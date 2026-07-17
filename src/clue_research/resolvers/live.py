@@ -35,7 +35,7 @@ from clue_research.resolvers.http import get_json, resolve_credential
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.config import Secrets
+    from clue_config import Secrets
 
 
 class AccountLookup(Protocol):

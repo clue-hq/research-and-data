@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 
+from clue_config import DeepPhaseConfig, RecursionPolicy
 from clue_core import (
     BudgetDecision,
     BudgetScope,
@@ -39,7 +40,6 @@ from clue_research.api.deep import (
     deep_account_run_id,
 )
 from clue_research.api.deep.run_io import DeepRunState
-from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,

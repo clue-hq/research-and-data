@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 
+from clue_config import OverlayStore
 from clue_core import (
     AspectContext,
     CampaignRunId,
@@ -45,7 +46,6 @@ from clue_core import (
     new_campaign_run_id,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.config import OverlayStore
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectProfilingWorker,

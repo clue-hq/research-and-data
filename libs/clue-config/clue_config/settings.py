@@ -6,7 +6,7 @@ plain strings rather than :class:`~pydantic.SecretStr`. Loaded once and injected
 read ``os.environ`` ad hoc.
 
 The ICP synthesis model id (M5.2) is the first live setting here; it also feeds
-:class:`~clue_research.config.gateway.GatewayConfig.synthesis_model` so ``get_config`` and
+:class:`~clue_config.gateway.GatewayConfig.synthesis_model` so ``get_config`` and
 ``synthesize_icps`` share one default.
 """
 

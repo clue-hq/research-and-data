@@ -30,6 +30,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import OverlayStore, RecursionPolicy
 from clue_core import (
     AccountEntity,
     AspectContext,
@@ -60,7 +61,6 @@ from clue_research.claimstore import (
     current_values,
     list_fields,
 )
-from clue_research.config import OverlayStore, RecursionPolicy
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,

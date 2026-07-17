@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.config import (
+from clue_config import (
     ConfidenceThresholds,
     Config,
     ConfigError,

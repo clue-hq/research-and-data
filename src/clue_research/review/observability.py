@@ -59,6 +59,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import VerificationHealthThresholds, get_config
 from clue_core import (
     BurnDown,
     CampaignPhase,
@@ -69,7 +70,6 @@ from clue_core import (
     UnitInterval,
     serialize_value_json,
 )
-from clue_research.config import VerificationHealthThresholds, get_config
 from clue_research.sources import SourceYieldStat, get_source_yield
 
 # Mirrors of the durable status tokens (``durable`` may not be imported by ``review``). The injected
@@ -186,7 +186,7 @@ class VerificationHealthCounts(BaseModel):
 class VerificationHealth(BaseModel):
     """Verification-health panel (Doc C §6 — the early-warning surface): the three rates plus, per
     rate, a ``*_alert`` flag set when the rate drops below its configured floor
-    (:class:`~clue_research.config.VerificationHealthThresholds`) — the signal of a possible
+    (:class:`~clue_config.VerificationHealthThresholds`) — the signal of a possible
     model/resolver regression. A rate is ``None`` (and never alerts) when it has no observations
     yet. ``alert`` is the OR of the three (any panel unhealthy)."""
 

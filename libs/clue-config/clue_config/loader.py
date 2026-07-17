@@ -4,10 +4,10 @@ Exposes the two accessors the rest of the subsystem consumes:
 
 * :func:`get_config(client_id, icp_id=None)` — the merged, validated :class:`Config`.
 * :func:`get_policy(client_id)` — the jurisdiction/use-class/posture
-  :class:`~clue_research.config.policy.JurisdictionPolicy`.
+  :class:`~clue_config.policy.JurisdictionPolicy`.
 
 **Layering.** Three layers merge in precedence order — *defaults → per-client → per-ICP/campaign*
-(staged-flow §2). Each layer is a sparse :class:`~clue_research.config.models.ConfigOverlay`; a
+(staged-flow §2). Each layer is a sparse :class:`~clue_config.models.ConfigOverlay`; a
 present sub-tree wins, an absent one inherits from beneath. Config is loaded once and *injected*,
 not read ad hoc: callers hold the returned object.
 
@@ -27,8 +27,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from clue_research.config.models import Config, ConfigOverlay, ConfigVersion
-from clue_research.config.policy import JurisdictionPolicy
+from clue_config.models import Config, ConfigOverlay, ConfigVersion
+from clue_config.policy import JurisdictionPolicy
 
 # The base layer: the conservative, GDPR-grade, full-sweep defaults (Doc D §6 Option 1). Its
 # version is layer "defaults"@1. Frozen models => safe to share this single instance.

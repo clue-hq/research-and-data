@@ -311,8 +311,8 @@ def test_sweep_expired_ages_out() -> None:  # AC2
 
 @pytest.mark.usefixtures("require_compliance_db")
 def test_access_exports_claims_and_basis() -> None:  # AC5 (access)
+    from clue_config import Jurisdiction
     from clue_research.compliance import record_lawful_basis
-    from clue_research.config import Jurisdiction
 
     async def _run() -> None:
         async with rollback_conn() as conn:

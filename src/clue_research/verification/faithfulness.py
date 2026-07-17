@@ -56,6 +56,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config.gateway import DEFAULT_GATEWAY_CONFIG
 from clue_core import (
     Claim,
     ClaimId,
@@ -71,7 +72,6 @@ from clue_core import (
 from clue_core.gateway import LLMGateway, Message, Role
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import record_verification
-from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_COST_CENTS,
@@ -152,7 +152,7 @@ class JudgePolicy(BaseModel):
     Swapping the model / prompt / threshold is a config change, regression-checked by M9.6.
 
     * ``judge_model`` — the gateway model id the judge calls (defaults to the shared
-      :class:`~clue_research.config.gateway.GatewayConfig` judge model id so the two never drift).
+      :class:`~clue_config.gateway.GatewayConfig` judge model id so the two never drift).
     * ``prompt_version`` — which versioned :data:`PROMPTS` entry to use (and part of the cache key).
     * ``supported_threshold`` — the 0..1 score floor a ``supported`` verdict must clear to *promote*
       a tier-4 claim to ``verified`` (D7 cost/accuracy dial; tune, do not hardcode at a call site).

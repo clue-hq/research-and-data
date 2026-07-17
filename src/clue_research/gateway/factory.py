@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pydantic import SecretStr
 
+from clue_config.gateway import GatewayConfig
 from clue_core.gateway import LLMGateway
-from clue_research.config.gateway import GatewayConfig
 from clue_research.gateway.openrouter import OpenRouterGateway
 from clue_research.gateway.stub import StubGateway
 from clue_research.gateway.tracing import TracingGateway

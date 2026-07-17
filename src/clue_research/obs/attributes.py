@@ -20,8 +20,8 @@ from enum import Enum
 from typing import TypedDict
 from uuid import UUID
 
+from clue_config import redact_mapping
 from clue_core import EntityType, ResearchMode, SourceTier
-from clue_research.config import redact_mapping
 
 # --- canonical attribute keys (the observability contract) ------------------
 ATTR_ENTITY_ID = "entity_id"

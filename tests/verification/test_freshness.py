@@ -22,6 +22,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config.policy import RetentionTtls
+from clue_config.schema import FreshnessTtls
 from clue_core import (
     Claim,
     EntityId,
@@ -47,8 +49,6 @@ from clue_research.claimstore import (
     merge_claims,
     register_field,
 )
-from clue_research.config.policy import RetentionTtls
-from clue_research.config.schema import FreshnessTtls
 from clue_research.obs import SPAN_VERIFICATION_FRESHNESS, InMemorySink, collect_spans
 from clue_research.verification import (
     DEFAULT_CADENCE_POLICY,

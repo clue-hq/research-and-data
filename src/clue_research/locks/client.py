@@ -8,7 +8,7 @@ closes it on exit. The concrete client sits behind these accessors so the backen
 cluster, or a Temporal activity once durable execution graduates — conventions §2) can be swapped
 without touching any caller.
 
-Like ``db/``, this package reads its env var **directly** (not via ``clue_research.config``) so the
+Like ``db/``, this package reads its env var **directly** (not via ``clue_config``) so the
 lock layer carries no config dependency; the variable name is the contract.
 """
 

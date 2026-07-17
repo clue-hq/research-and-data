@@ -17,6 +17,7 @@ from decimal import Decimal
 import pytest
 from pydantic import JsonValue, SecretStr
 
+from clue_config import Secrets
 from clue_core import (
     AccountEntity,
     Entity,
@@ -35,7 +36,6 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore import ALL_TENANTS, claims_for, register_field
-from clue_research.config import Secrets
 from clue_research.obs import ATTR_COST_CENTS, resolve_span
 from clue_research.obs.testing import collect_spans
 from clue_research.resolvers import (

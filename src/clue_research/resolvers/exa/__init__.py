@@ -58,7 +58,7 @@ from clue_research.resolvers.live import AccountLookup, HttpFetcher, HttpRequest
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.config import Secrets
+    from clue_config import Secrets
 
 SOURCE_KEY = "exa_deep"
 AUTH_REF = "CLUE_EXA_API_KEY"

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.config import (
+from clue_config import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
     DEFAULT_SOURCE_PLAN_POLICY,
     ConfidenceThresholds,

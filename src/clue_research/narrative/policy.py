@@ -21,8 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config.gateway import DEFAULT_GATEWAY_CONFIG
 from clue_core import Persona, decode_jsonb
-from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG
 from clue_research.narrative.prompts import PROMPT_VERSION, PROMPTS
 from clue_research.obs import get_logger
 

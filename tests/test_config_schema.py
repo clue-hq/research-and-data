@@ -16,8 +16,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from clue_core import CostCents, FieldClass
-from clue_research.config import (
+from clue_config import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
     DEFAULT_SOURCE_PLAN_POLICY,
     BudgetCaps,
@@ -32,6 +31,7 @@ from clue_research.config import (
     SourceProfile,
     get_config,
 )
+from clue_core import CostCents, FieldClass
 
 
 def test_all_placeholders_default_and_validate() -> None:

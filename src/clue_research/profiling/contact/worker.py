@@ -21,6 +21,13 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import (
+    ConfidenceThresholds,
+    OverlayStore,
+    RecursionPolicy,
+    SourcePlanPolicy,
+    get_config,
+)
 from clue_core import (
     AspectContext,
     EntityId,
@@ -35,13 +42,6 @@ from clue_core import (
     WorkerStatus,
 )
 from clue_db import ConnFactory
-from clue_research.config import (
-    ConfidenceThresholds,
-    OverlayStore,
-    RecursionPolicy,
-    SourcePlanPolicy,
-    get_config,
-)
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, get_contact, surviving_id
 from clue_research.profiling.contact.binding import DEFAULT_BINDING_CLASSIFIER, BindingClassifier
@@ -175,7 +175,7 @@ class ContactProfileAspectWorker:
 
     The orchestrator hands an :class:`AspectContext` whose ``entity_id`` is the *contact* and whose
     ``params`` carry ``account_entity_id`` + ``client_id``/``icp_key``/``icp_version``. The facet
-    sub-worker budget is derived from the injected :class:`~clue_research.config.RecursionPolicy`
+    sub-worker budget is derived from the injected :class:`~clue_config.RecursionPolicy`
     (``caps_for(tier).max_facet_workers_per_aspect``, and only if the aspect is recursion-eligible)
     — the versioned dial is the single source of truth, so a low-tier contact gets single-level
     depth regardless of any per-call hint. The worker opens a connection from the injected

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.config import (
+from clue_config import (
     DEFAULT_SYNTHESIS_MODEL,
     get_config,
     load_settings,
 )
-from clue_research.config.gateway import default_gateway_config
+from clue_config.gateway import default_gateway_config
 
 
 def test_synthesis_model_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,7 +4,7 @@ Every personal claim records a **lawful basis** as provenance, so the question "
 to hold this data" is *answered from the store*, not assumed (Doc D §4). The basis is a function of
 the claim's use-class (M10.2), the contact's resolved jurisdiction (M10.1, recorded for audit), and
 the client policy (M10.4 — the per-client basis strings on
-:class:`~clue_research.config.LawfulBasisDefaults`):
+:class:`~clue_config.LawfulBasisDefaults`):
 
 * ``professional-public`` / ``personal-public-non-sensitive`` B2B → **legitimate interest** (GDPR
   Art. 6(1)(f)), carried with a pointer to the client's documented balancing test (the ``lia_ref``);
@@ -20,7 +20,7 @@ data
 subject — almost always true in cold B2B research) and the use-class-keyed ``retention_until``
 horizon (personal claims carry a *shorter* retention than firmographic facts — Doc D §4). M10.5 owns
 the retention *semantics*; the horizon source is the M0.4
-:class:`~clue_research.config.RetentionTtls`
+:class:`~clue_config.RetentionTtls`
 placeholder (also referenced by the M9.5 freshness engine), not redefined here.
 
 This module is the *recording* surface; the *erasure/retention enforcement* (the tombstone sweep
@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import Jurisdiction, LawfulBasisDefaults, RetentionTtls
 from clue_core import (
     Claim,
     ClaimId,
@@ -45,7 +46,6 @@ from clue_core import (
     UseClass,
     UtcDatetime,
 )
-from clue_research.config import Jurisdiction, LawfulBasisDefaults, RetentionTtls
 from clue_research.obs import (
     ATTR_FIELD_KEY,
     SPAN_COMPLIANCE_LAWFUL_BASIS,

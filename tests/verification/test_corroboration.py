@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import MergePolicy as ConfigMergePolicy
 from clue_core import (
     DEFAULT_NUMERIC_ABS_TOLERANCE,
     DEFAULT_NUMERIC_REL_TOLERANCE,
@@ -45,7 +46,6 @@ from clue_research.claimstore import (
     record_verification,
     register_field,
 )
-from clue_research.config import MergePolicy as ConfigMergePolicy
 from clue_research.identity import insert_account_entity
 from clue_research.obs import InMemorySink
 from clue_research.verification import (

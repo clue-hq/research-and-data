@@ -135,7 +135,7 @@ class FirecrawlScrapeBackend:
         # via the manifest's ``auth_ref`` reference (never the secret in code).
         from firecrawl import FirecrawlApp
 
-        from clue_research.config import Secrets
+        from clue_config import Secrets
 
         secret = getattr(Secrets(), (ctx.auth_ref or "").lower().removeprefix("clue_"), None)
         if secret is None:

@@ -9,6 +9,7 @@ from decimal import Decimal
 
 import pytest
 
+from clue_config import BudgetCaps
 from clue_core import (
     BudgetScope,
     BudgetVerdict,
@@ -18,7 +19,6 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.config import BudgetCaps
 from clue_research.durable.budget import (
     BudgetEngine,
     BudgetStateNotFound,

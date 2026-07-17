@@ -59,6 +59,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_config import DeepPhaseConfig, RecursionPolicy
 from clue_core import (
     BudgetEngine,
     BudgetScope,
@@ -81,7 +82,6 @@ from clue_research.api.deep.spend import (
     already_done,
     deep_step_key,
 )
-from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,

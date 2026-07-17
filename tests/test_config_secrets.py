@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
-from clue_research.config import (
+from clue_config import (
     DB_DSN_ENV_VAR,
     Secrets,
     is_secret_name,

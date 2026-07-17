@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from clue_config import RecursionPolicy, TierRecursionCaps
 from clue_core import (
     EntityType,
     ExtractionMethod,
@@ -31,7 +32,6 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore import insert_claim, register_field
-from clue_research.config import RecursionPolicy, TierRecursionCaps
 from clue_research.identity import insert_account_entity, mark_merged
 from clue_research.profiling import profile_account
 

@@ -13,6 +13,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from clue_config import (
+    ConfigOverlay,
+    OverlayStore,
+    VerificationHealthThresholds,
+    get_config,
+)
 from clue_core import (
     BurnDown,
     CampaignPhase,
@@ -21,12 +27,6 @@ from clue_core import (
     UnsearchedChannel,
     new_campaign_run_id,
     new_run_id,
-)
-from clue_research.config import (
-    ConfigOverlay,
-    OverlayStore,
-    VerificationHealthThresholds,
-    get_config,
 )
 from clue_research.review import (
     COST_STATUS_GRACEFUL_STOP,

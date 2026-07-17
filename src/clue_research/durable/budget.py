@@ -12,17 +12,17 @@ Three scopes, all real (:class:`~clue_core.BudgetScope`):
 
 * **ACCOUNT** — the per-account deep cap: the account run's per-row override
   (``account_run.budget_cap_cents``) if set, else the per-tier policy band
-  (:meth:`~clue_research.config.BudgetCaps.per_account_cap_for`). A breach is a ``DENY`` — the
+  (:meth:`~clue_config.BudgetCaps.per_account_cap_for`). A breach is a ``DENY`` — the
   M7.2 spawn-denial: the run continues with the aspect marked partial, never a crash.
 * **PASS** — the cheap Pass-A per-account ceiling
-  (:attr:`~clue_research.config.BudgetCaps.pass_a_cap_cents_per_account`); a runaway scoring cost on
+  (:attr:`~clue_config.BudgetCaps.pass_a_cap_cents_per_account`); a runaway scoring cost on
   one account is ``DENY``\\ed. (There is no per-pass *aggregate* spend counter in V1 — Pass A is
   deterministic-only and cheap; this is the per-account-rate guard the spec names.)
 * **RUN** — the per-campaign hard cap (``campaign_run.budget_cap_cents``). A breach is a
   ``GRACEFUL_STOP`` — the campaign is brought to a clean stop at the next checkpoint (via M7.3),
   never hard-killed mid-step.
 
-Caps are **policy-as-data** (:class:`~clue_research.config.BudgetCaps`, versioned, per-ICP/client
+Caps are **policy-as-data** (:class:`~clue_config.BudgetCaps`, versioned, per-ICP/client
 overridable — already wired into the config loader). Persistence sits behind the
 :class:`BudgetStore` seam, so the engine is testable on an in-memory store and the accounting
 backend is swappable (Postgres now, Temporal-shaped later) — exactly the conventions §2
@@ -45,6 +45,7 @@ from typing import Protocol, runtime_checkable
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import BudgetCaps
 from clue_core import (
     BudgetDecision,
     BudgetScope,
@@ -57,7 +58,6 @@ from clue_core import (
     RunId,
 )
 from clue_db import transaction
-from clue_research.config import BudgetCaps
 from clue_research.durable.budget_event import (
     AccountBudgetState,
     RunBudgetState,
@@ -323,7 +323,7 @@ class DbBudgetStore:
 class BudgetEngine:
     """The cost-governance engine (M7.5) — the concrete :class:`clue_core.BudgetEngine`.
 
-    Construct once with the run's resolved :class:`~clue_research.config.BudgetCaps` policy (the api
+    Construct once with the run's resolved :class:`~clue_config.BudgetCaps` policy (the api
     root reads ``get_config(client, icp).budget_caps``) and a :class:`BudgetStore`. It is the
     single chokepoint for spend authorisation: Pass-A scoring (M6), deep workers (M8), and
     verification (M9) call :meth:`check` before spending and :meth:`record` after; the state

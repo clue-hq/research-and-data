@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from clue_config import Secrets
 from clue_core import ResolverError, RetryableResolverError
-from clue_research.config import Secrets
 
 if TYPE_CHECKING:
     from pydantic import SecretStr
