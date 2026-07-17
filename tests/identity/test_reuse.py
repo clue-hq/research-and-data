@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.claimstore import TenantScope, current_value, insert_claim
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     FreshnessState,
     ReuseScope,
@@ -17,6 +16,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import TenantScope, current_value, insert_claim
 from clue_research.identity import (
     ReusePolicy,
     classify_reuse_scope,

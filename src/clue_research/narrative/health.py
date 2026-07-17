@@ -29,7 +29,7 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import IdentityBinding, ProfileClaimView, UnitInterval, ValueNarrativeItem
+from clue_core import IdentityBinding, ProfileClaimView, UnitInterval, ValueNarrativeItem
 from clue_research.narrative.handoff_seams import HandoffCommitteeMember
 from clue_research.narrative.support import FaithfulnessCitation
 

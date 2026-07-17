@@ -1,4 +1,4 @@
-"""The aspect-worker registry — aspect → :class:`~clue_research.core.AspectWorker` dispatch.
+"""The aspect-worker registry — aspect → :class:`~clue_core.AspectWorker` dispatch.
 
 The orchestrator spawns workers by *aspect*, but must not import the package that implements them
 (M8 owns the bodies; the import-linter independence contract forbids ``durable → profiling``). So,
@@ -14,7 +14,7 @@ calling :meth:`WorkerRegistry.register`.
 
 from __future__ import annotations
 
-from clue_research.core import AspectWorker
+from clue_core import AspectWorker
 
 
 class WorkerRegistry:

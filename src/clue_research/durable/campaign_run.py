@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     CostCents,
@@ -59,7 +59,7 @@ class CampaignRunRow(BaseModel):
 
 class CampaignPhaseCheckpointRow(BaseModel):
     """A ``campaign_phase_checkpoint`` row (M7.3). ``payload`` is the phase handler's
-    :class:`~clue_research.core.PhaseResult` payload by reference — and, for ``tier_checkpoint``,
+    :class:`~clue_core.PhaseResult` payload by reference — and, for ``tier_checkpoint``,
     the M6.4 review payload the surface reads back (proposed cutoffs / tier distribution / cost
     estimate / decision)."""
 
@@ -128,7 +128,7 @@ async def ensure_campaign_run(
 
     Idempotent on the supplied id so ``CampaignRun.start`` is safe to call twice (a re-entry never
     resets a run that already advanced). The id is supplied by the caller (minted once via
-    :func:`~clue_research.core.new_campaign_run_id`) so it is stable across a crash-and-resume."""
+    :func:`~clue_core.new_campaign_run_id`) so it is stable across a crash-and-resume."""
     await conn.execute(
         _ENSURE_RUN_SQL,
         {

@@ -14,14 +14,14 @@ Provider SDKs (none are needed here — the transport is generic HTTP) live only
 sub-package (Rule 4). Resolvers never import one another (Rule 3).
 
 The shared HTTP/SDK client wrapper, the ``auth_ref`` → credential resolver, and the
-:class:`~clue_research.core.RetryableResolverError` taxonomy are built **once** (M4 kickoff decision
+:class:`~clue_core.RetryableResolverError` taxonomy are built **once** (M4 kickoff decision
 3b) — in :mod:`clue_research.resolvers.http` / :mod:`clue_research.resolvers.live` / ``core`` so no
 provider re-implements HTTP, retry, or auth.
 """
 
 from __future__ import annotations
 
-from clue_research.core import ResolverError, RetryableResolverError
+from clue_core import ResolverError, RetryableResolverError
 from clue_research.resolvers import (
     apollo,
     builtwith,

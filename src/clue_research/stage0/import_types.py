@@ -13,7 +13,7 @@ inputs (:class:`ImportRow` / :class:`ImportContactRow`) and the output (:class:`
 ``resolved`` set is the **same ``account_entity``-keyed shape the discovery path produces** — so the
 Pass A scoring bridge and everything downstream cannot tell discovered from imported accounts except
 by their provenance flavor (``matched_channel='import'``). The fit/intent back-scores are the frozen
-:class:`~clue_research.core.Score` primitives (decomposed, each sub-score linking the claims behind
+:class:`~clue_core.Score` primitives (decomposed, each sub-score linking the claims behind
 it), the same primitives that later compose ``account_handoff`` — not the full handoff object (M12).
 """
 
@@ -23,7 +23,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import ClaimId, EntityId, Score, UseClass
+from clue_core import ClaimId, EntityId, Score, UseClass
 
 # --- input: the messy free-text list ---------------------------------------
 
@@ -78,7 +78,7 @@ class FitFlag(StrEnum):
 class ResolvedAccount(BaseModel):
     """A resolved imported account — the **same ``account_entity``-keyed shape discovery emits**
     plus its back-score. ``fit_score`` / ``intent_score`` are the decomposed
-    :class:`~clue_research.core.Score` primitives (each component linking the claims behind it — no
+    :class:`~clue_core.Score` primitives (each component linking the claims behind it — no
     score without evidence), computed against the confirmed ICP via the M5.2/M3.4 Pass-A scorer.
     ``provenance_claim_id`` points at the discovery-provenance claim (``matched_channel='import'``)
     that records where/why the entity entered, so the resolution is auditable. The durable

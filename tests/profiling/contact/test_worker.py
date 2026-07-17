@@ -12,14 +12,14 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     AspectWorker,
     IdentityBinding,
     ProfileClaimView,
     WorkerStatus,
 )
+from clue_research.claimstore import TenantScope, claims_for
 from clue_research.profiling.contact import ContactProfileAspectWorker, profile_contact
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings

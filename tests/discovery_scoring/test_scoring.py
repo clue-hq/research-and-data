@@ -14,14 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import (
-    TenantScope,
-    claims_for,
-    insert_claim,
-    load_core_pack,
-    register_field,
-)
-from clue_research.core import (
+from clue_core import (
     EntityScope,
     ExtractionMethod,
     FieldClass,
@@ -34,6 +27,13 @@ from clue_research.core import (
     SourceManifest,
     account_claim,
     new_run_id,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    claims_for,
+    insert_claim,
+    load_core_pack,
+    register_field,
 )
 from clue_research.discovery_scoring.scoring import (
     FIT_FIELD,

@@ -24,7 +24,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import CostCents, ICPSpec, LLMGateway, RunId
+from clue_core import CostCents, ICPSpec, LLMGateway, RunId
 from clue_research.discovery_scoring.discovery.channels import (
     ChannelRegistry,
     DiscoveryChannel,

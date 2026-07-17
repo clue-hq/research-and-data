@@ -10,10 +10,10 @@ dossier, so it is verified by the same machinery as every other claim (the M9.3 
 judge) and never promoted unless its evidence entails it.
 
 :class:`Positioner` is built like the M9.3 judge (the established pattern for an LLM step with
-durable output): injected :class:`~clue_research.core.gateway.LLMGateway`, the
-:class:`~clue_research.core.retrieval.ClientKnowledgeRetriever` (M5 seam), the
+durable output): injected :class:`~clue_core.gateway.LLMGateway`, the
+:class:`~clue_core.retrieval.ClientKnowledgeRetriever` (M5 seam), the
 :class:`~clue_research.narrative.seams.CommitteeReader` (M8/M10 seam), the
-:class:`~clue_research.core.verification.FaithfulnessJudge` (M9.3), a resolved
+:class:`~clue_core.verification.FaithfulnessJudge` (M9.3), a resolved
 :class:`~clue_research.narrative.policy.PositioningPolicy`, and a connection factory. Every
 concrete dependency is injected at the ``api`` composition root — ``narrative`` imports no sibling
 worker.
@@ -45,14 +45,7 @@ from time import perf_counter
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    claims_for,
-    current_values,
-    insert_claim,
-    supersede_claim,
-)
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimId,
     CostCents,
@@ -67,7 +60,14 @@ from clue_research.core import (
     account_claim,
     is_outreach_promotable,
 )
-from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
+from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
+from clue_research.claimstore import (
+    TenantScope,
+    claims_for,
+    current_values,
+    insert_claim,
+    supersede_claim,
+)
 from clue_research.db import ConnFactory, transaction
 from clue_research.identity import stamp_reuse
 from clue_research.narrative.fields import VALUE_NARRATIVE

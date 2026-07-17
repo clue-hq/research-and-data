@@ -49,7 +49,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     Confidence,
@@ -167,7 +167,7 @@ class SynthesisBackend(Protocol):
     :class:`SynthesizedField`\\s — each with a mandatory citation +
     evidence span (a candidate with no grounding is dropped *here*, never returned). An **empty**
     :class:`SynthesisResult` is a *hard miss* the waterfall advances past; a **transient** failure
-    (timeout / 5xx / rate-limit) raises :class:`~clue_research.core.RetryableResolverError` so M7
+    (timeout / 5xx / rate-limit) raises :class:`~clue_core.RetryableResolverError` so M7
     retries — never swallowed into an empty result. The backend is the only place that knows the
     provider's API and response shape.
     """

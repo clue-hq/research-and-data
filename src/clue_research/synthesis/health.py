@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from clue_research.core import Claim, VerificationStatus
+from clue_core import Claim, VerificationStatus
 from clue_research.obs.metrics import (
     METRIC_TIER4_PASSED,
     METRIC_TIER4_TOTAL,

@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import CostCents, FieldClass, RunId, serialize_value_json
+from clue_core import CostCents, FieldClass, RunId, serialize_value_json
 
 # The recency horizon the freshness_score decays over (M13.3): a surviving claim at-or-past this age
 # scores 0.0, a brand-new one 1.0, linearly between. ~6 months — long enough a stale-but-live

@@ -15,9 +15,9 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
+from clue_core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
 from clue_research.config import ConfigOverlay, GatewayConfig, ModelPrice, get_config
 from clue_research.config.loader import OverlayStore
-from clue_research.core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
 from clue_research.gateway import (
     GatewayError,
     OpenRouterGateway,

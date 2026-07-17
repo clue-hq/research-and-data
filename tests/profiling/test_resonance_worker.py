@@ -13,8 +13,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import register_field
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     Claim,
     Entity,
@@ -31,6 +30,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import register_field
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import (
     ProfilingFieldDisposition,

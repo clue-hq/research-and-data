@@ -32,7 +32,7 @@ from types import TracebackType
 
 from redis.asyncio import Redis
 
-from clue_research.core import EntityId, EntityType
+from clue_core import EntityId, EntityType
 from clue_research.obs import get_metric_sink, traced_step
 
 # Default lease: long enough for a unit of expensive work, short enough that a crashed holder frees

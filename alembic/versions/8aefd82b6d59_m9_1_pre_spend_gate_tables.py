@@ -19,7 +19,7 @@ spend on a doomed claim (substrate §6(1)). This migration adds the two M9.1 per
 The per-field ``gate_spec`` (M9.1) is carried in the **existing** ``field_definition.gate`` text
 column (same column, declared JSON contents) — no schema change there.
 
-``pre_spend_verdict`` mirrors :class:`clue_research.core.enums.PreSpendVerdict`; the enum-parity
+``pre_spend_verdict`` mirrors :class:`clue_core.enums.PreSpendVerdict`; the enum-parity
 test ``test_prespend_gate.py::test_pre_spend_verdict_enum_matches_core`` guards drift (the DB and
 the domain model cannot import each other's spelling). ``entity_type`` is reused from 0002 (no new
 enum, no downgrade burden for it). ``downgrade()`` cleanly reverses ``upgrade()``.
@@ -37,7 +37,7 @@ down_revision: str | None = "82831d3fa4c5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirrors clue_research.core.enums.PreSpendVerdict (parity-tested in the M9.1 test suite).
+# Mirrors clue_core.enums.PreSpendVerdict (parity-tested in the M9.1 test suite).
 _PRE_SPEND_VERDICT = ("pass", "reject")
 
 

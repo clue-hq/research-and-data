@@ -12,7 +12,7 @@ logic.** The use-gate (``(use_class × jurisdiction × client_policy)`` → allo
 balancing test (LIA), and the ``lawful_basis`` claim-provenance field all land with M10. Here we
 only carry the inputs that gate will read.
 
-Reuses :class:`clue_research.core.UseClass` (``professional-public | personal-public-non-sensitive
+Reuses :class:`clue_core.UseClass` (``professional-public | personal-public-non-sensitive
 | sensitive``) — it is **not** re-defined here.
 """
 
@@ -23,7 +23,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from clue_research.core import UseClass
+from clue_core import UseClass
 
 
 class Jurisdiction(StrEnum):

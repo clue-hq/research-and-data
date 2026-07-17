@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 
-from clue_research.core import LLMGateway, Message, Role
+from clue_core import LLMGateway, Message, Role
 from clue_research.discovery_scoring.discovery.strategy import DiscoveryConfig, DiscoveryStrategy
 
 # The hard instruction: expand QUERIES, never companies. The grounding guarantee does not *depend*

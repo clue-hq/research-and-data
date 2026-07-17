@@ -4,7 +4,7 @@ When the campaign-run state machine enters the REVIEW phase (between VERIFICATIO
 handler opens a durable ``review_session`` per ready high-tier account and returns ``PAUSED`` — the
 state machine then parks the run at an ``AWAITING_INPUT`` checkpoint (Option B: the human gate
 reuses the M7.3 suspend/resume the state machine already reserves for M13, not a per-account
-``interrupt()``). A human works the sessions through the :class:`~clue_research.core.ReviewSurface`;
+``interrupt()``). A human works the sessions through the :class:`~clue_core.ReviewSurface`;
 the last ``finalize`` resumes the campaign (via the surface's injected resume hook), which advances
 to HANDOFF — and HANDOFF only emits the accounts whose session finalized (the readiness gate).
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     PhaseContext,
     PhaseHandler,
@@ -33,7 +33,7 @@ ReviewAccountResolver = Callable[[PhaseContext], Awaitable[Sequence[AccountSpec]
 
 
 class ReviewPhaseHandler:
-    """The ``CampaignPhase.REVIEW`` :class:`~clue_research.core.PhaseHandler` (M13.1).
+    """The ``CampaignPhase.REVIEW`` :class:`~clue_core.PhaseHandler` (M13.1).
 
     Opens a session per ready account (idempotent — a crash-resume re-opens onto the same row) and
     returns ``PAUSED`` so the run suspends for human review. An empty ready set is a clean

@@ -41,7 +41,7 @@ def register_synthesis_wiring(*, accounts: AccountLookup | None = None) -> None:
     :class:`~clue_research.resolvers.GroundedSynthesisResolver` seam — the waterfall dispatches to
     whichever a field's ``tier_plan`` names, with no knowledge of either provider. ``accounts`` is
     the orchestrator's :class:`~clue_research.resolvers.AccountLookup` (entity_id → the resolved
-    :class:`~clue_research.core.AccountEntity`) the resolvers target-lock the query with; the M6/M8
+    :class:`~clue_core.AccountEntity`) the resolvers target-lock the query with; the M6/M8
     deep-run composition supplies it. Idempotent (last write wins per key).
     """
     register_exa_deep_resolver(accounts=accounts)

@@ -20,9 +20,9 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import clue_obs
+from clue_core import AccountEntity, new_run_id
 from clue_research.api.composition import load_research_packs
 from clue_research.config import GatewayConfig
-from clue_research.core import AccountEntity, new_run_id
 from clue_research.db import db_lifespan, transaction
 from clue_research.gateway import build_gateway
 from clue_research.identity import insert_account_entity

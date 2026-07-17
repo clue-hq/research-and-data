@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from clue_core import UseClass
 from clue_research.config import (
     DEFAULT_JURISDICTION,
     DEFAULT_POSTURE,
@@ -21,7 +22,6 @@ from clue_research.config import (
     UseDisposition,
     get_policy,
 )
-from clue_research.core import UseClass
 
 
 def test_default_policy_is_option1_gdpr_fullsweep_sensitive_locked() -> None:

@@ -17,7 +17,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     AspectWorker,
     Binding,

@@ -28,7 +28,7 @@ appended in one transaction share ``created_at`` (the transaction timestamp), so
 ``seq`` (GENERATED ALWAYS AS IDENTITY) is the only stable audit order — exactly the
 ``adjustment_journal`` lesson.
 
-Enums: ``budget_scope`` mirrors the **core** :class:`clue_research.core.enums.BudgetScope` (the
+Enums: ``budget_scope`` mirrors the **core** :class:`clue_core.enums.BudgetScope` (the
 cross-milestone scope vocabulary the ``BudgetEngine`` ``check``/``record`` exchange);
 ``budget_event_kind`` mirrors the **durable-internal**
 :class:`clue_research.durable.enums.BudgetEventKind`. Both are parity-tested against their Python
@@ -53,7 +53,7 @@ down_revision: str | None = "df78df38b168"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums.BudgetScope (a CORE enum — the shared scope vocabulary).
+# Mirror clue_core.enums.BudgetScope (a CORE enum — the shared scope vocabulary).
 _BUDGET_SCOPE = ("account", "pass", "run")
 
 # Mirror clue_research.durable.enums.BudgetEventKind (durable-internal governance audit).

@@ -17,22 +17,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.composition import VERIFICATION_GATE_ORDER
-from clue_research.claimstore import insert_claim
-from clue_research.compliance import (
-    DEFAULT_CLIENT_POLICY,
-    ClientPolicy,
-    SensitiveOverride,
-    UseGateImpl,
-    decide_use,
-    load_client_policy,
-)
-from clue_research.compliance.use_gate import (
-    METRIC_USE_GATE_EVALUATIONS,
-    METRIC_USE_GATE_USABLE,
-)
-from clue_research.config import Jurisdiction, Posture, SourceScope, UseDisposition
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     ClaimId,
@@ -51,6 +36,21 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.api.composition import VERIFICATION_GATE_ORDER
+from clue_research.claimstore import insert_claim
+from clue_research.compliance import (
+    DEFAULT_CLIENT_POLICY,
+    ClientPolicy,
+    SensitiveOverride,
+    UseGateImpl,
+    decide_use,
+    load_client_policy,
+)
+from clue_research.compliance.use_gate import (
+    METRIC_USE_GATE_EVALUATIONS,
+    METRIC_USE_GATE_USABLE,
+)
+from clue_research.config import Jurisdiction, Posture, SourceScope, UseDisposition
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 from clue_research.obs import (
     SPAN_COMPLIANCE_USE_GATE,

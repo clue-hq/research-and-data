@@ -11,7 +11,7 @@ Beat-0 gives M5 **no new tables**, so everything import persists is **claim-nati
 - :data:`CONTACT_IMPORT_RECORD` (``contact.import_record``) — a **canonical** ``contact.*`` field
   carrying one imported contact's datum + governance tags. Because ``contact`` is a canonical
   namespace (not a vertical pack) it is registered *without* a ``pack`` (registry rule), and it is
-  written via :func:`~clue_research.core.contact_claim`, which stamps the required
+  written via :func:`~clue_core.contact_claim`, which stamps the required
   ``identity_binding`` + ``use_class`` (Doc D §2). Its lawful basis rides in the claim value
   (forward-compatible with M10.5's planned ``claim`` provenance column) so M10 can govern it without
   M5.3 importing ``compliance``.
@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField, load_pack, register_field
-from clue_research.core import FieldDef, PassKind, ReuseScope
 
 # --- the import grouping marker (vertical pack) ----------------------------
 IMPORT_PACK = "import"

@@ -32,15 +32,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
-from clue_research.api.verification.handler import ContactResolver, VerificationAccountResolver
-from clue_research.compliance import RetentionSweep
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     EntityId,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
 )
+from clue_research.api.verification.handler import ContactResolver, VerificationAccountResolver
+from clue_research.compliance import RetentionSweep
 from clue_research.db import ConnFactory, transaction
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account

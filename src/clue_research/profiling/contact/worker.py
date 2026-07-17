@@ -21,14 +21,7 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.config import (
-    ConfidenceThresholds,
-    OverlayStore,
-    RecursionPolicy,
-    SourcePlanPolicy,
-    get_config,
-)
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     EntityId,
     EntityType,
@@ -40,6 +33,13 @@ from clue_research.core import (
     RunId,
     WorkerResult,
     WorkerStatus,
+)
+from clue_research.config import (
+    ConfidenceThresholds,
+    OverlayStore,
+    RecursionPolicy,
+    SourcePlanPolicy,
+    get_config,
 )
 from clue_research.db import ConnFactory
 from clue_research.icp.spec import get_icp_version

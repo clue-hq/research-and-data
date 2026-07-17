@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from clue_research.core import Claim
+from clue_core import Claim
 from clue_research.evals.models import GoldClaim
 
 

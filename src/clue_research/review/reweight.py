@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import EntityId
+from clue_core import EntityId
 from clue_research.icp.rubric import ScoringRubric, SubRubric
 from clue_research.icp.source_profile import SourceWeight, WeightedSource
 from clue_research.review.disposition import DispositionType

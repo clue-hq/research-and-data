@@ -16,6 +16,17 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import (
+    AccountStatus,
+    Claim,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    IdentityBinding,
+    ResearchMode,
+    UseClass,
+    new_run_id,
+)
 from clue_research.compliance import (
     LawfulBasis,
     derive_lawful_basis,
@@ -30,17 +41,6 @@ from clue_research.config import (
     Jurisdiction,
     LawfulBasisDefaults,
     RetentionTtls,
-)
-from clue_research.core import (
-    AccountStatus,
-    Claim,
-    EntityId,
-    EntityType,
-    ExtractionMethod,
-    IdentityBinding,
-    ResearchMode,
-    UseClass,
-    new_run_id,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 

@@ -21,7 +21,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import CostCents, NormalizedText, UtcDatetime
+from clue_core import CostCents, NormalizedText, UtcDatetime
 
 
 def content_key(source_key: str, ref: str) -> str:

@@ -14,9 +14,9 @@ from typing import Annotated
 from annotated_types import Ge
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from clue_research.core.enums import EntityScope, IdentityBinding, Modality
-from clue_research.core.field import is_field_key_or_class
-from clue_research.core.primitives import CostCents, SourceTier
+from clue_core.enums import EntityScope, IdentityBinding, Modality
+from clue_core.field import is_field_key_or_class
+from clue_core.primitives import CostCents, SourceTier
 
 
 class SourceManifest(BaseModel):

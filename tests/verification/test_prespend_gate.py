@@ -17,8 +17,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore.registry import register_field
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     AccountStatus,
     ContactEntity,
@@ -31,6 +30,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore.registry import register_field
 from clue_research.identity import (
     insert_account_entity,
     mark_merged,

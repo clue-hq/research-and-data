@@ -6,7 +6,7 @@ M7 ``durable``, M8 ``profiling``, M9 ``verification``, …) from importing one a
 coordination point the M8 kickoff/handoff calls out: it
 
 * loads every field pack + source manifest a deep run reads (:func:`load_research_packs`);
-* constructs the M8 deep-profiling :class:`~clue_research.core.execution.AspectWorker`\\s with their
+* constructs the M8 deep-profiling :class:`~clue_core.execution.AspectWorker`\\s with their
   injected dependencies and registers them into the M7
   :class:`~clue_research.durable.WorkerRegistry`
   (:func:`build_profiling_workers` / :func:`build_worker_registry`); the two axes carry disjoint
@@ -15,7 +15,7 @@ coordination point the M8 kickoff/handoff calls out: it
 * injects the M9 governance seams — the authoritative ``verification.classify_binding`` behind
   M8.4's :class:`~clue_research.profiling.contact.binding.BindingClassifier`
   (:class:`VerificationBindingClassifier`, the deferred M9.4×M8.4 stamp) and the
-  :class:`~clue_research.core.verification.PreSpendGate` the account-axis worker consults before
+  :class:`~clue_core.verification.PreSpendGate` the account-axis worker consults before
   spend (:func:`build_pre_spend_gate`, the deferred M9.1 routing).
 
 Not yet wired here (still deferred — they need worker/M7 code changes, not pure composition, and are
@@ -32,9 +32,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import load_core_pack
-from clue_research.config import RecursionPolicy
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     EntityId,
     IdentityBinding,
@@ -42,7 +40,9 @@ from clue_research.core import (
     PreSpendGate,
     new_claim_id,
 )
-from clue_research.core.execution import AspectWorker
+from clue_core.execution import AspectWorker
+from clue_research.claimstore import load_core_pack
+from clue_research.config import RecursionPolicy
 from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
     AccountResearchGraph,
@@ -189,7 +189,7 @@ def build_pre_spend_gate(
     conn_factory: ConnFactory | None = None,
     record_decisions: bool = True,
 ) -> PreSpendGate:
-    """The api-root :class:`~clue_research.core.verification.PreSpendGate` to inject before spend.
+    """The api-root :class:`~clue_core.verification.PreSpendGate` to inject before spend.
 
     Records one ``gate_decision`` audit row per ``check`` (so "did this run gate this
     ``(entity, field)`` before spending?" is a query — M9.1 AC6). ``conn_factory`` defaults to the

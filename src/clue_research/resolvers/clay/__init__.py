@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from clue_research.core import CostCents, FieldDef
+from clue_core import CostCents, FieldDef
 from clue_research.resolvers.base import (
     DeterministicResolver,
     EnrichmentBackend,
@@ -27,7 +27,7 @@ from clue_research.resolvers.live import AccountLookup, HttpEnrichmentBackend, H
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.core import AccountEntity
+    from clue_core import AccountEntity
 
 SOURCE_KEY = "clay"
 AUTH_REF = "CLUE_CLAY_API_KEY"

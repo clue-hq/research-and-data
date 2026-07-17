@@ -19,13 +19,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    TenantScope,
-    claims_for,
-    current_value,
-)
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Entity,
     EntityId,
@@ -40,6 +34,12 @@ from clue_research.core import (
     UseClass,
     new_entity_id,
     new_run_id,
+)
+from clue_research.claimstore import (
+    ALL_TENANTS,
+    TenantScope,
+    claims_for,
+    current_value,
 )
 from clue_research.identity import insert_account_entity
 from clue_research.resolvers import (

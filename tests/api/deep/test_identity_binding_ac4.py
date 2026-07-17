@@ -12,14 +12,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from clue_research.api.deep import build_deep_phase_handler
-from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import (
+from clue_core import (
     Claim,
     ICPCreatedFrom,
     ICPSpec,
     IdentityBinding,
 )
+from clue_research.api.deep import build_deep_phase_handler
+from clue_research.claimstore import TenantScope, claims_for
 from clue_research.profiling import profile_contact
 from clue_research.profiling.contact.binding import BindingClassifier
 from clue_research.profiling.fields import FACET_STATED_INTERESTS

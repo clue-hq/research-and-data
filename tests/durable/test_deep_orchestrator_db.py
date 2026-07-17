@@ -22,15 +22,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.deep import (
-    AccountDeepOrchestrator,
-    DbAccountRunIO,
-    DbExactlyOnceSpend,
-    deep_account_run_id,
-    deep_step_key,
-)
-from clue_research.config import DeepPhaseConfig
-from clue_research.core import (
+from clue_core import (
     EntityId,
     Persona,
     SourceTier,
@@ -39,8 +31,16 @@ from clue_research.core import (
     new_claim_id,
     new_entity_id,
 )
-from clue_research.core.enums import ICPCreatedFrom
-from clue_research.core.handoff import ICPSpec, ProfileClaimView
+from clue_core.enums import ICPCreatedFrom
+from clue_core.handoff import ICPSpec, ProfileClaimView
+from clue_research.api.deep import (
+    AccountDeepOrchestrator,
+    DbAccountRunIO,
+    DbExactlyOnceSpend,
+    deep_account_run_id,
+    deep_step_key,
+)
+from clue_research.config import DeepPhaseConfig
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,

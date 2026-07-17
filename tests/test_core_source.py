@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import EntityScope, IdentityBinding, Modality, SourceManifest
+from clue_core import EntityScope, IdentityBinding, Modality, SourceManifest
 
 
 @pytest.mark.parametrize("modality", list(Modality))

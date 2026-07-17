@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.core.gateway import Completion, EmbeddingResult, LLMGateway, Message, TokenUsage
+from clue_core.gateway import Completion, EmbeddingResult, LLMGateway, Message, TokenUsage
 from clue_research.obs import (
     ATTR_COMPLETION_TOKENS,
     ATTR_COST_CENTS,

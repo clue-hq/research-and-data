@@ -18,7 +18,7 @@ Pass A → tiering → checkpoint → Pass B path discovered accounts take. It d
 3. **ICP back-scoring** — every resolved account is scored against the client's confirmed
    ``ICPSpec`` (M5.2) via the **M3.4 Pass-A scorer** (``icp.score_entity`` — the same primitive M6
    wraps; import skips *discovery*, never *scoring*). The decomposed fit/intent
-   :class:`~clue_research.core.Score` (each component linking the claims behind it) is returned in
+   :class:`~clue_core.Score` (each component linking the claims behind it) is returned in
    :class:`ImportResult` — the durable ``account.scoring.*`` write is M6.3's at the SCORING phase;
    this is the early import-time preview.
 4. **Non-fit flagging (D6 — flag + proceed)** — an account below the ICP-relative fit floor (the
@@ -42,14 +42,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    current_value,
-    get_field,
-    insert_claim,
-    load_core_pack,
-)
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     Entity,
     EntityId,
@@ -63,6 +56,13 @@ from clue_research.core import (
     account_claim,
     contact_claim,
     discovery_claim,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    current_value,
+    get_field,
+    insert_claim,
+    load_core_pack,
 )
 from clue_research.icp import (
     ScoringRubric,

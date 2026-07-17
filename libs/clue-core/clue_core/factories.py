@@ -20,8 +20,8 @@ from typing import Any
 
 from pydantic import JsonValue, TypeAdapter
 
-from clue_research.core.claim import Claim, DiscoveryProvenance
-from clue_research.core.enums import (
+from clue_core.claim import Claim, DiscoveryProvenance
+from clue_core.enums import (
     ClaimFlavor,
     EntityType,
     ExtractionMethod,
@@ -29,7 +29,7 @@ from clue_research.core.enums import (
     ResearchMode,
     UseClass,
 )
-from clue_research.core.primitives import (
+from clue_core.primitives import (
     Confidence,
     CostCents,
     EntityId,

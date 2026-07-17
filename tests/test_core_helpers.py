@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import Decimal
 
-from clue_research.core import (
+from clue_core import (
     TIER_ORDER,
     Claim,
     ExtractionMethod,

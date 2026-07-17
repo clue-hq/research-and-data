@@ -2,7 +2,7 @@
 
 Ties the pieces together: :func:`~clue_research.review.yield_metrics.compute_yield` (the metrics),
 the pure reweighters (``reweight.py``), the ``config_revision`` ledger (``config_revision.py``), and
-the versioned config stores (``icp``) — with the injected :class:`~clue_research.core.BacktestGate`
+the versioned config stores (``icp``) — with the injected :class:`~clue_core.BacktestGate`
 gating a rubric promotion. The loop only ever *proposes* a versioned revision and, on a gated
 ``promote``, writes the existing store (a new ``icp_spec`` version for a rubric, a
 ``source_profile_override`` version for a profile); the engine reads the stores, not the ledger, so
@@ -16,7 +16,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     BacktestGate,
     ConfigRevisionStatus,
     ConfigRevisionTarget,

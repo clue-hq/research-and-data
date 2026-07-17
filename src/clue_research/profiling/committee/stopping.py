@@ -21,7 +21,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_research.core import CostCents
+from clue_core import CostCents
 
 
 class CommitteeStopReason(StrEnum):

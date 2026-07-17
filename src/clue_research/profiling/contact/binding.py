@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import ContactEntity, IdentityBinding
+from clue_core import ContactEntity, IdentityBinding
 
 
 class BindingInput(BaseModel):

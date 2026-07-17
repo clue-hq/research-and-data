@@ -1,13 +1,13 @@
 """The shared live-transport template for tier-1 HTTP backends (M4.4 / ENG-122).
 
-The ``Resolver`` protocol hands a backend a *minimal* :class:`~clue_research.core.Entity` (an
+The ``Resolver`` protocol hands a backend a *minimal* :class:`~clue_core.Entity` (an
 ``entity_id`` + type) and is **synchronous** — it has no DB connection. A live provider call,
 though, needs the account's identifiers (domain / name / registry ids) to form a query. Two seams
 bridge that gap without a resolver ever resolving identity (that is M2's) or holding a connection:
 
 * :class:`AccountLookup` — supplied by the campaign orchestrator (M6/M7), which has *already* loaded
   the account records it is researching; it maps ``entity_id`` → the resolved
-  :class:`~clue_research.core.AccountEntity`. Resolvers receive it by injection, never load it.
+  :class:`~clue_core.AccountEntity`. Resolvers receive it by injection, never load it.
 * :func:`fetch_via_http` — the one place the live request lifecycle lives: resolve the credential
   from the manifest ``auth_ref``, guard the lookup, issue the request through the shared
   :func:`~clue_research.resolvers.http.get_json` wrapper, and normalize the response. Each provider
@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING, Any, Protocol
 
-from clue_research.core import AccountEntity, Entity, EntityId, FieldDef, ResolverError
+from clue_core import AccountEntity, Entity, EntityId, FieldDef, ResolverError
 from clue_research.resolvers.base import ResolvedField
 from clue_research.resolvers.http import get_json, resolve_credential
 
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 class AccountLookup(Protocol):
-    """Resolve an ``entity_id`` to the loaded :class:`~clue_research.core.AccountEntity` whose
+    """Resolve an ``entity_id`` to the loaded :class:`~clue_core.AccountEntity` whose
     ``primary_domain`` / ``canonical_name`` / ``registry_ids`` a live provider query needs.
 
     The orchestrator that drives the waterfall over a set of accounts (M6/M7) owns the account

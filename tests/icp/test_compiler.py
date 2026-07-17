@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from clue_core import FieldDef, ICPCreatedFrom, ICPSpec, PassKind
 from clue_research.claimstore import register_field
-from clue_research.core import FieldDef, ICPCreatedFrom, ICPSpec, PassKind
 from clue_research.icp import (
     HEALTHCARE_PRACTICE,
     CompileError,

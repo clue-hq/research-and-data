@@ -10,7 +10,7 @@ guard). It is the exact M9 side-table pattern (``faithfulness_verdict`` /
 narrative ``claim_id``.
 
 M12.1 (the positioner) writes it atomically with the narrative claim; M12.2 (the assembler) reads
-it to populate :class:`clue_research.core.handoff.NarrativeSupport` and the provenance index, so
+it to populate :class:`clue_core.handoff.NarrativeSupport` and the provenance index, so
 "every narrative line is sourced on both sides" is a queryable property, not a promise.
 """
 
@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import ClaimId, decode_jsonb
+from clue_core import ClaimId, decode_jsonb
 
 
 class ClaimSupport(BaseModel):

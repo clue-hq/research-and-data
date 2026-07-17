@@ -22,7 +22,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, JsonValue
 
-from clue_research.core.enums import PassKind, ReuseScope
+from clue_core.enums import PassKind, ReuseScope
 
 # --- canonical field-key namespaces (conventions §3) -----------------------
 NS_CORE = "core"  # commodity facts: employee_count, primary_domain, work_email...

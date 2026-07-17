@@ -34,7 +34,7 @@ down_revision: str | None = "0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums (IdentityBinding / UseClass / ClaimFlavor). The enum-parity test
+# Mirror clue_core.enums (IdentityBinding / UseClass / ClaimFlavor). The enum-parity test
 # tests/claimstore/test_provenance_flavors.py::test_flavor_enums_match_core guards against drift.
 _IDENTITY_BINDING = ("strong", "weak")
 _USE_CLASS = ("professional-public", "personal-public-non-sensitive", "sensitive")

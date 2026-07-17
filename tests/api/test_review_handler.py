@@ -1,6 +1,6 @@
 """M13.1 — ``ReviewPhaseHandler`` unit tests (fakes only, no DB).
 
-Drives the REVIEW phase handler with a fake :class:`~clue_research.core.ReviewSurface` and a fake
+Drives the REVIEW phase handler with a fake :class:`~clue_core.ReviewSurface` and a fake
 account resolver, asserting: protocol conformance + registration, the empty-set COMPLETED no-op, the
 populated-set PAUSED-after-opening-sessions path (the human gate), per-account isolation, and the
 ``build_review_phase_handler`` composition smoke (construction touches no DB)."""
@@ -11,9 +11,7 @@ import asyncio
 from collections.abc import Sequence
 from uuid import uuid4
 
-from clue_research.api.review import ReviewPhaseHandler, build_review_phase_handler
-from clue_research.api.review.handler import ReviewAccountResolver
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     EntityId,
@@ -28,14 +26,16 @@ from clue_research.core import (
     new_campaign_run_id,
     new_entity_id,
 )
-from clue_research.core.review import ReviewSessionId
+from clue_core.review import ReviewSessionId
+from clue_research.api.review import ReviewPhaseHandler, build_review_phase_handler
+from clue_research.api.review.handler import ReviewAccountResolver
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 
 _CLIENT = "client-acme"
 
 
 class FakeReviewSurface:
-    """A fake :class:`~clue_research.core.ReviewSurface` — records opened sessions; the handler only
+    """A fake :class:`~clue_core.ReviewSurface` — records opened sessions; the handler only
     calls ``open_session``. ``raise_for`` makes one account's open fail (isolation test)."""
 
     def __init__(self, *, raise_for: EntityId | None = None) -> None:

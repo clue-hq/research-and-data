@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from clue_core import UseClass, UseReason
 from clue_research.compliance import (
     DEFAULT_CLIENT_POLICY,
     DEFAULT_POSTURE_POLICY,
@@ -18,7 +19,6 @@ from clue_research.compliance import (
     decide_use,
 )
 from clue_research.config import Jurisdiction, Posture, SourceScope, UseDisposition
-from clue_research.core import UseClass, UseReason
 
 _PRO = UseClass.PROFESSIONAL_PUBLIC
 _PERSONAL = UseClass.PERSONAL_PUBLIC_NON_SENSITIVE

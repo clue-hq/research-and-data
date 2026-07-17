@@ -8,6 +8,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import text
 
+from clue_core import Claim, FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import (
     FieldRedefinitionError,
     UnknownFieldError,
@@ -19,7 +20,6 @@ from clue_research.claimstore import (
     register_field,
     validate_value,
 )
-from clue_research.core import Claim, FieldClass, FieldDef, PassKind, ReuseScope
 
 from .conftest import rollback_conn, run_async
 

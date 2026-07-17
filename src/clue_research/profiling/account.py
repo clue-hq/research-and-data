@@ -30,14 +30,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    PUBLIC_ONLY,
-    TenantScope,
-    current_values,
-    list_fields,
-)
-from clue_research.config import OverlayStore, RecursionPolicy
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     AspectContext,
     AspectWorker,
@@ -59,7 +52,14 @@ from clue_research.core import (
     new_campaign_run_id,
     new_run_id,
 )
-from clue_research.core.field import field_namespace
+from clue_core.field import field_namespace
+from clue_research.claimstore import (
+    PUBLIC_ONLY,
+    TenantScope,
+    current_values,
+    list_fields,
+)
+from clue_research.config import OverlayStore, RecursionPolicy
 from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.aspect_worker import (

@@ -13,11 +13,11 @@ M8 registers long-tail adapters), so the framework never imports a concrete adap
 
 from __future__ import annotations
 
-from clue_research.core import ModalityAdapter
+from clue_core import ModalityAdapter
 
 
 class AdapterNotRegisteredError(LookupError):
-    """No :class:`~clue_research.core.ModalityAdapter` is registered for a key.
+    """No :class:`~clue_core.ModalityAdapter` is registered for a key.
 
     Raised by :func:`get_adapter` and surfaced by ``run_pipeline`` for a source whose modality needs
     an adapter (pdf/audio/video) but none is registered — a clear misconfiguration, not a crash on
@@ -32,7 +32,7 @@ def register_adapter(key: str, adapter: ModalityAdapter) -> None:
     """Register ``adapter`` under ``key`` (a modality name or a source ``requires_adapter`` key).
 
     Last write wins, so a test/config can swap the implementation behind a key. Asserts structural
-    conformance to the :class:`~clue_research.core.ModalityAdapter` protocol up front, so a
+    conformance to the :class:`~clue_core.ModalityAdapter` protocol up front, so a
     misregistration fails at registration rather than mid-pipeline.
     """
     if not isinstance(adapter, ModalityAdapter):

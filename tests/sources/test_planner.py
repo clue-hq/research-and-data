@@ -15,8 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.adapters import CallableClaimExtractor, run_pipeline
-from clue_research.core import (
+from clue_core import (
     Claim,
     Completion,
     EmbeddingResult,
@@ -37,6 +36,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.adapters import CallableClaimExtractor, run_pipeline
 from clue_research.icp import (
     Pack,
     PackSourceSlot,

@@ -26,8 +26,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, ICPSpec, PassKind, ReuseScope, resolve_reuse_scope
 from clue_research.claimstore import get_field
-from clue_research.core import FieldDef, ICPSpec, PassKind, ReuseScope, resolve_reuse_scope
 from clue_research.icp.catalog import UnknownPackError, get_pack_field_set
 from clue_research.icp.spec import UnknownICPSpecError, get_active_icp
 

@@ -21,7 +21,7 @@ from collections import deque
 from decimal import Decimal
 from enum import StrEnum
 
-from clue_research.core import CostCents
+from clue_core import CostCents
 
 
 class StoppingReason(StrEnum):

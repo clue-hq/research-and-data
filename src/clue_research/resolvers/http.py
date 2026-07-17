@@ -18,7 +18,7 @@ Two design rules this module obeys:
   exercised directly by the unit tests.
 
 The retryable/hard-miss split is the source-layer contract (substrate §4/§5; M4.4): a transient
-fault raises :class:`~clue_research.core.RetryableResolverError` (the engine/M7 retries); a hard
+fault raises :class:`~clue_core.RetryableResolverError` (the engine/M7 retries); a hard
 provider miss is an *empty claim list* the resolver returns (not an error). A malformed/forbidden
 response is a :class:`ProviderResponseError` — a real fault, but not one a retry would fix.
 """
@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from clue_core import ResolverError, RetryableResolverError
 from clue_research.config import Secrets
-from clue_research.core import ResolverError, RetryableResolverError
 
 if TYPE_CHECKING:
     from pydantic import SecretStr
@@ -60,7 +60,7 @@ class CredentialError(ResolverError):
 def classify_status(status: int, *, source_key: str, url: str) -> None:
     """Map an HTTP status to the resolver fault taxonomy (pure; the tested core of the wrapper).
 
-    Returns ``None`` for a 2xx success. Raises :class:`~clue_research.core.RetryableResolverError`
+    Returns ``None`` for a 2xx success. Raises :class:`~clue_core.RetryableResolverError`
     for a transient status (so M7 retries) and :class:`ProviderResponseError` for a hard 4xx/other
     (so the run fails fast instead of looping on a request that can never succeed).
     """
@@ -109,7 +109,7 @@ def get_json(
     """Issue one HTTP request and return the decoded JSON, applying the shared fault classification.
 
     The live network path (``# pragma: no cover``): transport errors (DNS/connect/read timeouts)
-    and transient statuses raise :class:`~clue_research.core.RetryableResolverError`; hard 4xx raise
+    and transient statuses raise :class:`~clue_core.RetryableResolverError`; hard 4xx raise
     :class:`ProviderResponseError`; a non-JSON body raises :class:`ProviderResponseError`. ``httpx``
     is imported lazily so neither importing this module nor the tests need the library.
     """

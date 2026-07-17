@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from clue_research.core import AccountEntity, new_entity_id
+from clue_core import AccountEntity, new_entity_id
 from clue_research.identity.canonicalize import plan_merge
 
 

@@ -12,15 +12,15 @@ from __future__ import annotations
 
 import hashlib
 
+from clue_core.gateway import Completion, EmbeddingResult, Message, TokenUsage, Vector
 from clue_research.config.gateway import GatewayConfig
-from clue_research.core.gateway import Completion, EmbeddingResult, Message, TokenUsage, Vector
 
 # Dimensionality of a stub embedding vector — small, deterministic, enough for a candidate-set test.
 _EMBED_DIM = 8
 
 
 class StubGateway:
-    """A deterministic, offline :class:`~clue_research.core.gateway.LLMGateway` (no live call)."""
+    """A deterministic, offline :class:`~clue_core.gateway.LLMGateway` (no live call)."""
 
     def __init__(self, config: GatewayConfig) -> None:
         self._config = config

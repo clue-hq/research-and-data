@@ -21,7 +21,7 @@ from alembic.config import Config
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     Completion,
     EmbeddingResult,
     EntityId,

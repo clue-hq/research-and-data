@@ -20,7 +20,7 @@ import json
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import CampaignRunId, EntityId, decode_jsonb
+from clue_core import CampaignRunId, EntityId, decode_jsonb
 from clue_research.narrative.handoff import AssembledHandoff
 
 

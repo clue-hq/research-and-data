@@ -100,7 +100,7 @@ class PhaseCheckpointStatus(StrEnum):
       waiting for a client action (the M6.4 tier-checkpoint ``awaiting`` state, or a budget
       graceful-stop). ``payload_json`` holds the review payload the surface (M13) reads back.
     * ``COMMITTED`` — the phase completed; ``payload_json`` is its committed
-      :class:`~clue_research.core.PhaseResult` payload and re-entry short-circuits (idempotency).
+      :class:`~clue_core.PhaseResult` payload and re-entry short-circuits (idempotency).
     * ``FAILED`` — the phase handler failed; the run is ``FAILED`` at this phase.
     """
 

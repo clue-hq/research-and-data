@@ -17,8 +17,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.deep import DbExactlyOnceSpend, already_done, deep_step_key
-from clue_research.core import (
+from clue_core import (
     BudgetScope,
     CampaignRunId,
     ClaimId,
@@ -29,6 +28,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.api.deep import DbExactlyOnceSpend, already_done, deep_step_key
 from clue_research.durable import (
     AccountRunStatus,
     BudgetEngine,

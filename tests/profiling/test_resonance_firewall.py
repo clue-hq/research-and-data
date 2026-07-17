@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import JsonValue
 
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     ResearchMode,
     account_claim,

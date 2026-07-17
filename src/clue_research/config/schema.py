@@ -28,7 +28,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from clue_research.core import (
+from clue_core import (
     DEFAULT_NUMERIC_ABS_TOLERANCE,
     DEFAULT_NUMERIC_REL_TOLERANCE,
     DEFAULT_SEMANTIC_JACCARD_THRESHOLD,

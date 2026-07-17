@@ -9,7 +9,7 @@ separate **LLM-as-judge** call scores whether ``value_json`` is entailed by the 
 ``evidence_span`` *alone* — claim-level groundedness, not document-level — as a **distinct trace
 span** so faithfulness is *measured*, not assumed.
 
-:class:`FaithfulnessJudgeImpl` implements the Beat-0 :class:`clue_research.core.verification.
+:class:`FaithfulnessJudgeImpl` implements the Beat-0 :class:`clue_core.verification.
 FaithfulnessJudge` protocol, so callers in other milestone packages (M11 synthesis, M8 deep workers,
 M5.1 client claims) depend only on the ``core`` seam; the concrete judge is injected at the ``api``
 composition root. ``judge(claim)``:
@@ -20,7 +20,7 @@ composition root. ``judge(claim)``:
 2. **cache probe** — keyed on ``(claim_id, judge_model, prompt_version)`` (the ``faithfulness_
    verdict`` UNIQUE): a hit returns the recorded verdict with *no* second LLM call; bumping
    ``prompt_version`` misses → a fresh judgment;
-3. **entailment** — otherwise call the shared :class:`~clue_research.core.gateway.LLMGateway` with a
+3. **entailment** — otherwise call the shared :class:`~clue_core.gateway.LLMGateway` with a
    versioned claim-level prompt, parse the verdict, and record it;
 4. **status transition (tier-4 only)** — drive ``claim.verification_status`` via
    :func:`clue_research.claimstore.record_verification`: ``supported`` (score ≥ threshold,
@@ -56,9 +56,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import record_verification
-from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimId,
     Confidence,
@@ -70,7 +68,9 @@ from clue_research.core import (
     can_be_promoted,
     serialize_value_json,
 )
-from clue_research.core.gateway import LLMGateway, Message, Role
+from clue_core.gateway import LLMGateway, Message, Role
+from clue_research.claimstore import record_verification
+from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG
 from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_CACHE_HIT,
@@ -307,10 +307,10 @@ def status_for_verdict(
 
 
 class FaithfulnessJudgeImpl:
-    """The M9.3 faithfulness judge (implements :class:`clue_research.core.verification.
+    """The M9.3 faithfulness judge (implements :class:`clue_core.verification.
     FaithfulnessJudge`).
 
-    Constructed with an injected :class:`~clue_research.core.gateway.LLMGateway` (the ``core``
+    Constructed with an injected :class:`~clue_core.gateway.LLMGateway` (the ``core``
     protocol — the impl never imports ``clue_research.gateway``, keeping verification independent),
     the resolved :class:`JudgePolicy`, a connection factory (defaults to a committed transaction per
     judge), and an optional metric sink. Injected at the ``api`` composition root; per-client policy

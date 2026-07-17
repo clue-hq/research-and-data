@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import ARRAY, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityId, EntityType, decode_jsonb
+from clue_core import EntityId, EntityType, decode_jsonb
 from clue_research.identity.embedding import (
     DEFAULT_EMBEDDER,
     Embedder,
@@ -163,7 +163,7 @@ class _CandidateRecord(BaseModel):
     """Slim **right-hand side** of probabilistic scoring — one live DB entity + query-time cosine.
 
     Built by :func:`_fetch_account_records` from ``account_entity`` (and its embedding join).
-    Not :class:`~clue_research.core.AccountEntity` (no status/merge fields) and not a
+    Not :class:`~clue_core.AccountEntity` (no status/merge fields) and not a
     :class:`Candidate` (no score yet): it is the feature bundle :func:`_score` compares against an
     :class:`Observation` before producing the ranked :class:`Candidate` output."""
 

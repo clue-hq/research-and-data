@@ -8,7 +8,7 @@ the :class:`~clue_research.review.ObservabilitySurface`:
 * :class:`DurableCampaignStateReader` — phase progress over the M7.3 ``campaign_run`` /
   ``campaign_phase_checkpoint`` tables (``durable``).
 * :class:`BudgetEngineBurnDownReader` — the live burn-down over the **same**
-  :class:`~clue_research.core.BudgetEngine` the deep run uses (one materialization, never
+  :class:`~clue_core.BudgetEngine` the deep run uses (one materialization, never
   re-derived).
 * :class:`BudgetCapsPreRunEstimator` — the pure ``project_spend`` projection over the client's
   ``config.BudgetCaps`` (side-effect-free — it never persists onto ``campaign_run``, unlike the
@@ -34,9 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from clue_research.claimstore import TenantScope, claims_for_runs
-from clue_research.config import BudgetCaps, get_config
-from clue_research.core import (
+from clue_core import (
     BudgetEngine,
     BurnDown,
     CampaignPhase,
@@ -46,6 +44,8 @@ from clue_research.core import (
     UnsearchedChannel,
     VerificationStatus,
 )
+from clue_research.claimstore import TenantScope, claims_for_runs
+from clue_research.config import BudgetCaps, get_config
 from clue_research.db import ConnFactory, connection
 from clue_research.discovery_scoring import CoverageReport as _DiscoveryCoverageReport
 from clue_research.durable import (
@@ -83,7 +83,7 @@ _TERMINAL_RUN_STATUSES = frozenset({CampaignRunStatus.COMPLETED, CampaignRunStat
 class DurableCampaignStateReader:
     """The production :class:`CampaignStateReader` over the M7.3 ``campaign_run`` /
     ``campaign_phase_checkpoint`` tables. Reads the run row + a checkpoint per
-    :class:`~clue_research.core.CampaignPhase` (the per-phase ``campaign_phase_checkpoint_run``
+    :class:`~clue_core.CampaignPhase` (the per-phase ``campaign_phase_checkpoint_run``
     index
     supports the per-phase look-ups). Tenant-scoped; projects the durable enums to plain strings so
     ``review`` never learns the durable enum tokens."""

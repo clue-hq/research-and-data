@@ -20,15 +20,7 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from clue_research.claimstore import (
-    FieldRedefinitionError,
-    ValueSchemaError,
-    get_field,
-    list_fields,
-    register_field,
-    validate_value,
-)
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityType,
     ExtractionMethod,
@@ -45,6 +37,14 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
     resolve_reuse_scope,
+)
+from clue_research.claimstore import (
+    FieldRedefinitionError,
+    ValueSchemaError,
+    get_field,
+    list_fields,
+    register_field,
+    validate_value,
 )
 from clue_research.profiling import (
     DEEP_PROFILING_PACK,

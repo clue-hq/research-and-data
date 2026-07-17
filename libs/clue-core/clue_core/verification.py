@@ -8,13 +8,13 @@ tier-4 client claims; M7.5's scheduler calls :class:`Freshness` to find re-resea
 
 Because those callers live in *other* packages and must stay import-independent of ``verification``
 (the import-linter contract), the gate **protocols** live here in ``core`` — exactly like
-:class:`~clue_research.core.resolver.Resolver` — while M9 supplies the **implementations** behind
+:class:`~clue_core.resolver.Resolver` — while M9 supplies the **implementations** behind
 them. Concrete gates are injected at the ``api`` composition root; no milestone imports another.
 
 This module is the *accuracy / identity-binding* gate only (is it true, and is it *this* entity?).
 The distinct *appropriateness / use* gate (``use_class × jurisdiction × client_policy``) is M10 and
 is deliberately not here (Doc D §5 — they must be separately measurable). The structural promotion
-predicate already lives on the claim itself (:func:`~clue_research.core.claim.can_be_promoted`); M9
+predicate already lives on the claim itself (:func:`~clue_core.claim.can_be_promoted`); M9
 calls it and these gates decide the actual transition.
 
 Beat-0 ships only the seam (protocols + frozen value types). Corroboration (the M9-internal
@@ -31,9 +31,9 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
-from clue_research.core.claim import Claim
-from clue_research.core.entity import AccountEntity, ContactEntity
-from clue_research.core.enums import (
+from clue_core.claim import Claim
+from clue_core.entity import AccountEntity, ContactEntity
+from clue_core.enums import (
     EntityType,
     EnumerationScope,
     FreshnessState,
@@ -42,8 +42,8 @@ from clue_research.core.enums import (
     PreSpendKind,
     PreSpendVerdict,
 )
-from clue_research.core.field import FieldDef, FieldKey
-from clue_research.core.primitives import (
+from clue_core.field import FieldDef, FieldKey
+from clue_core.primitives import (
     ClaimId,
     Confidence,
     CostCents,

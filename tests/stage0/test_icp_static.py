@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.core import ExtractionMethod, ReuseScope
-from clue_research.core.field import classify_field_key, is_valid_field_key, resolve_reuse_scope
+from clue_core import ExtractionMethod, ReuseScope
+from clue_core.field import classify_field_key, is_valid_field_key, resolve_reuse_scope
 from clue_research.identity import DEFAULT_REUSE_POLICY, classify_reuse_scope
 from clue_research.stage0 import (
     ICP_CONFIRM_DIFF,

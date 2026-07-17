@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from clue_research.core import EntityType, new_entity_id
+from clue_core import EntityType, new_entity_id
 from clue_research.locks import (
     METRIC_LOCK_ACQUIRED,
     METRIC_LOCK_CONTENDED,

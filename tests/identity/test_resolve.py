@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from clue_research.core import EntityType
+from clue_core import EntityType
 from clue_research.identity import (
     DEFAULT_EMBEDDER,
     DEFAULT_RESOLUTION_POLICY,

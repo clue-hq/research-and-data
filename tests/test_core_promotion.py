@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from clue_research.core import Claim, ExtractionMethod, IdentityBinding, can_be_promoted
+from clue_core import Claim, ExtractionMethod, IdentityBinding, can_be_promoted
 
 
 def test_tier4_without_evidence_span_is_not_promotable(make_account: Callable[..., Claim]) -> None:

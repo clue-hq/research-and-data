@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from clue_research.core import Claim, EntityId
+from clue_core import Claim, EntityId
 from clue_research.evals.judge import Judge
 from clue_research.evals.models import EvalReport, GoldSet, RubricScore
 from clue_research.evals.scorers import Scorer

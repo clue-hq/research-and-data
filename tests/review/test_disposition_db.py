@@ -20,8 +20,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     ClaimId,
     EntityId,
@@ -33,8 +32,9 @@ from clue_research.core import (
     new_claim_id,
     new_run_id,
 )
-from clue_research.core.enums import AccountStatus
-from clue_research.core.review import ReviewActionOutcome
+from clue_core.enums import AccountStatus
+from clue_core.review import ReviewActionOutcome
+from clue_research.claimstore import insert_claim
 from clue_research.discovery_scoring.scoring.engine import FIT_FIELD
 from clue_research.durable.campaign_run import ensure_campaign_run
 from clue_research.identity import DEFAULT_REUSE_POLICY, insert_account_entity, stamp_reuse

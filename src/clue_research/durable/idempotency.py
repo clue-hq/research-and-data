@@ -8,8 +8,8 @@ restartable: a single Postgres ``idempotency_ledger`` row per derived key, and a
 ``idempotent(...)`` context manager that consults it before executing and records the outcome after.
 
 The two key *shapes* are the stable contract and live in ``core`` (pure, dependency-free):
-:func:`~clue_research.core.idempotency.account_step_key` ``(account_run, entity, field, tier)`` and
-:func:`~clue_research.core.idempotency.phase_key` ``(campaign_run, phase)``. The ledger *backend*
+:func:`~clue_core.idempotency.account_step_key` ``(account_run, entity, field, tier)`` and
+:func:`~clue_core.idempotency.phase_key` ``(campaign_run, phase)``. The ledger *backend*
 sits behind the :class:`IdempotencyStore` seam, so the dedup mechanism is swappable (Postgres now,
 Temporal-native activity dedup later) without changing a single caller — exactly the conventions §2
 replaceability rule the rest of M7 follows.
@@ -52,7 +52,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     CostCents,
     IdempotencyScope,
     UtcDatetime,

@@ -13,8 +13,8 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from clue_research.core import CampaignPhase, IdempotencyScope, PhaseStatus
-from clue_research.core.idempotency import phase_key
+from clue_core import CampaignPhase, IdempotencyScope, PhaseStatus
+from clue_core.idempotency import phase_key
 from clue_research.durable import (
     PHASE_SEQUENCE,
     CampaignRun,

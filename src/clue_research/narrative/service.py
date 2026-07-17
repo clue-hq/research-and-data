@@ -26,7 +26,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     ClaimId,

@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.claimstore import ValueSchemaError, get_field, validate_value
-from clue_research.core import (
+from clue_core import (
     FieldClass,
     PassKind,
     ReuseScope,
     classify_field_key,
     resolve_reuse_scope,
 )
+from clue_research.claimstore import ValueSchemaError, get_field, validate_value
 from clue_research.profiling.committee import (
     COMMITTEE_FIELD_KEYS,
     PERSONA,

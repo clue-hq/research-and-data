@@ -19,23 +19,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    TenantScope,
-    claims_for,
-    current_value,
-    insert_claim,
-    provenance_index,
-)
-from clue_research.compliance import (
-    DataSubjectRights,
-    DataSubjectRightsImpl,
-    ErasureScope,
-    RetentionSweep,
-    TombstoneReason,
-    build_tombstone,
-)
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     AgeOutCandidate,
     Claim,
@@ -51,6 +35,22 @@ from clue_research.core import (
     UseClass,
     UtcDatetime,
     new_run_id,
+)
+from clue_research.claimstore import (
+    ALL_TENANTS,
+    TenantScope,
+    claims_for,
+    current_value,
+    insert_claim,
+    provenance_index,
+)
+from clue_research.compliance import (
+    DataSubjectRights,
+    DataSubjectRightsImpl,
+    ErasureScope,
+    RetentionSweep,
+    TombstoneReason,
+    build_tombstone,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 

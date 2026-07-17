@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import hashlib
 
-from clue_research.core.enums import CampaignPhase, IdempotencyScope
-from clue_research.core.field import FieldKey
-from clue_research.core.primitives import (
+from clue_core.enums import CampaignPhase, IdempotencyScope
+from clue_core.field import FieldKey
+from clue_core.primitives import (
     CampaignRunId,
     EntityId,
     RunId,

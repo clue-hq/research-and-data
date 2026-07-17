@@ -13,6 +13,13 @@ from decimal import Decimal
 
 import pytest
 
+from clue_core import (
+    ExtractionMethod,
+    ResearchMode,
+    ReuseScope,
+    account_claim,
+    new_run_id,
+)
 from clue_research.claimstore import (
     ALL_TENANTS,
     ReuseScopeError,
@@ -20,13 +27,6 @@ from clue_research.claimstore import (
     claims_for,
     current_value,
     insert_claim,
-)
-from clue_research.core import (
-    ExtractionMethod,
-    ResearchMode,
-    ReuseScope,
-    account_claim,
-    new_run_id,
 )
 from clue_research.identity import stamp_reuse
 from clue_research.sources import bind_resolver

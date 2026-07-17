@@ -1,6 +1,6 @@
 """The ``CampaignPhase.DEEP`` phase handler (M8A.2) — drives the deep phase end-to-end.
 
-The :class:`~clue_research.core.PhaseHandler` for ``CampaignPhase.DEEP``. Registering it at the api
+The :class:`~clue_core.PhaseHandler` for ``CampaignPhase.DEEP``. Registering it at the api
 composition root makes ``CampaignRun.advance()`` dispatch ``DEEP`` with zero new dispatch code — the
 run no longer raises ``NoPhaseHandlerRegistered(DEEP)`` the moment it enters Pass B.
 
@@ -46,13 +46,7 @@ from typing import Any, Protocol, runtime_checkable
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import JsonValue
 
-from clue_research.api.deep.handoff_skeleton import build_handoff_skeleton
-from clue_research.api.deep.orchestrator import (
-    AccountDeepOrchestrator,
-    AccountDeepResult,
-    deep_account_run_id,
-)
-from clue_research.core import (
+from clue_core import (
     BudgetVerdict,
     CampaignPhase,
     CampaignRunId,
@@ -62,6 +56,12 @@ from clue_research.core import (
     PhaseResult,
     PhaseStatus,
     RunId,
+)
+from clue_research.api.deep.handoff_skeleton import build_handoff_skeleton
+from clue_research.api.deep.orchestrator import (
+    AccountDeepOrchestrator,
+    AccountDeepResult,
+    deep_account_run_id,
 )
 from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
@@ -219,7 +219,7 @@ def _succeeded_outcome(result: AccountDeepResult) -> _AccountOutcome:
 
 
 class DeepPhaseHandler:
-    """The ``CampaignPhase.DEEP`` :class:`~clue_research.core.PhaseHandler` (M8A.2).
+    """The ``CampaignPhase.DEEP`` :class:`~clue_core.PhaseHandler` (M8A.2).
 
     Resolves the approved high-tier accounts and drives the scheduler with the M8A.1 orchestrator as
     the per-account callback, owning per-account FAILED isolation and the budget-verdict → phase-

@@ -39,9 +39,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore.claims import _SELECT_COLUMNS, _row_to_claim, claims_for
-from clue_research.claimstore.tenancy import TenantScope
-from clue_research.core import (
+from clue_core import (
     DEFAULT_NUMERIC_ABS_TOLERANCE,
     DEFAULT_NUMERIC_REL_TOLERANCE,
     DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
@@ -58,7 +56,9 @@ from clue_research.core import (
     WinningProvenance,
     values_agree,
 )
-from clue_research.core.field import FieldKey
+from clue_core.field import FieldKey
+from clue_research.claimstore.claims import _SELECT_COLUMNS, _row_to_claim, claims_for
+from clue_research.claimstore.tenancy import TenantScope
 
 # ``EqualityMode`` / ``values_agree`` come from ``core`` (the substrate's one equality contract):
 # the merge's conflict / distinctness check and the M9.2 corroborator's grouping share them, so

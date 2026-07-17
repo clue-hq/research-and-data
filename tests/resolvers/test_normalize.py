@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.core import FieldDef, PassKind, UseClass
+from clue_core import FieldDef, PassKind, UseClass
 from clue_research.resolvers import apollo, builtwith, clay, zoominfo
 from clue_research.resolvers.registries import CIK, DUNS, LEI, NPI, registry_normalize
 

@@ -12,7 +12,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import Claim
+from clue_core import Claim
 
 
 class JudgeVerdict(BaseModel):

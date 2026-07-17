@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 import clue_obs
-from clue_research.core import CampaignRunId, ClaimId, EntityId, Persona
+from clue_core import CampaignRunId, ClaimId, EntityId, Persona
 from clue_research.db import connection, db_lifespan
 from clue_research.narrative import (
     HANDOFF_SCHEMA_VERSION,

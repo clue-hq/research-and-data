@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
-from clue_research.core import (
+from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
@@ -24,6 +23,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
 from clue_research.discovery_scoring.scoring import FIT_FIELD, INTENT_FIELD
 from clue_research.discovery_scoring.tiering import (
     DEFAULT_TIERING_CONFIG,

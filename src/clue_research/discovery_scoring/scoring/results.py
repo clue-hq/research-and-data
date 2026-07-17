@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import ClaimId, CostCents, EntityId, FieldClass, Score
+from clue_core import ClaimId, CostCents, EntityId, FieldClass, Score
 
 
 class SourceYieldRow(BaseModel):

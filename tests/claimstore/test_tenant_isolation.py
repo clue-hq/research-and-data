@@ -13,6 +13,16 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from clue_core import (
+    Claim,
+    ExtractionMethod,
+    FieldDef,
+    PassKind,
+    ReuseScope,
+    account_claim,
+    new_entity_id,
+    new_run_id,
+)
 from clue_research.claimstore import (
     ALL_TENANTS,
     ReuseScopeError,
@@ -23,16 +33,6 @@ from clue_research.claimstore import (
     insert_claim,
     provenance_index,
     register_field,
-)
-from clue_research.core import (
-    Claim,
-    ExtractionMethod,
-    FieldDef,
-    PassKind,
-    ReuseScope,
-    account_claim,
-    new_entity_id,
-    new_run_id,
 )
 
 from .conftest import rollback_conn, run_async

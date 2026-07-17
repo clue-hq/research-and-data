@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import ClaimId, EntityId
+from clue_core import ClaimId, EntityId
 
 
 class AdmissionStatus(StrEnum):

@@ -13,8 +13,7 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
-from clue_research.config import Secrets
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Entity,
     EntityType,
@@ -24,6 +23,7 @@ from clue_research.core import (
     RetryableResolverError,
     new_entity_id,
 )
+from clue_research.config import Secrets
 from clue_research.resolvers import (
     CredentialError,
     HttpEnrichmentBackend,

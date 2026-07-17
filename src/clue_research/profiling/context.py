@@ -1,9 +1,9 @@
 """Per-run context the M8 deep workers need but ``AspectContext`` does not yet carry.
 
-The M7 graph hands an :class:`~clue_research.core.AspectContext` to each worker with the entity, the
+The M7 graph hands an :class:`~clue_core.AspectContext` to each worker with the entity, the
 run id, the tier, the aspect's gap ``field_keys``, the budget envelope, and the recursion soft-cap —
 but **not** the campaign's ``client_id`` / ``icp`` coordinates or its ``tenant_id``. A deep worker
-needs those to (a) load the active :class:`~clue_research.core.ICPSpec` for the Source Planner and
+needs those to (a) load the active :class:`~clue_core.ICPSpec` for the Source Planner and
 (b) write a ``tenant_private`` claim (``account.resonance.*`` is tenant-private — the M4 waterfall
 fails *loud* without a ``tenant_id``).
 

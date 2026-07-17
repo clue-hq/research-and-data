@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     EntityScope,
     FieldClass,
     ICPCreatedFrom,

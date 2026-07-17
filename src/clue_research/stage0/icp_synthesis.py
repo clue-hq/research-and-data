@@ -7,7 +7,7 @@ seed accounts, starting source profile, scoring rubric) and every element links 
 claim ids** that justify it (no element justified by "synthesis thought it was a good idea").
 
 The proposal-generation model is an LLM call through the shared
-:class:`~clue_research.core.LLMGateway` (M0.4) — injected, **config-bounded** to the offered pack
+:class:`~clue_core.LLMGateway` (M0.4) — injected, **config-bounded** to the offered pack
 catalog + the registered candidate field set (the model may rank/choose/split *within* the bounds
 but can never name a field or pack outside them; off-set names are dropped, exactly like the M4.6
 Source Planner). The LLM is **optional**: with no gateway the synthesis returns a deterministic
@@ -25,8 +25,8 @@ import re
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import Claim, ClaimId, LLMGateway, Message, PassKind, Role
 from clue_research.claimstore import list_fields
-from clue_research.core import Claim, ClaimId, LLMGateway, Message, PassKind, Role
 from clue_research.icp import get_pack_field_set, get_pack_source_profile, list_packs
 from clue_research.stage0.client_kb import read_client_kb_claims
 from clue_research.stage0.fields import (

@@ -8,7 +8,7 @@ clears both** — a true, well-sourced, correctly-attributed personal fact can s
 tasteless to use, and that is a *separately measurable* failure (Doc D §5; conventions §5). The two
 gates live in separate modules and emit separate spans on purpose.
 
-:class:`UseGateImpl` implements the Beat-0 :class:`clue_research.core.compliance.UseGate` protocol,
+:class:`UseGateImpl` implements the Beat-0 :class:`clue_core.compliance.UseGate` protocol,
 so M12 (``narrative``) and others call it through the ``core`` seam without importing ``compliance``
 (the import-linter independence contract); M10 supplies the impl, injected at the ``api`` root
 **last** in the verification sequence (``…faithfulness → identity_binding → use_gate``; PF-7 /
@@ -31,7 +31,7 @@ Doc D §7 — "is it this person?" before "may we use it?"). ``evaluate(claim)``
    ``(use_class, regime, policy_version, usable, reason)`` and the "share usable" metric (Doc C §6).
 
 The composite M12 calls — "a hook is promotable iff strong identity-binding **and** usable" — is the
-frozen :func:`clue_research.core.compliance.is_outreach_promotable` (it takes the claim *and* this
+frozen :func:`clue_core.compliance.is_outreach_promotable` (it takes the claim *and* this
 decision, since the verdict lives in the side table, not on the claim). A claim that failed
 identity-binding is excluded upstream (``merge`` drops weak-bound contacts; the composite re-asserts
 strong), so the use gate is the appropriateness axis *only* and never folds binding into its verdict
@@ -52,6 +52,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    EntityType,
+    UseClass,
+    UseDecision,
+    UseReason,
+    decode_jsonb,
+)
 from clue_research.claimstore import TenantScope, current_value
 from clue_research.compliance.fields import CONTACT_JURISDICTION
 from clue_research.config import (
@@ -62,16 +72,6 @@ from clue_research.config import (
     Posture,
     SourceScope,
     UseDisposition,
-)
-from clue_research.core import (
-    Claim,
-    ClaimId,
-    EntityId,
-    EntityType,
-    UseClass,
-    UseDecision,
-    UseReason,
-    decode_jsonb,
 )
 from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
@@ -283,7 +283,7 @@ def decide_use(
 
 
 class UseGateImpl:
-    """The M10.3 appropriateness/use gate (implements ``clue_research.core.compliance.UseGate``).
+    """The M10.3 appropriateness/use gate (implements ``clue_core.compliance.UseGate``).
 
     Constructed per (client) context at the ``api`` root with the resolved :class:`ClientPolicy`
     (loaded via :func:`load_client_policy`), a connection factory (defaults to a committed

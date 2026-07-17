@@ -28,7 +28,7 @@ import math
 from collections import OrderedDict
 from collections.abc import Sequence
 
-from clue_research.core import RunId
+from clue_core import RunId
 from clue_research.discovery_scoring.coverage.config import (
     DEFAULT_COVERAGE_CONFIG,
     CoverageConfig,

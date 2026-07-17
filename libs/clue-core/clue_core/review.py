@@ -38,8 +38,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core.compliance import UseDecision
-from clue_research.core.enums import (
+from clue_core.compliance import UseDecision
+from clue_core.enums import (
     FreshnessState,
     IdentityBinding,
     JudgeVerdict,
@@ -50,9 +50,9 @@ from clue_research.core.enums import (
     UseClass,
     VerificationStatus,
 )
-from clue_research.core.field import FieldKey
-from clue_research.core.handoff import ProvenanceRef, Score, ValueNarrativeItem
-from clue_research.core.primitives import (
+from clue_core.field import FieldKey
+from clue_core.handoff import ProvenanceRef, Score, ValueNarrativeItem
+from clue_core.primitives import (
     CampaignRunId,
     ClaimId,
     Confidence,

@@ -20,8 +20,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     ClaimFlavor,
@@ -38,6 +37,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import insert_claim
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.obs import (
     SPAN_VERIFICATION_IDENTITY_BINDING,

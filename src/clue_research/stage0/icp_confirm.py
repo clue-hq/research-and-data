@@ -29,8 +29,7 @@ from dataclasses import field as dc_field
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityId,
     ExtractionMethod,
@@ -41,6 +40,7 @@ from clue_research.core import (
     account_claim,
     new_run_id,
 )
+from clue_research.claimstore import insert_claim
 from clue_research.icp import (
     RubricEntry,
     ScoringRubric,

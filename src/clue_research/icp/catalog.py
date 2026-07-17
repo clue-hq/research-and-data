@@ -32,8 +32,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import SeedField, get_field, list_fields, load_pack
-from clue_research.core import (
+from clue_core import (
     FieldClass,
     FieldDef,
     ICPSpec,
@@ -41,7 +40,8 @@ from clue_research.core import (
     field_namespace,
     resolve_reuse_scope,
 )
-from clue_research.core import register_pack as register_namespace
+from clue_core import register_pack as register_namespace
+from clue_research.claimstore import SeedField, get_field, list_fields, load_pack
 from clue_research.icp.source_profile import (
     ResolvedSourceProfile,
     WeightedSource,

@@ -20,7 +20,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import CostCents, EntityId, FieldClass
+from clue_core import CostCents, EntityId, FieldClass
 from clue_research.review.disposition import DispositionType
 from clue_research.review.labeled_dataset import read_labeled_dataset
 from clue_research.sources import SourceYieldStat, get_source_yield

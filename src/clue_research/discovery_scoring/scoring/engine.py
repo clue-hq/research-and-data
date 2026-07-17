@@ -34,11 +34,7 @@ from decimal import Decimal
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    entities_with_field_claim,
-)
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     EntityId,
     EntityType,
@@ -50,6 +46,10 @@ from clue_research.core import (
     Score,
     account_claim,
     classify_field_key,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    entities_with_field_claim,
 )
 from clue_research.discovery_scoring.claim_writes import write_icp_scoped_claim
 from clue_research.discovery_scoring.gate import DISCOVERY_PROVENANCE_FIELD

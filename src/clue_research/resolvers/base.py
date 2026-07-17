@@ -9,7 +9,7 @@ whole point of the milestone:
   sub-package (``resolvers/<provider>/``), the only place a provider SDK may be imported
   (import-linter Rule 4); nothing it returns carries a provider-shaped type.
 * the **resolver** is provider-agnostic: it asks the backend for the requested field and turns each
-  :class:`ResolvedField` into a typed, tier-1 :class:`~clue_research.core.Claim` via the shared
+  :class:`ResolvedField` into a typed, tier-1 :class:`~clue_core.Claim` via the shared
   ``core.factories`` constructors (never hand-built). It knows no provider name.
 
 Because the only thing that changes between providers is the injected backend, swapping Clay for a
@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     Confidence,
     CostCents,
@@ -162,7 +162,7 @@ class EnrichmentBackend(Protocol):
     Contract (substrate §4/§5; M4.4): return a (possibly empty) list of :class:`ResolvedField`\\s
     for the requested ``field``. An **empty** result is a *hard miss* — a correct empty+flagged
     output the waterfall advances past, never fabricated. A **transient** failure (timeout / 5xx /
-    rate-limit) raises :class:`~clue_research.core.RetryableResolverError` so M7 retries — it must
+    rate-limit) raises :class:`~clue_core.RetryableResolverError` so M7 retries — it must
     not be swallowed into an empty result, or a flaky provider would read as "the fact doesn't
     exist". The backend is the only place that knows the provider's API and response shape.
     """
@@ -181,7 +181,7 @@ _PLACEHOLDER_MODE: dict[EntityType, ResearchMode] = {
 
 
 def build_claim(entity: Entity, resolved: ResolvedField, *, cost_cents: CostCents) -> Claim:
-    """Build one tier-1 ``api`` :class:`~clue_research.core.Claim` from a normalized answer.
+    """Build one tier-1 ``api`` :class:`~clue_core.Claim` from a normalized answer.
 
     Uses the shared provenance-enforcing constructors (``core.factories``) — never a hand-built
     ``Claim`` (the M4 invariant). ``run_id``/``research_mode`` are placeholders the engine restamps;
@@ -228,7 +228,7 @@ class DeterministicResolver:
     to the first claim only — the waterfall sums per-claim cost into the step/budget, so spreading
     the full price across a multi-value response would over-count (a per-field resolve is almost
     always a single claim, so the common case is exact). A hard miss returns ``[]``; a transient
-    fault propagates as :class:`~clue_research.core.RetryableResolverError` from the backend.
+    fault propagates as :class:`~clue_core.RetryableResolverError` from the backend.
     """
 
     tier: int = 1

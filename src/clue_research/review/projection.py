@@ -1,7 +1,7 @@
 """The M13.1 per-account review read projection (the ``ReviewSession`` assembler).
 
 Pure store reads (the claim store M1 + identity M2) plus the injected cross-package
-:class:`~clue_research.core.VerificationAnnotationReader` seam (the M9/M10 per-claim verdicts live
+:class:`~clue_core.VerificationAnnotationReader` seam (the M9/M10 per-claim verdicts live
 in tables ``review`` may not import). Reuses the frozen ``core`` projection value types — it invents
 no shape. ``review`` MAY import ``claimstore``/``identity`` (the M1-M4 services) + ``core`` (the
 import-linter independence rule allows the shared base + services; it bans only sibling *workers*).
@@ -13,14 +13,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    claims_by_ids,
-    claims_for,
-    current_value,
-    current_values,
-)
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     Claim,
     ClaimId,
@@ -38,11 +31,18 @@ from clue_research.core import (
     VerificationStatus,
     can_be_promoted,
 )
-from clue_research.core.review import (
+from clue_core.review import (
     ClaimAnnotation,
     FieldConflict,
     ReviewSessionId,
     VerificationAnnotationReader,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    claims_by_ids,
+    claims_for,
+    current_value,
+    current_values,
 )
 from clue_research.identity import contact_ids_for_account, surviving_id
 
@@ -95,7 +95,7 @@ def _empty_reason(claim: Claim, annotation: ClaimAnnotation) -> str | None:
 
 
 class ReviewProjector:
-    """Builds the :class:`~clue_research.core.ReviewSession` read projection for one account.
+    """Builds the :class:`~clue_core.ReviewSession` read projection for one account.
 
     The cross-package per-claim annotations (faithfulness M9.3, use-gate M10.3) and the open
     conflict flags (M9.2) arrive through the injected :class:`VerificationAnnotationReader` (the
@@ -264,7 +264,7 @@ class ReviewProjector:
 
 
 class InMemoryVerificationAnnotationReader:
-    """A fixture :class:`~clue_research.core.VerificationAnnotationReader` (no DB) — lets M13.1
+    """A fixture :class:`~clue_core.VerificationAnnotationReader` (no DB) — lets M13.1
     build and test the projection with zero ``verification``/``compliance`` imports (mirrors
     ``narrative.InMemoryCommitteeReader``). The production impl is wired at the ``api`` root."""
 

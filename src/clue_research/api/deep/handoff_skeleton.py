@@ -2,11 +2,11 @@
 
 After the trunk (M8A.1) has profiled the account (M8.1/M8.2), discovered the committee (M8.3), and
 contact-profiled each admitted member (M8.4), this folds that one run's :class:`AccountDeepResult`
-into the references-only join M12.2 consumes: each committee :class:`~clue_research.core.handoff.
+into the references-only join M12.2 consumes: each committee :class:`~clue_core.handoff.
 CommitteeMember` shell keyed ``(contact_entity_id, persona)`` with its facet ``profile_claims``
 joined on by ``contact_entity_id``, plus a per-section claim-id index and the coverage band.
 
-It is **not** the final :class:`~clue_research.core.handoff.AccountHandoff` — the fit/intent scores,
+It is **not** the final :class:`~clue_core.handoff.AccountHandoff` — the fit/intent scores,
 the value narrative, and the provenance index are M6/M12. M8A.5 only proves "this account is
 M12-ready": the inputs exist and are correctly keyed (overview §3). It builds **no new table**
 (D-D — the materialised handoff row, if any, is M12.2's call; the Postgres claim store is the sole
@@ -28,8 +28,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_core import ClaimId, CommitteeMember, CostCents, EntityId, RunId
 from clue_research.api.deep.orchestrator import AccountDeepResult
-from clue_research.core import ClaimId, CommitteeMember, CostCents, EntityId, RunId
 from clue_research.profiling.committee.coverage import CommitteeCoverage
 
 # The ``references_index`` section keys (ids only). Account + resonance claims are folded together
@@ -119,7 +119,7 @@ def build_handoff_skeleton(result: AccountDeepResult) -> AccountHandoffSkeleton:
     """Fold one account's :class:`AccountDeepResult` into the references-only skeleton (M8A.5).
 
     Projects ``result.committee.committee()`` to ``(contact_entity_id, persona)``-keyed
-    :class:`~clue_research.core.handoff.CommitteeMember` shells and JOINs each admitted member's
+    :class:`~clue_core.handoff.CommitteeMember` shells and JOINs each admitted member's
     ``ProfileClaimView``s onto its shell by ``contact_entity_id`` (a member with no contact result
     keeps ``profile_claims=()`` — a valid partial). Every written claim id is folded into
     ``references_index`` under the ``account`` / ``committee`` / ``contact:<id>`` sections (ids

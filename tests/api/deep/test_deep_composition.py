@@ -12,14 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.deep import (
-    DeepPhaseComposition,
-    build_deep_phase_handler,
-    build_high_tier_resolver,
-    register_deep_phase_handler,
-)
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     ExtractionMethod,
     ICPCreatedFrom,
@@ -31,6 +24,13 @@ from clue_research.core import (
     new_campaign_run_id,
     new_run_id,
 )
+from clue_research.api.deep import (
+    DeepPhaseComposition,
+    build_deep_phase_handler,
+    build_high_tier_resolver,
+    register_deep_phase_handler,
+)
+from clue_research.claimstore import insert_claim
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (
     AccountSpec,

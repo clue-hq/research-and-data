@@ -1,7 +1,7 @@
 """``run_pipeline`` — the fetch → adapt → extract dispatch (M4.3 / ENG-116).
 
 Given a source's manifest (``modality`` / ``requires_adapter``), select the right adapter, run its
-three stages, and turn the resulting :class:`~clue_research.core.ClaimDraft`s into typed ``Claim``s
+three stages, and turn the resulting :class:`~clue_core.ClaimDraft`s into typed ``Claim``s
 written through the M1.1 store — so a resolver that needs adaptation (M4.5 Firecrawl) or a deep-pass
 worker (M8) calls one function instead of hand-rolling fetch/transcribe/parse. Adding a new modality
 is a :func:`~clue_research.adapters.registry.register_adapter` call — no pipeline fork (§7b).
@@ -39,23 +39,7 @@ from time import perf_counter
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.adapters.cache import (
-    ArtifactCache,
-    CachedArtifact,
-    content_key,
-    freshness_ttl,
-    is_fresh,
-    utc_now,
-)
-from clue_research.adapters.concrete import PassthroughAdapter
-from clue_research.adapters.registry import (
-    AdapterNotRegisteredError,
-    get_adapter,
-    is_adapter_registered,
-)
-from clue_research.adapters.seams import AdaptError, ClaimExtractor
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     AdaptContext,
     Claim,
     ClaimDraft,
@@ -75,6 +59,22 @@ from clue_research.core import (
     revalidate_with,
     to_value_json,
 )
+from clue_research.adapters.cache import (
+    ArtifactCache,
+    CachedArtifact,
+    content_key,
+    freshness_ttl,
+    is_fresh,
+    utc_now,
+)
+from clue_research.adapters.concrete import PassthroughAdapter
+from clue_research.adapters.registry import (
+    AdapterNotRegisteredError,
+    get_adapter,
+    is_adapter_registered,
+)
+from clue_research.adapters.seams import AdaptError, ClaimExtractor
+from clue_research.claimstore import insert_claim
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.obs import (
     ATTR_CACHE_HIT,
@@ -469,7 +469,7 @@ def _materialize(
 
 def _stamp_source_key(claim: Claim, source_key: str) -> Claim:
     """Stamp the producing ``source_key`` (the factories don't take it) and re-validate, via the
-    shared :func:`~clue_research.core.revalidate_with` helper — the same provenance-stamp path the
+    shared :func:`~clue_core.revalidate_with` helper — the same provenance-stamp path the
     M4.1 waterfall uses, so the model_copy-skips-validators subtlety lives in exactly one place
     (conventions §2 DRY) and per-source yield/telemetry keys on the source."""
     return revalidate_with(claim, source_key=source_key)

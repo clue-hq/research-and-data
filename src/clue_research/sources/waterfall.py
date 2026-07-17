@@ -4,7 +4,7 @@ A field is filled by walking its ``tier_plan`` in **trust-tier order** and **sto
 result that clears the field's confidence threshold** (substrate §4). This is a structural bet:
 the LLM (tier 4) is the *least*-trusted source, so it runs last and can never be the base a later
 trustworthy source fails to overwrite. The waterfall is the **only** thing that composes resolvers;
-each resolver stays uniform behind the :class:`~clue_research.core.Resolver` protocol and is
+each resolver stays uniform behind the :class:`~clue_core.Resolver` protocol and is
 reached **only** through the M4.2 registry binding (``get_resolver``) — never imported here.
 
 Guarantees:
@@ -30,8 +30,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, insert_claim
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimId,
     CostCents,
@@ -45,6 +44,7 @@ from clue_research.core import (
     first_confident_claim,
     revalidate_with,
 )
+from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, insert_claim
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.obs import (
     ATTR_COST_CENTS,

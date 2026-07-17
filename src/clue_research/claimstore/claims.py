@@ -12,10 +12,10 @@ Design rules realized here (substrate §1, db/README "migration conventions chec
   atomically inside one transaction. The DB trigger rejects any other UPDATE; there is no in-place
   value mutation anywhere in the write path.
 * **One serialization path.** ``value_json`` is (de)serialized with
-  :func:`clue_research.core.serialize_value_json` / :func:`parse_value_json`, so the typed payload
+  :func:`clue_core.serialize_value_json` / :func:`parse_value_json`, so the typed payload
   has exactly one round-trip path (no JSON codec is reimplemented here).
 * **Structural pre-checks before the round-trip.** The evidence-span / weak-binding promotion rule
-  (:func:`clue_research.core.can_be_promoted`) is asserted before insert so a caller gets a clear
+  (:func:`clue_core.can_be_promoted`) is asserted before insert so a caller gets a clear
   error rather than a CHECK violation — and the DB CHECK is still there as the backstop.
 
 M1.4 extends both the ``claim`` table and the INSERT here with the provenance-flavor columns
@@ -30,9 +30,7 @@ from collections.abc import Iterable, Sequence
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore.registry import check_claim_writable
-from clue_research.claimstore.tenancy import TenantScope
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimFlavor,
     ClaimId,
@@ -43,7 +41,9 @@ from clue_research.core import (
     decode_jsonb_scalar,
     serialize_value_json,
 )
-from clue_research.core.field import FieldKey
+from clue_core.field import FieldKey
+from clue_research.claimstore.registry import check_claim_writable
+from clue_research.claimstore.tenancy import TenantScope
 
 _INSERT_SQL = text(
     """

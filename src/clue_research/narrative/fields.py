@@ -35,8 +35,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, Persona, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
-from clue_research.core import FieldDef, PassKind, Persona, ReuseScope
 
 # --- field key (conventions §3: account.* namespace, the value-narrative output) -------------
 VALUE_NARRATIVE = "account.value_narrative"

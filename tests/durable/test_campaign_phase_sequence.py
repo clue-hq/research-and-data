@@ -7,7 +7,7 @@ lock that ordering and the ``next_phase`` walk to the single source of truth (``
 
 from __future__ import annotations
 
-from clue_research.core import CampaignPhase
+from clue_core import CampaignPhase
 from clue_research.durable import PHASE_SEQUENCE, next_phase
 from clue_research.obs import CAMPAIGN_PHASES
 

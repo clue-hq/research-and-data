@@ -11,8 +11,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from clue_research.claimstore import ALL_TENANTS, TenantScope, insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     EntityType,
     ExtractionMethod,
@@ -20,6 +19,7 @@ from clue_research.core import (
     account_claim,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, TenantScope, insert_claim
 from clue_research.identity import (
     DispositionOutcome,
     DispositionPolicy,
@@ -365,7 +365,7 @@ def test_merge_resolved_read_does_not_leak_across_tenants() -> None:
     under the survivor for its OWN tenant, but never surfaces to another tenant (M2.5)."""
 
     async def _run() -> None:
-        from clue_research.core import ReuseScope
+        from clue_core import ReuseScope
 
         async with rollback_conn() as conn:
             survivor = await insert_account_entity(conn, canonical_name="Acme")

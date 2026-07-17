@@ -1,11 +1,11 @@
-"""The phase-handler registry — :class:`~clue_research.core.CampaignPhase` → handler dispatch.
+"""The phase-handler registry — :class:`~clue_core.CampaignPhase` → handler dispatch.
 
 The campaign-run state machine (M7.3) advances through phases but must not import the packages that
 implement them (M5/M6/M8/M9/M12 own the bodies; the import-linter independence contract forbids
 ``durable → discovery_scoring`` etc.). So, exactly like the aspect-worker registry
 (``durable/workers.py``) and the source layer's resolver binding (``sources.registry``), concrete
-:class:`~clue_research.core.PhaseHandler`\\s register themselves into this in-process map and the
-state machine looks them up by the :class:`~clue_research.core.CampaignPhase` it is advancing.
+:class:`~clue_core.PhaseHandler`\\s register themselves into this in-process map and the
+state machine looks them up by the :class:`~clue_core.CampaignPhase` it is advancing.
 The registration call happens at the ``api`` composition root; ``durable`` only defines the registry
 and the lookup, and never imports a handler implementation.
 
@@ -14,7 +14,7 @@ Last write wins, so a test or config can swap the handler behind a phase.
 
 from __future__ import annotations
 
-from clue_research.core import CampaignPhase, PhaseHandler
+from clue_core import CampaignPhase, PhaseHandler
 
 
 class PhaseHandlerRegistry:

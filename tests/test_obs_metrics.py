@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     ExtractionMethod,
     IdentityBinding,

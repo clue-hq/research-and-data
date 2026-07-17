@@ -9,7 +9,7 @@ coverage; the worker / admission / field-pack tests use the migrated DB and ``py
 a reachable ``CLUE_DATABASE_URL`` so ``make check`` stays green. The in-process resolver binding is
 cleared around every test (it is module-global). The doubles model the seams a real
 committee/contact run depends on: a grounded :class:`CommitteeSource`, the :class:`LLMGateway`, and
-a facet :class:`~clue_research.core.resolver.Resolver`.
+a facet :class:`~clue_core.resolver.Resolver`.
 """
 
 from __future__ import annotations
@@ -25,8 +25,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     Completion,
@@ -47,6 +46,7 @@ from clue_research.core import (
     contact_claim,
     new_run_id,
 )
+from clue_research.claimstore import load_core_pack
 from clue_research.db import db_lifespan
 from clue_research.identity import (
     get_account,
@@ -268,7 +268,7 @@ class FakeGateway:
 
 @dataclass
 class FakeFacetResolver:
-    """A :class:`~clue_research.core.resolver.Resolver` double for M8.4's facet fill: returns tier-4
+    """A :class:`~clue_core.resolver.Resolver` double for M8.4's facet fill: returns tier-4
     facet claims with *placeholder* tags (binding=WEAK, use_class=professional-public) — what a real
     resolver must set just to construct a facet claim — so the test can assert M8.4 *re-tags* them
     with the authoritative per-claim binding + use-class. Bind it via ``sources.bind_resolver`` and

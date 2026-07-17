@@ -1,6 +1,6 @@
 """The registry-row source manifest — the wrapper over the core capability contract (M4.2).
 
-Locked decision #2: *wrap, don't redefine.* :class:`clue_research.core.SourceManifest` is the
+Locked decision #2: *wrap, don't redefine.* :class:`clue_core.SourceManifest` is the
 M0.2 capability contract (staged-flow §7a) and stays clean; :class:`RegistrySourceManifest` embeds
 it and adds the operational metadata a registry row needs — ``active``, ``provider`` (vendor/human
 name, for billing/ops ONLY, **never** branched on by callers), ``auth_ref`` (a reference into the
@@ -17,7 +17,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core import CostCents, EntityScope, IdentityBinding, Modality, SourceManifest
+from clue_core import CostCents, EntityScope, IdentityBinding, Modality, SourceManifest
 
 
 class RegistrySourceManifest(BaseModel):

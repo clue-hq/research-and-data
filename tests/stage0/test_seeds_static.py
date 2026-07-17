@@ -6,7 +6,7 @@ counts, and the deterministic run id without a connection.
 
 from __future__ import annotations
 
-from clue_research.core import EntityId
+from clue_core import EntityId
 from clue_research.icp import TierBand, TierCutoffs, fit_floor
 from clue_research.stage0 import (
     DEFAULT_SEED_POLICY,

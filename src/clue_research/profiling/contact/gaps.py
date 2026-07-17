@@ -14,8 +14,8 @@ from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import EntityId, EntityType, FieldClass, FieldDef, FreshnessState, PassKind
 from clue_research.claimstore import TenantScope, list_fields
-from clue_research.core import EntityId, EntityType, FieldClass, FieldDef, FreshnessState, PassKind
 from clue_research.identity import current_value_resolved
 
 

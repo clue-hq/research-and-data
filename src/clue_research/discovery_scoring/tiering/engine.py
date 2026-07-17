@@ -30,12 +30,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    claims_for,
-    entities_with_field_claim,
-)
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimId,
     EntityId,
@@ -45,6 +40,11 @@ from clue_research.core import (
     ResearchMode,
     RunId,
     account_claim,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    claims_for,
+    entities_with_field_claim,
 )
 from clue_research.discovery_scoring.claim_writes import write_icp_scoped_claim
 from clue_research.discovery_scoring.scoring import FIT_FIELD, INTENT_FIELD

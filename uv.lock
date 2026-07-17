@@ -8,6 +8,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "clue-core",
     "clue-obs",
     "clue-research",
 ]
@@ -232,6 +233,17 @@ wheels = [
 ]
 
 [[package]]
+name = "clue-core"
+version = "0.0.0"
+source = { editable = "libs/clue-core" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
+
+[[package]]
 name = "clue-obs"
 version = "0.0.0"
 source = { editable = "libs/clue-obs" }
@@ -249,6 +261,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "clue-core" },
     { name = "clue-obs" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -278,6 +291,7 @@ dev = [
 requires-dist = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28.1" },

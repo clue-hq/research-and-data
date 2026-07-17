@@ -16,8 +16,7 @@ from decimal import Decimal
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from clue_research.claimstore import register_field
-from clue_research.core import (
+from clue_core import (
     Claim,
     Entity,
     EntityScope,
@@ -32,6 +31,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import register_field
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,

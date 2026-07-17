@@ -7,7 +7,7 @@ root) is the *only* path that mutates schema — no component issues DDL at runt
 
 This package owns the async engine/pool lifecycle and the session/transaction helpers; it owns
 **no** domain tables and **no** business queries (those land in M1+). JSONB ``value_json``
-serialization is aligned to ``clue_research.core`` (M0.2) and is performed there, not re-implemented
+serialization is aligned to ``clue_core`` (M0.2) and is performed there, not re-implemented
 here. ``db`` reads its DSN from the ``CLUE_DATABASE_URL`` env var and must not import
 ``clue_research.config`` (built in parallel; the env var is the contract between them).
 

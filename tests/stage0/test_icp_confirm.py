@@ -14,8 +14,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import ICPCreatedFrom, ICPStatus, ReuseScope
 from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import ICPCreatedFrom, ICPStatus, ReuseScope
 from clue_research.icp import (
     compile_field_plan,
     get_active_icp,

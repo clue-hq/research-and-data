@@ -15,7 +15,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     IdempotencyScope,
     new_campaign_run_id,
@@ -23,8 +23,8 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.field import FieldKey
-from clue_research.core.idempotency import account_step_key, phase_key
+from clue_core.field import FieldKey
+from clue_core.idempotency import account_step_key, phase_key
 from clue_research.durable import (
     IdempotencyConflict,
     IdempotencyStatus,

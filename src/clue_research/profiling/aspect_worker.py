@@ -50,16 +50,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import claims_for, get_field
-from clue_research.config import (
-    DEFAULT_CONFIDENCE_THRESHOLDS,
-    DEFAULT_SOURCE_PLAN_POLICY,
-    ConfidenceThresholds,
-    OverlayStore,
-    SourcePlanPolicy,
-    get_config,
-)
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     AspectContext,
     Claim,
@@ -78,8 +69,17 @@ from clue_research.core import (
     WorkerResult,
     WorkerStatus,
 )
-from clue_research.core.enums import PreSpendVerdict, ReuseScope
-from clue_research.core.field import resolve_reuse_scope
+from clue_core.enums import PreSpendVerdict, ReuseScope
+from clue_core.field import resolve_reuse_scope
+from clue_research.claimstore import claims_for, get_field
+from clue_research.config import (
+    DEFAULT_CONFIDENCE_THRESHOLDS,
+    DEFAULT_SOURCE_PLAN_POLICY,
+    ConfidenceThresholds,
+    OverlayStore,
+    SourcePlanPolicy,
+    get_config,
+)
 from clue_research.db import ConnFactory, transaction
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account, surviving_id
@@ -171,7 +171,7 @@ SynthesisGuard = Callable[[FieldDef, ResearchMode], None]
 
 
 class AspectProfilingWorker:
-    """A mode-M2 account-profiling :class:`~clue_research.core.AspectWorker` (M8.1).
+    """A mode-M2 account-profiling :class:`~clue_core.AspectWorker` (M8.1).
 
     One instance per account aspect (field-class) the graph dispatches — ``aspect="account"`` /
     ``"core"`` / a ``<pack>`` namespace; the resonance specialisation
@@ -180,7 +180,7 @@ class AspectProfilingWorker:
     injected dependencies and register it into M7's ``WorkerRegistry`` at the api composition
     root (``api/composition.py`` — ``build_profiling_workers`` / ``register_profiling_workers``).
     Stateless across calls; the per-run context arrives in
-    :class:`~clue_research.core.AspectContext`."""
+    :class:`~clue_core.AspectContext`."""
 
     def __init__(
         self,

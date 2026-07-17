@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from opentelemetry.sdk.trace import TracerProvider
 
-from clue_research.core import new_entity_id, new_run_id
+from clue_core import new_entity_id, new_run_id
 from clue_research.obs import (
     SPAN_MERGE_CURRENT_VALUE,
     collect_spans,

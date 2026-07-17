@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityScope, ICPSpec, RunId, decode_jsonb
+from clue_core import EntityScope, ICPSpec, RunId, decode_jsonb
 from clue_research.discovery_scoring.coverage.config import (
     DEFAULT_COVERAGE_CONFIG,
     CoverageConfig,

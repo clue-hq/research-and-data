@@ -3,7 +3,7 @@
 Frozen value types the reverse-profiling pipeline (M5.1) exchanges with its callers. Kept separate
 from the orchestration so the API/contract is legible on its own (the FastAPI surface and the M7
 phase handler both speak these shapes). Everything keys on a resolved
-:class:`~clue_research.core.primitives.EntityId`, never a free-text name (conventions §2): the
+:class:`~clue_core.primitives.EntityId`, never a free-text name (conventions §2): the
 client *input* is a name+website, but the *output* reference is the resolved client entity id.
 """
 
@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import CostCents, EntityId, RunId
+from clue_core import CostCents, EntityId, RunId
 from clue_research.stage0.fields import SurfaceClass
 
 # --- input ------------------------------------------------------------------

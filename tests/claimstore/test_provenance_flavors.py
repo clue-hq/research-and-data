@@ -9,8 +9,7 @@ import pytest
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import DBAPIError
 
-from clue_research.claimstore import ALL_TENANTS, claims_for, current_value, insert_claim
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimFlavor,
     EntityType,
@@ -23,6 +22,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, claims_for, current_value, insert_claim
 
 from .conftest import rollback_conn, run_async
 

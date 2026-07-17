@@ -38,8 +38,9 @@ dependencies = [
     "langgraph-checkpoint-postgres>=2",
     "fastapi>=0.138.0",
     "httpx>=0.28.1",
-    # Doc R R0 — structlog-first observability lib (libs/clue-obs, workspace member).
+    # Doc R workspace libs (libs/*).
     "clue-obs",
+    "clue-core",
 ]
 
 [dependency-groups]
@@ -65,6 +66,7 @@ members = ["libs/*"]
 
 [tool.uv.sources]
 clue-obs = { workspace = true }
+clue-core = { workspace = true }
 
 # --- ruff: format + lint ----------------------------------------------------
 [tool.ruff]
@@ -85,13 +87,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs"]
+known-first-party = ["clue_research", "clue_obs", "clue_core"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["src/clue_research", "libs/clue-obs/clue_obs"]
-mypy_path = "src:libs/clue-obs"
+files = ["src/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core"]
+mypy_path = "src:libs/clue-obs:libs/clue-core"
 explicit_package_bases = true
 namespace_packages = true
 strict = true
@@ -130,37 +132,15 @@ addopts = "-q"
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
 # breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
 [tool.importlinter]
-root_package = "clue_research"
+root_packages = ["clue_research", "clue_core", "clue_obs"]
 include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
 
 # Rule 2 — core/ is the shared kernel: it imports nothing else inside clue_research.
 [[tool.importlinter.contracts]]
 name = "core is the shared kernel (imports nothing internal)"
 type = "forbidden"
-source_modules = ["clue_research.core"]
-forbidden_modules = [
-    "clue_research.config",
-    "clue_research.obs",
-    "clue_research.db",
-    "clue_research.evals",
-    "clue_research.claimstore",
-    "clue_research.identity",
-    "clue_research.locks",
-    "clue_research.icp",
-    "clue_research.sources",
-    "clue_research.resolvers",
-    "clue_research.adapters",
-    "clue_research.stage0",
-    "clue_research.discovery_scoring",
-    "clue_research.durable",
-    "clue_research.profiling",
-    "clue_research.verification",
-    "clue_research.compliance",
-    "clue_research.synthesis",
-    "clue_research.narrative",
-    "clue_research.review",
-    "clue_research.api",
-]
+source_modules = ["clue_core"]
+forbidden_modules = ["clue_research", "clue_obs"]
 
 # Rule 1 (shape) — the shared base is layered obs -> config -> core; no upward imports.
 # Everything else may freely import this trio (that is the default, not constrained here).
@@ -168,7 +148,7 @@ forbidden_modules = [
 name = "shared base is layered: obs -> config -> core"
 type = "layers"
 containers = ["clue_research"]
-layers = ["obs", "config", "core"]
+layers = ["obs", "config"]
 
 # Rule 3 — workers coordinate through the claim store, never by importing a sibling worker. Judges
 # live in verification/; scorers in discovery_scoring/. M4.5 carve-out: a resolver whose source needs
@@ -251,7 +231,7 @@ forbidden_modules = ["clue_research.resolvers"]
 name = "provider SDKs only behind resolvers/<provider> and adapters/<source>"
 type = "forbidden"
 source_modules = [
-    "clue_research.core",
+    "clue_core",
     "clue_research.config",
     "clue_research.obs",
     "clue_research.db",
@@ -303,7 +283,7 @@ ignore_imports = ["clue_research.adapters.concrete -> firecrawl"]
 name = "the LLM-vendor SDK lives only behind the gateway/ package"
 type = "forbidden"
 source_modules = [
-    "clue_research.core",
+    "clue_core",
     "clue_research.config",
     "clue_research.obs",
     "clue_research.db",
@@ -387,7 +367,7 @@ forbidden_modules = [
 name = "nothing imports the api app layer"
 type = "forbidden"
 source_modules = [
-    "clue_research.core",
+    "clue_core",
     "clue_research.config",
     "clue_research.obs",
     "clue_research.db",

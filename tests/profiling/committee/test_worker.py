@@ -13,8 +13,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     AspectWorker,
     IdentityBinding,
@@ -23,6 +22,7 @@ from clue_research.core import (
     UseClass,
     WorkerStatus,
 )
+from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
 from clue_research.profiling.committee import (
     PERSONA,
     ROLE_ON_COMMITTEE,

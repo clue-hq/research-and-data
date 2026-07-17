@@ -55,7 +55,7 @@ down_revision: str | None = "0004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirrors clue_research.core.enums.AccountStatus (the shared entity lifecycle, used by both the
+# Mirrors clue_core.enums.AccountStatus (the shared entity lifecycle, used by both the
 # account and contact tables). The enum-parity test in tests/identity/test_entity_model.py guards
 # against drift, exactly as the M1 migrations' parity tests do.
 _ENTITY_STATUS = ("candidate", "active", "merged")

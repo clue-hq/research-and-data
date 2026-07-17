@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import ClaimId, EntityId, Estimate, UnitInterval
+from clue_core import ClaimId, EntityId, Estimate, UnitInterval
 
 # --- the six proposal elements (Doc B §3) ----------------------------------
 
@@ -291,7 +291,7 @@ class ICPSpecRef(BaseModel):
 class ICPConfirmation(BaseModel):
     """What :func:`~clue_research.stage0.icp_confirm.confirm_icp` returns: the confirmed spec
     reference, the suggested-vs-confirmed diff (also persisted), and the pre-run cost
-    :class:`~clue_research.core.execution.Estimate` surfaced before any discovery/scoring spend
+    :class:`~clue_core.execution.Estimate` surfaced before any discovery/scoring spend
     (Doc C §5). The estimate reuses the frozen M7 ``BudgetEngine.estimate`` value type — pre-
     discovery its ``discovered_count`` is a projected addressable prior (low ``confidence``), and
     once M7's real ``BudgetEngine`` is injected it returns the authoritative figure unchanged."""

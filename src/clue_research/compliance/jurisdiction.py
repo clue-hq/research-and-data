@@ -39,6 +39,16 @@ from typing import Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    RunId,
+    UnitInterval,
+)
 from clue_research.claimstore import (
     TenantScope,
     claims_for,
@@ -52,16 +62,6 @@ from clue_research.config import (
     JurisdictionPolicy,
     RegimeMapping,
     get_policy,
-)
-from clue_research.core import (
-    Claim,
-    ClaimId,
-    EntityId,
-    EntityType,
-    ExtractionMethod,
-    ResearchMode,
-    RunId,
-    UnitInterval,
 )
 from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact, stamp_reuse

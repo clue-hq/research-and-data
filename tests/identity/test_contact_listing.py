@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.core import EntityType
+from clue_core import EntityType
 from clue_research.identity import (
     contact_ids_for_account,
     insert_account_entity,

@@ -21,9 +21,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, current_value, insert_claim
-from clue_research.compliance import DataSubjectRightsImpl, RetentionSweep, UseGateImpl
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     Completion,
@@ -38,7 +36,9 @@ from clue_research.core import (
     contact_claim,
     new_run_id,
 )
-from clue_research.core.compliance import is_outreach_promotable
+from clue_core.compliance import is_outreach_promotable
+from clue_research.claimstore import TenantScope, current_value, insert_claim
+from clue_research.compliance import DataSubjectRightsImpl, RetentionSweep, UseGateImpl
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 from clue_research.verification import FaithfulnessJudgeImpl, FreshnessImpl
 

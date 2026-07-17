@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.api.deep import deep_account_run_id, deep_step_key
-from clue_research.config import DeepPhaseConfig
-from clue_research.core import (
+from clue_core import (
     BudgetVerdict,
     new_campaign_run_id,
     new_entity_id,
 )
+from clue_research.api.deep import deep_account_run_id, deep_step_key
+from clue_research.config import DeepPhaseConfig
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from tests.api.deep.test_orchestrator import (
     FakeAccountRunIO,

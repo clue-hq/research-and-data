@@ -4,7 +4,7 @@ Reverse-profiling points the subsystem's own machinery *inward* at the client. L
 field in the system, the client-knowledge fields are **registered rows in the M1.3 field registry,
 never hardcoded** (conventions §2 — open by registration). They sit in the ``client.*`` namespace,
 which the registry classifies as a vertical *pack*
-(:class:`~clue_research.core.field.FieldClass.PACK`), so they are loaded as a pack
+(:class:`~clue_core.field.FieldClass.PACK`), so they are loaded as a pack
 (``pack="client"``) exactly like an industry pack's field set.
 
 Two pieces live here:
@@ -33,8 +33,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
-from clue_research.core import FieldDef, PassKind, ReuseScope
 
 # --- the client-knowledge namespace + field keys ---------------------------
 CLIENT_PACK = "client"

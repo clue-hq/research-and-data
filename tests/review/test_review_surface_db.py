@@ -18,8 +18,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, current_value, insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     EntityId,
@@ -33,6 +32,7 @@ from clue_research.core import (
     new_campaign_run_id,
     new_run_id,
 )
+from clue_research.claimstore import TenantScope, claims_for, current_value, insert_claim
 from clue_research.identity import insert_account_entity
 from clue_research.review import (
     InMemoryVerificationAnnotationReader,

@@ -18,12 +18,12 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api import build_pre_spend_gate
-from clue_research.core import (
+from clue_core import (
     EntityScope,
     Modality,
     SourceManifest,
 )
+from clue_research.api import build_pre_spend_gate
 from clue_research.profiling import discover_committee, profile_contact
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import (

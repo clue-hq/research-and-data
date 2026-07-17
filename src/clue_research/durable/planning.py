@@ -22,18 +22,18 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import CostCents, EntityId, FreshnessState, PassKind
+from clue_core.field import FieldClass, FieldDef, field_namespace
 from clue_research.claimstore import current_values
 from clue_research.claimstore.registry import get_field, list_fields
 from clue_research.claimstore.tenancy import TenantScope
 from clue_research.config import RecursionPolicy
-from clue_research.core import CostCents, EntityId, FreshnessState, PassKind
-from clue_research.core.field import FieldClass, FieldDef, field_namespace
 
 
 class AspectPlan(BaseModel):
     """One aspect cluster the lead plans (M7.1): a field-class's gap fields, the worker count to
     spawn, the recursion depth allowed, and (M7.5) the budget envelope. The orchestrator dispatches
-    one :class:`~clue_research.core.AspectWorker` per aspect; ``depth`` ≥ 1 marks an aspect that the
+    one :class:`~clue_core.AspectWorker` per aspect; ``depth`` ≥ 1 marks an aspect that the
     M7.2 knob may let recurse into facet sub-workers."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")

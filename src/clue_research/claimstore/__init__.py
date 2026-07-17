@@ -20,6 +20,9 @@ from within ``clue_research`` (it is not a worker; conventions §2 / import-lint
 
 from __future__ import annotations
 
+from clue_core import (
+    canonical_json,
+)  # re-export: relocated to core (the equality contract)
 from clue_research.claimstore.claims import (
     claims_by_ids,
     claims_for,
@@ -59,9 +62,6 @@ from clue_research.claimstore.registry import (
     validate_value,
 )
 from clue_research.claimstore.tenancy import ALL_TENANTS, PUBLIC_ONLY, TenantScope
-from clue_research.core import (
-    canonical_json,
-)  # re-export: relocated to core (the equality contract)
 
 __all__ = [
     # write contract (M1.1)

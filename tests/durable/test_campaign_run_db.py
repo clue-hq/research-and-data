@@ -17,8 +17,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import CampaignPhase, new_campaign_run_id
-from clue_research.core.idempotency import phase_key
+from clue_core import CampaignPhase, new_campaign_run_id
+from clue_core.idempotency import phase_key
 from clue_research.durable import (
     CampaignRunStatus,
     PhaseCheckpointStatus,

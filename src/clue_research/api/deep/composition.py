@@ -54,6 +54,13 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import JsonValue
 
+from clue_core import (
+    CostCents,
+    ICPSpec,
+    LLMGateway,
+    PhaseContext,
+    PreSpendGate,
+)
 from clue_research.api.composition import (
     build_pre_spend_gate,
     load_research_packs,
@@ -69,13 +76,6 @@ from clue_research.api.deep.run_io import DbAccountRunIO
 from clue_research.api.deep.spend import DbExactlyOnceSpend
 from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
 from clue_research.config import DeepPhaseConfig, OverlayStore, RecursionPolicy
-from clue_research.core import (
-    CostCents,
-    ICPSpec,
-    LLMGateway,
-    PhaseContext,
-    PreSpendGate,
-)
 from clue_research.db import ConnFactory, transaction
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (

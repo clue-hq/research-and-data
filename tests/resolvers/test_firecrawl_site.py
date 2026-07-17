@@ -17,13 +17,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.adapters import (
-    CallableClaimExtractor,
-    FirecrawlHtmlAdapter,
-    register_adapter,
-    span_for,
-)
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     ClaimDraft,
@@ -41,6 +35,12 @@ from clue_research.core import (
     SourceManifest,
     new_entity_id,
     new_run_id,
+)
+from clue_research.adapters import (
+    CallableClaimExtractor,
+    FirecrawlHtmlAdapter,
+    register_adapter,
+    span_for,
 )
 from clue_research.resolvers import ScrapePolicy, ScrapeResolver, register_scrape_resolver
 from clue_research.sources import (

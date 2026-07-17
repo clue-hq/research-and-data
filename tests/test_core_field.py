@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import (
+from clue_core import (
     FieldClass,
     FieldDef,
     PassKind,
