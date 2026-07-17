@@ -143,8 +143,33 @@ spine as libs/clue-spine (new box vs Doc R tree); tenant_private retained; heade
   collapsed to one field; guard test with EMPTY allowlist. Retained: tenant_private family,
   tenancy.py filename, client_knowledge_ids (client-KB concept; its claim_support_client_ids_is_
   array CHECK is the one old-vocab DB name left, deliberate). All 4 gates verified independently.
-- IN FLIGHT: A3.2 clue-spine (subagent; DDL pinned in PA spec §A3.2).
+- **A3.2 spine DONE** (`302d19b`): libs/clue-spine (migration 98422adaaa38: workspace/brand/
+  product/project + campaign_run.project_id; composite-FK anchors kill cross-workspace refs
+  structurally; one-brand-per-workspace as UNIQUE; IntegrityError deliberately uncaught); ids
+  ws_/brd_/prd_/prj_+uuid4hex, explicit ids accepted for legacy slot-in; 9 DB-gated constraint
+  tests. Legacy-table workspace_id→workspace FKs deferred to build step 2 (by design).
+- **A4 (R2) DONE** (`bf3ffc7`): clue_research → subsystems/research (own pyproject); root =
+  virtual uv workspace root; scaffolds subsystems/{memory,content} + platform/{toolbelt,agents,
+  fleet,projections} with contracts (subsystems independence; agents→toolbelt+projections only);
+  Makefile uv sync --all-packages; docs/architecture/README.md layout section. platform/api
+  waits for R3 (= build step 2, by design).
+- **Review close-out** (`e392599`): old-import structure guard test added (spec promise);
+  PA spec marked EXECUTED; scripts 01→02 chain + evals CLI verified under the new structure.
 
-## Next
-spine review+commit → A4 (R2 scaffolds + clue_research → subsystems/ + Doc R §7 doc updates) →
-completeness review vs spec + deferral ledger to founder. No push.
+## PHASE A COMPLETE — final commit e392599 (16 commits ebe7f7d..e392599)
+End state: workspace layout live (7 libs, 3 subsystems, 4 platform scaffolds), workspace_id
+vocabulary everywhere, spine tables migrated, all gates green (make check 1148 passed; full DB
+suite 1924 on fresh schema; db-smoke; one head 98422adaaa38; script chain + evals sentinels).
+
+## Deferral ledger (surfaced to founder at close-out)
+1. **claim_tagger consolidation** — blocked on 3 design rulings (stop-accounting basis with a
+   dropping tagger; gate seam on resolve_field; tier-mismatch guarantee vs the tier-3-fake
+   fixture). Analysis: `_memory/2026-07-17-claim-tagger-consolidation-blocked.md`. Slot: build
+   step 4.
+2. **BudgetTracker** — pre-authorized split; blocks nothing in Phase B.
+3. **DB suite rerun-hygiene** — fresh schema per run is the operating rule (LangGraph checkpoint
+   tables + state accumulate); candidate cleanup task.
+4. **model_call_usage gateway telemetry** (Doc R §4) — not wired in A1; slot with step 0/2.
+5. Legacy-table FKs → workspace + **platform/api move (R3)** — deferred by design to step 2.
+6. One old-vocab DB name kept deliberately: claim_support_client_ids_is_array (client-KB
+   concept, not tenancy).
