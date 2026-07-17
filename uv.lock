@@ -15,6 +15,7 @@ members = [
     "clue-locks",
     "clue-obs",
     "clue-research",
+    "clue-spine",
 ]
 
 [[package]]
@@ -349,6 +350,7 @@ dependencies = [
     { name = "clue-gateway" },
     { name = "clue-locks" },
     { name = "clue-obs" },
+    { name = "clue-spine" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "langgraph" },
@@ -383,6 +385,7 @@ requires-dist = [
     { name = "clue-gateway", editable = "libs/clue-gateway" },
     { name = "clue-locks", editable = "libs/clue-locks" },
     { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "clue-spine", editable = "libs/clue-spine" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langgraph", specifier = ">=0.2" },
@@ -405,6 +408,25 @@ dev = [
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
+name = "clue-spine"
+version = "0.0.0"
+source = { editable = "libs/clue-spine" }
+dependencies = [
+    { name = "clue-core" },
+    { name = "clue-db" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-db", editable = "libs/clue-db" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
 
 [[package]]
