@@ -140,7 +140,7 @@ def test_no_posture_named_branch_in_gate_or_collection() -> None:  # AC: "not pe
     # grep guard (Doc D §6): no posture-named if/elif branch exists in the gate or the posture
     # resolution — postures are DATA (the POSTURE_PRESETS table), never if/else. The preset dict
     # literal keys (``Posture.X: ...``) and field annotations are not conditionals and are allowed.
-    here = Path(__file__).resolve().parents[2] / "src/clue_research/compliance"
+    here = Path(__file__).resolve().parents[2] / "subsystems/research/clue_research/compliance"
     for module in ("use_gate.py", "posture.py"):
         for raw in (here / module).read_text().splitlines():
             line = raw.strip()

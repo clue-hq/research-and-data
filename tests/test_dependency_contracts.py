@@ -62,7 +62,9 @@ def test_provider_sdk_import_outside_resolvers_breaks_the_build() -> None:
     exe = shutil.which("lint-imports")
     if exe is None:
         pytest.skip("import-linter not installed in this environment")
-    victim = REPO / "src" / "clue_research" / "claimstore" / "_neg_sdk_violation.py"
+    victim = (
+        REPO / "subsystems" / "research" / "clue_research" / "claimstore" / "_neg_sdk_violation.py"
+    )
     victim.write_text("import firecrawl  # deliberate violation for the negative contract test\n")
     try:
         result = subprocess.run([exe], cwd=REPO, capture_output=True, text=True)

@@ -31,6 +31,16 @@ docs (Doc A, Doc S) use the new vocabulary.
 | `clue-hq-content-and-artifact-scaling.md` | **Doc S** | The content plane (v1.1): content schema ↔ slot contract, three-beat flow, template finalization, scaled derivation, havana gap list; resolves overview D2 | **Authoritative (content plane)** |
 | `clue-hq-repo-structure-and-observability.md` | **Doc R** | Ratified plan: uv-workspace repo layout (libs/ · subsystems/ · platform/), structlog-first observability (`clue-obs`), phases R0–R3, branch conventions | **Ratified plan (execution pending)** |
 
+## Repo layout (Doc R — executed Phase A, 2026-07-17)
+
+uv workspace, three zones: **`libs/`** (shared, subsystem-agnostic: `clue-core`, `clue-config`,
+`clue-db`, `clue-gateway`, `clue-locks`, `clue-obs` (structlog + OTel), `clue-spine` (workspace →
+brand → {product, project})); **`subsystems/`** (`research/` — the M0–M13 build; `memory/`,
+`content/` — contracted scaffolds); **`platform/`** (`toolbelt/`, `agents/`, `fleet/`,
+`projections/` — contracted scaffolds; `api/` arrives at R3 with build step 2). Tenancy is keyed
+`workspace_id` everywhere (the 2026-07-17 rename; the `tenant_private` reuse-scope enum value is
+deliberately retained). Import rules are enforced by import-linter in the root `pyproject.toml`.
+
 ## Authority order when docs conflict
 
 1. **Harness doc (v1.2)** — for platform-era requirements, decisions, and open items.

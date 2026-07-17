@@ -8,14 +8,30 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "clue-agents",
     "clue-config",
+    "clue-content",
     "clue-core",
     "clue-db",
+    "clue-fleet",
     "clue-gateway",
     "clue-locks",
+    "clue-memory",
     "clue-obs",
+    "clue-projections",
     "clue-research",
     "clue-spine",
+    "clue-toolbelt",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "alembic" },
+    { name = "fakeredis", specifier = ">=2.20" },
+    { name = "import-linter", specifier = ">=2.0" },
+    { name = "mypy", specifier = ">=1.11" },
+    { name = "pytest", specifier = ">=8.2" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]
@@ -238,6 +254,11 @@ wheels = [
 ]
 
 [[package]]
+name = "clue-agents"
+version = "0.0.0"
+source = { editable = "platform/agents" }
+
+[[package]]
 name = "clue-config"
 version = "0.0.0"
 source = { editable = "libs/clue-config" }
@@ -253,6 +274,11 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2" },
 ]
+
+[[package]]
+name = "clue-content"
+version = "0.0.0"
+source = { editable = "subsystems/content" }
 
 [[package]]
 name = "clue-core"
@@ -281,6 +307,11 @@ requires-dist = [
     { name = "pgvector" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
+
+[[package]]
+name = "clue-fleet"
+version = "0.0.0"
+source = { editable = "platform/fleet" }
 
 [[package]]
 name = "clue-gateway"
@@ -319,6 +350,11 @@ requires-dist = [
 ]
 
 [[package]]
+name = "clue-memory"
+version = "0.0.0"
+source = { editable = "subsystems/memory" }
+
+[[package]]
 name = "clue-obs"
 version = "0.0.0"
 source = { editable = "libs/clue-obs" }
@@ -338,76 +374,47 @@ requires-dist = [
 ]
 
 [[package]]
+name = "clue-projections"
+version = "0.0.0"
+source = { editable = "platform/projections" }
+
+[[package]]
 name = "clue-research"
 version = "0.0.0"
-source = { editable = "." }
+source = { editable = "subsystems/research" }
 dependencies = [
-    { name = "alembic" },
-    { name = "asyncpg" },
     { name = "clue-config" },
     { name = "clue-core" },
     { name = "clue-db" },
     { name = "clue-gateway" },
     { name = "clue-locks" },
     { name = "clue-obs" },
-    { name = "clue-spine" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
-    { name = "openai" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-sdk" },
     { name = "pgvector" },
     { name = "pydantic" },
-    { name = "pydantic-settings" },
     { name = "pypdf" },
-    { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "fakeredis" },
-    { name = "import-linter" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic" },
-    { name = "asyncpg" },
     { name = "clue-config", editable = "libs/clue-config" },
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-db", editable = "libs/clue-db" },
     { name = "clue-gateway", editable = "libs/clue-gateway" },
     { name = "clue-locks", editable = "libs/clue-locks" },
     { name = "clue-obs", editable = "libs/clue-obs" },
-    { name = "clue-spine", editable = "libs/clue-spine" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langgraph", specifier = ">=0.2" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=2" },
-    { name = "openai", specifier = ">=1.40" },
-    { name = "opentelemetry-api", specifier = ">=1.20" },
-    { name = "opentelemetry-sdk", specifier = ">=1.20" },
     { name = "pgvector" },
     { name = "pydantic", specifier = ">=2.7" },
-    { name = "pydantic-settings", specifier = ">=2" },
     { name = "pypdf", specifier = ">=6" },
-    { name = "redis", specifier = ">=5" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "fakeredis", specifier = ">=2.20" },
-    { name = "import-linter", specifier = ">=2.0" },
-    { name = "mypy", specifier = ">=1.11" },
-    { name = "pytest", specifier = ">=8.2" },
-    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]
@@ -428,6 +435,11 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
+
+[[package]]
+name = "clue-toolbelt"
+version = "0.0.0"
+source = { editable = "platform/toolbelt" }
 
 [[package]]
 name = "colorama"
