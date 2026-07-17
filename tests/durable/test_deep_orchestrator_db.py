@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import DeepPhaseConfig
 from clue_core import (
     EntityId,
     Persona,
@@ -40,7 +41,6 @@ from clue_research.api.deep import (
     deep_account_run_id,
     deep_step_key,
 )
-from clue_research.config import DeepPhaseConfig
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,

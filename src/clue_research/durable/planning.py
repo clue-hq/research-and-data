@@ -22,12 +22,12 @@ from collections.abc import Sequence
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import RecursionPolicy
 from clue_core import CostCents, EntityId, FreshnessState, PassKind
 from clue_core.field import FieldClass, FieldDef, field_namespace
 from clue_research.claimstore import current_values
 from clue_research.claimstore.registry import get_field, list_fields
 from clue_research.claimstore.tenancy import TenantScope
-from clue_research.config import RecursionPolicy
 
 
 class AspectPlan(BaseModel):

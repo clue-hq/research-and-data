@@ -356,7 +356,7 @@ class FreshnessTtls(BaseModel):
     The merge view (substrate §1) only considers a claim that satisfies its field's freshness
     TTL; verification (M9) ages claims out. Field-level TTLs default by field-class here and are
     overridable per field-key. (Personal-claim retention TTLs proper live on the policy — Doc D
-    §4 — :class:`~clue_research.config.policy.RetentionTtls`.)
+    §4 — :class:`~clue_config.policy.RetentionTtls`.)
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

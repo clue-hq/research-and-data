@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.config import (
+from clue_config import (
     Config,
     ConfigOverlay,
     OverlayStore,

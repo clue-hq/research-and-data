@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
-from clue_research.config import redact
+from clue_config import redact
 
 _ROOT_LOGGER = "clue_research"
 

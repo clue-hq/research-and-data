@@ -19,6 +19,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import BudgetCaps, VerificationHealthThresholds
 from clue_core import (
     BurnDown,
     CampaignPhase,
@@ -43,7 +44,6 @@ from clue_research.api import (
     build_observability_surface,
 )
 from clue_research.claimstore import insert_claim, record_verification
-from clue_research.config import BudgetCaps, VerificationHealthThresholds
 from clue_research.discovery_scoring import (
     CoverageBand,
     CoverageConfidence,

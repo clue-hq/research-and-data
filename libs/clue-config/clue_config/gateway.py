@@ -4,7 +4,7 @@ The gateway *client* lives in :mod:`clue_research.gateway` (it emits the ``llm.g
 so it must sit above the ``obs → config → core`` layering); its *configuration* lives here, beside
 every other "policy is data" surface, so a model swap — or an OpenRouter → another OpenAI-compatible
 gateway swap — is a config change, never code. :class:`GatewayConfig` is folded into the layered
-:class:`~clue_research.config.models.Config`, so it is per-client/per-ICP overridable through one
+:class:`~clue_config.models.Config`, so it is per-client/per-ICP overridable through one
 ``get_config`` seam as merge policy, scoring, and budgets.
 
 Pricing is config too: per-model cents-per-1k-token rates the gateway uses to compute a claim/call's
@@ -18,9 +18,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_config.settings import DEFAULT_SYNTHESIS_MODEL, load_settings
 from clue_core.gateway import TokenUsage
 from clue_core.primitives import CostCents
-from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL, load_settings
 
 
 class ModelPrice(BaseModel):

@@ -60,7 +60,7 @@ from clue_research.resolvers.live import AccountLookup, HttpFetcher, HttpRequest
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.config import Secrets
+    from clue_config import Secrets
 
 SOURCE_KEY = "parallel_task"
 AUTH_REF = "CLUE_PARALLEL_API_KEY"

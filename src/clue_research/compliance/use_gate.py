@@ -52,6 +52,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import (
+    DEFAULT_POSTURE,
+    STRICT_DEFAULT_REGIME,
+    Jurisdiction,
+    JurisdictionPolicy,
+    Posture,
+    SourceScope,
+    UseDisposition,
+)
 from clue_core import (
     Claim,
     ClaimId,
@@ -65,15 +74,6 @@ from clue_core import (
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import TenantScope, current_value
 from clue_research.compliance.fields import CONTACT_JURISDICTION
-from clue_research.config import (
-    DEFAULT_POSTURE,
-    STRICT_DEFAULT_REGIME,
-    Jurisdiction,
-    JurisdictionPolicy,
-    Posture,
-    SourceScope,
-    UseDisposition,
-)
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_ENTITY_ID,

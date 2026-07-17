@@ -8,7 +8,7 @@ hands each worker its depth/cap budget via ``AspectContext.params``, model-visib
 sub-worker, so "be thorough" can never translate into unbounded spawn regardless of what the model
 asked for. A spawn the guard denies is a no-op + a logged ``cap_hit``, never a run failure.
 
-The dial values are *data, not code*: :class:`~clue_research.config.RecursionPolicy` is versioned,
+The dial values are *data, not code*: :class:`~clue_config.RecursionPolicy` is versioned,
 per-ICP/pack-overridable config (conventions §2). Retuning per-tier depth/worker numbers (Doc C §8)
 is a config bump — this guard's logic does not change. Budget denial is delegated: a spawn within
 the depth/count caps may still be denied because the per-account budget envelope (M7.5) is spent.
@@ -21,8 +21,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_config import RecursionPolicy
 from clue_core import CostCents
-from clue_research.config import RecursionPolicy
 
 
 class SpawnDenyReason(StrEnum):

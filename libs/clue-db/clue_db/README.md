@@ -31,7 +31,7 @@ path for the typed payload.
 
 The database DSN is read from the **`CLUE_DATABASE_URL`** environment variable (the shared seam).
 `db` reads it directly from the environment via `database_url()`; it does **not** import
-`clue_research.config` (that package is built in parallel — the env var is the contract between
+`clue_config` (that package is built in parallel — the env var is the contract between
 them). The documentation of the variable in `.env.example` is owned by M0.4.
 
 Local-dev default (used when `CLUE_DATABASE_URL` is unset), matching `docker-compose.yml`:

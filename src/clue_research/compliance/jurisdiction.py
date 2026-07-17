@@ -19,12 +19,12 @@ The resolution waterfall, highest-confidence first (the first mappable source wi
 5. **nothing mappable** → the strict-default regime, ``jurisdiction_unknown = True``.
 
 The *seam* is the regime code: M10.3/M10.4/M10.5 key only on
-:class:`~clue_research.config.Jurisdiction`, never on raw geography, so the region→regime mapping
+:class:`~clue_config.Jurisdiction`, never on raw geography, so the region→regime mapping
 (or a future geo-IP/registry resolver) is swappable behind :class:`JurisdictionResolver` without
 touching the gate. The region→regime table is versioned config
 (``JurisdictionPolicy.regime_mapping``; D8), so adding a region is a config edit.
 
-The existing :class:`~clue_research.config.Jurisdiction` enum (``gdpr``/``uk_gdpr``/``us_state``/
+The existing :class:`~clue_config.Jurisdiction` enum (``gdpr``/``uk_gdpr``/``us_state``/
 ``global_strict``) is M0.4-frozen and reused as-is; the M10 spec's illustrative ``EU_GDPR`` regime
 is this codebase's ``Jurisdiction.GDPR`` (the EU/EEA GDPR-grade regime). Architecture: Doc D §1;
 docs/specs/M10-compliance-and-personal-data.md §M10.1.
@@ -39,6 +39,13 @@ from typing import Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import (
+    STRICT_DEFAULT_REGIME,
+    Jurisdiction,
+    JurisdictionPolicy,
+    RegimeMapping,
+    get_policy,
+)
 from clue_core import (
     Claim,
     ClaimId,
@@ -57,13 +64,6 @@ from clue_research.claimstore import (
     supersede_claims,
 )
 from clue_research.compliance.fields import CONTACT_JURISDICTION
-from clue_research.config import (
-    STRICT_DEFAULT_REGIME,
-    Jurisdiction,
-    JurisdictionPolicy,
-    RegimeMapping,
-    get_policy,
-)
 from clue_research.identity import get_account, get_contact, stamp_reuse
 from clue_research.obs import (
     ATTR_CLIENT_ID,

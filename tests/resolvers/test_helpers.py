@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 
+from clue_config import Secrets
 from clue_core import RetryableResolverError
-from clue_research.config import Secrets
 from clue_research.resolvers import (
     CredentialError,
     ProviderResponseError,

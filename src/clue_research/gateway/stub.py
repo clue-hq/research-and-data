@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import hashlib
 
+from clue_config.gateway import GatewayConfig
 from clue_core.gateway import Completion, EmbeddingResult, Message, TokenUsage, Vector
-from clue_research.config.gateway import GatewayConfig
 
 # Dimensionality of a stub embedding vector — small, deterministic, enough for a candidate-set test.
 _EMBED_DIM = 8

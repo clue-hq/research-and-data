@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.config import BudgetCaps
+from clue_config import BudgetCaps
 from clue_research.durable.budget import project_spend
 
 # A representative policy: Pass A 2c/account; top tier $5/account, high tier $2/account.

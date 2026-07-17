@@ -10,7 +10,7 @@ What lives here (M0.3):
 
 * :func:`database_url` — the DSN, read from the ``CLUE_DATABASE_URL`` env var (the shared seam;
   the local default is documented in this package's ``README.md``). Read directly from the
-  environment, **not** via ``clue_research.config`` — that package is built in parallel and ``db``
+  environment, **not** via ``clue_config`` — that package is built in parallel and ``db``
   must not depend on it.
 * :func:`db_lifespan` — an ``@asynccontextmanager`` that creates the engine on enter and disposes
   it (closing every pooled connection) on exit. This is the FastAPI-``lifespan`` shape.
@@ -65,7 +65,7 @@ def database_url() -> str:
 
     Read from ``CLUE_DATABASE_URL`` (the shared seam), falling back to the documented local-dev
     default (:data:`DEFAULT_DATABASE_URL`). Read straight from the environment — ``db`` must not
-    import ``clue_research.config`` (it is built in parallel; the env var is the contract between
+    import ``clue_config`` (it is built in parallel; the env var is the contract between
     them).
     """
     return os.environ.get(DATABASE_URL_ENV, DEFAULT_DATABASE_URL)

@@ -88,7 +88,7 @@ from clue_research.resolvers.live import AccountLookup, HttpFetcher, HttpRequest
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.config import Secrets
+    from clue_config import Secrets
 
 # The tier-4 trust tier these resolvers always produce. The claim model enforces tier-4 ⟺
 # llm_synthesis; the waterfall's _finalize re-asserts the manifest tier matches.

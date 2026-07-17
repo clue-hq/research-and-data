@@ -12,7 +12,7 @@ adjacent) and only de-escalates when the cause is evidently benign; the fail-saf
 *toward* sensitive (better to over-restrict a hook than misuse special-category data).
 
 The special-category lexicon (the Art. 9 marker set + the benign-cause markers) is **versioned
-config** — :class:`clue_research.config.UseClassLexicon` (M10.2) — so the Art. 9 set is editable
+config** — :class:`clue_config.UseClassLexicon` (M10.2) — so the Art. 9 set is editable
 without code (policy-as-data, conventions §2; D8). M8 owns the tagger; M10 owns the lexicon it reads
 and the use-gate/postures that act on the tag.
 """
@@ -21,8 +21,8 @@ from __future__ import annotations
 
 from pydantic import JsonValue
 
+from clue_config import DEFAULT_USE_CLASS_LEXICON, UseClassLexicon
 from clue_core import FieldDef, UseClass
-from clue_research.config import DEFAULT_USE_CLASS_LEXICON, UseClassLexicon
 
 _HINT_KEY = "use_class_hint"
 _ESCALATABLE_KEY = "use_class_escalatable"

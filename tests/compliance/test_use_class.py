@@ -12,6 +12,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from clue_config import (
+    DEFAULT_USE_CLASS_LEXICON,
+    JurisdictionPolicy,
+    UseClassLexicon,
+)
 from clue_core import (
     Claim,
     EntityType,
@@ -21,11 +26,6 @@ from clue_core import (
     UseClass,
     new_entity_id,
     new_run_id,
-)
-from clue_research.config import (
-    DEFAULT_USE_CLASS_LEXICON,
-    JurisdictionPolicy,
-    UseClassLexicon,
 )
 from clue_research.obs import (
     METRIC_USE_CLASS_TOTAL,

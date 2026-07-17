@@ -13,8 +13,8 @@ from decimal import Decimal
 
 from langgraph.checkpoint.memory import InMemorySaver
 
+from clue_config import RecursionPolicy, TierRecursionCaps
 from clue_core import new_campaign_run_id, new_entity_id
-from clue_research.config import RecursionPolicy, TierRecursionCaps
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,

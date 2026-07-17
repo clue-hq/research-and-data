@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from clue_config import BudgetCaps
 from clue_core import CampaignPhase
-from clue_research.config import BudgetCaps
 from clue_research.durable import (
     CampaignRun,
     CampaignRunStatus,

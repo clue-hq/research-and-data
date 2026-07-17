@@ -21,6 +21,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import DEFAULT_SOURCE_PLAN_POLICY, SourcePlanPolicy
 from clue_core import (
     AccountEntity,
     Claim,
@@ -42,7 +43,6 @@ from clue_core import (
     revalidate_with,
 )
 from clue_research.claimstore import TenantScope, claims_for, insert_claim
-from clue_research.config import DEFAULT_SOURCE_PLAN_POLICY, SourcePlanPolicy
 from clue_research.identity import stamp_reuse
 from clue_research.profiling.contact.binding import (
     DEFAULT_BINDING_CLASSIFIER,

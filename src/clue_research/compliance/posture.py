@@ -18,7 +18,7 @@ is one machinery and the posture is a configuration decision, not a branch.
   (``source_scope = professional_public_only``); the deep personal-life dimension is never collected
   and ``sensitive`` is not stored; the use-gate is light.
 
-This module is the **resolution layer**: it maps a :class:`~clue_research.config.Posture` to the
+This module is the **resolution layer**: it maps a :class:`~clue_config.Posture` to the
 materialized ``ClientPolicy`` via a data table (:data:`POSTURE_PRESETS`), so there is **no
 posture-named ``if``/``else``** anywhere in the gate or the collection path — the posture is data,
 the gate reads only the materialized parameters. The api root calls
@@ -30,8 +30,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from clue_config import DEFAULT_POSTURE, Posture, SourceScope
 from clue_research.compliance.use_gate import ClientPolicy
-from clue_research.config import DEFAULT_POSTURE, Posture, SourceScope
 
 
 @dataclass(frozen=True)

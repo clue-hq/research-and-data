@@ -1,4 +1,4 @@
-"""`clue_research.config` — Config, secrets & jurisdiction/policy skeleton (M0.4).
+"""`clue_config` — Config, secrets & jurisdiction/policy skeleton (M0.4).
 
 The ``config/`` seam (conventions §2 "policy is data, not code"). Exposes:
 
@@ -23,13 +23,13 @@ Implements ENG-120 (docs/specs/M00-foundations-and-shared-contracts.md §M0.4).
 
 from __future__ import annotations
 
-from clue_research.config.gateway import (
+from clue_config.gateway import (
     DEFAULT_GATEWAY_CONFIG,
     GatewayConfig,
     ModelPrice,
     default_gateway_config,
 )
-from clue_research.config.loader import (
+from clue_config.loader import (
     ConfigError,
     OverlayStore,
     default_store,
@@ -37,8 +37,8 @@ from clue_research.config.loader import (
     get_policy,
     overlay_from_mapping,
 )
-from clue_research.config.models import Config, ConfigOverlay, ConfigVersion
-from clue_research.config.policy import (
+from clue_config.models import Config, ConfigOverlay, ConfigVersion
+from clue_config.policy import (
     DEFAULT_JURISDICTION,
     DEFAULT_POSTURE,
     DEFAULT_REGIME_MAPPING,
@@ -54,7 +54,7 @@ from clue_research.config.policy import (
     UseClassLexicon,
     UseDisposition,
 )
-from clue_research.config.schema import (
+from clue_config.schema import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
     DEFAULT_SOURCE_PLAN_POLICY,
     BudgetCaps,
@@ -69,14 +69,14 @@ from clue_research.config.schema import (
     TierRecursionCaps,
     VerificationHealthThresholds,
 )
-from clue_research.config.secrets import (
+from clue_config.secrets import (
     DB_DSN_ENV_VAR,
     Secrets,
     is_secret_name,
     redact,
     redact_mapping,
 )
-from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL, Settings, load_settings
+from clue_config.settings import DEFAULT_SYNTHESIS_MODEL, Settings, load_settings
 
 __all__ = [
     # loader / seam

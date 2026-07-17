@@ -16,6 +16,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import (
+    FreshnessTtls,
+    Jurisdiction,
+    LawfulBasisDefaults,
+    RetentionTtls,
+)
 from clue_core import (
     AccountStatus,
     Claim,
@@ -35,12 +41,6 @@ from clue_research.compliance import (
     record_lawful_basis,
     retention_horizon_for,
     third_party_notice_report,
-)
-from clue_research.config import (
-    FreshnessTtls,
-    Jurisdiction,
-    LawfulBasisDefaults,
-    RetentionTtls,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 

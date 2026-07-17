@@ -39,8 +39,8 @@ schema). M9.5 follows that pattern (same resolution as M9.4's immutable ``identi
 The engine is **policy-as-data** (conventions §2): the per-field-class ``ttl`` (staleness threshold)
 and ``refresh_cadence`` (re-research spacing) are versioned :class:`CadencePolicy` rows in
 ``cadence_policy`` (per-client overridable; read via :func:`load_cadence_policy`), defaulting from
-the shared :class:`~clue_research.config.schema.FreshnessTtls`. The personal-claim **retention
-horizon** is *referenced* from :class:`~clue_research.config.policy.RetentionTtls` (the M10.5-owned
+the shared :class:`~clue_config.schema.FreshnessTtls`. The personal-claim **retention
+horizon** is *referenced* from :class:`~clue_config.policy.RetentionTtls` (the M10.5-owned
 placeholder), not redefined here. Re-research *execution* lives entirely behind the
 ``re_research_candidate`` row seam — M7 schedules and runs; M9.5 only emits — so the executor swap
 (Postgres state machine -> Temporal) never touches the freshness engine.
@@ -58,6 +58,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config.policy import RetentionTtls
+from clue_config.schema import FreshnessTtls
 from clue_core import (
     AgeOutCandidate,
     Claim,
@@ -73,8 +75,6 @@ from clue_core import (
 from clue_core.field import FieldKey
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import ALL_TENANTS, TenantScope
-from clue_research.config.policy import RetentionTtls
-from clue_research.config.schema import FreshnessTtls
 from clue_research.obs import (
     SPAN_VERIFICATION_FRESHNESS,
     MetricSink,
@@ -173,7 +173,7 @@ def retention_horizon_for(
     Only *personal* claims (``contact.*`` / ``contact.facet.*``) carry a retention horizon (Doc D
     §4 — minimize retained personal data; a public firmographic fact has none). The horizon is
     keyed on the claim's **stamped ``use_class``** (read from the M10.5-owned
-    :class:`~clue_research.config.policy.RetentionTtls` placeholder, ``sensitive`` shortest):
+    :class:`~clue_config.policy.RetentionTtls` placeholder, ``sensitive`` shortest):
     ``SENSITIVE`` -> ``sensitive_claim_ttl``; ``PROFESSIONAL_PUBLIC`` -> ``professional_claim_ttl``;
     ``PERSONAL_PUBLIC_NON_SENSITIVE`` -> ``personal_claim_ttl``.
 

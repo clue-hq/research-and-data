@@ -7,20 +7,20 @@ versioned ICP specs, staged-flow §2). This module defines:
 * :class:`ConfigOverlay` — a *sparse* layer: every field optional, so an override sets only what
   it changes and inherits the rest. The per-client and per-ICP layers are overlays.
 * :class:`Config` — the *dense*, fully-resolved, validated object the engine receives. Every
-  field is present (defaulted). This is what :func:`clue_research.config.get_config` returns.
+  field is present (defaulted). This is what :func:`clue_config.get_config` returns.
 
 Both carry a :class:`ConfigVersion` so "which config produced this run" is queryable. The policy
-sub-tree (:class:`~clue_research.config.policy.JurisdictionPolicy`) is folded into ``Config`` and
-also surfaced directly by :func:`clue_research.config.get_policy`.
+sub-tree (:class:`~clue_config.policy.JurisdictionPolicy`) is folded into ``Config`` and
+also surfaced directly by :func:`clue_config.get_policy`.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_research.config.gateway import GatewayConfig, default_gateway_config
-from clue_research.config.policy import JurisdictionPolicy
-from clue_research.config.schema import (
+from clue_config.gateway import GatewayConfig, default_gateway_config
+from clue_config.policy import JurisdictionPolicy
+from clue_config.schema import (
     BudgetCaps,
     ConfidenceThresholds,
     FreshnessTtls,
@@ -81,7 +81,7 @@ class ConfigOverlay(BaseModel):
 class Config(BaseModel):
     """The fully-resolved, validated config the engine is injected with (M0.4 seam).
 
-    Returned by :func:`clue_research.config.get_config`. Every "policy is data" surface is present
+    Returned by :func:`clue_config.get_config`. Every "policy is data" surface is present
     and defaulted; ``applied_versions`` records the version of each layer that contributed, in
     precedence order, so the config is auditable and reproducible.
     """

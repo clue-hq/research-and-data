@@ -32,6 +32,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import RecursionPolicy
 from clue_core import (
     ClaimId,
     EntityId,
@@ -43,7 +44,6 @@ from clue_core import (
 from clue_core.execution import AspectWorker
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import load_core_pack
-from clue_research.config import RecursionPolicy
 from clue_research.durable import (
     AccountResearchGraph,
     WorkerRegistry,

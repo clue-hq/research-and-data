@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config.gateway import GatewayConfig
 from clue_core import (
     EntityId,
     ExtractionMethod,
@@ -29,7 +30,6 @@ from clue_core import (
 )
 from clue_core.enums import EntityType
 from clue_research.claimstore import ALL_TENANTS, insert_claim
-from clue_research.config.gateway import GatewayConfig
 from clue_research.evals import (
     EvalHarness,
     EvalReport,

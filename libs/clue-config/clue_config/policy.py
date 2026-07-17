@@ -457,7 +457,7 @@ class RetentionTtls(BaseModel):
 class JurisdictionPolicy(BaseModel):
     """Per-client jurisdiction/use-class/posture policy — the skeleton (data + defaults, no gate).
 
-    Exposed via :func:`clue_research.config.get_policy`. Consumed (later) by M10 (the use-gate),
+    Exposed via :func:`clue_config.get_policy`. Consumed (later) by M10 (the use-gate),
     M4 (posture-driven source-scope). Switching a client from Option 1 to Option 3 is a config
     write — it flips ``posture`` (and, derived, ``source_scope``) — never a code path (Doc D §6).
     """

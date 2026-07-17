@@ -15,6 +15,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_config import (
+    DEFAULT_REGIME_MAPPING,
+    STRICT_DEFAULT_REGIME,
+    Jurisdiction,
+    JurisdictionPolicy,
+    RegimeMapping,
+)
 from clue_core import (
     AccountStatus,
     Claim,
@@ -41,13 +48,6 @@ from clue_research.compliance.jurisdiction import (
     METRIC_JURISDICTION_RESOLVED,
     METRIC_JURISDICTION_UNKNOWN,
     _confidence,
-)
-from clue_research.config import (
-    DEFAULT_REGIME_MAPPING,
-    STRICT_DEFAULT_REGIME,
-    Jurisdiction,
-    JurisdictionPolicy,
-    RegimeMapping,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 from clue_research.obs import SPAN_COMPLIANCE_JURISDICTION, InMemorySink, collect_spans

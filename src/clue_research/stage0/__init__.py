@@ -32,7 +32,7 @@ the confirmed spec's ``discovery_strategy.seed_account_ids`` (so a SeedSet slots
 
 from __future__ import annotations
 
-from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL
+from clue_config.settings import DEFAULT_SYNTHESIS_MODEL
 from clue_research.stage0.client_kb import (
     current_kb_version,
     read_client_kb,
