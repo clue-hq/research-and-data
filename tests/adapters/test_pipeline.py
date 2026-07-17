@@ -34,6 +34,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import collect_spans
 from clue_research.adapters import (
     AdapterNotRegisteredError,
     CallableClaimExtractor,
@@ -53,7 +54,6 @@ from clue_research.adapters import (
 )
 from clue_research.adapters.seams import AdaptError
 from clue_research.claimstore import ALL_TENANTS, claims_for
-from clue_research.obs import collect_spans
 from clue_research.sources import RegistrySourceManifest, get_source, register_source
 
 from .conftest import rollback_conn, run_async

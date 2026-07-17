@@ -59,24 +59,7 @@ from clue_core import (
     revalidate_with,
     to_value_json,
 )
-from clue_research.adapters.cache import (
-    ArtifactCache,
-    CachedArtifact,
-    content_key,
-    freshness_ttl,
-    is_fresh,
-    utc_now,
-)
-from clue_research.adapters.concrete import PassthroughAdapter
-from clue_research.adapters.registry import (
-    AdapterNotRegisteredError,
-    get_adapter,
-    is_adapter_registered,
-)
-from clue_research.adapters.seams import AdaptError, ClaimExtractor
-from clue_research.claimstore import insert_claim
-from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_CACHE_HIT,
     ATTR_COST_CENTS,
     ATTR_COST_ESTIMATE_CENTS,
@@ -94,6 +77,23 @@ from clue_research.obs import (
     apply_attributes,
     traced_step,
 )
+from clue_research.adapters.cache import (
+    ArtifactCache,
+    CachedArtifact,
+    content_key,
+    freshness_ttl,
+    is_fresh,
+    utc_now,
+)
+from clue_research.adapters.concrete import PassthroughAdapter
+from clue_research.adapters.registry import (
+    AdapterNotRegisteredError,
+    get_adapter,
+    is_adapter_registered,
+)
+from clue_research.adapters.seams import AdaptError, ClaimExtractor
+from clue_research.claimstore import insert_claim
+from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources import RegistrySourceManifest, get_source
 
 

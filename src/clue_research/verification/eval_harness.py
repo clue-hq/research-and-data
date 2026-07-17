@@ -57,6 +57,12 @@ from clue_core import (
 from clue_core import JudgeVerdict as CoreJudgeVerdict
 from clue_core.field import classify_field_key
 from clue_core.gateway import LLMGateway
+from clue_obs.otel import (
+    MetricSink,
+    apply_attributes,
+    get_metric_sink,
+    traced_step,
+)
 from clue_research.claimstore import ALL_TENANTS, TenantScope
 from clue_research.evals import (
     EvalHarness,
@@ -69,12 +75,6 @@ from clue_research.evals import (
     RubricScore,
     Scorer,
     default_scorers,
-)
-from clue_research.obs import (
-    MetricSink,
-    apply_attributes,
-    get_metric_sink,
-    traced_step,
 )
 from clue_research.verification.corroboration import independent_source_count
 from clue_research.verification.faithfulness import (

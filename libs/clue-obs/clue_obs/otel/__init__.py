@@ -1,4 +1,4 @@
-"""`clue_research.obs` — Observability & tracing skeleton (M0.5).
+"""`clue_obs.otel` — Observability & tracing skeleton (M0.5).
 
 The shared tracing/metrics/logging seam every pipeline component emits through. Spans are
 OpenTelemetry-shaped behind the ``traced_step`` wrapper (the backend/exporter is swappable);
@@ -14,7 +14,7 @@ ENG-125 (docs/specs/M00-foundations-and-shared-contracts.md §M0.5).
 
 from __future__ import annotations
 
-from clue_research.obs.attributes import (
+from clue_obs.otel.attributes import (
     ATTR_CACHE_HIT,
     ATTR_CAMPAIGN_RUN_ID,
     ATTR_CLIENT_ID,
@@ -42,8 +42,8 @@ from clue_research.obs.attributes import (
     safe_attributes,
     to_otel_value,
 )
-from clue_research.obs.logging import RedactingFilter, configure_logging, get_logger
-from clue_research.obs.metrics import (
+from clue_obs.otel.logging import RedactingFilter, configure_logging, get_logger
+from clue_obs.otel.metrics import (
     METRIC_CLAIMS_SURVIVING,
     METRIC_CLAIMS_TOTAL,
     METRIC_CONTACT_CLAIMS_TOTAL,
@@ -64,7 +64,7 @@ from clue_research.obs.metrics import (
     record_verification_health,
     set_metric_sink,
 )
-from clue_research.obs.spans import (
+from clue_obs.otel.spans import (
     CAMPAIGN_PHASES,
     SPAN_ADAPTER_ADAPT,
     SPAN_ADAPTER_EXTRACT,
@@ -88,8 +88,8 @@ from clue_research.obs.spans import (
     phase_span,
     resolve_span,
 )
-from clue_research.obs.testing import collect_spans
-from clue_research.obs.tracing import apply_attributes, configure_tracing, traced, traced_step
+from clue_obs.otel.testing import collect_spans
+from clue_obs.otel.tracing import apply_attributes, configure_tracing, traced, traced_step
 
 __all__ = [
     # tracing

@@ -57,6 +57,7 @@ from clue_core import (
     contact_claim,
     discovery_claim,
 )
+from clue_obs.otel import ATTR_CLIENT_ID, traced_step
 from clue_research.claimstore import (
     TenantScope,
     current_value,
@@ -89,7 +90,6 @@ from clue_research.identity import (
     stamp_reuse,
     surviving_id,
 )
-from clue_research.obs import ATTR_CLIENT_ID, traced_step
 from clue_research.stage0.icp_types import ICPSpecRef
 from clue_research.stage0.import_fields import (
     CONTACT_IMPORT_RECORD,

@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from clue_core import Claim, EntityType, IdentityBinding, VerificationStatus
-from clue_research.obs.spans import CAMPAIGN_PHASES
+from clue_obs.otel.spans import CAMPAIGN_PHASES
 
 # --- metric names -----------------------------------------------------------
 METRIC_CLAIMS_TOTAL = "research.claims.total"  # by source

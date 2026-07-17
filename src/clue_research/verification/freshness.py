@@ -74,14 +74,14 @@ from clue_core import (
 )
 from clue_core.field import FieldKey
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import ALL_TENANTS, TenantScope
-from clue_research.obs import (
+from clue_obs.otel import (
     SPAN_VERIFICATION_FRESHNESS,
     MetricSink,
     apply_attributes,
     get_metric_sink,
     traced_step,
 )
+from clue_research.claimstore import ALL_TENANTS, TenantScope
 
 # Verification-health metrics (Doc C §6 — freshness is a verification-health number). M9-local
 # metric name strings (the shared sink accepts any string), defined here so M9.5 stays self-

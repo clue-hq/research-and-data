@@ -40,13 +40,13 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import insert_claim, register_field
-from clue_research.identity import insert_account_entity
-from clue_research.obs import (
+from clue_obs.otel import (
     SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
     InMemorySink,
     collect_spans,
 )
+from clue_research.claimstore import insert_claim, register_field
+from clue_research.identity import insert_account_entity
 from clue_research.verification import (
     DEFAULT_JUDGE_POLICY,
     PROMPT_VERSION,

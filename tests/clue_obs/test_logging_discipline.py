@@ -2,8 +2,6 @@
 ``clue_obs`` (the structlog bridge) — everything acquires loggers via ``clue_obs.get_logger``.
 
 ``print`` is enforced separately by ruff T20 (with sanctioned per-file ignores).
-The legacy ``clue_research/obs`` OTel package is temporarily allowed; it folds into
-``clue_obs`` at Doc R phase R1 (Phase A step A2), when its entry below must be removed.
 """
 
 from __future__ import annotations
@@ -13,10 +11,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-_ALLOWED = (
-    REPO / "libs" / "clue-obs" / "clue_obs",
-    REPO / "src" / "clue_research" / "obs",  # legacy OTel skeleton — folds into clue_obs at A2
-)
+_ALLOWED = (REPO / "libs" / "clue-obs" / "clue_obs",)
 
 _PATTERN = re.compile(r"\blogging\.getLogger\s*\(")
 

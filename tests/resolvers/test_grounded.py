@@ -26,7 +26,7 @@ from clue_core import (
     VerificationStatus,
     new_entity_id,
 )
-from clue_research.obs.testing import collect_spans
+from clue_obs.otel.testing import collect_spans
 from clue_research.resolvers import (
     GroundedSynthesisResolver,
     ResolverError,

@@ -27,7 +27,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.obs import (
+from clue_obs.otel import (
     METRIC_USE_CLASS_TOTAL,
     InMemorySink,
     record_use_class_distribution,

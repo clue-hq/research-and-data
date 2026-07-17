@@ -8,8 +8,8 @@ lock that ordering and the ``next_phase`` walk to the single source of truth (``
 from __future__ import annotations
 
 from clue_core import CampaignPhase
+from clue_obs.otel import CAMPAIGN_PHASES
 from clue_research.durable import PHASE_SEQUENCE, next_phase
-from clue_research.obs import CAMPAIGN_PHASES
 
 # conventions §3 / Doc C §4 — the exact phase list, written out so a reorder of the enum is caught
 # against an independent literal (not just re-derived from the same enum).

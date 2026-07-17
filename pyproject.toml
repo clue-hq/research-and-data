@@ -243,7 +243,7 @@ type = "forbidden"
 source_modules = [
     "clue_core",
     "clue_config",
-    "clue_research.obs",
+    "clue_obs.otel",
     "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",
@@ -295,7 +295,7 @@ type = "forbidden"
 source_modules = [
     "clue_core",
     "clue_config",
-    "clue_research.obs",
+    "clue_obs.otel",
     "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",
@@ -379,7 +379,7 @@ type = "forbidden"
 source_modules = [
     "clue_core",
     "clue_config",
-    "clue_research.obs",
+    "clue_obs.otel",
     "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",

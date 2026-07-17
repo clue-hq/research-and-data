@@ -284,11 +284,19 @@ name = "clue-obs"
 version = "0.0.0"
 source = { editable = "libs/clue-obs" }
 dependencies = [
+    { name = "clue-config" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
     { name = "structlog" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "structlog", specifier = ">=24" }]
+requires-dist = [
+    { name = "clue-config", editable = "libs/clue-config" },
+    { name = "opentelemetry-api", specifier = ">=1.20" },
+    { name = "opentelemetry-sdk", specifier = ">=1.20" },
+    { name = "structlog", specifier = ">=24" },
+]
 
 [[package]]
 name = "clue-research"

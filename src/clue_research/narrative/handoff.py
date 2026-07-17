@@ -63,6 +63,14 @@ from clue_core import (
     ValueNarrativeItem,
     VerificationStatus,
 )
+from clue_obs.otel import (
+    ATTR_CLIENT_ID,
+    ATTR_ENTITY_ID,
+    MetricSink,
+    apply_attributes,
+    get_metric_sink,
+    traced_step,
+)
 from clue_research.claimstore import (
     TenantScope,
     claims_by_ids,
@@ -77,14 +85,6 @@ from clue_research.narrative.support import (
     FaithfulnessCitation,
     read_claim_support,
     read_faithfulness_citation,
-)
-from clue_research.obs import (
-    ATTR_CLIENT_ID,
-    ATTR_ENTITY_ID,
-    MetricSink,
-    apply_attributes,
-    get_metric_sink,
-    traced_step,
 )
 
 # The reserved Pass-A score fields (M6.3 ``discovery_scoring.scoring.engine`` writes them; that is a

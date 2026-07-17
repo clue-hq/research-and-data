@@ -58,6 +58,14 @@ from clue_core import (
     RunId,
 )
 from clue_db import transaction
+from clue_obs.otel import (
+    ATTR_CAMPAIGN_RUN_ID,
+    METRIC_COST_CAP_CENTS,
+    METRIC_COST_CENTS,
+    apply_attributes,
+    get_metric_sink,
+    traced_step,
+)
 from clue_research.durable.budget_event import (
     AccountBudgetState,
     RunBudgetState,
@@ -78,14 +86,6 @@ from clue_research.durable.spans import (
     ATTR_PROJECTED_CENTS,
     SPAN_BUDGET_CHECK,
     SPAN_BUDGET_ESTIMATE,
-)
-from clue_research.obs import (
-    ATTR_CAMPAIGN_RUN_ID,
-    METRIC_COST_CAP_CENTS,
-    METRIC_COST_CENTS,
-    apply_attributes,
-    get_metric_sink,
-    traced_step,
 )
 
 # --- errors ----------------------------------------------------------------------------------
@@ -549,7 +549,7 @@ class BudgetEngine:
         so an over-budget run reads 0 remaining, not a negative); both ``cap_cents`` and
         ``estimated_cents`` read 0 when never set. Emits the Doc C §6 cost gauges for the M13.4
         surface. Per-pass / per-source breakdowns are left to M13 (derived from claim provenance via
-        :func:`clue_research.obs.record_source_yield`), so they default empty here."""
+        :func:`clue_obs.otel.record_source_yield`), so they default empty here."""
         run = await self._store.run_state(campaign_run_id)
         if run is None:
             raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")

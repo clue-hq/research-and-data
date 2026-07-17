@@ -78,15 +78,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    claims_for,
-    supersede_claim,
-    supersede_claims,
-)
-from clue_research.compliance.lawful_basis import LawfulBasisRecord, load_lawful_basis
-from clue_research.identity import dsar_private_claims, stamp_reuse
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_ENTITY_ID,
     SPAN_COMPLIANCE_DSAR,
     SPAN_COMPLIANCE_RETENTION_SWEEP,
@@ -96,6 +88,14 @@ from clue_research.obs import (
     get_metric_sink,
     traced_step,
 )
+from clue_research.claimstore import (
+    ALL_TENANTS,
+    claims_for,
+    supersede_claim,
+    supersede_claims,
+)
+from clue_research.compliance.lawful_basis import LawfulBasisRecord, load_lawful_basis
+from clue_research.identity import dsar_private_claims, stamp_reuse
 
 _log = get_logger(__name__)
 

@@ -48,6 +48,12 @@ from clue_core import (
 )
 from clue_core.idempotency import phase_key
 from clue_db import transaction
+from clue_obs.otel import (
+    ATTR_CAMPAIGN_RUN_ID,
+    apply_attributes,
+    phase_span,
+    traced_step,
+)
 from clue_research.durable.campaign_run import (
     CampaignPhaseCheckpointRow,
     CampaignRunRow,
@@ -70,12 +76,6 @@ from clue_research.durable.idempotency import (
 )
 from clue_research.durable.phases import PhaseHandlerRegistry, default_phase_handler_registry
 from clue_research.durable.spans import ATTR_PHASE, ATTR_PHASE_STATUS
-from clue_research.obs import (
-    ATTR_CAMPAIGN_RUN_ID,
-    apply_attributes,
-    phase_span,
-    traced_step,
-)
 
 # The canonical phase sequence (Doc C §4 / conventions §3) — derived from the single source of truth
 # ``core.CampaignPhase`` (enum definition order), so the state-machine order, the obs span tokens,

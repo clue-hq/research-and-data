@@ -19,6 +19,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import METRIC_COST_CENTS, InMemorySink, set_metric_sink
 from clue_research.durable.budget import (
     BudgetEngine,
     BudgetStateNotFound,
@@ -27,7 +28,6 @@ from clue_research.durable.budget import (
 )
 from clue_research.durable.enums import BudgetEventKind
 from clue_research.durable.idempotency import idempotent
-from clue_research.obs import METRIC_COST_CENTS, InMemorySink, set_metric_sink
 from tests.db.conftest import run_async
 from tests.durable.conftest import FakeBudgetStore, FakeIdempotencyStore
 
@@ -505,7 +505,7 @@ def test_burn_down_emits_cost_gauge() -> None:
             store.set_run(cr, spent=Decimal("250"), cap=Decimal("1000"))
             engine = _engine(store)
             await engine.burn_down(cr)
-            from clue_research.obs import ATTR_CAMPAIGN_RUN_ID, METRIC_COST_CAP_CENTS
+            from clue_obs.otel import ATTR_CAMPAIGN_RUN_ID, METRIC_COST_CAP_CENTS
 
             assert sink.gauge_value(METRIC_COST_CENTS, **{ATTR_CAMPAIGN_RUN_ID: str(cr)}) == 250.0
             # the cap gauge is emitted when a cap is set (the burn-down's cap line for M13.4)

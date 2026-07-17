@@ -62,6 +62,12 @@ from clue_core import (
     parse_cost_cents,
 )
 from clue_db import database_url, transaction
+from clue_obs.otel import (
+    ATTR_CAMPAIGN_RUN_ID,
+    ATTR_ENTITY_ID,
+    apply_attributes,
+    traced_step,
+)
 from clue_research.durable.account_run import (
     ReferencesIndex,
     ensure_account_run,
@@ -90,12 +96,6 @@ from clue_research.durable.spans import (
     graph_node_span,
 )
 from clue_research.durable.workers import WorkerRegistry, default_worker_registry
-from clue_research.obs import (
-    ATTR_CAMPAIGN_RUN_ID,
-    ATTR_ENTITY_ID,
-    apply_attributes,
-    traced_step,
-)
 
 # --- the account-run persistence seam ---------------------------------------
 

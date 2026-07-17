@@ -46,7 +46,7 @@ from clue_core import (
     UseClass,
     UtcDatetime,
 )
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_FIELD_KEY,
     SPAN_COMPLIANCE_LAWFUL_BASIS,
     MetricSink,

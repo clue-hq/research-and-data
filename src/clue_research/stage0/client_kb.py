@@ -43,6 +43,14 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
+from clue_obs.otel import (
+    ATTR_CLIENT_ID,
+    ATTR_COST_CENTS,
+    ATTR_ENTITY_ID,
+    ATTR_N_CLAIMS,
+    apply_attributes,
+    traced_step,
+)
 from clue_research.claimstore import (
     TenantScope,
     ValueSchemaError,
@@ -61,14 +69,6 @@ from clue_research.identity import (
     set_status,
     stamp_reuse,
     surviving_id,
-)
-from clue_research.obs import (
-    ATTR_CLIENT_ID,
-    ATTR_COST_CENTS,
-    ATTR_ENTITY_ID,
-    ATTR_N_CLAIMS,
-    apply_attributes,
-    traced_step,
 )
 from clue_research.sources import StopReason, resolve_field
 from clue_research.stage0.fields import (

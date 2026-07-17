@@ -30,12 +30,12 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import InMemorySink
 from clue_research.claimstore.registry import register_field
 from clue_research.identity import (
     insert_account_entity,
     mark_merged,
 )
-from clue_research.obs import InMemorySink
 from clue_research.verification import (
     DEFAULT_PRE_SPEND_POLICY,
     GateSpec,

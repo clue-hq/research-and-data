@@ -71,8 +71,7 @@ from clue_core import (
 )
 from clue_core.gateway import LLMGateway, Message, Role
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import record_verification
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_CACHE_HIT,
     ATTR_COST_CENTS,
     ATTR_ENTITY_ID,
@@ -87,6 +86,7 @@ from clue_research.obs import (
     get_metric_sink,
     traced_step,
 )
+from clue_research.claimstore import record_verification
 
 _log = get_logger(__name__)
 

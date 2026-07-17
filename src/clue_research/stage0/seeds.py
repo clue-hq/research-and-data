@@ -47,6 +47,7 @@ from clue_core import (
     RunId,
     discovery_claim,
 )
+from clue_obs.otel import ATTR_CLIENT_ID, traced_step
 from clue_research.claimstore import TenantScope, claims_for, insert_claim
 from clue_research.icp import ScoringRubric, fit_floor, get_rubric_version, score_entity
 from clue_research.identity import (
@@ -58,7 +59,6 @@ from clue_research.identity import (
     stamp_reuse,
     surviving_id,
 )
-from clue_research.obs import ATTR_CLIENT_ID, traced_step
 from clue_research.stage0.client_kb import read_client_kb_claims
 from clue_research.stage0.fields import CLIENT_CUSTOMER
 from clue_research.stage0.icp_types import ICPSpecRef, SeedAccount

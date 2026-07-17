@@ -72,9 +72,7 @@ from clue_core import (
     decode_jsonb,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import TenantScope, current_value
-from clue_research.compliance.fields import CONTACT_JURISDICTION
-from clue_research.obs import (
+from clue_obs.otel import (
     ATTR_CACHE_HIT,
     ATTR_ENTITY_ID,
     ATTR_FIELD_KEY,
@@ -86,6 +84,8 @@ from clue_research.obs import (
     get_metric_sink,
     traced_step,
 )
+from clue_research.claimstore import TenantScope, current_value
+from clue_research.compliance.fields import CONTACT_JURISDICTION
 
 _log = get_logger(__name__)
 

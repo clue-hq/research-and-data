@@ -40,11 +40,11 @@ from clue_core import (
     PhaseResult,
 )
 from clue_db import ConnFactory, transaction
+from clue_obs.otel import MetricSink
 from clue_research.api.verification.handler import ContactResolver, VerificationAccountResolver
 from clue_research.compliance import RetentionSweep
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
-from clue_research.obs import MetricSink
 from clue_research.verification import FreshnessImpl
 
 # Reuse the VERIFICATION resolver seams (DRY): the same "run's high-tier accounts" and "an account's

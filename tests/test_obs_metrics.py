@@ -13,7 +13,7 @@ from clue_core import (
     IdentityBinding,
     VerificationStatus,
 )
-from clue_research.obs import (
+from clue_obs.otel import (
     METRIC_CLAIMS_SURVIVING,
     METRIC_CLAIMS_TOTAL,
     METRIC_CONTACT_CLAIMS_TOTAL,

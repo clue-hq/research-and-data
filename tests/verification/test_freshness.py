@@ -41,6 +41,7 @@ from clue_core import (
 )
 from clue_core.field import FieldDef
 from clue_core.verification import Freshness
+from clue_obs.otel import SPAN_VERIFICATION_FRESHNESS, InMemorySink, collect_spans
 from clue_research.claimstore import (
     ALL_TENANTS,
     DEFAULT_MERGE_POLICY,
@@ -49,7 +50,6 @@ from clue_research.claimstore import (
     merge_claims,
     register_field,
 )
-from clue_research.obs import SPAN_VERIFICATION_FRESHNESS, InMemorySink, collect_spans
 from clue_research.verification import (
     DEFAULT_CADENCE_POLICY,
     METRIC_FRESHNESS_DUE,
