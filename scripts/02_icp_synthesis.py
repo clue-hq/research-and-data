@@ -16,7 +16,7 @@ import asyncio
 from uuid import UUID
 
 from clue_research.api.composition import load_research_packs
-from clue_research.config import GatewayConfig
+from clue_research.config import GatewayConfig, load_settings
 from clue_research.db import db_lifespan, transaction
 from clue_research.gateway import build_gateway
 from clue_research.stage0 import ClientKnowledgeBaseRef, confirm_icp, synthesize_icps
@@ -31,7 +31,13 @@ async def main(client_id: str, client_entity_id: str, kb_version: int) -> None:
 
     async with db_lifespan(), transaction() as conn:
         await load_research_packs(conn)
-        proposals = await synthesize_icps(conn, ref, client_id=client_id, gateway=gateway)
+        proposals = await synthesize_icps(
+            conn,
+            ref,
+            client_id=client_id,
+            gateway=gateway,
+            synthesis_model=load_settings().synthesis_model,
+        )
         if not proposals:
             print("no ICP proposals produced")
             return

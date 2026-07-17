@@ -32,6 +32,7 @@ the confirmed spec's ``discovery_strategy.seed_account_ids`` (so a SeedSet slots
 
 from __future__ import annotations
 
+from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL
 from clue_research.stage0.client_kb import (
     current_kb_version,
     read_client_kb,
@@ -56,7 +57,7 @@ from clue_research.stage0.icp_fields import (
     load_icp_feedback_pack,
 )
 from clue_research.stage0.icp_handler import IcpConfirmedHandler
-from clue_research.stage0.icp_synthesis import DEFAULT_SYNTHESIS_MODEL, synthesize_icps
+from clue_research.stage0.icp_synthesis import synthesize_icps
 from clue_research.stage0.icp_types import (
     CandidateSignal,
     FirmographicDimensions,

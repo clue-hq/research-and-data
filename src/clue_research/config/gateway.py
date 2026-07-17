@@ -18,6 +18,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL, load_settings
 from clue_research.core.gateway import TokenUsage
 from clue_research.core.primitives import CostCents
 
@@ -55,7 +56,7 @@ class GatewayConfig(BaseModel):
     # defaults are illustrative real OpenRouter ids; deployments set their own.
     judge_model: str = "anthropic/claude-3.5-sonnet"
     planner_model: str = "openai/gpt-4o-mini"
-    synthesis_model: str = "anthropic/claude-3.5-sonnet"
+    synthesis_model: str = DEFAULT_SYNTHESIS_MODEL
     embedding_model: str = "openai/text-embedding-3-small"
     # Optional fallback model id tried when the primary errors (config; ``None`` = no fallback).
     fallback_model: str | None = None
@@ -80,4 +81,10 @@ class GatewayConfig(BaseModel):
         return price.cost_cents(usage) if price is not None else Decimal(0)
 
 
-DEFAULT_GATEWAY_CONFIG = GatewayConfig()
+def default_gateway_config() -> GatewayConfig:
+    """Return gateway defaults with deploy-time env overrides (``CLUE_SYNTHESIS_MODEL``, …)."""
+    settings = load_settings()
+    return GatewayConfig(synthesis_model=settings.synthesis_model)
+
+
+DEFAULT_GATEWAY_CONFIG = default_gateway_config()

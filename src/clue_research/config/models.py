@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_research.config.gateway import GatewayConfig
+from clue_research.config.gateway import GatewayConfig, default_gateway_config
 from clue_research.config.policy import JurisdictionPolicy
 from clue_research.config.schema import (
     BudgetCaps,
@@ -101,7 +101,7 @@ class Config(BaseModel):
     budget_caps: BudgetCaps = BudgetCaps()
     recursion_policy: RecursionPolicy = RecursionPolicy()
     freshness_ttls: FreshnessTtls = FreshnessTtls()
-    gateway: GatewayConfig = GatewayConfig()
+    gateway: GatewayConfig = Field(default_factory=default_gateway_config)
     verification_health_thresholds: VerificationHealthThresholds = VerificationHealthThresholds()
     # M13.4/D7 — whether the cost & progress ObservabilitySurface read projections are exposed to
     # the
