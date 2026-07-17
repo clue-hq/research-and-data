@@ -15,6 +15,7 @@ import argparse
 import asyncio
 from uuid import UUID
 
+import clue_obs
 from clue_research.api.composition import load_research_packs
 from clue_research.config import GatewayConfig, load_settings
 from clue_research.db import db_lifespan, transaction
@@ -66,6 +67,7 @@ async def main(client_id: str, client_entity_id: str, kb_version: int) -> None:
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="ICP synthesis + confirm")
     p.add_argument("--client-id", default="acme")
     p.add_argument("--client-entity-id", required=True, help="UUID printed by script 01")

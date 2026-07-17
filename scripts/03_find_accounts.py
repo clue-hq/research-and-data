@@ -21,6 +21,7 @@ from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 
+import clue_obs
 from clue_research.db import db_lifespan, transaction
 from clue_research.identity import insert_account_entity
 
@@ -62,6 +63,7 @@ def _parse_company(raw: str) -> tuple[str, str | None]:
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="Resolve a capped list of accounts into the store")
     p.add_argument("--client-id", default="acme")
     p.add_argument("--max-accounts", type=int, default=5)

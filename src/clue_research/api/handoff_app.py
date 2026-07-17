@@ -32,6 +32,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+import clue_obs
 from clue_research.core import CampaignRunId, ClaimId, EntityId, Persona
 from clue_research.db import connection, db_lifespan
 from clue_research.narrative import (
@@ -168,8 +169,10 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
 
 @asynccontextmanager
 async def handoff_lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Production lifespan: open the DB engine for the app's lifetime (substrate §12). A standalone
+    """Production lifespan: configure logging once (Doc R §4 — one ``clue_obs.setup`` per
+    entrypoint), then open the DB engine for the app's lifetime (substrate §12). A standalone
     handoff server uses this; tests pass a no-op lifespan and override the connection dependency."""
+    clue_obs.setup()
     async with db_lifespan():
         yield
 

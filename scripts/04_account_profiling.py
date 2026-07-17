@@ -17,6 +17,7 @@ import argparse
 import asyncio
 from uuid import UUID, uuid4
 
+import clue_obs
 from clue_research.api.composition import load_research_packs
 from clue_research.config import GatewayConfig
 from clue_research.core import ICPCreatedFrom, ICPSpec
@@ -73,6 +74,7 @@ async def main(
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="M2 deep account profiling")
     p.add_argument("--client-id", default="acme")
     p.add_argument("--icp-key", default="default")

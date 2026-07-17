@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+import clue_obs
 from clue_research.api.composition import load_research_packs
 from clue_research.config import GatewayConfig
 from clue_research.core import AccountEntity, new_run_id
@@ -109,6 +110,7 @@ async def main(client_id: str, tier: str, account_id: str | None) -> None:
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="M3 committee discovery")
     p.add_argument("--client-id", default="acme")
     p.add_argument("--tier", default="high")
