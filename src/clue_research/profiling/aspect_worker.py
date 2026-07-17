@@ -13,7 +13,8 @@ The worker is mode **M2 Profiling**: *converge*, not discover (staged-flow §1/�
 gap field it walks a closed, target-locked fill sequence and stops — the opposite of M6's open-ended
 ``expand``. The whole loop terminates by construction: a finite field set, each filled by the M4
 waterfall's finite ``tier_plan`` walk; the three stop states are **schema-satisfied** (a confident
-hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged field), and **budget-cap**
+hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged field), and
+**budget-cap**
 (the M7.5 envelope halted the walk).
 
 The per-gap-field sequence (§C of the build contract):
@@ -104,8 +105,9 @@ DEEP_PROFILING_PLANNER_CONFIG: SourcePlannerConfig = DEFAULT_SOURCE_PLANNER_CONF
     update={"gate_expensive_entity_tiers": frozenset({"top", "high"})}
 )
 
-# A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the aspect's
-# output (still written to the append-only store, unpromotable). M8.2's resonance firewall is one.
+# A per-claim screen applied post-fill: ``True`` keeps the claim, ``False`` drops it from the
+# aspect's output (still written to the append-only store, unpromotable). M8.2's resonance
+# firewall is one.
 ClaimFilter = Callable[[Claim], bool]
 
 
@@ -447,7 +449,8 @@ class AspectProfilingWorker:
         rc: RunContext,
     ) -> tuple[tuple[ClaimId, ...], int, int]:
         """Drop a written claim from the aspect's output if it fails target-lock (a drift-prone
-        claim not bound to this entity) or the optional ``claim_filter`` (M8.2's sensitivity firewall).
+        claim not bound to this entity) or the optional ``claim_filter`` (M8.2's sensitivity
+        firewall).
         The claim still exists in the append-only store (unpromotable); it is simply not surfaced as
         this aspect's evidence. Returns ``(kept_refs, target_lock_rejected, filter_rejected)``."""
         if not result_refs:

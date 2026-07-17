@@ -11,8 +11,8 @@ without a DB):
 
 * :func:`build_target_lock` turns a resolved :class:`~clue_research.core.AccountEntity` into the
   shared :class:`~clue_research.core.TargetLock` context (canonical domain + identifiers + a
-  no-drift instruction) — the same shape M9.1's ``PreSpendGate.assemble_target_lock`` produces, so the
-  synthesis prompt and the post-fill validator read one lock.
+  no-drift instruction) — the same shape M9.1's ``PreSpendGate.assemble_target_lock`` produces,
+  so the synthesis prompt and the post-fill validator read one lock.
 * :func:`binds_to_entity` is the validator the M8.1 worker applies to drift-prone claims (tier ≥ 3):
   the claim's ``evidence_span`` / ``source_url`` must reference a *strong* identifier of **this**
   entity (its registrable domain, a registry id, or its canonical name co-occurring with a geo

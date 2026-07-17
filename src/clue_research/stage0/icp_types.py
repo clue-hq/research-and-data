@@ -120,8 +120,8 @@ class SourcePrior(BaseModel):
 
     Different ICPs/industries need different sources prioritized (e.g. arXiv **high** for
     frontier AI, BuiltWith **high** for data infra). At runtime the Source Planner reads weighted
-    priors to pick and order sources per field; this type surfaces that choice to the client *before*
-    confirm. Synthesis copies these from each enabled pack's catalog defaults
+    priors to pick and order sources per field; this type surfaces that choice to the client
+    *before* confirm. Synthesis copies these from each enabled pack's catalog defaults
     (:class:`~clue_research.icp.source_profile.WeightedSource`); it is proposal-layer only — the
     authoritative profile is served at runtime from ``enabled_packs`` (M4.6).
 
