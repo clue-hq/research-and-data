@@ -21,8 +21,7 @@ from decimal import Decimal
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     ClaimId,
     CostCents,
@@ -46,6 +45,7 @@ from clue_research.core import (
     WorkerStatus,
     contact_claim,
 )
+from clue_research.claimstore import TenantScope, claims_for, insert_claim
 from clue_research.db import ConnFactory
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, stamp_reuse, surviving_id

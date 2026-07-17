@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from clue_core import IdentityBinding, ResearchMode, UseClass
 from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import IdentityBinding, ResearchMode, UseClass
 from clue_research.profiling.contact.fill import fill_contact_field
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings

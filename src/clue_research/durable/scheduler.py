@@ -29,7 +29,7 @@ from typing import Any, TypeVar, overload
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import CampaignRunId, EntityId, EntityType
+from clue_core import CampaignRunId, EntityId, EntityType
 from clue_research.durable.graph import AccountResearchGraph, AccountRunResult
 from clue_research.locks import DEFAULT_TTL_MS, entity_lock
 

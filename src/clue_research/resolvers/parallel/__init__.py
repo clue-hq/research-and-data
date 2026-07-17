@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_research.core import AccountEntity, CostCents, FieldDef
+from clue_core import AccountEntity, CostCents, FieldDef
 from clue_research.resolvers.base import coerce_confidence
 from clue_research.resolvers.grounded import (
     HttpSynthesisBackend,

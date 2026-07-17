@@ -1,4 +1,4 @@
-"""`clue_research.core` — Core domain types & shared contracts (M0.2).
+"""`clue_core` — Core domain types & shared contracts (M0.2).
 
 **This package IS the seam** (conventions §2): the single, shared, DRY definition of the
 typed claim with provenance and every contract built around it. Resolvers, adapters,
@@ -12,10 +12,10 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 
 from __future__ import annotations
 
-from clue_research.core.claim import Claim, DiscoveryProvenance, can_be_promoted
-from clue_research.core.compliance import UseDecision, UseGate, is_outreach_promotable
-from clue_research.core.entity import AccountEntity, ContactEntity, Entity
-from clue_research.core.enums import (
+from clue_core.claim import Claim, DiscoveryProvenance, can_be_promoted
+from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
+from clue_core.entity import AccountEntity, ContactEntity, Entity
+from clue_core.enums import (
     AccountStatus,
     BudgetScope,
     BudgetVerdict,
@@ -50,7 +50,7 @@ from clue_research.core.enums import (
     VerificationStatus,
     WorkerStatus,
 )
-from clue_research.core.equality import (
+from clue_core.equality import (
     DEFAULT_NUMERIC_ABS_TOLERANCE,
     DEFAULT_NUMERIC_REL_TOLERANCE,
     DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
@@ -58,7 +58,7 @@ from clue_research.core.equality import (
     canonical_json,
     values_agree,
 )
-from clue_research.core.execution import (
+from clue_core.execution import (
     AspectContext,
     AspectWorker,
     BudgetDecision,
@@ -70,7 +70,7 @@ from clue_research.core.execution import (
     PhaseResult,
     WorkerResult,
 )
-from clue_research.core.factories import (
+from clue_core.factories import (
     TIER_ORDER,
     account_claim,
     by_tier_ascending,
@@ -87,7 +87,7 @@ from clue_research.core.factories import (
     serialize_value_json,
     to_value_json,
 )
-from clue_research.core.field import (
+from clue_core.field import (
     NS_ACCOUNT,
     NS_ACCOUNT_RESONANCE,
     NS_CONTACT,
@@ -106,7 +106,7 @@ from clue_research.core.field import (
     register_pack,
     resolve_reuse_scope,
 )
-from clue_research.core.gateway import (
+from clue_core.gateway import (
     Completion,
     EmbeddingResult,
     LLMGateway,
@@ -115,7 +115,7 @@ from clue_research.core.gateway import (
     TokenUsage,
     Vector,
 )
-from clue_research.core.handoff import (
+from clue_core.handoff import (
     AccountHandoff,
     CommitteeMember,
     CurrentValue,
@@ -128,17 +128,17 @@ from clue_research.core.handoff import (
     ValueNarrativeItem,
     WinningProvenance,
 )
-from clue_research.core.idempotency import (
+from clue_core.idempotency import (
     account_step_key,
     idempotency_key,
     phase_key,
 )
-from clue_research.core.learning import (
+from clue_core.learning import (
     BacktestGate,
     BacktestRegression,
     BacktestVerdict,
 )
-from clue_research.core.modality import (
+from clue_core.modality import (
     AdaptContext,
     ClaimDraft,
     GateDecision,
@@ -146,11 +146,11 @@ from clue_research.core.modality import (
     NormalizedText,
     RawArtifact,
 )
-from clue_research.core.observability import (
+from clue_core.observability import (
     CoverageReport,
     UnsearchedChannel,
 )
-from clue_research.core.primitives import (
+from clue_core.primitives import (
     CampaignRunId,
     ClaimId,
     Confidence,
@@ -166,9 +166,9 @@ from clue_research.core.primitives import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.resolver import Resolver, ResolverError, RetryableResolverError
-from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
-from clue_research.core.review import (
+from clue_core.resolver import Resolver, ResolverError, RetryableResolverError
+from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
+from clue_core.review import (
     ClaimAnnotation,
     FieldConflict,
     ReviewActionOutcome,
@@ -181,8 +181,8 @@ from clue_research.core.review import (
     ReviewSurface,
     VerificationAnnotationReader,
 )
-from clue_research.core.source import SourceManifest
-from clue_research.core.verification import (
+from clue_core.source import SourceManifest
+from clue_core.verification import (
     AgeOutCandidate,
     Binding,
     FaithfulnessJudge,

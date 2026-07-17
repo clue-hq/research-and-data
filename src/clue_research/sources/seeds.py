@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityScope, IdentityBinding, Modality, SourceManifest
+from clue_core import EntityScope, IdentityBinding, Modality, SourceManifest
 from clue_research.sources.manifest import RegistrySourceManifest
 from clue_research.sources.registry import register_source
 

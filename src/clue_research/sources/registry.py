@@ -32,8 +32,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import get_field, list_fields
-from clue_research.core import (
+from clue_core import (
     EntityScope,
     FieldClass,
     IdentityBinding,
@@ -46,6 +45,7 @@ from clue_research.core import (
     is_valid_field_key,
     serialize_value_json,
 )
+from clue_research.claimstore import get_field, list_fields
 from clue_research.sources.manifest import RegistrySourceManifest
 
 
@@ -62,7 +62,7 @@ class SourceYieldError(ValueError):
 
 
 class NoResolverBoundError(LookupError):
-    """No concrete :class:`~clue_research.core.Resolver` is bound to a ``source_key``.
+    """No concrete :class:`~clue_core.Resolver` is bound to a ``source_key``.
 
     The expected state for a registered-but-resolver-absent source (the tier-4 Exa/Parallel
     placeholders before M11). The waterfall (M4.1) maps this to ``stop_reason=no_resolver`` — a

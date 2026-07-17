@@ -21,8 +21,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import insert_claim, register_field
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     ClaimId,
@@ -41,6 +40,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import insert_claim, register_field
 from clue_research.identity import insert_account_entity
 from clue_research.obs import (
     SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
@@ -71,7 +71,7 @@ from .conftest import rollback_conn, run_async
 
 
 class FakeGateway:
-    """A deterministic :class:`~clue_research.core.gateway.LLMGateway` for the judge tests: returns
+    """A deterministic :class:`~clue_core.gateway.LLMGateway` for the judge tests: returns
     one canned response and records every ``complete`` call (model + messages) so the test can
     assert *which* model was called and *how many times* (caching / no-call / model-swap)."""
 

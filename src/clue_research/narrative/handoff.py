@@ -5,7 +5,7 @@ fit/intent **scores** (M6.3, on the reserved ``account.scoring.*`` fields), the 
 profile** incl. ``account.resonance.*`` (M8.1/M8.2), the identity-resolved, governed **committee**
 (M8.3/M8.4 × M10) and the per-``(account, persona)`` **value narrative** (M12.1). This module is the
 **deterministic assembler/serializer** gathering the current verified truth into the one canonical
-:class:`~clue_research.core.handoff.AccountHandoff` (conventions §4 / overview §3), with a
+:class:`~clue_core.handoff.AccountHandoff` (conventions §4 / overview §3), with a
 ``provenance_index`` that makes "every fact links to its source" literally true and traversable.
 
 Like ``current_value`` (substrate §1) it is a **pure function over the claim store** — no LLM, no
@@ -14,7 +14,7 @@ synthesis, no write to the domain — so the handoff is reproducible and auditab
 * **scores** via :func:`claims_for` on ``account.scoring.fit`` / ``.intent``, filtered to *this* ICP
   (an account scored under several ICPs has one live score per ICP — D5 — so the merge would mix
   them; the assembler keys on the score's ``value_json.icp_version``) → reconstructs the decomposed
-  :class:`~clue_research.core.handoff.Score`, each sub-component carrying its evidence claim ids;
+  :class:`~clue_core.handoff.Score`, each sub-component carrying its evidence claim ids;
 * the **account profile** as the verified ``current_values`` of every registered account-axis field
   (no hardcode — :func:`list_fields`), minus ``account.scoring.*`` (Output 1) and
   ``account.value_narrative`` (Output 4);
@@ -43,14 +43,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    claims_by_ids,
-    claims_for,
-    current_values,
-    list_fields,
-)
-from clue_research.core import (
+from clue_core import (
     AccountHandoff,
     CampaignRunId,
     ClaimId,
@@ -69,6 +62,13 @@ from clue_research.core import (
     UtcDatetime,
     ValueNarrativeItem,
     VerificationStatus,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    claims_by_ids,
+    claims_for,
+    current_values,
+    list_fields,
 )
 from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_research.narrative.handoff_seams import HandoffCommitteeMember, HandoffCommitteeReader

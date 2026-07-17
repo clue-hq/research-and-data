@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     ICPCreatedFrom,
     PhaseContext,

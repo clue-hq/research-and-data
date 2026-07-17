@@ -22,7 +22,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import EntityId
+from clue_core import EntityId
 from clue_research.discovery_scoring.discovery.hypothesis import CandidateRecord
 
 

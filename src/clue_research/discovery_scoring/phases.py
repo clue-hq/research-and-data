@@ -27,8 +27,7 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import JsonValue
 from redis.asyncio import Redis
 
-from clue_research.claimstore import ALL_TENANTS
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     LLMGateway,
     PhaseContext,
@@ -36,6 +35,7 @@ from clue_research.core import (
     PhaseStatus,
     RunId,
 )
+from clue_research.claimstore import ALL_TENANTS
 from clue_research.db import ConnFactory, transaction
 from clue_research.discovery_scoring.coverage import (
     DEFAULT_COVERAGE_CONFIG,

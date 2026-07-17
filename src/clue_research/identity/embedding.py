@@ -25,7 +25,7 @@ from typing import Protocol, runtime_checkable
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityId
+from clue_core import EntityId
 from clue_research.identity.normalize import normalize_name
 
 # The fixed embedding dimension. Locked to the ``vector(N)`` column in migration 0006 (parity test).

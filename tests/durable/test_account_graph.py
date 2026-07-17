@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from clue_research.core import new_campaign_run_id, new_entity_id, new_run_id
+from clue_core import new_campaign_run_id, new_entity_id, new_run_id
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,

@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import Claim, ClaimId, RunId
 from clue_research.claimstore import (
     TenantScope,
     claims_for,
     insert_claim,
     supersede_claim,
 )
-from clue_research.core import Claim, ClaimId, RunId
 
 
 def claim_icp_key(claim: Claim) -> str | None:

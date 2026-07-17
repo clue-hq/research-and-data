@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     ClaimId,
     EntityId,
@@ -29,7 +29,7 @@ from clue_research.core import (
     UtcDatetime,
     serialize_value_json,
 )
-from clue_research.core.review import ReviewSessionId
+from clue_core.review import ReviewSessionId
 
 _SESSION_COLS = (
     "id, account_entity_id, campaign_run_id, client_id, review_round, "

@@ -8,7 +8,7 @@ Shipped so far:
 
 * the **deep-profiling composition root** (:mod:`clue_research.api.composition`): loads the field
   packs + source manifests, constructs + registers the M8 account/committee/contact
-  :class:`~clue_research.core.execution.AspectWorker`\\s into the M7 ``WorkerRegistry``, and injects
+  :class:`~clue_core.execution.AspectWorker`\\s into the M7 ``WorkerRegistry``, and injects
   the M9 governance seams (``verification.classify_binding`` behind M8.4's ``BindingClassifier``;
   the
   ``PreSpendGate`` before account/committee/contact spend).

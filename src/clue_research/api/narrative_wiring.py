@@ -29,9 +29,9 @@ per the pre-flight overrides. The M12.2 handoff assembler + M12.3 publisher are 
 
 from __future__ import annotations
 
+from clue_core import EntityId
+from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_research.api.composition import RESEARCH_PACK_LOADERS
-from clue_research.core import EntityId
-from clue_research.core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_research.db import ConnFactory, transaction
 from clue_research.narrative import (
     HandoffAssembler,
@@ -66,7 +66,7 @@ class ClientKnowledgeRetrieverStub:
     chunk (``client_knowledge_id`` = the client claim's id, so the narrative cites a real KB entry),
     and applies an in-memory token-overlap relevance filter
     (:func:`clue_research.narrative.rank_by_query_overlap`). The pgvector retriever lands later
-    behind this same :class:`~clue_research.core.retrieval.ClientKnowledgeRetriever` signature — a
+    behind this same :class:`~clue_core.retrieval.ClientKnowledgeRetriever` signature — a
     config/impl swap, no positioner change. Manages its own short read txn (no conn in the seam)."""
 
     def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:

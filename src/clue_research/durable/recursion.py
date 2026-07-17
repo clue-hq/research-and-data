@@ -21,8 +21,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_core import CostCents
 from clue_research.config import RecursionPolicy
-from clue_research.core import CostCents
 
 
 class SpawnDenyReason(StrEnum):

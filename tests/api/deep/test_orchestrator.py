@@ -15,14 +15,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 
-from clue_research.api.deep import (
-    AccountDeepOrchestrator,
-    StepInfo,
-    deep_account_run_id,
-)
-from clue_research.api.deep.run_io import DeepRunState
-from clue_research.config import DeepPhaseConfig, RecursionPolicy
-from clue_research.core import (
+from clue_core import (
     BudgetDecision,
     BudgetScope,
     BudgetVerdict,
@@ -38,8 +31,15 @@ from clue_research.core import (
     new_claim_id,
     new_entity_id,
 )
-from clue_research.core.enums import ICPCreatedFrom
-from clue_research.core.handoff import ICPSpec
+from clue_core.enums import ICPCreatedFrom
+from clue_core.handoff import ICPSpec
+from clue_research.api.deep import (
+    AccountDeepOrchestrator,
+    StepInfo,
+    deep_account_run_id,
+)
+from clue_research.api.deep.run_io import DeepRunState
+from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,
@@ -230,7 +230,7 @@ class FakeProfileContact:
 
 
 class FakeBudgetEngine:
-    """A configurable :class:`~clue_research.core.BudgetEngine` for the admission tests (M8A.3).
+    """A configurable :class:`~clue_core.BudgetEngine` for the admission tests (M8A.3).
 
     ``check`` returns a scripted sequence of verdicts (falling back to ``default`` — ``ALLOW`` —
     once the script is exhausted) and records every call, so a test can assert the projected

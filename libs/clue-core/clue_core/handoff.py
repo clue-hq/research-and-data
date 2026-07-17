@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core.enums import (
+from clue_core.enums import (
     FreshnessState,
     ICPCreatedFrom,
     ICPStatus,
@@ -27,8 +27,8 @@ from clue_research.core.enums import (
     Persona,
     UseClass,
 )
-from clue_research.core.field import FieldKey
-from clue_research.core.primitives import (
+from clue_core.field import FieldKey
+from clue_core.primitives import (
     CampaignRunId,
     ClaimId,
     Confidence,

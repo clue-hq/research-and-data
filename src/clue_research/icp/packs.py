@@ -18,8 +18,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField
-from clue_research.core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.icp.catalog import Pack, PackSourceSlot, register_pack_catalog
 from clue_research.icp.source_profile import SourceWeight, WeightedSource
 

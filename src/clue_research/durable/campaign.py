@@ -8,7 +8,7 @@ human gate at ``tier_checkpoint`` (an ``interrupt()``-style suspend/resume), and
 **pause / resume / adjust** with safe re-entry.
 
 It owns *transitions, persistence, and re-entry* — never phase content: phase bodies are supplied by
-M5/M6/M8/M9/M12 as :class:`~clue_research.core.PhaseHandler`\\s registered into a
+M5/M6/M8/M9/M12 as :class:`~clue_core.PhaseHandler`\\s registered into a
 :class:`~clue_research.durable.phases.PhaseHandlerRegistry` (the same registration seam as the
 aspect-worker registry). Persistence sits behind the :class:`CampaignRunStore` seam, so the state
 machine is testable on an in-memory store and the durable backend is swappable (Postgres now,
@@ -31,7 +31,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
 
-from clue_research.core import (
+from clue_core import (
     BudgetEngine,
     BudgetScope,
     BudgetVerdict,
@@ -46,7 +46,7 @@ from clue_research.core import (
     new_campaign_run_id,
     parse_cost_cents,
 )
-from clue_research.core.idempotency import phase_key
+from clue_core.idempotency import phase_key
 from clue_research.db import transaction
 from clue_research.durable.campaign_run import (
     CampaignPhaseCheckpointRow,
@@ -127,7 +127,7 @@ class CampaignRunNotFound(CampaignRunError):
 
 
 class NoPhaseHandlerRegistered(CampaignRunError):
-    """No :class:`~clue_research.core.PhaseHandler` is registered for the run's current phase — the
+    """No :class:`~clue_core.PhaseHandler` is registered for the run's current phase — the
     api composition root must bind one (M5/M6/M8/M9/M12)."""
 
 
@@ -137,7 +137,7 @@ class CheckpointNotAwaiting(CampaignRunError):
 
 
 class BudgetEngineNotConfigured(CampaignRunError):
-    """:meth:`CampaignRun.pre_run_estimate` needs a :class:`~clue_research.core.BudgetEngine` (M7.5
+    """:meth:`CampaignRun.pre_run_estimate` needs a :class:`~clue_core.BudgetEngine` (M7.5
     supplies the cost math); none was injected."""
 
 
@@ -324,7 +324,7 @@ class DbCampaignRunStore:
 
 class CampaignRun:
     """The outer campaign-run state machine (M7.3). Construct once with a :class:`CampaignRunStore`,
-    a :class:`PhaseHandlerRegistry`, and (optionally) a :class:`~clue_research.core.BudgetEngine`;
+    a :class:`PhaseHandlerRegistry`, and (optionally) a :class:`~clue_core.BudgetEngine`;
     drive a run with :meth:`start` then :meth:`run_to_completion` (or step it with :meth:`advance`).
 
     The phase handlers do the work; this class owns ordering, durable checkpointing, the human gate,
@@ -406,7 +406,7 @@ class CampaignRun:
         :meth:`resume`\\d first). Otherwise: a ``COMMITTED`` checkpoint short-circuits to the
         transition (no re-run); an ``AWAITING_INPUT`` checkpoint returns unchanged (waiting on
         :meth:`submit_checkpoint`); else the registered handler runs and its
-        :class:`~clue_research.core.PhaseResult` is applied."""
+        :class:`~clue_core.PhaseResult` is applied."""
         run = await self.status(campaign_run_id)
         if run.status in (CampaignRunStatus.COMPLETED, CampaignRunStatus.FAILED):
             return run
@@ -550,7 +550,7 @@ class CampaignRun:
     ) -> CampaignRunRow:
         """Apply a versioned mid-run change the next phase picks up, journaled for audit: re-point
         the ICP version (M3 re-versions the spec), raise/lower the per-campaign budget cap (flowed
-        to the M7.5 :class:`~clue_research.core.BudgetEngine` when one is wired), or edit the tier
+        to the M7.5 :class:`~clue_core.BudgetEngine` when one is wired), or edit the tier
         cutoffs (re-tiering happens deterministically at the next ``scoring``/``tier_checkpoint``).
         Only the provided fields change."""
         await self._store.adjust(
@@ -669,7 +669,7 @@ class CampaignRun:
         tier_cutoffs: dict[str, float] | None = None,
     ) -> Estimate:
         """Project the run's spend before any deep spend (Doc C §5) by delegating to the injected
-        :class:`~clue_research.core.BudgetEngine` (M7.5 owns the math; M7.3 exposes the call the
+        :class:`~clue_core.BudgetEngine` (M7.5 owns the math; M7.3 exposes the call the
         ``tier_checkpoint`` surface uses). Uses the run's stored cutoffs when none are supplied.
         Raises :class:`BudgetEngineNotConfigured` if no engine is wired."""
         if self._budget is None:
@@ -682,7 +682,7 @@ class CampaignRun:
 
     async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown:
         """The live cost burn-down for the run (Doc C §5/§6) — spent vs estimate vs cap vs remaining
-        — by delegating to the injected :class:`~clue_research.core.BudgetEngine` (M7.5 owns the
+        — by delegating to the injected :class:`~clue_core.BudgetEngine` (M7.5 owns the
         accounting; M7.3 exposes the call the client surface / M13.4 uses). Raises
         :class:`BudgetEngineNotConfigured` if no engine is wired."""
         if self._budget is None:
@@ -707,7 +707,7 @@ class CampaignRun:
         return decision.verdict is BudgetVerdict.GRACEFUL_STOP
 
     def _phase_context(self, run: CampaignRunRow) -> PhaseContext:
-        """Build the frozen :class:`~clue_research.core.PhaseContext` for the run's current phase —
+        """Build the frozen :class:`~clue_core.PhaseContext` for the run's current phase —
         identifies the run + active ICP version; tier cutoffs ride ``params`` (the phase-specific
         escape hatch) so adding one never forces a ``core`` change."""
         return PhaseContext(

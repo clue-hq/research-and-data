@@ -8,7 +8,7 @@ independence contract) wires:
   ``account_run`` tables (``narrative`` may not import ``durable``, so this lands here, like the
   M12.1 positioner's committee reader and the M12.2 assembler's committee reader);
 * the :class:`~clue_research.narrative.HandoffService` (the read API) over that reader;
-* the **handoff phase handler** — a :class:`~clue_research.core.PhaseHandler` for
+* the **handoff phase handler** — a :class:`~clue_core.PhaseHandler` for
   ``CampaignPhase.HANDOFF`` that, when the campaign-run state machine enters the handoff phase,
   assembles + materialises + emits a durable ``handoff_event`` for every ready account (the M12.3
   emit/notify path), registered into the M7.3 :class:`PhaseHandlerRegistry`
@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     EntityId,
@@ -153,7 +153,7 @@ def build_handoff_service(
 
 
 class HandoffPhaseHandler:
-    """The ``CampaignPhase.HANDOFF`` :class:`~clue_research.core.PhaseHandler` (M12.3 emit path).
+    """The ``CampaignPhase.HANDOFF`` :class:`~clue_core.PhaseHandler` (M12.3 emit path).
 
     When the campaign-run state machine enters the handoff phase, :meth:`run` assembles +
     materialises

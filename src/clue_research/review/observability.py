@@ -59,8 +59,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.config import VerificationHealthThresholds, get_config
-from clue_research.core import (
+from clue_core import (
     BurnDown,
     CampaignPhase,
     CampaignRunId,
@@ -70,6 +69,7 @@ from clue_research.core import (
     UnitInterval,
     serialize_value_json,
 )
+from clue_research.config import VerificationHealthThresholds, get_config
 from clue_research.sources import SourceYieldStat, get_source_yield
 
 # Mirrors of the durable status tokens (``durable`` may not be imported by ``review``). The injected
@@ -244,7 +244,7 @@ class CampaignStateReader(Protocol):
 class CostBurnDownReader(Protocol):
     """Reads the live ``core.BudgetEngine.burn_down`` for the cost panel (the M13.4 ↔ M7.5 seam).
 
-    Returns the authoritative :class:`~clue_research.core.BurnDown` (the
+    Returns the authoritative :class:`~clue_core.BurnDown` (the
     ``campaign_run.spent_cents``
     counter, clamped remaining) — the single cost materialization, never re-derived. Tenant-scoped;
     ``None`` for a missing / cross-tenant run. Injected at the ``api`` root over the same

@@ -24,7 +24,7 @@ mutates schema. Postgres is the sole source of truth; nothing external sits in t
   enables the `vector` extension and creates **no domain tables**.
 
 JSONB `value_json` serialization is **not** re-implemented here: callers serialize with
-`clue_research.core.serialize_value_json` / `parse_value_json` (M0.2) so there is one round-trip
+`clue_core.serialize_value_json` / `parse_value_json` (M0.2) so there is one round-trip
 path for the typed payload.
 
 ## The DSN seam — `CLUE_DATABASE_URL`
@@ -77,7 +77,7 @@ migration must satisfy all of:
 - [ ] **UTC `timestamptz` for time columns** — `observed_at`, `collected_at` (and any later time
   column) are `TIMESTAMP WITH TIME ZONE`, stored and compared in UTC (substrate §1).
 - [ ] **JSONB `value_json`** — the typed payload is a `JSONB` column (shape declared by the field
-  registry), serialized with `clue_research.core.serialize_value_json` / `parse_value_json`. JSONB
+  registry), serialized with `clue_core.serialize_value_json` / `parse_value_json`. JSONB
   carries the per-vertical variation without a schema change (substrate §12).
 - [ ] **Real, indexed columns on hot query paths** — the keys the pipeline filters/joins on are
   promoted to real columns with indexes, not left only inside the JSONB blob. At minimum an index

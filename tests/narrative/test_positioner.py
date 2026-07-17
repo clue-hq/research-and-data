@@ -23,14 +23,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    PUBLIC_ONLY,
-    TenantScope,
-    claims_for,
-    insert_claim,
-    record_verification,
-)
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     ClaimId,
     Completion,
@@ -50,7 +43,14 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.retrieval import ClientKnowledgeChunk
+from clue_core.retrieval import ClientKnowledgeChunk
+from clue_research.claimstore import (
+    PUBLIC_ONLY,
+    TenantScope,
+    claims_for,
+    insert_claim,
+    record_verification,
+)
 from clue_research.identity import (
     DEFAULT_REUSE_POLICY,
     classify_reuse_scope,

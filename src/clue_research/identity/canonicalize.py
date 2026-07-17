@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import AccountEntity
+from clue_core import AccountEntity
 
 
 class CanonicalPlan(BaseModel):

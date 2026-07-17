@@ -37,8 +37,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import ALL_TENANTS, TenantScope
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityId,
     EntityType,
@@ -55,9 +54,10 @@ from clue_research.core import (
     new_run_id,
     serialize_value_json,
 )
-from clue_research.core import JudgeVerdict as CoreJudgeVerdict
-from clue_research.core.field import classify_field_key
-from clue_research.core.gateway import LLMGateway
+from clue_core import JudgeVerdict as CoreJudgeVerdict
+from clue_core.field import classify_field_key
+from clue_core.gateway import LLMGateway
+from clue_research.claimstore import ALL_TENANTS, TenantScope
 from clue_research.evals import (
     EvalHarness,
     EvalReport,
@@ -127,7 +127,7 @@ CORROBORATION_THRESHOLD = 2
 
 class GatewayJudge:
     """An :class:`~clue_research.evals.Judge` backed by the M9.3 LLM-as-judge infra: it builds the
-    M9.3 entailment messages, calls the injected ``core`` :class:`~clue_research.core.gateway.
+    M9.3 entailment messages, calls the injected ``core`` :class:`~clue_core.gateway.
     LLMGateway`, and parses the verdict with the M9.3 parser — so the faithfulness rubric uses the
     **real** judge and a judge-model swap is a config change (regression-checked by this battery).
 

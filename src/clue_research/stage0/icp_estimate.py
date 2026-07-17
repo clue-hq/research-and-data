@@ -5,7 +5,7 @@ At confirm, before any discovery/scoring spend, the client is shown "~N accounts
 real discovered count); M5.2 has no discovered count yet, so it surfaces a **pre-discovery prior**
 computed from versioned cost-dial config (policy-as-data — conventions §2; D7), with a low
 ``confidence`` to mark it a forecast, not a commitment. When M7's real ``BudgetEngine`` is injected
-at the composition root it returns the same frozen :class:`~clue_research.core.execution.Estimate`
+at the composition root it returns the same frozen :class:`~clue_core.execution.Estimate`
 unchanged — this is the placeholder behind that seam, not a second cost model.
 
 The cost dial is *fan-out-per-account × accounts-per-pass* (Doc C §5): a cheap deterministic Pass A
@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import CostCents, Estimate, UnitInterval
+from clue_core import CostCents, Estimate, UnitInterval
 
 # Cost-dial priors as config (D7 — starting bands to confirm against real campaigns, not hardcoded
 # policy). Cents are exact Decimal (the DB numeric / M7 hard-cap contract).

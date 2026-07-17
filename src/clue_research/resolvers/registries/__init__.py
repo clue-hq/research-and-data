@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from clue_research.core import CostCents, FieldDef
+from clue_core import CostCents, FieldDef
 from clue_research.resolvers.base import (
     DeterministicResolver,
     EnrichmentBackend,
@@ -33,7 +33,7 @@ from clue_research.resolvers.live import AccountLookup, HttpEnrichmentBackend, H
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.core import AccountEntity
+    from clue_core import AccountEntity
 
 
 @dataclass(frozen=True)

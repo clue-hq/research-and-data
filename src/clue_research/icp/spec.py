@@ -1,6 +1,6 @@
 """The versioned ICP spec data model (M3.1 / ENG-104).
 
-Durable, append-only storage for the ``ICPSpec`` contract (``clue_research.core.ICPSpec``;
+Durable, append-only storage for the ``ICPSpec`` contract (``clue_core.ICPSpec``;
 conventions §4) — the single object M3.2 / M3.4 read and M5 writes, keyed
 ``(client_id, icp_key, version)``. This module is storage + versioning + reference validation ONLY:
 no resolver, source, or LLM dependency (it sits cleanly below M4). It validates the *active field
@@ -23,14 +23,14 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import get_field
-from clue_research.core import (
+from clue_core import (
     ICPCreatedFrom,
     ICPSpec,
     ICPStatus,
     decode_jsonb,
     serialize_value_json,
 )
+from clue_research.claimstore import get_field
 from clue_research.icp.catalog import get_pack
 
 

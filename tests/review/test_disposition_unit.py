@@ -8,14 +8,14 @@ from uuid import uuid4
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     EntityType,
     ReviewAction,
     new_campaign_run_id,
     new_claim_id,
     new_entity_id,
 )
-from clue_research.core.review import ReviewDispositionEmitter
+from clue_core.review import ReviewDispositionEmitter
 from clue_research.review import (
     ACCOUNT_DISPOSITION_TYPES,
     CLAIM_DISPOSITION_TYPES,

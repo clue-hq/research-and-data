@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityScope, Modality, RunId, SourceManifest, new_run_id
+from clue_core import EntityScope, Modality, RunId, SourceManifest, new_run_id
 from clue_research.discovery_scoring import (
     CoverageConfidence,
     StoppingReason,

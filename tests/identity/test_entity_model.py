@@ -11,8 +11,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     EntityType,
     ExtractionMethod,
@@ -21,6 +20,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import insert_claim
 from clue_research.identity import (
     MergeCycleError,
     get_account,

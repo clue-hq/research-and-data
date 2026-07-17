@@ -30,7 +30,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     ClaimId,
     EntityId,

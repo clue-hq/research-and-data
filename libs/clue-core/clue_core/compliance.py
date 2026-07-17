@@ -28,9 +28,9 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core.claim import Claim
-from clue_research.core.enums import IdentityBinding, UseReason
-from clue_research.core.primitives import ClaimId
+from clue_core.claim import Claim
+from clue_core.enums import IdentityBinding, UseReason
+from clue_core.primitives import ClaimId
 
 
 class UseDecision(BaseModel):
@@ -65,7 +65,7 @@ class UseGate(Protocol):
 
 def is_outreach_promotable(claim: Claim, decision: UseDecision) -> bool:
     """Whether a contact claim may drive outreach — the **use-axis** composite, distinct from the
-    **accuracy-axis** :func:`~clue_research.core.claim.can_be_promoted` (and the
+    **accuracy-axis** :func:`~clue_core.claim.can_be_promoted` (and the
     ``Claim.is_promotable`` convenience that wraps it). The two predicates are deliberately named
     apart so a caller cannot bind the wrong one.
 

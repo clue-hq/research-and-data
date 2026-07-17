@@ -6,7 +6,7 @@ name-only match on a stranger's page is WEAK (the same-name trap). M8.4 tags; M9
 
 from __future__ import annotations
 
-from clue_research.core import ContactEntity, IdentityBinding, new_entity_id
+from clue_core import ContactEntity, IdentityBinding, new_entity_id
 from clue_research.profiling.contact.binding import (
     DEFAULT_BINDING_CLASSIFIER,
     BindingInput,

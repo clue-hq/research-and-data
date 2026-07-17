@@ -20,8 +20,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     CampaignRunId,
     CostCents,
@@ -31,6 +30,7 @@ from clue_research.core import (
     WorkerStatus,
     new_claim_id,
 )
+from clue_research.claimstore import load_core_pack
 from clue_research.db import db_lifespan
 from clue_research.durable.account_run import ReferencesIndex
 from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
@@ -159,7 +159,7 @@ assert isinstance(FakeAccountRunStore(ResearchPlan(tier="low", aspects=())), Acc
 
 
 class StubAspectWorker:
-    """A recording :class:`~clue_research.core.AspectWorker` (no IO).
+    """A recording :class:`~clue_core.AspectWorker` (no IO).
 
     Returns ``n_claims`` freshly-minted claim-id references, records each invocation, and can be
     made to ``raise`` (to test sibling isolation), run a ``before`` hook (to test concurrency), or
@@ -216,7 +216,7 @@ class StubAspectWorker:
 from datetime import UTC, datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from clue_research.core import (  # noqa: E402
+from clue_core import (  # noqa: E402
     BudgetDecision,
     BudgetScope,
     BudgetVerdict,
@@ -375,7 +375,7 @@ class FakeCampaignRunStore:
 
 
 class RecordingPhaseHandler:
-    """A recording :class:`~clue_research.core.PhaseHandler` (no IO).
+    """A recording :class:`~clue_core.PhaseHandler` (no IO).
 
     Declares the ``phase`` it serves, records each invocation and the :class:`PhaseContext` it saw,
     and returns a configurable :class:`PhaseResult` (``COMPLETED`` by default; ``PAUSED`` models the
@@ -411,7 +411,7 @@ class RecordingPhaseHandler:
 
 
 class FakeBudgetEngine:
-    """A minimal :class:`~clue_research.core.BudgetEngine` (M7.5 stub) for M7.3 tests.
+    """A minimal :class:`~clue_core.BudgetEngine` (M7.5 stub) for M7.3 tests.
 
     Only ``estimate`` (the ``pre_run_estimate`` delegate) and ``set_campaign_cap`` (the
     ``adjust(budget_cap)`` flow-through) are exercised by M7.3; ``check``/``record``/``burn_down``
@@ -481,7 +481,7 @@ class FakeBudgetEngine:
 
 from datetime import timedelta  # noqa: E402
 
-from clue_research.core import IdempotencyScope  # noqa: E402
+from clue_core import IdempotencyScope  # noqa: E402
 from clue_research.durable.enums import IdempotencyStatus  # noqa: E402
 from clue_research.durable.idempotency import (  # noqa: E402
     ClaimOutcome,

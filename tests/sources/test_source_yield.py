@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     Entity,
     EntityScope,
     EntityType,

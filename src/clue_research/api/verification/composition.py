@@ -3,7 +3,7 @@
 Constructs :class:`~clue_research.api.verification.handler.VerificationPhaseHandler` with the real
 M9.2 :class:`~clue_research.verification.Corroborator`, the M9.3
 :class:`~clue_research.verification.FaithfulnessJudgeImpl` (over the shared
-:class:`~clue_research.core.gateway.LLMGateway`), the live-claims loader
+:class:`~clue_core.gateway.LLMGateway`), the live-claims loader
 (:func:`clue_research.claimstore.claims_for` with ``field_key=None``), and — when
 ``govern_contacts`` is set — the committee-contact source
 (:func:`clue_research.identity.contact_ids_for_account`) plus
@@ -30,6 +30,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from clue_core import Claim, EntityId
+from clue_core.compliance import UseGate
+from clue_core.gateway import LLMGateway
 from clue_research.api.verification.handler import (
     ClaimCorroborator,
     ContactResolver,
@@ -39,9 +42,6 @@ from clue_research.api.verification.handler import (
 )
 from clue_research.claimstore import TenantScope, claims_for
 from clue_research.compliance import UseGateImpl, load_client_policy
-from clue_research.core import Claim, EntityId
-from clue_research.core.compliance import UseGate
-from clue_research.core.gateway import LLMGateway
 from clue_research.db import ConnFactory, transaction
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account

@@ -28,7 +28,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClientKnowledgeChunk,
     EntityId,

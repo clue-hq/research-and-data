@@ -31,7 +31,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     CostCents,
     Entity,
     EntityScope,

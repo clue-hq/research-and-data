@@ -21,8 +21,8 @@ from __future__ import annotations
 
 from pydantic import JsonValue
 
+from clue_core import FieldDef, UseClass
 from clue_research.config import DEFAULT_USE_CLASS_LEXICON, UseClassLexicon
-from clue_research.core import FieldDef, UseClass
 
 _HINT_KEY = "use_class_hint"
 _ESCALATABLE_KEY = "use_class_escalatable"

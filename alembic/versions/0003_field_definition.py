@@ -37,7 +37,7 @@ down_revision: str | None = "0002"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirrors clue_research.core.enums.PassKind / FieldClass. The enum-parity test in
+# Mirrors clue_core.enums.PassKind / FieldClass. The enum-parity test in
 # tests/claimstore/test_field_registry.py::test_registry_enums_match_core guards against drift.
 _PASS = ("scoring", "deep")
 _FIELD_CLASS = ("core", "account", "account.resonance", "contact", "contact.facet", "pack")

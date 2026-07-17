@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from clue_research.core import EntityId, new_campaign_run_id, new_entity_id, new_run_id
+from clue_core import EntityId, new_campaign_run_id, new_entity_id, new_run_id
 from clue_research.durable import (
     AccountRunResult,
     AccountRunStatus,

@@ -13,7 +13,7 @@ mega-agent (substrate §5b). The graph has four node boundaries:
   never holds claim bodies — only the plan and, transiently, the merge view it re-plans on.
 * **fan_out**: the lead dispatches one ``aspect_worker`` per aspect via LangGraph's ``Send`` (a
   parallel super-step). Each worker does its IO through the M4 resolver surface and the claim store,
-  writes typed claims, and returns a :class:`~clue_research.core.WorkerResult` of **claim-id
+  writes typed claims, and returns a :class:`~clue_core.WorkerResult` of **claim-id
   references only** — never blobs. Workers share no state but the store; one worker failing is
   isolated (its aspect is marked ``FAILED``; siblings continue).
 * **collect**: merges the workers' reference sets into ``account_run.references_index`` and the
@@ -24,7 +24,7 @@ mega-agent (substrate §5b). The graph has four node boundaries:
 The graph engine (LangGraph) and the checkpoint backend (``AsyncPostgresSaver`` in prod, an
 in-memory saver in tests) sit **behind** :class:`AccountResearchGraph` and the
 :class:`AccountRunStore` seam — swapping either, or later folding this graph into a Temporal
-activity, does not change ``run`` or the :class:`~clue_research.core.AspectWorker` contract
+activity, does not change ``run`` or the :class:`~clue_core.AspectWorker` contract
 (conventions §2).
 
 The worker *bodies* (mode M2/M3/M4 logic, resolver calls) are M8's; M7.1 ships the graph skeleton,
@@ -48,8 +48,7 @@ from langgraph.types import Send
 from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypedDict
 
-from clue_research.config import RecursionPolicy
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     CampaignRunId,
     ClaimId,
@@ -61,6 +60,7 @@ from clue_research.core import (
     new_run_id,
     parse_cost_cents,
 )
+from clue_research.config import RecursionPolicy
 from clue_research.db import database_url, transaction
 from clue_research.durable.account_run import (
     ReferencesIndex,

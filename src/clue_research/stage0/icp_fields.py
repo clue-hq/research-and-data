@@ -12,7 +12,7 @@ as a typed claim on the client's ``account_entity``; its value carries
 confirm history of an ICP is queryable and append-only with the rest of the store.
 
 The field sits in the ``icp.*`` namespace, which the registry classifies as a vertical *pack*
-(:class:`~clue_research.core.field.FieldClass.PACK`); a ``<pack>.*`` field has no safe default
+(:class:`~clue_core.field.FieldClass.PACK`); a ``<pack>.*`` field has no safe default
 reuse-scope (ENG-165 fail-closed), so it **declares** ``reuse_scope=TENANT_PRIVATE`` — an ICP is
 client-tuned and never amortizes across tenants (the stamping side is
 :data:`~clue_research.stage0.reuse.ICP_REUSE_POLICY`).
@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
-from clue_research.core import FieldDef, PassKind, ReuseScope
 
 # --- the icp-synthesis feedback namespace ----------------------------------
 ICP_PACK = "icp"

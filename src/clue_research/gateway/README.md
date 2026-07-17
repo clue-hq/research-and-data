@@ -5,7 +5,7 @@ The gateway is to models what the `Resolver` protocol is to data sources: provid
 **config, not code** (conventions §2/§4).
 
 ## Layout
-- **Protocol + value types:** `clue_research.core.gateway` (`LLMGateway`, `Message`, `Completion`,
+- **Protocol + value types:** `clue_core.gateway` (`LLMGateway`, `Message`, `Completion`,
   `EmbeddingResult`, `TokenUsage`, `Vector`) — the shared contract every call site imports.
 - **Config:** `clue_research.config.gateway.GatewayConfig` — base URL, per-call-site model ids,
   timeout/retry, fallback model, `stub` flag, and the per-model price table (policy-as-data; folded

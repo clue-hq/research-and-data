@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from clue_research.core import new_campaign_run_id, new_entity_id
+from clue_core import new_campaign_run_id, new_entity_id
 from clue_research.narrative import (
     HANDOFF_EVENT_STATUSES,
     HandoffEvent,

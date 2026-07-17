@@ -26,7 +26,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Completion,
     Confidence,

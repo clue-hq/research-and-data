@@ -59,15 +59,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.api.deep.run_io import AccountRunIO
-from clue_research.api.deep.spend import (
-    ExactlyOnceSpend,
-    StepInfo,
-    already_done,
-    deep_step_key,
-)
-from clue_research.config import DeepPhaseConfig, RecursionPolicy
-from clue_research.core import (
+from clue_core import (
     BudgetEngine,
     BudgetScope,
     BudgetVerdict,
@@ -81,6 +73,14 @@ from clue_research.core import (
     RunId,
     WorkerStatus,
 )
+from clue_research.api.deep.run_io import AccountRunIO
+from clue_research.api.deep.spend import (
+    ExactlyOnceSpend,
+    StepInfo,
+    already_done,
+    deep_step_key,
+)
+from clue_research.config import DeepPhaseConfig, RecursionPolicy
 from clue_research.db import ConnFactory
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (

@@ -16,7 +16,7 @@ from collections.abc import Iterable, Mapping
 from decimal import Decimal
 from typing import Protocol
 
-from clue_research.core import Claim, EntityType, IdentityBinding, VerificationStatus
+from clue_core import Claim, EntityType, IdentityBinding, VerificationStatus
 from clue_research.obs.spans import CAMPAIGN_PHASES
 
 # --- metric names -----------------------------------------------------------

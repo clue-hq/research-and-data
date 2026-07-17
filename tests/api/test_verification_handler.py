@@ -14,18 +14,7 @@ import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
 
-from clue_research.api.verification import (
-    VerificationPhaseHandler,
-    build_verification_phase_handler,
-)
-from clue_research.api.verification.handler import (
-    ClaimLoader,
-    ContactResolver,
-    UseGateProvider,
-    VerificationAccountResolver,
-)
-from clue_research.claimstore import TenantScope
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     Claim,
     EntityId,
@@ -42,10 +31,21 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.compliance import UseDecision
-from clue_research.core.enums import JudgeVerdict, UseReason
-from clue_research.core.gateway import Completion, Message
-from clue_research.core.verification import JudgeResult
+from clue_core.compliance import UseDecision
+from clue_core.enums import JudgeVerdict, UseReason
+from clue_core.gateway import Completion, Message
+from clue_core.verification import JudgeResult
+from clue_research.api.verification import (
+    VerificationPhaseHandler,
+    build_verification_phase_handler,
+)
+from clue_research.api.verification.handler import (
+    ClaimLoader,
+    ContactResolver,
+    UseGateProvider,
+    VerificationAccountResolver,
+)
+from clue_research.claimstore import TenantScope
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 from clue_research.obs.metrics import METRIC_TIER4_TOTAL, InMemorySink
 

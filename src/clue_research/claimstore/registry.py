@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     FieldClass,
     FieldDef,
     PassKind,
@@ -40,7 +40,7 @@ from clue_research.core import (
     resolve_reuse_scope,
     serialize_value_json,
 )
-from clue_research.core.field import FieldKey
+from clue_core.field import FieldKey
 
 
 class UnknownFieldError(ValueError):

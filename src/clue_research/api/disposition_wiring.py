@@ -24,7 +24,7 @@ deleted) and leave the ``labeled_dataset`` view (Doc D §4 / spec §M13.2 AC5).
 
 from __future__ import annotations
 
-from clue_research.core.review import ReviewDispositionEmitter
+from clue_core.review import ReviewDispositionEmitter
 from clue_research.db import ConnFactory, transaction
 from clue_research.obs import MetricSink
 from clue_research.review.disposition_store import DispositionStore, ReviewDispositionEmitterImpl

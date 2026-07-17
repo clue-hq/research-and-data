@@ -15,7 +15,7 @@ The ``config/`` seam (conventions §2 "policy is data, not code"). Exposes:
   :class:`SourceProfile`, :class:`BudgetCaps`, :class:`FreshnessTtls`; defaulted, validated, read
   by no engine yet (they reserve the seam for M1/M3/M4/M6/M7/M9).
 
-Layering: ``config`` may import :mod:`clue_research.core` (and stdlib / pydantic-settings) only —
+Layering: ``config`` may import :mod:`clue_core` (and stdlib / pydantic-settings) only —
 **never** ``obs`` (obs sits above config) and **never** ``db`` (enforced by import-linter, M0.1).
 
 Implements ENG-120 (docs/specs/M00-foundations-and-shared-contracts.md §M0.4).

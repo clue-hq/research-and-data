@@ -30,8 +30,7 @@ from __future__ import annotations
 import json
 import re
 
-from clue_research.config import OverlayStore
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     CampaignRunId,
     Claim,
@@ -45,6 +44,7 @@ from clue_research.core import (
     WorkerResult,
     new_campaign_run_id,
 )
+from clue_research.config import OverlayStore
 from clue_research.db import ConnFactory, transaction
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
@@ -213,7 +213,7 @@ async def collect_resonance(
     """Run the resonance collector for one account and return its :class:`WorkerResult` (M8.2 seam).
 
     The directly-callable form of the resonance aspect (the spec's ``collect_resonance``): builds an
-    :class:`~clue_research.core.AspectContext` over the resonance field set and invokes
+    :class:`~clue_core.AspectContext` over the resonance field set and invokes
     :class:`ResonanceAspectWorker`. ``profile_account`` (M8.1) drives the same worker as the
     ``account.resonance`` cluster; this entrypoint lets M8.2 be exercised on its own. Returns the
     worker result (claim refs + coverage); ``result.claim_refs`` is the ``list[claim_ref]`` the spec

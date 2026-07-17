@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
 from sqlalchemy import ARRAY, String, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     AccountStatus,
     ContactEntity,

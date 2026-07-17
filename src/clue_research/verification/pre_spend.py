@@ -8,7 +8,7 @@ requirement, a canonical-name lock, dedup-registry membership, the in-flight loc
 This module promotes those into one declarative, config-driven gate that every claim-producing path
 (the M4 waterfall, M8 workers, M11 synthesis) calls *before* it acts.
 
-It implements the Beat-0 :class:`clue_research.core.verification.PreSpendGate` protocol, so
+It implements the Beat-0 :class:`clue_core.verification.PreSpendGate` protocol, so
 callers in other milestone packages depend only on the ``core`` seam (the impl is injected at the
 ``api`` composition root). Two surfaces:
 
@@ -37,13 +37,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore.registry import (
-    UnknownFieldError,
-    ValueSchemaError,
-    get_field,
-    validate_value,
-)
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     AccountStatus,
     ContactEntity,
@@ -57,6 +51,12 @@ from clue_research.core import (
     SourceTier,
     TargetLock,
     serialize_value_json,
+)
+from clue_research.claimstore.registry import (
+    UnknownFieldError,
+    ValueSchemaError,
+    get_field,
+    validate_value,
 )
 from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_entity
@@ -289,7 +289,7 @@ async def _record_gate_decision(
 
 
 class PreSpendGateImpl:
-    """The M9.1 pre-spend gate (implements :class:`clue_research.core.verification.PreSpendGate`).
+    """The M9.1 pre-spend gate (implements :class:`clue_core.verification.PreSpendGate`).
 
     Constructed with the gate :class:`PreSpendPolicy`, a connection factory (defaults to a committed
     transaction per check), and an optional in-flight lock reader (a Redis client). Injected at the

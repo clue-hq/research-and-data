@@ -31,14 +31,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.adapters import (
-    ClaimExtractor,
-    FirecrawlHtmlAdapter,
-    ScrapeBackend,
-    register_adapter,
-    run_chain,
-)
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     Entity,
@@ -47,6 +40,13 @@ from clue_research.core import (
     ResearchMode,
     ResolverError,
     new_run_id,
+)
+from clue_research.adapters import (
+    ClaimExtractor,
+    FirecrawlHtmlAdapter,
+    ScrapeBackend,
+    register_adapter,
+    run_chain,
 )
 from clue_research.resolvers.live import AccountLookup
 from clue_research.sources import SEED_MANIFESTS, RegistrySourceManifest, bind_resolver

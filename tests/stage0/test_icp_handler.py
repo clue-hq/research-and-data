@@ -13,14 +13,14 @@ from uuid import uuid4
 
 import pytest
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
     new_campaign_run_id,
 )
+from clue_research.claimstore import load_core_pack
 from clue_research.db import db_lifespan, transaction
 from clue_research.icp import load_starter_packs
 from clue_research.sources import seed_source_manifests

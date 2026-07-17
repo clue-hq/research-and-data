@@ -15,8 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     CostCents,
@@ -25,6 +24,7 @@ from clue_research.core import (
     PhaseStatus,
     new_campaign_run_id,
 )
+from clue_research.claimstore import load_core_pack
 from clue_research.db import db_lifespan, transaction
 from clue_research.sources import bind_resolver, seed_source_manifests
 from clue_research.stage0 import ReverseProfilingHandler

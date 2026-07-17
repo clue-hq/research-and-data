@@ -17,7 +17,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core import EntityId, EntityType, FieldKey, ResearchMode, SourceTier
+from clue_core import EntityId, EntityType, FieldKey, ResearchMode, SourceTier
 
 
 class FixtureKind(StrEnum):

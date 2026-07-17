@@ -19,8 +19,7 @@ import pytest
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     EntityId,
     ExtractionMethod,
@@ -30,6 +29,7 @@ from clue_research.core import (
     account_claim,
     new_run_id,
 )
+from clue_research.claimstore import TenantScope, claims_for, insert_claim
 from clue_research.icp import get_active_icp
 from clue_research.identity import (
     DEFAULT_REUSE_POLICY,

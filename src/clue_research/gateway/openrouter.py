@@ -15,8 +15,8 @@ from typing import Any
 
 from pydantic import SecretStr
 
+from clue_core.gateway import Completion, EmbeddingResult, Message, TokenUsage
 from clue_research.config.gateway import GatewayConfig
-from clue_research.core.gateway import Completion, EmbeddingResult, Message, TokenUsage
 
 # A zero-arg factory returning an OpenAI-compatible client (duck-typed: ``.chat.completions.create``
 # and ``.embeddings.create``). The default builds the real ``openai`` client; tests inject a fake.
@@ -34,7 +34,7 @@ class GatewayError(RuntimeError):
 
 
 class OpenRouterGateway:
-    """Live :class:`~clue_research.core.gateway.LLMGateway` backed by OpenRouter."""
+    """Live :class:`~clue_core.gateway.LLMGateway` backed by OpenRouter."""
 
     def __init__(
         self,

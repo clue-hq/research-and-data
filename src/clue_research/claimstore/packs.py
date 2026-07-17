@@ -20,8 +20,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, ReuseScope
 from clue_research.claimstore.registry import register_field
-from clue_research.core import FieldDef, PassKind, ReuseScope
 
 
 @dataclass(frozen=True)

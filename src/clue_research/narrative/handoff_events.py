@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import CampaignRunId, EntityId, UtcDatetime
+from clue_core import CampaignRunId, EntityId, UtcDatetime
 
 
 class HandoffEventStatus(StrEnum):

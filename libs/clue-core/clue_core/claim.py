@@ -23,7 +23,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from clue_research.core.enums import (
+from clue_core.enums import (
     ClaimFlavor,
     EntityType,
     ExtractionMethod,
@@ -33,8 +33,8 @@ from clue_research.core.enums import (
     UseClass,
     VerificationStatus,
 )
-from clue_research.core.field import FieldClass, FieldKey, classify_field_key
-from clue_research.core.primitives import (
+from clue_core.field import FieldClass, FieldKey, classify_field_key
+from clue_core.primitives import (
     ClaimId,
     Confidence,
     Corroborations,

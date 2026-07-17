@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from clue_research.core import (
+from clue_core import (
     AdaptContext,
     ClaimDraft,
     Entity,

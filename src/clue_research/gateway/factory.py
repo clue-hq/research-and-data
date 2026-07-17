@@ -11,15 +11,15 @@ from __future__ import annotations
 
 from pydantic import SecretStr
 
+from clue_core.gateway import LLMGateway
 from clue_research.config.gateway import GatewayConfig
-from clue_research.core.gateway import LLMGateway
 from clue_research.gateway.openrouter import OpenRouterGateway
 from clue_research.gateway.stub import StubGateway
 from clue_research.gateway.tracing import TracingGateway
 
 
 def build_gateway(config: GatewayConfig, api_key: SecretStr | None = None) -> LLMGateway:
-    """Build the injected :class:`~clue_research.core.gateway.LLMGateway` (traced; stub or live)."""
+    """Build the injected :class:`~clue_core.gateway.LLMGateway` (traced; stub or live)."""
     inner: LLMGateway
     if config.stub or api_key is None:
         inner = StubGateway(config)

@@ -2,7 +2,7 @@
 
 The ``discover_committee`` output and its config. The result returns **references** (contact ids +
 claim ids), never claim bodies (substrate §5b), and maps 1:1 to the handoff
-:class:`~clue_research.core.handoff.CommitteeMember` shape so M12 assembles the committee without
+:class:`~clue_core.handoff.CommitteeMember` shape so M12 assembles the committee without
 translation (the per-member ``profile_claims`` are filled later by M8.4).
 """
 
@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from clue_research.core import ClaimId, CommitteeMember, Confidence, CostCents, EntityId, Persona
+from clue_core import ClaimId, CommitteeMember, Confidence, CostCents, EntityId, Persona
 from clue_research.profiling.committee.coverage import CommitteeCoverage
 from clue_research.profiling.committee.stopping import (
     DEFAULT_COMMITTEE_STOPPING_CONFIG,

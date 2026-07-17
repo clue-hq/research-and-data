@@ -33,7 +33,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import FieldClass, decode_jsonb, serialize_value_json
+from clue_core import FieldClass, decode_jsonb, serialize_value_json
 
 # A source_key is the same shape as source_manifest.source_key / a resolver key: a lowercase
 # identifier ("arxiv", "npi", "google_places"). Validated here so a malformed reference is caught

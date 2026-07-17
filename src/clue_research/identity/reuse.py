@@ -19,6 +19,7 @@ from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import Claim, CurrentValue, EntityId, ExtractionMethod, ReuseScope
 from clue_research.claimstore import (
     DEFAULT_MERGE_POLICY,
     MergePolicy,
@@ -26,7 +27,6 @@ from clue_research.claimstore import (
     claims_for,
     current_value,
 )
-from clue_research.core import Claim, CurrentValue, EntityId, ExtractionMethod, ReuseScope
 from clue_research.identity.policy import DEFAULT_REUSE_POLICY, ReusePolicy
 
 

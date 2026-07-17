@@ -18,10 +18,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import IdempotencyScope
-from clue_research.core.field import FieldKey
-from clue_research.core.idempotency import account_step_key
-from clue_research.core.primitives import new_entity_id, new_run_id
+from clue_core import IdempotencyScope
+from clue_core.field import FieldKey
+from clue_core.idempotency import account_step_key
+from clue_core.primitives import new_entity_id, new_run_id
 from clue_research.durable import IdempotencyStatus
 from clue_research.durable.idempotency import (
     ClaimOutcome,

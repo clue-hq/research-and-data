@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from clue_core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField, get_field, list_fields
-from clue_research.core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.icp import (
     DATA_INFRA,
     FRONTIER_AI,

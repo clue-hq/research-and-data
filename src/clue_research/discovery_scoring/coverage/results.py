@@ -28,7 +28,7 @@ from typing import Annotated
 from annotated_types import Ge
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from clue_research.core import CostCents, RunId, UnitInterval
+from clue_core import CostCents, RunId, UnitInterval
 from clue_research.discovery_scoring.discovery import StoppingReason
 
 NonNegInt = Annotated[int, Ge(0)]

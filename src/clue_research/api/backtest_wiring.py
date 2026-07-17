@@ -18,8 +18,8 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import JsonValue
 
+from clue_core import BacktestGate, BacktestRegression, BacktestVerdict
 from clue_research.claimstore import TenantScope
-from clue_research.core import BacktestGate, BacktestRegression, BacktestVerdict
 from clue_research.db import ConnFactory, connection
 from clue_research.evals import EvalReport, MechanismMetric
 from clue_research.icp import get_rubric_version, rubric_from_slot, score_entity

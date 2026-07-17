@@ -12,8 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import ALL_TENANTS, TenantScope, claims_for, current_value
-from clue_research.core import (
+from clue_core import (
     Claim,
     Entity,
     EntityScope,
@@ -34,6 +33,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, TenantScope, claims_for, current_value
 from clue_research.sources import (
     RegistrySourceManifest,
     StepOutcome,

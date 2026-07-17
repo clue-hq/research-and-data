@@ -22,9 +22,9 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import Entity, FieldDef, RetryableResolverError
 from clue_research.adapters import clear_adapters
 from clue_research.claimstore import load_core_pack
-from clue_research.core import Entity, FieldDef, RetryableResolverError
 from clue_research.db import db_lifespan
 from clue_research.resolvers.base import ResolvedField
 from clue_research.sources import clear_resolver_bindings, seed_source_manifests

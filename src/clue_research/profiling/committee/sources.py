@@ -2,7 +2,7 @@
 
 Committee discovery (mode M3) is *bounded discovery*: it must **enumerate** the people at a known
 account, then resolve each through the M2 identity gate (staged-flow §6). The M4
-:class:`~clue_research.core.resolver.Resolver` is the wrong shape for this — it *fills a field for a
+:class:`~clue_core.resolver.Resolver` is the wrong shape for this — it *fills a field for a
 known entity* (``resolve(entity, field) -> claims``); it structurally cannot produce new entities.
 M6 owns a `DiscoveryChannel` for the account axis, but that lives in ``discovery_scoring`` and M8
 may not import a sibling milestone (the independence contract). So M8.3 defines its own minimal,
@@ -29,7 +29,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
-from clue_research.core import AccountEntity, Confidence, CostCents
+from clue_core import AccountEntity, Confidence, CostCents
 
 
 class CommitteePersonCandidate(BaseModel):

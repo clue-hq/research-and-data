@@ -10,10 +10,10 @@ import all of them) and injected.
 This is a *richer* seam than M12.1's :class:`~clue_research.narrative.seams.CommitteeReader` (which
 returns only the use-cleared facet hooks the positioner gates its *prompt* on): the handoff's
 ``committee[]`` carries each member's **full** ``profile_claims`` (role, persona, and facets) as
-:class:`~clue_research.core.handoff.ProfileClaimView`\\s — each with ``identity_binding`` +
+:class:`~clue_core.handoff.ProfileClaimView`\\s — each with ``identity_binding`` +
 ``use_class`` (Doc D §7), so the content layer can see why a hook is or isn't usable. So the seam
-returns the handoff-shaped :class:`~clue_research.core.handoff.CommitteeMember`, paired with
-the per-claim :class:`~clue_research.core.compliance.UseDecision` the assembler needs to mark the
+returns the handoff-shaped :class:`~clue_core.handoff.CommitteeMember`, paired with
+the per-claim :class:`~clue_core.compliance.UseDecision` the assembler needs to mark the
 outreach-eligible set (``is_outreach_promotable`` — Doc D / M10; PF-1).
 
 The production reader can reuse the M8A.5 ``build_handoff_skeleton`` (which already JOINs M8.3's
@@ -29,7 +29,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import ClaimId, CommitteeMember, EntityId, UseDecision
+from clue_core import ClaimId, CommitteeMember, EntityId, UseDecision
 
 
 class HandoffCommitteeMember(BaseModel):

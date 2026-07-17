@@ -38,14 +38,14 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.config import Jurisdiction, LawfulBasisDefaults, RetentionTtls
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimId,
     ExtractionMethod,
     UseClass,
     UtcDatetime,
 )
+from clue_research.config import Jurisdiction, LawfulBasisDefaults, RetentionTtls
 from clue_research.obs import (
     ATTR_FIELD_KEY,
     SPAN_COMPLIANCE_LAWFUL_BASIS,

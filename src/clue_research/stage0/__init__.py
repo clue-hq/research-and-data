@@ -6,7 +6,7 @@ Base (M5.1), ICP synthesis & proposal (M5.2), and the import + hybrid-lookalike 
 
 Beat-0 froze the cross-milestone seam in ``core`` (``docs/specs/_beat0-contract-freeze.md``): M5's
 ``REVERSE_PROFILING``/``ICP_CONFIRMED`` phases *implement* ``PhaseHandler`` from
-:mod:`clue_research.core.execution`; M5.1 calls the M9 ``FaithfulnessJudge`` (injected) for tier-4
+:mod:`clue_core.execution`; M5.1 calls the M9 ``FaithfulnessJudge`` (injected) for tier-4
 client claims, and M5.2's synthesis calls the M0.4 ``LLMGateway`` (injected). Imports and lookalike
 seeds reach M6 through the **claim store** — M5 imports no sibling milestone package
 (machine-enforced by the import-linter independence contract); it consumes the M1–M4 services

@@ -7,7 +7,7 @@ strength — **strong** (evidence on the contact's *verified* profile/handle, or
 strong identifiers bound to *this* person) or **weak** (the same-name trap). **A weak-bound claim
 never promotes and never drives outreach** — better an empty hook than someone else's fact.
 
-:class:`IdentityBindingGateImpl` implements the Beat-0 :class:`clue_research.core.verification.
+:class:`IdentityBindingGateImpl` implements the Beat-0 :class:`clue_core.verification.
 IdentityBindingGate` protocol, so callers in other milestone packages (M8.4 contact profiling,
 M8.5 ``contact.facet.*``) depend only on the ``core`` seam; the concrete gate is injected at the
 ``api`` composition root.
@@ -18,7 +18,7 @@ It is set at insert (the M4 waterfall stamps the ``source_manifest`` prior; the 
 trigger forbids any in-place change (the allow-list is only ``superseded_by/verification_status/
 corroborations``). That immutable column is the *authoritative exclusion signal*:
 :func:`clue_research.claimstore.merge._is_eligible` drops weak-bound contact claims from
-``current_value`` and :func:`clue_research.core.can_be_promoted` blocks their promotion — both read
+``current_value`` and :func:`clue_core.can_be_promoted` blocks their promotion — both read
 the column, not a status. So the gate's job is **not** to rewrite the column but to make it
 *authoritative* and to audit/enforce around it. Two surfaces:
 
@@ -59,8 +59,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import record_verification
-from clue_research.core import (
+from clue_core import (
     Binding,
     Claim,
     ClaimFlavor,
@@ -74,7 +73,8 @@ from clue_research.core import (
     decode_jsonb_scalar,
     serialize_value_json,
 )
-from clue_research.core.entity import AccountEntity
+from clue_core.entity import AccountEntity
+from clue_research.claimstore import record_verification
 from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact
 from clue_research.obs import (
@@ -422,7 +422,7 @@ def classify_binding(
 
 
 class IdentityBindingGateImpl:
-    """The M9.4 identity-binding gate (implements :class:`clue_research.core.verification.
+    """The M9.4 identity-binding gate (implements :class:`clue_core.verification.
     IdentityBindingGate`).
 
     Constructed with the resolved :class:`BindingPolicy`, a connection factory (defaults to a

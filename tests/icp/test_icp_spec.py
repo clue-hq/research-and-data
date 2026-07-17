@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import ICPCreatedFrom, ICPStatus
+from clue_core import ICPCreatedFrom, ICPStatus
 from clue_research.icp import (
     HEALTHCARE_PRACTICE,
     ICPSpecValidationError,

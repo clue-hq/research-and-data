@@ -7,9 +7,9 @@ on the internet" is registering a manifest (M4.2) + (if non-trivial) an adapter 
 
 Public seam (what callers depend on; the providers stay hidden):
 
-* the :class:`~clue_research.core.ModalityAdapter` protocol (defined in ``core`` alongside
-  ``Resolver``) + its value types (:class:`~clue_research.core.RawArtifact`,
-  :class:`~clue_research.core.NormalizedText`, :class:`~clue_research.core.ClaimDraft`);
+* the :class:`~clue_core.ModalityAdapter` protocol (defined in ``core`` alongside
+  ``Resolver``) + its value types (:class:`~clue_core.RawArtifact`,
+  :class:`~clue_core.NormalizedText`, :class:`~clue_core.ClaimDraft`);
 * :func:`register_adapter` / :func:`run_pipeline` / :func:`cost_estimate` — register a modality,
   run a source's chain into written claims, and read a source's pre-spend cost estimate;
 * the three **independent provider seams** — :class:`Transcriber`, :class:`PdfTextExtractor`,
@@ -25,6 +25,14 @@ only behind its seam (import-linter Rule 4) and **never** imports a resolver or 
 
 from __future__ import annotations
 
+from clue_core import (
+    AdaptContext,
+    ClaimDraft,
+    GateDecision,
+    ModalityAdapter,
+    NormalizedText,
+    RawArtifact,
+)
 from clue_research.adapters.cache import (
     ArtifactCache,
     CachedArtifact,
@@ -70,17 +78,9 @@ from clue_research.adapters.seams import (
     ScrapeBackend,
     Transcriber,
 )
-from clue_research.core import (
-    AdaptContext,
-    ClaimDraft,
-    GateDecision,
-    ModalityAdapter,
-    NormalizedText,
-    RawArtifact,
-)
 
 __all__ = [
-    # core contract (re-exported for ergonomics; defined in clue_research.core)
+    # core contract (re-exported for ergonomics; defined in clue_core)
     "ModalityAdapter",
     "RawArtifact",
     "NormalizedText",

@@ -13,8 +13,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import AspectContext
 from clue_research.config import RecursionPolicy
-from clue_research.core import AspectContext
 from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver

@@ -8,7 +8,7 @@ campaign's ``(client_id, icp_key, icp_version)``; this handler emits the **phase
 state machine advances on — the compiled field-plan reference (``plan_hash``, the two-pass field
 counts) plus the pre-run cost estimate (Doc C §5).
 
-It *implements* the frozen :class:`~clue_research.core.execution.PhaseHandler` (Beat-0) — imports
+It *implements* the frozen :class:`~clue_core.execution.PhaseHandler` (Beat-0) — imports
 ``core``, never M7's ``durable``; the concrete instance is registered into the ``CampaignRun`` at
 the ``api`` composition root, which dispatches by the declared ``phase`` attribute. The phase is
 **pure reads** (read the pinned spec → compile → estimate), so it is naturally idempotent: a
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pydantic import JsonValue
 
-from clue_research.core import CampaignPhase, PhaseContext, PhaseResult, PhaseStatus
+from clue_core import CampaignPhase, PhaseContext, PhaseResult, PhaseStatus
 from clue_research.db import transaction
 from clue_research.icp import compile_field_plan, get_icp_version
 from clue_research.obs import ATTR_CLIENT_ID, apply_attributes, traced_step
@@ -28,7 +28,7 @@ from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 
 
 class IcpConfirmedHandler:
-    """Implements :class:`~clue_research.core.execution.PhaseHandler` for ``ICP_CONFIRMED``."""
+    """Implements :class:`~clue_core.execution.PhaseHandler` for ``ICP_CONFIRMED``."""
 
     phase = CampaignPhase.ICP_CONFIRMED
 

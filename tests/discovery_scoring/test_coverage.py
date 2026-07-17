@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import RunId
+from clue_core import RunId
 from clue_research.discovery_scoring import (
     DEFAULT_COVERAGE_CONFIG,
     ChannelObservation,

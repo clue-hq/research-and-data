@@ -8,7 +8,7 @@ disagree — the regression-on-swap demonstration). The real hand-verified gold 
 
 from __future__ import annotations
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityType,
     ExtractionMethod,

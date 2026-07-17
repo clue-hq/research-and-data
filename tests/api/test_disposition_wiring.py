@@ -3,11 +3,11 @@ M13.2 / ``core`` seams, so integration can inject them without importing ``revie
 
 from __future__ import annotations
 
+from clue_core.review import ReviewDispositionEmitter
 from clue_research.api.disposition_wiring import (
     build_disposition_store,
     build_review_disposition_emitter,
 )
-from clue_research.core.review import ReviewDispositionEmitter
 from clue_research.review import DispositionStore
 
 

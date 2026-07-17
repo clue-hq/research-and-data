@@ -18,8 +18,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     EntityId,
@@ -34,6 +33,7 @@ from clue_research.core import (
     new_campaign_run_id,
     new_run_id,
 )
+from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
 from clue_research.discovery_scoring import ScoringPhaseHandler, TierCheckpointPhaseHandler
 from clue_research.discovery_scoring.phases import _discovery_run_id
 from clue_research.discovery_scoring.scoring import FIT_FIELD

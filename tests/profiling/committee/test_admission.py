@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from clue_core import EntityType, ResearchMode
 from clue_research.claimstore import PUBLIC_ONLY, claims_for
-from clue_research.core import EntityType, ResearchMode
 from clue_research.identity import get_contact, insert_contact_entity
 from clue_research.profiling.committee.admission import (
     DISCOVERY_PROVENANCE_FIELD,

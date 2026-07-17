@@ -16,8 +16,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from clue_research.claimstore import ALL_TENANTS, claims_for_runs, insert_claim
-from clue_research.core import (
+from clue_core import (
     Estimate,
     ExtractionMethod,
     ResearchMode,
@@ -26,6 +25,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, claims_for_runs, insert_claim
 from clue_research.review import (
     InMemoryCampaignStateReader,
     InMemoryCostBurnDownReader,

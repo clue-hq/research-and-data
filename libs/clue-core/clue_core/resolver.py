@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from clue_research.core.claim import Claim
-from clue_research.core.entity import Entity
-from clue_research.core.field import FieldDef
+from clue_core.claim import Claim
+from clue_core.entity import Entity
+from clue_core.field import FieldDef
 
 
 class ResolverError(Exception):

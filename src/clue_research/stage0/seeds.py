@@ -37,8 +37,7 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     ClaimId,
     EntityId,
@@ -48,6 +47,7 @@ from clue_research.core import (
     RunId,
     discovery_claim,
 )
+from clue_research.claimstore import TenantScope, claims_for, insert_claim
 from clue_research.icp import ScoringRubric, fit_floor, get_rubric_version, score_entity
 from clue_research.identity import (
     Observation,

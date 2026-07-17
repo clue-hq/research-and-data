@@ -1,6 +1,6 @@
 """The ``LLMGateway`` protocol + its value types — the model-egress seam (M0.4, conventions §4).
 
-The model analogue of the :class:`~clue_research.core.resolver.Resolver` seam: every *direct* LLM
+The model analogue of the :class:`~clue_core.resolver.Resolver` seam: every *direct* LLM
 call the subsystem makes itself (chat/completion + embedding) goes through **one** shared gateway
 whose provider/model is config, not code. The faithfulness judge (M9.3), the eval rubric scorers
 (M9.6), discovery query-planning (M6.1), ICP synthesis (M5.2), committee role-inference (M8.3) and
@@ -25,7 +25,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_research.core.primitives import CostCents
+from clue_core.primitives import CostCents
 
 # An embedding vector — a plain list of floats (the OpenAI-compatible embedding shape).
 Vector = list[float]

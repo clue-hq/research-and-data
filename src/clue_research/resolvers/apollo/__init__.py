@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import JsonValue
 
-from clue_research.core import CostCents, FieldDef
+from clue_core import CostCents, FieldDef
 from clue_research.resolvers.base import (
     DeterministicResolver,
     EnrichmentBackend,
@@ -31,7 +31,7 @@ from clue_research.resolvers.live import AccountLookup, HttpEnrichmentBackend, H
 if TYPE_CHECKING:
     from pydantic import SecretStr
 
-    from clue_research.core import AccountEntity
+    from clue_core import AccountEntity
 
 SOURCE_KEY = "apollo"
 AUTH_REF = "CLUE_APOLLO_API_KEY"

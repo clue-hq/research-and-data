@@ -1,6 +1,6 @@
 """Default claim-extraction strategies (M4.3).
 
-``extract`` (text → typed :class:`~clue_research.core.ClaimDraft`s) is inherently field/source-
+``extract`` (text → typed :class:`~clue_core.ClaimDraft`s) is inherently field/source-
 specific — an LLM-backed extractor (M8/M11) or a structured parser (M4.5) plugs into the
 :class:`~clue_research.adapters.seams.ClaimExtractor` seam. M4.3 ships the seam plus the small,
 deterministic helpers that prove the framework and serve simple sources: a callable wrapper (so a
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from clue_research.core import ClaimDraft, Entity, FieldDef, NormalizedText
+from clue_core import ClaimDraft, Entity, FieldDef, NormalizedText
 
 # A plain extraction function (the duck-typed body of a ClaimExtractor).
 ExtractFn = Callable[[NormalizedText, Entity, FieldDef], list[ClaimDraft]]

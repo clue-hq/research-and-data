@@ -20,8 +20,8 @@ from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField, load_pack
-from clue_research.core import FieldDef, PassKind, ReuseScope
 
 # The registered field-key for a contact's resolved regime (M10.1). Imported by the resolver so the
 # key is spelled once.

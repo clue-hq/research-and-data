@@ -3,7 +3,7 @@
 `stage0` cannot import `resolvers`/`adapters` (the import-linter one-way worker seam), so the live
 client-knowledge extractor + Firecrawl wiring is api-composition-root integration. The
 reverse-profiling *orchestration* is exercised here by binding a fake
-:class:`~clue_research.core.resolver.Resolver` to a real seeded ``source_key`` via
+:class:`~clue_core.resolver.Resolver` to a real seeded ``source_key`` via
 ``sources.bind_resolver`` — the same dispatch the production waterfall uses — so M5.1's loop,
 budget, versioning and coverage are tested end-to-end and deterministically.
 Tests (unlike milestone packages) may import anything.
@@ -16,7 +16,7 @@ from decimal import Decimal
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     Completion,
     EmbeddingResult,
@@ -52,7 +52,7 @@ from clue_research.stage0 import (
 
 
 class FakeResolver:
-    """A :class:`~clue_research.core.resolver.Resolver` that returns a canned claim per field.
+    """A :class:`~clue_core.resolver.Resolver` that returns a canned claim per field.
 
     ``values`` maps ``field_key -> value_json``; a field absent from it is a hard miss (``[]``). The
     claim's ``source_tier`` MUST equal the bound manifest's tier (the waterfall asserts it), so a
@@ -97,7 +97,7 @@ class FakeResolver:
 
 
 class FakeCrmResolver:
-    """A tier-1 ``crm`` :class:`~clue_research.core.resolver.Resolver` (M5.3 import enrichment).
+    """A tier-1 ``crm`` :class:`~clue_core.resolver.Resolver` (M5.3 import enrichment).
 
     Returns a single ``account.crm_relationship_status`` claim (``extraction_method=crm_import``,
     tier-1, no ``source_url``) for every account — modelling the client's CRM. Bound to the ``crm``
@@ -202,7 +202,7 @@ async def build_confirmed_icp_on_field(
 
 
 class RecordingJudge:
-    """A :class:`~clue_research.core.verification.FaithfulnessJudge` that records the claims it
+    """A :class:`~clue_core.verification.FaithfulnessJudge` that records the claims it
     judged and returns a fixed verdict (default ``SUPPORTED``)."""
 
     def __init__(self, verdict: JudgeVerdict = JudgeVerdict.SUPPORTED) -> None:
@@ -220,7 +220,7 @@ class RecordingJudge:
 
 
 class FakeGateway:
-    """A :class:`~clue_research.core.LLMGateway` returning a canned completion (M5.2 synthesis).
+    """A :class:`~clue_core.LLMGateway` returning a canned completion (M5.2 synthesis).
 
     ``text`` is the (JSON) body ``complete`` returns; ``raise_exc`` makes ``complete`` raise so the
     graceful-degradation-to-floor path is exercised. ``calls`` records the (model, messages) of each

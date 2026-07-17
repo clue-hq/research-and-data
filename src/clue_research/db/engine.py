@@ -76,7 +76,7 @@ def create_engine(url: str | None = None, *, echo: bool = False) -> AsyncEngine:
 
     Prefer :func:`db_lifespan` for process-wide lifecycle; this exists for tests and tools that
     want an isolated engine. ``value_json`` payloads are passed as already-serialized JSON text by
-    the caller (M1) using :func:`clue_research.core.serialize_value_json`, so no engine-level JSON
+    the caller (M1) using :func:`clue_core.serialize_value_json`, so no engine-level JSON
     codec is registered here — serialization stays aligned to ``core`` in one place.
     """
     return create_async_engine(url or database_url(), echo=echo, future=True)

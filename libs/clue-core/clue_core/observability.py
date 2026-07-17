@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core.primitives import RunId, UnitInterval
+from clue_core.primitives import RunId, UnitInterval
 
 
 class UnsearchedChannel(BaseModel):

@@ -20,8 +20,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import PUBLIC_ONLY, claims_for, insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     ClaimId,
     CostCents,
@@ -33,6 +32,7 @@ from clue_research.core import (
     RunId,
     discovery_claim,
 )
+from clue_research.claimstore import PUBLIC_ONLY, claims_for, insert_claim
 from clue_research.identity import (
     Observation,
     insert_contact_entity,

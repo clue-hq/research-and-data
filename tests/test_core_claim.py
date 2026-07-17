@@ -8,7 +8,7 @@ from collections.abc import Callable
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityType,
     ExtractionMethod,

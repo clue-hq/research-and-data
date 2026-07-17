@@ -35,14 +35,7 @@ from redis.asyncio import Redis
 from sqlalchemy import ARRAY, Text, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    DEFAULT_MERGE_POLICY,
-    MergePolicy,
-    TenantScope,
-    claims_for,
-    merge_claims,
-)
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     CurrentValue,
@@ -50,6 +43,13 @@ from clue_research.core import (
     EntityType,
     EqualityMode,
     serialize_value_json,
+)
+from clue_research.claimstore import (
+    DEFAULT_MERGE_POLICY,
+    MergePolicy,
+    TenantScope,
+    claims_for,
+    merge_claims,
 )
 from clue_research.identity.canonicalize import plan_merge
 from clue_research.identity.entities import (

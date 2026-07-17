@@ -22,17 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    DEFAULT_MERGE_POLICY,
-    current_value,
-    insert_claim,
-    merge_claims,
-    register_field,
-)
-from clue_research.config.policy import RetentionTtls
-from clue_research.config.schema import FreshnessTtls
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityId,
     EntityType,
@@ -47,8 +37,18 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.field import FieldDef
-from clue_research.core.verification import Freshness
+from clue_core.field import FieldDef
+from clue_core.verification import Freshness
+from clue_research.claimstore import (
+    ALL_TENANTS,
+    DEFAULT_MERGE_POLICY,
+    current_value,
+    insert_claim,
+    merge_claims,
+    register_field,
+)
+from clue_research.config.policy import RetentionTtls
+from clue_research.config.schema import FreshnessTtls
 from clue_research.obs import SPAN_VERIFICATION_FRESHNESS, InMemorySink, collect_spans
 from clue_research.verification import (
     DEFAULT_CADENCE_POLICY,
@@ -768,7 +768,7 @@ def test_discovery_claims_excluded_from_scan() -> None:
     # the scan is over field claims; a discovery-provenance claim (admission evidence, not a field
     # value) is never a re-research candidate even if old.
     async def _run() -> None:
-        from clue_research.core import ClaimFlavor, DiscoveryProvenance
+        from clue_core import ClaimFlavor, DiscoveryProvenance
 
         async with rollback_conn() as conn:
             entity = new_entity_id()

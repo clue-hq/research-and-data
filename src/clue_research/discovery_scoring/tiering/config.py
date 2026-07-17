@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_research.core import CostCents, UnitInterval
+from clue_core import CostCents, UnitInterval
 
 
 class TieringConfig(BaseModel):

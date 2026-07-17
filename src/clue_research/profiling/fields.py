@@ -50,8 +50,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, UseClass
 from clue_research.claimstore import SeedField, load_pack
-from clue_research.core import FieldDef, PassKind, UseClass
 
 # --- namespaces ------------------------------------------------------------
 NS_RESONANCE = "account.resonance"

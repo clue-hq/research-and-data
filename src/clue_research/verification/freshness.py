@@ -7,7 +7,7 @@ and re-research runs on a cadence (~90-day default; signal fields faster; person
 Doc D §4). This module computes staleness per claim, exposes it as a queryable signal, and emits the
 re-research candidates the M7 durable executor schedules.
 
-:class:`FreshnessImpl` implements the Beat-0 :class:`clue_research.core.verification.Freshness`
+:class:`FreshnessImpl` implements the Beat-0 :class:`clue_core.verification.Freshness`
 protocol, so callers in other milestone packages (M6.3 scoring discounts stale signals; M7.5's
 scheduler asks for re-research candidates) depend only on the ``core`` seam; the concrete engine is
 injected at the ``api`` composition root.
@@ -21,7 +21,7 @@ verification_status/corroborations``; there is no ``freshness_state`` column or 
 schema). M9.5 follows that pattern (same resolution as M9.4's immutable ``identity_binding``):
 
 * :meth:`FreshnessImpl.evaluate` returns the per-claim verdict as the *computed*
-  :class:`~clue_research.core.verification.Staleness` (``FRESH``/``STALE``/``EXPIRED``) — the
+  :class:`~clue_core.verification.Staleness` (``FRESH``/``STALE``/``EXPIRED``) — the
   queryable signal scoring and the merge read; nothing is written to the claim.
 * ``EXPIRED`` is the *retention age-out* disposition (Doc D §4): a personal claim past its retention
   horizon. M9.5 *detects and surfaces* these to M10.5 for age-out
@@ -58,10 +58,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import ALL_TENANTS, TenantScope
-from clue_research.config.policy import RetentionTtls
-from clue_research.config.schema import FreshnessTtls
-from clue_research.core import (
+from clue_core import (
     AgeOutCandidate,
     Claim,
     ClaimId,
@@ -73,7 +70,10 @@ from clue_research.core import (
     UseClass,
     classify_field_key,
 )
-from clue_research.core.field import FieldKey
+from clue_core.field import FieldKey
+from clue_research.claimstore import ALL_TENANTS, TenantScope
+from clue_research.config.policy import RetentionTtls
+from clue_research.config.schema import FreshnessTtls
 from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     SPAN_VERIFICATION_FRESHNESS,
@@ -274,7 +274,7 @@ def _utcnow() -> datetime:
 
 
 class FreshnessImpl:
-    """The M9.5 freshness engine (implements :class:`clue_research.core.verification.Freshness`).
+    """The M9.5 freshness engine (implements :class:`clue_core.verification.Freshness`).
 
     Constructed with the resolved :class:`CadencePolicy`, a :class:`TenantScope` for the scan
     (defaults to :data:`ALL_TENANTS` — re-research is an operator maintenance scan; the emitted

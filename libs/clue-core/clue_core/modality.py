@@ -14,7 +14,7 @@ adapter normalizes; the extractor reads the normalized surface and emits the :cl
 this module defines.
 
 The protocol + its value types live here in ``core`` (the shared-contracts package — the *modality*
-analogue of :class:`~clue_research.core.resolver.Resolver`) so the dispatch framework
+analogue of :class:`~clue_core.resolver.Resolver`) so the dispatch framework
 (M4.3, :mod:`clue_research.adapters`), a resolver that needs adaptation (M4.5 Firecrawl), and a
 deep-pass worker (M8) all import one shape and never re-implement it. The concrete adapters, the
 provider seams (``Transcriber`` / PDF extractor / scrape backend / ``ClaimExtractor``), and
@@ -29,9 +29,9 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
-from clue_research.core.enums import Modality, UseClass
-from clue_research.core.field import FieldKey
-from clue_research.core.primitives import Confidence, UtcDatetime
+from clue_core.enums import Modality, UseClass
+from clue_core.field import FieldKey
+from clue_core.primitives import Confidence, UtcDatetime
 
 
 class RawArtifact(BaseModel):

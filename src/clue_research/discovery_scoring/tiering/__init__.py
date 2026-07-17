@@ -18,7 +18,7 @@ Public seam:
   decision, and the result rows.
 * :class:`TieringConfig` — the per-tier Pass-B budget bands (policy as data, D7).
 
-The integrated ``TIER_CHECKPOINT`` :class:`~clue_research.core.PhaseHandler` (the durable
+The integrated ``TIER_CHECKPOINT`` :class:`~clue_core.PhaseHandler` (the durable
 suspend/resume behaviour M7 schedules) lives in :mod:`clue_research.discovery_scoring.phases`.
 """
 

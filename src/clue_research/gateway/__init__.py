@@ -1,7 +1,7 @@
 """`clue_research.gateway` — the shared LLM gateway client (OpenRouter), M0.4 / conventions §4.
 
 The concrete egress for every *direct* LLM call. The protocol + value types live in
-:mod:`clue_research.core.gateway` (the shared-contracts package); **this** package holds the live
+:mod:`clue_core.gateway` (the shared-contracts package); **this** package holds the live
 OpenRouter client, the deterministic CI stub, the :class:`TracingGateway` that emits the
 ``llm.gateway_call`` span, and :func:`build_gateway` (the stub/live toggle behind the seam). It sits
 **above** the ``obs → config → core`` shared base, so it may import ``obs`` to trace; the ``openai``

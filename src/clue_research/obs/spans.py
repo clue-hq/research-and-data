@@ -8,7 +8,7 @@ something we shouldn't have" (appropriateness) must be separately measurable.
 
 from __future__ import annotations
 
-from clue_research.core.enums import CampaignPhase
+from clue_core.enums import CampaignPhase
 
 # --- source layer (M4) ------------------------------------------------------
 SPAN_RESOLVE = "resolve"  # base name; resolve spans are tagged by source_tier + source_key

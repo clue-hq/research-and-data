@@ -12,8 +12,8 @@ Enough to prove the framework end-to-end and unblock M4.5 (Firecrawl scrape) and
   page → markdown via the :class:`ScrapeBackend` seam (default Firecrawl-backed).
 
 Each adapter is a pure *normalizer*: it composes its modality-specific *transport* (``fetch``) +
-*normalization* (``adapt``) into modality-erased :class:`~clue_research.core.NormalizedText` — two
-independently-swappable seams behind one :class:`~clue_research.core.ModalityAdapter`. Claim
+*normalization* (``adapt``) into modality-erased :class:`~clue_core.NormalizedText` — two
+independently-swappable seams behind one :class:`~clue_core.ModalityAdapter`. Claim
 *extraction* is **not** an adapter concern (it varies by field, not modality): it is the separate
 :class:`~clue_research.adapters.seams.ClaimExtractor` seam ``run_pipeline`` injects per-call. The
 live provider clients are **lazy-imported** so the double-driven CI path (locked decision #3) never
@@ -27,6 +27,12 @@ import io
 from pathlib import Path
 from typing import Any
 
+from clue_core import (
+    AdaptContext,
+    Modality,
+    NormalizedText,
+    RawArtifact,
+)
 from clue_research.adapters.seams import (
     AdaptError,
     BytesFetcher,
@@ -34,12 +40,6 @@ from clue_research.adapters.seams import (
     PdfTextExtractor,
     ScrapeBackend,
     Transcriber,
-)
-from clue_research.core import (
-    AdaptContext,
-    Modality,
-    NormalizedText,
-    RawArtifact,
 )
 
 # --- default transport backends ---------------------------------------------

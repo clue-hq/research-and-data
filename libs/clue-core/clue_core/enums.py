@@ -242,7 +242,7 @@ class WorkerStatus(StrEnum):
 class IdempotencyScope(StrEnum):
     """The two idempotency-key shapes the durable layer keys on (M7.4): a per-account research
     *step* ``(account_run, entity, field, tier)`` and a per-campaign *phase* ``(campaign_run,
-    phase)``. See :mod:`clue_research.core.idempotency` for the pure key-derivation helpers."""
+    phase)``. See :mod:`clue_core.idempotency` for the pure key-derivation helpers."""
 
     ACCOUNT_STEP = "account_step"
     CAMPAIGN_PHASE = "campaign_phase"

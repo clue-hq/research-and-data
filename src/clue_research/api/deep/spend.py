@@ -34,7 +34,7 @@ from typing import Protocol
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     BudgetScope,
     CampaignRunId,
     ClaimId,
@@ -59,7 +59,7 @@ def deep_step_key(account_run_id: RunId, step: str) -> str:
     """The idempotency key for one deep spend step (M8A.4) — ``(account_run, step)`` under the
     ``ACCOUNT_STEP`` scope, where ``step`` is ``"account"`` / ``"committee"`` / ``"contact:<id>"``.
 
-    Distinct from the M4 :func:`~clue_research.core.idempotency.account_step_key` (which keys
+    Distinct from the M4 :func:`~clue_core.idempotency.account_step_key` (which keys
     ``(account_run, entity, field, tier)`` for one field-fill): a deep stage is a coarser unit — one
     whole committee discovery, or one whole contact profile — so it gets its own stable key.
     Deterministic (no clock, no randomness) so a resumed stage re-derives the same key and

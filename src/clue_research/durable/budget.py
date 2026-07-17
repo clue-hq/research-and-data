@@ -3,12 +3,12 @@
 The founders' entire cost concern reduces to one dial — *fan-out cost per account × accounts per
 pass* — and the architecture demands it be explicit, client-controllable, and **enforced** (Doc C
 §5; substrate §5c). :class:`BudgetEngine` is the concrete implementation of the frozen
-:class:`clue_research.core.BudgetEngine` seam: it estimates spend before any deep cost, authorises
+:class:`clue_core.BudgetEngine` seam: it estimates spend before any deep cost, authorises
 (or denies / graceful-stops) every spend through one ``check``, records each charge exactly once,
 applies the client-set per-campaign hard cap, and serves the live burn-down the client surface
 (M13.4) and the source-intelligence learning loop (M13.3 / Doc C §6) consume.
 
-Three scopes, all real (:class:`~clue_research.core.BudgetScope`):
+Three scopes, all real (:class:`~clue_core.BudgetScope`):
 
 * **ACCOUNT** — the per-account deep cap: the account run's per-row override
   (``account_run.budget_cap_cents``) if set, else the per-tier policy band
@@ -45,8 +45,7 @@ from typing import Protocol, runtime_checkable
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.config import BudgetCaps
-from clue_research.core import (
+from clue_core import (
     BudgetDecision,
     BudgetScope,
     BudgetVerdict,
@@ -57,6 +56,7 @@ from clue_research.core import (
     Estimate,
     RunId,
 )
+from clue_research.config import BudgetCaps
 from clue_research.db import transaction
 from clue_research.durable.budget_event import (
     AccountBudgetState,
@@ -321,7 +321,7 @@ class DbBudgetStore:
 
 
 class BudgetEngine:
-    """The cost-governance engine (M7.5) — the concrete :class:`clue_research.core.BudgetEngine`.
+    """The cost-governance engine (M7.5) — the concrete :class:`clue_core.BudgetEngine`.
 
     Construct once with the run's resolved :class:`~clue_research.config.BudgetCaps` policy (the api
     root reads ``get_config(client, icp).budget_caps``) and a :class:`BudgetStore`. It is the

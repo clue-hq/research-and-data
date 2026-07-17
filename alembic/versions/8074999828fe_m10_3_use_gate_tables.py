@@ -32,7 +32,7 @@ and a new enum; it alters **no shared mutable surface** (no ``claim`` ALTER, no 
   typed ``reason`` (``use_reason``), the deciding ``regime`` (audit — *which* jurisdiction the
   verdict was reached under, so the M10.3×M10.1 interaction is queryable; not in the core seam), and
   ``policy_version``. This is the side-table home of
-  :class:`clue_research.core.compliance.UseDecision` — explicitly a verdict **settable *after* the
+  :class:`clue_core.compliance.UseDecision` — explicitly a verdict **settable *after* the
   claim is inserted** (PF-2: "a use verdict is settable post-insert (a side-table row), which an
   immutable born-column would forbid anyway"), never a born ``claim`` column, so M10 never touches
   the append-only immutable guard. Unlike the strictly content-addressed (append-only)
@@ -45,7 +45,7 @@ and a new enum; it alters **no shared mutable surface** (no ``claim`` ALTER, no 
   used something we shouldn't have" is a different, separately-measurable failure from "we
   fabricated").
 
-``use_reason`` mirrors :class:`clue_research.core.enums.UseReason` (a *core* enum — the verdict
+``use_reason`` mirrors :class:`clue_core.enums.UseReason` (a *core* enum — the verdict
 crosses the M12/M13 caller boundary, so it lives in ``core``; the DB↔enum parity test is
 ``tests/compliance/test_use_gate.py::test_use_reason_enum_matches_core`` + the no-DB tuple guard).
 There is deliberately **no ``objected`` member** — a data-subject objection (Art. 21) and retention
@@ -66,7 +66,7 @@ down_revision: str | None = "3df3b2f629fd"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirrors clue_research.core.enums.UseReason (parity-tested in the M10.3 suite, with order).
+# Mirrors clue_core.enums.UseReason (parity-tested in the M10.3 suite, with order).
 _USE_REASON = ("allowed", "sensitive_locked", "use_class_disallowed_for_regime")
 
 

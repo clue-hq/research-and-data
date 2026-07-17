@@ -1,6 +1,6 @@
 """The M13.1 Tier-1 review surface implementation (:class:`ReviewSurfaceImpl`).
 
-Drives the human gate behind the frozen :class:`~clue_research.core.ReviewSurface` contract:
+Drives the human gate behind the frozen :class:`~clue_core.ReviewSurface` contract:
 
 * ``open_session`` — idempotently opens the durable ``review_session`` for one account_handoff
   candidate and returns its read projection (the REVIEW phase handler opens one per ready account;
@@ -23,8 +23,7 @@ from __future__ import annotations
 
 from pydantic import JsonValue
 
-from clue_research.claimstore import TenantScope, claims_by_ids, supersede_claim
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     Claim,
     ClaimId,
@@ -44,12 +43,13 @@ from clue_research.core import (
     classify_field_key,
     new_run_id,
 )
-from clue_research.core.review import (
+from clue_core.review import (
     ReviewDispositionEmitter,
     ReviewResumeHook,
     ReviewSessionId,
     VerificationAnnotationReader,
 )
+from clue_research.claimstore import TenantScope, claims_by_ids, supersede_claim
 from clue_research.db import ConnFactory
 from clue_research.review.projection import ReviewProjector
 from clue_research.review.repository import (
@@ -143,7 +143,7 @@ def _build_reject(target: Claim, *, reason: ReviewRejectReason, note: str | None
 
 
 class ReviewSurfaceImpl:
-    """The production :class:`~clue_research.core.ReviewSurface` (M13.1). Construct once with a
+    """The production :class:`~clue_core.ReviewSurface` (M13.1). Construct once with a
     :class:`~clue_research.review.projection.ReviewProjector`, a ``session_factory``
     (``transaction``) and (optionally) the resume hook + disposition emitter; wired at the ``api``
     composition root."""

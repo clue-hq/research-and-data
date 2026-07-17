@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import AccountEntity, AccountStatus, Entity, EntityType, new_entity_id
+from clue_core import AccountEntity, AccountStatus, Entity, EntityType, new_entity_id
 
 
 def test_entity_requires_a_resolved_uuid_not_a_name() -> None:

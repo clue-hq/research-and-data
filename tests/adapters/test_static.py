@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from clue_core import Modality
 from clue_research.adapters import (
     AdapterNotRegisteredError,
     PassthroughAdapter,
@@ -24,7 +25,6 @@ from clue_research.adapters import (
     span_for,
     unregister_adapter,
 )
-from clue_research.core import Modality
 
 _ADAPTERS_DIR = Path(__file__).resolve().parents[2] / "src" / "clue_research" / "adapters"
 

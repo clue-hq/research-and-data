@@ -1,7 +1,7 @@
 """Contact-profiling result + config types (M8.4).
 
 ``profile_contact`` returns **references** + the per-claim handoff views; ``profile_claims`` is
-built directly to the handoff :class:`~clue_research.core.handoff.ProfileClaimView` shape (value,
+built directly to the handoff :class:`~clue_core.handoff.ProfileClaimView` shape (value,
 evidence_span, source_tier, identity_binding, use_class) so M12 assembles the committee member's
 ``profile_claims`` without translation (overview §3)."""
 
@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     CostCents,
     EntityId,

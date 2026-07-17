@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from clue_research.core import Confidence, CostCents, EntityId
+from clue_core import Confidence, CostCents, EntityId
 
 # The reserved channel label for lookalike expansion from seed/customer/import entities (staged-flow
 # §3; Doc B §4 hybrid). Distinct from a structured-DB/web channel's ``source_key`` so the gate and

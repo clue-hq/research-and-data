@@ -15,8 +15,8 @@ adds the *outer* tables the campaign-run state machine owns:
   resumable execution cursor over it). ``account_run.campaign_run_id`` is a soft FK back to it.
 * ``campaign_phase_checkpoint`` — the per-phase durable record the run commits each phase transition
   into, **UNIQUE on ``(campaign_run_id, phase)``** (the frozen ``(campaign_run, phase)`` idempotency
-  shape — :func:`clue_research.core.idempotency.phase_key`). ``payload_json`` carries the phase
-  handler's :class:`~clue_research.core.PhaseResult` payload by reference — and is the **M6↔M7
+  shape — :func:`clue_core.idempotency.phase_key`). ``payload_json`` carries the phase
+  handler's :class:`~clue_core.PhaseResult` payload by reference — and is the **M6↔M7
   hand-off surface**: M6.4's ``tier_checkpoint`` handler persists its review payload (proposed
   cutoffs, tier distribution, cost estimate, decision) here via ``payload_json`` with a read-back,
   so M6 needs **no** bespoke ``tier_checkpoint`` table (telemetry-ownership agreement). ``status``
@@ -32,7 +32,7 @@ Soft FKs (no ``REFERENCES``, mirroring ``claim``/``account_run`` 0002/M7.1): ``c
 FK-referenced by ``account_run`` at the DB level (integrity is enforced in the write path) so the
 two M7 migrations stay order-independent.
 
-Enums: ``campaign_phase`` mirrors the **core** :class:`clue_research.core.enums.CampaignPhase` (the
+Enums: ``campaign_phase`` mirrors the **core** :class:`clue_core.enums.CampaignPhase` (the
 cross-milestone phase vocabulary — every phase handler shares it); ``campaign_run_status`` and
 ``phase_checkpoint_status`` are **durable-internal** lifecycle enums mirrored from
 :mod:`clue_research.durable.enums`. All three are parity-tested against their Python sources in
@@ -51,7 +51,7 @@ down_revision: str | None = "79d56a0f4425"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums.CampaignPhase (a CORE enum — the shared phase vocabulary). The
+# Mirror clue_core.enums.CampaignPhase (a CORE enum — the shared phase vocabulary). The
 # parity test in tests/durable/ guards against drift, and obs.CAMPAIGN_PHASES derives from the same
 # source, so the span tokens, the state-machine enum, and this DB enum cannot diverge.
 _CAMPAIGN_PHASE = (

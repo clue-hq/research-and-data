@@ -9,8 +9,8 @@ it counts as the aspect's output.
 Two pure pieces, both over ``core`` types only (so this stays import-trivial and unit-testable
 without a DB):
 
-* :func:`build_target_lock` turns a resolved :class:`~clue_research.core.AccountEntity` into the
-  shared :class:`~clue_research.core.TargetLock` context (canonical domain + identifiers + a
+* :func:`build_target_lock` turns a resolved :class:`~clue_core.AccountEntity` into the
+  shared :class:`~clue_core.TargetLock` context (canonical domain + identifiers + a
   no-drift instruction) — the same shape M9.1's ``PreSpendGate.assemble_target_lock`` produces,
   so the synthesis prompt and the post-fill validator read one lock.
 * :func:`binds_to_entity` is the validator the M8.1 worker applies to drift-prone claims (tier ≥ 3):
@@ -32,7 +32,7 @@ from collections.abc import Iterable
 
 from pydantic import JsonValue
 
-from clue_research.core import AccountEntity, Claim, TargetLock
+from clue_core import AccountEntity, Claim, TargetLock
 from clue_research.identity import registrable_domain
 
 # Open-web / synthesis tiers — where the prototype drifted (staged-flow §8). Tiers 1–2 are
@@ -41,7 +41,7 @@ _BINDING_CHECK_MIN_TIER = 3
 
 
 def build_target_lock(account: AccountEntity) -> TargetLock:
-    """Build the :class:`~clue_research.core.TargetLock` for a resolved account (M8.1).
+    """Build the :class:`~clue_core.TargetLock` for a resolved account (M8.1).
 
     Mirrors M9.1's ``assemble_target_lock``: the canonical domain is the strong key, with the
     registry ids / canonical name / aliases / hq geo as the disambiguator bundle, plus a

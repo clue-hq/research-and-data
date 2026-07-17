@@ -22,12 +22,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    insert_claim,
-    record_verification,
-    supersede_claim,
-)
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     ClaimId,
     CommitteeMember,
@@ -49,7 +44,12 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.retrieval import ClientKnowledgeChunk
+from clue_core.retrieval import ClientKnowledgeChunk
+from clue_research.claimstore import (
+    insert_claim,
+    record_verification,
+    supersede_claim,
+)
 from clue_research.identity import DEFAULT_REUSE_POLICY, insert_account_entity, stamp_reuse
 from clue_research.narrative import (
     FIT_FIELD,

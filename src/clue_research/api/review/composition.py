@@ -5,7 +5,7 @@ package and the ``verification``/``compliance``/``durable`` packages whose data 
 displays / whose state machine it resumes. This module assembles:
 
 * :class:`DbVerificationAnnotationReader` — the production
-  :class:`~clue_research.core.VerificationAnnotationReader` over the ``faithfulness_verdict``
+  :class:`~clue_core.VerificationAnnotationReader` over the ``faithfulness_verdict``
   (M9.3), ``use_decision`` (M10.3), and ``conflict_flag`` (M9.2) side tables (read by raw SQL, the
   composition root — these could be promoted to public reader fns in
   ``verification``/``compliance`` later; tracked follow-up);
@@ -25,9 +25,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import bindparam, text
 
-from clue_research.api.handoff_wiring import DurableHandoffReadinessReader
-from clue_research.api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     ClaimId,
     EntityId,
@@ -37,12 +35,14 @@ from clue_research.core import (
     UseDecision,
     UseReason,
 )
-from clue_research.core.review import (
+from clue_core.review import (
     ClaimAnnotation,
     FieldConflict,
     ReviewDispositionEmitter,
     VerificationAnnotationReader,
 )
+from clue_research.api.handoff_wiring import DurableHandoffReadinessReader
+from clue_research.api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
 from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable import AccountSpec, register_phase_handler
 from clue_research.durable.campaign import CampaignRun, CheckpointNotAwaiting
@@ -50,7 +50,7 @@ from clue_research.review import ReviewProjector, ReviewSurfaceImpl
 
 
 class DbVerificationAnnotationReader:
-    """The production :class:`~clue_research.core.VerificationAnnotationReader` over the M9/M10 side
+    """The production :class:`~clue_core.VerificationAnnotationReader` over the M9/M10 side
     tables. Manages its own short read transaction (the seam carries no connection). The claim ids
     are already tenant-scoped by the projection (it reads only tenant-visible claims), so the side
     tables — which carry no tenant column — are read by ``claim_id`` directly."""

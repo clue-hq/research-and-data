@@ -24,7 +24,7 @@ import json
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import Message, Persona, Role, serialize_value_json
+from clue_core import Message, Persona, Role, serialize_value_json
 
 # The current prompt version. Bumping it (or adding a key to ``PROMPTS`` / ``ANGLE_TEMPLATES``)
 # invalidates nothing structurally but is recorded on each narrative's ``value_json`` lineage via

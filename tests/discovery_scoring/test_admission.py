@@ -12,8 +12,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import ALL_TENANTS, claims_for
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     ClaimFlavor,
     EntityId,
@@ -21,6 +20,7 @@ from clue_research.core import (
     ResearchMode,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, claims_for
 from clue_research.discovery_scoring import AdmissionStatus, ExistenceVerdict, admit
 from clue_research.discovery_scoring.gate.admission import DISCOVERY_PROVENANCE_FIELD
 from clue_research.identity import (

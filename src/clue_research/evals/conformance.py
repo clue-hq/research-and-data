@@ -1,13 +1,13 @@
 """Reusable contract-conformance checks (M0.6).
 
 The fixtures every future component's tests call to assert it honours an M0 seam — most importantly
-the :class:`~clue_research.core.Resolver` protocol; a new resolver (M4) proves conformance the same
+the :class:`~clue_core.Resolver` protocol; a new resolver (M4) proves conformance the same
 way regardless of provider. These keep "replaceable without breaking neighbours" a checked property.
 """
 
 from __future__ import annotations
 
-from clue_research.core import Resolver, SourceManifest
+from clue_core import Resolver, SourceManifest
 
 
 def assert_resolver_conformance(candidate: object) -> None:
@@ -20,5 +20,5 @@ def assert_resolver_conformance(candidate: object) -> None:
 
 
 def assert_valid_source_manifest(manifest: object) -> None:
-    """Assert ``manifest`` is a well-formed :class:`~clue_research.core.SourceManifest`."""
+    """Assert ``manifest`` is a well-formed :class:`~clue_core.SourceManifest`."""
     assert isinstance(manifest, SourceManifest), f"{manifest!r} is not a SourceManifest"

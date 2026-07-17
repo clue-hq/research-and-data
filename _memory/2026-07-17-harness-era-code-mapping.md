@@ -70,6 +70,34 @@ questions to founder (see below).
    surfaces (it doesn't — new tables + new package; only coupling is spine scope ids → spine
    lands first).
 
+## Q2 partially resolved — docs committed (2026-07-17)
+Founder ruled: commit the docs on `m13.3/learning-loop`. Done as `ebe7f7d` (21 files, +8086):
+full harness-era doc set + doc map + substrate-doc revisions + CLAUDE.md/AGENTS.md (AGENTS.md
+re-synced identical to CLAUDE.md) + 4 _memory notes + diagrams + proposed-research-design.png.
+Two ruled doc touches included: AGENTS.md sync; Doc M §4 naming note (`scope_type` enum uses
+`project` from birth per §1a). **The founder's Settings slice (config/settings.py,
+CLUE_SYNTHESIS_MODEL wiring, scripts/.env.example, tests) remains deliberately uncommitted** —
+not authorized; his in-flight work.
+
+## Phase A planned (same day, later)
+Founder said "proceed with phase A." Detailed execution spec written:
+`docs/specs/PA-phase-a-restructure-and-spine.md` (uncommitted, for review). Grounded in three
+censuses (packaging/tooling; rename blast radius; py_lumen_obs reachable at
+`~/conductor/workspaces/clue-design/havana/py_lumen_obs`, 839 lines).
+Key facts: baseline `make check` FAILS — 15 ruff errors (1 I001 in uncommitted Settings slice;
+~14 E501 docstrings in COMMITTED code: identity/resolve.py, profiling/account.py,
+icp/source_profile.py — last two commits landed ungated). Rename surface: 19 tables (4 tenant_id,
+15 client_id), ~20 named indexes/constraints, ~1600 code occurrences, ~47 string-literal keys,
+ATTR_CLIENT_ID span attr, claim append-only trigger + reuse-scope CHECK.
+Plan: A0 green baseline + commit Settings slice + branch `platform/workspace-restructure-v0` →
+A1 R0 (uv workspace + libs/clue-obs structlog port, workspace_id bound-context from birth) →
+A2 R1 (6 lib promotions, move-only commits + DRY batch incl. claim_tagger/contact-fill rejoin) →
+A3 rename (one reversible migration, 19 tables; TenantScope→WorkspaceScope; X-Client-Id→
+X-Workspace-Id; tenant_private enum RETAINED) then spine (libs/clue-spine: workspace/brand/
+product/project + campaign_run.project_id; composite FKs; legacy-table FK backfill deferred to
+step 2) → A4 R2 (clue_research → subsystems/research; scaffolds). ~4–5 working days serial.
+**[DEVIATION flags for founder]:** shims skipped (no in-flight branches + simplicity ruling);
+spine as libs/clue-spine (new box vs Doc R tree); tenant_private retained; header rename.
+
 ## Next
-Founder to rule on execution posture (Q1) + commit posture (Q2) → then: commit docs; R0; R1
-(+DRY); spine + workspace_id rename pass; R2 scaffolds; step 0. Update this note as rulings land.
+Execute A0/A1 (deviation-free); founder signs off deviations before A2/A3. No push.

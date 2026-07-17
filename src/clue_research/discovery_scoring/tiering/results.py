@@ -22,7 +22,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
-from clue_research.core import ClaimId, CostCents, EntityId, Estimate, parse_cost_cents
+from clue_core import ClaimId, CostCents, EntityId, Estimate, parse_cost_cents
 from clue_research.icp.rubric import TierCutoffs
 
 # The key under which the M7 state machine threads the client's ``resume(...)`` decision into the

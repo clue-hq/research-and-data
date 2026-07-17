@@ -21,7 +21,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import UnitInterval
+from clue_core import UnitInterval
 from clue_research.profiling.committee.stopping import CommitteeStopReason
 
 # Never claim we found the whole committee, however saturated the sampling looks (conventions §5).

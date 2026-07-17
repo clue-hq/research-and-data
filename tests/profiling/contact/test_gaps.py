@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     IdentityBinding,
     ResearchMode,
     UseClass,
     contact_claim,
 )
+from clue_research.claimstore import insert_claim
 from clue_research.identity import stamp_reuse
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE
 from clue_research.profiling.contact import compute_contact_gap_fields

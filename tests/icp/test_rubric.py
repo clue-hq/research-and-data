@@ -12,8 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from clue_research.claimstore import ALL_TENANTS, insert_claim, register_field
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     CurrentValue,
     EntityId,
@@ -31,6 +30,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, insert_claim, register_field
 from clue_research.icp import (
     Contribution,
     ContributionFlag,

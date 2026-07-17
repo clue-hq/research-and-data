@@ -23,8 +23,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, Persona
 from clue_research.claimstore import SeedField, load_pack
-from clue_research.core import FieldDef, PassKind, Persona
 
 # --- field keys (conventions §3: plain contact.* committee facts) -----------
 ROLE_ON_COMMITTEE = "contact.role_on_committee"

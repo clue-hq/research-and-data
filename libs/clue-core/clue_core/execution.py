@@ -3,7 +3,7 @@
 M7 (``durable``) is the runtime *underneath* every phase: M5/M6/M8/M9/M12 register as
 :class:`PhaseHandler`\\ s into the campaign-run state machine, and M8's deep workers implement
 :class:`AspectWorker`. Per the project's seam rule (conventions §2) — and exactly like the
-:class:`~clue_research.core.resolver.Resolver` and :class:`~clue_research.core.gateway.LLMGateway`
+:class:`~clue_core.resolver.Resolver` and :class:`~clue_core.gateway.LLMGateway`
 protocols — the *contract* lives in ``core`` while the *implementation* lives in its package
 (``durable``). That is what lets every milestone package stay import-independent of the others
 (the import-linter independence contract): a handler imports ``core``, never ``durable``; the
@@ -26,15 +26,15 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_research.core.enums import (
+from clue_core.enums import (
     BudgetScope,
     BudgetVerdict,
     CampaignPhase,
     PhaseStatus,
     WorkerStatus,
 )
-from clue_research.core.field import FieldKey
-from clue_research.core.primitives import (
+from clue_core.field import FieldKey
+from clue_core.primitives import (
     CampaignRunId,
     ClaimId,
     CostCents,

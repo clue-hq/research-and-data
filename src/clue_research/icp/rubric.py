@@ -39,8 +39,7 @@ from annotated_types import Ge
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, current_values
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     Confidence,
     CurrentValue,
@@ -51,6 +50,7 @@ from clue_research.core import (
     ScoreComponent,
     UnitInterval,
 )
+from clue_research.claimstore import TenantScope, current_values
 from clue_research.icp.compiler import FieldPlan
 from clue_research.icp.spec import get_active_icp, get_icp_version
 
@@ -239,7 +239,7 @@ class ScoreResult(BaseModel):
         return tuple(c for c in self.contributions if c.dimension is ScoreDimension.INTENT)
 
     def as_fit_score(self) -> Score:
-        """Project onto the M0.2 :class:`~clue_research.core.Score` the ``account_handoff`` embeds
+        """Project onto the M0.2 :class:`~clue_core.Score` the ``account_handoff`` embeds
         (M12) — same decomposition, with weights renormalized to ``[0,1]`` relative shares."""
         return _as_core_score(self.fit_score, self.fit_contributions)
 

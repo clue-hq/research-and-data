@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from clue_research.core import EntityId
+from clue_core import EntityId
 from clue_research.icp.rubric import RubricEntry, ScoringRubric, SubRubric
 from clue_research.icp.source_profile import SourceWeight, WeightedSource
 from clue_research.review import (

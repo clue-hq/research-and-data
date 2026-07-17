@@ -13,6 +13,7 @@ from collections.abc import Callable
 import pytest
 from sqlalchemy import text
 
+from clue_core import Claim, ExtractionMethod, new_entity_id, new_run_id
 from clue_research.claimstore import (
     ALL_TENANTS,
     current_value,
@@ -21,7 +22,6 @@ from clue_research.claimstore import (
     provenance_index,
     supersede_claim,
 )
-from clue_research.core import Claim, ExtractionMethod, new_entity_id, new_run_id
 
 from .conftest import rollback_conn, run_async
 

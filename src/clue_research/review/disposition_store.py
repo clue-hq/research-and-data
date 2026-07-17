@@ -34,8 +34,7 @@ from uuid import UUID
 from sqlalchemy import ARRAY, String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_by_ids
-from clue_research.core import (
+from clue_core import (
     CampaignRunId,
     ClaimId,
     EntityId,
@@ -43,7 +42,8 @@ from clue_research.core import (
     UtcDatetime,
     serialize_value_json,
 )
-from clue_research.core.review import ReviewActionOutcome
+from clue_core.review import ReviewActionOutcome
+from clue_research.claimstore import TenantScope, claims_by_ids
 from clue_research.db import ConnFactory, transaction
 from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,

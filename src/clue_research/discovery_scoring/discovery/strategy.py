@@ -16,7 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from clue_research.core import CostCents, EntityId
+from clue_core import CostCents, EntityId
 from clue_research.discovery_scoring.discovery.hypothesis import LOOKALIKE_CHANNEL
 
 __all__ = [

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import clue_core as core
 import clue_research.adapters as adapters
-import clue_research.core as core
-from clue_research.core import (
+from clue_core import (
     Completion,
     EmbeddingResult,
     Entity,
@@ -35,7 +35,7 @@ _CFG = SourcePlannerConfig()
 
 
 class _ScriptedGateway:
-    """A fake :class:`~clue_research.core.LLMGateway` returning a fixed completion (hermetic)."""
+    """A fake :class:`~clue_core.LLMGateway` returning a fixed completion (hermetic)."""
 
     def __init__(self, text: str) -> None:
         self._text = text

@@ -18,9 +18,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_core.gateway import TokenUsage
+from clue_core.primitives import CostCents
 from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL, load_settings
-from clue_research.core.gateway import TokenUsage
-from clue_research.core.primitives import CostCents
 
 
 class ModelPrice(BaseModel):
@@ -40,7 +40,7 @@ class ModelPrice(BaseModel):
 
 
 class GatewayConfig(BaseModel):
-    """Versioned config for the shared :class:`~clue_research.core.gateway.LLMGateway`.
+    """Versioned config for the shared :class:`~clue_core.gateway.LLMGateway`.
 
     Every field is "policy as data": the per-call-site model ids, the base URL, timeout/retry, the
     fallback model, and the price table are all swappable without a code change. ``stub`` forces the

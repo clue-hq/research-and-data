@@ -7,7 +7,7 @@ the aggregate, so M13.4 / the M4.6 learning loop can read a per-field pass-rate.
 
 from __future__ import annotations
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     ExtractionMethod,
     ResearchMode,

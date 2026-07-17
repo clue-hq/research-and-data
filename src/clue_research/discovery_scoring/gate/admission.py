@@ -28,8 +28,7 @@ from uuid import NAMESPACE_URL, uuid5
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import ALL_TENANTS, claims_for, insert_claim
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     EntityId,
     EntityType,
@@ -40,6 +39,7 @@ from clue_research.core import (
     SourceTier,
     discovery_claim,
 )
+from clue_research.claimstore import ALL_TENANTS, claims_for, insert_claim
 from clue_research.discovery_scoring.discovery import CandidateHypothesis
 from clue_research.discovery_scoring.gate.existence import (
     DEFAULT_EXISTENCE_CHECK,

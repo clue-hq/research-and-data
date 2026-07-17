@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from clue_core import AdaptContext
 from clue_research.adapters import FetchError, FirecrawlScrapeBackend
-from clue_research.core import AdaptContext
 
 
 class _DictClient:

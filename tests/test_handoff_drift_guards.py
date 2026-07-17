@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     IdentityBinding,
     ProfileClaimView,

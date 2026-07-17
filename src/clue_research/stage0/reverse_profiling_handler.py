@@ -1,7 +1,7 @@
 """The ``REVERSE_PROFILING`` phase handler (M5.1).
 
 M5 owns the campaign-run's first phase (Doc C §4). The handler *implements* the frozen
-:class:`~clue_research.core.execution.PhaseHandler` protocol from ``core`` (Beat-0) — it imports
+:class:`~clue_core.execution.PhaseHandler` protocol from ``core`` (Beat-0) — it imports
 ``core``, never M7's ``durable``; the concrete instance is constructed (with the injected M9 judge
 / M0.4 gateway) and registered into the ``CampaignRun`` state machine at the ``api`` composition
 root, which dispatches by the declared ``phase`` attribute without importing this package.
@@ -12,7 +12,7 @@ pipeline deduplicates instead of double-spending), runs
 :func:`~clue_research.stage0.client_kb.reverse_profile`, and reports the versioned base by
 reference (never claim bodies). A budget graceful-stop returns ``PAUSED`` so the state machine
 holds the run at a durable boundary (raise the cap → resume → the same run id continues), per
-:class:`~clue_research.core.enums.PhaseStatus`.
+:class:`~clue_core.enums.PhaseStatus`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import JsonValue
 
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     CampaignRunId,
     FaithfulnessJudge,
@@ -59,7 +59,7 @@ def _client_input_from_params(params: dict[str, JsonValue]) -> ClientInput:
 
 
 class ReverseProfilingHandler:
-    """Implements :class:`~clue_research.core.execution.PhaseHandler` for ``REVERSE_PROFILING``."""
+    """Implements :class:`~clue_core.execution.PhaseHandler` for ``REVERSE_PROFILING``."""
 
     phase = CampaignPhase.REVERSE_PROFILING
 

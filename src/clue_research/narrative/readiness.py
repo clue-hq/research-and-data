@@ -10,7 +10,7 @@ through this **injected seam**; the production reader (over ``durable.get_campai
 ``account_run``) is built at the ``api`` composition root and injected, exactly like the M12.1
 positioner's committee reader and the M12.2 assembler's committee reader.
 
-The seam deliberately exposes only the **core** :class:`~clue_research.core.CampaignPhase`
+The seam deliberately exposes only the **core** :class:`~clue_core.CampaignPhase`
 (importable
 by ``narrative``) plus pre-computed booleans / plain strings for the durable-internal statuses
 (``CampaignRunStatus`` / ``AccountRunStatus`` live in ``durable.enums`` and are out of bounds here)
@@ -24,7 +24,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_research.core import CampaignPhase, CampaignRunId, EntityId
+from clue_core import CampaignPhase, CampaignRunId, EntityId
 
 
 class RunReadiness(BaseModel):

@@ -15,6 +15,16 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import (
+    AccountStatus,
+    Claim,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    new_entity_id,
+    new_run_id,
+)
 from clue_research.claimstore import current_value, insert_claim
 from clue_research.claimstore.registry import _validate_payload
 from clue_research.claimstore.tenancy import TenantScope
@@ -38,16 +48,6 @@ from clue_research.config import (
     Jurisdiction,
     JurisdictionPolicy,
     RegimeMapping,
-)
-from clue_research.core import (
-    AccountStatus,
-    Claim,
-    EntityId,
-    EntityType,
-    ExtractionMethod,
-    ResearchMode,
-    new_entity_id,
-    new_run_id,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 from clue_research.obs import SPAN_COMPLIANCE_JURISDICTION, InMemorySink, collect_spans

@@ -34,7 +34,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     CostCents,

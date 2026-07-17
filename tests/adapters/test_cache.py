@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from clue_core import NormalizedText
 from clue_research.adapters import (
     CachedArtifact,
     InMemoryArtifactCache,
@@ -16,7 +17,6 @@ from clue_research.adapters import (
     freshness_ttl,
     is_fresh,
 )
-from clue_research.core import NormalizedText
 
 
 def test_content_key_is_deterministic_and_separator_safe() -> None:

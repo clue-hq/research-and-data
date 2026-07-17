@@ -8,7 +8,7 @@ about company B is written to company A".
 
 from __future__ import annotations
 
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     ExtractionMethod,
     ResearchMode,

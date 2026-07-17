@@ -31,7 +31,7 @@ So a synthesized value reaches ``current_value`` only after the faithfulness jud
 
 from __future__ import annotations
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityType,
     FieldClass,

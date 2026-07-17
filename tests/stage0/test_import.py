@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import AccountStatus, EntityId, IdentityBinding, ReuseScope, UseClass
 from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import AccountStatus, EntityId, IdentityBinding, ReuseScope, UseClass
 from clue_research.icp import assign_tier, get_rubric_version, score_entity
 from clue_research.identity import (
     DispositionPolicy,

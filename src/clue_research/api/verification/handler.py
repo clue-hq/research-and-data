@@ -44,8 +44,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
-from clue_research.claimstore import TenantScope
-from clue_research.core import (
+from clue_core import (
     CampaignPhase,
     Claim,
     CostCents,
@@ -57,8 +56,9 @@ from clue_research.core import (
     PhaseResult,
     PhaseStatus,
 )
-from clue_research.core.compliance import UseGate
-from clue_research.core.verification import FaithfulnessJudge
+from clue_core.compliance import UseGate
+from clue_core.verification import FaithfulnessJudge
+from clue_research.claimstore import TenantScope
 from clue_research.durable import AccountSpec
 from clue_research.obs import MetricSink
 from clue_research.synthesis import record_synthesis_health
@@ -83,7 +83,7 @@ ClaimLoader = Callable[[EntityId, TenantScope], Awaitable[Sequence[Claim]]]
 # account-only. Production reads ``identity.contact_ids_for_account``.
 ContactResolver = Callable[[EntityId], Awaitable[Sequence[EntityId]]]
 
-# Build the per-client M10.3 :class:`~clue_research.core.compliance.UseGate` for a run (the gate is
+# Build the per-client M10.3 :class:`~clue_core.compliance.UseGate` for a run (the gate is
 # parameterized by the client's posture policy, so it is resolved from ``ctx.client_id`` at run
 # time, not at handler-construction). ``None`` (the provider unset, or returning ``None``) skips the
 # use-gate leg. Production loads ``ClientPolicy`` and constructs ``compliance.UseGateImpl``.
@@ -116,7 +116,7 @@ class _AccountVerification:
 
 
 class VerificationPhaseHandler:
-    """The ``CampaignPhase.VERIFICATION`` :class:`~clue_research.core.PhaseHandler`.
+    """The ``CampaignPhase.VERIFICATION`` :class:`~clue_core.PhaseHandler`.
 
     Drives corroboration → faithfulness → (use-gate last) → verification-health over each high-tier
     account's deep claims, isolated per account. Construct once per campaign with the injected

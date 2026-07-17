@@ -29,15 +29,7 @@ from decimal import Decimal
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    TenantScope,
-    ValueSchemaError,
-    claims_for,
-    get_field,
-    insert_claim,
-    supersede_claim,
-)
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     Entity,
@@ -50,6 +42,14 @@ from clue_research.core import (
     RunId,
     account_claim,
     new_run_id,
+)
+from clue_research.claimstore import (
+    TenantScope,
+    ValueSchemaError,
+    claims_for,
+    get_field,
+    insert_claim,
+    supersede_claim,
 )
 from clue_research.identity import (
     Observation,

@@ -16,9 +16,7 @@ from decimal import Decimal
 import pytest
 from pydantic import SecretStr
 
-from clue_research.claimstore import ALL_TENANTS, claims_for
-from clue_research.config import Secrets
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     Entity,
@@ -33,6 +31,8 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import ALL_TENANTS, claims_for
+from clue_research.config import Secrets
 from clue_research.resolvers import (
     RetryableResolverError,
     SynthesisResult,

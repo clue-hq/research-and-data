@@ -15,9 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from clue_research.claimstore import insert_claim, register_field
-from clue_research.claimstore.tenancy import TenantScope
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     PassKind,
     ResearchMode,
@@ -27,7 +25,9 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.field import FieldDef
+from clue_core.field import FieldDef
+from clue_research.claimstore import insert_claim, register_field
+from clue_research.claimstore.tenancy import TenantScope
 from clue_research.db import db_lifespan, transaction
 from clue_research.durable import (
     AccountResearchGraph,
