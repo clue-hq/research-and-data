@@ -1,4 +1,4 @@
-"""`clue_research.gateway` — the shared LLM gateway client (OpenRouter), M0.4 / conventions §4.
+"""`clue_gateway` — the shared LLM gateway client (OpenRouter), M0.4 / conventions §4.
 
 The concrete egress for every *direct* LLM call. The protocol + value types live in
 :mod:`clue_core.gateway` (the shared-contracts package); **this** package holds the live
@@ -17,10 +17,10 @@ Implements the LLM-gateway deliverable of ENG-120
 
 from __future__ import annotations
 
-from clue_research.gateway.factory import build_gateway
-from clue_research.gateway.openrouter import GatewayError, OpenRouterGateway
-from clue_research.gateway.stub import StubGateway
-from clue_research.gateway.tracing import TracingGateway
+from clue_gateway.factory import build_gateway
+from clue_gateway.openrouter import GatewayError, OpenRouterGateway
+from clue_gateway.stub import StubGateway
+from clue_gateway.tracing import TracingGateway
 
 __all__ = [
     "build_gateway",

@@ -311,7 +311,7 @@ class FaithfulnessJudgeImpl:
     FaithfulnessJudge`).
 
     Constructed with an injected :class:`~clue_core.gateway.LLMGateway` (the ``core``
-    protocol — the impl never imports ``clue_research.gateway``, keeping verification independent),
+    protocol — the impl never imports ``clue_gateway``, keeping verification independent),
     the resolved :class:`JudgePolicy`, a connection factory (defaults to a committed transaction per
     judge), and an optional metric sink. Injected at the ``api`` composition root; per-client policy
     is loaded via :func:`load_judge_policy`."""

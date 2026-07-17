@@ -8,7 +8,7 @@ module is that scheduler.
 * **Parallelism cap** — an ``asyncio.Semaphore(max_parallel)`` bounds in-flight per-account graphs
   (the cost dial's "accounts per pass" half; tuned by tier/budget).
 * **Single-flight per entity** — each account runs inside a Redis in-flight lock (M2.4
-  :func:`~clue_research.locks.entity_lock`) keyed on its ``entity_id``, so a second run for the same
+  :func:`~clue_locks.entity_lock`) keyed on its ``entity_id``, so a second run for the same
   account waits rather than double-researching it (and double-spending). The lock is acquired
   through an injectable ``lock_factory`` seam, so the scheduler is testable without Redis and the
   lock backend stays swappable (conventions §2); :func:`account_entity_lock_factory` is the
@@ -30,8 +30,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict
 
 from clue_core import CampaignRunId, EntityId, EntityType
+from clue_locks import DEFAULT_TTL_MS, entity_lock
 from clue_research.durable.graph import AccountResearchGraph, AccountRunResult
-from clue_research.locks import DEFAULT_TTL_MS, entity_lock
 
 # A factory the scheduler calls per entity to obtain the in-flight lock context manager. Injectable
 # so tests can supply a process-local lock (no Redis) and prod supplies the Redis entity lock.

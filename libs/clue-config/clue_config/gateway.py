@@ -1,6 +1,6 @@
 """LLM-gateway config — the policy-as-data half of the model-egress seam (M0.4, conventions §2/§4).
 
-The gateway *client* lives in :mod:`clue_research.gateway` (it emits the ``llm.gateway_call`` span,
+The gateway *client* lives in :mod:`clue_gateway` (it emits the ``llm.gateway_call`` span,
 so it must sit above the ``obs → config → core`` layering); its *configuration* lives here, beside
 every other "policy is data" surface, so a model swap — or an OpenRouter → another OpenAI-compatible
 gateway swap — is a config change, never code. :class:`GatewayConfig` is folded into the layered

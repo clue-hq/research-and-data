@@ -120,7 +120,7 @@ __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLDS",
     "SourcePlanPolicy",
     "DEFAULT_SOURCE_PLAN_POLICY",
-    # llm-gateway config (the model-egress policy-as-data; client in clue_research.gateway)
+    # llm-gateway config (the model-egress policy-as-data; client in clue_gateway)
     "GatewayConfig",
     "ModelPrice",
     "DEFAULT_GATEWAY_CONFIG",

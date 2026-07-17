@@ -29,6 +29,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_core.enums import EntityType
+from clue_gateway.stub import StubGateway
 from clue_obs.otel import InMemorySink, collect_spans
 from clue_research.claimstore import ALL_TENANTS, insert_claim
 from clue_research.evals import (
@@ -42,7 +43,6 @@ from clue_research.evals import (
     StubJudge,
     default_scorers,
 )
-from clue_research.gateway.stub import StubGateway
 from clue_research.verification import (
     GOLD_SUITE,
     GatewayJudge,

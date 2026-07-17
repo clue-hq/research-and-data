@@ -39,6 +39,7 @@ from clue_core import (
     SourceTier,
     discovery_claim,
 )
+from clue_locks import entity_lock
 from clue_research.claimstore import ALL_TENANTS, claims_for, insert_claim
 from clue_research.discovery_scoring.discovery import CandidateHypothesis
 from clue_research.discovery_scoring.gate.existence import (
@@ -61,7 +62,6 @@ from clue_research.identity import (
     resolve,
     surviving_id,
 )
-from clue_research.locks import entity_lock
 from clue_research.sources import get_source
 
 # The registered field-key the discovery-provenance claim lands on. A discovery-flavored claim skips

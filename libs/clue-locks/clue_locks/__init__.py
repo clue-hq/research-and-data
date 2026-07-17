@@ -1,4 +1,4 @@
-"""`clue_research.locks` — Redis in-flight locks & rate-limit coordination (M2.4).
+"""`clue_locks` — Redis in-flight locks & rate-limit coordination (M2.4).
 
 The concurrency seam every expensive-work caller uses (substrate §2; conventions §6 — "Redis for
 in-flight locks and rate-limit coordination"). It exposes:
@@ -18,7 +18,7 @@ seam, so swapping Redis for another backend (or a Temporal activity) is invisibl
 
 from __future__ import annotations
 
-from clue_research.locks.client import (
+from clue_locks.client import (
     DEFAULT_REDIS_URL,
     REDIS_URL_ENV,
     create_redis,
@@ -26,7 +26,7 @@ from clue_research.locks.client import (
     redis_lifespan,
     redis_url,
 )
-from clue_research.locks.entity_lock import (
+from clue_locks.entity_lock import (
     DEFAULT_TTL_MS,
     METRIC_LOCK_ACQUIRED,
     METRIC_LOCK_CONTENDED,
@@ -39,7 +39,7 @@ from clue_research.locks.entity_lock import (
     lock_key,
     multi_lock,
 )
-from clue_research.locks.rate_limit import RateLimiter
+from clue_locks.rate_limit import RateLimiter
 
 __all__ = [
     # client lifecycle
