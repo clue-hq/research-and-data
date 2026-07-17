@@ -71,6 +71,7 @@ from clue_core import (
     can_be_promoted,
     decode_jsonb,
     decode_jsonb_scalar,
+    normalize_host,
     serialize_value_json,
 )
 from clue_core.entity import AccountEntity
@@ -189,19 +190,16 @@ def normalize_url(url: str | None) -> str | None:
     lowercase path with the trailing slash dropped, query/fragment discarded. ``None`` for an
     empty/host-less input.
 
-    Scheme-less and doubled-slash URLs are handled by a two-pass parse (``urlsplit(url).hostname``,
-    else ``urlsplit('//' + url).hostname``) — the single ``'//' in url`` heuristic would mis-parse
-    ``acme.com/a//b`` (it contains ``//`` yet has no scheme) as path-only and drop the host. (DRY
-    note: ``corroboration._host`` does the same host folding; consolidating both onto one shared
-    normalizer is a backlog item.)"""
+    A thin host+path wrapper over the shared :func:`clue_core.normalize_host` fold (M9.4 DRY
+    consolidation — one host normalizer with ``corroboration._host`` and the resolver target-lock),
+    which handles scheme-less/doubled-slash URLs by a two-pass parse."""
     if not url:
         return None
-    parts = urlsplit(url)
-    host = parts.hostname or urlsplit("//" + url).hostname or ""
-    host = host.lower().removeprefix("www.")
+    host = normalize_host(url)
     if not host:
         return None
     # Re-derive the path from whichever parse found the host (so a scheme-less input keeps it).
+    parts = urlsplit(url)
     path = (parts.path if parts.hostname else urlsplit("//" + url).path).rstrip("/").lower()
     return host + path
 

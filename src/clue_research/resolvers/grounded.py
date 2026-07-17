@@ -45,7 +45,6 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -64,6 +63,7 @@ from clue_core import (
     ResolverError,
     account_claim,
     new_run_id,
+    normalize_host,
     parse_cost_cents,
     serialize_value_json,
     to_value_json,
@@ -240,17 +240,14 @@ class HttpSynthesisBackend:
 def registrable_host(value: str | None) -> str | None:
     """The lower-cased host of a bare domain or URL, minus a leading ``www.`` — the target-lock key.
 
-    Mirrors ``resolvers.firecrawl._registrable_host`` (DRY backlog: one shared ``normalize_host`` is
-    a post-integration cleanup — not refactored across packages on this feature branch). Returns
-    ``None`` when ``value`` has no host.
+    Delegates to the shared :func:`clue_core.normalize_host` fold (M9.4 DRY consolidation — one
+    host normalizer with ``resolvers.firecrawl._registrable_host``, the M9.2 corroboration
+    ``_host``, and the M9.4 identity-binding ``normalize_url``). Returns ``None`` when ``value``
+    has no host.
     """
     if not value:
         return None
-    raw = value.strip()
-    if "//" not in raw:
-        raw = "//" + raw  # treat a bare domain as a netloc, not a path
-    host = (urlsplit(raw).hostname or "").lower().removeprefix("www.")
-    return host or None
+    return normalize_host(value) or None
 
 
 # Per-field synthesis intent — the phrase appended to the entity-bound query so a provider retrieves

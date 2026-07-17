@@ -54,6 +54,7 @@ from clue_core import (
     IdentityBinding,
     VerificationStatus,
     WinningProvenance,
+    reference_time,
     values_agree,
 )
 from clue_core.field import FieldKey
@@ -109,16 +110,14 @@ class MergePolicy(BaseModel):
 DEFAULT_MERGE_POLICY = MergePolicy()
 
 
-def _reference_time(claim: Claim) -> datetime:
-    """Time a claim's freshness is measured from: when the source was observed, else collected."""
-    return claim.observed_at or claim.collected_at
-
-
 def _is_fresh(claim: Claim, freshness_ttl: timedelta | None, now: datetime) -> bool:
-    """Whether ``claim`` is within its field's TTL. No TTL declared ⇒ always fresh."""
+    """Whether ``claim`` is within its field's TTL (measured from the shared
+    :func:`clue_core.reference_time` — observed, else collected — M9.5 DRY consolidation, so the
+    merge view and the freshness engine can never disagree on a claim's age). No TTL declared ⇒
+    always fresh."""
     if freshness_ttl is None:
         return True
-    return (now - _reference_time(claim)) <= freshness_ttl
+    return (now - reference_time(claim)) <= freshness_ttl
 
 
 def _is_eligible(claim: Claim, policy: MergePolicy) -> bool:

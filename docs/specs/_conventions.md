@@ -43,9 +43,27 @@ neighbours. We achieve this with **stable seams** — narrow contracts that hide
   per client/ICP without code changes.
 - **Durable execution is Temporal-shaped** so the V1 Postgres state machine → Temporal migration is
   mechanical (substrate §5c/§12).
-- **DRY:** shared domain types, the `Resolver` protocol, provenance/claim helpers, the tracing wrapper,
-  and config loaders live in one shared package (M0.2). Resolvers/adapters/judges/scorers import them;
-  they never re-implement them.
+- **DRY (rewritten at Doc R R1 / Phase A, 2026-07-17):** shared domain types, the `Resolver`
+  protocol, provenance/claim helpers, and shared utilities (`normalize_host`, `reference_time`,
+  `decode_jsonb_scalar`, …) live in **`libs/clue-core`**; config loaders in **`libs/clue-config`**;
+  logging/tracing in **`libs/clue-obs`**. **Copying a shared utility into a milestone package is a
+  defect**, not a workaround: the earlier "frozen core" reading (which bred local copies) is
+  replaced by a lightweight **contract-delta lane** — a small, reviewed change to a `libs/` package
+  is always preferable to a second implementation. Module-specific behavior extends a shared
+  engine via **hooks/config** (e.g. the waterfall's pre-insert `claim_tagger`), never by
+  re-implementing the engine.
+- **Conventions serve maintainability — never the reverse (founder ruling, 2026-07-17).** Do not
+  multiply abstractions/packages to satisfy an import rule: genuinely shared things get promoted
+  to a `libs/` package once; single-consumer things live with their one consumer; a protocol
+  exists only when more than one real implementation does. Prefer making invalid states
+  unrepresentable (DB constraints, closed types, keyed idempotency) over defensive
+  exception-handling.
+- **Physical layout (Doc R):** `libs/` = shared, subsystem-agnostic (`clue_core`, `clue_config`,
+  `clue_db`, `clue_gateway`, `clue_locks`, `clue_obs`, `clue_spine`); `subsystems/` = research /
+  memory / content (communicate only through the shared substrates, never by importing each
+  other); `platform/` = toolbelt, agents, fleet, projections, api (the composition root).
+  Import rules are machine-enforced by import-linter exactly as before — the contracts moved with
+  the packages.
 - **One LLM gateway egress — OpenRouter.** Every *direct* LLM call (chat/completion + embedding) goes
   through one shared **LLM gateway client** that wraps **OpenRouter** (OpenAI-compatible). The known
   call sites are the faithfulness judge (M9.3), the eval rubric scorers (M9.6), discovery query-planning

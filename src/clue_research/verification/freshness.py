@@ -71,6 +71,7 @@ from clue_core import (
     Staleness,
     UseClass,
     classify_field_key,
+    reference_time,
 )
 from clue_core.field import FieldKey
 from clue_db import ConnFactory, transaction
@@ -119,14 +120,6 @@ _DEFAULT_RE_RESEARCH_TTL_DAYS = 90  # spec ~90-day re-research default (unlisted
 
 
 # --- pure helpers (DB-free, unit-testable) ----------------------------------
-
-
-def reference_time(claim: Claim) -> datetime:
-    """The time a claim's freshness is measured from: when the source was observed, else when it was
-    collected (mirrors ``claimstore.merge._reference_time`` exactly, so the freshness engine and the
-    merge view never disagree on a claim's age). DRY note: consolidating both onto one shared helper
-    is a backlog item."""
-    return claim.observed_at or claim.collected_at
 
 
 def staleness(

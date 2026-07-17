@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from clue_core import (
@@ -15,6 +16,7 @@ from clue_core import (
     first_confident_claim,
     parse_cost_cents,
     parse_value_json,
+    reference_time,
     serialize_value_json,
     to_value_json,
 )
@@ -56,6 +58,18 @@ def test_decode_jsonb_scalar_never_reparses_a_decoded_scalar() -> None:
     # only a raw bytes/bytearray round-trip is parsed
     assert decode_jsonb_scalar(b'"robotics"') == "robotics"
     assert decode_jsonb_scalar(bytearray(b"42")) == 42
+
+
+def test_reference_time_prefers_observed_then_collected(
+    make_account: Callable[..., Claim],
+) -> None:
+    # The one shared fold (M9.5 DRY consolidation) the merge view, the freshness engine, and the
+    # lawful-basis retention deadline all measure a claim's age from.
+    observed = datetime(2026, 1, 1, tzinfo=UTC)
+    with_observed = make_account(observed_at=observed)
+    assert reference_time(with_observed) == observed
+    without_observed = make_account()
+    assert reference_time(without_observed) == without_observed.collected_at
 
 
 def test_tier_order_constant() -> None:

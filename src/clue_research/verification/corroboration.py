@@ -36,7 +36,6 @@ evaluator (swap note, M09 §M9.2).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
@@ -51,6 +50,7 @@ from clue_core import (
     EqualityMode,
     VerificationStatus,
     can_be_promoted,
+    normalize_host,
     serialize_value_json,
 )
 from clue_core import values_agree as _core_values_agree
@@ -191,19 +191,14 @@ def _host(source_url: str | None) -> str | None:
     """The registrable host of a ``source_url`` (lowercased, ``www.`` stripped), or ``None`` for an
     absent / host-less URL. Two claims sharing a host are not independent.
 
-    Uses :meth:`urllib.parse.SplitResult.hostname`, which correctly strips userinfo, the port, and
-    IPv6 brackets (a manual ``rsplit(':')`` would corrupt a bracketed IPv6 authority). A scheme-less
-    but real authority (``"acme.com/x"`` — ``source_url`` is an unvalidated string) is re-parsed
-    with a ``//`` prefix so it is recognised rather than treated as host-less."""
+    Delegates to the shared :func:`clue_core.normalize_host` fold (M9.4 DRY consolidation — one
+    host normalizer with the identity-binding ``normalize_url`` and the resolver target-lock),
+    which uses ``hostname`` (userinfo/port/IPv6-bracket safe) and re-parses a scheme-less but real
+    authority (``"acme.com/x"``) with a ``//`` prefix so it is recognised, not treated as
+    host-less."""
     if not source_url:
         return None
-    host = urlsplit(source_url).hostname or urlsplit("//" + source_url).hostname
-    if not host:
-        return None
-    host = host.lower()
-    if host.startswith("www."):
-        host = host[4:]
-    return host or None
+    return normalize_host(source_url) or None
 
 
 def independent_source_count(claims: Sequence[Claim]) -> int:

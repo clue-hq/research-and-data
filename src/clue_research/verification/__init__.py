@@ -42,7 +42,8 @@ Implemented so far:
 from __future__ import annotations
 
 # EqualityMode relocated to ``core`` (M9.2×M1.2 — merge/corroborator shared equality); re-exported.
-from clue_core import AgeOutCandidate, EqualityMode
+# reference_time likewise relocated to ``core`` (M9.5 DRY consolidation — one merge/freshness fold).
+from clue_core import AgeOutCandidate, EqualityMode, reference_time
 from clue_research.verification.corroboration import (
     DEFAULT_CORROBORATION_POLICY,
     CorroborationPolicy,
@@ -93,7 +94,6 @@ from clue_research.verification.freshness import (
     CadencePolicy,
     FreshnessImpl,
     load_cadence_policy,
-    reference_time,
     retention_horizon_for,
     staleness,
 )
