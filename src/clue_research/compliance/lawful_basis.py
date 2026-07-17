@@ -45,6 +45,7 @@ from clue_core import (
     ExtractionMethod,
     UseClass,
     UtcDatetime,
+    reference_time,
 )
 from clue_obs.otel import (
     ATTR_FIELD_KEY,
@@ -228,8 +229,8 @@ async def record_lawful_basis(
     retention_horizon_for(use_class)``
     (``None`` when the use-class carries no personal retention). The reference time is
     ``observed_at`` (when the source published / was seen), falling back to ``collected_at`` — the
-    **same** ``reference_time`` the M9.5 freshness engine ages out on (``merge._reference_time`` /
-    ``verification.freshness.reference_time``), so the *recorded* erasure deadline this surfaces to
+    **same** shared :func:`clue_core.reference_time` the M9.5 freshness engine ages out on and the
+    M1.2 merge measures TTLs from, so the *recorded* erasure deadline this surfaces to
     the compliance owner / a DSAR access export equals the moment the retention sweep actually
     tombstones the claim (it would otherwise overstate the deadline whenever a source was published
     before it was scraped). Raises on a claim with no ``use_class`` (lawful basis is recorded only
@@ -246,8 +247,9 @@ async def record_lawful_basis(
         is_third_party_collected(claim) if third_party_collected is None else third_party_collected
     )
     horizon = retention_horizon_for(use_class, retention)
-    reference_time = claim.observed_at or claim.collected_at  # mirrors merge._reference_time (M9.5)
-    retention_until = reference_time + horizon if horizon is not None else None
+    # The shared clue_core.reference_time (M9.5 DRY consolidation) — the same fold the freshness
+    # sweep ages out on, so the recorded deadline equals the actual tombstone moment.
+    retention_until = reference_time(claim) + horizon if horizon is not None else None
     record = LawfulBasisRecord(
         claim_id=claim.id,
         lawful_basis=basis,

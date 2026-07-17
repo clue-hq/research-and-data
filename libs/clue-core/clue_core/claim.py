@@ -218,3 +218,10 @@ def can_be_promoted(claim: Claim) -> bool:
         claim.entity_type is EntityType.CONTACT and claim.identity_binding is IdentityBinding.WEAK
     )
     return not (tier4_without_span or weakly_bound_contact)
+
+
+def reference_time(claim: Claim) -> datetime:
+    """The time a claim's freshness is measured from: when the source was observed, else when it
+    was collected (M9.5 DRY consolidation — the one definition the merge view (M1.2) and the
+    freshness engine (M9.5) share, so they can never disagree on a claim's age)."""
+    return claim.observed_at or claim.collected_at

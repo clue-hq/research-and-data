@@ -27,7 +27,6 @@ Two anti-drift / governance guards live here, where the fetch happens:
 from __future__ import annotations
 
 from collections.abc import Callable
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -40,6 +39,7 @@ from clue_core import (
     ResearchMode,
     ResolverError,
     new_run_id,
+    normalize_host,
 )
 from clue_research.adapters import (
     ClaimExtractor,
@@ -73,14 +73,11 @@ def default_surfaces(account: AccountEntity) -> list[str]:
 
 def _registrable_host(value: str | None) -> str | None:
     """The lower-cased host of a bare domain or a URL, minus a leading ``www.`` — the target-lock
-    comparison key. Returns ``None`` when ``value`` has no host."""
+    comparison key. Returns ``None`` when ``value`` has no host. Delegates to the shared
+    :func:`clue_core.normalize_host` fold (M9.4 DRY consolidation)."""
     if not value:
         return None
-    raw = value.strip()
-    if "//" not in raw:
-        raw = "//" + raw  # treat a bare domain as a netloc, not a path
-    host = (urlsplit(raw).hostname or "").lower().removeprefix("www.")
-    return host or None
+    return normalize_host(value) or None
 
 
 def _account_country(account: AccountEntity) -> str | None:

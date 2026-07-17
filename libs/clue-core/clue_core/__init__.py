@@ -12,7 +12,7 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 
 from __future__ import annotations
 
-from clue_core.claim import Claim, DiscoveryProvenance, can_be_promoted
+from clue_core.claim import Claim, DiscoveryProvenance, can_be_promoted, reference_time
 from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_core.entity import AccountEntity, ContactEntity, Entity
 from clue_core.enums import (
@@ -146,6 +146,7 @@ from clue_core.modality import (
     NormalizedText,
     RawArtifact,
 )
+from clue_core.normalize import normalize_host
 from clue_core.observability import (
     CoverageReport,
     UnsearchedChannel,
@@ -280,6 +281,7 @@ __all__ = [
     "Claim",
     "DiscoveryProvenance",
     "can_be_promoted",
+    "reference_time",
     # source / resolver
     "SourceManifest",
     "Resolver",
@@ -329,6 +331,7 @@ __all__ = [
     "parse_value_json",
     "decode_jsonb",
     "decode_jsonb_scalar",
+    "normalize_host",
     "by_tier_ascending",
     "first_confident_claim",
     "parse_cost_cents",
