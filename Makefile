@@ -12,7 +12,7 @@ help: ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 install: ## Create the venv and install deps + the package (editable)
-	uv sync
+	uv sync --all-packages
 
 format: ## Auto-format and apply safe lint fixes
 	uv run ruff format .
@@ -36,7 +36,7 @@ check: lint typecheck contracts test ## Run the full local gate (what CI runs)
 # --- database (M0.3) --------------------------------------------------------
 # Postgres + pgvector lifecycle and the reviewed-migration workflow. The DB DSN is read from
 # CLUE_DATABASE_URL (the shared seam), defaulting to the local docker-compose database
-# (postgresql+asyncpg://clue:clue@localhost:5432/clue). See src/clue_research/db/README.md.
+# (postgresql+asyncpg://clue:clue@localhost:5432/clue). See libs/clue-db/clue_db/README.md.
 
 db-up: ## Start local Postgres+pgvector (waits for healthcheck)
 	docker compose up -d --wait db

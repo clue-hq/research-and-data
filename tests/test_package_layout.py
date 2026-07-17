@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-PKG = REPO / "src" / "clue_research"
+PKG = REPO / "subsystems" / "research" / "clue_research"
 LIBS = REPO / "libs"
 
 # package -> the milestone token its README must name

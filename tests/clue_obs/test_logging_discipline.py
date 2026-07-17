@@ -22,7 +22,7 @@ def _is_allowed(path: Path) -> bool:
 
 def test_no_direct_logging_getlogger_outside_clue_obs() -> None:
     offenders: list[str] = []
-    for root in (REPO / "src", REPO / "libs", REPO / "scripts"):
+    for root in (REPO / "subsystems", REPO / "platform", REPO / "libs", REPO / "scripts"):
         if not root.exists():
             continue
         for path in root.rglob("*.py"):
