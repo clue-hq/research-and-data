@@ -206,7 +206,7 @@ def test_run_budget_state_spend_and_estimate() -> None:
             await ensure_campaign_run(
                 conn,
                 campaign_run_id=run_id,
-                client_id="c",
+                workspace_id="c",
                 icp_key="k",
                 icp_version=1,
                 budget_cap_cents=Decimal("1000"),
@@ -243,7 +243,7 @@ def test_campaign_run_estimated_nonneg_check() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="c", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="c", icp_key="k", icp_version=1
             )
             with pytest.raises(Exception, match="estimated_nonneg"):
                 await conn.execute(

@@ -59,7 +59,7 @@ from clue_core import (
 )
 from clue_core.field import FieldKey
 from clue_research.claimstore.claims import _SELECT_COLUMNS, _row_to_claim, claims_for
-from clue_research.claimstore.tenancy import TenantScope
+from clue_research.claimstore.tenancy import WorkspaceScope
 
 # ``EqualityMode`` / ``values_agree`` come from ``core`` (the substrate's one equality contract):
 # the merge's conflict / distinctness check and the M9.2 corroborator's grouping share them, so
@@ -349,14 +349,16 @@ async def current_value(
     entity_id: EntityId,
     field_key: FieldKey | str,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> CurrentValue | None:
     """The current truth for one ``(entity, field)``, or ``None`` if there is no eligible claim.
 
     ``scope`` is **required** (M2.5 — fail-closed): the caller must state whose view this is — a
-    tenant (:meth:`TenantScope.for_tenant`, returning public ∪ that tenant's private), the shared
-    public base (:meth:`TenantScope.public_only`), or the operator (``TenantScope.all_tenants``).
+    workspace (:meth:`WorkspaceScope.for_workspace`, returning public ∪ that workspace's private),
+    the shared
+    public base (:meth:`WorkspaceScope.public_only`), or the operator
+    (``WorkspaceScope.all_workspaces``).
     A tenant scope never returns another tenant's private claim.
     """
     claims = await claims_for(conn, entity_id, field_key, scope=scope)
@@ -369,7 +371,7 @@ async def current_values(
     entity_ids: Iterable[EntityId],
     field_keys: Iterable[FieldKey | str],
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> dict[tuple[EntityId, str], CurrentValue]:
     """Batch merge over the ``entity_ids × field_keys`` cross-product in a single live-claims query.
@@ -418,7 +420,7 @@ async def provenance_index(
     conn: AsyncConnection,
     entity_id: EntityId,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> dict[str, WinningProvenance]:
     """The winning provenance per field for an entity — ``{field_key: winning_provenance}``

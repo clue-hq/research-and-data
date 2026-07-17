@@ -254,7 +254,7 @@ async def get_pack_source_profile(
     conn: AsyncConnection,
     pack_key: str,
     *,
-    client_id: str | None = None,
+    workspace_id: str | None = None,
     icp_key: str | None = None,
 ) -> ResolvedSourceProfile:
     """The pack's resolved source profile (pack default ⊕ client/ICP override). Consumed by M4's
@@ -263,7 +263,7 @@ async def get_pack_source_profile(
     rec = await get_pack(conn, pack_key)
     if rec is None:
         raise UnknownPackError(f"pack {pack_key!r} is not in the catalog")
-    return await get_source_profile(conn, pack_key, client_id=client_id, icp_key=icp_key)
+    return await get_source_profile(conn, pack_key, workspace_id=workspace_id, icp_key=icp_key)
 
 
 def _merge_slot(weighted_lists: Sequence[Sequence[WeightedSource]]) -> tuple[WeightedSource, ...]:
@@ -297,7 +297,8 @@ async def serve_source_profile(
 
     The ICP-level analogue of :func:`get_pack_source_profile`. Each pack is resolved with the
     client/ICP override applied (:func:`get_pack_source_profile`, keyed by ``pack_key`` with
-    ``client_id``/``icp_key`` from the spec — override > pack default). The merge unions the packs'
+    ``workspace_id``/``icp_key`` from the spec — override > pack default). The merge unions the
+    packs'
     weighted sets (see :func:`_merge_slot`). ``packs`` overrides ``spec.enabled_packs`` (for an
     audit of a subset); the default serves exactly the ICP's enabled packs. Consumed by M4's Source
     Planner (``clue_research.sources.resolve_allowed_set`` intersects the result with the registry).
@@ -305,7 +306,7 @@ async def serve_source_profile(
     pack_keys = tuple(packs) if packs is not None else tuple(spec.enabled_packs)
     profiles: list[ResolvedSourceProfile] = [
         await get_pack_source_profile(
-            conn, pack_key, client_id=spec.client_id, icp_key=spec.icp_key
+            conn, pack_key, workspace_id=spec.workspace_id, icp_key=spec.icp_key
         )
         for pack_key in pack_keys
     ]

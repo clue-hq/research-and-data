@@ -100,14 +100,14 @@ def _contact_resolver(contacts: dict[EntityId, list[EntityId]]):  # noqa: ANN202
 
 
 def _spec(entity_id: EntityId) -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier="top", tenant_id=_CLIENT)
+    return AccountSpec(entity_id=entity_id, tier="top", workspace_id=_CLIENT)
 
 
 def _ctx() -> PhaseContext:
     return PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.HANDOFF,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
     )

@@ -81,18 +81,18 @@ class LearningLoopImpl:
         self._policy = policy
 
     async def compute_yield(
-        self, *, client_id: str, icp_key: str, icp_spec_version: int | None = None
+        self, *, workspace_id: str, icp_key: str, icp_spec_version: int | None = None
     ) -> YieldMetrics:
         """The per-(field-class, source) yield for a scope+version (spec §M13.3 AC)."""
         async with self._conn_factory() as conn:
             return await compute_yield(
-                conn, client_id=client_id, icp_key=icp_key, icp_spec_version=icp_spec_version
+                conn, workspace_id=workspace_id, icp_key=icp_key, icp_spec_version=icp_spec_version
             )
 
     async def propose_source_profile_revision(
         self,
         *,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         pack_key: str,
         icp_spec_version: int,
@@ -104,10 +104,10 @@ class LearningLoopImpl:
         pack-wide slot; ``promote`` writes it as a ``source_profile_override`` version."""
         async with self._conn_factory() as conn:
             resolved = await get_source_profile(
-                conn, pack_key, client_id=client_id, icp_key=icp_key
+                conn, pack_key, workspace_id=workspace_id, icp_key=icp_key
             )
             metrics = await compute_yield(
-                conn, client_id=client_id, icp_key=icp_key, icp_spec_version=icp_spec_version
+                conn, workspace_id=workspace_id, icp_key=icp_key, icp_spec_version=icp_spec_version
             )
             new_sources, moves = reweight_source_profile(
                 resolved.default, metrics, policy=self._policy
@@ -119,14 +119,14 @@ class LearningLoopImpl:
             }
             parent = await latest_config_revision(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=icp_key,
                 target=ConfigRevisionTarget.SOURCE_PROFILE,
             )
             return await record_config_revision(
                 conn,
                 target=ConfigRevisionTarget.SOURCE_PROFILE,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=icp_key,
                 icp_spec_version=icp_spec_version,
                 payload_json=payload,
@@ -142,22 +142,22 @@ class LearningLoopImpl:
             )
 
     async def propose_scoring_rubric_revision(
-        self, *, client_id: str, icp_key: str, proposed_by: str | None = None
+        self, *, workspace_id: str, icp_key: str, proposed_by: str | None = None
     ) -> ConfigRevision:
         """Reweight the active scoring rubric from the labeled dataset → a new ``proposed`` rubric
         revision (decomposed/explainable). ``within_bounds`` is ``False`` when a capped move bit (so
         ``promote`` requires ``PromotionMode.HUMAN``)."""
         async with self._conn_factory() as conn:
-            active = await get_active_icp(conn, client_id, icp_key)
+            active = await get_active_icp(conn, workspace_id, icp_key)
             if active is None:
-                raise LearningLoopError(f"no active ICP spec for ({client_id!r}, {icp_key!r})")
+                raise LearningLoopError(f"no active ICP spec for ({workspace_id!r}, {icp_key!r})")
             rubric = rubric_from_slot(active.scoring_rubric)
             if rubric is None:
                 raise LearningLoopError(
-                    f"active ICP spec ({client_id!r}, {icp_key!r}) carries no scoring rubric"
+                    f"active ICP spec ({workspace_id!r}, {icp_key!r}) carries no scoring rubric"
                 )
             dataset = await read_labeled_dataset(
-                conn, client_id=client_id, icp_key=icp_key, icp_spec_version=active.version
+                conn, workspace_id=workspace_id, icp_key=icp_key, icp_spec_version=active.version
             )
             fit_w, intent_w, moves, within = reweight_scoring_rubric(
                 rubric, dataset, policy=self._policy
@@ -174,14 +174,14 @@ class LearningLoopImpl:
             )
             parent = await latest_config_revision(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=icp_key,
                 target=ConfigRevisionTarget.SCORING_RUBRIC,
             )
             return await record_config_revision(
                 conn,
                 target=ConfigRevisionTarget.SCORING_RUBRIC,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=icp_key,
                 icp_spec_version=active.version,
                 payload_json=rubric_to_slot(new_rubric),
@@ -224,7 +224,7 @@ class LearningLoopImpl:
             if rev.target is ConfigRevisionTarget.SCORING_RUBRIC and self._gate is not None:
                 verdict = await self._gate.backtest(
                     rev.payload_json,  # type: ignore[arg-type]  # the serialized rubric slot
-                    client_id=rev.client_id,
+                    workspace_id=rev.workspace_id,
                     icp_key=rev.icp_key,
                     baseline_version=rev.icp_spec_version,
                     tolerance=tolerance,
@@ -264,7 +264,7 @@ class LearningLoopImpl:
         edit landed a newer version in between): promoting it would archive the newer version and
         silently revert its non-rubric edits. The operator must re-propose against the current
         version. Reproducibility holds either way: prior versions stay byte-identical."""
-        active = await get_active_icp(conn, rev.client_id, rev.icp_key)
+        active = await get_active_icp(conn, rev.workspace_id, rev.icp_key)
         if active is None or active.version != rev.icp_spec_version:
             raise PromotionBlocked(
                 f"stale rubric proposal: derived from v{rev.icp_spec_version}, but the active ICP "
@@ -272,7 +272,7 @@ class LearningLoopImpl:
             )
         spec = await create_icp_spec(
             conn,
-            client_id=rev.client_id,
+            workspace_id=rev.workspace_id,
             icp_key=rev.icp_key,
             created_from=ICPCreatedFrom.FEEDBACK_REWEIGHT,
             field_keys=active.field_keys,
@@ -297,16 +297,16 @@ class LearningLoopImpl:
             await conn.execute(
                 text(
                     "SELECT COALESCE(MAX(version), 0) + 1 FROM source_profile_override "
-                    "WHERE pack_key = :p AND client_id = :c "
+                    "WHERE pack_key = :p AND workspace_id = :c "
                     "AND icp_key IS NOT DISTINCT FROM :k AND field_class IS NULL"
                 ),
-                {"p": pack_key, "c": rev.client_id, "k": rev.icp_key},
+                {"p": pack_key, "c": rev.workspace_id, "k": rev.icp_key},
             )
         ).scalar_one()
         await register_source_profile_override(
             conn,
             pack_key,
-            rev.client_id,
+            rev.workspace_id,
             sources,
             field_class=None,
             icp_key=rev.icp_key,

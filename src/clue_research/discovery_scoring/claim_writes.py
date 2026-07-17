@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import Claim, ClaimId, RunId
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     insert_claim,
     supersede_claim,
@@ -40,7 +40,7 @@ async def write_icp_scoped_claim(
     *,
     run_id: RunId,
     icp_key: str,
-    scope: TenantScope,
+    scope: WorkspaceScope,
 ) -> tuple[ClaimId, bool]:
     """Persist a stamped score-family ``claim`` idempotently + ICP-scoped → ``(claim_id, written)``.
 

@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import EntityId, EntityType, FieldClass, FieldDef, FreshnessState, PassKind
-from clue_research.claimstore import TenantScope, list_fields
+from clue_research.claimstore import WorkspaceScope, list_fields
 from clue_research.identity import current_value_resolved
 
 
@@ -23,7 +23,7 @@ async def compute_contact_gap_fields(
     conn: AsyncConnection,
     contact_entity_id: EntityId,
     *,
-    tenant_id: str,
+    workspace_id: str,
     field_keys: Sequence[str] | None = None,
 ) -> list[FieldDef]:
     """The deep contact fields still needing research for this contact (the converge checklist).
@@ -43,7 +43,7 @@ async def compute_contact_gap_fields(
         if field.tier_plan and (wanted is None or field.field_key in wanted)
     ]
 
-    scope = TenantScope.for_tenant(tenant_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     gaps: list[FieldDef] = []
     for field in candidates:
         current = await current_value_resolved(

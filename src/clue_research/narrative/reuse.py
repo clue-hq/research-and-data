@@ -11,7 +11,7 @@ future tightening of the shared default auto-inherits, and the value narrative s
 private.
 
 This keeps the one stamping seam (``identity.stamp_reuse``) authoritative — the positioner never
-sets ``reuse_scope`` / ``tenant_id`` by hand — and makes "a client-tuned narrative is never
+sets ``reuse_scope`` / ``workspace_id`` by hand — and makes "a client-tuned narrative is never
 written public" a property of the data model, not the positioner's discipline (substrate §2; the
 ``FieldDef`` declaration + ``check_claim_writable`` are the backstop).
 """

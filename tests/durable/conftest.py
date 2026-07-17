@@ -114,7 +114,7 @@ class FakeAccountRunStore:
         campaign_run_id: CampaignRunId,
         entity_id: EntityId,
         tier: str,
-        tenant_id: str | None,
+        workspace_id: str | None,
         field_keys: Sequence[str] | None,
     ) -> ResearchPlan:
         self.begin_calls += 1
@@ -261,7 +261,7 @@ class FakeCampaignRunStore:
         self,
         *,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         icp_version: int,
         budget_cap_cents: CostCents | None,
@@ -271,7 +271,7 @@ class FakeCampaignRunStore:
             campaign_run_id,
             {
                 "id": campaign_run_id,
-                "client_id": client_id,
+                "workspace_id": workspace_id,
                 "icp_key": icp_key,
                 "icp_version": icp_version,
                 "phase": CampaignPhase.REVERSE_PROFILING,

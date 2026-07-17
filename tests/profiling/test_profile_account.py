@@ -76,7 +76,7 @@ class _StubWorker:
 
 def _spec(field_keys=_ALL) -> ICPSpec:
     return ICPSpec(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="k",
         created_from=ICPCreatedFrom.SYNTHESIS,
         version=1,
@@ -115,7 +115,7 @@ def test_dispatches_one_worker_per_gap_cluster() -> None:
                 account_entity_id=acct,
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -150,7 +150,7 @@ def test_aspects_run_in_parallel() -> None:
                     account_entity_id=acct,
                     spec=_spec(),
                     tier="top",
-                    tenant_id="acme",
+                    workspace_id="acme",
                     session_factory=conn_session_factory(conn),
                     worker_for=_stub_builder(stubs),
                 ),
@@ -182,7 +182,7 @@ def test_per_tier_aspect_cap_drops_excess_clusters() -> None:
                 account_entity_id=acct,
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 recursion_policy=policy,
                 worker_for=_stub_builder(top_stubs),
@@ -195,7 +195,7 @@ def test_per_tier_aspect_cap_drops_excess_clusters() -> None:
                 account_entity_id=acct,
                 spec=_spec(),
                 tier="small",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 recursion_policy=policy,
                 worker_for=_stub_builder(small_stubs),
@@ -237,7 +237,7 @@ def test_all_fresh_fields_is_complete_zero_work() -> None:
                 account_entity_id=acct,
                 spec=_spec((_CORE_F, _ACCT_F)),  # only the two now-fresh public fields
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -255,7 +255,7 @@ def test_unresolved_account_fails_cleanly() -> None:
                 account_entity_id=new_entity_id(),  # never inserted
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder({}),
             )
@@ -279,7 +279,7 @@ def test_run_id_is_threaded_to_every_aspect() -> None:
                 spec=_spec(),
                 tier="top",
                 run_id=run_id,
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -328,7 +328,7 @@ def test_stale_field_is_treated_as_a_gap() -> None:
                 account_entity_id=acct,
                 spec=_spec((_ACCT_F,)),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -353,7 +353,7 @@ def test_profile_account_follows_account_merge_to_survivor() -> None:
                 account_entity_id=loser,  # called with the merged-away id
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )

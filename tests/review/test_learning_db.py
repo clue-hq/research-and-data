@@ -114,7 +114,7 @@ async def _outcome(
         FeedbackDisposition.for_downstream(
             disposition_type=dtype,
             account_entity_id=account,
-            client_id=_CLIENT,
+            workspace_id=_CLIENT,
             external_id=external_id,
             occurred_at=_AT,
             icp_key=_ICP,
@@ -141,7 +141,7 @@ def test_compute_yield_telemetry_terms_reconcile() -> None:
         async with rollback_conn() as conn:
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="clay",
                 icp_version=1,
@@ -150,7 +150,7 @@ def test_compute_yield_telemetry_terms_reconcile() -> None:
                 cost_cents=Decimal("400"),
                 freshness_seconds=int(90 * 86_400),
             )
-            ym = await compute_yield(conn, client_id=_CLIENT, icp_key=_ICP, icp_spec_version=1)
+            ym = await compute_yield(conn, workspace_id=_CLIENT, icp_key=_ICP, icp_spec_version=1)
             clay = next(s for s in ym.sources if s.source_key == "clay")
             assert clay.precision == 0.8  # 8 survived / 10 produced
             assert clay.cost_per_surviving_claim == Decimal("400") / 8
@@ -167,14 +167,14 @@ def test_propose_and_promote_rubric_is_versioned_and_reproducible() -> None:
             base = _rubric(_PAIN)
             await create_icp_spec(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 scoring_rubric=rubric_to_slot(base),
                 activate=True,
             )
             loop = LearningLoopImpl(conn_factory=_factory(conn))  # no backtest gate
-            rev = await loop.propose_scoring_rubric_revision(client_id=_CLIENT, icp_key=_ICP)
+            rev = await loop.propose_scoring_rubric_revision(workspace_id=_CLIENT, icp_key=_ICP)
             assert rev.target is ConfigRevisionTarget.SCORING_RUBRIC
             assert rev.status is ConfigRevisionStatus.PROPOSED
             assert rev.icp_spec_version == 1  # derived from the active v1
@@ -202,7 +202,7 @@ def test_out_of_bounds_rubric_promotion_requires_human() -> None:
         async with rollback_conn() as conn:
             await create_icp_spec(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 scoring_rubric=rubric_to_slot(_rubric(_PAIN)),
@@ -211,7 +211,7 @@ def test_out_of_bounds_rubric_promotion_requires_human() -> None:
             rev = await record_config_revision(
                 conn,
                 target=ConfigRevisionTarget.SCORING_RUBRIC,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 icp_spec_version=1,
                 payload_json=rubric_to_slot(_rubric(_PAIN)),
@@ -249,7 +249,7 @@ def test_propose_and_promote_source_profile_is_versioned_and_bounded() -> None:
             # clay produced only rejected claims (precision 0) → it must down-weight one level.
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="clay",
                 icp_version=1,
@@ -258,7 +258,7 @@ def test_propose_and_promote_source_profile_is_versioned_and_bounded() -> None:
             )
             loop = LearningLoopImpl(conn_factory=_factory(conn))
             rev = await loop.propose_source_profile_revision(
-                client_id=_CLIENT, icp_key=_ICP, pack_key="learnpack", icp_spec_version=1
+                workspace_id=_CLIENT, icp_key=_ICP, pack_key="learnpack", icp_spec_version=1
             )
             assert rev.target is ConfigRevisionTarget.SOURCE_PROFILE
             assert rev.within_bounds is True  # the ordinal one-level cap is always in-bounds
@@ -272,7 +272,9 @@ def test_propose_and_promote_source_profile_is_versioned_and_bounded() -> None:
                 applied == 1
             )  # the first override version (append-only over the base pack profile)
 
-            resolved = await get_source_profile(conn, "learnpack", client_id=_CLIENT, icp_key=_ICP)
+            resolved = await get_source_profile(
+                conn, "learnpack", workspace_id=_CLIENT, icp_key=_ICP
+            )
             clay = next(s for s in resolved.default if s.source_key == "clay")
             assert clay.weight is SourceWeight.MEDIUM  # HIGH → MEDIUM (down one, not zeroed)
 
@@ -286,7 +288,7 @@ def test_config_revision_proposal_is_idempotent() -> None:
             first = await record_config_revision(
                 conn,
                 target=ConfigRevisionTarget.SOURCE_PROFILE,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 icp_spec_version=1,
                 payload_json=payload,
@@ -294,7 +296,7 @@ def test_config_revision_proposal_is_idempotent() -> None:
             again = await record_config_revision(
                 conn,
                 target=ConfigRevisionTarget.SOURCE_PROFILE,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 icp_spec_version=1,
                 payload_json=payload,
@@ -312,7 +314,7 @@ async def _seed_backtest_world(conn: AsyncConnection) -> None:
     low — so the baseline discriminates and a rubric that inverts the signal regresses."""
     await create_icp_spec(
         conn,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key=_ICP,
         created_from=ICPCreatedFrom.SYNTHESIS,
         scoring_rubric=rubric_to_slot(_rubric(_PAIN)),
@@ -335,7 +337,7 @@ def test_backtest_blocks_a_regressing_rubric() -> None:
             # A rubric that rewards FUNDING inverts the ranking (the rejected account scores high).
             verdict = await gate.backtest(
                 rubric_to_slot(_rubric(_FUNDING)),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 baseline_version=1,
             )
@@ -354,7 +356,7 @@ def test_backtest_passes_a_non_regressing_rubric() -> None:
             # The same rubric as the baseline ⇒ identical AUC ⇒ no regression.
             verdict = await gate.backtest(
                 rubric_to_slot(_rubric(_PAIN)),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 baseline_version=1,
             )

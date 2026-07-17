@@ -22,7 +22,7 @@ from clue_core import (
     UseClass,
     WorkerStatus,
 )
-from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
+from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
 from clue_research.profiling.committee import (
     PERSONA,
     ROLE_ON_COMMITTEE,
@@ -93,7 +93,7 @@ def test_discover_committee_end_to_end(require_profiling_db: None) -> None:
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[source],
                 gateway=gateway,
                 role_model="model-x",
@@ -105,7 +105,7 @@ def test_discover_committee_end_to_end(require_profiling_db: None) -> None:
             assert len(result.claim_refs) == 6  # discovery + role + persona per member
             assert gateway.complete_calls == 2  # role inference per admitted member
 
-            scope = TenantScope.for_tenant(_TENANT)
+            scope = WorkspaceScope.for_workspace(_TENANT)
             for member in result.members:
                 role_claims = await claims_for(
                     conn, member.contact_entity_id, ROLE_ON_COMMITTEE, scope=scope
@@ -120,7 +120,7 @@ def test_discover_committee_end_to_end(require_profiling_db: None) -> None:
                     assert claim.identity_binding is IdentityBinding.STRONG
                     assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC
                     assert claim.reuse_scope.value == "tenant_private"
-                    assert claim.tenant_id == _TENANT
+                    assert claim.workspace_id == _TENANT
                 # role claim value carries the plausibility verdict.
                 role_value = role_claims[0].value_json
                 assert isinstance(role_value, dict)
@@ -155,7 +155,7 @@ def test_worker_flags_implausible_junior_role(require_profiling_db: None) -> Non
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[source],
                 gateway=gateway,
                 role_model="model-x",
@@ -163,7 +163,7 @@ def test_worker_flags_implausible_junior_role(require_profiling_db: None) -> Non
             assert result.admitted == 1
             member = result.members[0]
             assert member.role_plausible is False  # flagged
-            scope = TenantScope.for_tenant(_TENANT)
+            scope = WorkspaceScope.for_workspace(_TENANT)
             role_claim = (
                 await claims_for(conn, member.contact_entity_id, ROLE_ON_COMMITTEE, scope=scope)
             )[0]
@@ -188,7 +188,7 @@ def test_duplicate_candidates_deduped_and_bounded(require_profiling_db: None) ->
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[source],
                 gateway=FakeGateway(),
                 role_model="model-x",
@@ -226,7 +226,7 @@ def test_marginal_yield_stops_before_redundant_source(require_profiling_db: None
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[productive, redundant, never],
                 gateway=FakeGateway(),
                 role_model="model-x",
@@ -267,7 +267,7 @@ def test_budget_cap_stops_discovery(require_profiling_db: None) -> None:
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[costly, never],
                 gateway=FakeGateway(),
                 role_model="model-x",
@@ -290,7 +290,7 @@ def test_missing_role_model_fails_loud(require_profiling_db: None) -> None:
                     conn,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     sources=[],
                     gateway=FakeGateway(),
                 )  # no role_model and config default is None
@@ -327,7 +327,7 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
                 run_id=_RUN,
                 tier="top",
                 aspect="committee",
-                params={"client_id": _TENANT, "icp_key": "default", "icp_version": 1},
+                params={"workspace_id": _TENANT, "icp_key": "default", "icp_version": 1},
             )
             result = await worker.research(ctx)
             assert result.status is WorkerStatus.OK
@@ -336,7 +336,7 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
             assert result.detail["admitted"] == 1
             # with no ICP spec persisted the worker defaults to all personas; the persona claim is
             # still written with a value in the canonical set.
-            scope = TenantScope.for_tenant(_TENANT)
+            scope = WorkspaceScope.for_workspace(_TENANT)
             persona_contacts = await entities_with_field_claim(
                 conn, PERSONA, run_id=_RUN, scope=scope
             )
@@ -359,7 +359,7 @@ def test_exhausted_stop_reason(require_profiling_db: None) -> None:
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[source],
                 gateway=FakeGateway(),
                 role_model="model-x",
@@ -386,7 +386,7 @@ def test_all_candidates_without_strong_keys_stop_gracefully(require_profiling_db
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[source],
                 gateway=FakeGateway(),
                 role_model="model-x",
@@ -418,7 +418,7 @@ def test_role_fallback_on_unparseable_gateway(require_profiling_db: None) -> Non
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[source],
                 gateway=FakeGateway(reply="stub:deadbeef not json"),  # unparseable → fail-safe
                 role_model="model-x",

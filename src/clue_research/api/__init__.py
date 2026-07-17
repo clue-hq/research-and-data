@@ -64,7 +64,7 @@ from clue_research.api.handoff_app import (
     create_handoff_app,
     create_handoff_router,
     handoff_lifespan,
-    header_tenant_resolver,
+    header_workspace_resolver,
     read_conn_dependency,
 )
 from clue_research.api.handoff_retention import (
@@ -152,7 +152,7 @@ __all__ = [
     "create_handoff_app",
     "create_handoff_router",
     "handoff_lifespan",
-    "header_tenant_resolver",
+    "header_workspace_resolver",
     "read_conn_dependency",
     "HANDOFF_SCHEMA_HEADER",
     "DurableHandoffReadinessReader",

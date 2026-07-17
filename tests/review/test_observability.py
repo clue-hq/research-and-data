@@ -89,7 +89,7 @@ def test_campaign_progress_orders_phases_and_marks_current_complete_awaiting() -
     reader.set(
         RunPhaseState(
             campaign_run_id=run,
-            client_id=_CLIENT,
+            workspace_id=_CLIENT,
             current_phase=CampaignPhase.REVIEW,
             run_status="paused",
             is_terminal=False,
@@ -102,7 +102,7 @@ def test_campaign_progress_orders_phases_and_marks_current_complete_awaiting() -
     )
     surface = _surface(campaign_reader=reader)
 
-    progress = run_async(surface.campaign_progress(campaign_run_id=run, client_id=_CLIENT))
+    progress = run_async(surface.campaign_progress(campaign_run_id=run, workspace_id=_CLIENT))
     assert progress is not None
     # phases come back in the canonical CampaignPhase order, no manual refresh.
     assert tuple(p.phase for p in progress.phases) == tuple(CampaignPhase)
@@ -119,19 +119,19 @@ def test_campaign_progress_orders_phases_and_marks_current_complete_awaiting() -
     assert progress.current_phase is CampaignPhase.REVIEW
 
 
-def test_campaign_progress_is_tenant_scoped() -> None:
+def test_campaign_progress_is_workspace_scoped() -> None:
     run = new_campaign_run_id()
     reader = InMemoryCampaignStateReader()
     reader.set(
         RunPhaseState(
             campaign_run_id=run,
-            client_id=_CLIENT,
+            workspace_id=_CLIENT,
             current_phase=CampaignPhase.DISCOVERY,
             run_status="active",
         )
     )
     surface = _surface(campaign_reader=reader)
-    assert run_async(surface.campaign_progress(campaign_run_id=run, client_id=_OTHER)) is None
+    assert run_async(surface.campaign_progress(campaign_run_id=run, workspace_id=_OTHER)) is None
 
 
 # --- cost_burndown (AC: spent/estimate/cap reconcile; graceful-stop status) ----
@@ -150,10 +150,10 @@ def _burndown(spent: str, estimated: str, cap: str) -> BurnDown:
 def test_cost_burndown_status_ok_near_cap_and_graceful_stop() -> None:
     run = new_campaign_run_id()
     reader = InMemoryCostBurnDownReader()
-    reader.set(run, _burndown("400", "1000", "1000"), client_id=_CLIENT)
+    reader.set(run, _burndown("400", "1000", "1000"), workspace_id=_CLIENT)
     surface = _surface(burndown_reader=reader)
 
-    bd = run_async(surface.cost_burndown(campaign_run_id=run, client_id=_CLIENT))
+    bd = run_async(surface.cost_burndown(campaign_run_id=run, workspace_id=_CLIENT))
     assert bd is not None
     # reconciles spent/estimate/cap/remaining straight off the authoritative BurnDown.
     assert bd.spent_cents == Decimal("400")
@@ -163,12 +163,14 @@ def test_cost_burndown_status_ok_near_cap_and_graceful_stop() -> None:
     assert bd.over_cap is False
     assert bd.has_cap is True
 
-    reader.set(run, _burndown("950", "1000", "1000"), client_id=_CLIENT)  # 50 of 1000 left → near
-    near = run_async(surface.cost_burndown(campaign_run_id=run, client_id=_CLIENT))
+    reader.set(
+        run, _burndown("950", "1000", "1000"), workspace_id=_CLIENT
+    )  # 50 of 1000 left → near
+    near = run_async(surface.cost_burndown(campaign_run_id=run, workspace_id=_CLIENT))
     assert near is not None and near.status == COST_STATUS_NEAR_CAP and near.over_cap is False
 
-    reader.set(run, _burndown("1000", "1000", "1000"), client_id=_CLIENT)  # spent == cap
-    stopped = run_async(surface.cost_burndown(campaign_run_id=run, client_id=_CLIENT))
+    reader.set(run, _burndown("1000", "1000", "1000"), workspace_id=_CLIENT)  # spent == cap
+    stopped = run_async(surface.cost_burndown(campaign_run_id=run, workspace_id=_CLIENT))
     assert stopped is not None
     assert stopped.status == COST_STATUS_GRACEFUL_STOP  # stops at the cap, never overspends
     assert stopped.over_cap is True
@@ -178,9 +180,9 @@ def test_cost_burndown_status_ok_near_cap_and_graceful_stop() -> None:
 def test_cost_burndown_no_cap_is_ok() -> None:
     run = new_campaign_run_id()
     reader = InMemoryCostBurnDownReader()
-    reader.set(run, _burndown("9999", "0", "0"), client_id=_CLIENT)  # cap 0 == none configured
+    reader.set(run, _burndown("9999", "0", "0"), workspace_id=_CLIENT)  # cap 0 == none configured
     surface = _surface(burndown_reader=reader)
-    bd = run_async(surface.cost_burndown(campaign_run_id=run, client_id=_CLIENT))
+    bd = run_async(surface.cost_burndown(campaign_run_id=run, workspace_id=_CLIENT))
     assert bd is not None and bd.status == COST_STATUS_OK and bd.has_cap is False
 
 
@@ -190,7 +192,7 @@ def test_cost_burndown_no_cap_is_ok() -> None:
 def test_pre_run_estimate_summary_and_recompute_on_cutoff_change() -> None:
     run = new_campaign_run_id()
 
-    def fn(client_id: str, discovered: int, cutoffs) -> Estimate:  # type: ignore[no-untyped-def]
+    def fn(workspace_id: str, discovered: int, cutoffs) -> Estimate:  # type: ignore[no-untyped-def]
         # a stricter cutoff sends fewer accounts deep — the estimate must move with the cutoffs.
         cutoff = max((cutoffs or {}).values(), default=0.0)
         deep = round(discovered * (1 - cutoff))
@@ -205,12 +207,18 @@ def test_pre_run_estimate_summary_and_recompute_on_cutoff_change() -> None:
 
     loose = run_async(
         surface.pre_run_estimate(
-            campaign_run_id=run, client_id=_CLIENT, discovered_count=100, tier_cutoffs={"top": 0.6}
+            campaign_run_id=run,
+            workspace_id=_CLIENT,
+            discovered_count=100,
+            tier_cutoffs={"top": 0.6},
         )
     )
     strict = run_async(
         surface.pre_run_estimate(
-            campaign_run_id=run, client_id=_CLIENT, discovered_count=100, tier_cutoffs={"top": 0.9}
+            campaign_run_id=run,
+            workspace_id=_CLIENT,
+            discovered_count=100,
+            tier_cutoffs={"top": 0.9},
         )
     )
     assert loose.projected_deep_count == 40
@@ -242,7 +250,7 @@ def test_verification_health_raises_alert_on_faithfulness_drop() -> None:
             corroboration_passed=8,
             corroboration_total=10,
         ),
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
     )
     surface = _surface(
         health_reader=reader,
@@ -250,7 +258,7 @@ def test_verification_health_raises_alert_on_faithfulness_drop() -> None:
             faithfulness_pass_floor=0.8, strong_binding_floor=0.5, corroboration_pass_floor=0.5
         ),
     )
-    health = run_async(surface.verification_health(campaign_run_id=run, client_id=_CLIENT))
+    health = run_async(surface.verification_health(campaign_run_id=run, workspace_id=_CLIENT))
     assert health is not None
     assert health.faithfulness_pass_share == 0.1
     assert health.strong_binding_share == 0.9
@@ -274,22 +282,22 @@ def test_verification_health_healthy_run_raises_no_alert() -> None:
             corroboration_passed=9,
             corroboration_total=10,
         ),
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
     )
     surface = _surface(health_reader=reader)
-    health = run_async(surface.verification_health(campaign_run_id=run, client_id=_CLIENT))
+    health = run_async(surface.verification_health(campaign_run_id=run, workspace_id=_CLIENT))
     assert health is not None and health.alert is False
 
 
 def test_verification_health_no_observations_never_alerts() -> None:
     run = new_campaign_run_id()
     reader = InMemoryVerificationHealthReader()
-    reader.set(run, VerificationHealthCounts(), client_id=_CLIENT)  # all zero denominators
+    reader.set(run, VerificationHealthCounts(), workspace_id=_CLIENT)  # all zero denominators
     surface = _surface(
         health_reader=reader,
         thresholds=VerificationHealthThresholds(faithfulness_pass_floor=0.99),
     )
-    health = run_async(surface.verification_health(campaign_run_id=run, client_id=_CLIENT))
+    health = run_async(surface.verification_health(campaign_run_id=run, workspace_id=_CLIENT))
     assert health is not None
     assert health.faithfulness_pass_share is None  # nothing to be unhealthy about yet
     assert health.alert is False
@@ -315,10 +323,10 @@ def test_coverage_confidence_returns_band_and_unsearched_never_complete() -> Non
             channels_not_searched=(UnsearchedChannel(source_key="g2", tier=3),),
             framing="estimated ~40–60% of the addressable set found via the channels searched",
         ),
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
     )
     surface = _surface(coverage_reader=reader)
-    report = run_async(surface.coverage_confidence(campaign_run_id=run, client_id=_CLIENT))
+    report = run_async(surface.coverage_confidence(campaign_run_id=run, workspace_id=_CLIENT))
     assert report is not None
     assert report.channels_not_searched  # the honesty guarantee: a non-empty gap list
     assert "100%" not in report.estimate_percent
@@ -329,7 +337,7 @@ def test_coverage_confidence_returns_band_and_unsearched_never_complete() -> Non
 def test_coverage_confidence_none_for_import_only_run() -> None:
     run = new_campaign_run_id()
     surface = _surface(coverage_reader=InMemoryCoverageReportReader())  # no coverage telemetry
-    assert run_async(surface.coverage_confidence(campaign_run_id=run, client_id=_CLIENT)) is None
+    assert run_async(surface.coverage_confidence(campaign_run_id=run, workspace_id=_CLIENT)) is None
 
 
 # --- exposure flag (AC: toggles visibility without a code change) --------------

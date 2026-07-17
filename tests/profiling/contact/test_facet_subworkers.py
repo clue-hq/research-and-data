@@ -71,7 +71,7 @@ async def _run_worker(tier: str, *, depth: int = 0):  # type: ignore[no-untyped-
             depth=depth,
             params={
                 "account_entity_id": str(account.id),
-                "client_id": _TENANT,
+                "workspace_id": _TENANT,
                 "icp_key": "default",
                 "icp_version": 1,
             },

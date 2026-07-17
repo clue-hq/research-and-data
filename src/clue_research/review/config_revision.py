@@ -42,7 +42,7 @@ class ConfigRevision(BaseModel):
 
     id: ConfigRevisionId
     target: ConfigRevisionTarget
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_spec_version: int
     parent_revision: ConfigRevisionId | None
@@ -64,7 +64,7 @@ SourceProfileRevision = ConfigRevision
 ScoringRubricRevision = ConfigRevision
 
 _COLUMNS = (
-    "id, target, client_id, icp_key, icp_spec_version, parent_revision, payload_json, "
+    "id, target, workspace_id, icp_key, icp_spec_version, parent_revision, payload_json, "
     "derived_from_json, explanation_json, within_bounds, status, proposed_by, proposed_at, "
     "promoted_by, promoted_at, applied_version"
 )
@@ -85,7 +85,7 @@ def _to_revision(row: dict[str, object]) -> ConfigRevision:
         {
             "id": row["id"],
             "target": row["target"],
-            "client_id": row["client_id"],
+            "workspace_id": row["workspace_id"],
             "icp_key": row["icp_key"],
             "icp_spec_version": row["icp_spec_version"],
             "parent_revision": row["parent_revision"],
@@ -107,7 +107,7 @@ async def record_config_revision(
     conn: AsyncConnection,
     *,
     target: ConfigRevisionTarget,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     icp_spec_version: int,
     payload_json: JsonValue,
@@ -127,10 +127,10 @@ async def record_config_revision(
                 text(
                     f"""
                     INSERT INTO config_revision (
-                        id, target, client_id, icp_key, icp_spec_version, parent_revision,
+                        id, target, workspace_id, icp_key, icp_spec_version, parent_revision,
                         payload_json, derived_from_json, explanation_json, within_bounds
                     ) VALUES (
-                        :id, CAST(:target AS config_revision_target), :client_id, :icp_key,
+                        :id, CAST(:target AS config_revision_target), :workspace_id, :icp_key,
                         :icp_spec_version, :parent_revision, CAST(:payload AS jsonb),
                         CAST(:derived AS jsonb), CAST(:explanation AS jsonb), :within_bounds
                     )
@@ -141,7 +141,7 @@ async def record_config_revision(
                 {
                     "id": new_config_revision_id(),
                     "target": target.value,
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     "icp_key": icp_key,
                     "icp_spec_version": icp_spec_version,
                     "parent_revision": parent_revision,
@@ -166,13 +166,13 @@ async def record_config_revision(
                 text(
                     f"SELECT {_COLUMNS} FROM config_revision "
                     "WHERE target = CAST(:target AS config_revision_target) "
-                    "AND client_id = :client_id AND icp_key = :icp_key "
+                    "AND workspace_id = :workspace_id AND icp_key = :icp_key "
                     "AND icp_spec_version = :icp_spec_version "
                     "AND parent_revision IS NOT DISTINCT FROM :parent_revision"
                 ),
                 {
                     "target": target.value,
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     "icp_key": icp_key,
                     "icp_spec_version": icp_spec_version,
                     "parent_revision": parent_revision,
@@ -207,7 +207,7 @@ async def get_config_revision(
 async def latest_config_revision(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     target: ConfigRevisionTarget,
     status: ConfigRevisionStatus | None = None,
@@ -219,13 +219,13 @@ async def latest_config_revision(
             await conn.execute(
                 text(
                     f"SELECT {_COLUMNS} FROM config_revision "
-                    "WHERE client_id = :client_id AND icp_key = :icp_key "
+                    "WHERE workspace_id = :workspace_id AND icp_key = :icp_key "
                     "AND target = CAST(:target AS config_revision_target) "
                     "AND (CAST(:status AS config_revision_status) IS NULL OR status = :status) "
                     "ORDER BY proposed_at DESC, id DESC LIMIT 1"
                 ),
                 {
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     "icp_key": icp_key,
                     "target": target.value,
                     "status": status.value if status is not None else None,

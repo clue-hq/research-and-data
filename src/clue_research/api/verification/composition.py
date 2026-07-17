@@ -7,7 +7,7 @@ M9.2 :class:`~clue_research.verification.Corroborator`, the M9.3
 (:func:`clue_research.claimstore.claims_for` with ``field_key=None``), and — when
 ``govern_contacts`` is set — the committee-contact source
 (:func:`clue_research.identity.contact_ids_for_account`) plus
-the per-client use-gate provider (:func:`clue_research.compliance.load_client_policy` →
+the per-client use-gate provider (:func:`clue_research.compliance.load_workspace_policy` →
 :class:`~clue_research.compliance.UseGateImpl`). It then registers the handler into the M7
 phase-handler registry so ``CampaignRun.advance()`` dispatches ``VERIFICATION`` instead of raising
 ``NoPhaseHandlerRegistered(VERIFICATION)``.
@@ -22,7 +22,7 @@ exactly the accounts DEEP processed — one source of the high-tier set.
 
 **Contacts + use-gate (M10.3):** with ``govern_contacts=True`` (the default), each account's
 committee contacts are verified alongside it and every ``contact.facet.*`` claim is run through the
-per-client use-gate (resolved from ``ctx.client_id`` at run time, since the posture policy is the
+per-client use-gate (resolved from ``ctx.workspace_id`` at run time, since the posture policy is the
 client's). Set ``govern_contacts=False`` for account-only verification (e.g. a no-committee run).
 """
 
@@ -42,8 +42,8 @@ from clue_research.api.verification.handler import (
     VerificationAccountResolver,
     VerificationPhaseHandler,
 )
-from clue_research.claimstore import TenantScope, claims_for
-from clue_research.compliance import UseGateImpl, load_client_policy
+from clue_research.claimstore import WorkspaceScope, claims_for
+from clue_research.compliance import UseGateImpl, load_workspace_policy
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
 from clue_research.verification import (
@@ -80,7 +80,7 @@ def build_verification_phase_handler(
         gateway=gateway, policy=judge_policy, conn_factory=session_factory, sink=health_sink
     )
 
-    async def load_claims(entity_id: EntityId, scope: TenantScope) -> Sequence[Claim]:
+    async def load_claims(entity_id: EntityId, scope: WorkspaceScope) -> Sequence[Claim]:
         async with session_factory() as conn:
             return await claims_for(conn, entity_id, scope=scope)
 
@@ -92,11 +92,11 @@ def build_verification_phase_handler(
             async with session_factory() as conn:
                 return await contact_ids_for_account(conn, account_entity_id)
 
-        async def provide_use_gate(client_id: str) -> UseGate | None:
+        async def provide_use_gate(workspace_id: str) -> UseGate | None:
             async with session_factory() as conn:
-                policy = await load_client_policy(conn, client_id=client_id)
+                policy = await load_workspace_policy(conn, workspace_id=workspace_id)
             return UseGateImpl(
-                client_id, policy=policy, conn_factory=session_factory, sink=health_sink
+                workspace_id, policy=policy, conn_factory=session_factory, sink=health_sink
             )
 
         contact_resolver = resolve_contacts

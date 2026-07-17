@@ -36,7 +36,7 @@ from clue_core import (
     RunId,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.claimstore import ALL_TENANTS
+from clue_research.claimstore import ALL_WORKSPACES
 from clue_research.discovery_scoring.coverage import (
     DEFAULT_COVERAGE_CONFIG,
     CoverageConfig,
@@ -121,13 +121,13 @@ class DiscoveryPhaseHandler:
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         run_id = _discovery_run_id(ctx)
         async with self._session_factory() as conn:
-            spec = await get_icp_version(conn, ctx.client_id, ctx.icp_key, ctx.icp_version)
+            spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
                 return PhaseResult(
                     status=PhaseStatus.FAILED,
                     payload={
                         "error": (
-                            f"no ICP spec for ({ctx.client_id!r}, {ctx.icp_key!r}, "
+                            f"no ICP spec for ({ctx.workspace_id!r}, {ctx.icp_key!r}, "
                             f"v{ctx.icp_version})"
                         )
                     },
@@ -175,7 +175,7 @@ class DiscoveryPhaseHandler:
             for channel_yield in result.per_channel_yield:
                 await record_source_yield(
                     conn,
-                    client_id=ctx.client_id,
+                    workspace_id=ctx.workspace_id,
                     icp_key=ctx.icp_key,
                     icp_version=ctx.icp_version,
                     source_key=channel_yield.source_key,
@@ -256,13 +256,13 @@ class ScoringPhaseHandler:
         discovery_run = _discovery_run_id(ctx)
         scoring_run = _scoring_run_id(ctx)
         async with self._session_factory() as conn:
-            spec = await get_icp_version(conn, ctx.client_id, ctx.icp_key, ctx.icp_version)
+            spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
                 return PhaseResult(
                     status=PhaseStatus.FAILED,
                     payload={
                         "error": (
-                            f"no ICP spec for ({ctx.client_id!r}, {ctx.icp_key!r}, "
+                            f"no ICP spec for ({ctx.workspace_id!r}, {ctx.icp_key!r}, "
                             f"v{ctx.icp_version})"
                         )
                     },
@@ -274,7 +274,7 @@ class ScoringPhaseHandler:
                     status=PhaseStatus.FAILED,
                     payload={
                         "error": (
-                            f"ICP spec ({ctx.client_id!r}, {ctx.icp_key!r}, v{ctx.icp_version}) "
+                            f"ICP spec ({ctx.workspace_id!r}, {ctx.icp_key!r}, v{ctx.icp_version}) "
                             "carries no scoring rubric"
                         )
                     },
@@ -288,7 +288,9 @@ class ScoringPhaseHandler:
             fill_fields = await pass_a_fill_fields(
                 conn, field_plan, rubric, max_source_tier=self._config.max_source_tier
             )
-            account_ids = await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_TENANTS)
+            account_ids = await admitted_account_ids(
+                conn, run_id=discovery_run, scope=ALL_WORKSPACES
+            )
 
             scored = written = replayed = errors = 0
             total_cost = Decimal(0)
@@ -302,7 +304,7 @@ class ScoringPhaseHandler:
                         rubric=rubric,
                         fill_fields=fill_fields,
                         run_id=scoring_run,
-                        client_id=ctx.client_id,
+                        workspace_id=ctx.workspace_id,
                         icp_key=ctx.icp_key,
                         icp_version=ctx.icp_version,
                         budget_envelope=ctx.budget_cap_cents,
@@ -329,7 +331,7 @@ class ScoringPhaseHandler:
             for row in aggregate_yield(yield_rows):
                 await record_source_yield(
                     conn,
-                    client_id=ctx.client_id,
+                    workspace_id=ctx.workspace_id,
                     icp_key=ctx.icp_key,
                     icp_version=ctx.icp_version,
                     source_key=row.source_key,
@@ -410,13 +412,13 @@ class TierCheckpointPhaseHandler:
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         scoring_run = _scoring_run_id(ctx)
         async with self._session_factory() as conn:
-            spec = await get_icp_version(conn, ctx.client_id, ctx.icp_key, ctx.icp_version)
+            spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
                 return PhaseResult(
                     status=PhaseStatus.FAILED,
                     payload={
                         "error": (
-                            f"no ICP spec for ({ctx.client_id!r}, {ctx.icp_key!r}, "
+                            f"no ICP spec for ({ctx.workspace_id!r}, {ctx.icp_key!r}, "
                             f"v{ctx.icp_version})"
                         )
                     },
@@ -428,7 +430,7 @@ class TierCheckpointPhaseHandler:
                     status=PhaseStatus.FAILED,
                     payload={
                         "error": (
-                            f"ICP spec ({ctx.client_id!r}, {ctx.icp_key!r}, v{ctx.icp_version}) "
+                            f"ICP spec ({ctx.workspace_id!r}, {ctx.icp_key!r}, v{ctx.icp_version}) "
                             "carries no scoring rubric"
                         )
                     },
@@ -440,7 +442,9 @@ class TierCheckpointPhaseHandler:
             cutoffs = decision.cutoffs if decision.cutoffs is not None else rubric.tier_cutoffs
             cversion = cutoff_version(cutoffs)
 
-            views = await load_score_views(conn, scoring_run=scoring_run, client_id=ctx.client_id)
+            views = await load_score_views(
+                conn, scoring_run=scoring_run, workspace_id=ctx.workspace_id
+            )
             assignments = assign_tiers(views, cutoffs)
             distribution = tier_distribution(assignments, cutoffs)
             estimate = estimate_cost(distribution, self._config)
@@ -473,7 +477,7 @@ class TierCheckpointPhaseHandler:
                             tier=assignments[view.account_id],
                             cutoff_version=cversion,
                             run_id=tier_run,
-                            client_id=ctx.client_id,
+                            workspace_id=ctx.workspace_id,
                             icp_key=ctx.icp_key,
                             icp_version=ctx.icp_version,
                         )

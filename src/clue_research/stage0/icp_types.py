@@ -277,13 +277,14 @@ class ICPProposalDiff(BaseModel):
 
 class ICPSpecRef(BaseModel):
     """A handle to a confirmed, versioned ``ICPSpec`` — the single contract downstream executes
-    against. Note the spec is keyed ``(client_id, icp_key, version)`` (M3.1): there is **no**
-    ``icp_id``; the spec's nominal ``icp_id`` is the ``(client_id, icp_key)`` pair, with ``version``
+    against. Note the spec is keyed ``(workspace_id, icp_key, version)`` (M3.1): there is **no**
+    ``icp_id``; the spec's nominal ``icp_id`` is the ``(workspace_id, icp_key)`` pair, with
+    ``version``
     pinning the immutable spec a campaign reproduces from."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_version: int
 

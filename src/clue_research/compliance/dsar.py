@@ -89,7 +89,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import (
-    ALL_TENANTS,
+    ALL_WORKSPACES,
     claims_for,
     supersede_claim,
     supersede_claims,
@@ -164,7 +164,7 @@ class DataSubjectExport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     contact_entity_id: EntityId
-    tenant_id: str
+    workspace_id: str
     claims: tuple[Claim, ...]
     lawful_bases: tuple[LawfulBasisRecord, ...]
     exported_at: UtcDatetime
@@ -177,7 +177,7 @@ class ErasureResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     contact_entity_id: EntityId
-    tenant_id: str
+    workspace_id: str
     reason: TombstoneReason
     tombstoned_claim_ids: tuple[ClaimId, ...]
     already_tombstoned: int = 0
@@ -190,7 +190,7 @@ class ObjectionResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     contact_entity_id: EntityId
-    tenant_id: str
+    workspace_id: str
     newly_objected: bool
     tombstoned_claim_ids: tuple[ClaimId, ...]
 
@@ -236,7 +236,7 @@ def build_tombstone(target: Claim, *, run_id: RunId) -> Claim:
         identity_binding=IdentityBinding.WEAK if is_facet else target.identity_binding,
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
-        tenant_id=target.tenant_id,
+        workspace_id=target.workspace_id,
     )
 
 
@@ -246,7 +246,7 @@ async def _apply_tombstone(
     *,
     reason: TombstoneReason,
     contact_entity_id: EntityId,
-    tenant_id: str,
+    workspace_id: str,
     run_id: RunId,
     scope_desc: str | None,
     sink: MetricSink,
@@ -272,7 +272,8 @@ async def _apply_tombstone(
         text(
             """
             INSERT INTO dsar_tombstone
-                (erased_claim_id, tombstone_claim_id, contact_entity_id, tenant_id, reason, scope)
+                (erased_claim_id, tombstone_claim_id, contact_entity_id, workspace_id, reason,
+                 scope)
             VALUES
                 (:erased, :tombstone, :contact, :tenant, :reason, :scope)
             ON CONFLICT (erased_claim_id) DO NOTHING
@@ -282,7 +283,7 @@ async def _apply_tombstone(
             "erased": str(target.id),
             "tombstone": str(tombstone.id),
             "contact": str(contact_entity_id),
-            "tenant": tenant_id,
+            "tenant": workspace_id,
             "reason": reason.value,
             "scope": scope_desc,
         },
@@ -319,22 +320,24 @@ class DataSubjectRights(Protocol):
 
 
 class DataSubjectRightsImpl:
-    """The M10.5 :class:`DataSubjectRights` implementation, scoped to one controller (``client_id``
+    """The M10.5 :class:`DataSubjectRights` implementation, scoped to one controller
+    (``workspace_id``
     =
-    ``tenant_id``). A DSAR is always for one controller, so every read uses the
-    ``private_for_tenant`` selector (``identity.dsar_private_claims``) — it never touches the shared
+    ``workspace_id``). A DSAR is always for one controller, so every read uses the
+    ``private_for_workspace`` selector (``identity.dsar_private_claims``) — it never touches the
+    shared
     public base or another tenant's private data (Doc D §4). Erasure/objection are append-only
     supersession; ``access``/``rectify`` are read/merge. Each operation runs in one committed
     transaction (tests inject a rollback factory)."""
 
     def __init__(
         self,
-        client_id: str,
+        workspace_id: str,
         *,
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
-        self._client_id = client_id
+        self._workspace_id = workspace_id
         self._conn_factory = conn_factory
         self._sink = sink
 
@@ -354,7 +357,7 @@ class DataSubjectRightsImpl:
             async with self._conn_factory() as conn:
                 claims = tuple(
                     c
-                    for c in await dsar_private_claims(conn, contact_entity_id, self._client_id)
+                    for c in await dsar_private_claims(conn, contact_entity_id, self._workspace_id)
                     if not _is_tombstone(c)
                 )
                 bases: list[LawfulBasisRecord] = []
@@ -366,7 +369,7 @@ class DataSubjectRightsImpl:
             self._metric_sink.add(METRIC_DSAR_OPERATIONS, 1, {"op": "access"})
             return DataSubjectExport(
                 contact_entity_id=contact_entity_id,
-                tenant_id=self._client_id,
+                workspace_id=self._workspace_id,
                 claims=claims,
                 lawful_bases=tuple(bases),
                 exported_at=_now(),
@@ -386,12 +389,12 @@ class DataSubjectRightsImpl:
         ``supersede_claim`` SQL has no tenant predicate, so the guard lives here). The corrected
         claim
         is ``stamp_reuse``-bound to this controller so it cannot be written into the wrong scope."""
-        corrected = stamp_reuse(corrected, tenant_id=self._client_id)
+        corrected = stamp_reuse(corrected, workspace_id=self._workspace_id)
         with traced_step(
             SPAN_COMPLIANCE_DSAR, **{ATTR_ENTITY_ID: str(corrected.entity_id)}
         ) as span:
             async with self._conn_factory() as conn:
-                owned = await dsar_private_claims(conn, corrected.entity_id, self._client_id)
+                owned = await dsar_private_claims(conn, corrected.entity_id, self._workspace_id)
                 if not any(c.id == claim_id for c in owned):
                     raise ValueError(
                         "rectify target is not one of this controller's tenant-private claims for "
@@ -416,7 +419,7 @@ class DataSubjectRightsImpl:
             async with self._conn_factory() as conn:
                 targets = [
                     c
-                    for c in await dsar_private_claims(conn, contact_entity_id, self._client_id)
+                    for c in await dsar_private_claims(conn, contact_entity_id, self._workspace_id)
                     if _erasable(c) and scope.matches(c)
                 ]
                 tombstoned, already = await self._tombstone_all(
@@ -438,7 +441,7 @@ class DataSubjectRightsImpl:
             self._metric_sink.add(METRIC_DSAR_OPERATIONS, 1, {"op": "erase"})
             return ErasureResult(
                 contact_entity_id=contact_entity_id,
-                tenant_id=self._client_id,
+                workspace_id=self._workspace_id,
                 reason=TombstoneReason.ERASURE,
                 tombstoned_claim_ids=tuple(tombstoned),
                 already_tombstoned=already,
@@ -458,17 +461,17 @@ class DataSubjectRightsImpl:
                 marker = await conn.execute(
                     text(
                         """
-                        INSERT INTO outreach_objected (contact_entity_id, tenant_id)
+                        INSERT INTO outreach_objected (contact_entity_id, workspace_id)
                         VALUES (:contact, :tenant)
-                        ON CONFLICT (contact_entity_id, tenant_id) DO NOTHING
+                        ON CONFLICT (contact_entity_id, workspace_id) DO NOTHING
                         """
                     ),
-                    {"contact": str(contact_entity_id), "tenant": self._client_id},
+                    {"contact": str(contact_entity_id), "tenant": self._workspace_id},
                 )
                 newly_objected = marker.rowcount > 0
                 hooks = [
                     c
-                    for c in await dsar_private_claims(conn, contact_entity_id, self._client_id)
+                    for c in await dsar_private_claims(conn, contact_entity_id, self._workspace_id)
                     if _erasable(c) and _is_outreach_hook(c)
                 ]
                 tombstoned, _already = await self._tombstone_all(
@@ -490,7 +493,7 @@ class DataSubjectRightsImpl:
             self._metric_sink.add(METRIC_DSAR_OPERATIONS, 1, {"op": "objection"})
             return ObjectionResult(
                 contact_entity_id=contact_entity_id,
-                tenant_id=self._client_id,
+                workspace_id=self._workspace_id,
                 newly_objected=newly_objected,
                 tombstoned_claim_ids=tuple(tombstoned),
             )
@@ -508,13 +511,13 @@ class DataSubjectRightsImpl:
         tombstoned: list[ClaimId] = []
         already = 0
         for target in targets:
-            tenant_id = target.tenant_id or self._client_id
+            workspace_id = target.workspace_id or self._workspace_id
             tombstone_id = await _apply_tombstone(
                 conn,
                 target,
                 reason=reason,
                 contact_entity_id=contact_entity_id,
-                tenant_id=tenant_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
                 scope_desc=scope_desc,
                 sink=self._metric_sink,
@@ -604,16 +607,18 @@ class RetentionSweep:
         Retention age-out is a **personal-data** operation and personal claims are tenant-private by
         construction (the ``contact.*`` field-classes default ``TENANT_PRIVATE``), so a target with
         no
-        ``tenant_id`` (public-footprint) would be a non-personal claim that should never have a
+        ``workspace_id`` (public-footprint) would be a non-personal claim that should never have a
         retention horizon — it is skipped rather than recorded with a degenerate empty-string
         controller in the per-controller ``dsar_tombstone`` audit."""
-        live = await claims_for(conn, candidate.entity_id, candidate.field_key, scope=ALL_TENANTS)
+        live = await claims_for(
+            conn, candidate.entity_id, candidate.field_key, scope=ALL_WORKSPACES
+        )
         target = next((c for c in live if c.id == candidate.claim_id), None)
         if target is None or _is_tombstone(target):
             # already superseded / merged away since the scan, or itself a tombstone — skip
             # (idempotent; a tombstone is never aged out by a subsequent sweep)
             return None
-        if target.tenant_id is None:
+        if target.workspace_id is None:
             # a public-footprint claim carrying a retention horizon is a contract violation
             # (personal
             # claims are tenant-private); skip + warn rather than write an un-attributable audit row
@@ -629,7 +634,7 @@ class RetentionSweep:
             target,
             reason=TombstoneReason.RETENTION_EXPIRY,
             contact_entity_id=candidate.entity_id,
-            tenant_id=target.tenant_id,
+            workspace_id=target.workspace_id,
             run_id=run_id,
             scope_desc=str(candidate.field_key),
             sink=self._metric_sink,
@@ -646,14 +651,14 @@ class RetentionSweep:
             async with self._conn_factory() as conn:
                 rows = (
                     await conn.execute(
-                        text("SELECT contact_entity_id, tenant_id FROM outreach_objected")
+                        text("SELECT contact_entity_id, workspace_id FROM outreach_objected")
                     )
                 ).all()
-                for contact_raw, tenant_id in rows:
+                for contact_raw, workspace_id in rows:
                     contact_id = EntityId(contact_raw)
                     hooks = [
                         c
-                        for c in await dsar_private_claims(conn, contact_id, str(tenant_id))
+                        for c in await dsar_private_claims(conn, contact_id, str(workspace_id))
                         if _erasable(c) and _is_outreach_hook(c)
                     ]
                     scanned += len(hooks)
@@ -663,7 +668,7 @@ class RetentionSweep:
                             hook,
                             reason=TombstoneReason.OBJECTION,
                             contact_entity_id=contact_id,
-                            tenant_id=hook.tenant_id or str(tenant_id),
+                            workspace_id=hook.workspace_id or str(workspace_id),
                             run_id=run_id,
                             scope_desc="contact.facet.*",
                             sink=self._metric_sink,

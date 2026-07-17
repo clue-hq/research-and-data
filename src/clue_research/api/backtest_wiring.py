@@ -20,7 +20,7 @@ from pydantic import JsonValue
 
 from clue_core import BacktestGate, BacktestRegression, BacktestVerdict
 from clue_db import ConnFactory, connection
-from clue_research.claimstore import TenantScope
+from clue_research.claimstore import WorkspaceScope
 from clue_research.evals import EvalReport, MechanismMetric
 from clue_research.icp import get_rubric_version, rubric_from_slot, score_entity
 from clue_research.review import account_outcome_labels, read_labeled_dataset
@@ -54,14 +54,14 @@ class LabeledDatasetBacktestGate:
         self,
         proposed_rubric_slot: Mapping[str, JsonValue],
         *,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         baseline_version: int,
         tolerance: float = 0.0,
     ) -> BacktestVerdict:
         proposed = rubric_from_slot(proposed_rubric_slot)
         async with self._conn_factory() as conn:
-            baseline = await get_rubric_version(conn, client_id, icp_key, baseline_version)
+            baseline = await get_rubric_version(conn, workspace_id, icp_key, baseline_version)
             if proposed is None or baseline is None:
                 return BacktestVerdict(
                     passed=True,  # nothing to compare — can't detect a regression, so don't block
@@ -70,10 +70,10 @@ class LabeledDatasetBacktestGate:
                     detail="no baseline/proposed rubric to compare — backtest skipped",
                 )
             dataset = await read_labeled_dataset(
-                conn, client_id=client_id, icp_key=icp_key, icp_spec_version=baseline_version
+                conn, workspace_id=workspace_id, icp_key=icp_key, icp_spec_version=baseline_version
             )
             labels = account_outcome_labels(dataset)
-            scope = TenantScope.for_tenant(client_id)
+            scope = WorkspaceScope.for_workspace(workspace_id)
             # per dimension, the baseline/proposed scores split by label (accepted vs rejected).
             buckets: dict[str, list[list[float]]] = {
                 "fit": [[], [], [], []],  # base_pos, base_neg, prop_pos, prop_neg

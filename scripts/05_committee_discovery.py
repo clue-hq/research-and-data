@@ -69,7 +69,7 @@ _DEMO_CANDIDATES = [
 ]
 
 
-async def main(client_id: str, tier: str, account_id: str | None) -> None:
+async def main(workspace_id: str, tier: str, account_id: str | None) -> None:
     gateway = build_gateway(GatewayConfig(), api_key=None)  # stub role inference
     source = DemoPeopleSource(_DEMO_CANDIDATES)
 
@@ -87,7 +87,7 @@ async def main(client_id: str, tier: str, account_id: str | None) -> None:
             conn,
             account_entity_id=UUID(account_id),
             run_id=new_run_id(),
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             sources=[source],
             gateway=gateway,
             role_model="openai/gpt-4o-mini",  # model id is config; the stub ignores it
@@ -104,7 +104,7 @@ async def main(client_id: str, tier: str, account_id: str | None) -> None:
     if result.members:
         print(
             "\nNext: scripts/06_contact_profiling.py "
-            f"--client-id {client_id} --account-id {result.account_entity_id} "
+            f"--workspace-id {workspace_id} --account-id {result.account_entity_id} "
             f"--contact-id {result.members[0].contact_entity_id} --tier {tier}"
         )
 
@@ -112,8 +112,8 @@ async def main(client_id: str, tier: str, account_id: str | None) -> None:
 if __name__ == "__main__":
     clue_obs.setup()
     p = argparse.ArgumentParser(description="M3 committee discovery")
-    p.add_argument("--client-id", default="acme")
+    p.add_argument("--workspace-id", default="acme")
     p.add_argument("--tier", default="high")
     p.add_argument("--account-id", default=None, help="UUID from script 03 (seeds one if omitted)")
     args = p.parse_args()
-    asyncio.run(main(args.client_id, args.tier, args.account_id))
+    asyncio.run(main(args.workspace_id, args.tier, args.account_id))

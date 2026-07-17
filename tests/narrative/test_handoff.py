@@ -251,7 +251,7 @@ async def _profile_fact(
         source_url="https://src.local/x",
         evidence_span=f"evidence that {value}" if tier == 4 else None,
     )
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
     cid = await insert_claim(conn, claim)
     if verified:
         await record_verification(conn, cid, status=VerificationStatus.VERIFIED)
@@ -274,7 +274,7 @@ async def _write_score(
         run_id=new_run_id(),
         research_mode=ResearchMode.ACCOUNT_PROFILING,
     )
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
     return await insert_claim(conn, claim)
 
 
@@ -309,7 +309,7 @@ async def _write_narrative(
         source_url="clue://narrative/positioning",
         evidence_span="the grounding span",
     )
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=NARRATIVE_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=NARRATIVE_REUSE_POLICY)
     cid = await insert_claim(conn, claim)
     await write_claim_support(
         conn,
@@ -339,7 +339,7 @@ async def _real_committee_claim(conn: AsyncConnection, contact: EntityId, value:
         source_url="https://src.local/c",
         evidence_span=f"the span for {value}",
     )
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
     return await insert_claim(conn, claim)
 
 
@@ -419,7 +419,7 @@ def test_assembles_all_outputs_end_to_end() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -453,7 +453,7 @@ def test_assembles_all_outputs_end_to_end() -> None:
             )
             assembler = HandoffAssembler(committee_reader=_committee((member,), account))
             assembled = await assembler.assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
             h = assembled.handoff
             # all five sections populated.
@@ -494,7 +494,7 @@ def test_provenance_dangling_reference_fails_the_build() -> None:
             )
             with pytest.raises(HandoffAssemblyError):
                 await _assembler().assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
 
     run_async(_run())
@@ -522,7 +522,7 @@ def test_superseded_evidence_reference_still_resolves_in_provenance() -> None:
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
                 source_url="https://src.local/x",
             )
-            fresh = stamp_reuse(fresh, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+            fresh = stamp_reuse(fresh, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
             await supersede_claim(conn, old_signal, fresh)
             await _write_score(
                 conn,
@@ -532,7 +532,7 @@ def test_superseded_evidence_reference_still_resolves_in_provenance() -> None:
             )
             h = (
                 await _assembler().assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             # the superseded-but-cited signal still has a provenance entry (traceable, not gone).
@@ -622,7 +622,7 @@ def test_committee_excludes_weak_and_sensitive_from_outreach_and_provenance() ->
             assembler = HandoffAssembler(committee_reader=_committee((member,), account))
             h = (
                 await assembler.assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             kept = {pv.claim_id for pv in h.committee[0].profile_claims}
@@ -662,10 +662,10 @@ def test_assembly_is_pure_and_deterministic() -> None:
             )
             assembler = _assembler()
             a = await assembler.assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
             b = await assembler.assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
             assert a.model_dump(mode="json") == b.model_dump(mode="json")
 
@@ -707,7 +707,7 @@ def test_conflict_and_coverage_flags_propagate() -> None:
                 conn,
                 account,
                 icp_spec_version=1,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 assembled_at=_AT,
                 coverage_confidence=0.42,
             )
@@ -732,7 +732,7 @@ def test_non_fit_flag_travels_with_fit() -> None:
                 conn, account, FIT_FIELD, _score_payload(0.1, [], icp_version=1, non_fit=True)
             )
             assembled = await _assembler().assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
             assert assembled.non_fit is True
 
@@ -753,7 +753,7 @@ def test_reassembly_after_supersede_reflects_new_truth() -> None:
             )
             assembler = _assembler()
             first = await assembler.assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
             old_view = next(pv for pv in first.handoff.account_profile_claims if pv.claim_id == old)
             assert old_view.value_json == "old pain"
@@ -771,12 +771,12 @@ def test_reassembly_after_supersede_reflects_new_truth() -> None:
                 source_url="https://src.local/x",
                 evidence_span="evidence that new pain",
             )
-            new_claim = stamp_reuse(new_claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+            new_claim = stamp_reuse(new_claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
             new_cid = await supersede_claim(conn, old, new_claim)
             await record_verification(conn, new_cid, status=VerificationStatus.VERIFIED)
 
             second = await assembler.assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT2
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT2
             )
             values = {str(pv.value_json) for pv in second.handoff.account_profile_claims}
             assert "new pain" in values and "old pain" not in values
@@ -819,12 +819,12 @@ def test_two_icps_yield_distinct_handoffs() -> None:
             assembler = _assembler()
             h1 = (
                 await assembler.assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             h2 = (
                 await assembler.assemble(
-                    conn, account, icp_spec_version=2, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=2, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             assert h1.fit_score.value == pytest.approx(0.3) and h2.fit_score.value == pytest.approx(
@@ -858,7 +858,7 @@ def test_unverified_narrative_is_not_handed_off() -> None:
             )
             h = (
                 await _assembler().assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             assert h.value_narrative == ()
@@ -879,17 +879,17 @@ def test_materialization_round_trip_and_tenant_isolation() -> None:
                 conn, account, FIT_FIELD, _score_payload(0.6, [], icp_version=1, non_fit=False)
             )
             assembled = await _assembler().assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
-            await write_handoff(conn, assembled, client_id=_CLIENT)
+            await write_handoff(conn, assembled, workspace_id=_CLIENT)
             got = await read_handoff(
-                conn, client_id=_CLIENT, account_entity_id=account, icp_spec_version=1
+                conn, workspace_id=_CLIENT, account_entity_id=account, icp_spec_version=1
             )
             assert got is not None
             assert got.model_dump(mode="json") == assembled.model_dump(mode="json")
             # a different client cannot read this client's assembled handoff.
             other = await read_handoff(
-                conn, client_id="other-client", account_entity_id=account, icp_spec_version=1
+                conn, workspace_id="other-client", account_entity_id=account, icp_spec_version=1
             )
             assert other is None
 
@@ -941,7 +941,7 @@ def test_icp_key_segments_at_same_version_do_not_conflate() -> None:
                 account,
                 icp_spec_version=1,
                 icp_key="seg_a",
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 assembled_at=_AT,
             )
             b = await assembler.assemble(
@@ -949,7 +949,7 @@ def test_icp_key_segments_at_same_version_do_not_conflate() -> None:
                 account,
                 icp_spec_version=1,
                 icp_key="seg_b",
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 assembled_at=_AT,
             )
             assert a.handoff.fit_score.value == pytest.approx(0.3)
@@ -957,11 +957,11 @@ def test_icp_key_segments_at_same_version_do_not_conflate() -> None:
             assert {i.persona for i in a.handoff.value_narrative} == {Persona.CHAMPION}
             assert {i.persona for i in b.handoff.value_narrative} == {Persona.BLOCKER}
             # the materialization keeps the two segments distinct (same account + version).
-            await write_handoff(conn, a, client_id=_CLIENT, icp_key="seg_a")
-            await write_handoff(conn, b, client_id=_CLIENT, icp_key="seg_b")
+            await write_handoff(conn, a, workspace_id=_CLIENT, icp_key="seg_a")
+            await write_handoff(conn, b, workspace_id=_CLIENT, icp_key="seg_b")
             got_a = await read_handoff(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 account_entity_id=account,
                 icp_spec_version=1,
                 icp_key="seg_a",
@@ -981,7 +981,7 @@ def test_missing_score_is_flagged_unscored_not_a_fabricated_zero() -> None:
             account = await _account(conn)
             await _profile_fact(conn, account, "account.operational_pain", "cloud overspend")
             assembled = await _assembler().assemble(
-                conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
             )
             assert assembled.fit_scored is False and assembled.intent_scored is False
             assert assembled.handoff.fit_score.value == pytest.approx(0.0)
@@ -1034,7 +1034,7 @@ def test_sensitive_facet_without_use_decision_is_dropped_fail_closed() -> None:
             assembler = HandoffAssembler(committee_reader=_committee((member,), account))
             h = (
                 await assembler.assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             kept = {pv.claim_id for pv in h.committee[0].profile_claims}
@@ -1064,7 +1064,7 @@ def test_field_conflict_contenders_are_in_the_provenance_index() -> None:
             )
             h = (
                 await _assembler().assemble(
-                    conn, account, icp_spec_version=1, client_id=_CLIENT, assembled_at=_AT
+                    conn, account, icp_spec_version=1, workspace_id=_CLIENT, assembled_at=_AT
                 )
             ).handoff
             assert set(h.field_conflicts["account.operational_pain"]) == {a, b}

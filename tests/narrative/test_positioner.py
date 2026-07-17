@@ -46,7 +46,7 @@ from clue_core import (
 from clue_core.retrieval import ClientKnowledgeChunk
 from clue_research.claimstore import (
     PUBLIC_ONLY,
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     insert_claim,
     record_verification,
@@ -256,7 +256,7 @@ async def _write_fact(
     field_key: str,
     value: str,
     *,
-    client_id: str,
+    workspace_id: str,
     run_id: object,
 ) -> ClaimId:
     """Write a verified tier-4 account claim (so the merge view surfaces it as the account side)."""
@@ -272,7 +272,7 @@ async def _write_fact(
         source_url="https://src.local/x",
         evidence_span=f"evidence that {value}",
     )
-    claim = stamp_reuse(claim, tenant_id=client_id, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=workspace_id, policy=DEFAULT_REUSE_POLICY)
     cid = await insert_claim(conn, claim)
     await record_verification(conn, cid, status=VerificationStatus.VERIFIED)
     return cid
@@ -324,7 +324,7 @@ def test_produces_one_verified_narrative_per_persona() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             await _write_fact(
@@ -332,7 +332,7 @@ def test_produces_one_verified_narrative_per_persona() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             await _write_fact(
@@ -340,7 +340,7 @@ def test_produces_one_verified_narrative_per_persona() -> None:
                 account,
                 ACCOUNT_STRATEGIC_MOVES,
                 "expanding to EU",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("our platform autoscales clusters",))
@@ -350,7 +350,7 @@ def test_produces_one_verified_narrative_per_persona() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -362,7 +362,7 @@ def test_produces_one_verified_narrative_per_persona() -> None:
             assert ref.judge_verdict == "supported"
 
             claims = await claims_for(
-                conn, account, VALUE_NARRATIVE, scope=TenantScope.for_tenant(client_id)
+                conn, account, VALUE_NARRATIVE, scope=WorkspaceScope.for_workspace(workspace_id)
             )
             assert len(claims) == 1
             claim = claims[0]
@@ -386,7 +386,7 @@ def test_ungrounded_argument_not_promoted() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             await _write_fact(
@@ -394,7 +394,7 @@ def test_ungrounded_argument_not_promoted() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("unrelated client capability",))
@@ -406,7 +406,7 @@ def test_ungrounded_argument_not_promoted() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -414,7 +414,7 @@ def test_ungrounded_argument_not_promoted() -> None:
             assert ref.judge_verdict == "unsupported"
             claim = (
                 await claims_for(
-                    conn, account, VALUE_NARRATIVE, scope=TenantScope.for_tenant(client_id)
+                    conn, account, VALUE_NARRATIVE, scope=WorkspaceScope.for_workspace(workspace_id)
                 )
             )[0]
             assert claim.verification_status is VerificationStatus.REJECTED  # never verified
@@ -428,7 +428,7 @@ def test_personas_argue_from_different_evidence() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             pain = await _write_fact(
@@ -436,7 +436,7 @@ def test_personas_argue_from_different_evidence() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             moves = await _write_fact(
@@ -444,7 +444,7 @@ def test_personas_argue_from_different_evidence() -> None:
                 account,
                 ACCOUNT_STRATEGIC_MOVES,
                 "expanding to EU",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             culture = await _write_fact(
@@ -452,7 +452,7 @@ def test_personas_argue_from_different_evidence() -> None:
                 account,
                 ACCOUNT_RESONANCE_CULTURE,
                 "engineering-led culture",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("our platform autoscales",))
@@ -464,7 +464,7 @@ def test_personas_argue_from_different_evidence() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -486,7 +486,7 @@ def test_referential_integrity_of_supporting_ids() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             # write >1 account fact (the econ persona reads pain + moves) so the per-id check is
@@ -496,7 +496,7 @@ def test_referential_integrity_of_supporting_ids() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             await _write_fact(
@@ -504,7 +504,7 @@ def test_referential_integrity_of_supporting_ids() -> None:
                 account,
                 ACCOUNT_STRATEGIC_MOVES,
                 "expanding to EU",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("cap one", "cap two"))
@@ -515,14 +515,14 @@ def test_referential_integrity_of_supporting_ids() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
             ref = result.narratives[0]
             assert len(ref.account_evidence_ids) >= 2  # multi-field set, not a single coincidence
             # every account_evidence_id resolves, field-agnostically, to a real live account claim.
-            scope = TenantScope.for_tenant(client_id)
+            scope = WorkspaceScope.for_workspace(workspace_id)
             real_verified: dict[ClaimId, str] = {}
             for fk in (ACCOUNT_OPERATIONAL_PAIN, ACCOUNT_STRATEGIC_MOVES):
                 for c in await claims_for(conn, account, fk, scope=scope):
@@ -542,7 +542,7 @@ def test_only_use_cleared_facets_reach_the_argument() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             contact = new_entity_id()
@@ -551,7 +551,7 @@ def test_only_use_cleared_facets_reach_the_argument() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
 
@@ -602,7 +602,7 @@ def test_only_use_cleared_facets_reach_the_argument() -> None:
             await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -621,7 +621,7 @@ def test_thin_kb_emits_coverage_gap_not_fabrication() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             await _write_fact(
@@ -629,7 +629,7 @@ def test_thin_kb_emits_coverage_gap_not_fabrication() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ())  # empty KB
@@ -639,7 +639,7 @@ def test_thin_kb_emits_coverage_gap_not_fabrication() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -649,7 +649,7 @@ def test_thin_kb_emits_coverage_gap_not_fabrication() -> None:
             assert synth.calls == []  # no synthesis call (no fabrication)
             assert (
                 await claims_for(
-                    conn, account, VALUE_NARRATIVE, scope=TenantScope.for_tenant(client_id)
+                    conn, account, VALUE_NARRATIVE, scope=WorkspaceScope.for_workspace(workspace_id)
                 )
                 == []
             )
@@ -663,7 +663,7 @@ def test_rerun_supersedes_not_duplicates() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             await _write_fact(
@@ -671,7 +671,7 @@ def test_rerun_supersedes_not_duplicates() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("our platform autoscales",))
@@ -682,7 +682,7 @@ def test_rerun_supersedes_not_duplicates() -> None:
                 await positioner.position(
                     account,
                     icp_spec_version=1,
-                    client_id=client_id,
+                    workspace_id=workspace_id,
                     client_entity_id=client_entity,
                     run_id=run_id,
                 )
@@ -690,7 +690,7 @@ def test_rerun_supersedes_not_duplicates() -> None:
             await _position()
             await _position()  # re-run: supersede, do not duplicate
 
-            scope = TenantScope.for_tenant(client_id)
+            scope = WorkspaceScope.for_workspace(workspace_id)
             live = await claims_for(conn, account, VALUE_NARRATIVE, scope=scope)
             assert len(live) == 1  # one live narrative, not two (AC7)
             allc = await claims_for(
@@ -709,7 +709,7 @@ def test_config_swap_changes_cited_evidence() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             pain = await _write_fact(
@@ -717,7 +717,7 @@ def test_config_swap_changes_cited_evidence() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             moves = await _write_fact(
@@ -725,7 +725,7 @@ def test_config_swap_changes_cited_evidence() -> None:
                 account,
                 ACCOUNT_STRATEGIC_MOVES,
                 "expanding to EU",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("our platform autoscales",))
@@ -740,7 +740,7 @@ def test_config_swap_changes_cited_evidence() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -757,7 +757,7 @@ def test_narrative_claim_is_tenant_private() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             await _write_fact(
@@ -765,7 +765,7 @@ def test_narrative_claim_is_tenant_private() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("our platform autoscales",))
@@ -775,16 +775,16 @@ def test_narrative_claim_is_tenant_private() -> None:
             await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
             tenant = await claims_for(
-                conn, account, VALUE_NARRATIVE, scope=TenantScope.for_tenant(client_id)
+                conn, account, VALUE_NARRATIVE, scope=WorkspaceScope.for_workspace(workspace_id)
             )
             assert len(tenant) == 1
             assert tenant[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert tenant[0].tenant_id == client_id
+            assert tenant[0].workspace_id == workspace_id
             public = await claims_for(conn, account, VALUE_NARRATIVE, scope=PUBLIC_ONLY)
             assert public == []  # a client-tuned narrative never amortizes cross-tenant
 
@@ -798,7 +798,7 @@ def test_no_account_evidence_emits_coverage_gap() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             # write NO persona-relevant account facts; the KB is non-empty so the gap is
@@ -810,7 +810,7 @@ def test_no_account_evidence_emits_coverage_gap() -> None:
             result = await positioner.position(
                 account,
                 icp_spec_version=1,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
             )
@@ -820,7 +820,7 @@ def test_no_account_evidence_emits_coverage_gap() -> None:
             assert synth.calls == []  # returns before synthesis — no fabrication
             assert (
                 await claims_for(
-                    conn, account, VALUE_NARRATIVE, scope=TenantScope.for_tenant(client_id)
+                    conn, account, VALUE_NARRATIVE, scope=WorkspaceScope.for_workspace(workspace_id)
                 )
                 == []
             )
@@ -835,7 +835,7 @@ def test_multi_icp_produces_separate_claims() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            client_id, run_id = "tenant-a", new_run_id()
+            workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
             client_entity = new_entity_id()
             await _write_fact(
@@ -843,7 +843,7 @@ def test_multi_icp_produces_separate_claims() -> None:
                 account,
                 ACCOUNT_OPERATIONAL_PAIN,
                 "manual scaling toil",
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run_id,
             )
             retriever = _retriever(client_entity, ("our platform autoscales",))
@@ -854,11 +854,11 @@ def test_multi_icp_produces_separate_claims() -> None:
                 await positioner.position(
                     account,
                     icp_spec_version=icp,
-                    client_id=client_id,
+                    workspace_id=workspace_id,
                     client_entity_id=client_entity,
                     run_id=run_id,
                 )
-            scope = TenantScope.for_tenant(client_id)
+            scope = WorkspaceScope.for_workspace(workspace_id)
             live = await claims_for(conn, account, VALUE_NARRATIVE, scope=scope)
             assert len(live) == 2  # one per ICP — neither superseded the other (D5)
             assert {c.value_json["icp_spec_version"] for c in live} == {1, 2}  # type: ignore[index]
@@ -871,7 +871,7 @@ async def _insert_positioning_policy(
     conn: AsyncConnection,
     *,
     policy_id: str,
-    client_id: str | None,
+    workspace_id: str | None,
     model: str,
     prompt_version: str = PROMPT_VERSION,
     version: int = 1,
@@ -883,14 +883,14 @@ async def _insert_positioning_policy(
         text(
             """
             INSERT INTO positioning_policy
-                (policy_id, client_id, narrative_model, prompt_version, min_account_evidence,
+                (policy_id, workspace_id, narrative_model, prompt_version, min_account_evidence,
                  min_client_chunks, retrieval_limit, max_evidence_chars, field_relevance, version)
             VALUES (:pid, :cid, :model, :pv, :mae, 1, :rl, 4000, CAST(:fr AS jsonb), :ver)
             """
         ),
         {
             "pid": policy_id,
-            "cid": client_id,
+            "cid": workspace_id,
             "model": model,
             "pv": prompt_version,
             "mae": min_account_evidence,
@@ -910,31 +910,32 @@ def test_load_positioning_policy_precedence_and_degrade() -> None:
         async with rollback_conn() as conn:
             # no rows → the built-in default
             assert (
-                await load_positioning_policy(conn, client_id="acme") == DEFAULT_POSITIONING_POLICY
+                await load_positioning_policy(conn, workspace_id="acme")
+                == DEFAULT_POSITIONING_POLICY
             )
 
-            # a global row (client_id NULL) wins when there is no per-client row, and every
+            # a global row (workspace_id NULL) wins when there is no per-client row, and every
             # configurable knob round-trips (incl. min_account_evidence / retrieval_limit).
             await _insert_positioning_policy(
                 conn,
                 policy_id="g1",
-                client_id=None,
+                workspace_id=None,
                 model="model/global",
                 min_account_evidence=2,
                 retrieval_limit=3,
                 field_relevance={"economic_buyer": [ACCOUNT_STRATEGIC_MOVES]},
             )
-            loaded = await load_positioning_policy(conn, client_id="acme")
+            loaded = await load_positioning_policy(conn, workspace_id="acme")
             assert loaded.narrative_model == "model/global"
             assert loaded.min_account_evidence == 2 and loaded.retrieval_limit == 3
             assert loaded.fields_for(Persona.ECONOMIC_BUYER) == (ACCOUNT_STRATEGIC_MOVES,)
 
             # a per-client row beats the global (most-specific scope wins)
             await _insert_positioning_policy(
-                conn, policy_id="c1", client_id="acme", model="model/acme"
+                conn, policy_id="c1", workspace_id="acme", model="model/acme"
             )
             assert (
-                await load_positioning_policy(conn, client_id="acme")
+                await load_positioning_policy(conn, workspace_id="acme")
             ).narrative_model == "model/acme"
 
             # a later version whose prompt_version is unregistered degrades to the default prompt
@@ -942,12 +943,12 @@ def test_load_positioning_policy_precedence_and_degrade() -> None:
             await _insert_positioning_policy(
                 conn,
                 policy_id="c2",
-                client_id="acme",
+                workspace_id="acme",
                 model="model/acme2",
                 prompt_version="vDOESNOTEXIST",
                 version=2,
             )
-            degraded = await load_positioning_policy(conn, client_id="acme")
+            degraded = await load_positioning_policy(conn, workspace_id="acme")
             assert degraded.narrative_model == "model/acme2"
             assert degraded.prompt_version == DEFAULT_POSITIONING_POLICY.prompt_version
 

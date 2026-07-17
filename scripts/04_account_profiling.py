@@ -28,11 +28,11 @@ from clue_research.profiling import profile_account
 
 
 async def main(
-    client_id: str, icp_key: str, icp_version: int, tier: str, account_id: str | None
+    workspace_id: str, icp_key: str, icp_version: int, tier: str, account_id: str | None
 ) -> None:
     gateway = build_gateway(GatewayConfig(), api_key=None)  # stub
     spec = ICPSpec(
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         created_from=ICPCreatedFrom.SYNTHESIS,
         version=icp_version,
@@ -57,7 +57,7 @@ async def main(
             account_entity_id=UUID(account_id),
             spec=spec,
             tier=tier,
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             gateway=gateway,
         )
 
@@ -76,10 +76,10 @@ async def main(
 if __name__ == "__main__":
     clue_obs.setup()
     p = argparse.ArgumentParser(description="M2 deep account profiling")
-    p.add_argument("--client-id", default="acme")
+    p.add_argument("--workspace-id", default="acme")
     p.add_argument("--icp-key", default="default")
     p.add_argument("--icp-version", type=int, default=1)
     p.add_argument("--tier", default="high")
     p.add_argument("--account-id", default=None, help="UUID from script 03 (seeds one if omitted)")
     args = p.parse_args()
-    asyncio.run(main(args.client_id, args.icp_key, args.icp_version, args.tier, args.account_id))
+    asyncio.run(main(args.workspace_id, args.icp_key, args.icp_version, args.tier, args.account_id))

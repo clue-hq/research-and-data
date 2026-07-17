@@ -4,7 +4,7 @@ Package scaffolded by M0.1 (ENG-101); scope and the modular-boundary rules live 
 ``README.md``. Implemented by M3:
 
 * **M3.1 — ICP spec data model** (``spec.py``): durable, append-only storage + read/write API for
-  the versioned ``ICPSpec`` contract (keyed ``(client_id, icp_key, version)``), validating
+  the versioned ``ICPSpec`` contract (keyed ``(workspace_id, icp_key, version)``), validating
   field-keys against the M1.3 registry and packs against the M3.3 catalog.
 * **M3.2 — research-schema compiler** (``compiler.py``): pure ``compile_field_plan(icp_spec)`` →
   typed ``FieldPlan`` (scoring/deep partition, signal-class links, gates, per-ICP overrides).

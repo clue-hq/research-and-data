@@ -48,7 +48,7 @@ from clue_locks import multi_lock
 from clue_research.claimstore import (
     DEFAULT_MERGE_POLICY,
     MergePolicy,
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     merge_claims,
 )
@@ -124,7 +124,7 @@ class ReviewTask(BaseModel):
     candidates: tuple[dict[str, JsonValue], ...]
     proposed_action: str
     subject_entity_id: EntityId | None
-    tenant_id: str | None
+    workspace_id: str | None
     status: ReviewStatus
     resolution: ReviewResolution | None
     resolved_by: str | None
@@ -247,7 +247,7 @@ async def auto_merge(
     top_score: float = 1.0,
     decided_by: str = "auto",
     config_version: int = 1,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
 ) -> EntityId:
     """Merge ``loser`` into ``survivor`` and return the survivor id. Idempotent on the pair.
 
@@ -326,7 +326,7 @@ async def auto_merge(
 
     if redis is not None:
         async with multi_lock(
-            redis, [(entity_type, loser_id), (entity_type, survivor_id)], tenant=tenant_id
+            redis, [(entity_type, loser_id), (entity_type, survivor_id)], tenant=workspace_id
         ):
             return await _do()
     return await _do()
@@ -340,7 +340,7 @@ async def disposition(
     *,
     policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
     redis: Redis | None = None,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
     decided_by: str = "auto",
     subject_entity_id: EntityId | None = None,
 ) -> Disposition:
@@ -368,7 +368,7 @@ async def disposition(
                 top_score=result.top_score,
                 decided_by=decided_by,
                 config_version=policy.version,
-                tenant_id=tenant_id,
+                workspace_id=workspace_id,
             )
         else:
             await record_disposition(
@@ -391,7 +391,7 @@ async def disposition(
             conn,
             observation,
             result,
-            tenant_id=tenant_id,
+            workspace_id=workspace_id,
             config_version=policy.version,
             subject_entity_id=subject_entity_id,
             proposed_action="merge_into",
@@ -440,7 +440,7 @@ async def enqueue_review_task(
     result: ResolutionResult,
     *,
     config_version: int,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
     subject_entity_id: EntityId | None = None,
     proposed_action: str = "merge_into",
 ) -> EntityId:
@@ -450,11 +450,11 @@ async def enqueue_review_task(
             """
             INSERT INTO identity_review_task (
                 entity_type, observation_json, candidates_json, proposed_action,
-                subject_entity_id, tenant_id, config_version
+                subject_entity_id, workspace_id, config_version
             ) VALUES (
                 CAST(:entity_type AS entity_type), CAST(:observation_json AS jsonb),
                 CAST(:candidates_json AS jsonb), :proposed_action, :subject_entity_id,
-                :tenant_id, :config_version
+                :workspace_id, :config_version
             ) RETURNING id
             """
         ),
@@ -464,7 +464,7 @@ async def enqueue_review_task(
             "candidates_json": _candidates_json(result),
             "proposed_action": proposed_action,
             "subject_entity_id": subject_entity_id,
-            "tenant_id": tenant_id,
+            "workspace_id": workspace_id,
             "config_version": config_version,
         },
     )
@@ -485,7 +485,7 @@ async def enqueue_review_task(
 
 _TASK_COLUMNS = (
     "id, entity_type, observation_json, candidates_json, proposed_action, subject_entity_id, "
-    "tenant_id, status, resolution, resolved_by, config_version"
+    "workspace_id, status, resolution, resolved_by, config_version"
 )
 
 
@@ -498,7 +498,7 @@ def _row_to_task(row: dict[str, object]) -> ReviewTask:
             "candidates": tuple(row["candidates_json"] or ()),  # type: ignore[arg-type]
             "proposed_action": row["proposed_action"],
             "subject_entity_id": row["subject_entity_id"],
-            "tenant_id": row["tenant_id"],
+            "workspace_id": row["workspace_id"],
             "status": row["status"],
             "resolution": row["resolution"],
             "resolved_by": row["resolved_by"],
@@ -522,7 +522,7 @@ async def get_task(conn: AsyncConnection, task_id: EntityId) -> ReviewTask | Non
 
 
 async def list_open_tasks(
-    conn: AsyncConnection, *, tenant_id: str | None = None, limit: int = 100
+    conn: AsyncConnection, *, workspace_id: str | None = None, limit: int = 100
 ) -> list[ReviewTask]:
     """Open review tasks (optionally tenant-scoped) — the queue the human surface reads."""
     rows = (
@@ -531,10 +531,10 @@ async def list_open_tasks(
                 text(
                     f"SELECT {_TASK_COLUMNS} FROM identity_review_task "
                     "WHERE status = 'open' "
-                    "AND (CAST(:tenant AS text) IS NULL OR tenant_id = :tenant) "
+                    "AND (CAST(:tenant AS text) IS NULL OR workspace_id = :tenant) "
                     "ORDER BY created_at, id LIMIT :limit"
                 ),
-                {"tenant": tenant_id, "limit": limit},
+                {"tenant": workspace_id, "limit": limit},
             )
         )
         .mappings()
@@ -589,7 +589,7 @@ async def resolve_merge_into(
             redis=redis,
             decided_by=resolved_by,
             config_version=task.config_version,
-            tenant_id=task.tenant_id,
+            workspace_id=task.workspace_id,
         )
     await _close_task(
         conn,
@@ -830,7 +830,7 @@ async def current_value_resolved(
     entity_id: EntityId,
     field_key: str,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     entity_type: EntityType = EntityType.ACCOUNT,
     policy: MergePolicy = DEFAULT_MERGE_POLICY,
 ) -> CurrentValue | None:

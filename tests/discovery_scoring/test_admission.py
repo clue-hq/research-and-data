@@ -20,7 +20,7 @@ from clue_core import (
     ResearchMode,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, claims_for
+from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.discovery_scoring import AdmissionStatus, ExistenceVerdict, admit
 from clue_research.discovery_scoring.gate.admission import DISCOVERY_PROVENANCE_FIELD
 from clue_research.identity import (
@@ -48,7 +48,7 @@ async def _count_accounts(conn: AsyncConnection) -> int:
 
 
 async def _provenance_claims(conn: AsyncConnection, entity_id: EntityId) -> list[object]:
-    return list(await claims_for(conn, entity_id, DISCOVERY_PROVENANCE_FIELD, scope=ALL_TENANTS))
+    return list(await claims_for(conn, entity_id, DISCOVERY_PROVENANCE_FIELD, scope=ALL_WORKSPACES))
 
 
 def test_admit_real_candidate_creates_entity_and_one_provenance_claim() -> None:

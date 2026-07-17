@@ -72,7 +72,7 @@ def handoff_ref_for(account_entity_id: EntityId, icp_spec_version: int, icp_key:
 class HandoffEvent(BaseModel):
     """The emit payload — everything a consumer needs to fetch one assembled handoff (M12.3).
 
-    ``client_id`` is the owning tenant (a consumer is served only its own events — substrate §2);
+    ``workspace_id`` is the owning tenant (a consumer is served only its own events — substrate §2);
     ``handoff_ref`` is the read-API path (:func:`handoff_ref_for`); ``schema_version`` pins the
     ``AccountHandoff`` contract version at emit so a pinned consumer reads the right shape (AC5)."""
 
@@ -82,7 +82,7 @@ class HandoffEvent(BaseModel):
     account_entity_id: EntityId
     icp_spec_version: int
     icp_key: str = ""
-    client_id: str
+    workspace_id: str
     handoff_ref: str
     schema_version: str
 
@@ -98,7 +98,7 @@ class HandoffEventRow(BaseModel):
     account_entity_id: EntityId
     icp_spec_version: int
     icp_key: str
-    client_id: str
+    workspace_id: str
     handoff_ref: str
     schema_version: str
     status: HandoffEventStatus
@@ -107,17 +107,17 @@ class HandoffEventRow(BaseModel):
 
 
 _EVENT_COLUMNS = (
-    "id, campaign_run_id, account_entity_id, icp_spec_version, icp_key, client_id, handoff_ref, "
+    "id, campaign_run_id, account_entity_id, icp_spec_version, icp_key, workspace_id, handoff_ref, "
     "schema_version, status, emitted_at, delivered_at"
 )
 
 _EMIT_SQL = text(
     """
     INSERT INTO handoff_event
-        (id, campaign_run_id, account_entity_id, icp_spec_version, icp_key, client_id,
+        (id, campaign_run_id, account_entity_id, icp_spec_version, icp_key, workspace_id,
          handoff_ref, schema_version, status)
     VALUES
-        (:id, :campaign_run_id, :account_entity_id, :icp_spec_version, :icp_key, :client_id,
+        (:id, :campaign_run_id, :account_entity_id, :icp_spec_version, :icp_key, :workspace_id,
          :handoff_ref, :schema_version, 'pending')
     ON CONFLICT (campaign_run_id, account_entity_id, icp_spec_version, icp_key) DO NOTHING
     """
@@ -138,7 +138,7 @@ async def emit_handoff_event(conn: AsyncConnection, event: HandoffEvent) -> bool
             "account_entity_id": str(event.account_entity_id),
             "icp_spec_version": event.icp_spec_version,
             "icp_key": event.icp_key,
-            "client_id": event.client_id,
+            "workspace_id": event.workspace_id,
             "handoff_ref": event.handoff_ref,
             "schema_version": event.schema_version,
         },
@@ -153,9 +153,9 @@ async def get_handoff_event(
     account_entity_id: EntityId,
     icp_spec_version: int,
     icp_key: str = "",
-    client_id: str,
+    workspace_id: str,
 ) -> HandoffEventRow | None:
-    """Read one outbox row by its scope key, tenant-scoped on ``client_id``, or ``None``."""
+    """Read one outbox row by its scope key, tenant-scoped on ``workspace_id``, or ``None``."""
     row = (
         (
             await conn.execute(
@@ -163,14 +163,14 @@ async def get_handoff_event(
                     f"SELECT {_EVENT_COLUMNS} FROM handoff_event "
                     "WHERE campaign_run_id = :run AND account_entity_id = :account "
                     "AND icp_spec_version = :icp_spec_version AND icp_key = :icp_key "
-                    "AND client_id = :client_id"
+                    "AND workspace_id = :workspace_id"
                 ),
                 {
                     "run": campaign_run_id,
                     "account": str(account_entity_id),
                     "icp_spec_version": icp_spec_version,
                     "icp_key": icp_key,
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                 },
             )
         )
@@ -184,25 +184,25 @@ async def list_handoff_events(
     conn: AsyncConnection,
     *,
     campaign_run_id: CampaignRunId,
-    client_id: str,
+    workspace_id: str,
     status: HandoffEventStatus | None = None,
 ) -> list[HandoffEventRow]:
-    """All outbox rows for a ``(campaign_run_id, client_id)`` (optionally filtered to one
+    """All outbox rows for a ``(campaign_run_id, workspace_id)`` (optionally filtered to one
     ``status``),
-    oldest first — the pull surface a consumer polls. Tenant-scoped on ``client_id``."""
+    oldest first — the pull surface a consumer polls. Tenant-scoped on ``workspace_id``."""
     status_clause = "AND status = CAST(:status AS text) " if status is not None else ""
     rows = (
         (
             await conn.execute(
                 text(
                     f"SELECT {_EVENT_COLUMNS} FROM handoff_event "
-                    "WHERE campaign_run_id = :run AND client_id = :client_id "
+                    "WHERE campaign_run_id = :run AND workspace_id = :workspace_id "
                     f"{status_clause}"
                     "ORDER BY emitted_at, account_entity_id, icp_spec_version, icp_key"
                 ),
                 {
                     "run": campaign_run_id,
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     **({"status": status.value} if status is not None else {}),
                 },
             )
@@ -238,7 +238,7 @@ def _row_to_event(row: dict[str, object]) -> HandoffEventRow:
             "account_entity_id": row["account_entity_id"],
             "icp_spec_version": row["icp_spec_version"],
             "icp_key": row["icp_key"],
-            "client_id": row["client_id"],
+            "workspace_id": row["workspace_id"],
             "handoff_ref": row["handoff_ref"],
             "schema_version": row["schema_version"],
             "status": row["status"],

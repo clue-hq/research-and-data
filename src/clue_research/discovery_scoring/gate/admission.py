@@ -40,7 +40,7 @@ from clue_core import (
     discovery_claim,
 )
 from clue_locks import entity_lock
-from clue_research.claimstore import ALL_TENANTS, claims_for, insert_claim
+from clue_research.claimstore import ALL_WORKSPACES, claims_for, insert_claim
 from clue_research.discovery_scoring.discovery import CandidateHypothesis
 from clue_research.discovery_scoring.gate.existence import (
     DEFAULT_EXISTENCE_CHECK,
@@ -127,7 +127,9 @@ async def _existing_provenance(
     survivor). Otherwise a candidate admitted as a new entity in run 1, then merged into another
     entity before a replay, would have its provenance missed and a duplicate written."""
     for member in await merged_member_ids(conn, entity_id, EntityType.ACCOUNT):
-        for claim in await claims_for(conn, member, DISCOVERY_PROVENANCE_FIELD, scope=ALL_TENANTS):
+        for claim in await claims_for(
+            conn, member, DISCOVERY_PROVENANCE_FIELD, scope=ALL_WORKSPACES
+        ):
             provenance = claim.discovery_provenance
             if (
                 provenance is not None

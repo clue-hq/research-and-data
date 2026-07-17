@@ -5,7 +5,7 @@ result so M12.3 serves a stable object with a precomputed provenance index, Post
 source of truth, and a re-assembly after a claim is superseded simply replaces the row (overview §3
 recommended persistence; AC8). The whole :class:`~clue_research.narrative.handoff.AssembledHandoff`
 (the frozen ``AccountHandoff`` contract object + the M12.2 extras) is stored as a JSONB ``payload``;
-the scope key columns ``(client_id, account_entity_id, icp_spec_version)`` make a client's view
+the scope key columns ``(workspace_id, account_entity_id, icp_spec_version)`` make a client's view
 fetchable and tenant-isolated (substrate §2 — the same public account researched by two clients
 keeps two handoffs).
 
@@ -35,11 +35,11 @@ async def write_handoff(
     conn: AsyncConnection,
     assembled: AssembledHandoff,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str = "",
     tier: str | None = None,
 ) -> None:
-    """Materialise ``assembled`` for ``(client_id, icp_key)`` (UPSERT on the ``(client_id,
+    """Materialise ``assembled`` for ``(workspace_id, icp_key)`` (UPSERT on the ``(workspace_id,
     account_entity_id, icp_spec_version, icp_key)`` scope key — a re-assembly after supersession
     replaces the payload + ``assembled_at``, never duplicating). ``icp_key`` is the ICP segment
     (D5: ``icp_spec_version`` restarts at 1 per ``icp_key``, so two segments must not clobber each
@@ -54,12 +54,12 @@ async def write_handoff(
         text(
             """
             INSERT INTO account_handoff
-                (client_id, account_entity_id, icp_spec_version, icp_key, campaign_run_id,
+                (workspace_id, account_entity_id, icp_spec_version, icp_key, campaign_run_id,
                  assembled_at, tier, payload)
             VALUES
-                (:client_id, :account_entity_id, :icp_spec_version, :icp_key, :campaign_run_id,
+                (:workspace_id, :account_entity_id, :icp_spec_version, :icp_key, :campaign_run_id,
                  :assembled_at, :tier, CAST(:payload AS jsonb))
-            ON CONFLICT (client_id, account_entity_id, icp_spec_version, icp_key) DO UPDATE SET
+            ON CONFLICT (workspace_id, account_entity_id, icp_spec_version, icp_key) DO UPDATE SET
                 campaign_run_id = EXCLUDED.campaign_run_id,
                 assembled_at    = EXCLUDED.assembled_at,
                 tier            = EXCLUDED.tier,
@@ -67,7 +67,7 @@ async def write_handoff(
             """
         ),
         {
-            "client_id": client_id,
+            "workspace_id": workspace_id,
             "account_entity_id": str(h.account_entity_id),
             "icp_spec_version": h.icp_spec_version,
             "icp_key": icp_key,
@@ -82,24 +82,24 @@ async def write_handoff(
 async def read_handoff(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     account_entity_id: EntityId,
     icp_spec_version: int,
     icp_key: str = "",
 ) -> AssembledHandoff | None:
-    """Read the materialised :class:`AssembledHandoff` for ``(client_id, account_entity_id,
+    """Read the materialised :class:`AssembledHandoff` for ``(workspace_id, account_entity_id,
     icp_spec_version, icp_key)``, or ``None`` if it has not been assembled. Tenant-scoped on
-    ``client_id`` so a client never reads another client's assembled handoff (substrate §2);
+    ``workspace_id`` so a client never reads another client's assembled handoff (substrate §2);
     ``icp_key`` (default ``""``) selects the ICP segment (D5)."""
     row = (
         await conn.execute(
             text(
-                "SELECT payload FROM account_handoff WHERE client_id = :client_id "
+                "SELECT payload FROM account_handoff WHERE workspace_id = :workspace_id "
                 "AND account_entity_id = :account_entity_id "
                 "AND icp_spec_version = :icp_spec_version AND icp_key = :icp_key"
             ),
             {
-                "client_id": client_id,
+                "workspace_id": workspace_id,
                 "account_entity_id": str(account_entity_id),
                 "icp_spec_version": icp_spec_version,
                 "icp_key": icp_key,
@@ -112,24 +112,25 @@ async def read_handoff(
 
 
 async def list_handoffs_for_run(
-    conn: AsyncConnection, *, client_id: str, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, *, workspace_id: str, campaign_run_id: CampaignRunId
 ) -> list[tuple[str, str | None, AssembledHandoff]]:
-    """All materialised handoffs for ``(client_id, campaign_run_id)`` as ``(icp_key, tier,
+    """All materialised handoffs for ``(workspace_id, campaign_run_id)`` as ``(icp_key, tier,
     assembled)`` triples — the M12.3 list-serve surface (``GET /campaign_runs/{id}/handoffs``). A
     materialised row exists only *after* assembly (which reads verified claims), so the list returns
     exactly the run's **ready** handoffs (M12.3 AC: an account still in deep/verification has no row
     and is absent). ``icp_key`` / ``tier`` are table columns (the frozen ``AccountHandoff`` payload
     carries ``icp_spec_version`` but not the segment key — D5 — nor the tier), so a multi-segment
-    account's fetch ref is correct and the list can filter by tier. Tenant-scoped on ``client_id``
+    account's fetch ref is correct and the list can filter by tier. Workspace-scoped on
+    ``workspace_id``
     (substrate §2); ordered by ``(account_entity_id, icp_spec_version, icp_key)``."""
     rows = (
         await conn.execute(
             text(
                 "SELECT icp_key, tier, payload FROM account_handoff "
-                "WHERE client_id = :client_id AND campaign_run_id = :campaign_run_id "
+                "WHERE workspace_id = :workspace_id AND campaign_run_id = :campaign_run_id "
                 "ORDER BY account_entity_id, icp_spec_version, icp_key"
             ),
-            {"client_id": client_id, "campaign_run_id": campaign_run_id},
+            {"workspace_id": workspace_id, "campaign_run_id": campaign_run_id},
         )
     ).all()
     return [(str(row[0]), row[1], _decode_payload(row[2])) for row in rows]

@@ -55,12 +55,12 @@ that stand-in is the real implementation.)
 ## Run the chain
 
 ```bash
-uv run python scripts/01_stage0_onboarding.py --name "Acme Robotics" --website "https://acme.example" --client-id acme
-uv run python scripts/02_icp_synthesis.py --client-id acme --client-entity-id <from 01> --kb-version 1
-uv run python scripts/03_find_accounts.py --client-id acme --max-accounts 5
-uv run python scripts/04_account_profiling.py --client-id acme --account-id <from 03> --tier high
-uv run python scripts/05_committee_discovery.py --client-id acme --account-id <from 03> --tier high
-uv run python scripts/06_contact_profiling.py --client-id acme --account-id <from 03> --contact-id <from 05> --tier high
+uv run python scripts/01_stage0_onboarding.py --name "Acme Robotics" --website "https://acme.example" --workspace-id acme
+uv run python scripts/02_icp_synthesis.py --workspace-id acme --client-entity-id <from 01> --kb-version 1
+uv run python scripts/03_find_accounts.py --workspace-id acme --max-accounts 5
+uv run python scripts/04_account_profiling.py --workspace-id acme --account-id <from 03> --tier high
+uv run python scripts/05_committee_discovery.py --workspace-id acme --account-id <from 03> --tier high
+uv run python scripts/06_contact_profiling.py --workspace-id acme --account-id <from 03> --contact-id <from 05> --tier high
 ```
 
 Each script also runs standalone with sensible defaults (04/05/06 seed a demo account/contact

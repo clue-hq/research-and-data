@@ -14,11 +14,11 @@ so M12 (``narrative``) and others call it through the ``core`` seam without impo
 **last** in the verification sequence (``…faithfulness → identity_binding → use_gate``; PF-7 /
 Doc D §7 — "is it this person?" before "may we use it?"). ``evaluate(claim)``:
 
-1. the decision is a **pure** function of ``(use_class, resolved_jurisdiction, client_policy)``
+1. the decision is a **pure** function of ``(use_class, resolved_jurisdiction, workspace_policy)``
    (:func:`decide_use`) — the claim's immutable ``use_class`` (stamped at extraction by M10.2), the
    contact's *current* resolved regime read via M10.1's ``contact.jurisdiction`` claim
    (:meth:`_resolved_regime`, **fail-closed** to the strict regime when unknown — Doc D §1), and the
-   versioned :class:`ClientPolicy` allow-map (M10.4 postures-as-config);
+   versioned :class:`WorkspacePolicy` allow-map (M10.4 postures-as-config);
 2. **the hard floor (Doc D §4):** ``sensitive`` (special-category) data is **never usable** for
    outreach under *any* posture — enforced in the gate itself (not left to config), so even an
    Option-2 "gather broadly" policy that stored it cannot make it usable except via an explicit,
@@ -38,8 +38,9 @@ strong), so the use gate is the appropriateness axis *only* and never folds bind
 (that would conflate the two gates Doc D §5 keeps apart).
 
 Policy-as-data (conventions §2): the allow-map, per-regime relaxation, gather/store scope, override
-register, and ``version`` are versioned :class:`ClientPolicy` rows in ``client_policy`` (per-client
-overridable; read via :func:`load_client_policy`; the three postures materialize into it via
+register, and ``version`` are versioned :class:`WorkspacePolicy` rows in ``workspace_policy``
+(per-workspace
+overridable; read via :func:`load_workspace_policy`; the three postures materialize into it via
 :mod:`clue_research.compliance.posture`), so a posture switch is a config row, not code (Doc D §6).
 Architecture: Doc D §3/§5/§6/§7; docs/specs/M10-compliance-and-personal-data.md §M10.3/§M10.4.
 """
@@ -84,7 +85,7 @@ from clue_obs.otel import (
     get_metric_sink,
     traced_step,
 )
-from clue_research.claimstore import TenantScope, current_value
+from clue_research.claimstore import WorkspaceScope, current_value
 from clue_research.compliance.fields import CONTACT_JURISDICTION
 
 _log = get_logger(__name__)
@@ -141,7 +142,7 @@ class SensitiveOverride(BaseModel):
         return value.strip()
 
 
-class ClientPolicy(BaseModel):
+class WorkspacePolicy(BaseModel):
     """The per-client posture policy as data (policy-as-data, conventions §2; Doc D §6) — the seam
     M10.3 reads for usability and M8 / the M4.6 planner read for gather/store scope.
 
@@ -179,7 +180,7 @@ class ClientPolicy(BaseModel):
     version: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
-    def _check(self) -> ClientPolicy:
+    def _check(self) -> WorkspacePolicy:
         """Every use-class has a base disposition; ``sensitive`` may never be config-marked USABLE
         in ``allow_map`` *or* ``regime_overrides`` (the gate floors it regardless, but a config row
         trying to bypass the Art. 9 floor is a misconfiguration that must fail loudly —
@@ -247,7 +248,7 @@ class ClientPolicy(BaseModel):
         return None
 
 
-DEFAULT_CLIENT_POLICY = ClientPolicy()
+DEFAULT_WORKSPACE_POLICY = WorkspacePolicy()
 
 
 # --- the pure decision (DB-free, unit-testable) -----------------------------
@@ -256,12 +257,12 @@ DEFAULT_CLIENT_POLICY = ClientPolicy()
 def decide_use(
     use_class: UseClass,
     regime: Jurisdiction,
-    policy: ClientPolicy,
+    policy: WorkspacePolicy,
     *,
     field_key: str | None = None,
 ) -> tuple[bool, UseReason]:
     """The appropriateness verdict ``(usable_for_outreach, reason)`` for a personal claim — the pure
-    core of the gate, a function of ``(use_class, regime, client_policy)`` only (Doc D §3).
+    core of the gate, a function of ``(use_class, regime, workspace_policy)`` only (Doc D §3).
 
     The **hard floor first** (Doc D §4, AC2): ``sensitive`` special-category data is *never* usable
     for outreach under any posture — enforced here in the gate, not delegated to the allow-map, so
@@ -285,27 +286,27 @@ def decide_use(
 class UseGateImpl:
     """The M10.3 appropriateness/use gate (implements ``clue_core.compliance.UseGate``).
 
-    Constructed per (client) context at the ``api`` root with the resolved :class:`ClientPolicy`
-    (loaded via :func:`load_client_policy`), a connection factory (defaults to a committed
+    Constructed per (client) context at the ``api`` root with the resolved :class:`WorkspacePolicy`
+    (loaded via :func:`load_workspace_policy`), a connection factory (defaults to a committed
     transaction per evaluate), and an optional metric sink. It reads the contact's resolved regime
     under the client's tenant scope and records the verdict in ``use_decision``.
     ``record_decisions=False`` skips the write (callers needing the verdict; read-only tests)."""
 
     def __init__(
         self,
-        client_id: str,
+        workspace_id: str,
         *,
-        policy: ClientPolicy = DEFAULT_CLIENT_POLICY,
+        policy: WorkspacePolicy = DEFAULT_WORKSPACE_POLICY,
         conn_factory: ConnFactory = transaction,
         record_decisions: bool = True,
         sink: MetricSink | None = None,
     ) -> None:
-        self._client_id = client_id
+        self._workspace_id = workspace_id
         self._policy = policy
         self._conn_factory = conn_factory
         self._record = record_decisions
         self._sink = sink
-        self._scope = TenantScope.for_tenant(client_id)
+        self._scope = WorkspaceScope.for_workspace(workspace_id)
 
     async def evaluate(self, claim: Claim) -> UseDecision:
         """Decide whether ``claim`` may drive outreach; record the ``use_decision`` verdict and emit
@@ -500,11 +501,13 @@ def _parse_sensitive_overrides(raw: object) -> tuple[SensitiveOverride, ...]:
     return tuple(SensitiveOverride.model_validate(entry) for entry in _as_array(raw))
 
 
-async def load_client_policy(
-    conn: AsyncConnection, *, client_id: str | None = None
-) -> ClientPolicy:
-    """Load the most-specific :class:`ClientPolicy` for a scope: per-client → global default row →
-    :data:`DEFAULT_CLIENT_POLICY`. The latest ``version`` in the matched scope wins (deterministic
+async def load_workspace_policy(
+    conn: AsyncConnection, *, workspace_id: str | None = None
+) -> WorkspacePolicy:
+    """Load the most-specific :class:`WorkspacePolicy` for a scope: per-workspace → global default
+    row →
+    :data:`DEFAULT_WORKSPACE_POLICY`. The latest ``version`` in the matched scope wins
+    (deterministic
     ``created_at``/``policy_id`` tie-break, so a duplicate same-version global row can never resolve
     non-deterministically). Returns the built-in default when no row matches (policy-as-data;
     fail-soft).
@@ -513,12 +516,13 @@ async def load_client_policy(
     to list the entries it changes (a partial override; mirrors the config skeleton's "a client
     override replaces individual entries") and is always complete. A row that tries to mark
     ``sensitive`` USABLE (in ``allow_map`` or ``regime_overrides``), or carries a blank
-    ``sensitive_overrides`` entry, fails :class:`ClientPolicy` validation at load (fail-closed — the
+    ``sensitive_overrides`` entry, fails :class:`WorkspacePolicy` validation at load (fail-closed —
+    the
     Art. 9 floor is not config-bypassable; only a reviewed per-field override relaxes it), surfacing
     the misconfiguration loudly rather than silently relaxing governance."""
     candidates: list[str | None] = []
-    if client_id is not None:
-        candidates.append(client_id)
+    if workspace_id is not None:
+        candidates.append(workspace_id)
     candidates.append(None)  # the global default row
 
     for scope_client in candidates:
@@ -528,17 +532,17 @@ async def load_client_policy(
                     """
                     SELECT posture, allow_map, regime_overrides, source_scope, store_sensitive,
                            gather_scope, sensitive_overrides, version
-                    FROM client_policy
-                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                    FROM workspace_policy
+                    WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                     ORDER BY version DESC, created_at DESC, policy_id DESC
                     LIMIT 1
                     """
                 ),
-                {"client_id": scope_client},
+                {"workspace_id": scope_client},
             )
         ).first()
         if row is not None:
-            return ClientPolicy(
+            return WorkspacePolicy(
                 posture=Posture(row[0]),
                 allow_map={**_DEFAULT_ALLOW_MAP, **_parse_allow_map(row[1])},
                 regime_overrides=_parse_regime_overrides(row[2]),
@@ -548,4 +552,4 @@ async def load_client_policy(
                 sensitive_overrides=_parse_sensitive_overrides(row[6]),
                 version=int(row[7]),
             )
-    return DEFAULT_CLIENT_POLICY
+    return DEFAULT_WORKSPACE_POLICY

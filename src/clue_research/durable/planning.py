@@ -27,7 +27,7 @@ from clue_core import CostCents, EntityId, FreshnessState, PassKind
 from clue_core.field import FieldClass, FieldDef, field_namespace
 from clue_research.claimstore import current_values
 from clue_research.claimstore.registry import get_field, list_fields
-from clue_research.claimstore.tenancy import TenantScope
+from clue_research.claimstore.tenancy import WorkspaceScope
 
 
 class AspectPlan(BaseModel):
@@ -111,7 +111,7 @@ async def compute_gap_fields(
     conn: AsyncConnection,
     entity_id: EntityId,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     field_keys: Sequence[str] | None = None,
 ) -> list[FieldDef]:
     """Return the deep-pass fields that still need research for ``entity_id`` (M7.1).

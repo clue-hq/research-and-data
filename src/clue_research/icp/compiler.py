@@ -38,12 +38,12 @@ class CompileError(ValueError):
     no partial/ambiguous plan is ever emitted (empty-or-correct discipline applied to config)."""
 
     def __init__(
-        self, client_id: str, icp_key: str, version: int, diagnostics: tuple[str, ...]
+        self, workspace_id: str, icp_key: str, version: int, diagnostics: tuple[str, ...]
     ) -> None:
         self.diagnostics = diagnostics
         joined = "; ".join(diagnostics)
         super().__init__(
-            f"cannot compile ICP spec ({client_id!r}, {icp_key!r}, v{version}): {joined}"
+            f"cannot compile ICP spec ({workspace_id!r}, {icp_key!r}, v{version}): {joined}"
         )
 
 
@@ -92,7 +92,7 @@ class FieldPlan(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_version: int
     fields: tuple[FieldPlanEntry, ...] = ()
@@ -135,10 +135,10 @@ def _build_signal_links(entries: tuple[FieldPlanEntry, ...]) -> tuple[SignalClas
 
 
 def _plan_hash(
-    client_id: str, icp_key: str, icp_version: int, entries: tuple[FieldPlanEntry, ...]
+    workspace_id: str, icp_key: str, icp_version: int, entries: tuple[FieldPlanEntry, ...]
 ) -> str:
     payload = {
-        "client_id": client_id,
+        "workspace_id": workspace_id,
         "icp_key": icp_key,
         "icp_version": icp_version,
         "fields": [
@@ -229,12 +229,12 @@ async def compile_field_plan(
 
     if diagnostics:
         raise CompileError(
-            icp_spec.client_id, icp_spec.icp_key, icp_spec.version, tuple(diagnostics)
+            icp_spec.workspace_id, icp_spec.icp_key, icp_spec.version, tuple(diagnostics)
         )
 
     frozen_entries = tuple(entries)
     return FieldPlan(
-        client_id=icp_spec.client_id,
+        workspace_id=icp_spec.workspace_id,
         icp_key=icp_spec.icp_key,
         icp_version=icp_spec.version,
         fields=frozen_entries,
@@ -248,17 +248,17 @@ async def compile_field_plan(
         ),
         signal_classes=_build_signal_links(frozen_entries),
         plan_hash=_plan_hash(
-            icp_spec.client_id, icp_spec.icp_key, icp_spec.version, frozen_entries
+            icp_spec.workspace_id, icp_spec.icp_key, icp_spec.version, frozen_entries
         ),
     )
 
 
-async def compile_active_icp(conn: AsyncConnection, client_id: str, icp_key: str) -> FieldPlan:
-    """Convenience: compile the currently-active ICP spec for ``(client_id, icp_key)`` (what M6
+async def compile_active_icp(conn: AsyncConnection, workspace_id: str, icp_key: str) -> FieldPlan:
+    """Convenience: compile the currently-active ICP spec for ``(workspace_id, icp_key)`` (what M6
     runs Pass A against). Raises :class:`UnknownICPSpecError` if no active spec exists."""
-    spec = await get_active_icp(conn, client_id, icp_key)
+    spec = await get_active_icp(conn, workspace_id, icp_key)
     if spec is None:
-        raise UnknownICPSpecError(f"no active ICP spec for ({client_id!r}, {icp_key!r})")
+        raise UnknownICPSpecError(f"no active ICP spec for ({workspace_id!r}, {icp_key!r})")
     return await compile_field_plan(conn, spec)
 
 

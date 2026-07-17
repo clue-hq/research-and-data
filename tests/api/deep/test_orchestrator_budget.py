@@ -61,7 +61,7 @@ def test_deny_stops_admitting_and_records_partial_not_failed() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)
@@ -92,7 +92,7 @@ def test_graceful_stop_is_surfaced_for_the_handler_to_pause() -> None:
         FakeProfileContact(rec),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -119,7 +119,7 @@ def test_all_allow_profiles_every_in_cap_member_with_no_stop() -> None:
         FakeProfileContact(rec),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -147,7 +147,7 @@ def test_admission_projects_per_contact_estimate_from_config() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         await orch.run_one(spec, campaign_run_id=campaign)
@@ -190,7 +190,7 @@ def test_facet_subworker_budget_is_read_from_recursion_policy_bound_c() -> None:
         _recording_contact,
         recursion_policy=policy,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -212,7 +212,7 @@ def test_deny_on_first_contact_admits_zero_records_partial() -> None:
         FakeProfileContact(rec),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -243,7 +243,7 @@ def test_budget_check_exception_cancels_admitted_tasks_no_orphans() -> None:
         config=DeepPhaseConfig(committee_size_cap=8),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         with pytest.raises(RuntimeError, match="budget engine unavailable"):

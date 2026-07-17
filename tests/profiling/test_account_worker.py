@@ -114,7 +114,7 @@ async def _insert_account(conn, *, domain: str | None = "acme-robotics.com", hq_
     )
 
 
-def _ctx(entity_id, *, field_keys=(_FIELD,), budget=None, tenant_id=None, aspect="account"):
+def _ctx(entity_id, *, field_keys=(_FIELD,), budget=None, workspace_id=None, aspect="account"):
     return AspectContext(
         entity_id=entity_id,
         campaign_run_id=new_campaign_run_id(),
@@ -123,7 +123,7 @@ def _ctx(entity_id, *, field_keys=(_FIELD,), budget=None, tenant_id=None, aspect
         aspect=aspect,
         field_keys=field_keys,
         budget_envelope_cents=budget,
-        params=params_for_run(client_id=None, icp_key=None, icp_version=None, tenant_id=tenant_id),
+        params=params_for_run(workspace_id=workspace_id, icp_key=None, icp_version=None),
     )
 
 
@@ -300,7 +300,7 @@ def test_target_lock_excludes_cross_entity_tier3_claim() -> None:
 def test_tenant_private_field_without_tenant_is_flagged() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            # a seeded tenant_private resonance field, profiled with NO tenant_id in context.
+            # a seeded tenant_private resonance field, profiled with NO workspace_id in context.
             acct = await _insert_account(conn)
             worker = AspectProfilingWorker(
                 "account.resonance", session_factory=conn_session_factory(conn)
@@ -310,7 +310,7 @@ def test_tenant_private_field_without_tenant_is_flagged() -> None:
                     acct,
                     field_keys=("account.resonance.employee_sentiment",),
                     aspect="account.resonance",
-                    tenant_id=None,
+                    workspace_id=None,
                 )
             )
             assert result.claim_refs == ()

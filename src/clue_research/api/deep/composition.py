@@ -76,7 +76,7 @@ from clue_research.api.deep.handler import (
 from clue_research.api.deep.orchestrator import AccountDeepOrchestrator
 from clue_research.api.deep.run_io import DbAccountRunIO
 from clue_research.api.deep.spend import DbExactlyOnceSpend
-from clue_research.claimstore import TenantScope, claims_for, entities_with_field_claim
+from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (
     AccountResearchGraph,
@@ -147,8 +147,8 @@ def build_high_tier_resolver(
     "Deep-eligible" defaults to every band the cutoffs *name* (the fallback tier — accounts that
     cleared no band — is excluded); pass ``deep_tiers`` to research only a subset (e.g. the top
     band). An empty / band-less cutoff set selects nothing — a clean COMPLETED no-op for the phase.
-    The tier claims are ``tenant_private`` (keyed by ``client_id``), so the read is scoped
-    :meth:`TenantScope.for_tenant`.
+    The tier claims are ``tenant_private`` (keyed by ``workspace_id``), so the read is scoped
+    :meth:`WorkspaceScope.for_workspace`.
     """
 
     async def _resolve(ctx: PhaseContext) -> Sequence[AccountSpec]:
@@ -159,7 +159,7 @@ def build_high_tier_resolver(
         eligible = (
             deep_tiers if deep_tiers is not None else frozenset(b.tier for b in cutoffs.bands)
         )
-        scope = TenantScope.for_tenant(ctx.client_id)
+        scope = WorkspaceScope.for_workspace(ctx.workspace_id)
         specs: list[AccountSpec] = []
         async with session_factory() as conn:
             entity_ids = await entities_with_field_claim(conn, TIER_FIELD, scope=scope)
@@ -181,7 +181,7 @@ def build_high_tier_resolver(
                     AccountSpec(
                         entity_id=entity_id,
                         tier=tier,
-                        tenant_id=ctx.client_id,
+                        workspace_id=ctx.workspace_id,
                         field_keys=spec.field_keys or None,
                     )
                 )

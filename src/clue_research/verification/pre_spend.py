@@ -454,17 +454,17 @@ class PreSpendGateImpl:
 async def load_pre_spend_policy(
     conn: AsyncConnection,
     *,
-    client_id: str | None = None,
+    workspace_id: str | None = None,
     icp_version: int | None = None,
 ) -> PreSpendPolicy:
     """Load the most-specific :class:`PreSpendPolicy` for a scope: per-ICP → per-client → global
     default row → :data:`DEFAULT_PRE_SPEND_POLICY`. The latest ``version`` within the matched scope
     wins. Returns the built-in default when no row matches (policy-as-data; fail-soft)."""
     candidates: list[tuple[str | None, int | None]] = []
-    if client_id is not None and icp_version is not None:
-        candidates.append((client_id, icp_version))
-    if client_id is not None:
-        candidates.append((client_id, None))
+    if workspace_id is not None and icp_version is not None:
+        candidates.append((workspace_id, icp_version))
+    if workspace_id is not None:
+        candidates.append((workspace_id, None))
     candidates.append((None, None))  # the global default row
 
     for scope_client, scope_icp in candidates:
@@ -473,13 +473,13 @@ async def load_pre_spend_policy(
                 text(
                     """
                     SELECT rules_json FROM pre_spend_policy
-                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                    WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                       AND icp_version IS NOT DISTINCT FROM :icp_version
                     ORDER BY version DESC
                     LIMIT 1
                     """
                 ),
-                {"client_id": scope_client, "icp_version": scope_icp},
+                {"workspace_id": scope_client, "icp_version": scope_icp},
             )
         ).first()
         if row is not None:

@@ -567,21 +567,21 @@ def test_load_judge_policy_per_client_then_global_then_default() -> None:
             await conn.execute(
                 text(
                     "INSERT INTO judge_policy "
-                    "(policy_id, client_id, judge_model, prompt_version, supported_threshold) "
+                    "(policy_id, workspace_id, judge_model, prompt_version, supported_threshold) "
                     "VALUES ('global', NULL, 'm/global', 'v1', 0.6)"
                 )
             )
-            glob = await load_judge_policy(conn, client_id="acme")
+            glob = await load_judge_policy(conn, workspace_id="acme")
             assert glob.judge_model == "m/global" and glob.supported_threshold == pytest.approx(0.6)
             # a per-client row wins over the global one.
             await conn.execute(
                 text(
                     "INSERT INTO judge_policy "
-                    "(policy_id, client_id, judge_model, prompt_version, supported_threshold) "
+                    "(policy_id, workspace_id, judge_model, prompt_version, supported_threshold) "
                     "VALUES ('acme', 'acme', 'm/acme', 'v1', 0.8)"
                 )
             )
-            cli = await load_judge_policy(conn, client_id="acme")
+            cli = await load_judge_policy(conn, workspace_id="acme")
             assert cli.judge_model == "m/acme" and cli.supported_threshold == pytest.approx(0.8)
 
     run_async(_run())
@@ -805,7 +805,7 @@ def test_unregistered_prompt_version_falls_back_to_default() -> None:
             await conn.execute(
                 text(
                     "INSERT INTO judge_policy "
-                    "(policy_id, client_id, judge_model, prompt_version, supported_threshold) "
+                    "(policy_id, workspace_id, judge_model, prompt_version, supported_threshold) "
                     "VALUES ('global', NULL, 'm/global', 'v-retired-999', 0.7)"
                 )
             )

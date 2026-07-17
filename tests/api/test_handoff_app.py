@@ -90,7 +90,7 @@ def _app(
     conn: AsyncConnection, *, run: CampaignRunId, phase: CampaignPhase = CampaignPhase.HANDOFF
 ):
     reader = InMemoryHandoffReadinessReader(
-        runs={run: RunReadiness(campaign_run_id=run, client_id=_CLIENT, phase=phase)}
+        runs={run: RunReadiness(campaign_run_id=run, workspace_id=_CLIENT, phase=phase)}
     )
     service = HandoffService(readiness_reader=reader)
     return create_handoff_app(
@@ -107,13 +107,13 @@ def test_get_handoff_200_with_schema_header() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             acc, run, cid = new_entity_id(), new_campaign_run_id(), new_claim_id()
             await write_handoff(
-                conn, _assembled(account=acc, run=run, claim_id=cid), client_id=_CLIENT
+                conn, _assembled(account=acc, run=run, claim_id=cid), workspace_id=_CLIENT
             )
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
                     f"/accounts/{acc}/handoff",
                     params={"icp_spec_version": 1},
-                    headers={"X-Client-Id": _CLIENT},
+                    headers={"X-Workspace-Id": _CLIENT},
                 )
             assert r.status_code == 200
             assert r.headers[HANDOFF_SCHEMA_HEADER] == HANDOFF_SCHEMA_VERSION
@@ -140,7 +140,7 @@ def test_missing_handoff_is_404() -> None:
                 r = await client.get(
                     f"/accounts/{new_entity_id()}/handoff",
                     params={"icp_spec_version": 1},
-                    headers={"X-Client-Id": _CLIENT},
+                    headers={"X-Workspace-Id": _CLIENT},
                 )
             assert r.status_code == 404
 
@@ -153,12 +153,12 @@ def test_cross_tenant_is_404() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             acc, run = new_entity_id(), new_campaign_run_id()
-            await write_handoff(conn, _assembled(account=acc, run=run), client_id=_CLIENT)
+            await write_handoff(conn, _assembled(account=acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
                     f"/accounts/{acc}/handoff",
                     params={"icp_spec_version": 1},
-                    headers={"X-Client-Id": _OTHER},
+                    headers={"X-Workspace-Id": _OTHER},
                 )
             assert r.status_code == 404
 
@@ -169,7 +169,7 @@ def test_missing_tenant_header_is_401() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             acc, run = new_entity_id(), new_campaign_run_id()
-            await write_handoff(conn, _assembled(account=acc, run=run), client_id=_CLIENT)
+            await write_handoff(conn, _assembled(account=acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(f"/accounts/{acc}/handoff", params={"icp_spec_version": 1})
             assert r.status_code == 401
@@ -181,10 +181,10 @@ def test_list_endpoint_returns_ready_with_phase() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             run, acc = new_campaign_run_id(), new_entity_id()
-            await write_handoff(conn, _assembled(account=acc, run=run), client_id=_CLIENT)
+            await write_handoff(conn, _assembled(account=acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
-                    f"/campaign_runs/{run}/handoffs", headers={"X-Client-Id": _CLIENT}
+                    f"/campaign_runs/{run}/handoffs", headers={"X-Workspace-Id": _CLIENT}
                 )
             assert r.status_code == 200
             body = r.json()
@@ -207,10 +207,10 @@ def test_list_excludes_unmaterialised_mid_run_account() -> None:
                 new_entity_id(),
             )
             # only ready_acc has a materialised handoff; mid_run_acc has none.
-            await write_handoff(conn, _assembled(account=ready_acc, run=run), client_id=_CLIENT)
+            await write_handoff(conn, _assembled(account=ready_acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
-                    f"/campaign_runs/{run}/handoffs", headers={"X-Client-Id": _CLIENT}
+                    f"/campaign_runs/{run}/handoffs", headers={"X-Workspace-Id": _CLIENT}
                 )
             assert r.status_code == 200
             body = r.json()
@@ -226,18 +226,18 @@ def test_provenance_endpoint_resolves_and_404s() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             acc, run, cid = new_entity_id(), new_campaign_run_id(), new_claim_id()
             await write_handoff(
-                conn, _assembled(account=acc, run=run, claim_id=cid), client_id=_CLIENT
+                conn, _assembled(account=acc, run=run, claim_id=cid), workspace_id=_CLIENT
             )
             async with _client(_app(conn, run=run)) as client:
                 ok = await client.get(
                     f"/accounts/{acc}/handoff/provenance/{cid}",
                     params={"icp_spec_version": 1},
-                    headers={"X-Client-Id": _CLIENT},
+                    headers={"X-Workspace-Id": _CLIENT},
                 )
                 miss = await client.get(
                     f"/accounts/{acc}/handoff/provenance/{new_claim_id()}",
                     params={"icp_spec_version": 1},
-                    headers={"X-Client-Id": _CLIENT},
+                    headers={"X-Workspace-Id": _CLIENT},
                 )
             assert ok.status_code == 200
             assert ok.json()["provenance"]["source_url"] == "https://src/x"

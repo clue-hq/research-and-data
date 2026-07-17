@@ -45,7 +45,7 @@ def _session_factory(
 async def _seed_active_icp(conn: AsyncConnection) -> None:
     await create_icp_spec(
         conn,
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         created_from=ICPCreatedFrom.SYNTHESIS,
         discovery_strategy={"channels": ["exa"], "static_queries": {"exa": ["q"]}},
@@ -57,7 +57,7 @@ def _ctx(*, icp_version: int = 1) -> PhaseContext:
     return PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.DISCOVERY,
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         icp_version=icp_version,
     )

@@ -63,10 +63,10 @@ from clue_core import (
 from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import (
-    ATTR_CLIENT_ID,
     ATTR_COST_CENTS,
     ATTR_ENTITY_ID,
     ATTR_MODEL,
+    ATTR_WORKSPACE_ID,
     MetricSink,
     apply_attributes,
     get_logger,
@@ -74,7 +74,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     current_values,
     insert_claim,
@@ -208,7 +208,7 @@ class Positioner:
         account_entity_id: EntityId,
         *,
         icp_spec_version: int,
-        client_id: str,
+        workspace_id: str,
         client_entity_id: EntityId,
         run_id: RunId,
         icp_key: str | None = None,
@@ -216,25 +216,26 @@ class Positioner:
     ) -> PositioningResult:
         """Produce the per-persona value narrative for one ``(account, icp)``.
 
-        ``client_id`` is the tenant the narrative binds to (TENANT_PRIVATE); ``client_entity_id``
+        ``workspace_id`` is the tenant the narrative binds to (TENANT_PRIVATE); ``client_entity_id``
         is the client's resolved account entity, for Client-Knowledge retrieval. The merge reads
-        are tenant-scoped to ``client_id`` (public account facts ∪ this tenant's private
+        are tenant-scoped to ``workspace_id`` (public account facts ∪ this tenant's private
         resonance).
 
         ``icp_key`` disambiguates *which* ICP segment this narrative is for: an ICP is
-        ``(client_id, icp_key, version)`` and ``version`` restarts at 1 per ``icp_key`` (D5), so two
+        ``(workspace_id, icp_key, version)`` and ``version`` restarts at 1 per ``icp_key`` (D5), so
+        two
         segments can share ``icp_spec_version=1``. When provided it is stamped into the claim's
         ``value_json`` and keys supersession on ``(persona, icp_key, icp_version)`` — so segment B's
         re-synthesis never clobbers segment A's narrative at the same version. ``None`` preserves
         the
         legacy version-only keying (a single-segment account)."""
         policy = self._policy
-        scope = TenantScope.for_tenant(client_id)
+        scope = WorkspaceScope.for_workspace(workspace_id)
         with traced_step(
             SPAN_NARRATIVE_POSITION,
             **{
                 ATTR_ENTITY_ID: str(account_entity_id),
-                ATTR_CLIENT_ID: client_id,
+                ATTR_WORKSPACE_ID: workspace_id,
                 ATTR_MODEL: policy.narrative_model,
             },
         ) as span:
@@ -253,7 +254,7 @@ class Positioner:
 
             # 2) Read the use-cleared committee (the M8/M10 seam; production impl injected at api).
             committee = await self._committee_reader.committee_for(
-                account_entity_id=account_entity_id, tenant_id=client_id
+                account_entity_id=account_entity_id, workspace_id=workspace_id
             )
 
             narratives: list[ValueNarrativeRef] = []
@@ -267,7 +268,7 @@ class Positioner:
                     account_facts_by_field=account_facts_by_field,
                     icp_spec_version=icp_spec_version,
                     icp_key=icp_key,
-                    client_id=client_id,
+                    workspace_id=workspace_id,
                     client_entity_id=client_entity_id,
                     run_id=run_id,
                     kb_version=kb_version,
@@ -303,11 +304,11 @@ class Positioner:
         account_facts_by_field: dict[str, CurrentValue],
         icp_spec_version: int,
         icp_key: str | None,
-        client_id: str,
+        workspace_id: str,
         client_entity_id: EntityId,
         run_id: RunId,
         kb_version: int | None,
-        scope: TenantScope,
+        scope: WorkspaceScope,
     ) -> tuple[ValueNarrativeRef | None, CoverageGap | None, CostCents]:
         """Synthesize (or coverage-gap) one persona's narrative. Returns ``(ref, gap, cost)`` —
         exactly one of ``ref``/``gap`` is set.
@@ -350,7 +351,7 @@ class Positioner:
         chunks = list(
             await self._retriever.retrieve(
                 client_entity_id=client_entity_id,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 query=query,
                 kb_version=kb_version,
                 limit=policy.retrieval_limit,
@@ -409,7 +410,7 @@ class Positioner:
             evidence_span=evidence_span,
             cost_cents=cost,
         )
-        claim = stamp_reuse(claim, tenant_id=client_id, policy=NARRATIVE_REUSE_POLICY)
+        claim = stamp_reuse(claim, workspace_id=workspace_id, policy=NARRATIVE_REUSE_POLICY)
 
         client_knowledge_ids = [chunk.client_knowledge_id for chunk in chunks]
         async with self._conn_factory() as conn:
@@ -449,7 +450,7 @@ class Positioner:
         persona: Persona,
         icp_spec_version: int,
         icp_key: str | None,
-        scope: TenantScope,
+        scope: WorkspaceScope,
     ) -> ClaimId:
         """Insert the narrative claim, superseding any prior live narrative for the same ``(account,
         persona, icp_key, icp)`` (append-only + supersede; M12.1 AC7 — re-run never duplicates).
@@ -486,7 +487,7 @@ class Positioner:
         persona: Persona,
         icp_spec_version: int,
         icp_key: str | None,
-        scope: TenantScope,
+        scope: WorkspaceScope,
     ) -> list[Claim]:
         """The live ``account.value_narrative`` claims for this exact ``(account, persona, icp_key,
         icp)`` (claims_for returns non-superseded; ordered collected_at DESC so ``[0]`` is the most

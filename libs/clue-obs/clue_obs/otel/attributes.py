@@ -32,7 +32,7 @@ ATTR_SOURCE_KEY = "source_key"  # M4 resolve spans tag this
 ATTR_RESEARCH_MODE = "research_mode"
 ATTR_RUN_ID = "run_id"
 ATTR_COST_CENTS = "cost_cents"
-ATTR_CLIENT_ID = "client_id"
+ATTR_WORKSPACE_ID = "workspace_id"
 ATTR_ICP_ID = "icp_id"
 ATTR_CAMPAIGN_RUN_ID = "campaign_run_id"
 # LLM gateway (M0.4) — the llm.gateway_call span tags these. `model` is the id that answered;
@@ -65,7 +65,7 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_RESEARCH_MODE,
         ATTR_RUN_ID,
         ATTR_COST_CENTS,
-        ATTR_CLIENT_ID,
+        ATTR_WORKSPACE_ID,
         ATTR_ICP_ID,
         ATTR_CAMPAIGN_RUN_ID,
         ATTR_MODEL,
@@ -97,7 +97,7 @@ class SpanAttributes(TypedDict, total=False):
     research_mode: ResearchMode | str
     run_id: UUID | str
     cost_cents: Decimal | float
-    client_id: UUID | str
+    workspace_id: UUID | str
     icp_id: UUID | str
     campaign_run_id: UUID | str
     model: str

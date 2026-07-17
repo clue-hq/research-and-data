@@ -76,14 +76,14 @@ async def _write_discovery_yield(
     needs_review: int = 0,
     rejected: int = 0,
     cost_cents: Decimal = Decimal(0),
-    client_id: str = "acme",
+    workspace_id: str = "acme",
     icp_key: str = "default",
 ) -> None:
     """Write one per-channel discovery telemetry row exactly as the DISCOVERY phase does (the
     run-level facts — stopping reason + admitted-vs-seen — denormalised onto the row)."""
     await record_source_yield(
         conn,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=1,
         source_key=source_key,

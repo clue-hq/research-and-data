@@ -59,7 +59,7 @@ class DbVerificationAnnotationReader:
         self._conn_factory = conn_factory
 
     async def annotations_for_claims(
-        self, *, claim_ids: Sequence[ClaimId], tenant_id: str
+        self, *, claim_ids: Sequence[ClaimId], workspace_id: str
     ) -> dict[ClaimId, ClaimAnnotation]:
         ids = [str(cid) for cid in claim_ids]
         if not ids:
@@ -119,7 +119,7 @@ class DbVerificationAnnotationReader:
         return out
 
     async def open_conflicts_for_account(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[FieldConflict, ...]:
         async with self._conn_factory() as conn:
             rows = (
@@ -190,11 +190,11 @@ def build_review_account_resolver(
 
     async def resolve(ctx: PhaseContext) -> Sequence[AccountSpec]:
         ready = await reader.ready_accounts(
-            campaign_run_id=ctx.campaign_run_id, client_id=ctx.client_id
+            campaign_run_id=ctx.campaign_run_id, workspace_id=ctx.workspace_id
         )
         return [
             AccountSpec(
-                entity_id=r.account_entity_id, tier=r.tier or "top", tenant_id=ctx.client_id
+                entity_id=r.account_entity_id, tier=r.tier or "top", workspace_id=ctx.workspace_id
             )
             for r in ready
         ]

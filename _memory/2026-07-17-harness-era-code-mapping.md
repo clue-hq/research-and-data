@@ -99,5 +99,35 @@ step 2) → A4 R2 (clue_research → subsystems/research; scaffolds). ~4–5 wor
 **[DEVIATION flags for founder]:** shims skipped (no in-flight branches + simplicity ruling);
 spine as libs/clue-spine (new box vs Doc R tree); tenant_private retained; header rename.
 
+## Phase A execution log (founder approved all 4 deviations; "proceed")
+- **A0 DONE**: 15 ruff errors fixed (E501 docstrings in committed code — last 2 pre-phase commits
+  had landed ungated); Settings slice committed (`ab5ae1b`); PA spec committed (`8626114`);
+  full suite green incl. DB-gated on FRESH schema; db-smoke green. Branch was already renamed by
+  founder to `platform/workspace-restructure` (kept; not `-v0`).
+  LEDGER: DB suite is not rerun-idempotent on a persistent DB (durable tests leave LangGraph
+  checkpointer tables; registry/claim rows accumulate) → fresh `DROP SCHEMA public CASCADE` per
+  run is the operating rule. Follow-up candidate, not Phase A scope.
+- **A1 (R0) DONE** (`628c530`): uv workspace root; libs/clue-obs ported from havana py_lumen_obs
+  (setup/get_logger, CLUE_LOG_MODE/FORMAT, workspace-era binders, ids-only claim-value redaction
+  (_CLAIM_VALUE_KEYS incl. value_json/evidence_span/memory_body/creating_quote), log_span,
+  capture_events); wired into handoff_app lifespan + 6 scripts; ruff T20 print ban + grep test
+  banning logging.getLogger outside clue_obs.
+- **A2 (R1) moves DONE** (5 move-only commits `79e6834`..`2ac8237`): core→clue-core, db→clue-db,
+  config→clue-config, obs→clue_obs.otel (merge), gateway→clue-gateway, locks→clue-locks. No shims
+  (approved deviation) — imports rewritten wholesale; package-layout test made location-aware
+  (_locate + _SPECIAL_HOMES obs→clue_obs/otel); import-linter: root_packages=7, layers contract
+  now root-level (clue_obs→clue_config→clue_core), new "libs never import the subsystem" rule,
+  SDK bans extended to libs; 13 contracts kept. db-smoke green via clue_db.
+- **A2 DRY batch 1 DONE** (`e614575`): clue_core.normalize_host (replaced FOUR copies — 4th in
+  resolvers/grounded.py; reconciled scheme-less two-pass parse) + clue_core.reference_time
+  (replaced THREE copies — 3rd inline in compliance/lawful_basis.py); decode_jsonb_scalar found
+  ALREADY consolidated pre-phase. conventions §2 rewritten (libs layout, contract-delta lane,
+  simplicity ruling). NOT consolidated (correct, different semantics): contact/binding.py
+  _normalize_url (netloc-keeping), identity/normalize.py registrable_domain (validator).
+- **LEDGER: BudgetTracker (DRY item 5) DEFERRED out of Phase A** — same-file collision with the
+  claim_tagger work, blocks nothing in Phase B; spec pre-authorized the split.
+- IN FLIGHT: claim_tagger pre-insert hook + contact-fill waterfall rejoin (subagent).
+
 ## Next
-Execute A0/A1 (deviation-free); founder signs off deviations before A2/A3. No push.
+claim_tagger review+commit → A3 (rename migration + code rename, then clue-spine) → A4 (R2
+scaffolds + clue_research → subsystems/). No push.

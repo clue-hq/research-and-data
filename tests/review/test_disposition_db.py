@@ -81,7 +81,7 @@ async def _account(
 async def _run(conn: AsyncConnection) -> CampaignRunId:
     rid = new_campaign_run_id()
     await ensure_campaign_run(
-        conn, campaign_run_id=rid, client_id=_CLIENT, icp_key=_ICP_KEY, icp_version=_ICP_VERSION
+        conn, campaign_run_id=rid, workspace_id=_CLIENT, icp_key=_ICP_KEY, icp_version=_ICP_VERSION
     )
     return rid
 
@@ -106,7 +106,7 @@ async def _claim(
         source_url="https://src.local/x",
     )
     claim = claim.model_copy(update={"source_key": source_key})
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
     return await insert_claim(conn, claim)
 
 
@@ -132,7 +132,7 @@ async def _fit_score(conn: AsyncConnection, account: EntityId, *, value: float =
         run_id=new_run_id(),
         research_mode=ResearchMode.ACCOUNT_PROFILING,
     )
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
     return await insert_claim(conn, claim)
 
 
@@ -150,7 +150,7 @@ async def _seed_handoff(
         text(
             """
             INSERT INTO account_handoff
-                (client_id, account_entity_id, icp_spec_version, icp_key, assembled_at, payload)
+                (workspace_id, account_entity_id, icp_spec_version, icp_key, assembled_at, payload)
             VALUES (:c, :a, :v, :k, now(), CAST(:p AS jsonb))
             """
         ),
@@ -212,7 +212,7 @@ def test_review_action_capture_is_idempotent_with_provenance() -> None:
                 (
                     await conn.execute(
                         text(
-                            "SELECT disposition_type, entity_id, account_entity_id, client_id, "
+                            "SELECT disposition_type, entity_id, account_entity_id, workspace_id, "
                             "icp_key, icp_spec_version, claim_id, origin, actor, natural_key "
                             "FROM disposition WHERE id = :i"
                         ),
@@ -223,7 +223,7 @@ def test_review_action_capture_is_idempotent_with_provenance() -> None:
                 .one()
             )
             assert row["disposition_type"] == "claim_approved"
-            assert row["client_id"] == _CLIENT
+            assert row["workspace_id"] == _CLIENT
             assert row["icp_key"] == _ICP_KEY and row["icp_spec_version"] == _ICP_VERSION
             assert EntityId(row["account_entity_id"]) == account
             assert ClaimId(row["claim_id"]) == claim
@@ -273,14 +273,14 @@ def test_ingest_downstream_resolves_or_rejects_and_dedupes() -> None:
             pre_resolved = DownstreamOutcome(
                 external_id="op-1",
                 disposition_type=DispositionType.ACCOUNT_ACCEPTED,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 occurred_at=_now(),
                 account_entity_id=account,
             )
             by_domain = DownstreamOutcome(
                 external_id="op-2",
                 disposition_type=DispositionType.REPLY_RECEIVED,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 occurred_at=_now(),
                 company_name="Acme Inc",
                 domain="acme.com",
@@ -288,7 +288,7 @@ def test_ingest_downstream_resolves_or_rejects_and_dedupes() -> None:
             unresolvable = DownstreamOutcome(
                 external_id="op-3",
                 disposition_type=DispositionType.ACCOUNT_REJECTED,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 occurred_at=_now(),
                 company_name="Ghost Co",
                 domain="ghost-co.invalid",
@@ -351,7 +351,7 @@ def test_account_disposition_snapshots_handoff_provenance() -> None:
                     DownstreamOutcome(
                         external_id="won-1",
                         disposition_type=DispositionType.CLOSED_WON,
-                        client_id=_CLIENT,
+                        workspace_id=_CLIENT,
                         occurred_at=_now(),
                         account_entity_id=account,
                     )
@@ -433,7 +433,7 @@ def test_labeled_dataset_joins_score_is_reproducible_and_tombstone_aware() -> No
             )
 
             rows = await read_labeled_dataset(
-                conn, client_id=_CLIENT, icp_spec_version=_ICP_VERSION, icp_key=_ICP_KEY
+                conn, workspace_id=_CLIENT, icp_spec_version=_ICP_VERSION, icp_key=_ICP_KEY
             )
             assert len(rows) == 2
             by_id = {r.disposition_id: r for r in rows}
@@ -444,7 +444,7 @@ def test_labeled_dataset_joins_score_is_reproducible_and_tombstone_aware() -> No
 
             # reproducible: re-running yields the same row identities.
             again = await read_labeled_dataset(
-                conn, client_id=_CLIENT, icp_spec_version=_ICP_VERSION, icp_key=_ICP_KEY
+                conn, workspace_id=_CLIENT, icp_spec_version=_ICP_VERSION, icp_key=_ICP_KEY
             )
             assert {r.disposition_id for r in again} == set(by_id)
 
@@ -452,7 +452,7 @@ def test_labeled_dataset_joins_score_is_reproducible_and_tombstone_aware() -> No
             # account-keyed one stays; both rows remain on the table (audited, not deleted).
             stamped = await tombstone_contact_dispositions(conn, contact)
             assert stamped == 1
-            after = await read_labeled_dataset(conn, client_id=_CLIENT)
+            after = await read_labeled_dataset(conn, workspace_id=_CLIENT)
             assert [r.disposition_id for r in after] == [account_did]
             total = (await conn.execute(text("SELECT count(*) FROM disposition"))).scalar_one()
             assert total == 2
@@ -478,7 +478,7 @@ def test_store_class_record_and_labeled_dataset() -> None:
             disposition = FeedbackDisposition.for_downstream(
                 disposition_type=DispositionType.ACCOUNT_ACCEPTED,
                 account_entity_id=account,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 external_id="x1",
                 occurred_at=_now(),
                 icp_key=_ICP_KEY,
@@ -486,7 +486,7 @@ def test_store_class_record_and_labeled_dataset() -> None:
                 campaign_run_id=run,
             )
             did = await store.record(disposition)
-            rows = await store.labeled_dataset(client_id=_CLIENT)
+            rows = await store.labeled_dataset(workspace_id=_CLIENT)
             assert did in {r.disposition_id for r in rows}
 
     run_async(go())

@@ -201,10 +201,9 @@ async def collect_resonance(
     account_entity_id: EntityId,
     run_id: RunId,
     tier: str,
-    client_id: str | None = None,
+    workspace_id: str | None = None,
     icp_key: str | None = None,
     icp_version: int | None = None,
-    tenant_id: str | None = None,
     field_keys: tuple[str, ...] = RESONANCE_FIELD_KEYS,
     budget_envelope_cents: CostCents | None = None,
     worker: ResonanceAspectWorker | None = None,
@@ -227,9 +226,7 @@ async def collect_resonance(
         aspect=resonance_worker.aspect,
         field_keys=field_keys,
         budget_envelope_cents=budget_envelope_cents,
-        params=params_for_run(
-            client_id=client_id, icp_key=icp_key, icp_version=icp_version, tenant_id=tenant_id
-        ),
+        params=params_for_run(workspace_id=workspace_id, icp_key=icp_key, icp_version=icp_version),
     )
     return await resonance_worker.research(ctx)
 

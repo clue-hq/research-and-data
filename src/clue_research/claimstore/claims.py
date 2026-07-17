@@ -43,7 +43,7 @@ from clue_core import (
 )
 from clue_core.field import FieldKey
 from clue_research.claimstore.registry import check_claim_writable
-from clue_research.claimstore.tenancy import TenantScope
+from clue_research.claimstore.tenancy import WorkspaceScope
 
 _INSERT_SQL = text(
     """
@@ -51,7 +51,7 @@ _INSERT_SQL = text(
         id, entity_id, entity_type, field_key, value_json, source_url, source_key, source_tier,
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
-        identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, tenant_id
+        identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
         CAST(:value_json AS jsonb), :source_url, :source_key, :source_tier,
@@ -61,7 +61,7 @@ _INSERT_SQL = text(
         CAST(:verification_status AS verification_status),
         CAST(:identity_binding AS identity_binding), CAST(:use_class AS use_class),
         CAST(:discovery_provenance AS jsonb), CAST(:claim_flavor AS claim_flavor),
-        CAST(:reuse_scope AS reuse_scope), :tenant_id
+        CAST(:reuse_scope AS reuse_scope), :workspace_id
     )
     RETURNING id
     """
@@ -73,7 +73,7 @@ _SELECT_COLUMNS = (
     "id, entity_id, entity_type, field_key, value_json, source_url, source_key, source_tier, "
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
-    "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, tenant_id"
+    "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id"
 )
 
 
@@ -109,7 +109,7 @@ def _insert_params(claim: Claim) -> dict[str, object]:
         ),
         "claim_flavor": claim.claim_flavor.value,
         "reuse_scope": claim.reuse_scope.value,
-        "tenant_id": claim.tenant_id,
+        "workspace_id": claim.workspace_id,
     }
 
 
@@ -148,7 +148,7 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "claim_flavor": row.get("claim_flavor", ClaimFlavor.FIELD_CLAIM),
             "discovery_provenance": discovery,
             "reuse_scope": row.get("reuse_scope", "public_footprint"),
-            "tenant_id": row.get("tenant_id"),
+            "workspace_id": row.get("workspace_id"),
         }
     )
 
@@ -291,7 +291,7 @@ async def claims_for(
     field_key: FieldKey | str | None = None,
     *,
     include_superseded: bool = False,
-    scope: TenantScope,
+    scope: WorkspaceScope,
 ) -> Sequence[Claim]:
     """Raw claim history for an entity (audit / time-travel / provenance index).
 
@@ -300,7 +300,7 @@ async def claims_for(
     deterministic "current truth" merge is :func:`clue_research.claimstore.current_value` (M1.2),
     not here. ``scope`` is **required** (M2.5 — fail-closed): there is no fail-open default, so no
     read path can accidentally cross tenants. An operator/audit caller passes
-    :data:`ALL_TENANTS` explicitly; a tenant-facing caller passes its own scope.
+    :data:`ALL_WORKSPACES` explicitly; a tenant-facing caller passes its own scope.
     """
     scope_sql, scope_params = scope.predicate()
     stmt = text(
@@ -330,7 +330,7 @@ async def claims_by_ids(
     conn: AsyncConnection,
     claim_ids: Iterable[ClaimId],
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     include_superseded: bool = False,
 ) -> dict[ClaimId, Claim]:
     """Resolve a set of ``claim_id``s to their :class:`Claim` rows in one query — the batch reader
@@ -374,7 +374,7 @@ async def entities_with_field_claim(
     *,
     run_id: RunId | None = None,
     include_superseded: bool = False,
-    scope: TenantScope,
+    scope: WorkspaceScope,
 ) -> list[EntityId]:
     """The distinct ``entity_id``s carrying a (live) claim on ``field_key`` — optionally narrowed to
     one ``run_id``.
@@ -383,7 +383,7 @@ async def entities_with_field_claim(
     a discovery run via ``core.discovery_provenance`` + that run's id, M6.5 the admitted-vs-seen
     counts) without anyone hand-writing SQL against ``claim`` (conventions §2 — the table stays
     behind this seam). ``scope`` is **required** (M2.5, fail-closed), like :func:`claims_for`; an
-    operator/cross-tenant caller passes :data:`ALL_TENANTS`. Returns the surviving-or-not ids as
+    operator/cross-tenant caller passes :data:`ALL_WORKSPACES`. Returns the surviving-or-not ids as
     stored — a caller that needs the merge survivor resolves each through ``identity.surviving_id``.
     Ordered by id for a deterministic result.
     """
@@ -415,7 +415,7 @@ async def claims_for_runs(
     conn: AsyncConnection,
     run_ids: Iterable[RunId],
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     include_superseded: bool = False,
 ) -> Sequence[Claim]:
     """All (live) claims written under a set of account ``run_id``s — the campaign-scoped scan.

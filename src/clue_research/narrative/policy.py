@@ -120,7 +120,7 @@ def _parse_field_relevance(raw: object) -> dict[Persona, tuple[str, ...]]:
 
 
 async def load_positioning_policy(
-    conn: AsyncConnection, *, client_id: str | None = None
+    conn: AsyncConnection, *, workspace_id: str | None = None
 ) -> PositioningPolicy:
     """Load the most-specific :class:`PositioningPolicy` for a scope: per-client → global
     default row → :data:`DEFAULT_POSITIONING_POLICY`.
@@ -130,8 +130,8 @@ async def load_positioning_policy(
     degrades an unregistered ``prompt_version`` to the default with a warning.
     """
     candidates: list[str | None] = []
-    if client_id is not None:
-        candidates.append(client_id)
+    if workspace_id is not None:
+        candidates.append(workspace_id)
     candidates.append(None)  # the global default row
 
     for scope_client in candidates:
@@ -142,12 +142,12 @@ async def load_positioning_policy(
                     SELECT narrative_model, prompt_version, min_account_evidence, min_client_chunks,
                            retrieval_limit, max_evidence_chars, field_relevance, version
                     FROM positioning_policy
-                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                    WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                     ORDER BY version DESC, created_at DESC, policy_id DESC
                     LIMIT 1
                     """
                 ),
-                {"client_id": scope_client},
+                {"workspace_id": scope_client},
             )
         ).first()
         if row is not None:

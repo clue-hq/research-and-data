@@ -129,7 +129,7 @@ class FakeCrmResolver:
 async def build_confirmed_icp(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str = "primary",
     fit_threshold: float = 0.5,
 ) -> ICPSpecRef:
@@ -155,20 +155,20 @@ async def build_confirmed_icp(
     )
     spec = await create_icp_spec(
         conn,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         created_from=ICPCreatedFrom.SYNTHESIS,
         field_keys=("account.crm_relationship_status",),
         scoring_rubric=rubric_to_slot(rubric),
         activate=True,
     )
-    return ICPSpecRef(client_id=client_id, icp_key=spec.icp_key, icp_version=spec.version)
+    return ICPSpecRef(workspace_id=workspace_id, icp_key=spec.icp_key, icp_version=spec.version)
 
 
 async def build_confirmed_icp_on_field(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     fit_field: str,
     fit_threshold: float = 0.5,
@@ -191,14 +191,14 @@ async def build_confirmed_icp_on_field(
     )
     spec = await create_icp_spec(
         conn,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         created_from=ICPCreatedFrom.SYNTHESIS,
         field_keys=(fit_field,),
         scoring_rubric=rubric_to_slot(rubric),
         activate=True,
     )
-    return ICPSpecRef(client_id=client_id, icp_key=spec.icp_key, icp_version=spec.version)
+    return ICPSpecRef(workspace_id=workspace_id, icp_key=spec.icp_key, icp_version=spec.version)
 
 
 class RecordingJudge:
@@ -245,7 +245,7 @@ class FakeGateway:
 async def build_client_kb(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     suffix: str,
     asserted: dict[str, JsonValue],
 ) -> ClientKnowledgeBaseRef:
@@ -267,7 +267,7 @@ async def build_client_kb(
                 ),
             ),
         ),
-        client_id=client_id,
+        workspace_id=workspace_id,
     )
     return result.ref
 

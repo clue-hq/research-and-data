@@ -22,8 +22,9 @@ Invariants enforced (substrate §4 / D7 / the M4.3 acceptance criteria):
 Reuse-scope note (M4.5, decision #6): when ``persist=True`` this function is a *composer* (it writes
 claims), so — exactly like the M4.1 waterfall — it **tenant-stamps every claim** via
 ``identity.stamp_reuse`` before insert: public-footprint facts amortize; ``crm_import`` / resonance
-/ personal / scoring claims become ``tenant_private`` bound to the supplied ``tenant_id`` (and a
-private-classifying claim with no ``tenant_id`` fails loud — no silent public leak). A resolver that
+/ personal / scoring claims become ``tenant_private`` bound to the supplied ``workspace_id`` (and a
+private-classifying claim with no ``workspace_id`` fails loud — no silent public leak). A resolver
+that
 wants the waterfall to be the sole writer (M4.5's Firecrawl) calls :func:`run_chain` with
 ``persist=False`` instead; the waterfall then stamps. (ENG-165 makes this stamping structural and
 fail-closed across *all* writers; this is M4's per-writer wiring.)
@@ -145,7 +146,7 @@ async def run_pipeline(
     cache: ArtifactCache | None = None,
     clock: Callable[[], datetime] = utc_now,
     persist: bool = True,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
     reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
     params: dict[str, JsonValue] | None = None,
 ) -> list[Claim]:
@@ -169,10 +170,11 @@ async def run_pipeline(
         persist: write the claims through M1.1 (default). ``False`` returns unwritten claims — the
             seam M4.5's Firecrawl resolver uses to return claims to the waterfall without a
             double-write (the waterfall is then the sole writer + tenant-stamper).
-        tenant_id: the run's tenant. When ``persist`` (this function is the writer), every claim is
+        workspace_id: the run's workspace. When ``persist`` (this function is the writer), every
+            claim is
             tenant-stamped before insert (decision #6): public facts amortize; a private-classifying
-            claim (crm_import / resonance / personal / scoring) is bound to ``tenant_id`` — and a
-            private claim with **no** ``tenant_id`` fails loud, never silently written public.
+            claim (crm_import / resonance / personal / scoring) is bound to ``workspace_id`` — and a
+            private claim with **no** ``workspace_id`` fails loud, never silently written public.
         reuse_policy: the versioned reuse-classification policy the stamping reads.
         params: free-form fetch params handed to the adapter via the :class:`AdaptContext`.
 
@@ -200,7 +202,7 @@ async def run_pipeline(
         # insert — identical to the M4.1 waterfall (decision #6), so an adapter-backed
         # tenant-private claim (M8 resonance/facet) is never written public_footprint by default.
         return [
-            await _persist(conn, stamp_reuse(c, tenant_id=tenant_id, policy=reuse_policy))
+            await _persist(conn, stamp_reuse(c, workspace_id=workspace_id, policy=reuse_policy))
             for c in claims
         ]
     return claims

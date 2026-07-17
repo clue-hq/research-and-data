@@ -156,7 +156,7 @@ class CampaignRunStore(Protocol):
         self,
         *,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         icp_version: int,
         budget_cap_cents: CostCents | None,
@@ -215,7 +215,7 @@ class DbCampaignRunStore:
         self,
         *,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         icp_version: int,
         budget_cap_cents: CostCents | None,
@@ -225,7 +225,7 @@ class DbCampaignRunStore:
             await ensure_campaign_run(
                 conn,
                 campaign_run_id=campaign_run_id,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=icp_key,
                 icp_version=icp_version,
                 budget_cap_cents=budget_cap_cents,
@@ -371,7 +371,7 @@ class CampaignRun:
     async def start(
         self,
         *,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         icp_version: int,
         budget_cap_cents: CostCents | None = None,
@@ -384,7 +384,7 @@ class CampaignRun:
         run_id = campaign_run_id if campaign_run_id is not None else new_campaign_run_id()
         await self._store.create(
             campaign_run_id=run_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             icp_key=icp_key,
             icp_version=icp_version,
             budget_cap_cents=budget_cap_cents,
@@ -713,7 +713,7 @@ class CampaignRun:
         return PhaseContext(
             campaign_run_id=run.id,
             phase=run.phase,
-            client_id=run.client_id,
+            workspace_id=run.workspace_id,
             icp_key=run.icp_key,
             icp_version=run.icp_version,
             budget_cap_cents=run.budget_cap_cents,

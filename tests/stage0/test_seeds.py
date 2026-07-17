@@ -29,7 +29,7 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
 from clue_research.icp import get_active_icp
 from clue_research.identity import (
     DEFAULT_REUSE_POLICY,
@@ -68,8 +68,8 @@ _EMP = "core.employee_count"
 _FUNDING = "account.recent_funding"
 
 
-def _scope() -> TenantScope:
-    return TenantScope.for_tenant(_CLIENT)
+def _scope() -> WorkspaceScope:
+    return WorkspaceScope.for_workspace(_CLIENT)
 
 
 async def _account(
@@ -103,7 +103,7 @@ async def _write_field(
         source_url="https://seed-evidence.example",
         evidence_span="seed test fixture",
     )
-    claim = stamp_reuse(claim, tenant_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=_CLIENT, policy=DEFAULT_REUSE_POLICY)
     await insert_claim(conn, claim)
 
 
@@ -113,7 +113,7 @@ async def _kb_with_customers(
     """A Client KB whose ``client.customer`` evidence names ``customers`` (name/domain dicts)."""
     return await build_client_kb(
         conn,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         suffix=suffix,
         asserted={"client.customer": customers},
     )
@@ -155,7 +155,7 @@ def test_assembles_seeds_from_imports_and_customers() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             # an existing customer (named on the customers page, has firmographic signal → fits)
             cust = await _account(conn, "cust", domain="cust.example")
@@ -188,10 +188,10 @@ def test_seeds_partitioned_per_icp() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             seg_a = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="seg_a", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="seg_a", fit_field=_EMP
             )
             seg_b = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="seg_b", fit_field=_FUNDING
+                conn, workspace_id=_CLIENT, icp_key="seg_b", fit_field=_FUNDING
             )
             # the customer has employee_count (segment A) but no recent_funding (segment B)
             cust = await _account(conn, "seg", domain="seg.example")
@@ -222,7 +222,7 @@ def test_non_fit_import_excluded_but_kept_in_list() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             fit_acct = await _account(conn, "fit", domain="fit.example")
             misfit = await _account(conn, "misfit", domain="misfit.example")
@@ -252,7 +252,7 @@ def test_low_resolution_confidence_customer_filtered() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             # a customers-page name with no matching store entity (default policy doesn't admit it)
             kb = await _kb_with_customers(
@@ -273,7 +273,7 @@ def test_low_resolution_confidence_import_filtered() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             clean = await _account(conn, "clean", domain="clean.example")
             dirty = await _account(conn, "dirty", domain="dirty.example")
@@ -298,7 +298,7 @@ def test_import_resolving_to_client_is_not_self_seeded() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             kb = await _kb_with_customers(conn, "self", [])
             # an import row that resolved to the client's own entity (a degenerate but real case)
@@ -319,7 +319,7 @@ def test_admit_unmatched_customers_mints_candidate_when_enabled() -> None:
         async with rollback_conn() as conn:
             # no fit floor → the freshly-admitted (claim-less) candidate is not gated out on fit
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP, fit_threshold=0.0
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP, fit_threshold=0.0
             )
             kb = await _kb_with_customers(
                 conn,
@@ -353,7 +353,7 @@ def test_opt_out_yields_suppressed_seedset() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             cust = await _account(conn, "optout", domain="optout.example")
             await _write_field(conn, cust, _EMP, 100)
             kb = await _kb_with_customers(
@@ -380,7 +380,7 @@ def test_seed_is_resolved_entity_with_provenance_and_mock_consumer() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             cust = await _account(conn, "prov", domain="prov.example")
             await _write_field(conn, cust, _EMP, 300)
@@ -407,7 +407,7 @@ def test_seed_is_resolved_entity_with_provenance_and_mock_consumer() -> None:
             assert marker.value_json["seed_reason"] == SeedReason.EXISTING_CUSTOMER.value
             assert marker.value_json["icp_key"] == "primary"
             assert marker.reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert marker.tenant_id == _CLIENT
+            assert marker.workspace_id == _CLIENT
             assert marker.discovery_provenance is not None
             # the seed cites both the client customer claim and its own seed marker
             assert seed.justifying_claim_ids
@@ -435,7 +435,7 @@ def test_entity_in_both_sources_dedups_to_stronger_anchor() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             both = await _account(conn, "both", domain="both.example")
             await _write_field(conn, both, _EMP, 400)
@@ -465,7 +465,7 @@ def test_seeds_flow_into_proposal_confirm_and_spec() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             cust = await _account(conn, "seam", domain="seam.example")
             await _write_field(conn, cust, _EMP, 700)
@@ -491,7 +491,7 @@ def test_seeds_flow_into_proposal_confirm_and_spec() -> None:
             confirmation = await confirm_icp(
                 conn,
                 proposal,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=kb.client_entity_id,
             )
             spec = await get_active_icp(conn, _CLIENT, confirmation.ref.icp_key)
@@ -513,7 +513,7 @@ def test_reassembly_is_stable() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             icp = await build_confirmed_icp_on_field(
-                conn, client_id=_CLIENT, icp_key="primary", fit_field=_EMP
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
             cust = await _account(conn, "stable", domain="stable.example")
             await _write_field(conn, cust, _EMP, 600)

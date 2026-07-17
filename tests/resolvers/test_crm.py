@@ -8,7 +8,7 @@ observations to M2 so two messy CRM names resolve to the *same* entity with no d
 existing customers exposed as lookalike seeds.
 
 Every CRM record comes from a connector **double** (no live CRM, no credential) — the seam is what's
-proven, not a vendor integration. CRM resolves pass the run ``tenant_id`` because ``crm_import``
+proven, not a vendor integration. CRM resolves pass the run ``workspace_id`` because ``crm_import``
 claims classify tenant-private (decision #6) — the engine fails loud without one.
 """
 
@@ -36,8 +36,8 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore import (
-    ALL_TENANTS,
-    TenantScope,
+    ALL_WORKSPACES,
+    WorkspaceScope,
     claims_for,
     current_value,
 )
@@ -139,11 +139,11 @@ def test_crm_relationship_status_flags_existing_customer() -> None:
                 _field(CRM_RELATIONSHIP_FIELD),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             (claim,) = await claims_for(
-                conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=ALL_TENANTS
+                conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=ALL_WORKSPACES
             )
             assert claim.value_json == "customer"  # the already-a-customer flag, at Pass A
             assert claim.source_tier == 1
@@ -173,10 +173,10 @@ def test_crm_maps_an_account_field_from_the_record() -> None:
                 _field("core.employee_count", value_type="int"),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert (
                 claim.value_json == 1200 and claim.extraction_method is ExtractionMethod.CRM_IMPORT
@@ -199,11 +199,11 @@ def test_crm_miss_writes_nothing() -> None:
                 _field(CRM_RELATIONSHIP_FIELD),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
             assert result.claim_refs == ()
             written = await claims_for(
-                conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=ALL_TENANTS
+                conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=ALL_WORKSPACES
             )
             assert written == []  # never fabricated
 
@@ -231,24 +231,24 @@ def test_crm_claims_are_tenant_private_and_excluded_from_cross_tenant_reuse() ->
                 _field(CRM_RELATIONSHIP_FIELD),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
             # The owning tenant sees its CRM claim, stamped tenant-private + bound to the tenant.
-            owner = TenantScope.for_tenant(_TENANT)
+            owner = WorkspaceScope.for_workspace(_TENANT)
             cv = await current_value(conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=owner)
             assert cv is not None and cv.value_json == "open_opportunity"
             (claim,) = await claims_for(conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=owner)
             assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert claim.tenant_id == _TENANT
+            assert claim.workspace_id == _TENANT
             # Another tenant touching the SAME public entity sees NONE of the first tenant's CRM.
-            other = TenantScope.for_tenant("tenant-other")
+            other = WorkspaceScope.for_workspace("tenant-other")
             assert (
                 await current_value(conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=other)
                 is None
             )
             assert list(await claims_for(conn, entity.entity_id, scope=other)) == []
             assert (
-                list(await claims_for(conn, entity.entity_id, scope=TenantScope.public_only()))
+                list(await claims_for(conn, entity.entity_id, scope=WorkspaceScope.public_only()))
                 == []
             )
 
@@ -281,13 +281,13 @@ def test_public_footprint_claim_stays_reusable_across_tenants() -> None:
                 ),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id=_TENANT,  # supplied, but a public claim drops it
+                workspace_id=_TENANT,  # supplied, but a public claim drops it
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
-            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.tenant_id is None
-            for scope in (TenantScope.for_tenant("t1"), TenantScope.for_tenant("t2")):
+            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.workspace_id is None
+            for scope in (WorkspaceScope.for_workspace("t1"), WorkspaceScope.for_workspace("t2")):
                 cv = await current_value(conn, entity.entity_id, "core.employee_count", scope=scope)
                 assert cv is not None and cv.value_json == 900
 
@@ -336,7 +336,7 @@ def test_same_entity_public_visible_both_tenants_private_only_owner() -> None:
                 _field(CRM_RELATIONSHIP_FIELD),
                 mode=_MODE,
                 run_id=run_id,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
             await resolve_field(
                 conn,
@@ -349,12 +349,12 @@ def test_same_entity_public_visible_both_tenants_private_only_owner() -> None:
                 ),
                 mode=_MODE,
                 run_id=run_id,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
 
-            owner = TenantScope.for_tenant(_TENANT)
-            other = TenantScope.for_tenant("tenant-other")
-            public = TenantScope.public_only()
+            owner = WorkspaceScope.for_workspace(_TENANT)
+            other = WorkspaceScope.for_workspace("tenant-other")
+            public = WorkspaceScope.public_only()
             # Owner sees BOTH the private CRM relationship and the public headcount.
             assert (
                 await current_value(conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=owner)
@@ -441,10 +441,10 @@ def test_swapping_connector_produces_the_same_claim_contract() -> None:
                     _field(CRM_RELATIONSHIP_FIELD),
                     mode=_MODE,
                     run_id=new_run_id(),
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                 )
                 (claim,) = await claims_for(
-                    conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=ALL_TENANTS
+                    conn, entity.entity_id, CRM_RELATIONSHIP_FIELD, scope=ALL_WORKSPACES
                 )
                 values.append(
                     (claim.value_json, claim.source_tier, claim.extraction_method, claim.source_key)
@@ -585,17 +585,17 @@ def test_crm_contact_claim_is_strong_bound_and_tenant_private() -> None:
                 field,
                 mode=ResearchMode.CONTACT_PROFILING,
                 run_id=new_run_id(),
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_TENANTS
+                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_WORKSPACES
             )
             assert claim.entity_type is EntityType.CONTACT
             assert (
                 claim.identity_binding is IdentityBinding.STRONG
             )  # crm manifest, not the placeholder
             assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC  # the connector classified it
-            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.tenant_id == _TENANT
+            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.workspace_id == _TENANT
 
     run_async(_run())
 

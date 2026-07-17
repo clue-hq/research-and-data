@@ -276,7 +276,7 @@ class AccountDeepOrchestrator:
         Idempotent on re-entry — completed stages are skipped (a contact never profiled before the
         committee admits it; the committee is a hard gate before the fan-out)."""
         run_id = deep_account_run_id(campaign_run_id, spec.entity_id)
-        tenant_id = spec.tenant_id or self._spec.client_id
+        workspace_id = spec.workspace_id or self._spec.workspace_id
 
         await self._io.ensure(
             account_run_id=run_id,
@@ -294,7 +294,8 @@ class AccountDeepOrchestrator:
         contact_results: tuple[ContactProfileResult, ...] = ()
         budget_stop: BudgetVerdict | None = None
 
-        # --- Stage 1: account axis (M8.1) — the direct callable carries the ICP spec + tenant_id as
+        # --- Stage 1: account axis (M8.1) — the direct callable carries the ICP spec +
+        # workspace_id as
         # explicit kwargs (no AspectContext / ctx.params), so the planner loads the spec and the
         # tenant-private resonance writes bind their tenant without the "#2" graph param-threading.
         if done is None:
@@ -304,7 +305,7 @@ class AccountDeepOrchestrator:
                 tier=spec.tier,
                 run_id=run_id,
                 campaign_run_id=campaign_run_id,
-                tenant_id=tenant_id,
+                workspace_id=workspace_id,
                 budget_cap_cents=self._budget_cap_cents,
                 recursion_policy=self._recursion_policy,
                 gateway=self._gateway,
@@ -368,7 +369,7 @@ class AccountDeepOrchestrator:
                         c,
                         account_entity_id=spec.entity_id,
                         run_id=run_id,
-                        tenant_id=tenant_id,
+                        workspace_id=workspace_id,
                         sources=self._sources,
                         gateway=self._gateway,
                         spec=self._spec,
@@ -406,7 +407,7 @@ class AccountDeepOrchestrator:
                 campaign_run_id=campaign_run_id,
                 account_entity_id=spec.entity_id,
                 run_id=run_id,
-                tenant_id=tenant_id,
+                workspace_id=workspace_id,
                 tier=spec.tier,
                 committed_cents=cost,
             )
@@ -461,7 +462,7 @@ class AccountDeepOrchestrator:
         campaign_run_id: CampaignRunId,
         account_entity_id: EntityId,
         run_id: RunId,
-        tenant_id: str,
+        workspace_id: str,
         tier: str,
         committed_cents: CostCents,
     ) -> tuple[tuple[_ContactOutcome, ...], BudgetVerdict | None]:
@@ -545,7 +546,7 @@ class AccountDeepOrchestrator:
                         contact_entity_id=contact_id,
                         account_entity_id=account_entity_id,
                         run_id=run_id,
-                        tenant_id=tenant_id,
+                        workspace_id=workspace_id,
                         tier=tier,
                         spec=self._spec,
                         facet_subworker_budget=facet_budget,

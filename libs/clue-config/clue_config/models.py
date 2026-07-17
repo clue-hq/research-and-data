@@ -88,7 +88,7 @@ class Config(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    client_id: str
+    workspace_id: str
     icp_id: str | None = None
     policy: JurisdictionPolicy = JurisdictionPolicy()
     merge_policy: MergePolicy = MergePolicy()

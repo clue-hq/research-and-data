@@ -131,15 +131,15 @@ def review_natural_key(review_action_id: UUID) -> str:
 def downstream_natural_key(
     *,
     origin: DispositionOrigin,
-    client_id: str,
+    workspace_id: str,
     external_id: str,
     disposition_type: DispositionType,
 ) -> str:
     """The downstream-origin idempotency anchor: the adapter-supplied external dedup token,
-    namespaced by ``origin`` + ``client_id`` (two clients may reuse a CRM record id) +
+    namespaced by ``origin`` + ``workspace_id`` (two clients may reuse a CRM record id) +
     ``disposition_type`` (one opportunity emits ``contacted`` then ``replied`` then
     ``meeting_booked`` — distinct signals)."""
-    return f"{origin.value}:{client_id}:{external_id}:{disposition_type.value}"
+    return f"{origin.value}:{workspace_id}:{external_id}:{disposition_type.value}"
 
 
 # --- the record -----------------------------------------------------------------------------------
@@ -153,7 +153,7 @@ class FeedbackDisposition(BaseModel):
     disposition; the parent account for a contact-typed one) so the learning loop can aggregate
     "this
     source drove N accepted *accounts*" without re-resolving the contact→account link. Carries the
-    ``(client_id, icp_key, icp_spec_version)`` scope so reweighting stays per-(ICP, run) and the
+    ``(workspace_id, icp_key, icp_spec_version)`` scope so reweighting stays per-(ICP, run) and the
     ``labeled_dataset`` view never mixes two ICP segments (D5: version restarts per ``icp_key``)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -165,7 +165,7 @@ class FeedbackDisposition(BaseModel):
     account_entity_id: EntityId  # the parent account (the dataset / source-rollup key)
     claim_id: ClaimId | None = None  # the reviewed claim (claim_* dispositions only)
     campaign_run_id: CampaignRunId | None = None
-    client_id: str
+    workspace_id: str
     icp_key: str = ""
     icp_spec_version: int | None = None
     actor: DispositionActor
@@ -204,7 +204,7 @@ class FeedbackDisposition(BaseModel):
         account_entity_id: EntityId,
         claim_id: ClaimId,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         icp_spec_version: int | None,
         review_action_id: UUID,
@@ -223,7 +223,7 @@ class FeedbackDisposition(BaseModel):
             account_entity_id=account_entity_id,
             claim_id=claim_id,
             campaign_run_id=campaign_run_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             icp_key=icp_key,
             icp_spec_version=icp_spec_version,
             actor=DispositionActor.INTERNAL_REVIEWER,
@@ -241,7 +241,7 @@ class FeedbackDisposition(BaseModel):
         *,
         disposition_type: DispositionType,
         account_entity_id: EntityId,
-        client_id: str,
+        workspace_id: str,
         external_id: str,
         occurred_at: UtcDatetime,
         icp_key: str = "",
@@ -264,7 +264,7 @@ class FeedbackDisposition(BaseModel):
             entity_type=EntityType.ACCOUNT,
             account_entity_id=account_entity_id,
             campaign_run_id=campaign_run_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             icp_key=icp_key,
             icp_spec_version=icp_spec_version,
             actor=actor,
@@ -274,7 +274,7 @@ class FeedbackDisposition(BaseModel):
             occurred_at=occurred_at,
             natural_key=downstream_natural_key(
                 origin=origin,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 external_id=external_id,
                 disposition_type=disposition_type,
             ),
@@ -297,7 +297,7 @@ class DownstreamOutcome(BaseModel):
 
     external_id: str
     disposition_type: DispositionType
-    client_id: str
+    workspace_id: str
     occurred_at: UtcDatetime
     # identity hint — a pre-resolved id OR a free-text company to resolve.
     account_entity_id: EntityId | None = None

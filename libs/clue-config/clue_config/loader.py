@@ -2,8 +2,8 @@
 
 Exposes the two accessors the rest of the subsystem consumes:
 
-* :func:`get_config(client_id, icp_id=None)` — the merged, validated :class:`Config`.
-* :func:`get_policy(client_id)` — the jurisdiction/use-class/posture
+* :func:`get_config(workspace_id, icp_id=None)` — the merged, validated :class:`Config`.
+* :func:`get_policy(workspace_id)` — the jurisdiction/use-class/posture
   :class:`~clue_config.policy.JurisdictionPolicy`.
 
 **Layering.** Three layers merge in precedence order — *defaults → per-client → per-ICP/campaign*
@@ -12,7 +12,7 @@ present sub-tree wins, an absent one inherits from beneath. Config is loaded onc
 not read ad hoc: callers hold the returned object.
 
 **Overlay source is a swappable seam.** M0 ships an in-memory :class:`OverlayStore` (overlays
-registered by ``client_id`` / ``(client_id, icp_id)``). A later milestone can back the same
+registered by ``workspace_id`` / ``(workspace_id, icp_id)``). A later milestone can back the same
 protocol with versioned DB rows without touching any caller (conventions §2 "policy is data").
 
 **Validation fails fast on load.** Building an overlay from untrusted data
@@ -59,17 +59,17 @@ class OverlayStore:
         self._client: dict[str, ConfigOverlay] = {}
         self._icp: dict[tuple[str, str], ConfigOverlay] = {}
 
-    def set_client_overlay(self, client_id: str, overlay: ConfigOverlay) -> None:
-        self._client[client_id] = overlay
+    def set_client_overlay(self, workspace_id: str, overlay: ConfigOverlay) -> None:
+        self._client[workspace_id] = overlay
 
-    def set_icp_overlay(self, client_id: str, icp_id: str, overlay: ConfigOverlay) -> None:
-        self._icp[(client_id, icp_id)] = overlay
+    def set_icp_overlay(self, workspace_id: str, icp_id: str, overlay: ConfigOverlay) -> None:
+        self._icp[(workspace_id, icp_id)] = overlay
 
-    def client_overlay(self, client_id: str) -> ConfigOverlay | None:
-        return self._client.get(client_id)
+    def client_overlay(self, workspace_id: str) -> ConfigOverlay | None:
+        return self._client.get(workspace_id)
 
-    def icp_overlay(self, client_id: str, icp_id: str) -> ConfigOverlay | None:
-        return self._icp.get((client_id, icp_id))
+    def icp_overlay(self, workspace_id: str, icp_id: str) -> ConfigOverlay | None:
+        return self._icp.get((workspace_id, icp_id))
 
     def clear(self) -> None:
         self._client.clear()
@@ -136,7 +136,7 @@ def _merge(base: Config, overlay: ConfigOverlay, version: ConfigVersion) -> Conf
 
 
 def get_config(
-    client_id: str,
+    workspace_id: str,
     icp_id: str | None = None,
     *,
     store: OverlayStore | None = None,
@@ -151,20 +151,20 @@ def get_config(
 
     # Layer 0 — defaults (the dense base; every "policy is data" surface present + conservative).
     config = Config(
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_id=icp_id,
         applied_versions=(_DEFAULTS_VERSION,),
     )
 
     # Layer 1 — per-client overlay.
-    client_overlay = overlay_store.client_overlay(client_id)
+    client_overlay = overlay_store.client_overlay(workspace_id)
     if client_overlay is not None:
         version = client_overlay.version or ConfigVersion(layer="client")
         config = _merge(config, client_overlay, version)
 
     # Layer 2 — per-ICP / per-campaign overlay.
     if icp_id is not None:
-        icp_overlay = overlay_store.icp_overlay(client_id, icp_id)
+        icp_overlay = overlay_store.icp_overlay(workspace_id, icp_id)
         if icp_overlay is not None:
             version = icp_overlay.version or ConfigVersion(layer="icp")
             config = _merge(config, icp_overlay, version)
@@ -177,11 +177,11 @@ def get_config(
         raise ConfigError(f"merged config failed validation: {exc}", cause=exc) from exc
 
 
-def get_policy(client_id: str, *, store: OverlayStore | None = None) -> JurisdictionPolicy:
+def get_policy(workspace_id: str, *, store: OverlayStore | None = None) -> JurisdictionPolicy:
     """Return the jurisdiction/use-class/posture policy for a client.
 
     The use-gate (M10) and the source-scope decision (M4) read this. A client with no overrides
     gets the conservative default: posture = Option 1, jurisdiction = GDPR-grade, source-scope =
     full sweep, ``sensitive`` ⇒ not usable for outreach (Doc D §6 Option 1).
     """
-    return get_config(client_id, store=store).policy
+    return get_config(workspace_id, store=store).policy

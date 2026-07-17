@@ -199,7 +199,7 @@ async def insert_test_contact(
 def icp_spec() -> ICPSpec:
     """A minimal in-memory ICP spec (committee discovery reads org context, not the rubric)."""
     return ICPSpec(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         created_from=ICPCreatedFrom.SYNTHESIS,
     )

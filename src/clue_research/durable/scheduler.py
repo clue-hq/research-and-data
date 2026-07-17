@@ -48,7 +48,7 @@ class AccountSpec(BaseModel):
 
     entity_id: EntityId
     tier: str
-    tenant_id: str | None = None
+    workspace_id: str | None = None
     field_keys: tuple[str, ...] | None = None
 
 
@@ -176,6 +176,6 @@ class AccountScheduler:
             tier=spec.tier,
             campaign_run_id=campaign_run_id,
             checkpointer=checkpointer,
-            tenant_id=spec.tenant_id,
+            workspace_id=spec.workspace_id,
             field_keys=spec.field_keys,
         )

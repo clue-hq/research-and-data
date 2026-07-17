@@ -64,15 +64,15 @@ from clue_core import (
     VerificationStatus,
 )
 from clue_obs.otel import (
-    ATTR_CLIENT_ID,
     ATTR_ENTITY_ID,
+    ATTR_WORKSPACE_ID,
     MetricSink,
     apply_attributes,
     get_metric_sink,
     traced_step,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_by_ids,
     claims_for,
     current_values,
@@ -89,7 +89,7 @@ from clue_research.narrative.support import (
 
 # The reserved Pass-A score fields (M6.3 ``discovery_scoring.scoring.engine`` writes them; that is a
 # sibling worker ``narrative`` may not import, so the two stable reserved keys are re-declared —
-# they are tenant-private, read under ``TenantScope.for_tenant``).
+# they are tenant-private, read under ``WorkspaceScope.for_workspace``).
 FIT_FIELD = "account.scoring.fit"
 INTENT_FIELD = "account.scoring.intent"
 
@@ -240,7 +240,7 @@ class HandoffAssembler:
         account_entity_id: EntityId,
         *,
         icp_spec_version: int,
-        client_id: str,
+        workspace_id: str,
         assembled_at: UtcDatetime,
         icp_key: str | None = None,
         campaign_run_id: CampaignRunId | None = None,
@@ -248,13 +248,16 @@ class HandoffAssembler:
     ) -> AssembledHandoff:
         """Assemble the ``account_handoff`` for one ``(account_entity_id, icp_spec_version)``.
 
-        ``client_id`` is the tenant whose view this is (scores / resonance / narrative / committee
-        are ``TENANT_PRIVATE``); reads are scoped to ``TenantScope.for_tenant(client_id)`` so a
+        ``workspace_id`` is the workspace whose view this is (scores / resonance / narrative /
+        committee
+        are ``TENANT_PRIVATE``); reads are scoped to ``WorkspaceScope.for_workspace(workspace_id)``
+        so a
         cross-tenant claim never enters the handoff. ``assembled_at`` + ``coverage_confidence`` are
         injected (a deterministic stamp keeps re-assembly byte-stable; M6.5 coverage is a sibling
         worker's output).
 
-        ``icp_key`` disambiguates the ICP **segment**: an ICP is ``(client_id, icp_key, version)``
+        ``icp_key`` disambiguates the ICP **segment**: an ICP is ``(workspace_id, icp_key,
+        version)``
         and ``version`` restarts at 1 per ``icp_key`` (D5), so two segments can share
         ``icp_spec_version=1``. When the account is targeted under several segments the production
         caller MUST pass ``icp_key`` — the scores and narrative are then matched on *both*
@@ -263,10 +266,10 @@ class HandoffAssembler:
 
         Raises :class:`HandoffAssemblyError` if any value's claim id is unresolvable (the build-fail
         "every line is sourced" check)."""
-        scope = TenantScope.for_tenant(client_id)
+        scope = WorkspaceScope.for_workspace(workspace_id)
         with traced_step(
             SPAN_HANDOFF_ASSEMBLE,
-            **{ATTR_ENTITY_ID: str(account_entity_id), ATTR_CLIENT_ID: client_id},
+            **{ATTR_ENTITY_ID: str(account_entity_id), ATTR_WORKSPACE_ID: workspace_id},
         ) as span:
             # 1) decomposed scores for THIS segment (D5: version restarts per icp_key, so match
             # both).
@@ -286,7 +289,7 @@ class HandoffAssembler:
             #    by (persona, contact) so the handoff is byte-stable independent of the seam's read
             #    order (AC5 determinism), not relying on the deferred production reader to order.
             hand_members = await self._committee_reader.committee_for_handoff(
-                account_entity_id=account_entity_id, tenant_id=client_id
+                account_entity_id=account_entity_id, workspace_id=workspace_id
             )
             committee = tuple(
                 sorted(
@@ -371,7 +374,7 @@ class HandoffAssembler:
         field_key: str,
         icp_spec_version: int,
         icp_key: str | None,
-        scope: TenantScope,
+        scope: WorkspaceScope,
     ) -> tuple[Score, bool, bool]:
         """The decomposed score for *this* ICP segment. Filters the live ``account.scoring.*``
         claims
@@ -394,7 +397,7 @@ class HandoffAssembler:
         return Score(value=0.0), False, False
 
     async def _read_account_profile(
-        self, conn: AsyncConnection, account_entity_id: EntityId, scope: TenantScope
+        self, conn: AsyncConnection, account_entity_id: EntityId, scope: WorkspaceScope
     ) -> tuple[tuple[ProfileClaimView, ...], dict[str, tuple[ClaimId, ...]]]:
         """The verified account profile claims (Output 2) + the per-field conflict surface.
 
@@ -431,7 +434,7 @@ class HandoffAssembler:
         account_entity_id: EntityId,
         icp_spec_version: int,
         icp_key: str | None,
-        scope: TenantScope,
+        scope: WorkspaceScope,
     ) -> tuple[tuple[ValueNarrativeItem, ...], dict[str, FaithfulnessCitation]]:
         """The verified value-narrative lines (Output 4) for this ICP segment + their judge
         citations.
@@ -481,7 +484,7 @@ class HandoffAssembler:
     async def _build_provenance_index(
         self,
         conn: AsyncConnection,
-        scope: TenantScope,
+        scope: WorkspaceScope,
         *,
         fit_score: Score,
         intent_score: Score,

@@ -82,10 +82,11 @@ def _field_class_value(field_class: FieldClass | str | None) -> str | None:
 _INSERT = text(
     """
     INSERT INTO source_yield (
-        client_id, icp_key, icp_version, field_class, source_key, run_id,
+        workspace_id, icp_key, icp_version, field_class, source_key, run_id,
         claims_total, claims_verified, fields_filled, cost_cents, freshness_seconds, disposition
     ) VALUES (
-        :client_id, :icp_key, :icp_version, CAST(:field_class AS field_class), :source_key, :run_id,
+        :workspace_id, :icp_key, :icp_version, CAST(:field_class AS field_class), :source_key,
+        :run_id,
         :claims_total, :claims_verified, :fields_filled, :cost_cents, :freshness_seconds,
         CAST(:disposition AS jsonb)
     )
@@ -96,7 +97,7 @@ _INSERT = text(
 async def record_source_yield(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     source_key: str,
     field_class: FieldClass | str | None = None,
@@ -120,7 +121,7 @@ async def record_source_yield(
     await conn.execute(
         _INSERT,
         {
-            "client_id": client_id,
+            "workspace_id": workspace_id,
             "icp_key": icp_key,
             "icp_version": icp_version,
             "field_class": _field_class_value(field_class),
@@ -143,7 +144,7 @@ def _to_field_class(raw: object) -> FieldClass | None:
 async def get_source_yield(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str | None = None,
     icp_version: int | None = None,
     source_key: str | None = None,
@@ -151,7 +152,7 @@ async def get_source_yield(
 ) -> list[SourceYieldStat]:
     """Aggregate the yield measurements per (field-class, source) — the M13 / audit read.
 
-    Sums the append-only rows for ``client_id`` (optionally narrowed by ICP key / ICP version /
+    Sums the append-only rows for ``workspace_id`` (optionally narrowed by ICP key / ICP version /
     source / field-class), grouped by ``(field_class, source_key)``. ``icp_version`` lets M13 read a
     pinned version's telemetry without pooling versions that may carry different source profiles.
     The aggregate is what the learning loop reweights on; a test asserts a write is readable here.
@@ -169,7 +170,7 @@ async def get_source_yield(
                            COALESCE(SUM(cost_cents), 0) AS cost_cents,
                            AVG(freshness_seconds) AS avg_freshness_seconds
                     FROM source_yield
-                    WHERE client_id = :client_id
+                    WHERE workspace_id = :workspace_id
                       AND (CAST(:icp_key AS text) IS NULL OR icp_key = :icp_key)
                       AND (CAST(:icp_version AS int) IS NULL OR icp_version = :icp_version)
                       AND (CAST(:source_key AS text) IS NULL OR source_key = :source_key)
@@ -180,7 +181,7 @@ async def get_source_yield(
                     """
                 ),
                 {
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     "icp_key": icp_key,
                     "icp_version": icp_version,
                     "source_key": source_key,

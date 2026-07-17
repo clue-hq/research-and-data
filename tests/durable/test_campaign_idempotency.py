@@ -57,7 +57,7 @@ def test_full_run_records_one_succeeded_ledger_row_per_phase() -> None:
     machine = CampaignRun(store=store, registry=registry, ledger=ledger)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.run_to_completion(run_id)
         # phase progression identical to the no-ledger path
         assert run.status is CampaignRunStatus.COMPLETED
@@ -83,7 +83,7 @@ def test_re_driving_a_completed_run_recharges_nothing() -> None:
     machine = CampaignRun(store=store, registry=registry, ledger=ledger)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         # a second drive over the finished run is a no-op: no handler re-runs, no ledger row flips
         again = await machine.run_to_completion(run_id)
@@ -110,7 +110,7 @@ def test_submit_checkpoint_approve_finalizes_through_the_ledger() -> None:
     machine = CampaignRun(store=store, registry=registry, ledger=ledger)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.run_to_completion(run_id)
         assert run.status is CampaignRunStatus.PAUSED
         assert run.phase is CampaignPhase.TIER_CHECKPOINT
@@ -147,7 +147,7 @@ def test_self_heal_finalizes_through_ledger_after_crash_between_commit_and_resum
     machine = CampaignRun(store=store, registry=registry, ledger=ledger)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)  # suspended at the gate
         gate_key = phase_key(run_id, CampaignPhase.TIER_CHECKPOINT)
 
@@ -189,7 +189,7 @@ def test_self_heal_finalizes_after_crash_between_resume_and_transition() -> None
     machine = CampaignRun(store=store, registry=registry, ledger=ledger)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)  # suspended at the gate (PAUSED, AWAITING_INPUT)
         gate_key = phase_key(run_id, CampaignPhase.TIER_CHECKPOINT)
 
@@ -229,7 +229,7 @@ def test_self_heal_replay_still_transitions_when_ledger_already_succeeded() -> N
     machine = CampaignRun(store=store, registry=registry, ledger=ledger)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         gate_key = phase_key(run_id, CampaignPhase.TIER_CHECKPOINT)
 
@@ -263,7 +263,7 @@ def test_phase_progression_is_identical_with_and_without_a_ledger() -> None:
         events: list[str] = []
         registry, _ = _registry(events)
         machine = CampaignRun(store=store, registry=registry, ledger=ledger)
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         return events
 

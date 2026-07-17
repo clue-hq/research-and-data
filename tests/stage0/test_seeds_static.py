@@ -72,7 +72,7 @@ def test_seedset_counts_and_customer_count() -> None:
         SeedAccount(account_entity_id=_eid(), seed_reason=SeedReason.CASE_STUDY.value),
         SeedAccount(account_entity_id=_eid(), seed_reason=SeedReason.HIGH_FIT_IMPORT.value),
     )
-    seed_set = SeedSet(client_id="t", icp_key="primary", icp_version=1, seeds=seeds)
+    seed_set = SeedSet(workspace_id="t", icp_key="primary", icp_version=1, seeds=seeds)
     assert seed_set.seed_count == 4
     # customer_seed_count uses the canonical is_customer_reason — incl. case_study, not the import
     assert seed_set.customer_seed_count == 3
@@ -129,7 +129,7 @@ def test_shared_fit_floor_helper() -> None:
 
 
 def test_suppressed_seedset_is_empty() -> None:
-    seed_set = SeedSet(client_id="t", icp_key="primary", icp_version=1, suppressed=True)
+    seed_set = SeedSet(workspace_id="t", icp_key="primary", icp_version=1, suppressed=True)
     assert seed_set.suppressed
     assert seed_set.seed_count == 0
     assert seed_set.seeds == ()
@@ -142,9 +142,9 @@ def test_skipped_seed_carries_a_reason() -> None:
 
 
 def test_seeds_run_id_is_deterministic_per_client_and_icp() -> None:
-    ref = ICPSpecRef(client_id="t", icp_key="primary", icp_version=1)
-    other_version = ICPSpecRef(client_id="t", icp_key="primary", icp_version=2)
-    other_icp = ICPSpecRef(client_id="t", icp_key="secondary", icp_version=1)
+    ref = ICPSpecRef(workspace_id="t", icp_key="primary", icp_version=1)
+    other_version = ICPSpecRef(workspace_id="t", icp_key="primary", icp_version=2)
+    other_icp = ICPSpecRef(workspace_id="t", icp_key="secondary", icp_version=1)
     assert seeds_run_id("t", ref) == seeds_run_id("t", ref)
     assert seeds_run_id("t", ref) != seeds_run_id("t", other_version)
     assert seeds_run_id("t", ref) != seeds_run_id("t", other_icp)

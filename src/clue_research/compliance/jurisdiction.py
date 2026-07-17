@@ -58,9 +58,9 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import (
-    ATTR_CLIENT_ID,
     ATTR_ENTITY_ID,
     ATTR_ENTITY_TYPE,
+    ATTR_WORKSPACE_ID,
     SPAN_COMPLIANCE_JURISDICTION,
     MetricSink,
     apply_attributes,
@@ -68,7 +68,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     current_value,
     supersede_claims,
@@ -195,7 +195,7 @@ class JurisdictionResolverImpl:
 
     def __init__(
         self,
-        client_id: str,
+        workspace_id: str,
         run_id: RunId,
         *,
         policy_getter: Callable[[str], JurisdictionPolicy] = get_policy,
@@ -203,24 +203,24 @@ class JurisdictionResolverImpl:
         persist: bool = True,
         sink: MetricSink | None = None,
     ) -> None:
-        self._client_id = client_id
+        self._workspace_id = workspace_id
         self._run_id = run_id
         self._policy_getter = policy_getter
         self._conn_factory = conn_factory
         self._persist = persist
         self._sink = sink
-        self._scope = TenantScope.for_tenant(client_id)
+        self._scope = WorkspaceScope.for_workspace(workspace_id)
 
     async def resolve(self, contact_entity_id: EntityId) -> JurisdictionResolution:
         """Resolve and (by default) store the contact's regime; emit the
         ``compliance.jurisdiction`` span + metrics."""
-        policy = self._policy_getter(self._client_id)
+        policy = self._policy_getter(self._workspace_id)
         with traced_step(
             SPAN_COMPLIANCE_JURISDICTION,
             **{
                 ATTR_ENTITY_ID: str(contact_entity_id),
                 ATTR_ENTITY_TYPE: EntityType.CONTACT.value,
-                ATTR_CLIENT_ID: self._client_id,
+                ATTR_WORKSPACE_ID: self._workspace_id,
             },
         ) as span:
             async with self._conn_factory() as conn:
@@ -368,7 +368,7 @@ class JurisdictionResolverImpl:
             run_id=self._run_id,
             research_mode=ResearchMode.CONTACT_PROFILING,
         )
-        stamped = stamp_reuse(claim, tenant_id=self._client_id)
+        stamped = stamp_reuse(claim, workspace_id=self._workspace_id)
         prior = await claims_for(
             conn, resolution.contact_entity_id, CONTACT_JURISDICTION, scope=self._scope
         )

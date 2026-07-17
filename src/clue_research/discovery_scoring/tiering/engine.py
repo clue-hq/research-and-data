@@ -42,7 +42,7 @@ from clue_core import (
     account_claim,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     entities_with_field_claim,
 )
@@ -168,17 +168,18 @@ def _live_for_run(claims: Sequence[Claim], run_id: RunId) -> Claim | None:
 
 
 async def load_score_views(
-    conn: AsyncConnection, *, scoring_run: RunId, client_id: str
+    conn: AsyncConnection, *, scoring_run: RunId, workspace_id: str
 ) -> list[AccountScoreView]:
     """The provisional :class:`AccountScoreView`s for the accounts scored in ``scoring_run``.
 
     Reads the M6.3 score object back from the store (never re-scores): the accounts carrying a live
     ``account.scoring.fit`` claim for this campaign's scoring run, each resolved through its
     ``merged_into`` chain and de-duplicated (a between-phase merge moves the truth to the survivor),
-    with the fit/intent values + the inspectable evidence links. Scoped to ``client_id`` (the score
+    with the fit/intent values + the inspectable evidence links. Scoped to ``workspace_id`` (the
+    score
     object is tenant-private) and pinned to ``scoring_run`` (D5-safe: an account scored under many
     ICPs is read per its own run). Ordered by id for a deterministic review/distribution."""
-    scope = TenantScope.for_tenant(client_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     views: list[AccountScoreView] = []
     seen: set[EntityId] = set()
     for entity_id in await entities_with_field_claim(
@@ -220,7 +221,7 @@ async def persist_tier(
     tier: str,
     cutoff_version: str,
     run_id: RunId,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     icp_version: int,
 ) -> tuple[ClaimId, bool]:
@@ -260,14 +261,14 @@ async def persist_tier(
             run_id=run_id,
             research_mode=ResearchMode.ACCOUNT_PROFILING,
         ),
-        tenant_id=client_id,
+        workspace_id=workspace_id,
     )
     return await write_icp_scoped_claim(
         conn,
         tier_claim,
         run_id=run_id,
         icp_key=icp_key,
-        scope=TenantScope.for_tenant(client_id),
+        scope=WorkspaceScope.for_workspace(workspace_id),
     )
 
 

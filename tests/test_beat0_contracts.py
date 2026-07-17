@@ -126,7 +126,7 @@ def test_execution_value_types_construct() -> None:
     ctx = PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.SCORING,
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         icp_version=1,
     )

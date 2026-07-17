@@ -40,13 +40,13 @@ class ClientKnowledgeRetriever(Protocol):
     """Retrieve the client-knowledge passages relevant to ``query`` for a client, **version-scoped**
     (the M5↔M12 seam). Returns the relevant chunks (highest ``score`` first); the impl is a stub
     over ``read_client_kb_claims`` until the pgvector retriever lands behind this signature.
-    Tenant-scoped on ``client_id`` (a client-knowledge claim is always ``TENANT_PRIVATE``)."""
+    Tenant-scoped on ``workspace_id`` (a client-knowledge claim is always ``TENANT_PRIVATE``)."""
 
     async def retrieve(
         self,
         *,
         client_entity_id: EntityId,
-        client_id: str,
+        workspace_id: str,
         query: str,
         kb_version: int | None = None,
         limit: int = 10,

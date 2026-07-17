@@ -58,7 +58,7 @@ class PhaseContext(BaseModel):
 
     campaign_run_id: CampaignRunId
     phase: CampaignPhase
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_version: int
     budget_cap_cents: CostCents | None = None

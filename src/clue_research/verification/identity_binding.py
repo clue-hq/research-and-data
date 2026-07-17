@@ -623,7 +623,7 @@ class IdentityBindingGateImpl:
 
 
 async def load_binding_policy(
-    conn: AsyncConnection, *, client_id: str | None = None
+    conn: AsyncConnection, *, workspace_id: str | None = None
 ) -> BindingPolicy:
     """Load the most-specific :class:`BindingPolicy` for a scope: per-client → global default row
     → :data:`DEFAULT_BINDING_POLICY`. The latest ``version`` within the matched scope wins (with a
@@ -636,8 +636,8 @@ async def load_binding_policy(
     level so the silently-inert kind is observable, never a surprise weaker classifier (mirrors
     :func:`load_judge_policy` warning on a retired ``prompt_version``)."""
     candidates: list[str | None] = []
-    if client_id is not None:
-        candidates.append(client_id)
+    if workspace_id is not None:
+        candidates.append(workspace_id)
     candidates.append(None)  # the global default row
 
     for scope_client in candidates:
@@ -648,12 +648,12 @@ async def load_binding_policy(
                     SELECT min_identifiers_k, strong_identifier_set, verified_handle_sufficient,
                            weak_source_requires_handle, version
                     FROM binding_policy
-                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                    WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                     ORDER BY version DESC, created_at DESC, policy_id DESC
                     LIMIT 1
                     """
                 ),
-                {"client_id": scope_client},
+                {"workspace_id": scope_client},
             )
         ).first()
         if row is not None:

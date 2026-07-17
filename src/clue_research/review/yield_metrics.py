@@ -85,7 +85,7 @@ class YieldMetrics(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_spec_version: int | None = None
     sources: tuple[SourceYield, ...] = ()
@@ -102,7 +102,7 @@ class YieldMetrics(BaseModel):
 async def compute_yield(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     icp_spec_version: int | None = None,
 ) -> YieldMetrics:
@@ -115,10 +115,10 @@ async def compute_yield(
     sources.
     """
     stats = await get_source_yield(
-        conn, client_id=client_id, icp_key=icp_key, icp_version=icp_spec_version
+        conn, workspace_id=workspace_id, icp_key=icp_key, icp_version=icp_spec_version
     )
     rows = await read_labeled_dataset(
-        conn, client_id=client_id, icp_key=icp_key, icp_spec_version=icp_spec_version
+        conn, workspace_id=workspace_id, icp_key=icp_key, icp_spec_version=icp_spec_version
     )
 
     positive_accounts: dict[str, set[EntityId]] = {}
@@ -147,7 +147,7 @@ async def compute_yield(
         for stat in stats
     )
     return YieldMetrics(
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         icp_spec_version=icp_spec_version,
         sources=sources,

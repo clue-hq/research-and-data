@@ -138,15 +138,15 @@ class ReuseScope(StrEnum):
     """Cross-tenant reuse class of a claim (substrate §2 — the moat, made safe; M2.5).
 
     * ``PUBLIC_FOOTPRINT`` — a public fact about a company (employee count, tech stack, funding)
-      partially reusable across clients that amortizes cost; carries no ``tenant_id``.
+      partially reusable across clients that amortizes cost; carries no ``workspace_id``.
     * ``TENANT_PRIVATE`` — client-specific scoring, CRM-imported facts, client-knowledge-derived
       claims, and any contact ``facet`` / personal / resonance data; strictly tenant-isolated and so
-      always carries a ``tenant_id``.
+      always carries a ``workspace_id``.
 
     The reuse-class is *derived from policy at write* (the classifier maps ``(field_key namespace,
     extraction_method, source_tier) → scope``) and stored for fast filtering; the tenant-scoped read
     returns public-footprint (any tenant) ∪ this tenant's private, and never another tenant's
-    private. A claim is ``TENANT_PRIVATE`` iff it has a ``tenant_id``."""
+    private. A claim is ``TENANT_PRIVATE`` iff it has a ``workspace_id``."""
 
     PUBLIC_FOOTPRINT = "public_footprint"
     TENANT_PRIVATE = "tenant_private"
@@ -315,7 +315,7 @@ class UseReason(StrEnum):
     """Why the appropriateness/use gate (M10.3, Doc D §3/§5) reached its ``usable_for_outreach``
     verdict on a personal claim — the closed reason vocabulary M10 emits and M12/M13 switch on.
     Mirrors the ``JudgeVerdict``/``PreSpendVerdict`` pattern so the cross-package boundary carries a
-    *typed* verdict, never free text (the same latent-drift class as the ``tenant_id``/``client_id``
+    *typed* verdict, never free text (the same latent-drift class as the pre-A3 split tenancy-id
     naming and the strong-binding-share metric in the backlog).
 
     Note the deliberate *absence* of an ``objected`` member: a data-subject objection (GDPR Art. 21)

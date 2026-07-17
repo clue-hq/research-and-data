@@ -16,7 +16,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import TenantScope, current_value, insert_claim
+from clue_research.claimstore import WorkspaceScope, current_value, insert_claim
 from clue_research.identity import (
     ReusePolicy,
     classify_reuse_scope,
@@ -114,31 +114,31 @@ def test_stamp_reuse_sets_scope_and_tenant() -> None:
     entity = new_entity_id()
     public = stamp_reuse(
         _claim(entity, "core.employee_count", 1, ExtractionMethod.API),  # type: ignore[arg-type]
-        tenant_id="tenant-a",
+        workspace_id="tenant-a",
     )
-    assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.tenant_id is None
+    assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.workspace_id is None
     private = stamp_reuse(
         _claim(entity, "core.employee_count", 1, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
-        tenant_id="tenant-a",
+        workspace_id="tenant-a",
     )
-    assert private.reuse_scope is ReuseScope.TENANT_PRIVATE and private.tenant_id == "tenant-a"
+    assert private.reuse_scope is ReuseScope.TENANT_PRIVATE and private.workspace_id == "tenant-a"
 
 
 def test_stamp_reuse_fails_loud_for_a_private_claim_with_no_tenant() -> None:
-    """A claim that classifies tenant_private with no tenant_id supplied is a wiring error —
+    """A claim that classifies tenant_private with no workspace_id supplied is a wiring error —
     refused, never silently written public (fail-closed, M4.5 decision #6). A public claim with no
     tenant is fine (it is tenant-less by definition)."""
     entity = new_entity_id()
     with pytest.raises(ValueError, match="tenant_private"):
         stamp_reuse(
             _claim(entity, "core.employee_count", 1, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
-            tenant_id=None,
+            workspace_id=None,
         )
     public = stamp_reuse(
         _claim(entity, "core.employee_count", 1, ExtractionMethod.API),  # type: ignore[arg-type]
-        tenant_id=None,
+        workspace_id=None,
     )
-    assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.tenant_id is None
+    assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.workspace_id is None
 
 
 # --- amortization / degradation / DSAR (DB) ---------------------------------
@@ -153,7 +153,7 @@ def test_amortization_reuses_a_fresh_public_claim() -> None:
             entity = new_entity_id()
             claim = stamp_reuse(
                 _claim(entity, "core.employee_count", 250, ExtractionMethod.API),  # type: ignore[arg-type]
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             await insert_claim(conn, claim, validate_field=False)
             reused = await reusable_public_value(conn, entity, "core.employee_count")
@@ -172,14 +172,14 @@ def test_safe_degradation_isolates_a_normally_public_claim() -> None:
             entity = new_entity_id()
             claim = stamp_reuse(
                 _claim(entity, "core.employee_count", 250, ExtractionMethod.API),  # type: ignore[arg-type]
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
                 policy=ReusePolicy(enabled=False),
             )
             assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
             await insert_claim(conn, claim, validate_field=False)
-            b = TenantScope.for_tenant("tenant-b")
+            b = WorkspaceScope.for_workspace("tenant-b")
             assert await current_value(conn, entity, "core.employee_count", scope=b) is None
-            a = TenantScope.for_tenant("tenant-a")
+            a = WorkspaceScope.for_workspace("tenant-a")
             assert await current_value(conn, entity, "core.employee_count", scope=a) is not None
 
     run_async(_run())
@@ -194,16 +194,16 @@ def test_dsar_selects_only_tenant_private_claims() -> None:
             entity = new_entity_id()
             public = stamp_reuse(
                 _claim(entity, "core.employee_count", 250, ExtractionMethod.API),  # type: ignore[arg-type]
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             private_a = stamp_reuse(
                 _claim(entity, "account.crm_note", {"note": "x"}, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             # Another tenant's private claim on the SAME entity must stay out of A's DSAR set.
             private_b = stamp_reuse(
                 _claim(entity, "account.crm_note", {"note": "y"}, ExtractionMethod.CRM_IMPORT),  # type: ignore[arg-type]
-                tenant_id="tenant-b",
+                workspace_id="tenant-b",
             )
             await insert_claim(conn, public, validate_field=False)
             await insert_claim(conn, private_a, validate_field=False)
@@ -211,7 +211,7 @@ def test_dsar_selects_only_tenant_private_claims() -> None:
             dsar = list(await dsar_private_claims(conn, entity, "tenant-a"))
             assert len(dsar) == 1  # only tenant A's private claim — not the public, not tenant B's
             assert dsar[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert dsar[0].tenant_id == "tenant-a"
+            assert dsar[0].workspace_id == "tenant-a"
             assert dsar[0].value_json == {"note": "x"}
 
     run_async(_run())

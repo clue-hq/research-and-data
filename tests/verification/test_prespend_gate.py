@@ -380,14 +380,14 @@ def test_load_pre_spend_policy_reads_the_most_specific_row() -> None:
             # a per-client row is more specific and wins for that client.
             await conn.execute(
                 text(
-                    "INSERT INTO pre_spend_policy (policy_id, client_id, rules_json) "
+                    "INSERT INTO pre_spend_policy (policy_id, workspace_id, rules_json) "
                     "VALUES ('acme', 'acme', CAST(:r AS jsonb))"
                 ),
                 {"r": '{"enforce_tier_in_plan": false}'},
             )
             glob = await load_pre_spend_policy(conn)
             assert glob.requires_strong_key is False
-            acme = await load_pre_spend_policy(conn, client_id="acme")
+            acme = await load_pre_spend_policy(conn, workspace_id="acme")
             assert acme.enforce_tier_in_plan is False
 
     run_async(_run())

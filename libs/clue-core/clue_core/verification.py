@@ -12,7 +12,8 @@ Because those callers live in *other* packages and must stay import-independent 
 them. Concrete gates are injected at the ``api`` composition root; no milestone imports another.
 
 This module is the *accuracy / identity-binding* gate only (is it true, and is it *this* entity?).
-The distinct *appropriateness / use* gate (``use_class × jurisdiction × client_policy``) is M10 and
+The distinct *appropriateness / use* gate (``use_class × jurisdiction × workspace_policy``) is M10
+and
 is deliberately not here (Doc D §5 — they must be separately measurable). The structural promotion
 predicate already lives on the claim itself (:func:`~clue_core.claim.can_be_promoted`); M9
 calls it and these gates decide the actual transition.

@@ -69,7 +69,7 @@ def _utc_now() -> UtcDatetime:
 class DurableHandoffReadinessReader:
     """The production :class:`HandoffReadinessReader` over the M7 ``campaign_run`` / ``account_run``
     tables. Manages its own short read transaction (the seam carries no connection, like the M12.1
-    retriever stub). Tenant-scoped: a run whose ``client_id`` is not the caller's resolves to
+    retriever stub). Tenant-scoped: a run whose ``workspace_id`` is not the caller's resolves to
     ``None`` / no ready accounts (cross-tenant isolation — substrate §2)."""
 
     def __init__(
@@ -83,15 +83,15 @@ class DurableHandoffReadinessReader:
         self._require_finalized_review = require_finalized_review
 
     async def run_readiness(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> RunReadiness | None:
         async with self._conn_factory() as conn:
             run = await get_campaign_run(conn, campaign_run_id)
-        if run is None or run.client_id != client_id:
+        if run is None or run.workspace_id != workspace_id:
             return None
         return RunReadiness(
             campaign_run_id=campaign_run_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             phase=run.phase,
             icp_key=run.icp_key,
             icp_version=run.icp_version,
@@ -99,11 +99,11 @@ class DurableHandoffReadinessReader:
         )
 
     async def ready_accounts(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> tuple[AccountReadiness, ...]:
         async with self._conn_factory() as conn:
             run = await get_campaign_run(conn, campaign_run_id)
-            if run is None or run.client_id != client_id:
+            if run is None or run.workspace_id != workspace_id:
                 return ()
             rows = await list_account_runs(conn, campaign_run_id)
             finalized_review = (
@@ -192,7 +192,7 @@ class HandoffPhaseHandler:
             readiness_reader=self._readiness_reader,
             publisher=self._publisher,
             campaign_run_id=ctx.campaign_run_id,
-            client_id=ctx.client_id,
+            workspace_id=ctx.workspace_id,
             assembled_at=self._clock(),
             coverage_confidence=self._coverage_confidence,
         )

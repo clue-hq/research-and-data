@@ -98,7 +98,7 @@ async def _seed_run(
     await ensure_campaign_run(
         conn,
         campaign_run_id=run,
-        client_id=client,
+        workspace_id=client,
         icp_key="enterprise",
         icp_version=1,
         phase=phase,
@@ -161,7 +161,7 @@ async def _seed_health_claims(conn: AsyncConnection, run: CampaignRunId) -> None
 # --- DurableCampaignStateReader ----------------------------------------------
 
 
-def test_campaign_state_reader_projects_phases_and_is_tenant_scoped() -> None:
+def test_campaign_state_reader_projects_phases_and_is_workspace_scoped() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             run = await _seed_run(conn, phase=CampaignPhase.REVIEW, status=CampaignRunStatus.PAUSED)
@@ -182,7 +182,7 @@ def test_campaign_state_reader_projects_phases_and_is_tenant_scoped() -> None:
                 payload={},
             )
             reader = DurableCampaignStateReader(conn_factory=_factory(conn))
-            state = await reader.run_phase_state(campaign_run_id=run, client_id=_CLIENT)
+            state = await reader.run_phase_state(campaign_run_id=run, workspace_id=_CLIENT)
             assert state is not None
             assert state.current_phase is CampaignPhase.REVIEW
             assert state.run_status == "paused"
@@ -191,7 +191,7 @@ def test_campaign_state_reader_projects_phases_and_is_tenant_scoped() -> None:
             assert by_phase[CampaignPhase.DISCOVERY] == "committed"
             assert by_phase[CampaignPhase.REVIEW] == "awaiting_input"
             # cross-tenant isolation.
-            assert await reader.run_phase_state(campaign_run_id=run, client_id=_OTHER) is None
+            assert await reader.run_phase_state(campaign_run_id=run, workspace_id=_OTHER) is None
 
     run_async(_run())
 
@@ -199,7 +199,7 @@ def test_campaign_state_reader_projects_phases_and_is_tenant_scoped() -> None:
 # --- BudgetEngineBurnDownReader ----------------------------------------------
 
 
-def test_burndown_reader_delegates_and_is_tenant_scoped() -> None:
+def test_burndown_reader_delegates_and_is_workspace_scoped() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             run = await _seed_run(conn, status=CampaignRunStatus.ACTIVE)
@@ -212,11 +212,11 @@ def test_burndown_reader_delegates_and_is_tenant_scoped() -> None:
             reader = BudgetEngineBurnDownReader(
                 budget=_FakeBudget(burndown), conn_factory=_factory(conn)
             )
-            got = await reader.burn_down(campaign_run_id=run, client_id=_CLIENT)
+            got = await reader.burn_down(campaign_run_id=run, workspace_id=_CLIENT)
             assert got is not None and got.spent_cents == Decimal("400")
-            assert await reader.burn_down(campaign_run_id=run, client_id=_OTHER) is None
+            assert await reader.burn_down(campaign_run_id=run, workspace_id=_OTHER) is None
             assert (
-                await reader.burn_down(campaign_run_id=new_campaign_run_id(), client_id=_CLIENT)
+                await reader.burn_down(campaign_run_id=new_campaign_run_id(), workspace_id=_CLIENT)
                 is None
             )
 
@@ -234,10 +234,10 @@ def test_pre_run_estimator_projects_and_recomputes_on_cutoff() -> None:
         )
         estimator = BudgetCapsPreRunEstimator(caps_for=lambda _c: caps)
         loose = await estimator.estimate(
-            client_id=_CLIENT, discovered_count=100, tier_cutoffs={"top": 0.6}
+            workspace_id=_CLIENT, discovered_count=100, tier_cutoffs={"top": 0.6}
         )
         strict = await estimator.estimate(
-            client_id=_CLIENT, discovered_count=100, tier_cutoffs={"top": 0.9}
+            workspace_id=_CLIENT, discovered_count=100, tier_cutoffs={"top": 0.9}
         )
         assert loose.projected_deep_count > strict.projected_deep_count
         assert loose.estimated_cost_cents > strict.estimated_cost_cents
@@ -255,7 +255,7 @@ def test_verification_health_reader_at_rest_scan_counts() -> None:
             run = await _seed_run(conn, status=CampaignRunStatus.ACTIVE)
             await _seed_health_claims(conn, run)
             reader = ClaimScanVerificationHealthReader(conn_factory=_factory(conn))
-            counts = await reader.health_counts(campaign_run_id=run, client_id=_CLIENT)
+            counts = await reader.health_counts(campaign_run_id=run, workspace_id=_CLIENT)
             assert counts is not None
             # 3 tier-4 claims; 1 VERIFIED → faithfulness 1/3.
             assert counts.faithfulness_total == 3
@@ -267,7 +267,7 @@ def test_verification_health_reader_at_rest_scan_counts() -> None:
             assert counts.corroboration_total == 2
             assert counts.corroboration_passed == 1
             # cross-tenant isolation.
-            assert await reader.health_counts(campaign_run_id=run, client_id=_OTHER) is None
+            assert await reader.health_counts(campaign_run_id=run, workspace_id=_OTHER) is None
 
     run_async(_run())
 
@@ -277,7 +277,7 @@ def test_verification_health_reader_empty_run_is_all_zero() -> None:
         async with rollback_conn() as conn:
             run = await _seed_run(conn, status=CampaignRunStatus.ACTIVE)  # no account runs / claims
             reader = ClaimScanVerificationHealthReader(conn_factory=_factory(conn))
-            counts = await reader.health_counts(campaign_run_id=run, client_id=_CLIENT)
+            counts = await reader.health_counts(campaign_run_id=run, workspace_id=_CLIENT)
             assert counts is not None
             assert counts.faithfulness_total == 0 and counts.contact_total == 0
 
@@ -317,7 +317,7 @@ def test_coverage_reader_maps_checkpoint_payload() -> None:
             run = await _seed_run(conn, status=CampaignRunStatus.ACTIVE)
             await _seed_coverage_checkpoint(conn, run)
             reader = CheckpointCoverageReportReader(conn_factory=_factory(conn))
-            report = await reader.coverage_for_run(campaign_run_id=run, client_id=_CLIENT)
+            report = await reader.coverage_for_run(campaign_run_id=run, workspace_id=_CLIENT)
             assert report is not None
             assert report.confidence == "moderate"
             assert report.estimate_percent == "~40–60%"
@@ -333,7 +333,7 @@ def test_coverage_reader_none_without_checkpoint() -> None:
         async with rollback_conn() as conn:
             run = await _seed_run(conn, status=CampaignRunStatus.ACTIVE)  # no tier_checkpoint
             reader = CheckpointCoverageReportReader(conn_factory=_factory(conn))
-            assert await reader.coverage_for_run(campaign_run_id=run, client_id=_CLIENT) is None
+            assert await reader.coverage_for_run(campaign_run_id=run, workspace_id=_CLIENT) is None
 
     run_async(_run())
 
@@ -367,18 +367,18 @@ def test_wired_surface_drives_all_panels() -> None:
                 caps_for=lambda _c: BudgetCaps(pass_a_cap_cents_per_account=Decimal("5")),
             )
             # progress reflects the REVIEW human gate.
-            progress = await surface.campaign_progress(campaign_run_id=run, client_id=_CLIENT)
+            progress = await surface.campaign_progress(campaign_run_id=run, workspace_id=_CLIENT)
             assert progress is not None and progress.current_phase is CampaignPhase.REVIEW
             assert progress.awaiting_input is True
             # burn-down at 95% of cap → near_cap.
-            bd = await surface.cost_burndown(campaign_run_id=run, client_id=_CLIENT)
+            bd = await surface.cost_burndown(campaign_run_id=run, workspace_id=_CLIENT)
             assert bd is not None and bd.status == "near_cap"
             # verification health: faithfulness 1/3 < the 0.8 floor → alert (default thresholds).
-            health = await surface.verification_health(campaign_run_id=run, client_id=_CLIENT)
+            health = await surface.verification_health(campaign_run_id=run, workspace_id=_CLIENT)
             assert health is not None
             assert health.faithfulness_alert is True and health.alert is True
             # coverage: a band + a non-empty unsearched list, never "100%/complete".
-            coverage = await surface.coverage_confidence(campaign_run_id=run, client_id=_CLIENT)
+            coverage = await surface.coverage_confidence(campaign_run_id=run, workspace_id=_CLIENT)
             assert coverage is not None and coverage.channels_not_searched
             assert "100%" not in coverage.estimate_percent
 

@@ -132,7 +132,7 @@ async def _testpack(conn: AsyncConnection, *weighted: WeightedSource) -> ICPSpec
     )
     return await create_icp_spec(
         conn,
-        client_id="acme",
+        workspace_id="acme",
         icp_key="seg1",
         created_from=ICPCreatedFrom.SYNTHESIS,
         enabled_packs=("testpack",),

@@ -53,7 +53,7 @@ from clue_research.adapters import (
     span_for,
 )
 from clue_research.adapters.seams import AdaptError
-from clue_research.claimstore import ALL_TENANTS, claims_for
+from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.sources import RegistrySourceManifest, get_source, register_source
 
 from .conftest import rollback_conn, run_async
@@ -207,7 +207,7 @@ def test_pdf_source_writes_claim_with_span_scrape_method_and_manifest_tier() -> 
             assert claim.source_url == "https://journal.example/p.pdf"
             # actually persisted via M1.1
             live = await claims_for(
-                conn, entity.entity_id, "account.operational_pain", scope=ALL_TENANTS
+                conn, entity.entity_id, "account.operational_pain", scope=ALL_WORKSPACES
             )
             assert [c.id for c in live] == [claim.id]
 
@@ -373,7 +373,7 @@ def test_gate_skip_makes_no_call_but_exposes_cost_estimate() -> None:
                 )
             assert claims == []
             assert transcriber.calls == 0  # the expensive transcription was NOT made
-            assert await claims_for(conn, entity.entity_id, scope=ALL_TENANTS) == []
+            assert await claims_for(conn, entity.entity_id, scope=ALL_WORKSPACES) == []
 
             by_name = {s.name: s for s in spans.get_finished_spans()}
             pipeline = by_name["adapter.pipeline.podcast"]
@@ -740,7 +740,7 @@ def test_persist_false_returns_unwritten_claims() -> None:
             )
             assert len(claims) == 1  # materialized and returned to the caller (the waterfall seam)
             assert (
-                await claims_for(conn, entity.entity_id, scope=ALL_TENANTS) == []
+                await claims_for(conn, entity.entity_id, scope=ALL_WORKSPACES) == []
             )  # but NOT written
 
     run_async(_run())
@@ -748,7 +748,8 @@ def test_persist_false_returns_unwritten_claims() -> None:
 
 def test_persist_true_fails_loud_on_a_tenant_private_claim_with_no_tenant() -> None:
     # run_pipeline(persist=True) is a writer, so it tenant-stamps (decision #6). A contact.facet.*
-    # claim classifies tenant_private — persisting it with NO tenant_id must fail loud, never write
+    # claim classifies tenant_private — persisting it with NO workspace_id must fail loud, never
+    # write
     # the personal claim public (the M8/run_pipeline footgun the M4.5 review flagged).
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -779,7 +780,7 @@ def test_persist_true_fails_loud_on_a_tenant_private_claim_with_no_tenant() -> N
                         source_url="https://linkedin.com/in/x",
                         use_class=UseClass.PROFESSIONAL_PUBLIC,
                     ),
-                    # no tenant_id → the writer refuses to persist the private claim
+                    # no workspace_id → the writer refuses to persist the private claim
                 )
 
     run_async(_run())
@@ -962,8 +963,8 @@ def test_contact_claim_carries_binding_from_manifest_and_use_class_from_draft() 
                     research_mode=ResearchMode.CONTACT_PROFILING,
                     extractor=extractor,
                     # a contact.facet.* claim classifies tenant_private (decision #6); run_pipeline,
-                    # as the writer, stamps it and so requires the run's tenant_id.
-                    tenant_id="tenant-a",
+                    # as the writer, stamps it and so requires the run's workspace_id.
+                    workspace_id="tenant-a",
                 )
             )[0]
             assert claim.entity_type is EntityType.CONTACT
@@ -971,7 +972,9 @@ def test_contact_claim_carries_binding_from_manifest_and_use_class_from_draft() 
             assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC  # carried from the draft
             assert claim.source_tier == 3
             # the writer stamped the personal claim tenant-private and bound it to the run tenant.
-            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.tenant_id == "tenant-a"
+            assert (
+                claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.workspace_id == "tenant-a"
+            )
 
     run_async(_run())
 

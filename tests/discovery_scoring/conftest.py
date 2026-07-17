@@ -113,7 +113,7 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
 def icp_spec(discovery_strategy: dict[str, JsonValue] | None = None) -> ICPSpec:
     """Build an in-memory ICP spec carrying a discovery-strategy slot (the only field M6.1 uses)."""
     return ICPSpec(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         created_from=ICPCreatedFrom.SYNTHESIS,
         discovery_strategy=discovery_strategy or {},

@@ -35,7 +35,7 @@ from clue_core import (
 from clue_obs.otel import SPAN_COMPLIANCE_JURISDICTION, InMemorySink, collect_spans
 from clue_research.claimstore import current_value, insert_claim
 from clue_research.claimstore.registry import _validate_payload
-from clue_research.claimstore.tenancy import TenantScope
+from clue_research.claimstore.tenancy import WorkspaceScope
 from clue_research.compliance import (
     COMPLIANCE_PACK,
     DerivedFrom,
@@ -178,7 +178,7 @@ _CLIENT = "client-m10-test"
 def _resolver(
     conn: AsyncConnection,
     *,
-    client_id: str = _CLIENT,
+    workspace_id: str = _CLIENT,
     policy: JurisdictionPolicy | None = None,
     persist: bool = True,
     sink: InMemorySink | None = None,
@@ -189,7 +189,7 @@ def _resolver(
 
     resolved_policy = policy if policy is not None else JurisdictionPolicy()
     return JurisdictionResolverImpl(
-        client_id,
+        workspace_id,
         new_run_id(),
         policy_getter=lambda _cid: resolved_policy,
         conn_factory=factory,
@@ -225,7 +225,7 @@ async def _write_location_claim(
     contact_id: EntityId,
     region: str,
     *,
-    client_id: str = _CLIENT,
+    workspace_id: str = _CLIENT,
     tier: int = 2,
 ) -> None:
     claim = Claim(
@@ -240,12 +240,12 @@ async def _write_location_claim(
         run_id=new_run_id(),
         research_mode=ResearchMode.CONTACT_PROFILING,
     )
-    await insert_claim(conn, stamp_reuse(claim, tenant_id=client_id))
+    await insert_claim(conn, stamp_reuse(claim, workspace_id=workspace_id))
 
 
 async def _jurisdiction_value(conn: AsyncConnection, contact_id: EntityId) -> dict[str, object]:
     cv = await current_value(
-        conn, contact_id, "contact.jurisdiction", scope=TenantScope.for_tenant(_CLIENT)
+        conn, contact_id, "contact.jurisdiction", scope=WorkspaceScope.for_workspace(_CLIENT)
     )
     assert cv is not None
     assert isinstance(cv.value_json, dict)
@@ -302,7 +302,7 @@ def test_stored_jurisdiction_claim_is_tenant_private() -> None:  # tenant isolat
             row = (
                 await conn.execute(
                     text(
-                        "SELECT reuse_scope, tenant_id FROM claim "
+                        "SELECT reuse_scope, workspace_id FROM claim "
                         "WHERE entity_id = :e AND field_key = 'contact.jurisdiction' "
                         "AND superseded_by IS NULL"
                     ),
@@ -357,7 +357,7 @@ def test_account_location_claim_path() -> None:  # waterfall step 3 (account loc
                 run_id=new_run_id(),
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
             )
-            await insert_claim(conn, stamp_reuse(claim, tenant_id=None))
+            await insert_claim(conn, stamp_reuse(claim, workspace_id=None))
 
             resolution = await _resolver(conn, persist=False).resolve(contact)
             assert resolution.regime is Jurisdiction.UK_GDPR
@@ -400,7 +400,7 @@ def test_store_supersedes_all_live_priors() -> None:  # _store collapses a multi
                     run_id=new_run_id(),
                     research_mode=ResearchMode.CONTACT_PROFILING,
                 )
-                await insert_claim(conn, stamp_reuse(planted, tenant_id=_CLIENT))
+                await insert_claim(conn, stamp_reuse(planted, workspace_id=_CLIENT))
             assert await _live_jurisdiction_count(conn, contact) == 2
 
             await _resolver(conn).resolve(contact)

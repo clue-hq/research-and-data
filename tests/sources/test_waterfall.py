@@ -33,7 +33,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, TenantScope, claims_for, current_value
+from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope, claims_for, current_value
 from clue_research.sources import (
     RegistrySourceManifest,
     StepOutcome,
@@ -232,7 +232,7 @@ def test_written_claims_are_unverified_with_correct_provenance() -> None:
             result = await resolve_field(conn, entity, _field(("t1",)), mode=_MODE, run_id=run_id)
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert len(written) == 1
             claim = written[0]
@@ -276,7 +276,7 @@ def test_tier4_null_span_written_unverified_and_unpromotable() -> None:
             )
             assert result.stop_reason is StopReason.CONFIDENT_HIT  # 0.9 >= account threshold 0.75
             written = await claims_for(
-                conn, entity.entity_id, "account.operational_pain", scope=ALL_TENANTS
+                conn, entity.entity_id, "account.operational_pain", scope=ALL_WORKSPACES
             )
             assert len(written) == 1
             assert written[0].verification_status is VerificationStatus.UNVERIFIED
@@ -370,7 +370,7 @@ def test_idempotent_retry_does_not_double_write() -> None:
             assert first.claim_refs == second.claim_refs  # same claim id, no second write
             assert second.per_tier[0].outcome is StepOutcome.IDEMPOTENT_SKIP
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert len(written) == 1  # exactly one claim despite two resolve_field calls
 
@@ -472,24 +472,24 @@ def test_contact_claim_identity_binding_from_manifest() -> None:
                 pass_kind=PassKind.DEEP,
             )
             # contact.facet.* + crm_import classifies tenant_private (decision #6) → the engine
-            # requires the run's tenant_id to stamp it (a private claim must bind to a tenant).
+            # requires the run's workspace_id to stamp it (a private claim must bind to a tenant).
             await resolve_field(
                 conn,
                 entity,
                 field,
                 mode=ResearchMode.CONTACT_PROFILING,
                 run_id=new_run_id(),
-                tenant_id="tenant-x",
+                workspace_id="tenant-x",
             )
             written = await claims_for(
-                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_TENANTS
+                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_WORKSPACES
             )
             assert len(written) == 1
             # the manifest's binding strength is authoritative — the engine stamped STRONG.
             assert written[0].identity_binding is IdentityBinding.STRONG
             # the engine stamped the personal claim tenant-private and bound it to the run tenant.
             assert written[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert written[0].tenant_id == "tenant-x"
+            assert written[0].workspace_id == "tenant-x"
 
     run_async(_run())
 
@@ -520,7 +520,7 @@ def test_same_tier_retry_attributes_per_source() -> None:
                 assert by_source["clay"].n_claims == 1
             assert first.claim_refs == second.claim_refs  # no double-write on retry
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert len(written) == 1 and written[0].source_key == "clay"
 
@@ -593,12 +593,14 @@ def test_engine_stamps_crm_import_claim_tenant_private() -> None:
                 _field(("crm",)),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
-            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.tenant_id == "tenant-a"
+            assert (
+                claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.workspace_id == "tenant-a"
+            )
 
     run_async(_run())
 
@@ -616,18 +618,18 @@ def test_engine_keeps_a_public_claim_public_even_when_a_tenant_is_supplied() -> 
                 _field(("clay",)),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
-            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.tenant_id is None
+            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.workspace_id is None
 
     run_async(_run())
 
 
 def test_engine_fails_loud_on_a_private_claim_with_no_tenant() -> None:
-    # A crm_import claim with NO tenant_id is a wiring error — the engine refuses it rather than
+    # A crm_import claim with NO workspace_id is a wiring error — the engine refuses it rather than
     # silently writing client data into the shared public pool (fail-closed, substrate §2).
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -644,7 +646,7 @@ def test_engine_fails_loud_on_a_private_claim_with_no_tenant() -> None:
     run_async(_run())
 
 
-def test_idempotent_reuse_is_tenant_scoped_no_cross_tenant_private_leak() -> None:
+def test_idempotent_reuse_is_workspace_scoped_no_cross_tenant_private_leak() -> None:
     # Defense-in-depth (substrate §2): even if two tenants shared a run_id (a caller bug — run_id is
     # per-run-per-tenant), the idempotency reuse is tenant-scoped, so tenant-B never receives
     # tenant-A's tenant_private CRM claim. Tenant-B re-resolves and writes its OWN private claim.
@@ -679,26 +681,34 @@ def test_idempotent_reuse_is_tenant_scoped_no_cross_tenant_private_leak() -> Non
             entity = _entity()
             run_id = new_run_id()
             field = _field(("crm",), field_key="account.crm_relationship_status")
-            a = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id, tenant_id="a")
-            b = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id, tenant_id="b")
+            a = await resolve_field(
+                conn, entity, field, mode=_MODE, run_id=run_id, workspace_id="a"
+            )
+            b = await resolve_field(
+                conn, entity, field, mode=_MODE, run_id=run_id, workspace_id="b"
+            )
             assert (
                 crm.calls == 2
             )  # tenant-b did NOT reuse tenant-a's private claim — it re-resolved
             assert a.claim_refs != b.claim_refs  # a distinct private claim per tenant
             # Each tenant sees ONLY its own private claim — never the other's.
-            a_claims = await claims_for(conn, entity.entity_id, scope=TenantScope.for_tenant("a"))
-            b_claims = await claims_for(conn, entity.entity_id, scope=TenantScope.for_tenant("b"))
-            assert {c.tenant_id for c in a_claims} == {"a"}
-            assert {c.tenant_id for c in b_claims} == {"b"}
+            a_claims = await claims_for(
+                conn, entity.entity_id, scope=WorkspaceScope.for_workspace("a")
+            )
+            b_claims = await claims_for(
+                conn, entity.entity_id, scope=WorkspaceScope.for_workspace("b")
+            )
+            assert {c.workspace_id for c in a_claims} == {"a"}
+            assert {c.workspace_id for c in b_claims} == {"b"}
             field_key = "account.crm_relationship_status"
             assert (
                 await current_value(
-                    conn, entity.entity_id, field_key, scope=TenantScope.for_tenant("a")
+                    conn, entity.entity_id, field_key, scope=WorkspaceScope.for_workspace("a")
                 )
             ) is not None
             assert (
                 await current_value(
-                    conn, entity.entity_id, field_key, scope=TenantScope.public_only()
+                    conn, entity.entity_id, field_key, scope=WorkspaceScope.public_only()
                 )
             ) is None  # the private claims never surface publicly
 

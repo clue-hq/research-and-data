@@ -74,7 +74,7 @@ pytestmark = pytest.mark.usefixtures("require_durable_db")
 
 
 def _spec() -> ICPSpec:
-    return ICPSpec(client_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
+    return ICPSpec(workspace_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
 
 
 class _ConnBudgetStore:
@@ -228,7 +228,7 @@ def test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references(
             await ensure_campaign_run(
                 conn,
                 campaign_run_id=campaign,
-                client_id="client-1",
+                workspace_id="client-1",
                 icp_key="icp-a",
                 icp_version=1,
                 budget_cap_cents=Decimal("100000"),

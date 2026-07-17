@@ -19,7 +19,7 @@ from clue_core import (
     ProfileClaimView,
     WorkerStatus,
 )
-from clue_research.claimstore import TenantScope, claims_for
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling.contact import ContactProfileAspectWorker, profile_contact
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings
@@ -80,7 +80,7 @@ def test_profile_contact_tags_every_claim(require_profiling_db: None) -> None:
                     contact_entity_id=contact.id,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     tier="top",
                     field_keys=[FACET_STATED_INTERESTS],
                 )
@@ -94,7 +94,10 @@ def test_profile_contact_tags_every_claim(require_profiling_db: None) -> None:
                 assert view.identity_binding is IdentityBinding.STRONG  # verified handle
                 # the written claim agrees.
                 written = await claims_for(
-                    conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                    conn,
+                    contact.id,
+                    FACET_STATED_INTERESTS,
+                    scope=WorkspaceScope.for_workspace(_TENANT),
                 )
                 assert len(written) == 1
                 assert written[0].identity_binding is not None
@@ -119,11 +122,11 @@ def test_tier4_without_span_stays_unverified(require_profiling_db: None) -> None
                     contact_entity_id=contact.id,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     tier="top",
                     field_keys=[FACET_STATED_INTERESTS],
                 )
-                scope = TenantScope.for_tenant(_TENANT)
+                scope = WorkspaceScope.for_workspace(_TENANT)
                 written = (await claims_for(conn, contact.id, FACET_STATED_INTERESTS, scope=scope))[
                     0
                 ]
@@ -151,7 +154,7 @@ def test_facet_subworker_requested_only_with_budget(require_profiling_db: None) 
                     contact_entity_id=contact.id,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     tier="top",
                     field_keys=[FACET_STATED_INTERESTS],
                     facet_subworker_budget=2,
@@ -165,7 +168,7 @@ def test_facet_subworker_requested_only_with_budget(require_profiling_db: None) 
                     contact_entity_id=contact.id,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     tier="low",
                     field_keys=[FACET_STATED_INTERESTS],
                     facet_subworker_budget=0,
@@ -202,7 +205,7 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
                     depth=0,
                     params={
                         "account_entity_id": str(account.id),
-                        "client_id": _TENANT,
+                        "workspace_id": _TENANT,
                         "icp_key": "default",
                         "icp_version": 1,
                         "max_facet_workers_per_aspect": 2,

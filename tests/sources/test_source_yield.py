@@ -60,7 +60,7 @@ def test_record_and_aggregate_source_yield() -> None:
         async with rollback_conn() as conn:
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="arxiv",
                 claims_total=10,
@@ -70,7 +70,7 @@ def test_record_and_aggregate_source_yield() -> None:
             )
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="arxiv",
                 claims_total=5,
@@ -78,7 +78,7 @@ def test_record_and_aggregate_source_yield() -> None:
                 fields_filled=2,
                 cost_cents=Decimal(2),
             )
-            stats = await get_source_yield(conn, client_id=_CLIENT, source_key="arxiv")
+            stats = await get_source_yield(conn, workspace_id=_CLIENT, source_key="arxiv")
             assert len(stats) == 1
             stat = stats[0]
             assert stat.field_class is None and stat.source_key == "arxiv"
@@ -95,7 +95,7 @@ def test_yield_groups_by_field_class() -> None:
         async with rollback_conn() as conn:
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="exa_deep",
                 field_class=FieldClass.ACCOUNT_RESONANCE,
@@ -104,14 +104,14 @@ def test_yield_groups_by_field_class() -> None:
             )
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="exa_deep",
                 field_class=FieldClass.CONTACT_FACET,
                 claims_total=2,
                 claims_verified=2,
             )
-            stats = await get_source_yield(conn, client_id=_CLIENT, source_key="exa_deep")
+            stats = await get_source_yield(conn, workspace_id=_CLIENT, source_key="exa_deep")
             by_fc = {s.field_class: s for s in stats}
             assert by_fc[FieldClass.ACCOUNT_RESONANCE].precision == pytest.approx(0.25)
             assert by_fc[FieldClass.CONTACT_FACET].precision == 1.0
@@ -125,7 +125,7 @@ def test_check_rejects_verified_greater_than_total() -> None:
             with pytest.raises(IntegrityError):
                 await record_source_yield(
                     conn,
-                    client_id=_CLIENT,
+                    workspace_id=_CLIENT,
                     icp_key=_ICP,
                     source_key="arxiv",
                     claims_total=2,
@@ -140,14 +140,14 @@ def test_check_rejects_negative_count_and_zero_icp_version() -> None:
         async with rollback_conn() as conn:
             with pytest.raises(IntegrityError):
                 await record_source_yield(
-                    conn, client_id=_CLIENT, icp_key=_ICP, source_key="arxiv", claims_total=-1
+                    conn, workspace_id=_CLIENT, icp_key=_ICP, source_key="arxiv", claims_total=-1
                 )
 
     async def _run2() -> None:
         async with rollback_conn() as conn:
             with pytest.raises(IntegrityError):
                 await record_source_yield(
-                    conn, client_id=_CLIENT, icp_key=_ICP, source_key="arxiv", icp_version=0
+                    conn, workspace_id=_CLIENT, icp_key=_ICP, source_key="arxiv", icp_version=0
                 )
 
     run_async(_run())
@@ -160,7 +160,7 @@ def test_get_source_yield_narrows_by_icp_key_and_version() -> None:
             # same source recorded under two ICP keys and two versions of one of them.
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key="A",
                 icp_version=1,
                 source_key="arxiv",
@@ -169,7 +169,7 @@ def test_get_source_yield_narrows_by_icp_key_and_version() -> None:
             )
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key="B",
                 icp_version=1,
                 source_key="arxiv",
@@ -178,7 +178,7 @@ def test_get_source_yield_narrows_by_icp_key_and_version() -> None:
             )
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key="A",
                 icp_version=2,
                 source_key="arxiv",
@@ -186,15 +186,15 @@ def test_get_source_yield_narrows_by_icp_key_and_version() -> None:
                 claims_verified=0,
             )
             # icp_key=A pools A's versions only (4+6 total, 2+0 verified) — B is isolated out.
-            a = await get_source_yield(conn, client_id=_CLIENT, icp_key="A", source_key="arxiv")
+            a = await get_source_yield(conn, workspace_id=_CLIENT, icp_key="A", source_key="arxiv")
             assert (a[0].claims_total, a[0].claims_verified) == (10, 2)
             # narrowing to one version isolates that slot.
             a1 = await get_source_yield(
-                conn, client_id=_CLIENT, icp_key="A", icp_version=1, source_key="arxiv"
+                conn, workspace_id=_CLIENT, icp_key="A", icp_version=1, source_key="arxiv"
             )
             assert (a1[0].claims_total, a1[0].claims_verified) == (4, 2)
             # B is never pooled into A (cross-ICP isolation).
-            b = await get_source_yield(conn, client_id=_CLIENT, icp_key="B", source_key="arxiv")
+            b = await get_source_yield(conn, workspace_id=_CLIENT, icp_key="B", source_key="arxiv")
             assert b[0].claims_total == 10
 
     run_async(_run())
@@ -207,7 +207,7 @@ def test_yield_forward_hooks_write_and_zero_claim_precision_is_none() -> None:
             # (uuid), icp_version — and the zero-claim precision-None contract M13 branches on.
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="exa_deep",
                 field_class=FieldClass.ACCOUNT_RESONANCE,
@@ -220,7 +220,7 @@ def test_yield_forward_hooks_write_and_zero_claim_precision_is_none() -> None:
                 freshness_seconds=86_400,
                 disposition={"won": True, "stage": "closed"},
             )
-            stats = await get_source_yield(conn, client_id=_CLIENT, source_key="exa_deep")
+            stats = await get_source_yield(conn, workspace_id=_CLIENT, source_key="exa_deep")
             assert len(stats) == 1
             assert stats[0].claims_total == 0
             assert stats[0].precision is None  # nothing produced ⇒ nothing to judge
@@ -259,7 +259,7 @@ async def _testpack(conn: AsyncConnection, *weighted: WeightedSource) -> ICPSpec
     )
     return await create_icp_spec(
         conn,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key=_ICP,
         created_from=ICPCreatedFrom.SYNTHESIS,
         enabled_packs=("testpack",),
@@ -286,7 +286,7 @@ def test_simulated_reweight_changes_plan_order_no_engine_change() -> None:
             # the same writable config seam. No planner/engine code changes.
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="b",
                 claims_total=10,

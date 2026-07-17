@@ -195,15 +195,16 @@ class VerificationAnnotationReader(Protocol):
     ``review`` cannot import ``verification``/``compliance`` (the independence contract), so the
     production impl (which reads ``faithfulness_verdict`` / ``use_decision`` / ``conflict_flag``) is
     constructed and injected at the ``api`` composition root, exactly like ``core.UseGate`` /
-    ``core.FaithfulnessJudge``. ``tenant_id`` lets the impl scope-check the underlying claims even
+    ``core.FaithfulnessJudge``. ``workspace_id`` lets the impl scope-check the underlying claims
+    even
     though the side tables carry no tenant column."""
 
     async def annotations_for_claims(
-        self, *, claim_ids: Sequence[ClaimId], tenant_id: str
+        self, *, claim_ids: Sequence[ClaimId], workspace_id: str
     ) -> dict[ClaimId, ClaimAnnotation]: ...
 
     async def open_conflicts_for_account(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[FieldConflict, ...]: ...
 
 
@@ -225,7 +226,7 @@ class ReviewSurface(Protocol):
         *,
         account_entity_id: EntityId,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
     ) -> ReviewSession: ...

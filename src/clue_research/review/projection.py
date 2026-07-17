@@ -38,7 +38,7 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_by_ids,
     claims_for,
     current_value,
@@ -111,11 +111,11 @@ class ReviewProjector:
         session_id: ReviewSessionId,
         account_entity_id: EntityId,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         review_round: int,
         status: ReviewSessionStatus,
     ) -> ReviewSession:
-        scope = TenantScope.for_tenant(client_id)
+        scope = WorkspaceScope.for_workspace(workspace_id)
         account_id = await surviving_id(conn, account_entity_id, EntityType.ACCOUNT)
 
         fit = await self._read_score(conn, account_id, FIT_FIELD, scope=scope)
@@ -137,10 +137,10 @@ class ReviewProjector:
         for _cid, cclaims in committee_raw:
             all_claim_ids.extend(c.id for c in cclaims)
         annotations = await self._annotations.annotations_for_claims(
-            claim_ids=all_claim_ids, tenant_id=client_id
+            claim_ids=all_claim_ids, workspace_id=workspace_id
         )
         field_conflicts = await self._annotations.open_conflicts_for_account(
-            account_entity_id=account_id, tenant_id=client_id
+            account_entity_id=account_id, workspace_id=workspace_id
         )
 
         account_rows = tuple(
@@ -181,7 +181,7 @@ class ReviewProjector:
         )
 
     async def _read_score(
-        self, conn: AsyncConnection, account_id: EntityId, field_key: str, *, scope: TenantScope
+        self, conn: AsyncConnection, account_id: EntityId, field_key: str, *, scope: WorkspaceScope
     ) -> Score | None:
         cv = await current_value(conn, account_id, field_key, scope=scope)
         if cv is None or not isinstance(cv.value_json, dict):
@@ -199,7 +199,7 @@ class ReviewProjector:
         account_live: list[Claim],
         committee_raw: list[tuple[EntityId, list[Claim]]],
         *,
-        scope: TenantScope,
+        scope: WorkspaceScope,
     ) -> _Winners:
         winners: _Winners = {}
         acct_fields = {c.field_key for c in account_live}
@@ -278,12 +278,12 @@ class InMemoryVerificationAnnotationReader:
         self._conflicts = conflicts or {}
 
     async def annotations_for_claims(
-        self, *, claim_ids: Sequence[ClaimId], tenant_id: str
+        self, *, claim_ids: Sequence[ClaimId], workspace_id: str
     ) -> dict[ClaimId, ClaimAnnotation]:
         return {cid: self._annotations[cid] for cid in claim_ids if cid in self._annotations}
 
     async def open_conflicts_for_account(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[FieldConflict, ...]:
         return self._conflicts.get(account_entity_id, ())
 

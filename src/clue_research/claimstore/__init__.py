@@ -61,7 +61,7 @@ from clue_research.claimstore.registry import (
     register_field,
     validate_value,
 )
-from clue_research.claimstore.tenancy import ALL_TENANTS, PUBLIC_ONLY, TenantScope
+from clue_research.claimstore.tenancy import ALL_WORKSPACES, PUBLIC_ONLY, WorkspaceScope
 
 __all__ = [
     # write contract (M1.1)
@@ -84,9 +84,9 @@ __all__ = [
     "DEFAULT_MERGE_POLICY",
     "canonical_json",
     # tenant scoping (M2.5)
-    "TenantScope",
+    "WorkspaceScope",
     "PUBLIC_ONLY",
-    "ALL_TENANTS",
+    "ALL_WORKSPACES",
     # field registry (M1.3)
     "register_field",
     "get_field",
