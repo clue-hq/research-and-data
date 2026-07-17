@@ -43,6 +43,8 @@ dependencies = [
     "clue-core",
     "clue-db",
     "clue-config",
+    "clue-gateway",
+    "clue-locks",
 ]
 
 [dependency-groups]
@@ -71,6 +73,8 @@ clue-obs = { workspace = true }
 clue-core = { workspace = true }
 clue-db = { workspace = true }
 clue-config = { workspace = true }
+clue-gateway = { workspace = true }
+clue-locks = { workspace = true }
 
 # --- ruff: format + lint ----------------------------------------------------
 [tool.ruff]
@@ -91,13 +95,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["src/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config"]
-mypy_path = "src:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config"
+files = ["src/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config", "libs/clue-gateway/clue_gateway", "libs/clue-locks/clue_locks"]
+mypy_path = "src:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config:libs/clue-gateway:libs/clue-locks"
 explicit_package_bases = true
 namespace_packages = true
 strict = true
@@ -136,7 +140,7 @@ addopts = "-q"
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
 # breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
 [tool.importlinter]
-root_packages = ["clue_research", "clue_core", "clue_obs", "clue_db", "clue_config"]
+root_packages = ["clue_research", "clue_core", "clue_obs", "clue_db", "clue_config", "clue_gateway", "clue_locks"]
 include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
 
 # Rule 2 — core/ is the shared kernel: it imports nothing else inside clue_research.
@@ -144,7 +148,7 @@ include_external_packages = true  # required so provider-SDK (external) imports 
 name = "core is the shared kernel (imports nothing internal)"
 type = "forbidden"
 source_modules = ["clue_core"]
-forbidden_modules = ["clue_research", "clue_obs", "clue_db", "clue_config"]
+forbidden_modules = ["clue_research", "clue_obs", "clue_db", "clue_config", "clue_gateway", "clue_locks"]
 
 # Rule 1 (shape) — the shared base stays layered, now across root-level libs:
 # clue_obs (top) -> clue_config -> clue_core (bottom). Lower layers never import higher ones.
@@ -243,12 +247,14 @@ type = "forbidden"
 source_modules = [
     "clue_core",
     "clue_config",
-    "clue_obs.otel",
+    "clue_obs",
     "clue_db",
+    "clue_gateway",
+    "clue_locks",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.stage0",
@@ -295,12 +301,13 @@ type = "forbidden"
 source_modules = [
     "clue_core",
     "clue_config",
-    "clue_obs.otel",
+    "clue_obs",
     "clue_db",
+    "clue_locks",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",
@@ -317,6 +324,13 @@ source_modules = [
     "clue_research.api",
 ]
 forbidden_modules = ["openai"]
+
+# Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
+[[tool.importlinter.contracts]]
+name = "libs never import the subsystem"
+type = "forbidden"
+source_modules = ["clue_core", "clue_config", "clue_obs", "clue_db", "clue_gateway", "clue_locks"]
+forbidden_modules = ["clue_research"]
 
 # Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
 # into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —
@@ -337,7 +351,7 @@ forbidden_modules = ["clue_research.resolvers"]
 name = "claim store does not import identity / locks (no inversion)"
 type = "forbidden"
 source_modules = ["clue_research.claimstore"]
-forbidden_modules = ["clue_research.identity", "clue_research.locks"]
+forbidden_modules = ["clue_research.identity", "clue_locks"]
 
 # Rule 7 — the eval scaffold (evals/) is a CORE-ONLY leaf. It defines the generic gold-set / rubric /
 # report shapes every milestone's accuracy battery binds to (M9.6 fills it), so it must import only
@@ -354,12 +368,12 @@ forbidden_modules = [
     "clue_db",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",
     "clue_research.adapters",
-    "clue_research.gateway",
+    "clue_gateway",
     "clue_research.stage0",
     "clue_research.discovery_scoring",
     "clue_research.durable",
@@ -379,12 +393,12 @@ type = "forbidden"
 source_modules = [
     "clue_core",
     "clue_config",
-    "clue_obs.otel",
+    "clue_obs",
     "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",

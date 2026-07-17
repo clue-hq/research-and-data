@@ -9,7 +9,7 @@ later specs reference *is* this gateway. No component constructs a model-vendor 
 
 The **protocol and value types live here in ``core``** (the shared-contracts package) so every call
 site imports one shape; the **concrete OpenRouter client and the deterministic CI stub live in
-``clue_research.gateway``**, which imports ``obs`` to emit the ``llm.gateway_call`` span — ``core``
+``clue_gateway``**, which imports ``obs`` to emit the ``llm.gateway_call`` span — ``core``
 may not (the ``obs → config → core`` layering, M0.1). This mirrors ``core.Resolver`` (protocol here)
 ↔ ``resolvers/<provider>`` (implementations there).
 

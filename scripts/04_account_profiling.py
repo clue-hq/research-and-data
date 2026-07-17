@@ -21,8 +21,8 @@ import clue_obs
 from clue_config import GatewayConfig
 from clue_core import ICPCreatedFrom, ICPSpec
 from clue_db import db_lifespan, transaction
+from clue_gateway import build_gateway
 from clue_research.api.composition import load_research_packs
-from clue_research.gateway import build_gateway
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import profile_account
 

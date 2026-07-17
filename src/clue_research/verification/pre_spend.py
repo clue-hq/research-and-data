@@ -53,6 +53,7 @@ from clue_core import (
     serialize_value_json,
 )
 from clue_db import ConnFactory, transaction
+from clue_locks.entity_lock import lock_key
 from clue_obs.otel import (
     ATTR_ENTITY_ID,
     ATTR_ENTITY_TYPE,
@@ -73,7 +74,6 @@ from clue_research.claimstore.registry import (
     validate_value,
 )
 from clue_research.identity import get_entity
-from clue_research.locks.entity_lock import lock_key
 
 # Blocked-pre-spend counter (the "claims blocked pre-spend" verification-health signal, Doc C §6).
 # An M9-local metric name (metric names are plain strings the shared sink accepts) — defined here so

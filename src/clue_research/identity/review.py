@@ -44,6 +44,7 @@ from clue_core import (
     EqualityMode,
     serialize_value_json,
 )
+from clue_locks import multi_lock
 from clue_research.claimstore import (
     DEFAULT_MERGE_POLICY,
     MergePolicy,
@@ -62,7 +63,6 @@ from clue_research.identity.entities import (
 )
 from clue_research.identity.policy import DEFAULT_DISPOSITION_POLICY, DispositionPolicy
 from clue_research.identity.resolve import Observation, ResolutionResult
-from clue_research.locks import multi_lock
 
 
 class MergeConflictError(ValueError):

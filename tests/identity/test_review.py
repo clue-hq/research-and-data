@@ -430,7 +430,7 @@ def test_auto_merge_acquires_redis_locks_and_completes() -> None:
     """The merge path locks both candidates (M2.4 multi_lock) and completes (needs Redis)."""
 
     async def _run() -> None:
-        from clue_research.locks import create_redis
+        from clue_locks import create_redis
 
         client = create_redis()
         try:

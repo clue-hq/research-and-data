@@ -203,7 +203,7 @@ def test_admit_under_redis_lock_dedups_to_single_entity() -> None:
     constraint + the M2.4 lock tests)."""
 
     async def _run() -> None:
-        from clue_research.locks import create_redis
+        from clue_locks import create_redis
 
         client = create_redis()
         try:

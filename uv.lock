@@ -11,6 +11,8 @@ members = [
     "clue-config",
     "clue-core",
     "clue-db",
+    "clue-gateway",
+    "clue-locks",
     "clue-obs",
     "clue-research",
 ]
@@ -280,6 +282,42 @@ requires-dist = [
 ]
 
 [[package]]
+name = "clue-gateway"
+version = "0.0.0"
+source = { editable = "libs/clue-gateway" }
+dependencies = [
+    { name = "clue-config" },
+    { name = "clue-core" },
+    { name = "clue-obs" },
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-config", editable = "libs/clue-config" },
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "openai", specifier = ">=1.40" },
+]
+
+[[package]]
+name = "clue-locks"
+version = "0.0.0"
+source = { editable = "libs/clue-locks" }
+dependencies = [
+    { name = "clue-core" },
+    { name = "clue-obs" },
+    { name = "redis" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "redis", specifier = ">=5" },
+]
+
+[[package]]
 name = "clue-obs"
 version = "0.0.0"
 source = { editable = "libs/clue-obs" }
@@ -308,6 +346,8 @@ dependencies = [
     { name = "clue-config" },
     { name = "clue-core" },
     { name = "clue-db" },
+    { name = "clue-gateway" },
+    { name = "clue-locks" },
     { name = "clue-obs" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -340,6 +380,8 @@ requires-dist = [
     { name = "clue-config", editable = "libs/clue-config" },
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-db", editable = "libs/clue-db" },
+    { name = "clue-gateway", editable = "libs/clue-gateway" },
+    { name = "clue-locks", editable = "libs/clue-locks" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28.1" },

@@ -23,8 +23,8 @@ import clue_obs
 from clue_config import GatewayConfig
 from clue_core import AccountEntity, new_run_id
 from clue_db import db_lifespan, transaction
+from clue_gateway import build_gateway
 from clue_research.api.composition import load_research_packs
-from clue_research.gateway import build_gateway
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import discover_committee
 from clue_research.profiling.committee.sources import CommitteePersonCandidate
