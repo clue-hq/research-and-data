@@ -20,7 +20,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
-from clue_research.db import db_lifespan
+from clue_db import db_lifespan
 
 from .conftest import run_async
 

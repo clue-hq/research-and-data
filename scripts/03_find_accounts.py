@@ -22,7 +22,7 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 
 import clue_obs
-from clue_research.db import db_lifespan, transaction
+from clue_db import db_lifespan, transaction
 from clue_research.identity import insert_account_entity
 
 _DEFAULT_NAMES = ["Acme Robotics", "Globex", "Initech", "Umbrella Health", "Stark Industries"]

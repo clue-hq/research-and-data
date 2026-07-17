@@ -34,7 +34,7 @@ from clue_core import (
     UnitInterval,
     UtcDatetime,
 )
-from clue_research.db import ConnFactory, connection, transaction
+from clue_db import ConnFactory, connection, transaction
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,

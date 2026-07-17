@@ -34,6 +34,7 @@ from clue_core import (
     WorkerResult,
     WorkerStatus,
 )
+from clue_db import ConnFactory
 from clue_research.config import (
     ConfidenceThresholds,
     OverlayStore,
@@ -41,7 +42,6 @@ from clue_research.config import (
     SourcePlanPolicy,
     get_config,
 )
-from clue_research.db import ConnFactory
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, get_contact, surviving_id
 from clue_research.profiling.contact.binding import DEFAULT_BINDING_CLASSIFIER, BindingClassifier

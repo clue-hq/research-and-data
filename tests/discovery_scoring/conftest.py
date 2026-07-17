@@ -29,7 +29,7 @@ from clue_core import (
     ICPSpec,
     Message,
 )
-from clue_research.db import db_lifespan
+from clue_db import db_lifespan
 from clue_research.discovery_scoring.discovery import (
     CandidateHypothesis,
     CandidateRecord,

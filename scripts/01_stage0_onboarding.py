@@ -16,8 +16,8 @@ import argparse
 import asyncio
 
 import clue_obs
+from clue_db import db_lifespan, transaction
 from clue_research.api.composition import load_research_packs
-from clue_research.db import db_lifespan, transaction
 from clue_research.stage0 import ClientInput, reverse_profile
 
 

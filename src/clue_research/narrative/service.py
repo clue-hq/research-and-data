@@ -36,7 +36,7 @@ from clue_core import (
     UnitInterval,
     UtcDatetime,
 )
-from clue_research.db import ConnFactory
+from clue_db import ConnFactory
 from clue_research.narrative.handoff import AssembledHandoff, HandoffAssembler
 from clue_research.narrative.handoff_events import (
     HandoffEvent,

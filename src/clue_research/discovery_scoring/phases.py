@@ -35,8 +35,8 @@ from clue_core import (
     PhaseStatus,
     RunId,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import ALL_TENANTS
-from clue_research.db import ConnFactory, transaction
 from clue_research.discovery_scoring.coverage import (
     DEFAULT_COVERAGE_CONFIG,
     CoverageConfig,

@@ -74,8 +74,8 @@ from clue_core import (
     serialize_value_json,
 )
 from clue_core.entity import AccountEntity
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import record_verification
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact
 from clue_research.obs import (
     ATTR_CACHE_HIT,

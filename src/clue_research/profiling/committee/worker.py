@@ -45,8 +45,8 @@ from clue_core import (
     WorkerStatus,
     contact_claim,
 )
+from clue_db import ConnFactory
 from clue_research.claimstore import TenantScope, claims_for, insert_claim
-from clue_research.db import ConnFactory
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, stamp_reuse, surviving_id
 from clue_research.profiling.committee.admission import AdmissionStatus, admit_candidate

@@ -14,7 +14,7 @@
 
 - One distribution `clue-research` (hatchling, `src/clue_research`, 23 packages), no uv
   workspace; 12 import-linter contracts live in root `pyproject.toml`; alembic env imports
-  `clue_research.db`, hand-written reversible migrations, one head.
+  `clue_db`, hand-written reversible migrations, one head.
 - `make check` currently **fails**: 15 ruff errors — 1 × I001 in the uncommitted Settings slice
   (`config/__init__.py`), ~14 × E501 overlong docstrings in committed code (`identity/resolve.py`,
   `profiling/account.py`, `icp/source_profile.py`, …) — the last two commits landed ungated.

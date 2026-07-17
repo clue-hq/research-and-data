@@ -77,6 +77,7 @@ from clue_core import (
     classify_field_key,
     new_run_id,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     ALL_TENANTS,
     claims_for,
@@ -84,7 +85,6 @@ from clue_research.claimstore import (
     supersede_claims,
 )
 from clue_research.compliance.lawful_basis import LawfulBasisRecord, load_lawful_basis
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import dsar_private_claims, stamp_reuse
 from clue_research.obs import (
     ATTR_ENTITY_ID,

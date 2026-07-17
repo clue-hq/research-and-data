@@ -47,7 +47,7 @@ from clue_core import (
     parse_cost_cents,
 )
 from clue_core.idempotency import phase_key
-from clue_research.db import transaction
+from clue_db import transaction
 from clue_research.durable.campaign_run import (
     CampaignPhaseCheckpointRow,
     CampaignRunRow,

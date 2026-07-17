@@ -41,9 +41,9 @@ from clue_core import (
     new_claim_id,
 )
 from clue_core.execution import AspectWorker
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import load_core_pack
 from clue_research.config import RecursionPolicy
-from clue_research.db import ConnFactory, transaction
 from clue_research.durable import (
     AccountResearchGraph,
     WorkerRegistry,

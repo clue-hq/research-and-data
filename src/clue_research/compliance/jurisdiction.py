@@ -49,6 +49,7 @@ from clue_core import (
     RunId,
     UnitInterval,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     TenantScope,
     claims_for,
@@ -63,7 +64,6 @@ from clue_research.config import (
     RegimeMapping,
     get_policy,
 )
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, get_contact, stamp_reuse
 from clue_research.obs import (
     ATTR_CLIENT_ID,

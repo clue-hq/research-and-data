@@ -26,9 +26,9 @@ from clue_core import (
     new_run_id,
 )
 from clue_core.field import FieldDef
+from clue_db import db_lifespan, transaction
 from clue_research.claimstore import insert_claim, register_field
 from clue_research.claimstore.tenancy import TenantScope
-from clue_research.db import db_lifespan, transaction
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,

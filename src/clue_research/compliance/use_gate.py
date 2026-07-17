@@ -62,6 +62,7 @@ from clue_core import (
     UseReason,
     decode_jsonb,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import TenantScope, current_value
 from clue_research.compliance.fields import CONTACT_JURISDICTION
 from clue_research.config import (
@@ -73,7 +74,6 @@ from clue_research.config import (
     SourceScope,
     UseDisposition,
 )
-from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_ENTITY_ID,

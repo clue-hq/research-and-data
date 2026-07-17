@@ -24,8 +24,8 @@ from clue_core import (
     PhaseStatus,
     new_campaign_run_id,
 )
+from clue_db import db_lifespan, transaction
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan, transaction
 from clue_research.sources import bind_resolver, seed_source_manifests
 from clue_research.stage0 import ReverseProfilingHandler
 from clue_research.stage0.fields import CLIENT_VALUE_PROP

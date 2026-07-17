@@ -71,10 +71,10 @@ from clue_core import (
     classify_field_key,
 )
 from clue_core.field import FieldKey
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import ALL_TENANTS, TenantScope
 from clue_research.config.policy import RetentionTtls
 from clue_research.config.schema import FreshnessTtls
-from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     SPAN_VERIFICATION_FRESHNESS,
     MetricSink,

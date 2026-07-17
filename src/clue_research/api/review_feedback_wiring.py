@@ -47,6 +47,7 @@ from typing import Protocol, runtime_checkable
 
 from clue_core import Claim, ClaimId, EntityId
 from clue_core.review import ReviewDispositionEmitter
+from clue_db import ConnFactory, connection, transaction
 from clue_research.api.disposition_wiring import build_review_disposition_emitter
 from clue_research.api.review import (
     ReviewPhaseHandler,
@@ -61,7 +62,6 @@ from clue_research.compliance import (
     ErasureScope,
     ObjectionResult,
 )
-from clue_research.db import ConnFactory, connection, transaction
 from clue_research.durable.campaign import CampaignRun
 from clue_research.obs import MetricSink
 from clue_research.review import DispositionStore

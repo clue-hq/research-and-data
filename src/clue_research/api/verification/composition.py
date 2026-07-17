@@ -33,6 +33,7 @@ from collections.abc import Sequence
 from clue_core import Claim, EntityId
 from clue_core.compliance import UseGate
 from clue_core.gateway import LLMGateway
+from clue_db import ConnFactory, transaction
 from clue_research.api.verification.handler import (
     ClaimCorroborator,
     ContactResolver,
@@ -42,7 +43,6 @@ from clue_research.api.verification.handler import (
 )
 from clue_research.claimstore import TenantScope, claims_for
 from clue_research.compliance import UseGateImpl, load_client_policy
-from clue_research.db import ConnFactory, transaction
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
 from clue_research.obs import MetricSink

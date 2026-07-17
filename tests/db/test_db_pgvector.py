@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from clue_research.db import db_lifespan, transaction
+from clue_db import db_lifespan, transaction
 
 from .conftest import run_async
 

@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import CampaignRunId, CostCents, EntityId, RunId
-from clue_research.db import ConnFactory, transaction
+from clue_db import ConnFactory, transaction
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,

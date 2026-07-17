@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from sqlalchemy import text
 
-from clue_research.db import DATABASE_URL_ENV, create_engine
+from clue_db import DATABASE_URL_ENV, create_engine
 
 
 def run_async[T](coro: Coroutine[Any, Any, T]) -> T:

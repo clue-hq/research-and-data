@@ -53,6 +53,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_core.field import field_namespace
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     PUBLIC_ONLY,
     TenantScope,
@@ -60,7 +61,6 @@ from clue_research.claimstore import (
     list_fields,
 )
 from clue_research.config import OverlayStore, RecursionPolicy
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,

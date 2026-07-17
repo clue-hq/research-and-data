@@ -69,9 +69,9 @@ from clue_core import (
     serialize_value_json,
 )
 from clue_core.gateway import LLMGateway, Message, Role
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import record_verification
 from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG
-from clue_research.db import ConnFactory, transaction
 from clue_research.obs import (
     ATTR_CACHE_HIT,
     ATTR_COST_CENTS,
