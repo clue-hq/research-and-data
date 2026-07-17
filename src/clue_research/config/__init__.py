@@ -23,7 +23,12 @@ Implements ENG-120 (docs/specs/M00-foundations-and-shared-contracts.md §M0.4).
 
 from __future__ import annotations
 
-from clue_research.config.gateway import DEFAULT_GATEWAY_CONFIG, GatewayConfig, ModelPrice
+from clue_research.config.gateway import (
+    DEFAULT_GATEWAY_CONFIG,
+    GatewayConfig,
+    ModelPrice,
+    default_gateway_config,
+)
 from clue_research.config.loader import (
     ConfigError,
     OverlayStore,
@@ -71,6 +76,7 @@ from clue_research.config.secrets import (
     redact,
     redact_mapping,
 )
+from clue_research.config.settings import DEFAULT_SYNTHESIS_MODEL, Settings, load_settings
 
 __all__ = [
     # loader / seam
@@ -118,6 +124,11 @@ __all__ = [
     "GatewayConfig",
     "ModelPrice",
     "DEFAULT_GATEWAY_CONFIG",
+    "default_gateway_config",
+    # deploy-time settings (non-secret env)
+    "Settings",
+    "load_settings",
+    "DEFAULT_SYNTHESIS_MODEL",
     # secrets
     "Secrets",
     "redact",

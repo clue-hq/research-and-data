@@ -59,10 +59,6 @@ _FLOOR_FIRMOGRAPHIC = ("core.employee_count", "core.primary_domain")
 _FLOOR_GROWTH_PROXY = "account.recent_funding"
 _FLOOR_GROWTH_NARRATIVE = "account.hiring_velocity_eng"
 
-# Default synthesis model — versioned config (a per-client overlay swaps it; tests inject a fake
-# gateway and ignore it). Passed straight to ``gateway.complete(model=...)`` — never an SDK call.
-DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4-8"
-
 
 async def synthesize_icps(
     conn: AsyncConnection,
