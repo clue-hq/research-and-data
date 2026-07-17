@@ -126,8 +126,25 @@ spine as libs/clue-spine (new box vs Doc R tree); tenant_private retained; heade
   _normalize_url (netloc-keeping), identity/normalize.py registrable_domain (validator).
 - **LEDGER: BudgetTracker (DRY item 5) DEFERRED out of Phase A** — same-file collision with the
   claim_tagger work, blocks nothing in Phase B; spec pre-authorized the split.
-- IN FLIGHT: claim_tagger pre-insert hook + contact-fill waterfall rejoin (subagent).
+- **LEDGER: claim_tagger consolidation BLOCKED → DEFERRED (needs design rulings).** Subagent
+  stopped correctly, no code changed. fill.py genuinely diverges from the waterfall: (1) per-claim
+  DROP semantics (tier-4 WEAK rejected pre-write) which would change confident-stop/TierStep
+  accounting; (2) per-SOURCE pre-spend gating (resolve_field has no gate seam; AC-6 test pins the
+  gate_decision rows); (3) waterfall's fail-loud tier-mismatch guarantee vs an existing fixture
+  binding a tier-3 fake to the tier-4 exa_deep manifest. Full analysis in
+  `_memory/2026-07-17-claim-tagger-consolidation-blocked.md`. Needs: hook type Claim→Claim|None +
+  stop-accounting-basis ruling; gate seam on resolve_field; fixture/tier ruling. Slot with build
+  step 4 (goal-judge touches the waterfall seam anyway).
+- **A3.1 rename DONE** (`b9aab40`, 215 files ±2.1k): migration b61cd4887129 (19 RENAME COLUMNs;
+  client_policy table → workspace_policy; 3 plpgsql guards recreated — census had said 1;
+  labeled_dataset view drop+recreate REQUIRED — RENAME COLUMN rewrites internal refs but keeps
+  old OUTPUT aliases); coherence renames (WorkspaceScope, WorkspacePolicy, X-Workspace-Id,
+  ATTR_WORKSPACE_ID, --workspace-id flags); collision site profiling/context.py RunContext
+  collapsed to one field; guard test with EMPTY allowlist. Retained: tenant_private family,
+  tenancy.py filename, client_knowledge_ids (client-KB concept; its claim_support_client_ids_is_
+  array CHECK is the one old-vocab DB name left, deliberate). All 4 gates verified independently.
+- IN FLIGHT: A3.2 clue-spine (subagent; DDL pinned in PA spec §A3.2).
 
 ## Next
-claim_tagger review+commit → A3 (rename migration + code rename, then clue-spine) → A4 (R2
-scaffolds + clue_research → subsystems/). No push.
+spine review+commit → A4 (R2 scaffolds + clue_research → subsystems/ + Doc R §7 doc updates) →
+completeness review vs spec + deferral ledger to founder. No push.
