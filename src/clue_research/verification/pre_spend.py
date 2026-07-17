@@ -52,13 +52,13 @@ from clue_core import (
     TargetLock,
     serialize_value_json,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore.registry import (
     UnknownFieldError,
     ValueSchemaError,
     get_field,
     validate_value,
 )
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import get_entity
 from clue_research.locks.entity_lock import lock_key
 from clue_research.obs import (

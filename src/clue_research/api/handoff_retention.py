@@ -39,9 +39,9 @@ from clue_core import (
     PhaseHandler,
     PhaseResult,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.api.verification.handler import ContactResolver, VerificationAccountResolver
 from clue_research.compliance import RetentionSweep
-from clue_research.db import ConnFactory, transaction
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
 from clue_research.obs import MetricSink

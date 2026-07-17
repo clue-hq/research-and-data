@@ -16,9 +16,9 @@ import asyncio
 from uuid import UUID
 
 import clue_obs
+from clue_db import db_lifespan, transaction
 from clue_research.api.composition import load_research_packs
 from clue_research.config import GatewayConfig, load_settings
-from clue_research.db import db_lifespan, transaction
 from clue_research.gateway import build_gateway
 from clue_research.stage0 import ClientKnowledgeBaseRef, confirm_icp, synthesize_icps
 

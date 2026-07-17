@@ -49,8 +49,8 @@ from clue_core.review import (
     ReviewSessionId,
     VerificationAnnotationReader,
 )
+from clue_db import ConnFactory
 from clue_research.claimstore import TenantScope, claims_by_ids, supersede_claim
-from clue_research.db import ConnFactory
 from clue_research.review.projection import ReviewProjector
 from clue_research.review.repository import (
     count_open_sessions,

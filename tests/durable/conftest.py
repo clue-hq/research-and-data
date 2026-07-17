@@ -30,8 +30,8 @@ from clue_core import (
     WorkerStatus,
     new_claim_id,
 )
+from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan
 from clue_research.durable.account_run import ReferencesIndex
 from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
 from clue_research.durable.graph import AccountRunStore

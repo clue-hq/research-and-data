@@ -10,8 +10,8 @@ joins in ``api/review_feedback_wiring.py``.
 from __future__ import annotations
 
 from clue_core import BacktestGate
+from clue_db import ConnFactory, connection, transaction
 from clue_research.api.backtest_wiring import build_backtest_gate
-from clue_research.db import ConnFactory, connection, transaction
 from clue_research.review import DEFAULT_REWEIGHT_POLICY, LearningLoopImpl, ReweightPolicy
 
 

@@ -71,6 +71,7 @@ from clue_core import (
 )
 from clue_core.enums import PreSpendVerdict, ReuseScope
 from clue_core.field import resolve_reuse_scope
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import claims_for, get_field
 from clue_research.config import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
@@ -80,7 +81,6 @@ from clue_research.config import (
     SourcePlanPolicy,
     get_config,
 )
-from clue_research.db import ConnFactory, transaction
 from clue_research.icp import get_icp_version
 from clue_research.identity import get_account, surviving_id
 from clue_research.profiling.context import RunContext

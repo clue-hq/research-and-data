@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "clue-core",
+    "clue-db",
     "clue-obs",
     "clue-research",
 ]
@@ -244,6 +245,23 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
 
 [[package]]
+name = "clue-db"
+version = "0.0.0"
+source = { editable = "libs/clue-db" }
+dependencies = [
+    { name = "asyncpg" },
+    { name = "pgvector" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncpg" },
+    { name = "pgvector" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+]
+
+[[package]]
 name = "clue-obs"
 version = "0.0.0"
 source = { editable = "libs/clue-obs" }
@@ -262,6 +280,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "clue-core" },
+    { name = "clue-db" },
     { name = "clue-obs" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -292,6 +311,7 @@ requires-dist = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-db", editable = "libs/clue-db" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28.1" },

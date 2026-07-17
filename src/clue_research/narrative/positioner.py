@@ -61,6 +61,7 @@ from clue_core import (
     is_outreach_promotable,
 )
 from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     TenantScope,
     claims_for,
@@ -68,7 +69,6 @@ from clue_research.claimstore import (
     insert_claim,
     supersede_claim,
 )
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import stamp_reuse
 from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_research.narrative.policy import DEFAULT_POSITIONING_POLICY, PositioningPolicy

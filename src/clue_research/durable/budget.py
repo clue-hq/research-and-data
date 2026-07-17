@@ -56,8 +56,8 @@ from clue_core import (
     Estimate,
     RunId,
 )
+from clue_db import transaction
 from clue_research.config import BudgetCaps
-from clue_research.db import transaction
 from clue_research.durable.budget_event import (
     AccountBudgetState,
     RunBudgetState,

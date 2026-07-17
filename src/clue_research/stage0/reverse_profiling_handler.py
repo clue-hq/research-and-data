@@ -30,7 +30,7 @@ from clue_core import (
     PhaseStatus,
     RunId,
 )
-from clue_research.db import transaction
+from clue_db import transaction
 from clue_research.stage0.client_kb import reverse_profile
 from clue_research.stage0.types import ClientInput
 

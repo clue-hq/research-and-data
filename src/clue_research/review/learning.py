@@ -23,7 +23,7 @@ from clue_core import (
     ICPCreatedFrom,
     PromotionMode,
 )
-from clue_research.db import ConnFactory, transaction
+from clue_db import ConnFactory, transaction
 from clue_research.icp import (
     WeightedSource,
     create_icp_spec,

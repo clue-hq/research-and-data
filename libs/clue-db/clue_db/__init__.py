@@ -1,4 +1,4 @@
-"""`clue_research.db` — Postgres + pgvector + migrations (M0.3).
+"""`clue_db` — Postgres + pgvector + migrations (M0.3).
 
 The shared persistence layer and the **single DB access contract** every persistence-touching
 milestone consumes (conventions §2; substrate §12 — "Postgres is the only source of truth; no
@@ -16,7 +16,7 @@ Implements ENG-114 (docs/specs/M00-foundations-and-shared-contracts.md §M0.3).
 
 from __future__ import annotations
 
-from clue_research.db.engine import (
+from clue_db.engine import (
     DATABASE_URL_ENV,
     DEFAULT_DATABASE_URL,
     ConnFactory,

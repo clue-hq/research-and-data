@@ -22,8 +22,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan
 from clue_research.narrative import load_narrative_pack
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async

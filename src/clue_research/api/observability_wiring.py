@@ -44,9 +44,9 @@ from clue_core import (
     UnsearchedChannel,
     VerificationStatus,
 )
+from clue_db import ConnFactory, connection
 from clue_research.claimstore import TenantScope, claims_for_runs
 from clue_research.config import BudgetCaps, get_config
-from clue_research.db import ConnFactory, connection
 from clue_research.discovery_scoring import CoverageReport as _DiscoveryCoverageReport
 from clue_research.durable import (
     BudgetStateNotFound,

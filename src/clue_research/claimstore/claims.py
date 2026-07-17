@@ -158,7 +158,7 @@ async def insert_claim(
 ) -> ClaimId:
     """Insert one claim and return its id (the reference callers pass around).
 
-    Run inside :func:`clue_research.db.transaction` when the write must be atomic with a
+    Run inside :func:`clue_db.transaction` when the write must be atomic with a
     supersession. ``collected_at`` is stamped at :class:`Claim` construction and
     ``verification_status`` defaults to ``unverified`` — both are persisted as-is.
 

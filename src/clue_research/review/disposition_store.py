@@ -43,8 +43,8 @@ from clue_core import (
     serialize_value_json,
 )
 from clue_core.review import ReviewActionOutcome
+from clue_db import ConnFactory, transaction
 from clue_research.claimstore import TenantScope, claims_by_ids
-from clue_research.db import ConnFactory, transaction
 from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,
     Observation,

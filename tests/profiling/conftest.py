@@ -46,8 +46,8 @@ from clue_core import (
     contact_claim,
     new_run_id,
 )
+from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan
 from clue_research.identity import (
     get_account,
     get_contact,

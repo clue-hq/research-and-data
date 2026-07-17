@@ -41,6 +41,7 @@ dependencies = [
     # Doc R workspace libs (libs/*).
     "clue-obs",
     "clue-core",
+    "clue-db",
 ]
 
 [dependency-groups]
@@ -67,6 +68,7 @@ members = ["libs/*"]
 [tool.uv.sources]
 clue-obs = { workspace = true }
 clue-core = { workspace = true }
+clue-db = { workspace = true }
 
 # --- ruff: format + lint ----------------------------------------------------
 [tool.ruff]
@@ -87,13 +89,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs", "clue_core"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["src/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core"]
-mypy_path = "src:libs/clue-obs:libs/clue-core"
+files = ["src/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db"]
+mypy_path = "src:libs/clue-obs:libs/clue-core:libs/clue-db"
 explicit_package_bases = true
 namespace_packages = true
 strict = true
@@ -132,7 +134,7 @@ addopts = "-q"
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
 # breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
 [tool.importlinter]
-root_packages = ["clue_research", "clue_core", "clue_obs"]
+root_packages = ["clue_research", "clue_core", "clue_obs", "clue_db"]
 include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
 
 # Rule 2 — core/ is the shared kernel: it imports nothing else inside clue_research.
@@ -140,7 +142,7 @@ include_external_packages = true  # required so provider-SDK (external) imports 
 name = "core is the shared kernel (imports nothing internal)"
 type = "forbidden"
 source_modules = ["clue_core"]
-forbidden_modules = ["clue_research", "clue_obs"]
+forbidden_modules = ["clue_research", "clue_obs", "clue_db"]
 
 # Rule 1 (shape) — the shared base is layered obs -> config -> core; no upward imports.
 # Everything else may freely import this trio (that is the default, not constrained here).
@@ -234,7 +236,7 @@ source_modules = [
     "clue_core",
     "clue_research.config",
     "clue_research.obs",
-    "clue_research.db",
+    "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
@@ -286,7 +288,7 @@ source_modules = [
     "clue_core",
     "clue_research.config",
     "clue_research.obs",
-    "clue_research.db",
+    "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
@@ -341,7 +343,7 @@ name = "the eval scaffold (evals/) is a core-only leaf"
 type = "forbidden"
 source_modules = ["clue_research.evals"]
 forbidden_modules = [
-    "clue_research.db",
+    "clue_db",
     "clue_research.claimstore",
     "clue_research.identity",
     "clue_research.locks",
@@ -370,7 +372,7 @@ source_modules = [
     "clue_core",
     "clue_research.config",
     "clue_research.obs",
-    "clue_research.db",
+    "clue_db",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",

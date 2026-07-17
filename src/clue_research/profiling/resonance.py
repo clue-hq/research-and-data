@@ -44,8 +44,8 @@ from clue_core import (
     WorkerResult,
     new_campaign_run_id,
 )
+from clue_db import ConnFactory, transaction
 from clue_research.config import OverlayStore
-from clue_research.db import ConnFactory, transaction
 from clue_research.profiling.aspect_worker import (
     DEEP_PROFILING_PLANNER_CONFIG,
     AspectProfilingWorker,

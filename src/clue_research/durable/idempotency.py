@@ -59,7 +59,7 @@ from clue_core import (
     parse_value_json,
     serialize_value_json,
 )
-from clue_research.db import transaction
+from clue_db import transaction
 from clue_research.durable.enums import IdempotencyStatus
 
 # An ``in_progress`` ledger row older than this is presumed crashed (its holder died mid-step) and
