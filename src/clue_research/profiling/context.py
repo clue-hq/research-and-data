@@ -12,8 +12,8 @@ for phase-specific inputs … so adding one does not force a ``core`` change"). 
 only ``{"recursion": {...}}`` today; the **api composition root** populates the campaign coordinates
 when it builds the per-account graph run (``api/composition.py`` / ``api/deep/composition.py``).
 :class:`RunContext` reads them defensively: every field is optional and the worker degrades to a
-correct, *flagged* output (never a crash) when a coordinate is absent — the same fail-soft discipline
-as the M9.1 / M9.4 deferred gate wirings.
+correct, *flagged* output (never a crash) when a coordinate is absent — the same fail-soft
+discipline as the M9.1 / M9.4 deferred gate wirings.
 """
 
 from __future__ import annotations

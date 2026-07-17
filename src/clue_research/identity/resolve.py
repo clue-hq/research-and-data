@@ -109,8 +109,8 @@ def _geo_country(geo: Mapping[str, object] | None) -> str | None:
 def _geo_agreement(
     obs_geo: Mapping[str, object] | None, cand_geo: Mapping[str, object] | None
 ) -> float:
-    """Pairwise geo feature for :func:`_score`: ``1.0`` match, ``0.0`` mismatch, ``0.5`` if either side
-    lacks a country (neutral — does not penalize unknown geo)."""
+    """Pairwise geo feature for :func:`_score`: ``1.0`` match, ``0.0`` mismatch, ``0.5`` if
+    either side lacks a country (neutral — does not penalize unknown geo)."""
     obs_country, cand_country = _geo_country(obs_geo), _geo_country(cand_geo)
     if obs_country is None or cand_country is None:
         return 0.5  # neutral — one side unknown
@@ -133,7 +133,8 @@ def _name_jaccard(obs_name: str, candidate_aliases: Sequence[str]) -> float:
 
 
 def _alias_overlap(obs_aliases: Sequence[str], candidate_aliases: Sequence[str]) -> float:
-    """Share of the observation's normalized alias keys that appear on the candidate (``0.0``–``1.0``)."""
+    """Share of the observation's normalized alias keys that appear on the candidate
+    (``0.0``–``1.0``)."""
     obs_keys = {name_key(a) for a in obs_aliases if name_key(a)}
     if not obs_keys:
         return 0.0
@@ -141,7 +142,8 @@ def _alias_overlap(obs_aliases: Sequence[str], candidate_aliases: Sequence[str])
 
 
 def _domain_agreement(obs: Observation, cand_domain: str | None) -> float:
-    """``1.0`` when both sides have the same registrable domain; ``0.0`` otherwise (including missing)."""
+    """``1.0`` when both sides have the same registrable domain; ``0.0`` otherwise (including
+    missing)."""
     obs_domain = registrable_domain(obs.domain) if obs.domain else None
     if obs_domain is None or cand_domain is None:
         return 0.0  # strong-key budget stays unearned without a confirmed domain

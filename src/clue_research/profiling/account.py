@@ -182,8 +182,9 @@ async def _deep_account_gap_fields(
 
     Reads the registered ``pass=deep`` schema, narrows it to the ICP's active ``field_keys`` (when
     the spec declares any) and the account axis, then drops every field whose ``current_value`` is
-    already  ``FRESH`` — a field with no value, or a ``STALE`` / ``EXPIRED`` one, is a gap (a refresh is
-    wanted), never silently skipped (substrate §1/§6). Mirrors ``durable.planning.compute_gap_fields``
+    already  ``FRESH`` — a field with no value, or a ``STALE`` / ``EXPIRED`` one, is a gap (a
+    refresh is wanted), never silently skipped (substrate §1/§6). Mirrors
+    ``durable.planning.compute_gap_fields``
     over claimstore primitives (no ``durable`` import)."""
     deep_fields = [
         f
@@ -380,11 +381,12 @@ def account_axis_workers(
     Returns one worker per account-axis aspect key the graph's field-class clustering can produce:
     the generic :class:`AspectProfilingWorker` for ``account`` / ``core`` and each enabled pack
     namespace, plus the :class:`ResonanceAspectWorker` for ``account.resonance``. ``profiling``
-    cannot import ``durable`` (the independence contract), so it cannot call ``register_aspect_worker``
+    cannot import ``durable`` (the independence contract), so it cannot call
+    ``register_aspect_worker``
     itself — the api root does ``for w in account_axis_workers(...): register_aspect_worker(w)``
     after ``load_deep_profiling_pack``. ``pack_namespaces`` are the vertical packs enabled for the
-    campaign (knowable at composition time); a pack aspect with no registered worker would otherwise be
-    marked ``FAILED`` by the graph (``durable.graph._run_one_worker``)."""
+    campaign (knowable at composition time); a pack aspect with no registered worker would
+    otherwise be marked ``FAILED`` by the graph (``durable.graph._run_one_worker``)."""
 
     def _generic(aspect: str) -> AspectProfilingWorker:
         return AspectProfilingWorker(
