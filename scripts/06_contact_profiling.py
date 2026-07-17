@@ -18,6 +18,7 @@ import argparse
 import asyncio
 from uuid import UUID, uuid4
 
+import clue_obs
 from clue_research.api.composition import load_research_packs
 from clue_research.core import (
     Claim,
@@ -121,6 +122,7 @@ async def main(client_id: str, tier: str, account_id: str | None, contact_id: st
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="M4 deep contact profiling")
     p.add_argument("--client-id", default="acme")
     p.add_argument("--tier", default="high")
