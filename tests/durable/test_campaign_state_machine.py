@@ -63,7 +63,7 @@ def test_advances_through_all_phases_in_order() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.run_to_completion(run_id)
         assert run.status is CampaignRunStatus.COMPLETED
         assert run.phase is CampaignPhase.HANDOFF
@@ -98,7 +98,7 @@ def test_tier_checkpoint_suspends_then_submit_resumes_deep() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.run_to_completion(run_id)
         # suspended durably at the human gate; deep has NOT run
         assert run.status is CampaignRunStatus.PAUSED
@@ -148,7 +148,7 @@ def test_suspended_run_survives_restart() -> None:
 
     async def _run() -> None:
         run_id = await CampaignRun(store=store, registry=registry).start(
-            client_id="c1", icp_key="default", icp_version=1
+            workspace_id="c1", icp_key="default", icp_version=1
         )
         await CampaignRun(store=store, registry=registry).run_to_completion(run_id)
         # a brand-new state-machine instance (simulating a process restart) over the same store
@@ -172,7 +172,7 @@ def test_pause_resume_does_not_respend() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.advance(run_id)  # reverse_profiling -> icp_confirmed
         run = await machine.advance(run_id)  # icp_confirmed -> discovery
         assert run.phase is CampaignPhase.DISCOVERY
@@ -205,7 +205,7 @@ def test_committed_checkpoint_short_circuits_reentry() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.advance(run_id)  # reverse_profiling committed + transitioned
         assert (await machine.status(run_id)).phase is CampaignPhase.ICP_CONFIRMED
         assert handlers[CampaignPhase.REVERSE_PROFILING].calls == 1
@@ -235,7 +235,7 @@ def test_failed_phase_marks_run_failed() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.run_to_completion(run_id)
         assert run.status is CampaignRunStatus.FAILED
         assert run.phase is CampaignPhase.DISCOVERY
@@ -255,7 +255,7 @@ def test_adjust_updates_fields_and_journals() -> None:
     machine = CampaignRun(store=store, registry=registry, budget_engine=budget)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.adjust(
             run_id,
             budget_cap_cents=Decimal("100000"),
@@ -280,7 +280,7 @@ def test_adjusted_icp_version_seen_by_next_phase() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.adjust(run_id, icp_version=7)
         await machine.advance(run_id)  # reverse_profiling compiles against the new version
         ctx = handlers[CampaignPhase.REVERSE_PROFILING].seen_contexts[0]
@@ -297,7 +297,7 @@ def test_pre_run_estimate_delegates_to_budget_engine() -> None:
 
     async def _run() -> None:
         run_id = await machine.start(
-            client_id="c1", icp_key="default", icp_version=1, tier_cutoffs={"top": 0.8}
+            workspace_id="c1", icp_key="default", icp_version=1, tier_cutoffs={"top": 0.8}
         )
         estimate = await machine.pre_run_estimate(run_id, discovered_count=500)
         assert estimate.discovered_count == 500
@@ -314,7 +314,7 @@ def test_pre_run_estimate_without_engine_raises() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         with pytest.raises(BudgetEngineNotConfigured):
             await machine.pre_run_estimate(run_id, discovered_count=10)
 
@@ -332,7 +332,7 @@ def test_submit_approve_applies_embedded_adjustments() -> None:
     machine = CampaignRun(store=store, registry=registry, budget_engine=budget)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         run = await machine.submit_checkpoint(
             run_id,
@@ -364,7 +364,7 @@ def test_submit_pause_keeps_suspended() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         run = await machine.submit_checkpoint(run_id, decision={"action": "pause"})
         assert run.phase is CampaignPhase.TIER_CHECKPOINT
@@ -381,7 +381,7 @@ def test_advance_without_handler_raises() -> None:
     machine = CampaignRun(store=FakeCampaignRunStore(), registry=PhaseHandlerRegistry())
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         with pytest.raises(NoPhaseHandlerRegistered):
             await machine.advance(run_id)
 
@@ -395,7 +395,7 @@ def test_completed_run_advance_is_noop() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         run = await machine.advance(run_id)
         assert run.status is CampaignRunStatus.COMPLETED
@@ -413,12 +413,12 @@ def test_start_is_idempotent_on_supplied_id() -> None:
     async def _run() -> None:
         run_id = new_campaign_run_id()
         await machine.start(
-            client_id="c1", icp_key="default", icp_version=1, campaign_run_id=run_id
+            workspace_id="c1", icp_key="default", icp_version=1, campaign_run_id=run_id
         )
         await machine.advance(run_id)  # advance to icp_confirmed
         # a re-start with the same id must not reset an advanced run
         await machine.start(
-            client_id="c1", icp_key="default", icp_version=1, campaign_run_id=run_id
+            workspace_id="c1", icp_key="default", icp_version=1, campaign_run_id=run_id
         )
         assert (await machine.status(run_id)).phase is CampaignPhase.ICP_CONFIRMED
 
@@ -458,7 +458,7 @@ def test_malformed_budget_cap_does_not_crash_or_persist() -> None:
         store = FakeCampaignRunStore()
         budget = FakeBudgetEngine()
         machine, _ = _gate_machine(store, budget=budget)
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         run = await machine.submit_checkpoint(
             run_id, decision={"action": "approve", "budget_cap_cents": bad_value}
@@ -481,7 +481,7 @@ def test_valid_budget_cap_still_applies() -> None:
     machine, _ = _gate_machine(store, budget=budget)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         run = await machine.submit_checkpoint(
             run_id, decision={"action": "approve", "budget_cap_cents": "150000"}
@@ -500,7 +500,7 @@ def test_pre_run_estimate_drops_non_numeric_cutoffs() -> None:
 
     async def _run() -> None:
         run_id = await machine.start(
-            client_id="c1",
+            workspace_id="c1",
             icp_key="default",
             icp_version=1,
             tier_cutoffs={"top": 0.8, "flag": True, "broken": float("inf")},
@@ -518,7 +518,7 @@ def test_submit_checkpoint_self_heals_partial_approve() -> None:
     machine, handlers = _gate_machine(store)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)  # PAUSED + AWAITING_INPUT at tier_checkpoint
         # simulate the partial crash: checkpoint COMMITTED, run still PAUSED (resume never ran)
         await store.put_checkpoint(
@@ -543,7 +543,7 @@ def test_resubmit_same_decision_does_not_duplicate_journal() -> None:
     machine, _ = _gate_machine(store, budget=budget)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         # first pause-with-edit journals once
         await machine.submit_checkpoint(
@@ -572,7 +572,7 @@ def test_unknown_action_stays_suspended_but_applies_edits() -> None:
     machine, handlers = _gate_machine(store)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)
         run = await machine.submit_checkpoint(
             run_id, decision={"action": "reject", "tier_cutoffs": {"top": 0.7}}
@@ -598,7 +598,7 @@ def test_run_to_completion_respects_max_steps() -> None:
     machine = CampaignRun(store=store, registry=registry)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         run = await machine.run_to_completion(run_id, max_steps=2)
         # exactly two advances: reverse_profiling -> icp_confirmed -> discovery, then stop
         assert run.phase is CampaignPhase.DISCOVERY
@@ -614,7 +614,7 @@ def test_run_to_completion_no_progress_guard_does_not_spin() -> None:
     machine, handlers = _gate_machine(store)
 
     async def _run() -> None:
-        run_id = await machine.start(client_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
         await machine.run_to_completion(run_id)  # PAUSED at the gate
         await machine.resume(run_id)  # ACTIVE, but checkpoint still AWAITING_INPUT (no submit)
         run = await machine.run_to_completion(run_id)

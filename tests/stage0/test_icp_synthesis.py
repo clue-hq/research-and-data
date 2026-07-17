@@ -59,8 +59,10 @@ def _all_justifying(proposal: ICPProposal) -> set[object]:
 def test_floor_proposal_has_all_six_elements() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="floor", asserted=_ASSERTED)
-            proposals = await synthesize_icps(conn, ref, client_id=_CLIENT)
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="floor", asserted=_ASSERTED
+            )
+            proposals = await synthesize_icps(conn, ref, workspace_id=_CLIENT)
 
             assert len(proposals) >= 1
             p = proposals[0]
@@ -80,14 +82,16 @@ def test_floor_proposal_has_all_six_elements() -> None:
 def test_floor_justifying_ids_are_real_client_claims() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="just", asserted=_ASSERTED)
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="just", asserted=_ASSERTED
+            )
             kb = await read_client_kb_claims(
-                conn, ref.client_entity_id, client_id=_CLIENT, version=ref.client_kb_version
+                conn, ref.client_entity_id, workspace_id=_CLIENT, version=ref.client_kb_version
             )
             real_ids = {claim.id for claim in kb.values()}
             assert real_ids  # the KB is non-empty
 
-            (proposal,) = await synthesize_icps(conn, ref, client_id=_CLIENT)
+            (proposal,) = await synthesize_icps(conn, ref, workspace_id=_CLIENT)
             cited = _all_justifying(proposal)
             assert cited  # every proposal cites its evidence
             # no element is justified by an invented id — every citation is a real client claim
@@ -150,10 +154,12 @@ def _two_icp_json() -> str:
 def test_llm_multi_icp_split_and_config_bounding() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="multi", asserted=_ASSERTED)
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="multi", asserted=_ASSERTED
+            )
             gateway = FakeGateway(_two_icp_json())
             proposals = await synthesize_icps(
-                conn, ref, client_id=_CLIENT, gateway=gateway, synthesis_model="fake/model"
+                conn, ref, workspace_id=_CLIENT, gateway=gateway, synthesis_model="fake/model"
             )
 
             assert len(proposals) == 2  # the LLM split into two ICPs (D5)
@@ -179,13 +185,15 @@ def test_llm_multi_icp_split_and_config_bounding() -> None:
 def test_llm_failure_degrades_to_floor() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="fail", asserted=_ASSERTED)
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="fail", asserted=_ASSERTED
+            )
 
             # a raising gateway → the deterministic floor stands (never propagates the failure)
             raising = await synthesize_icps(
                 conn,
                 ref,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 gateway=FakeGateway(raise_exc=True),
                 synthesis_model="fake/model",
             )
@@ -195,7 +203,7 @@ def test_llm_failure_degrades_to_floor() -> None:
             garbage = await synthesize_icps(
                 conn,
                 ref,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 gateway=FakeGateway("not json at all"),
                 synthesis_model="fake/model",
             )
@@ -203,7 +211,7 @@ def test_llm_failure_degrades_to_floor() -> None:
 
             # a gateway with no model id is not used at all → floor
             no_model = await synthesize_icps(
-                conn, ref, client_id=_CLIENT, gateway=FakeGateway(_two_icp_json())
+                conn, ref, workspace_id=_CLIENT, gateway=FakeGateway(_two_icp_json())
             )
             assert [p.icp_key for p in no_model] == ["primary"]
 

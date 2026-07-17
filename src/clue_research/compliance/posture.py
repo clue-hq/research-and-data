@@ -2,7 +2,8 @@
 
 The three postures are **not permanent forks** (Doc D §6): each is a *preset* over the *same*
 ``use_class × jurisdiction`` machinery, materialized into a
-:class:`~clue_research.compliance.use_gate.ClientPolicy`. A regulated client dials down to Option 3;
+:class:`~clue_research.compliance.use_gate.WorkspacePolicy`. A regulated client dials down to
+Option 3;
 an aggressive US client dials up to Option 2 — a config write, never a code path. Crucially the
 **use-side is identical for all three** (the conservative allow-map; the gate floors ``sensitive``
 regardless): the postures differ only on the **gather/store-side** (Doc D §6), so "what is usable"
@@ -19,10 +20,11 @@ is one machinery and the posture is a configuration decision, not a branch.
   and ``sensitive`` is not stored; the use-gate is light.
 
 This module is the **resolution layer**: it maps a :class:`~clue_config.Posture` to the
-materialized ``ClientPolicy`` via a data table (:data:`POSTURE_PRESETS`), so there is **no
+materialized ``WorkspacePolicy`` via a data table (:data:`POSTURE_PRESETS`), so there is **no
 posture-named ``if``/``else``** anywhere in the gate or the collection path — the posture is data,
 the gate reads only the materialized parameters. The api root calls
-:func:`client_policy_for_posture` (or ``load_client_policy`` for a DB row). Architecture: Doc D §6;
+:func:`workspace_policy_for_posture` (or ``load_workspace_policy`` for a DB row). Architecture:
+Doc D §6;
 docs/specs/M10-compliance-and-personal-data.md §M10.4.
 """
 
@@ -31,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from clue_config import DEFAULT_POSTURE, Posture, SourceScope
-from clue_research.compliance.use_gate import ClientPolicy
+from clue_research.compliance.use_gate import WorkspacePolicy
 
 
 @dataclass(frozen=True)
@@ -63,13 +65,13 @@ POSTURE_PRESETS: dict[Posture, PosturePreset] = {
 }
 
 
-def client_policy_for_posture(posture: Posture, *, version: int = 1) -> ClientPolicy:
-    """Materialize ``posture`` into a :class:`ClientPolicy` (the conservative use-side + the
+def workspace_policy_for_posture(posture: Posture, *, version: int = 1) -> WorkspacePolicy:
+    """Materialize ``posture`` into a :class:`WorkspacePolicy` (the conservative use-side + the
     posture's gather/store preset). A pure data lookup — no posture-named branch. The api root calls
     this to resolve a client's policy from its chosen posture; with ``DEFAULT_POSTURE`` it is the
-    platform default (equal to ``DEFAULT_CLIENT_POLICY``)."""
+    platform default (equal to ``DEFAULT_WORKSPACE_POLICY``)."""
     preset = POSTURE_PRESETS[posture]
-    return ClientPolicy(
+    return WorkspacePolicy(
         posture=posture,
         source_scope=preset.source_scope,
         store_sensitive=preset.store_sensitive,
@@ -78,4 +80,4 @@ def client_policy_for_posture(posture: Posture, *, version: int = 1) -> ClientPo
 
 
 # The platform default for a client with no posture set (D3): Option 1, materialized.
-DEFAULT_POSTURE_POLICY = client_policy_for_posture(DEFAULT_POSTURE)
+DEFAULT_POSTURE_POLICY = workspace_policy_for_posture(DEFAULT_POSTURE)

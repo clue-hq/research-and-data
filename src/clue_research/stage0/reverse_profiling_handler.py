@@ -74,7 +74,7 @@ class ReverseProfilingHandler:
             result = await reverse_profile(
                 conn,
                 client_input,
-                client_id=ctx.client_id,
+                workspace_id=ctx.workspace_id,
                 run_id=run_id,
                 budget_cap_cents=ctx.budget_cap_cents,
                 judge=self._judge,

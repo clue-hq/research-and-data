@@ -32,7 +32,7 @@ pytestmark = pytest.mark.usefixtures("require_icp_db")
 def _spec(**overrides: object) -> ICPSpec:
     """Build an in-memory ICPSpec (the compiler reads it; it need not be persisted)."""
     base: dict[str, object] = {
-        "client_id": "acme",
+        "workspace_id": "acme",
         "icp_key": "default",
         "created_from": ICPCreatedFrom.SYNTHESIS,
     }
@@ -270,7 +270,7 @@ def test_compile_active_icp_reads_the_active_spec() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -292,7 +292,7 @@ def test_pinned_version_recompiles_identically_after_refetch() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=(

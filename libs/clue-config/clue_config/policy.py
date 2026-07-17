@@ -8,7 +8,8 @@ enforces them is M10** — retrofitting lawful-basis/jurisdiction tracking later
 base-layer rework Doc D §1 warns against.
 
 **This module defines the typed shapes and the conservative defaults. It contains NO enforcement
-logic.** The use-gate (``(use_class × jurisdiction × client_policy)`` → allowed?), the lawful-basis
+logic.** The use-gate (``(use_class × jurisdiction × workspace_policy)`` → allowed?), the
+lawful-basis
 balancing test (LIA), and the ``lawful_basis`` claim-provenance field all land with M10. Here we
 only carry the inputs that gate will read.
 

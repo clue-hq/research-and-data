@@ -8,7 +8,7 @@ that skips a disallowed surface *without scraping it*; the manifest's ``rate_lim
 transport; and the waterfall ordering (CRM/tier-1 before Firecrawl/tier-2 before any tier-3 source).
 
 The scrape backend is a **double** (no live crawl, no credential) — the adapter seam is what's
-proven. Official-site facts are public-footprint, so these resolves need no tenant_id.
+proven. Official-site facts are public-footprint, so these resolves need no workspace_id.
 """
 
 from __future__ import annotations
@@ -360,6 +360,6 @@ def _seed_manifest() -> RegistrySourceManifest:
 
 
 async def claims_for_field(conn: object, entity_id: EntityId, field_key: str) -> list[Claim]:
-    from clue_research.claimstore import ALL_TENANTS, claims_for
+    from clue_research.claimstore import ALL_WORKSPACES, claims_for
 
-    return list(await claims_for(conn, entity_id, field_key, scope=ALL_TENANTS))  # type: ignore[arg-type]
+    return list(await claims_for(conn, entity_id, field_key, scope=ALL_WORKSPACES))  # type: ignore[arg-type]

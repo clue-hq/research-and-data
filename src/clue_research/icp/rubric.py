@@ -15,7 +15,7 @@ that lives here (boundary note, ENG-121).
 Where it is stored: the rubric is a **slot of the ICP spec** (``icp_spec.scoring_rubric``, M3.1) —
 no new table, no claim-store schema change. Its durable, append-only versioning *is* M3.1's: editing
 weights writes a new ``icp_spec`` version carrying the new rubric, and a campaign pinned to a prior
-``(client_id, icp_key, version)`` re-reads — and so re-scores — identically.
+``(workspace_id, icp_key, version)`` re-reads — and so re-scores — identically.
 
 Design seams (conventions §2):
 * **Data, not code.** The rubric is per-ICP, versioned config; the aggregation is data-driven
@@ -50,7 +50,7 @@ from clue_core import (
     ScoreComponent,
     UnitInterval,
 )
-from clue_research.claimstore import TenantScope, current_values
+from clue_research.claimstore import WorkspaceScope, current_values
 from clue_research.icp.compiler import FieldPlan
 from clue_research.icp.spec import get_active_icp, get_icp_version
 
@@ -517,20 +517,21 @@ def rubric_from_slot(slot: Mapping[str, JsonValue]) -> ScoringRubric | None:
 
 
 async def get_active_rubric(
-    conn: AsyncConnection, client_id: str, icp_key: str
+    conn: AsyncConnection, workspace_id: str, icp_key: str
 ) -> ScoringRubric | None:
-    """The rubric in the currently-active ICP spec for ``(client_id, icp_key)``, or ``None`` if no
+    """The rubric in the currently-active ICP spec for ``(workspace_id, icp_key)``, or ``None`` if
+    no
     active spec exists or it carries no rubric."""
-    spec = await get_active_icp(conn, client_id, icp_key)
+    spec = await get_active_icp(conn, workspace_id, icp_key)
     return rubric_from_slot(spec.scoring_rubric) if spec is not None else None
 
 
 async def get_rubric_version(
-    conn: AsyncConnection, client_id: str, icp_key: str, version: int
+    conn: AsyncConnection, workspace_id: str, icp_key: str, version: int
 ) -> ScoringRubric | None:
     """The rubric in a pinned ICP-spec version — the reproducibility seam: a campaign pinned to
-    ``(client_id, icp_key, version)`` re-reads this exact rubric and so re-scores identically."""
-    spec = await get_icp_version(conn, client_id, icp_key, version)
+    ``(workspace_id, icp_key, version)`` re-reads this exact rubric and so re-scores identically."""
+    spec = await get_icp_version(conn, workspace_id, icp_key, version)
     return rubric_from_slot(spec.scoring_rubric) if spec is not None else None
 
 
@@ -540,7 +541,7 @@ async def score_entity(
     rubric: ScoringRubric,
     entity_id: EntityId,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
 ) -> ScoreResult:
     """Convenience over the pure :func:`score`: fetch ``current_value`` for the rubric's fields and
     score one entity. The pure function is the contract; this lifts it over M1's merge read so a

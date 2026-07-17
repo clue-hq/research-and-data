@@ -10,7 +10,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from clue_core import IdentityBinding
-from clue_research.claimstore import TenantScope, claims_for
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling.contact.fill import fill_contact_field
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver
@@ -63,13 +63,16 @@ def test_verified_handle_claim_is_written_strong(require_profiling_db: None) -> 
                 account,
                 await _field(conn),
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 tier="top",
             )
             assert len(result.claim_refs) == 1
             written = (
                 await claims_for(
-                    conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                    conn,
+                    contact.id,
+                    FACET_STATED_INTERESTS,
+                    scope=WorkspaceScope.for_workspace(_TENANT),
                 )
             )[0]
             assert written.identity_binding is IdentityBinding.STRONG
@@ -107,18 +110,18 @@ def test_same_name_stranger_fact_not_written_to_contact(require_profiling_db: No
                 conn, account, full_name="Jane Smith", linkedin_url="https://linkedin.com/in/jane-b"
             )
             field = await _field(conn)
-            scope = TenantScope.for_tenant(_TENANT)
+            scope = WorkspaceScope.for_workspace(_TENANT)
 
             # Filling B: the evidence is on A's handle → does not bind to B → tier-4 reject.
             res_b = await fill_contact_field(
-                conn, contact_b, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact_b, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             assert res_b.claim_refs == []
             assert await claims_for(conn, contact_b.id, FACET_STATED_INTERESTS, scope=scope) == []
 
             # Filling A: the same evidence IS on A's handle → strong → written to A only.
             res_a = await fill_contact_field(
-                conn, contact_a, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact_a, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             assert len(res_a.claim_refs) == 1
             a_claims = await claims_for(conn, contact_a.id, FACET_STATED_INTERESTS, scope=scope)

@@ -54,15 +54,15 @@ from clue_research.compliance.posture import (
     DEFAULT_POSTURE_POLICY,
     POSTURE_PRESETS,
     PosturePreset,
-    client_policy_for_posture,
+    workspace_policy_for_posture,
 )
 from clue_research.compliance.use_gate import (
-    DEFAULT_CLIENT_POLICY,
-    ClientPolicy,
+    DEFAULT_WORKSPACE_POLICY,
     SensitiveOverride,
     UseGateImpl,
+    WorkspacePolicy,
     decide_use,
-    load_client_policy,
+    load_workspace_policy,
 )
 
 __all__ = [
@@ -76,15 +76,15 @@ __all__ = [
     "region_to_regime",
     # M10.3 — appropriateness/use gate (impl of core.compliance.UseGate)
     "UseGateImpl",
-    "ClientPolicy",
+    "WorkspacePolicy",
     "SensitiveOverride",
-    "DEFAULT_CLIENT_POLICY",
+    "DEFAULT_WORKSPACE_POLICY",
     "decide_use",
-    "load_client_policy",
+    "load_workspace_policy",
     # M10.4 — the three postures as per-client config
     "POSTURE_PRESETS",
     "PosturePreset",
-    "client_policy_for_posture",
+    "workspace_policy_for_posture",
     "DEFAULT_POSTURE_POLICY",
     # M10.5 — lawful basis + retention
     "LawfulBasis",

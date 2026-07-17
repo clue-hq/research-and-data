@@ -81,7 +81,7 @@ async def profile_contact(
     contact_entity_id: EntityId,
     account_entity_id: EntityId,
     run_id: RunId,
-    tenant_id: str,
+    workspace_id: str,
     tier: str,
     spec: ICPSpec | None = None,
     facet_subworker_budget: int = 0,
@@ -99,16 +99,17 @@ async def profile_contact(
 
     ``facet_subworker_budget`` is the per-tier level-2 fan-out allowance (= the M7 recursion knob's
     ``max_facet_workers_per_aspect`` for this tier, ``0`` ⇒ single-level depth) — M8.4 requests at
-    most this many facet sub-workers; the M7 ``SpawnGuard`` is the hard cap. ``tenant_id`` binds the
+    most this many facet sub-workers; the M7 ``SpawnGuard`` is the hard cap. ``workspace_id`` binds
+    the
     tenant-private contact claims.
 
     ``thresholds`` (the waterfall stop bar, lever 1) and ``plan_policy`` (the planner tier reach,
-    lever 2) default to the per-run layered config keyed by ``(tenant_id, icp_key)``; pass them
+    lever 2) default to the per-run layered config keyed by ``(workspace_id, icp_key)``; pass them
     explicitly to override. This is the single config-resolution point for the contact axis — the
     live deep path calls this callable directly, so resolving here (not only in the aspect-worker
     adapter) keeps it config-aware. ``config_store=None`` reads the process default store."""
     if thresholds is None or plan_policy is None:
-        cfg = get_config(tenant_id, icp_key, store=config_store)
+        cfg = get_config(workspace_id, icp_key, store=config_store)
         thresholds = thresholds if thresholds is not None else cfg.confidence_thresholds
         plan_policy = plan_policy if plan_policy is not None else cfg.source_plan_policy
     contact = await get_contact(
@@ -123,7 +124,7 @@ async def profile_contact(
         raise ValueError(f"account {account_entity_id} not found — cannot target-lock the contact")
 
     gaps = await compute_contact_gap_fields(
-        conn, contact.id, tenant_id=tenant_id, field_keys=field_keys
+        conn, contact.id, workspace_id=workspace_id, field_keys=field_keys
     )
 
     views: list[ProfileClaimView] = []
@@ -138,7 +139,7 @@ async def profile_contact(
             account,
             field_def,
             run_id=run_id,
-            tenant_id=tenant_id,
+            workspace_id=workspace_id,
             tier=tier,
             spec=spec,
             binding_classifier=binding_classifier,
@@ -174,7 +175,7 @@ class ContactProfileAspectWorker:
     """Adapts :func:`profile_contact` to the M7 ``AspectWorker`` seam (``aspect='contact.facet'``).
 
     The orchestrator hands an :class:`AspectContext` whose ``entity_id`` is the *contact* and whose
-    ``params`` carry ``account_entity_id`` + ``client_id``/``icp_key``/``icp_version``. The facet
+    ``params`` carry ``account_entity_id`` + ``workspace_id``/``icp_key``/``icp_version``. The facet
     sub-worker budget is derived from the injected :class:`~clue_config.RecursionPolicy`
     (``caps_for(tier).max_facet_workers_per_aspect``, and only if the aspect is recursion-eligible)
     — the versioned dial is the single source of truth, so a low-tier contact gets single-level
@@ -210,7 +211,7 @@ class ContactProfileAspectWorker:
         # params is JSON (no UUID type), so the account id arrives as a string — parse it back to a
         # real UUID-backed EntityId (not a bare str) so it keys correctly downstream.
         account_entity_id = EntityId(UUID(str(params["account_entity_id"])))
-        client_id = str(params["client_id"])
+        workspace_id = str(params["workspace_id"])
         icp_key = str(params["icp_key"])
         icp_version = int(params["icp_version"])  # type: ignore[arg-type]
         # The facet-recursion budget is the versioned dial, per tier — a level-0 worker on a
@@ -221,13 +222,13 @@ class ContactProfileAspectWorker:
             budget = self._recursion.caps_for(ctx.tier).max_facet_workers_per_aspect
 
         async with self._session_factory() as conn:
-            spec = await get_icp_version(conn, client_id, icp_key, icp_version)
+            spec = await get_icp_version(conn, workspace_id, icp_key, icp_version)
             result = await profile_contact(
                 conn,
                 contact_entity_id=ctx.entity_id,
                 account_entity_id=account_entity_id,
                 run_id=ctx.run_id,
-                tenant_id=client_id,
+                workspace_id=workspace_id,
                 tier=ctx.tier,
                 spec=spec,
                 facet_subworker_budget=budget,
@@ -238,7 +239,8 @@ class ContactProfileAspectWorker:
                 config=self._config,
                 icp_key=icp_key,
                 # profile_contact resolves the per-run source policies (lever 1/2) from the layered
-                # config keyed by (tenant_id, icp_key); pass the store through for test isolation.
+                # config keyed by (workspace_id, icp_key); pass the store through for test
+                # isolation.
                 config_store=self._config_store,
             )
 

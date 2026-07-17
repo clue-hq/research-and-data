@@ -241,14 +241,14 @@ def _ctx(campaign: CampaignRunId) -> PhaseContext:
     return PhaseContext(
         campaign_run_id=campaign,
         phase=CampaignPhase.DEEP,
-        client_id="client-1",
+        workspace_id="client-1",
         icp_key="icp-a",
         icp_version=1,
     )
 
 
 def _spec(entity_id: EntityId, *, tier: str = "top") -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier=tier, tenant_id="client-1")
+    return AccountSpec(entity_id=entity_id, tier=tier, workspace_id="client-1")
 
 
 def _handler(

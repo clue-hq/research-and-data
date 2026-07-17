@@ -143,7 +143,7 @@ class SeedSet(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_version: int
     seeds: tuple[SeedAccount, ...] = ()

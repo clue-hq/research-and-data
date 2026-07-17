@@ -147,7 +147,7 @@ CORE_PACK: tuple[SeedField, ...] = (
     # account. Reserved here as registered fields with reuse_scope=tenant_private so a client-tuned
     # score is *always* tenant-isolated — closing the "ReusePolicy names account.scoring. but no
     # field reserves it" gap (M2.5). M6 writes value_json={"value": <0..1>, "components": [...],
-    # "rubric_version": <int>, ...} and stamps tenant_id=client_id; the write boundary is
+    # "rubric_version": <int>, ...} and stamps workspace_id=workspace_id; the write boundary is
     # fail-closed (a public stamp on these is refused). No resolver/tier_plan — the value is
     # computed by M6.3's pure scorer over current_value (extraction_method is the scorer's).
     _seed(
@@ -181,7 +181,7 @@ CORE_PACK: tuple[SeedField, ...] = (
     # intent (so the reuse policy classifies it private — a tier is a per-client/ICP scoring
     # decision, never amortized) with the same fail-closed write boundary. M6.4 writes value_json=
     # {"tier": <str>, "cutoff_version": <str>, "fit_score": <0..1>, "intent_score": <0..1>,
-    # "icp_key": …, "icp_version": …, …} and stamps tenant_id=client_id; the value is the human-
+    # "icp_key": …, "icp_version": …, …} and stamps the run's workspace_id; the value is the human-
     # approved decision at the checkpoint (extraction_method=human), not a resolver fact — so there
     # is no tier_plan.
     _seed(

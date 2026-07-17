@@ -2,7 +2,8 @@
 
 Durable, append-only storage for the ``ICPSpec`` contract (``clue_core.ICPSpec``;
 conventions §4) — the single object M3.2 / M3.4 read and M5 writes, keyed
-``(client_id, icp_key, version)``. This module is storage + versioning + reference validation ONLY:
+``(workspace_id, icp_key, version)``. This module is storage + versioning + reference validation
+ONLY:
 no resolver, source, or LLM dependency (it sits cleanly below M4). It validates the *active field
 set* against the M1.3 registry and the *enabled packs* against the M3.3 catalog at write; the
 discovery-strategy / source-profile / scoring-rubric slots are stored opaquely (their internals are
@@ -10,7 +11,7 @@ owned by M6 / M4 / M3.4).
 
 Versioning discipline (the same the claim store uses in M1): an ``active`` spec is immutable; an
 edit appends a new ``version`` (``parent_version`` links the lineage); activating a version archives
-the prior atomically (never deletes). A pinned ``(client_id, icp_key, version)`` re-reads
+the prior atomically (never deletes). A pinned ``(workspace_id, icp_key, version)`` re-reads
 identically, so a campaign run (M7) is reproducible. ``icp_key`` distinguishes segments per client.
 """
 
@@ -40,7 +41,7 @@ class ICPSpecValidationError(ValueError):
 
 
 class UnknownICPSpecError(ValueError):
-    """Raised when an addressed ``(client_id, icp_key, version)`` does not exist."""
+    """Raised when an addressed ``(workspace_id, icp_key, version)`` does not exist."""
 
 
 class ICPSpecDiff(BaseModel):
@@ -79,7 +80,7 @@ async def validate_icp_references(
 
 # --- row <-> ICPSpec -------------------------------------------------------
 _COLUMNS = (
-    "client_id, icp_key, version, status, created_from, parent_version, label, description, "
+    "workspace_id, icp_key, version, status, created_from, parent_version, label, description, "
     "field_keys, enabled_packs, discovery_strategy, source_profile_ref, scoring_rubric, "
     "created_by, created_at"
 )
@@ -87,11 +88,11 @@ _COLUMNS = (
 _INSERT = text(
     """
     INSERT INTO icp_spec (
-        client_id, icp_key, version, status, created_from, parent_version, label, description,
+        workspace_id, icp_key, version, status, created_from, parent_version, label, description,
         field_keys, enabled_packs, discovery_strategy, source_profile_ref, scoring_rubric,
         created_by
     ) VALUES (
-        :client_id, :icp_key, :version, CAST(:status AS icp_status),
+        :workspace_id, :icp_key, :version, CAST(:status AS icp_status),
         CAST(:created_from AS icp_created_from), :parent_version, :label, :description,
         CAST(:field_keys AS jsonb), CAST(:enabled_packs AS jsonb),
         CAST(:discovery_strategy AS jsonb), CAST(:source_profile_ref AS jsonb),
@@ -103,7 +104,7 @@ _INSERT = text(
 
 def _row_to_icp_spec(row: Mapping[str, Any]) -> ICPSpec:
     return ICPSpec(
-        client_id=row["client_id"],
+        workspace_id=row["workspace_id"],
         icp_key=row["icp_key"],
         version=row["version"],
         status=ICPStatus(row["status"]),
@@ -121,10 +122,10 @@ def _row_to_icp_spec(row: Mapping[str, Any]) -> ICPSpec:
     )
 
 
-async def _max_version(conn: AsyncConnection, client_id: str, icp_key: str) -> int | None:
+async def _max_version(conn: AsyncConnection, workspace_id: str, icp_key: str) -> int | None:
     result = await conn.execute(
-        text("SELECT max(version) AS m FROM icp_spec WHERE client_id = :c AND icp_key = :k"),
-        {"c": client_id, "k": icp_key},
+        text("SELECT max(version) AS m FROM icp_spec WHERE workspace_id = :c AND icp_key = :k"),
+        {"c": workspace_id, "k": icp_key},
     )
     row = result.mappings().first()
     if row is None:
@@ -133,13 +134,13 @@ async def _max_version(conn: AsyncConnection, client_id: str, icp_key: str) -> i
     return None if value is None else int(value)
 
 
-async def _archive_active(conn: AsyncConnection, client_id: str, icp_key: str) -> None:
+async def _archive_active(conn: AsyncConnection, workspace_id: str, icp_key: str) -> None:
     await conn.execute(
         text(
             "UPDATE icp_spec SET status = 'archived' "
-            "WHERE client_id = :c AND icp_key = :k AND status = 'active'"
+            "WHERE workspace_id = :c AND icp_key = :k AND status = 'active'"
         ),
-        {"c": client_id, "k": icp_key},
+        {"c": workspace_id, "k": icp_key},
     )
 
 
@@ -147,7 +148,7 @@ async def _archive_active(conn: AsyncConnection, client_id: str, icp_key: str) -
 async def create_icp_spec(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     created_from: ICPCreatedFrom,
     field_keys: Sequence[str] = (),
@@ -160,7 +161,7 @@ async def create_icp_spec(
     description: str | None = None,
     activate: bool = False,
 ) -> ICPSpec:
-    """Append a new ICP-spec version for ``(client_id, icp_key)`` and return it.
+    """Append a new ICP-spec version for ``(workspace_id, icp_key)`` and return it.
 
     The first call yields ``version=1`` (``parent_version=None``); each subsequent call yields the
     next version with ``parent_version`` set to the prior latest (append-only lineage) — this is how
@@ -176,16 +177,16 @@ async def create_icp_spec(
     enabled_packs = tuple(dict.fromkeys(enabled_packs))
     await validate_icp_references(conn, field_keys, enabled_packs)
 
-    prior_max = await _max_version(conn, client_id, icp_key)
+    prior_max = await _max_version(conn, workspace_id, icp_key)
     version = (prior_max or 0) + 1
     status = ICPStatus.ACTIVE if activate else ICPStatus.DRAFT
     if activate:
-        await _archive_active(conn, client_id, icp_key)
+        await _archive_active(conn, workspace_id, icp_key)
 
     await conn.execute(
         _INSERT,
         {
-            "client_id": client_id,
+            "workspace_id": workspace_id,
             "icp_key": icp_key,
             "version": version,
             "status": status.value,
@@ -201,82 +202,85 @@ async def create_icp_spec(
             "created_by": created_by,
         },
     )
-    spec = await get_icp_version(conn, client_id, icp_key, version)
+    spec = await get_icp_version(conn, workspace_id, icp_key, version)
     assert spec is not None  # just inserted
     return spec
 
 
 async def activate_icp_version(
-    conn: AsyncConnection, client_id: str, icp_key: str, version: int
+    conn: AsyncConnection, workspace_id: str, icp_key: str, version: int
 ) -> ICPSpec:
-    """Make ``version`` the single ``active`` spec for ``(client_id, icp_key)``, archiving the prior
+    """Make ``version`` the single ``active`` spec for ``(workspace_id, icp_key)``, archiving the
+    prior
     active atomically (idempotent if it is already active). Run inside a transaction."""
-    target = await get_icp_version(conn, client_id, icp_key, version)
+    target = await get_icp_version(conn, workspace_id, icp_key, version)
     if target is None:
         raise UnknownICPSpecError(
-            f"icp_spec ({client_id!r}, {icp_key!r}, v{version}) does not exist"
+            f"icp_spec ({workspace_id!r}, {icp_key!r}, v{version}) does not exist"
         )
     if target.status is ICPStatus.ACTIVE:
         return target
-    await _archive_active(conn, client_id, icp_key)
+    await _archive_active(conn, workspace_id, icp_key)
     await conn.execute(
         text(
             "UPDATE icp_spec SET status = 'active' "
-            "WHERE client_id = :c AND icp_key = :k AND version = :v"
+            "WHERE workspace_id = :c AND icp_key = :k AND version = :v"
         ),
-        {"c": client_id, "k": icp_key, "v": version},
+        {"c": workspace_id, "k": icp_key, "v": version},
     )
-    spec = await get_icp_version(conn, client_id, icp_key, version)
+    spec = await get_icp_version(conn, workspace_id, icp_key, version)
     assert spec is not None
     return spec
 
 
 # --- read ------------------------------------------------------------------
-async def get_active_icp(conn: AsyncConnection, client_id: str, icp_key: str) -> ICPSpec | None:
-    """The single ``active`` spec for ``(client_id, icp_key)``, or ``None`` if none is active."""
+async def get_active_icp(conn: AsyncConnection, workspace_id: str, icp_key: str) -> ICPSpec | None:
+    """The single ``active`` spec for ``(workspace_id, icp_key)``, or ``None`` if none is active."""
     result = await conn.execute(
         text(
             f"SELECT {_COLUMNS} FROM icp_spec "
-            "WHERE client_id = :c AND icp_key = :k AND status = 'active'"
+            "WHERE workspace_id = :c AND icp_key = :k AND status = 'active'"
         ),
-        {"c": client_id, "k": icp_key},
+        {"c": workspace_id, "k": icp_key},
     )
     row = result.mappings().first()
     return _row_to_icp_spec(dict(row)) if row is not None else None
 
 
 async def get_icp_version(
-    conn: AsyncConnection, client_id: str, icp_key: str, version: int
+    conn: AsyncConnection, workspace_id: str, icp_key: str, version: int
 ) -> ICPSpec | None:
     """A pinned spec version (reproducible — returns the originally written content)."""
     result = await conn.execute(
         text(
             f"SELECT {_COLUMNS} FROM icp_spec "
-            "WHERE client_id = :c AND icp_key = :k AND version = :v"
+            "WHERE workspace_id = :c AND icp_key = :k AND version = :v"
         ),
-        {"c": client_id, "k": icp_key, "v": version},
+        {"c": workspace_id, "k": icp_key, "v": version},
     )
     row = result.mappings().first()
     return _row_to_icp_spec(dict(row)) if row is not None else None
 
 
-async def list_icp_versions(conn: AsyncConnection, client_id: str, icp_key: str) -> list[ICPSpec]:
-    """All versions for ``(client_id, icp_key)`` in lineage order (ascending version)."""
+async def list_icp_versions(
+    conn: AsyncConnection, workspace_id: str, icp_key: str
+) -> list[ICPSpec]:
+    """All versions for ``(workspace_id, icp_key)`` in lineage order (ascending version)."""
     result = await conn.execute(
         text(
             f"SELECT {_COLUMNS} FROM icp_spec "
-            "WHERE client_id = :c AND icp_key = :k ORDER BY version"
+            "WHERE workspace_id = :c AND icp_key = :k ORDER BY version"
         ),
-        {"c": client_id, "k": icp_key},
+        {"c": workspace_id, "k": icp_key},
     )
     return [_row_to_icp_spec(dict(row)) for row in result.mappings().all()]
 
 
-async def list_icp_keys(conn: AsyncConnection, client_id: str) -> list[str]:
+async def list_icp_keys(conn: AsyncConnection, workspace_id: str) -> list[str]:
     """The distinct ``icp_key``s under a client (D5: a client may run several segments)."""
     result = await conn.execute(
-        text("SELECT DISTINCT icp_key FROM icp_spec WHERE client_id = :c ORDER BY icp_key"),
-        {"c": client_id},
+        text("SELECT DISTINCT icp_key FROM icp_spec WHERE workspace_id = :c ORDER BY icp_key"),
+        {"c": workspace_id},
     )
     return [str(row["icp_key"]) for row in result.mappings().all()]
 

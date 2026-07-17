@@ -64,7 +64,7 @@ METRIC_THIRD_PARTY_COLLECTED = "research.compliance.lawful_basis.third_party"
 # a
 # singleton default rather than constructing one per call (B008). The api root injects the
 # per-client
-# LawfulBasisDefaults / RetentionTtls from get_policy(client_id) when wiring the M8 insert site.
+# LawfulBasisDefaults / RetentionTtls from get_policy(workspace_id) when wiring the M8 insert site.
 _DEFAULT_LAWFUL_BASIS_DEFAULTS = LawfulBasisDefaults()
 _DEFAULT_RETENTION_TTLS = RetentionTtls()
 
@@ -330,12 +330,12 @@ async def load_lawful_basis(conn: AsyncConnection, claim_id: ClaimId) -> LawfulB
 
 
 async def third_party_notice_report(
-    conn: AsyncConnection, *, tenant_id: str | None = None
+    conn: AsyncConnection, *, workspace_id: str | None = None
 ) -> NoticeReport:
     """The Art. 14 "notice may be owed" aggregate (Doc D §4): how many **currently-held** personal
     claims (and distinct contacts) carry ``third_party_collected``. Scoped to one controller's
     claims
-    when ``tenant_id`` is given (a DSAR/controller view), else platform-wide (the operator view).
+    when ``workspace_id`` is given (a DSAR/controller view), else platform-wide (the operator view).
     Joins to ``claim`` for the tenant/contact dimensions (``lawful_basis_record`` keys only on
     ``claim_id``).
 
@@ -354,10 +354,10 @@ async def third_party_notice_report(
                 JOIN claim c ON c.id = r.claim_id
                 WHERE r.third_party_collected
                   AND c.superseded_by IS NULL
-                  AND (CAST(:tenant_id AS text) IS NULL OR c.tenant_id = :tenant_id)
+                  AND (CAST(:workspace_id AS text) IS NULL OR c.workspace_id = :workspace_id)
                 """
             ),
-            {"tenant_id": tenant_id},
+            {"workspace_id": workspace_id},
         )
     ).first()
     if row is None:  # pragma: no cover — count(*) always returns one row

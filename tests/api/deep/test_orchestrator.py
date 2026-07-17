@@ -379,7 +379,7 @@ def _fake_session_factory() -> Any:
 
 
 def _spec() -> ICPSpec:
-    return ICPSpec(client_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
+    return ICPSpec(workspace_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
 
 
 def _orchestrator(
@@ -423,7 +423,7 @@ def test_fresh_run_sequences_account_then_committee_then_contacts() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)
@@ -462,7 +462,7 @@ def test_resume_at_committee_discovered_skips_account_and_committee() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
     run_id = deep_account_run_id(campaign, entity)
     contact_ids = [new_entity_id(), new_entity_id()]
     io.seed(
@@ -499,7 +499,7 @@ def test_full_resume_is_a_no_op() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
     run_id = deep_account_run_id(campaign, entity)
     io.seed(
         run_id,
@@ -528,7 +528,7 @@ def test_committee_size_cap_truncates_the_fan_out() -> None:
         FakeProfileContact(rec),
         config=DeepPhaseConfig(committee_size_cap=2),
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -550,7 +550,7 @@ def test_max_contacts_in_flight_bounds_concurrency() -> None:
         contact,
         config=DeepPhaseConfig(committee_size_cap=10, max_contacts_in_flight=2),
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -571,7 +571,7 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         await orch.run_one(spec, campaign_run_id=campaign)
@@ -579,11 +579,11 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
         acc = rec.account_kwargs[0]
         com = rec.committee_kwargs[0]
         # account axis: the ICP spec + tenant + the deterministic run id, all explicit kwargs
-        assert acc["spec"].client_id == "client-1"
-        assert acc["tenant_id"] == "client-1"
+        assert acc["spec"].workspace_id == "client-1"
+        assert acc["workspace_id"] == "client-1"
         assert acc["run_id"] == run_id
         # committee axis: tenant + run id as explicit kwargs (never via ctx.params)
-        assert com["tenant_id"] == "client-1"
+        assert com["workspace_id"] == "client-1"
         assert com["run_id"] == run_id  # one provenance line across stages
 
     run_async(_run())
@@ -598,7 +598,7 @@ def test_not_found_account_short_circuits_before_committee() -> None:
         make_discover_committee(rec),
         FakeProfileContact(rec),
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -624,7 +624,7 @@ def test_empty_committee_completes_with_zero_contacts() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)

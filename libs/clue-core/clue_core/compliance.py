@@ -2,7 +2,8 @@
 
 The *second* of the two distinct gates (Doc D §3/§5). The accuracy / identity-binding gate
 (``core.verification``) answers "is it true, and is it *this* person?"; this gate answers the
-orthogonal "*may we use it* for outreach?" — ``use_class × jurisdiction × client_policy``. They live
+orthogonal "*may we use it* for outreach?" — ``use_class × jurisdiction × workspace_policy``. They
+live
 in **separate modules on purpose** (Doc D §5: the two must be separately measurable, with separate
 spans) — the same reason ``core.verification``'s own docstring says the use gate is "deliberately
 not here". The *seam* lives in ``core`` (like every cross-package gate protocol — ``Resolver``,
@@ -36,7 +37,7 @@ from clue_core.primitives import ClaimId
 class UseDecision(BaseModel):
     """The appropriateness/use gate's verdict on one personal claim (M10.3). ``usable_for_outreach``
     is the single bit downstream reads; ``reason`` is the typed justification (``UseReason``);
-    ``policy_version`` pins the ``client_policy × jurisdiction`` config row that decided it
+    ``policy_version`` pins the ``workspace_policy × jurisdiction`` config row that decided it
     (versioned config, mirroring ``judge_policy`` / ``pre_spend_policy``).
 
     Stored in M10's ``use_decision`` **side table** keyed on ``claim_id`` — a verdict settable
@@ -55,7 +56,8 @@ class UseDecision(BaseModel):
 class UseGate(Protocol):
     """The appropriateness/use gate (M10.3) — the use-axis sibling of the accuracy gates in
     ``core.verification``. Classifies whether a personal claim may drive outreach under
-    ``use_class × jurisdiction × client_policy`` and emits its own ``compliance.use_gate`` span (Doc
+    ``use_class × jurisdiction × workspace_policy`` and emits its own ``compliance.use_gate`` span
+    (Doc
     D §5 — separately measurable from the faithfulness judge). Per-claim **by design**: objection
     (Art. 21) and retention age-out are excluded at the merge substrate, so this signature never
     needs a ``contact_context``. M10 supplies the impl; injected at ``api``."""

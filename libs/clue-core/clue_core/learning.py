@@ -72,7 +72,7 @@ class BacktestGate(Protocol):
         self,
         proposed_rubric_slot: Mapping[str, JsonValue],
         *,
-        client_id: str,
+        workspace_id: str,
         icp_key: str,
         baseline_version: int,
         tolerance: float = 0.0,

@@ -545,7 +545,9 @@ class FaithfulnessJudgeImpl:
             sink.add(METRIC_FAITHFULNESS_RE_RETRIEVAL, 1, labels)
 
 
-async def load_judge_policy(conn: AsyncConnection, *, client_id: str | None = None) -> JudgePolicy:
+async def load_judge_policy(
+    conn: AsyncConnection, *, workspace_id: str | None = None
+) -> JudgePolicy:
     """Load the most-specific :class:`JudgePolicy` for a scope: per-client → global default row →
     :data:`DEFAULT_JUDGE_POLICY`. The latest ``version`` within the matched scope wins (with a
     deterministic ``created_at``/``policy_id`` tie-break, so a duplicate same-version global row can
@@ -557,8 +559,8 @@ async def load_judge_policy(conn: AsyncConnection, *, client_id: str | None = No
     warning — so a stale config row degrades to a known-good prompt at load time, never an uncaught
     ``ValueError`` per claim mid-spend."""
     candidates: list[str | None] = []
-    if client_id is not None:
-        candidates.append(client_id)
+    if workspace_id is not None:
+        candidates.append(workspace_id)
     candidates.append(None)  # the global default row
 
     for scope_client in candidates:
@@ -567,12 +569,12 @@ async def load_judge_policy(conn: AsyncConnection, *, client_id: str | None = No
                 text(
                     """
                     SELECT judge_model, prompt_version, supported_threshold FROM judge_policy
-                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                    WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                     ORDER BY version DESC, created_at DESC, policy_id DESC
                     LIMIT 1
                     """
                 ),
-                {"client_id": scope_client},
+                {"workspace_id": scope_client},
             )
         ).first()
         if row is not None:

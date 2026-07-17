@@ -56,12 +56,12 @@ class HandoffCommitteeReader(Protocol):
 
     Returns one :class:`HandoffCommitteeMember` per resolved committee member — its
     :class:`CommitteeMember` (with full ``profile_claims``) and the per-governed-facet
-    :class:`UseDecision`. Tenant-scoped on ``tenant_id`` (a committee assessment and its personal
+    :class:`UseDecision`. Tenant-scoped on ``workspace_id`` (a committee assessment and its personal
     hooks are ``TENANT_PRIVATE``). The production impl (``profiling`` committee/contact results ×
     ``compliance`` ``use_decision``) is injected at the ``api`` root."""
 
     async def committee_for_handoff(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[HandoffCommitteeMember, ...]: ...
 
 
@@ -75,6 +75,6 @@ class InMemoryHandoffCommitteeReader:
         self._committees = committees or {}
 
     async def committee_for_handoff(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[HandoffCommitteeMember, ...]:
         return self._committees.get(account_entity_id, ())

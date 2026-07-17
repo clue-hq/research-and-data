@@ -36,9 +36,10 @@ the flag is the deploying caller's one-line opt-in, not a default.
   labeled training data). So a disposition ingested *after* an ``erase``/``record_objection`` —
   e.g. a late ``ingest_downstream`` outcome, before any re-sweep — is not re-tombstoned.
 * ``DispositionStore.tombstone_for_contact`` (M13.2) tombstones a contact's dispositions across
-  **all** controllers (no ``client_id`` predicate), while ``DataSubjectRights`` is per-controller —
+  **all** controllers (no ``workspace_id`` predicate), while ``DataSubjectRights`` is
+  per-controller —
   erasing a contact shared between two clients tombstones both clients' dispositions. Scoping the
-  tombstone by ``client_id`` is the fix (an M13.2-owned change).
+  tombstone by ``workspace_id`` is the fix (an M13.2-owned change).
 """
 
 from __future__ import annotations

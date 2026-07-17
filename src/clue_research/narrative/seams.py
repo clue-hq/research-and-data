@@ -94,14 +94,14 @@ class CommitteeReader(Protocol):
     """Read the use-cleared buying committee for an account (the M12 ↔ M8/M10 seam).
 
     Returns one :class:`CommitteeContact` per resolved committee member with its persona/role and
-    candidate facet hooks (each carrying its M10 use verdict). Tenant-scoped on ``tenant_id`` (a
+    candidate facet hooks (each carrying its M10 use verdict). Tenant-scoped on ``workspace_id`` (a
     committee assessment and its personal hooks are ``TENANT_PRIVATE``). The production impl
     (``contact_entity`` under the account × persona/facet claims × ``use_decision``) is injected
     at the ``api`` root.
     """
 
     async def committee_for(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[CommitteeContact, ...]: ...
 
 
@@ -119,7 +119,7 @@ class InMemoryCommitteeReader:
         self._committees = committees or {}
 
     async def committee_for(
-        self, *, account_entity_id: EntityId, tenant_id: str
+        self, *, account_entity_id: EntityId, workspace_id: str
     ) -> tuple[CommitteeContact, ...]:
         return self._committees.get(account_entity_id, ())
 
@@ -143,7 +143,7 @@ class InMemoryClientKnowledgeRetriever:
         self,
         *,
         client_entity_id: EntityId,
-        client_id: str,
+        workspace_id: str,
         query: str,
         kb_version: int | None = None,
         limit: int = 10,

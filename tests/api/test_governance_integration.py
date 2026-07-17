@@ -43,7 +43,13 @@ from clue_research.api import (
     build_profiling_workers,
     production_binding_classifier,
 )
-from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, get_field, register_field
+from clue_research.claimstore import (
+    PUBLIC_ONLY,
+    WorkspaceScope,
+    claims_for,
+    get_field,
+    register_field,
+)
 from clue_research.icp import (
     Pack,
     PackSourceSlot,
@@ -97,14 +103,17 @@ def _run_facet_fill(*, resolver: FakeFacetResolver) -> tuple[Claim, object, obje
                 account,
                 field,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 tier="top",
                 binding_classifier=production_binding_classifier(),
             )
             assert len(result.claim_refs) == 1, result
             written = (
                 await claims_for(
-                    conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                    conn,
+                    contact.id,
+                    FACET_STATED_INTERESTS,
+                    scope=WorkspaceScope.for_workspace(_TENANT),
                 )
             )[0]
             return written, contact, account
@@ -283,7 +292,7 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
             )
             spec = await create_icp_spec(
                 conn,
-                client_id=_TENANT,
+                workspace_id=_TENANT,
                 icp_key="seg1",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 enabled_packs=("probepack",),
@@ -318,7 +327,9 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
                 tier="top",
                 aspect="account",
                 field_keys=(_GATE_FIELD,),
-                params=params_for_run(client_id=_TENANT, icp_key="seg1", icp_version=spec.version),
+                params=params_for_run(
+                    workspace_id=_TENANT, icp_key="seg1", icp_version=spec.version
+                ),
             )
             await account_worker.research(ctx)
 
@@ -413,7 +424,7 @@ def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db:
             )
             spec = await create_icp_spec(
                 conn,
-                client_id=_TENANT,
+                workspace_id=_TENANT,
                 icp_key="seg1",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 enabled_packs=("synthpack",),
@@ -447,7 +458,9 @@ def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db:
                 tier="top",
                 aspect="account",
                 field_keys=(_T4_FIELD,),
-                params=params_for_run(client_id=_TENANT, icp_key="seg1", icp_version=spec.version),
+                params=params_for_run(
+                    workspace_id=_TENANT, icp_key="seg1", icp_version=spec.version
+                ),
             )
             await account_worker.research(ctx)
 

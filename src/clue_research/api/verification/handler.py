@@ -59,7 +59,7 @@ from clue_core import (
 from clue_core.compliance import UseGate
 from clue_core.verification import FaithfulnessJudge
 from clue_obs.otel import MetricSink
-from clue_research.claimstore import TenantScope
+from clue_research.claimstore import WorkspaceScope
 from clue_research.durable import AccountSpec
 from clue_research.synthesis import record_synthesis_health
 
@@ -76,7 +76,7 @@ VerificationAccountResolver = Callable[[PhaseContext], Awaitable[Sequence[Accoun
 # Load an entity's **live** claims across all fields (``claims_for(field_key=None)``), scoped.
 # Injected so the handler imports no claim store and stays unit-testable; the concrete is wired at
 # the composition root.
-ClaimLoader = Callable[[EntityId, TenantScope], Awaitable[Sequence[Claim]]]
+ClaimLoader = Callable[[EntityId, WorkspaceScope], Awaitable[Sequence[Claim]]]
 
 # Resolve the committee *contact* entity ids under an account so their ``contact.facet.*`` claims
 # are verified + use-gated alongside the account. ``None`` (the resolver unset) keeps verification
@@ -84,9 +84,9 @@ ClaimLoader = Callable[[EntityId, TenantScope], Awaitable[Sequence[Claim]]]
 ContactResolver = Callable[[EntityId], Awaitable[Sequence[EntityId]]]
 
 # Build the per-client M10.3 :class:`~clue_core.compliance.UseGate` for a run (the gate is
-# parameterized by the client's posture policy, so it is resolved from ``ctx.client_id`` at run
+# parameterized by the client's posture policy, so it is resolved from ``ctx.workspace_id`` at run
 # time, not at handler-construction). ``None`` (the provider unset, or returning ``None``) skips the
-# use-gate leg. Production loads ``ClientPolicy`` and constructs ``compliance.UseGateImpl``.
+# use-gate leg. Production loads ``WorkspacePolicy`` and constructs ``compliance.UseGateImpl``.
 UseGateProvider = Callable[[str], Awaitable[UseGate | None]]
 
 
@@ -101,7 +101,7 @@ class ClaimCorroborator(Protocol):
         entity_id: EntityId,
         field_key: FieldKey | str,
         *,
-        scope: TenantScope,
+        scope: WorkspaceScope,
         entity_type: EntityType | None = None,
     ) -> object: ...
 
@@ -159,12 +159,12 @@ class VerificationPhaseHandler:
                 payload={"verified_accounts": 0, "accounts_failed": 0},
             )
 
-        scope = TenantScope.for_tenant(ctx.client_id)
+        scope = WorkspaceScope.for_workspace(ctx.workspace_id)
         # The use-gate is per-client (its posture policy is the client's), so resolve it once for
-        # the whole run from ``ctx.client_id`` — not at handler construction (one handler serves
+        # the whole run from ``ctx.workspace_id`` — not at handler construction (one handler serves
         # every campaign).
         use_gate = (
-            await self._use_gate_provider(ctx.client_id)
+            await self._use_gate_provider(ctx.workspace_id)
             if self._use_gate_provider is not None
             else None
         )
@@ -183,7 +183,7 @@ class VerificationPhaseHandler:
         )
 
     async def _verify_isolated(
-        self, account_entity_id: EntityId, scope: TenantScope, use_gate: UseGate | None
+        self, account_entity_id: EntityId, scope: WorkspaceScope, use_gate: UseGate | None
     ) -> _AccountVerification:
         # The per-account isolation boundary: one account's fault must not sink the batch (the same
         # coverage-confidence policy the DEEP handler owns).
@@ -201,14 +201,14 @@ class VerificationPhaseHandler:
             entity_ids.extend(await self._contact_resolver(account_entity_id))
         return entity_ids
 
-    async def _load_all(self, entity_ids: Sequence[EntityId], scope: TenantScope) -> list[Claim]:
+    async def _load_all(self, entity_ids: Sequence[EntityId], scope: WorkspaceScope) -> list[Claim]:
         claims: list[Claim] = []
         for entity_id in entity_ids:
             claims.extend(await self._load_claims(entity_id, scope))
         return claims
 
     async def _verify_account(
-        self, account_entity_id: EntityId, scope: TenantScope, use_gate: UseGate | None
+        self, account_entity_id: EntityId, scope: WorkspaceScope, use_gate: UseGate | None
     ) -> CostCents:
         """Run the gate chain over an account + its committee contacts' live claims; return judge
         spend."""

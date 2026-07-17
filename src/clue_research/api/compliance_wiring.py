@@ -18,7 +18,7 @@ Own module so M10 / M11 / M12 never co-edit ``api/composition.py``. M10 fills
   claims **before** the next merge read, so ``current_value`` / the M12 handoff stop seeing them
   (decisions D-OBJ / D-EXP). This is the load-bearing ordering invariant (CLAUDE.md
   ``[M9.5×M1.2/M10.5]``) and lands with the HANDOFF-phase pre-read sweep;
-* **[deferred]** wire ``ClientPolicy.gather_scope`` into the M4.6 Source Planner.
+* **[deferred]** wire ``WorkspacePolicy.gather_scope`` into the M4.6 Source Planner.
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ def register_compliance_wiring() -> None:
     already appended — safe to call more than once, mirroring ``register_narrative_wiring``).
 
     The runtime governance seams M10 supplies — the ``UseGateImpl`` (the last verification gate),
-    the ``RetentionSweep`` tombstone-before-merge-read pass, and the ``ClientPolicy.gather_scope``
+    the ``RetentionSweep`` tombstone-before-merge-read pass, and the
+    ``WorkspacePolicy.gather_scope``
     source-scoping hook — are injected at their live call sites (the ``CampaignPhase.VERIFICATION``
     handler and the HANDOFF-phase pre-read sweep) as those land; see the module docstring.
     """

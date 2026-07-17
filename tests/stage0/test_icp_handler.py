@@ -2,7 +2,7 @@
 
 The handler implements the frozen ``PhaseHandler`` protocol and opens its own (committing)
 transaction, so this exercises it against a real DB. ``ICP_CONFIRMED`` is a checkpoint over an
-*already-confirmed* spec: it reads the pinned ``(client_id, icp_key, icp_version)``, compiles it,
+*already-confirmed* spec: it reads the pinned ``(workspace_id, icp_key, icp_version)``, compiles it,
 and emits the artifact (plan_hash + two-pass counts + pre-run estimate). A fresh tenant per run
 gives a brand-new client + spec at version 1 (the claim/icp tables are append-only — no cleanup).
 """
@@ -64,11 +64,11 @@ async def _seed_committed() -> None:
         await seed_source_manifests(conn)
 
 
-def _ctx(client_id: str, icp_key: str, icp_version: int) -> PhaseContext:
+def _ctx(workspace_id: str, icp_key: str, icp_version: int) -> PhaseContext:
     return PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.ICP_CONFIRMED,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=icp_version,
     )
@@ -83,11 +83,11 @@ def test_handler_emits_artifact_for_confirmed_spec() -> None:
             # build + confirm a spec in a committed transaction, then run the handler over it
             async with transaction() as conn:
                 ref = await build_client_kb(
-                    conn, client_id=client, suffix=suffix, asserted=_ASSERTED
+                    conn, workspace_id=client, suffix=suffix, asserted=_ASSERTED
                 )
-                (proposal,) = await synthesize_icps(conn, ref, client_id=client)
+                (proposal,) = await synthesize_icps(conn, ref, workspace_id=client)
                 confirmation = await confirm_icp(
-                    conn, proposal, client_id=client, client_entity_id=ref.client_entity_id
+                    conn, proposal, workspace_id=client, client_entity_id=ref.client_entity_id
                 )
 
             spec_ref = confirmation.ref

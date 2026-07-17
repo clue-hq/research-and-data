@@ -10,7 +10,7 @@ downstream
 reads the raw ``disposition`` tables — only this view (spec §M13.2 "swap points": the storage layout
 can change without touching the loop).
 
-Scoped by ``(client_id + icp_key + icp_spec_version)`` — **not** version alone: D5 restarts
+Scoped by ``(workspace_id + icp_key + icp_spec_version)`` — **not** version alone: D5 restarts
 ``icp_spec_version`` at 1 per ``icp_key``, so version-only would pool two ICP segments (the same
 reason M12's assembler matches on both). Reproducible + append-only: re-running yields the same
 disposition rows (keyed on ``disposition_id``, ordered deterministically) plus any newly-captured
@@ -45,7 +45,7 @@ from clue_research.review.disposition import (
 
 _VIEW_COLUMNS = (
     "disposition_id, disposition_type, actor, origin, entity_id, entity_type, account_entity_id, "
-    "claim_id, campaign_run_id, client_id, icp_key, icp_spec_version, occurred_at, recorded_at, "
+    "claim_id, campaign_run_id, workspace_id, icp_key, icp_spec_version, occurred_at, recorded_at, "
     "contributing_source_keys, contributing_field_keys, contributing_claim_ids, "
     "fit_score_json, intent_score_json, scoring_rubric, icp_label"
 )
@@ -66,7 +66,7 @@ class LabeledRow(BaseModel):
     account_entity_id: EntityId
     claim_id: ClaimId | None
     campaign_run_id: CampaignRunId | None
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_spec_version: int | None
     occurred_at: UtcDatetime
@@ -108,7 +108,7 @@ def _row_to_labeled(row: dict[str, object]) -> LabeledRow:
             "account_entity_id": row["account_entity_id"],
             "claim_id": row["claim_id"],
             "campaign_run_id": row["campaign_run_id"],
-            "client_id": row["client_id"],
+            "workspace_id": row["workspace_id"],
             "icp_key": row["icp_key"],
             "icp_spec_version": row["icp_spec_version"],
             "occurred_at": row["occurred_at"],
@@ -127,7 +127,7 @@ def _row_to_labeled(row: dict[str, object]) -> LabeledRow:
 async def read_labeled_dataset(
     conn: AsyncConnection,
     *,
-    client_id: str,
+    workspace_id: str,
     icp_spec_version: int | None = None,
     icp_key: str | None = None,
     campaign_run_id: CampaignRunId | None = None,
@@ -136,7 +136,7 @@ async def read_labeled_dataset(
     """Read the labeled dataset for a client, optionally narrowed to one ICP segment/version, one
     campaign run, and/or dispositions recorded ``since`` a watermark.
 
-    ``client_id`` is **required** — the dataset is tenant-private (the fit/intent score claims it
+    ``workspace_id`` is **required** — the dataset is tenant-private (the fit/intent score claims it
     snapshots are ``tenant_private``, M2.5). Deterministic order (``recorded_at``, then
     ``disposition_id``) so the export is reproducible and a ``since`` cursor reads monotonically.
     """
@@ -147,7 +147,7 @@ async def read_labeled_dataset(
                     f"""
                     SELECT {_VIEW_COLUMNS}
                     FROM labeled_dataset
-                    WHERE client_id = :client_id
+                    WHERE workspace_id = :workspace_id
                       AND (CAST(:icp_spec_version AS int) IS NULL
                            OR icp_spec_version = :icp_spec_version)
                       AND (CAST(:icp_key AS text) IS NULL OR icp_key = :icp_key)
@@ -158,7 +158,7 @@ async def read_labeled_dataset(
                     """
                 ),
                 {
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     "icp_spec_version": icp_spec_version,
                     "icp_key": icp_key,
                     "campaign_run_id": campaign_run_id,

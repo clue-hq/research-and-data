@@ -14,7 +14,7 @@ path from content/design into the claim store (substrate §5c / conventions §6)
 of
 ``account_handoff`` rows, the only writes are the assembler caching its own read + the
 one-directional
-``handoff_event`` outbox. Every read is **tenant-scoped** on ``client_id`` (a client's assembled
+``handoff_event`` outbox. Every read is **tenant-scoped** on ``workspace_id`` (a client's assembled
 handoff is ``TENANT_PRIVATE`` even where underlying public claims are shared — substrate §2). Each
 served object carries its ``schema_version`` (so a pinned consumer survives an additive schema
 change
@@ -39,8 +39,8 @@ from clue_core import (
 from clue_db import ConnFactory
 from clue_obs.otel import (
     ATTR_CAMPAIGN_RUN_ID,
-    ATTR_CLIENT_ID,
     ATTR_ENTITY_ID,
+    ATTR_WORKSPACE_ID,
     MetricSink,
     apply_attributes,
     get_metric_sink,
@@ -206,12 +206,12 @@ class HandoffService:
         self,
         conn: AsyncConnection,
         *,
-        client_id: str,
+        workspace_id: str,
         account_entity_id: EntityId,
         icp_spec_version: int,
         icp_key: str = "",
     ) -> ServedHandoff:
-        """Fetch one ``account_handoff`` for ``(client_id, account_entity_id, icp_spec_version,
+        """Fetch one ``account_handoff`` for ``(workspace_id, account_entity_id, icp_spec_version,
         icp_key)`` including its ``provenance_index`` and ``verification_health``.
 
         Raises :class:`HandoffNotFoundError` if no row is materialised for the tenant (a
@@ -219,11 +219,11 @@ class HandoffService:
         account and an absent one are deliberately indistinguishable across the tenant boundary)."""
         with traced_step(
             SPAN_HANDOFF_SERVE,
-            **{ATTR_ENTITY_ID: str(account_entity_id), ATTR_CLIENT_ID: client_id},
+            **{ATTR_ENTITY_ID: str(account_entity_id), ATTR_WORKSPACE_ID: workspace_id},
         ):
             assembled = await read_handoff(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 account_entity_id=account_entity_id,
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
@@ -233,14 +233,14 @@ class HandoffService:
                     f"no handoff for account {account_entity_id} "
                     f"(icp_spec_version={icp_spec_version}, icp_key={icp_key!r}) in this tenant"
                 )
-            self._emit_health_metrics(assembled, client_id=client_id)
+            self._emit_health_metrics(assembled, workspace_id=workspace_id)
             return ServedHandoff(schema_version=HANDOFF_SCHEMA_VERSION, assembled=assembled)
 
     async def resolve_provenance(
         self,
         conn: AsyncConnection,
         *,
-        client_id: str,
+        workspace_id: str,
         account_entity_id: EntityId,
         icp_spec_version: int,
         claim_id: ClaimId,
@@ -252,7 +252,7 @@ class HandoffService:
         the handoff is not servable or the ``claim_id`` is not in its provenance index."""
         assembled = await read_handoff(
             conn,
-            client_id=client_id,
+            workspace_id=workspace_id,
             account_entity_id=account_entity_id,
             icp_spec_version=icp_spec_version,
             icp_key=icp_key,
@@ -270,33 +270,34 @@ class HandoffService:
         self,
         conn: AsyncConnection,
         *,
-        client_id: str,
+        workspace_id: str,
         campaign_run_id: CampaignRunId,
         tier: str | None = None,
         persona: Persona | None = None,
         min_verification_pass_rate: UnitInterval | None = None,
     ) -> HandoffListPage:
         """List the **ready** handoffs for a campaign run (only materialised → only handoff-phase
-        accounts; an account in deep/verification is absent — AC2). Tenant-scoped on ``client_id``;
+        accounts; an account in deep/verification is absent — AC2). Workspace-scoped on
+        ``workspace_id``;
         a run unknown to this tenant yields an empty page with ``run_phase=None`` (no cross-tenant
         leak). Optional filters (spec §M12.3): ``tier`` (the account's research tier), ``persona``
         (presence in the committee), and ``min_verification_pass_rate`` (the tier-4 judge pass-rate
         floor)."""
         with traced_step(
             SPAN_HANDOFF_LIST,
-            **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_CLIENT_ID: client_id},
+            **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_WORKSPACE_ID: workspace_id},
         ):
             run_phase: CampaignPhase | None = None
             run_terminal = False
             if self._readiness_reader is not None:
                 readiness = await self._readiness_reader.run_readiness(
-                    campaign_run_id=campaign_run_id, client_id=client_id
+                    campaign_run_id=campaign_run_id, workspace_id=workspace_id
                 )
                 if readiness is not None:
                     run_phase = readiness.phase
                     run_terminal = readiness.is_terminal
             assembled_rows = await list_handoffs_for_run(
-                conn, client_id=client_id, campaign_run_id=campaign_run_id
+                conn, workspace_id=workspace_id, campaign_run_id=campaign_run_id
             )
             summaries = [
                 _summary(icp_key, row_tier, a)
@@ -312,12 +313,12 @@ class HandoffService:
                 items=tuple(summaries),
             )
 
-    def _emit_health_metrics(self, assembled: AssembledHandoff, *, client_id: str) -> None:
+    def _emit_health_metrics(self, assembled: AssembledHandoff, *, workspace_id: str) -> None:
         """Emit per-served-object verification-health gauges (Doc C §6) → M13.4's surface."""
         sink = self._sink_or_default()
         attrs = {
             ATTR_ENTITY_ID: str(assembled.handoff.account_entity_id),
-            ATTR_CLIENT_ID: client_id,
+            ATTR_WORKSPACE_ID: workspace_id,
         }
         sink.add(METRIC_HANDOFFS_SERVED, 1, attrs)
         vh = assembled.verification_health
@@ -358,7 +359,7 @@ async def emit_ready_handoffs(
     readiness_reader: HandoffReadinessReader,
     publisher: HandoffPublisher | None = None,
     campaign_run_id: CampaignRunId,
-    client_id: str,
+    workspace_id: str,
     assembled_at: UtcDatetime,
     coverage_confidence: UnitInterval | None = None,
     sink: MetricSink | None = None,
@@ -381,15 +382,15 @@ async def emit_ready_handoffs(
     sink = sink or get_metric_sink()
     with traced_step(
         SPAN_HANDOFF_EMIT,
-        **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_CLIENT_ID: client_id},
+        **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_WORKSPACE_ID: workspace_id},
     ) as span:
         readiness = await readiness_reader.run_readiness(
-            campaign_run_id=campaign_run_id, client_id=client_id
+            campaign_run_id=campaign_run_id, workspace_id=workspace_id
         )
         if readiness is None:
             return EmitReport(campaign_run_id=campaign_run_id)
         accounts = await readiness_reader.ready_accounts(
-            campaign_run_id=campaign_run_id, client_id=client_id
+            campaign_run_id=campaign_run_id, workspace_id=workspace_id
         )
         icp_key = readiness.icp_key
         icp_version = readiness.icp_version
@@ -403,7 +404,7 @@ async def emit_ready_handoffs(
                 conn_factory=conn_factory,
                 assembler=assembler,
                 campaign_run_id=campaign_run_id,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 account_entity_id=acc.account_entity_id,
                 icp_version=icp_version,
                 icp_key=icp_key,
@@ -431,7 +432,7 @@ async def _assemble_materialise_emit(
     conn_factory: ConnFactory,
     assembler: HandoffAssembler,
     campaign_run_id: CampaignRunId,
-    client_id: str,
+    workspace_id: str,
     account_entity_id: EntityId,
     icp_version: int,
     icp_key: str,
@@ -447,7 +448,7 @@ async def _assemble_materialise_emit(
         account_entity_id=account_entity_id,
         icp_spec_version=icp_version,
         icp_key=icp_key,
-        client_id=client_id,
+        workspace_id=workspace_id,
         handoff_ref=handoff_ref_for(account_entity_id, icp_version, icp_key),
         schema_version=HANDOFF_SCHEMA_VERSION,
     )
@@ -456,13 +457,13 @@ async def _assemble_materialise_emit(
             conn,
             account_entity_id,
             icp_spec_version=icp_version,
-            client_id=client_id,
+            workspace_id=workspace_id,
             assembled_at=assembled_at,
             icp_key=icp_key,
             campaign_run_id=campaign_run_id,
             coverage_confidence=coverage_confidence,
         )
-        await write_handoff(conn, assembled, client_id=client_id, icp_key=icp_key, tier=tier)
+        await write_handoff(conn, assembled, workspace_id=workspace_id, icp_key=icp_key, tier=tier)
         was_new = await emit_handoff_event(conn, event)
     return event, was_new
 

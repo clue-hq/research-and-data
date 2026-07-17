@@ -22,7 +22,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, claims_for, current_value, insert_claim
+from clue_research.claimstore import ALL_WORKSPACES, claims_for, current_value, insert_claim
 
 from .conftest import rollback_conn, run_async
 
@@ -114,7 +114,7 @@ def test_discovery_claim_roundtrips() -> None:
         claim = _discovery_account()
         async with rollback_conn() as conn:
             await insert_claim(conn, claim)
-            (stored,) = await claims_for(conn, claim.entity_id, scope=ALL_TENANTS)
+            (stored,) = await claims_for(conn, claim.entity_id, scope=ALL_WORKSPACES)
         assert stored.claim_flavor is ClaimFlavor.DISCOVERY
         assert stored.discovery_provenance is not None
         assert stored.discovery_provenance.found_via == "exa_search"
@@ -263,14 +263,14 @@ def test_weak_binding_contact_claim_excluded_from_current_value() -> None:
             )
 
             weak_cv = await current_value(
-                conn, weak_entity, "contact.facet.recent_post", scope=ALL_TENANTS
+                conn, weak_entity, "contact.facet.recent_post", scope=ALL_WORKSPACES
             )
             strong_cv = await current_value(
-                conn, strong_entity, "contact.facet.recent_post", scope=ALL_TENANTS
+                conn, strong_entity, "contact.facet.recent_post", scope=ALL_WORKSPACES
             )
 
             # the weak claim is still stored / queryable, just not the current truth
-            weak_rows = await claims_for(conn, weak_entity, scope=ALL_TENANTS)
+            weak_rows = await claims_for(conn, weak_entity, scope=ALL_WORKSPACES)
         assert weak_cv is None
         assert strong_cv is not None and strong_cv.value_json == "spoke at KubeCon"
         assert len(weak_rows) == 1 and weak_rows[0].identity_binding is IdentityBinding.WEAK

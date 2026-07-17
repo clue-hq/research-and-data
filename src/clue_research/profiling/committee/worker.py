@@ -46,7 +46,7 @@ from clue_core import (
     contact_claim,
 )
 from clue_db import ConnFactory
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
 from clue_research.icp.spec import get_icp_version
 from clue_research.identity import get_account, stamp_reuse, surviving_id
 from clue_research.profiling.committee.admission import AdmissionStatus, admit_candidate
@@ -120,7 +120,7 @@ async def _write_committee_claim(
     source_url: str | None,
     evidence_span: str | None,
     run_id: RunId,
-    tenant_id: str,
+    workspace_id: str,
     identity_binding: IdentityBinding,
 ) -> ClaimId:
     """Write (idempotently) one tenant-private committee field claim for a contact.
@@ -129,7 +129,7 @@ async def _write_committee_claim(
     field claim is ``use_class=professional-public`` (role/persona are professional-public by
     construction; M8.4 computes per-claim use-class for personal facets) and stamped tenant-private
     (a client's committee assessment never amortizes across clients)."""
-    scope = TenantScope.for_tenant(tenant_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     for existing in await claims_for(conn, contact_entity_id, field_key, scope=scope):
         if existing.run_id == run_id:
             return existing.id
@@ -148,7 +148,7 @@ async def _write_committee_claim(
         source_url=source_url,
         evidence_span=evidence_span,
     )
-    claim = stamp_reuse(claim, tenant_id=tenant_id)
+    claim = stamp_reuse(claim, workspace_id=workspace_id)
     return await insert_claim(conn, claim)
 
 
@@ -159,7 +159,7 @@ async def _write_role_and_persona(
     verdict: RoleVerdict,
     *,
     run_id: RunId,
-    tenant_id: str,
+    workspace_id: str,
     identity_binding: IdentityBinding,
 ) -> tuple[ClaimId, ClaimId]:
     """Write the ``contact.role_on_committee`` (with the plausibility verdict) + ``contact.persona``
@@ -181,7 +181,7 @@ async def _write_role_and_persona(
         source_url=source_url,
         evidence_span=evidence_span,
         run_id=run_id,
-        tenant_id=tenant_id,
+        workspace_id=workspace_id,
         identity_binding=identity_binding,
     )
     persona_claim_id = await _write_committee_claim(
@@ -195,7 +195,7 @@ async def _write_role_and_persona(
         source_url=source_url,
         evidence_span=evidence_span,
         run_id=run_id,
-        tenant_id=tenant_id,
+        workspace_id=workspace_id,
         identity_binding=identity_binding,
     )
     return role_claim_id, persona_claim_id
@@ -206,7 +206,7 @@ async def discover_committee(
     *,
     account_entity_id: EntityId,
     run_id: RunId,
-    tenant_id: str,
+    workspace_id: str,
     sources: Sequence[CommitteeSource],
     gateway: LLMGateway,
     spec: ICPSpec | None = None,
@@ -221,7 +221,7 @@ async def discover_committee(
 
     Existence-gates every candidate through M2 (a strong-key-less candidate is dropped), infers +
     plausibility-gates each admitted member's role, writes discovery-provenance + role/persona
-    claims, and bounds the walk by marginal-yield / budget. ``tenant_id`` (= client_id) binds the
+    claims, and bounds the walk by marginal-yield / budget. ``workspace_id`` binds the
     tenant-private role/persona claims. ``role_model`` (or ``config.role_model``) is the gateway
     model id for role inference — required, fails loud (model as config, never hardcoded). When a
     ``pre_spend_gate`` is injected (M9.1), each people-source enumeration is gated as an
@@ -342,7 +342,7 @@ async def discover_committee(
                 candidate,
                 verdict,
                 run_id=run_id,
-                tenant_id=tenant_id,
+                workspace_id=workspace_id,
                 identity_binding=outcome.identity_binding,
             )
             members.append(
@@ -388,7 +388,7 @@ class CommitteeAspectWorker:
     """Adapts :func:`discover_committee` to the M7 ``AspectWorker`` seam (``aspect='committee'``).
 
     The orchestrator hands an :class:`AspectContext` (no connection); the worker opens one from the
-    injected ``ConnFactory`` and reads ``client_id``/``icp_key``/``icp_version`` from
+    injected ``ConnFactory`` and reads ``workspace_id``/``icp_key``/``icp_version`` from
     ``ctx.params`` (the phase-input escape hatch) to load the ICP spec + bind the tenant. Concrete
     ``CommitteeSource``s + the gateway + the role model are injected at the ``api`` composition
     root."""
@@ -413,19 +413,19 @@ class CommitteeAspectWorker:
         self._config = config
 
     async def research(self, ctx: AspectContext) -> WorkerResult:
-        client_id = str(ctx.params["client_id"])
+        workspace_id = str(ctx.params["workspace_id"])
         icp_key = str(ctx.params["icp_key"])
         icp_version = int(ctx.params["icp_version"])  # type: ignore[arg-type]
         source_plan = ctx.params.get("source_plan")
         plan = [str(key) for key in source_plan] if isinstance(source_plan, (list, tuple)) else None
 
         async with self._session_factory() as conn:
-            spec = await get_icp_version(conn, client_id, icp_key, icp_version)
+            spec = await get_icp_version(conn, workspace_id, icp_key, icp_version)
             result = await discover_committee(
                 conn,
                 account_entity_id=ctx.entity_id,
                 run_id=ctx.run_id,
-                tenant_id=client_id,
+                workspace_id=workspace_id,
                 sources=self._sources,
                 gateway=self._gateway,
                 spec=spec,

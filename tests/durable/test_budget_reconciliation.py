@@ -65,7 +65,7 @@ async def _seed(
     await ensure_campaign_run(
         conn,
         campaign_run_id=campaign,
-        client_id="client-1",
+        workspace_id="client-1",
         icp_key="icp-a",
         icp_version=1,
         budget_cap_cents=cap,

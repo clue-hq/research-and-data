@@ -115,7 +115,7 @@ class AccountRunStore(Protocol):
         campaign_run_id: CampaignRunId,
         entity_id: EntityId,
         tier: str,
-        tenant_id: str | None,
+        workspace_id: str | None,
         field_keys: Sequence[str] | None,
     ) -> ResearchPlan:
         """Ensure the run row exists (idempotent on re-entry), compute the gap-fields, build the
@@ -171,7 +171,8 @@ class DbAccountRunStore:
 
     Each method runs in its own ``db.transaction()`` (so ``begin``'s ensure-row + plan-persist
     commit atomically, the M7.1 "plan committed before any spawn" guarantee). Gap detection uses the
-    tenant-scoped merge view: ``for_tenant(client_id)`` when a tenant is given (so the run sees this
+    workspace-scoped merge view: ``for_workspace(workspace_id)`` when a workspace is given (so the
+    run sees this
     client's private claims — resonance/facets are tenant-private), else the public base. A
     ``recursion_policy`` (M7.2) makes the plan record the per-tier facet-recursion depth allowance;
     the runtime ``SpawnGuard`` enforces the same policy."""
@@ -186,15 +187,15 @@ class DbAccountRunStore:
         campaign_run_id: CampaignRunId,
         entity_id: EntityId,
         tier: str,
-        tenant_id: str | None,
+        workspace_id: str | None,
         field_keys: Sequence[str] | None,
     ) -> ResearchPlan:
-        from clue_research.claimstore.tenancy import TenantScope
+        from clue_research.claimstore.tenancy import WorkspaceScope
 
         scope = (
-            TenantScope.for_tenant(tenant_id)
-            if tenant_id is not None
-            else TenantScope.public_only()
+            WorkspaceScope.for_workspace(workspace_id)
+            if workspace_id is not None
+            else WorkspaceScope.public_only()
         )
         async with transaction() as conn:
             await ensure_account_run(
@@ -288,7 +289,7 @@ class _GraphState(TypedDict, total=False):
     campaign_run_id: str
     account_run_id: str
     tier: str
-    tenant_id: str | None
+    workspace_id: str | None
     field_keys: list[str] | None
     # per-aspect Send payload (set on each parallel ``aspect_worker`` invocation, not the main run)
     aspect_spec: dict[str, Any]
@@ -383,7 +384,7 @@ class AccountResearchGraph:
                 campaign_run_id=CampaignRunId(UUID(state["campaign_run_id"])),
                 entity_id=EntityId(UUID(state["entity_id"])),
                 tier=state["tier"],
-                tenant_id=state.get("tenant_id"),
+                workspace_id=state.get("workspace_id"),
                 field_keys=tuple(field_keys) if field_keys else None,
             )
             apply_attributes(
@@ -714,7 +715,7 @@ class AccountResearchGraph:
         campaign_run_id: CampaignRunId,
         checkpointer: BaseCheckpointSaver[Any],
         account_run_id: RunId | None = None,
-        tenant_id: str | None = None,
+        workspace_id: str | None = None,
         field_keys: Sequence[str] | None = None,
     ) -> AccountRunResult:
         """Research one account and return its references (M7.1).
@@ -733,7 +734,7 @@ class AccountResearchGraph:
             "campaign_run_id": str(campaign_run_id),
             "account_run_id": str(run_id),
             "tier": tier,
-            "tenant_id": tenant_id,
+            "workspace_id": workspace_id,
             "field_keys": list(field_keys) if field_keys is not None else None,
             "aspect_results": [],
         }

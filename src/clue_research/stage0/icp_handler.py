@@ -4,7 +4,8 @@ M5 owns the campaign-run's first two phases (Doc C §4). After ``REVERSE_PROFILI
 ``ICP_CONFIRMED`` phase is the **checkpoint over an already-confirmed ICP spec**: the interactive
 synthesize → edit → confirm flow (:mod:`clue_research.stage0.icp_synthesis` /
 :mod:`clue_research.stage0.icp_confirm`) produced and activated the versioned ``ICPSpec`` for this
-campaign's ``(client_id, icp_key, icp_version)``; this handler emits the **phase artifact** the M7
+campaign's ``(workspace_id, icp_key, icp_version)``; this handler emits the **phase artifact** the
+M7
 state machine advances on — the compiled field-plan reference (``plan_hash``, the two-pass field
 counts) plus the pre-run cost estimate (Doc C §5).
 
@@ -22,7 +23,7 @@ from pydantic import JsonValue
 
 from clue_core import CampaignPhase, PhaseContext, PhaseResult, PhaseStatus
 from clue_db import transaction
-from clue_obs.otel import ATTR_CLIENT_ID, apply_attributes, traced_step
+from clue_obs.otel import ATTR_WORKSPACE_ID, apply_attributes, traced_step
 from clue_research.icp import compile_field_plan, get_icp_version
 from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 
@@ -38,9 +39,9 @@ class IcpConfirmedHandler:
         self._estimate_inputs = estimate_inputs
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        with traced_step("stage0.icp_confirmed", **{ATTR_CLIENT_ID: ctx.client_id}) as span:
+        with traced_step("stage0.icp_confirmed", **{ATTR_WORKSPACE_ID: ctx.workspace_id}) as span:
             async with transaction() as conn:
-                spec = await get_icp_version(conn, ctx.client_id, ctx.icp_key, ctx.icp_version)
+                spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
                 if spec is None:
                     return PhaseResult(
                         status=PhaseStatus.FAILED,

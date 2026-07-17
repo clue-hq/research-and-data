@@ -87,7 +87,7 @@ def test_campaign_run_round_trip() -> None:
             await ensure_campaign_run(
                 conn,
                 campaign_run_id=run_id,
-                client_id="client-1",
+                workspace_id="client-1",
                 icp_key="default",
                 icp_version=3,
                 budget_cap_cents=Decimal("50000"),
@@ -96,7 +96,7 @@ def test_campaign_run_round_trip() -> None:
             row = await get_campaign_run(conn, run_id)
         assert row is not None
         assert row.id == run_id
-        assert row.client_id == "client-1"
+        assert row.workspace_id == "client-1"
         assert row.icp_key == "default"
         assert row.icp_version == 3
         assert row.phase is CampaignPhase.REVERSE_PROFILING  # default first phase
@@ -114,15 +114,15 @@ def test_ensure_campaign_run_is_idempotent() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             # a second ensure with different data is a no-op (ON CONFLICT DO NOTHING)
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="b", icp_key="other", icp_version=9
+                conn, campaign_run_id=run_id, workspace_id="b", icp_key="other", icp_version=9
             )
             row = await get_campaign_run(conn, run_id)
         assert row is not None
-        assert row.client_id == "a"  # the first write stands
+        assert row.workspace_id == "a"  # the first write stands
         assert row.icp_version == 1
 
     run_async(_run())
@@ -133,7 +133,7 @@ def test_setters_update_run_fields() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             await set_phase(conn, run_id, phase=CampaignPhase.DEEP, status=CampaignRunStatus.ACTIVE)
             await set_run_status(conn, run_id, status=CampaignRunStatus.PAUSED, stamp_paused=True)
@@ -159,7 +159,7 @@ def test_checkpoint_upsert_read_back_and_committed_at_invariant() -> None:
         key = phase_key(run_id, phase)
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             # stage in_progress → committed_at is NULL
             await upsert_checkpoint(
@@ -227,7 +227,7 @@ def test_checkpoints_for_distinct_phases_coexist() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             for phase in (CampaignPhase.DISCOVERY, CampaignPhase.SCORING):
                 await upsert_checkpoint(
@@ -251,7 +251,7 @@ def test_adjustment_journal_append_and_list_order() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             await insert_adjustment(
                 conn, campaign_run_id=run_id, kind="icp_version", detail={"icp_version": 2}
@@ -275,7 +275,7 @@ def test_adjustment_journal_is_immutable() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             await insert_adjustment(
                 conn, campaign_run_id=run_id, kind="icp_version", detail={"icp_version": 2}
@@ -295,7 +295,7 @@ def test_adjustment_journal_rejects_delete() -> None:
         run_id = new_campaign_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await ensure_campaign_run(
-                conn, campaign_run_id=run_id, client_id="a", icp_key="k", icp_version=1
+                conn, campaign_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
             )
             await insert_adjustment(
                 conn, campaign_run_id=run_id, kind="icp_version", detail={"icp_version": 2}

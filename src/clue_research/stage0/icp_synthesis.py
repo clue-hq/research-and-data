@@ -64,7 +64,7 @@ async def synthesize_icps(
     conn: AsyncConnection,
     client_kb_ref: ClientKnowledgeBaseRef,
     *,
-    client_id: str,
+    workspace_id: str,
     gateway: LLMGateway | None = None,
     synthesis_model: str | None = None,
 ) -> list[ICPProposal]:
@@ -80,7 +80,7 @@ async def synthesize_icps(
     kb_claims = await read_client_kb_claims(
         conn,
         client_kb_ref.client_entity_id,
-        client_id=client_id,
+        workspace_id=workspace_id,
         version=client_kb_ref.client_kb_version,
     )
 

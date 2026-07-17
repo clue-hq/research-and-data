@@ -30,7 +30,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, insert_claim, register_field
+from clue_research.claimstore import ALL_WORKSPACES, insert_claim, register_field
 from clue_research.icp import (
     Contribution,
     ContributionFlag,
@@ -514,7 +514,7 @@ def _plan(*fields: FieldDef) -> FieldPlan:
     validate_rubric acceptance criterion is exercised in the always-run gate, not only with a DB."""
     entries = tuple(FieldPlanEntry(field=f) for f in fields)
     return FieldPlan(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         icp_version=1,
         fields=entries,
@@ -591,7 +591,7 @@ pytestmark_db = pytest.mark.usefixtures("require_icp_db")
 
 def _icp(**overrides: object) -> ICPSpec:
     base: dict[str, object] = {
-        "client_id": "acme",
+        "workspace_id": "acme",
         "icp_key": "default",
         "created_from": ICPCreatedFrom.SYNTHESIS,
     }
@@ -677,7 +677,7 @@ def test_rubric_is_a_versioned_icp_spec_slot() -> None:
             )
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -688,7 +688,7 @@ def test_rubric_is_a_versioned_icp_spec_slot() -> None:
             rubric_v2 = reweighted(rubric_v1, fit_weights={"core.employee_count": 9.0})
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.CLIENT_EDIT,
                 field_keys=("core.employee_count",),
@@ -761,7 +761,7 @@ def test_score_entity_end_to_end_and_reproducible() -> None:
                     )
                 ),
             )
-            result = await score_entity(conn, rubric, entity, scope=ALL_TENANTS)
+            result = await score_entity(conn, rubric, entity, scope=ALL_WORKSPACES)
             by_key = {c.field_key: c for c in result.contributions}
             assert by_key["core.employee_count"].claim_id == emp_id
             assert by_key["core.employee_count"].factor == pytest.approx(0.8)
@@ -771,7 +771,7 @@ def test_score_entity_end_to_end_and_reproducible() -> None:
             # intent = (1*1.0 + 1*0.0) / 2 = 0.5  (funding present, tech_stack missing)
             assert result.intent_score == pytest.approx(0.5)
 
-            again = await score_entity(conn, rubric, entity, scope=ALL_TENANTS)
+            again = await score_entity(conn, rubric, entity, scope=ALL_WORKSPACES)
             assert again == result  # reproducible: same scores + same provenance
 
     run_async(_run())

@@ -25,7 +25,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, claims_for_runs, insert_claim
+from clue_research.claimstore import ALL_WORKSPACES, claims_for_runs, insert_claim
 from clue_research.review import (
     InMemoryCampaignStateReader,
     InMemoryCostBurnDownReader,
@@ -85,7 +85,7 @@ def test_source_yield_equals_get_source_yield() -> None:
         async with rollback_conn() as conn:
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="arxiv",
                 claims_total=10,
@@ -95,7 +95,7 @@ def test_source_yield_equals_get_source_yield() -> None:
             )
             await record_source_yield(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 source_key="builtwith",
                 claims_total=4,
@@ -104,8 +104,8 @@ def test_source_yield_equals_get_source_yield() -> None:
                 cost_cents=Decimal(2),
             )
             surface = _surface()
-            via_surface = await surface.source_yield(conn, client_id=_CLIENT, icp_key=_ICP)
-            via_helper = await get_source_yield(conn, client_id=_CLIENT, icp_key=_ICP)
+            via_surface = await surface.source_yield(conn, workspace_id=_CLIENT, icp_key=_ICP)
+            via_helper = await get_source_yield(conn, workspace_id=_CLIENT, icp_key=_ICP)
             # the spec's explicit "a test asserts equality" — same helper, so byte-for-byte equal.
             assert list(via_surface) == list(via_helper)
             assert {s.source_key for s in via_surface} == {"arxiv", "builtwith"}
@@ -126,13 +126,13 @@ def test_claims_for_runs_scopes_by_run_id() -> None:
             await insert_claim(conn, _account_claim(e2, run_b), validate_field=False)
             await insert_claim(conn, _account_claim(e3, run_c), validate_field=False)
 
-            scoped = await claims_for_runs(conn, [run_a, run_b], scope=ALL_TENANTS)
+            scoped = await claims_for_runs(conn, [run_a, run_b], scope=ALL_WORKSPACES)
             got_runs = {c.run_id for c in scoped}
             assert got_runs == {run_a, run_b}  # run_c excluded
             assert len(scoped) == 2
 
             # empty run set → empty (no query, no error).
-            assert await claims_for_runs(conn, [], scope=ALL_TENANTS) == []
+            assert await claims_for_runs(conn, [], scope=ALL_WORKSPACES) == []
 
     run_async(_run())
 
@@ -148,7 +148,7 @@ def test_pre_run_estimate_writes_cost_estimate_snapshot() -> None:
 
             # conn=None → pure read, writes nothing.
             await surface.pre_run_estimate(
-                campaign_run_id=run, client_id=_CLIENT, discovered_count=120, conn=None
+                campaign_run_id=run, workspace_id=_CLIENT, discovered_count=120, conn=None
             )
             before = (
                 await conn.execute(
@@ -161,7 +161,7 @@ def test_pre_run_estimate_writes_cost_estimate_snapshot() -> None:
             # conn supplied → one snapshot appended with the projected figures.
             result = await surface.pre_run_estimate(
                 campaign_run_id=run,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 discovered_count=120,
                 tier_cutoffs={"top": 0.8},
                 conn=conn,
@@ -222,10 +222,10 @@ def test_read_methods_make_no_domain_writes() -> None:
             ).scalar_one()
 
             surface = _surface()
-            await surface.source_yield(conn, client_id=_CLIENT)
+            await surface.source_yield(conn, workspace_id=_CLIENT)
             await surface.pre_run_estimate(
                 campaign_run_id=new_campaign_run_id(),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 discovered_count=10,
                 conn=None,  # pure read — no snapshot
             )

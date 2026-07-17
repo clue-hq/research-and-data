@@ -43,7 +43,7 @@ class CampaignRunRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: CampaignRunId
-    client_id: str
+    workspace_id: str
     icp_key: str
     icp_version: int
     phase: CampaignPhase
@@ -91,17 +91,17 @@ class AdjustmentRow(BaseModel):
 # --- campaign_run --------------------------------------------------------------------------------
 
 _RUN_COLUMNS = (
-    "id, client_id, icp_key, icp_version, phase, status, budget_cap_cents, spent_cents, "
+    "id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, spent_cents, "
     "tier_cutoffs_json, paused_at, resumed_at, created_at, updated_at"
 )
 
 _ENSURE_RUN_SQL = text(
     """
     INSERT INTO campaign_run (
-        id, client_id, icp_key, icp_version, phase, status, budget_cap_cents, tier_cutoffs_json
+        id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, tier_cutoffs_json
     )
     VALUES (
-        :id, :client_id, :icp_key, :icp_version,
+        :id, :workspace_id, :icp_key, :icp_version,
         CAST(:phase AS campaign_phase), CAST(:status AS campaign_run_status),
         :budget_cap_cents, CAST(:tier_cutoffs AS jsonb)
     )
@@ -116,7 +116,7 @@ async def ensure_campaign_run(
     conn: AsyncConnection,
     *,
     campaign_run_id: CampaignRunId,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     icp_version: int,
     budget_cap_cents: CostCents | None = None,
@@ -133,7 +133,7 @@ async def ensure_campaign_run(
         _ENSURE_RUN_SQL,
         {
             "id": campaign_run_id,
-            "client_id": client_id,
+            "workspace_id": workspace_id,
             "icp_key": icp_key,
             "icp_version": icp_version,
             "budget_cap_cents": budget_cap_cents,
@@ -357,7 +357,7 @@ def _row_to_campaign_run(row: dict[str, object]) -> CampaignRunRow:
     return CampaignRunRow.model_validate(
         {
             "id": row["id"],
-            "client_id": row["client_id"],
+            "workspace_id": row["workspace_id"],
             "icp_key": row["icp_key"],
             "icp_version": row["icp_version"],
             "phase": row["phase"],

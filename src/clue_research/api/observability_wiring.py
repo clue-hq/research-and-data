@@ -22,7 +22,7 @@ the :class:`~clue_research.review.ObservabilitySurface`:
   the
   additive ``core.CoverageReport`` projection.
 
-Each reader is tenant-scoped (a run whose ``client_id`` is not the caller's resolves to ``None``,
+Each reader is tenant-scoped (a run whose ``workspace_id`` is not the caller's resolves to ``None``,
 substrate §2) and manages its own short read transaction via an injected ``conn_factory`` (mirroring
 :class:`~clue_research.api.handoff_wiring.DurableHandoffReadinessReader`). Nothing imports ``api``
 (Rule 5); this module is a leaf wired only at an app/test composition root — and it does **not**
@@ -54,7 +54,7 @@ from clue_obs.otel import (
     InMemorySink,
     record_verification_health,
 )
-from clue_research.claimstore import TenantScope, claims_for_runs
+from clue_research.claimstore import WorkspaceScope, claims_for_runs
 from clue_research.discovery_scoring import CoverageReport as _DiscoveryCoverageReport
 from clue_research.durable import (
     BudgetStateNotFound,
@@ -92,11 +92,11 @@ class DurableCampaignStateReader:
         self._conn_factory = conn_factory
 
     async def run_phase_state(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> RunPhaseState | None:
         async with self._conn_factory() as conn:
             run = await get_campaign_run(conn, campaign_run_id)
-            if run is None or run.client_id != client_id:
+            if run is None or run.workspace_id != workspace_id:
                 return None
             checkpoints: list[PhaseProgress] = []
             for phase in CampaignPhase:
@@ -105,7 +105,7 @@ class DurableCampaignStateReader:
                     checkpoints.append(PhaseProgress(phase=phase, status=cp.status.value))
         return RunPhaseState(
             campaign_run_id=campaign_run_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             current_phase=run.phase,
             run_status=run.status.value,
             is_terminal=run.status in _TERMINAL_RUN_STATUSES,
@@ -123,10 +123,12 @@ class BudgetEngineBurnDownReader:
         self._budget = budget
         self._conn_factory = conn_factory
 
-    async def burn_down(self, *, campaign_run_id: CampaignRunId, client_id: str) -> BurnDown | None:
+    async def burn_down(
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+    ) -> BurnDown | None:
         async with self._conn_factory() as conn:
             run = await get_campaign_run(conn, campaign_run_id)
-        if run is None or run.client_id != client_id:
+        if run is None or run.workspace_id != workspace_id:
             return None
         try:
             return await self._budget.burn_down(campaign_run_id)
@@ -142,16 +144,16 @@ class BudgetCapsPreRunEstimator:
     store."""
 
     def __init__(self, *, caps_for: Callable[[str], BudgetCaps] | None = None) -> None:
-        self._caps_for = caps_for or (lambda client_id: get_config(client_id).budget_caps)
+        self._caps_for = caps_for or (lambda workspace_id: get_config(workspace_id).budget_caps)
 
     async def estimate(
         self,
         *,
-        client_id: str,
+        workspace_id: str,
         discovered_count: int,
         tier_cutoffs: Mapping[str, float] | None = None,
     ) -> Estimate:
-        caps = self._caps_for(client_id)
+        caps = self._caps_for(workspace_id)
         return project_spend(
             caps,
             discovered_count=discovered_count,
@@ -186,16 +188,18 @@ class ClaimScanVerificationHealthReader:
         self._conn_factory = conn_factory
 
     async def health_counts(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> VerificationHealthCounts | None:
         async with self._conn_factory() as conn:
             run = await get_campaign_run(conn, campaign_run_id)
-            if run is None or run.client_id != client_id:
+            if run is None or run.workspace_id != workspace_id:
                 return None
             account_runs = await list_account_runs(conn, campaign_run_id)
             run_ids = [ar.id for ar in account_runs]
             claims = (
-                await claims_for_runs(conn, run_ids, scope=TenantScope.for_tenant(client_id))
+                await claims_for_runs(
+                    conn, run_ids, scope=WorkspaceScope.for_workspace(workspace_id)
+                )
                 if run_ids
                 else []
             )
@@ -233,11 +237,11 @@ class CheckpointCoverageReportReader:
         self._conn_factory = conn_factory
 
     async def coverage_for_run(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> CoverageReport | None:
         async with self._conn_factory() as conn:
             run = await get_campaign_run(conn, campaign_run_id)
-            if run is None or run.client_id != client_id:
+            if run is None or run.workspace_id != workspace_id:
                 return None
             checkpoint = await get_checkpoint(conn, campaign_run_id, CampaignPhase.TIER_CHECKPOINT)
         if checkpoint is None:

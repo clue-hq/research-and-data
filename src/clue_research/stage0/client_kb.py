@@ -44,16 +44,16 @@ from clue_core import (
     new_run_id,
 )
 from clue_obs.otel import (
-    ATTR_CLIENT_ID,
     ATTR_COST_CENTS,
     ATTR_ENTITY_ID,
     ATTR_N_CLAIMS,
+    ATTR_WORKSPACE_ID,
     apply_attributes,
     traced_step,
 )
 from clue_research.claimstore import (
-    TenantScope,
     ValueSchemaError,
+    WorkspaceScope,
     claims_for,
     get_field,
     insert_claim,
@@ -95,7 +95,8 @@ _EVIDENCE_SPAN_MAX = 2000  # cap a raw excerpt used as an evidence_span
 # Minimum match score to reuse an existing entity as *the client* (vs admitting a fresh one). A
 # deterministic strong-key hit scores 1.0; a fuzzy name+geo match caps well below this, so this
 # threshold reuses the client's own prior-run entity (exact self-match) without risking a collapse
-# onto a merely similar company. Identity-resolution policy lives in M2; this is the client-identity
+# onto a merely similar company. Identity-resolution policy lives in M2; this is the
+# workspace-identity
 # reuse knob for the (degenerate) no-registrable-domain case.
 _CLIENT_REUSE_MIN_SCORE = 0.85
 
@@ -104,7 +105,7 @@ async def reverse_profile(
     conn: AsyncConnection,
     client_input: ClientInput,
     *,
-    client_id: str,
+    workspace_id: str,
     run_id: RunId | None = None,
     budget_cap_cents: Decimal | None = None,
     judge: FaithfulnessJudge | None = None,
@@ -115,7 +116,7 @@ async def reverse_profile(
     high-confidence fuzzy fallback so a re-run never spawns a duplicate), ingests any volunteered
     materials as high-trust claims, then drives the trust-tiered waterfall (tiers 1–3) over the
     ``client.*`` field set — stopping gracefully at ``budget_cap_cents`` — and writes the version
-    marker. ``client_id`` is the tenant the client-knowledge claims are bound to.
+    marker. ``workspace_id`` is the tenant the client-knowledge claims are bound to.
 
     Idempotent on re-entry: pass the *same* ``run_id`` to resume a partial run without
     double-writing (the waterfall dedups per ``(entity, field, source, run)``; materials/marker are
@@ -132,12 +133,12 @@ async def reverse_profile(
     ``judge`` is the injected M9 seam used only for tier-4 client claims (consumed behind the judge
     — the tier-4 *synthesis* is M11). It is optional: the default tiers-1–3 pass needs no judge.
     """
-    scope = TenantScope.for_tenant(client_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     run = run_id if run_id is not None else new_run_id()
 
     with traced_step(
         "stage0.reverse_profile",
-        **{ATTR_CLIENT_ID: client_id},
+        **{ATTR_WORKSPACE_ID: workspace_id},
     ) as span:
         # Field registry must carry the client.* fields before any client claim is written.
         await load_client_knowledge_pack(conn)
@@ -164,7 +165,7 @@ async def reverse_profile(
                 conn,
                 material,
                 client_entity_id=client_entity_id,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 run_id=run,
                 already_written=material_fields,
             )
@@ -190,7 +191,7 @@ async def reverse_profile(
                 field_def,
                 mode=_MODE,
                 run_id=run,
-                tenant_id=client_id,
+                workspace_id=workspace_id,
                 budget_envelope=budget_cap_cents,
                 cost_so_far=spent,
                 reuse_policy=CLIENT_KNOWLEDGE_REUSE_POLICY,
@@ -212,7 +213,7 @@ async def reverse_profile(
         version = await _write_version_marker(
             conn,
             client_entity_id=client_entity_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             run_id=run,
             coverage=coverage,
         )
@@ -290,7 +291,7 @@ async def _ingest_material(
     material: VolunteeredMaterial,
     *,
     client_entity_id: EntityId,
-    client_id: str,
+    workspace_id: str,
     run_id: RunId,
     already_written: set[str],
 ) -> list[str]:
@@ -322,7 +323,7 @@ async def _ingest_material(
             research_mode=_MODE,
             evidence_span=span,
         )
-        claim = stamp_reuse(claim, tenant_id=client_id, policy=CLIENT_KNOWLEDGE_REUSE_POLICY)
+        claim = stamp_reuse(claim, workspace_id=workspace_id, policy=CLIENT_KNOWLEDGE_REUSE_POLICY)
         try:
             await insert_claim(conn, claim)
         except ValueSchemaError:
@@ -337,7 +338,7 @@ async def _judge_tier4_claims(
     client_entity_id: EntityId,
     *,
     run_id: RunId,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     judge: FaithfulnessJudge,
 ) -> list[JudgeResult]:
     """Run the injected faithfulness judge over any tier-4 client claims written this run.
@@ -383,7 +384,7 @@ async def _write_version_marker(
     conn: AsyncConnection,
     *,
     client_entity_id: EntityId,
-    client_id: str,
+    workspace_id: str,
     run_id: RunId,
     coverage: CoverageReport,
 ) -> int:
@@ -395,7 +396,7 @@ async def _write_version_marker(
         client_entity_id,
         CLIENT_KB_VERSION,
         include_superseded=True,
-        scope=TenantScope.for_tenant(client_id),
+        scope=WorkspaceScope.for_workspace(workspace_id),
     )
 
     existing_for_run = next((m for m in markers if m.run_id == run_id), None)
@@ -421,7 +422,7 @@ async def _write_version_marker(
         run_id=run_id,
         research_mode=_MODE,
     )
-    marker = stamp_reuse(marker, tenant_id=client_id, policy=CLIENT_KNOWLEDGE_REUSE_POLICY)
+    marker = stamp_reuse(marker, workspace_id=workspace_id, policy=CLIENT_KNOWLEDGE_REUSE_POLICY)
 
     current_marker = next((m for m in markers if m.superseded_by is None), None)
     if current_marker is not None:
@@ -444,7 +445,7 @@ def _marker_version(claim: Claim) -> int:
 
 
 async def current_kb_version(
-    conn: AsyncConnection, client_entity_id: EntityId, *, client_id: str
+    conn: AsyncConnection, client_entity_id: EntityId, *, workspace_id: str
 ) -> int | None:
     """The current Client Knowledge Base version (the non-superseded marker), or ``None`` if the
     client has never been reverse-profiled."""
@@ -453,7 +454,7 @@ async def current_kb_version(
         client_entity_id,
         CLIENT_KB_VERSION,
         include_superseded=False,
-        scope=TenantScope.for_tenant(client_id),
+        scope=WorkspaceScope.for_workspace(workspace_id),
     )
     versions = [_marker_version(m) for m in markers]
     return max(versions) if versions else None
@@ -463,7 +464,7 @@ async def _pinned_marker(
     conn: AsyncConnection,
     client_entity_id: EntityId,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     version: int | None,
 ) -> Claim | None:
     """The ``client.kb_version`` marker pinning a KB version (latest when ``version is None``), or
@@ -483,7 +484,7 @@ async def _pinned_field_claims(
     conn: AsyncConnection,
     client_entity_id: EntityId,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
     version: int | None,
 ) -> dict[str, Claim]:
     """The Client Knowledge Base as ``{field_key: winning Claim}`` for a version (the latest claim
@@ -508,7 +509,7 @@ async def read_client_kb(
     conn: AsyncConnection,
     client_entity_id: EntityId,
     *,
-    client_id: str,
+    workspace_id: str,
     version: int | None = None,
 ) -> dict[str, JsonValue]:
     """Read the Client Knowledge Base as a ``{field_key: value}`` map, **scoped to a KB version**.
@@ -521,7 +522,7 @@ async def read_client_kb(
     The raw ``current_value`` merge seam is deliberately NOT used here: that seam carries a prior
     value forward under trust+freshness until its TTL ages it out; this read is version-correct.
     Both paths read with ``include_superseded`` so a prior version stays queryable (append-only)."""
-    scope = TenantScope.for_tenant(client_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     pinned = await _pinned_field_claims(conn, client_entity_id, scope=scope, version=version)
     return {field_key: claim.value_json for field_key, claim in pinned.items()}
 
@@ -530,7 +531,7 @@ async def read_client_kb_claims(
     conn: AsyncConnection,
     client_entity_id: EntityId,
     *,
-    client_id: str,
+    workspace_id: str,
     version: int | None = None,
 ) -> dict[str, Claim]:
     """Like :func:`read_client_kb`, but returns the underlying ``{field_key: Claim}`` for a version.
@@ -538,5 +539,5 @@ async def read_client_kb_claims(
     M5.2 ICP synthesis reads through this so every proposed dimension can cite the **claim_id** of
     the client fact that justifies it (``justifying_claim_ids`` — no proposal element justified by
     "synthesis thought it was a good idea"). Same version-scoping as :func:`read_client_kb`."""
-    scope = TenantScope.for_tenant(client_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     return await _pinned_field_claims(conn, client_entity_id, scope=scope, version=version)

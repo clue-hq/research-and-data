@@ -82,7 +82,7 @@ from clue_obs.otel import (
     get_metric_sink,
     traced_step,
 )
-from clue_research.claimstore import ALL_TENANTS, TenantScope
+from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope
 
 # Verification-health metrics (Doc C §6 — freshness is a verification-health number). M9-local
 # metric name strings (the shared sink accepts any string), defined here so M9.5 stays self-
@@ -269,8 +269,8 @@ def _utcnow() -> datetime:
 class FreshnessImpl:
     """The M9.5 freshness engine (implements :class:`clue_core.verification.Freshness`).
 
-    Constructed with the resolved :class:`CadencePolicy`, a :class:`TenantScope` for the scan
-    (defaults to :data:`ALL_TENANTS` — re-research is an operator maintenance scan; the emitted
+    Constructed with the resolved :class:`CadencePolicy`, a :class:`WorkspaceScope` for the scan
+    (defaults to :data:`ALL_WORKSPACES` — re-research is an operator maintenance scan; the emitted
     candidates carry claim/entity *ids*, never values, so the cross-tenant scan leaks no tenant's
     data), a connection factory (defaults to a committed transaction per scan), and an optional
     metric sink. Injected at the ``api`` composition root; per-client policy is loaded via
@@ -280,7 +280,7 @@ class FreshnessImpl:
         self,
         *,
         policy: CadencePolicy = DEFAULT_CADENCE_POLICY,
-        scope: TenantScope = ALL_TENANTS,
+        scope: WorkspaceScope = ALL_WORKSPACES,
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
     ) -> None:
@@ -558,7 +558,7 @@ class FreshnessImpl:
 
 
 async def load_cadence_policy(
-    conn: AsyncConnection, *, client_id: str | None = None
+    conn: AsyncConnection, *, workspace_id: str | None = None
 ) -> CadencePolicy:
     """Load the most-specific :class:`CadencePolicy` for a scope: per-client rows -> global rows ->
     :data:`DEFAULT_CADENCE_POLICY`. The first scope that has *any* ``cadence_policy`` row wins
@@ -569,8 +569,8 @@ async def load_cadence_policy(
 
     Returns the built-in default when no row matches (policy-as-data; fail-soft)."""
     candidates: list[str | None] = []
-    if client_id is not None:
-        candidates.append(client_id)
+    if workspace_id is not None:
+        candidates.append(workspace_id)
     candidates.append(None)  # the global default rows
 
     for scope_client in candidates:
@@ -581,11 +581,11 @@ async def load_cadence_policy(
                     SELECT DISTINCT ON (field_class)
                         field_class, ttl, refresh_cadence, version
                     FROM cadence_policy
-                    WHERE client_id IS NOT DISTINCT FROM :client_id
+                    WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                     ORDER BY field_class, version DESC, created_at DESC, policy_id DESC
                     """
                 ),
-                {"client_id": scope_client},
+                {"workspace_id": scope_client},
             )
         ).all()
         if not rows:

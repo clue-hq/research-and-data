@@ -15,8 +15,9 @@ truth, conventions §6 / substrate §5c). The emit/notify *push* is the one-dire
 ``handoff_event`` outbox, driven by the campaign-run state machine (``api/handoff_wiring``), never
 by a request here.
 
-**Tenancy:** access is scoped to ``client_id`` via the injected ``tenant_resolver`` dependency (the
-auth seam). The default reads the ``X-Client-Id`` header; production swaps in real service-auth
+**Tenancy:** access is scoped to ``workspace_id`` via the injected ``workspace_resolver`` dependency
+(the
+auth seam). The default reads the ``X-Workspace-Id`` header; production swaps in real service-auth
 (M0.4) of the same shape. A client can never fetch another client's assembled handoff (substrate
 §2): the service's reads are tenant-scoped, so a cross-tenant fetch is a ``404`` (indistinguishable
 from absent — never leak another tenant's existence).
@@ -48,20 +49,21 @@ from clue_research.narrative import (
 # consumer reads it to confirm the shape it negotiated; an additive bump keeps a pinned consumer ok.
 HANDOFF_SCHEMA_HEADER = "X-Handoff-Schema-Version"
 
-TenantResolver = Callable[..., str]
+WorkspaceResolver = Callable[..., str]
 ConnDependency = Callable[..., AsyncIterator[AsyncConnection]]
 
 
-def header_tenant_resolver(
-    x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+def header_workspace_resolver(
+    x_workspace_id: Annotated[str | None, Header(alias="X-Workspace-Id")] = None,
 ) -> str:
-    """The default tenant/auth seam: derive ``client_id`` from the ``X-Client-Id`` header (``401``
+    """The default workspace/auth seam: derive ``workspace_id`` from the ``X-Workspace-Id`` header
+    (``401``
     if absent). Production replaces this with real service-auth (M0.4 — token validation → tenant)
-    of the same ``-> client_id`` shape, swapped via the ``tenant_resolver`` factory arg or
+    of the same ``-> workspace_id`` shape, swapped via the ``workspace_resolver`` factory arg or
     ``app.dependency_overrides``; the routes do not change."""
-    if not x_client_id:
-        raise HTTPException(status_code=401, detail="missing X-Client-Id (tenant) header")
-    return x_client_id
+    if not x_workspace_id:
+        raise HTTPException(status_code=401, detail="missing X-Workspace-Id (tenant) header")
+    return x_workspace_id
 
 
 async def read_conn_dependency() -> AsyncIterator[AsyncConnection]:
@@ -74,16 +76,17 @@ async def read_conn_dependency() -> AsyncIterator[AsyncConnection]:
 # The per-request injected dependencies as module-level Annotated aliases. They MUST be module-level
 # (not closure locals): ``from __future__ import annotations`` stringifies every annotation, and
 # FastAPI resolves those strings via ``get_type_hints`` against the function's *module globals* — a
-# closure-local alias would not resolve, and FastAPI would silently treat ``conn`` / ``client_id``
+# closure-local alias would not resolve, and FastAPI would silently treat ``conn`` /
+# ``workspace_id``
 # as query params. The auth + connection seams swap via ``app.dependency_overrides`` (the idiomatic
 # FastAPI way), wired by :func:`create_handoff_app`; the routes never change (M12.3 AC8).
 ConnDep = Annotated[AsyncConnection, Depends(read_conn_dependency)]
-TenantDep = Annotated[str, Depends(header_tenant_resolver)]
+WorkspaceDep = Annotated[str, Depends(header_workspace_resolver)]
 
 
 def create_handoff_router(service: HandoffService) -> APIRouter:
     """Build the read-only handoff :class:`APIRouter` over ``service``. The auth + connection seams
-    are the module-level :data:`TenantDep` / :data:`ConnDep` dependencies, swapped via
+    are the module-level :data:`WorkspaceDep` / :data:`ConnDep` dependencies, swapped via
     ``app.dependency_overrides`` (see :func:`create_handoff_app`). Every route is a ``GET`` — there
     is deliberately no write path (AC4)."""
     router = APIRouter()
@@ -93,7 +96,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         campaign_run_id: UUID,
         response: Response,
         conn: ConnDep,
-        client_id: TenantDep,
+        workspace_id: WorkspaceDep,
         tier: Annotated[str | None, Query()] = None,
         persona: Annotated[Persona | None, Query()] = None,
         min_verification_pass_rate: Annotated[float | None, Query(ge=0.0, le=1.0)] = None,
@@ -105,7 +108,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         response.headers[HANDOFF_SCHEMA_HEADER] = HANDOFF_SCHEMA_VERSION
         return await service.list_handoffs(
             conn,
-            client_id=client_id,
+            workspace_id=workspace_id,
             campaign_run_id=CampaignRunId(campaign_run_id),
             tier=tier,
             persona=persona,
@@ -117,7 +120,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         account_entity_id: UUID,
         response: Response,
         conn: ConnDep,
-        client_id: TenantDep,
+        workspace_id: WorkspaceDep,
         icp_spec_version: Annotated[int, Query(ge=1)],
         icp_key: Annotated[str, Query()] = "",
     ) -> ServedHandoff:
@@ -127,7 +130,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         try:
             return await service.get_handoff(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 account_entity_id=EntityId(account_entity_id),
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
@@ -144,7 +147,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         claim_id: UUID,
         response: Response,
         conn: ConnDep,
-        client_id: TenantDep,
+        workspace_id: WorkspaceDep,
         icp_spec_version: Annotated[int, Query(ge=1)],
         icp_key: Annotated[str, Query()] = "",
     ) -> ProvenanceRefResponse:
@@ -154,7 +157,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         try:
             ref = await service.resolve_provenance(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 account_entity_id=EntityId(account_entity_id),
                 icp_spec_version=icp_spec_version,
                 claim_id=ClaimId(claim_id),
@@ -180,15 +183,15 @@ async def handoff_lifespan(_app: FastAPI) -> AsyncIterator[None]:
 def create_handoff_app(
     service: HandoffService,
     *,
-    tenant_resolver: TenantResolver | None = None,
+    workspace_resolver: WorkspaceResolver | None = None,
     conn_dependency: ConnDependency | None = None,
     manage_db_lifespan: bool = True,
 ) -> FastAPI:
     """Construct the handoff FastAPI app (the terminal subsystem seam).
 
-    ``tenant_resolver`` / ``conn_dependency`` swap the auth + connection seams via
+    ``workspace_resolver`` / ``conn_dependency`` swap the auth + connection seams via
     ``app.dependency_overrides`` (the idiomatic FastAPI override of the module-level
-    :func:`header_tenant_resolver` / :func:`read_conn_dependency`) — production injects a real
+    :func:`header_workspace_resolver` / :func:`read_conn_dependency`) — production injects a real
     service-auth resolver; tests inject a rollback-scoped connection. ``manage_db_lifespan`` opens
     the DB engine for the app's lifetime (production); set ``False`` when the surrounding process
     already manages :func:`db_lifespan` (or in tests that drive their own engine)."""
@@ -197,8 +200,8 @@ def create_handoff_app(
         version=HANDOFF_SCHEMA_VERSION,
         lifespan=handoff_lifespan if manage_db_lifespan else None,
     )
-    if tenant_resolver is not None:
-        app.dependency_overrides[header_tenant_resolver] = tenant_resolver
+    if workspace_resolver is not None:
+        app.dependency_overrides[header_workspace_resolver] = workspace_resolver
     if conn_dependency is not None:
         app.dependency_overrides[read_conn_dependency] = conn_dependency
     app.include_router(create_handoff_router(service))

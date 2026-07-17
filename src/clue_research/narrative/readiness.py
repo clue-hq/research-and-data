@@ -40,7 +40,7 @@ class RunReadiness(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     campaign_run_id: CampaignRunId
-    client_id: str
+    workspace_id: str
     phase: CampaignPhase
     icp_key: str = ""
     icp_version: int = 1
@@ -67,18 +67,19 @@ class AccountReadiness(BaseModel):
 class HandoffReadinessReader(Protocol):
     """Read campaign-run + per-account readiness for the handoff API (the M12.3 ↔ M7 seam).
 
-    Tenant-scoped on ``client_id`` (a client only sees its own runs). ``run_readiness`` returns the
+    Workspace-scoped on ``workspace_id`` (a workspace only sees its own runs). ``run_readiness``
+    returns the
     run's phase (or ``None`` if the run does not exist / is not this tenant's); ``ready_accounts``
     returns the accounts in the run that have reached handoff-readiness (the emit path iterates
     them).
     The production impl (over ``durable``) is injected at the ``api`` root."""
 
     async def run_readiness(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> RunReadiness | None: ...
 
     async def ready_accounts(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> tuple[AccountReadiness, ...]: ...
 
 
@@ -97,17 +98,17 @@ class InMemoryHandoffReadinessReader:
         self._ready = ready or {}
 
     async def run_readiness(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> RunReadiness | None:
         rr = self._runs.get(campaign_run_id)
-        if rr is None or rr.client_id != client_id:
+        if rr is None or rr.workspace_id != workspace_id:
             return None
         return rr
 
     async def ready_accounts(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> tuple[AccountReadiness, ...]:
         rr = self._runs.get(campaign_run_id)
-        if rr is None or rr.client_id != client_id:
+        if rr is None or rr.workspace_id != workspace_id:
             return ()
         return self._ready.get(campaign_run_id, ())

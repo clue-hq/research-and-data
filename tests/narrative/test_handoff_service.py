@@ -119,10 +119,10 @@ def test_get_handoff_returns_object_with_schema_version() -> None:
         async with rollback_conn() as conn:
             acc, run = new_entity_id(), new_campaign_run_id()
             await write_handoff(
-                conn, _assembled(account=acc, campaign_run_id=run), client_id=_CLIENT
+                conn, _assembled(account=acc, campaign_run_id=run), workspace_id=_CLIENT
             )
             served = await HandoffService().get_handoff(
-                conn, client_id=_CLIENT, account_entity_id=acc, icp_spec_version=1
+                conn, workspace_id=_CLIENT, account_entity_id=acc, icp_spec_version=1
             )
             assert served.schema_version == HANDOFF_SCHEMA_VERSION
             assert served.assembled.handoff.account_entity_id == acc
@@ -135,24 +135,27 @@ def test_get_handoff_absent_raises_not_found() -> None:
         async with rollback_conn() as conn:
             with pytest.raises(HandoffNotFoundError):
                 await HandoffService().get_handoff(
-                    conn, client_id=_CLIENT, account_entity_id=new_entity_id(), icp_spec_version=1
+                    conn,
+                    workspace_id=_CLIENT,
+                    account_entity_id=new_entity_id(),
+                    icp_spec_version=1,
                 )
 
     run_async(_run())
 
 
-def test_get_handoff_is_tenant_scoped() -> None:
+def test_get_handoff_is_workspace_scoped() -> None:
     """AC6: a client cannot fetch another client's assembled handoff (cross-tenant → not found)."""
 
     async def _run() -> None:
         async with rollback_conn() as conn:
             acc, run = new_entity_id(), new_campaign_run_id()
             await write_handoff(
-                conn, _assembled(account=acc, campaign_run_id=run), client_id=_CLIENT
+                conn, _assembled(account=acc, campaign_run_id=run), workspace_id=_CLIENT
             )
             with pytest.raises(HandoffNotFoundError):
                 await HandoffService().get_handoff(
-                    conn, client_id=_OTHER, account_entity_id=acc, icp_spec_version=1
+                    conn, workspace_id=_OTHER, account_entity_id=acc, icp_spec_version=1
                 )
 
     run_async(_run())
@@ -169,17 +172,17 @@ def test_resolve_provenance_returns_ref_or_not_found() -> None:
             await write_handoff(
                 conn,
                 _assembled(account=acc, campaign_run_id=run, provenance={str(cid): ref}),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
             )
             svc = HandoffService()
             got = await svc.resolve_provenance(
-                conn, client_id=_CLIENT, account_entity_id=acc, icp_spec_version=1, claim_id=cid
+                conn, workspace_id=_CLIENT, account_entity_id=acc, icp_spec_version=1, claim_id=cid
             )
             assert got.source_url == "https://src/x" and got.source_tier == 2
             with pytest.raises(HandoffNotFoundError):
                 await svc.resolve_provenance(
                     conn,
-                    client_id=_CLIENT,
+                    workspace_id=_CLIENT,
                     account_entity_id=acc,
                     icp_spec_version=1,
                     claim_id=new_claim_id(),
@@ -199,17 +202,17 @@ def test_list_returns_only_materialised_with_run_phase() -> None:
                 await write_handoff(
                     conn,
                     _assembled(account=new_entity_id(), campaign_run_id=run),
-                    client_id=_CLIENT,
+                    workspace_id=_CLIENT,
                 )
             reader = InMemoryHandoffReadinessReader(
                 runs={
                     run: RunReadiness(
-                        campaign_run_id=run, client_id=_CLIENT, phase=CampaignPhase.HANDOFF
+                        campaign_run_id=run, workspace_id=_CLIENT, phase=CampaignPhase.HANDOFF
                     )
                 }
             )
             page = await HandoffService(readiness_reader=reader).list_handoffs(
-                conn, client_id=_CLIENT, campaign_run_id=run
+                conn, workspace_id=_CLIENT, campaign_run_id=run
             )
             assert page.total == 2
             assert page.run_phase is CampaignPhase.HANDOFF
@@ -218,14 +221,16 @@ def test_list_returns_only_materialised_with_run_phase() -> None:
     run_async(_run())
 
 
-def test_list_is_tenant_scoped_empty_for_other() -> None:
+def test_list_is_workspace_scoped_empty_for_other() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             run = new_campaign_run_id()
             await write_handoff(
-                conn, _assembled(account=new_entity_id(), campaign_run_id=run), client_id=_CLIENT
+                conn, _assembled(account=new_entity_id(), campaign_run_id=run), workspace_id=_CLIENT
             )
-            page = await HandoffService().list_handoffs(conn, client_id=_OTHER, campaign_run_id=run)
+            page = await HandoffService().list_handoffs(
+                conn, workspace_id=_OTHER, campaign_run_id=run
+            )
             assert page.total == 0 and page.run_phase is None
 
     run_async(_run())
@@ -243,7 +248,7 @@ def test_list_filters_by_persona_and_pass_rate() -> None:
                     personas=(Persona.ECONOMIC_BUYER,),
                     health=VerificationHealth(tier4_judge_pass_rate=0.9),
                 ),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
             )
             await write_handoff(
                 conn,
@@ -253,16 +258,16 @@ def test_list_filters_by_persona_and_pass_rate() -> None:
                     personas=(Persona.BLOCKER,),
                     health=VerificationHealth(tier4_judge_pass_rate=0.2),
                 ),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
             )
             svc = HandoffService()
             by_persona = await svc.list_handoffs(
-                conn, client_id=_CLIENT, campaign_run_id=run, persona=Persona.ECONOMIC_BUYER
+                conn, workspace_id=_CLIENT, campaign_run_id=run, persona=Persona.ECONOMIC_BUYER
             )
             assert by_persona.total == 1
             assert by_persona.items[0].personas == (Persona.ECONOMIC_BUYER,)
             by_rate = await svc.list_handoffs(
-                conn, client_id=_CLIENT, campaign_run_id=run, min_verification_pass_rate=0.5
+                conn, workspace_id=_CLIENT, campaign_run_id=run, min_verification_pass_rate=0.5
             )
             assert by_rate.total == 1
             assert by_rate.items[0].verification_health is not None
@@ -279,17 +284,20 @@ def test_list_filters_by_tier() -> None:
             run = new_campaign_run_id()
             top, high = new_entity_id(), new_entity_id()
             await write_handoff(
-                conn, _assembled(account=top, campaign_run_id=run), client_id=_CLIENT, tier="top"
+                conn, _assembled(account=top, campaign_run_id=run), workspace_id=_CLIENT, tier="top"
             )
             await write_handoff(
-                conn, _assembled(account=high, campaign_run_id=run), client_id=_CLIENT, tier="high"
+                conn,
+                _assembled(account=high, campaign_run_id=run),
+                workspace_id=_CLIENT,
+                tier="high",
             )
             svc = HandoffService()
-            both = await svc.list_handoffs(conn, client_id=_CLIENT, campaign_run_id=run)
+            both = await svc.list_handoffs(conn, workspace_id=_CLIENT, campaign_run_id=run)
             assert both.total == 2
             assert {s.tier for s in both.items} == {"top", "high"}
             only_top = await svc.list_handoffs(
-                conn, client_id=_CLIENT, campaign_run_id=run, tier="top"
+                conn, workspace_id=_CLIENT, campaign_run_id=run, tier="top"
             )
             assert only_top.total == 1
             assert only_top.items[0].account_entity_id == top
@@ -327,7 +335,7 @@ def _emit(conn, run, *, publisher):
         runs={
             run: RunReadiness(
                 campaign_run_id=run,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 phase=CampaignPhase.HANDOFF,
                 icp_key="",
                 icp_version=1,
@@ -341,7 +349,7 @@ def _emit(conn, run, *, publisher):
         readiness_reader=reader,
         publisher=publisher,
         campaign_run_id=run,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         assembled_at=_AT,
     )
 
@@ -355,7 +363,7 @@ def test_emit_is_idempotent_and_publishes_once() -> None:
             reader = InMemoryHandoffReadinessReader(
                 runs={
                     run: RunReadiness(
-                        campaign_run_id=run, client_id=_CLIENT, phase=CampaignPhase.HANDOFF
+                        campaign_run_id=run, workspace_id=_CLIENT, phase=CampaignPhase.HANDOFF
                     )
                 },
                 ready={run: (AccountReadiness(account_entity_id=new_entity_id(), is_ready=True),)},
@@ -367,7 +375,7 @@ def test_emit_is_idempotent_and_publishes_once() -> None:
                 "readiness_reader": reader,
                 "publisher": pub,
                 "campaign_run_id": run,
-                "client_id": _CLIENT,
+                "workspace_id": _CLIENT,
                 "assembled_at": _AT,
             }
             first = await emit_ready_handoffs(**common)
@@ -376,7 +384,7 @@ def test_emit_is_idempotent_and_publishes_once() -> None:
             second = await emit_ready_handoffs(**common)  # re-entry
             assert second.accounts_processed == 1 and second.newly_emitted == 0
             assert len(pub.published) == 1  # not re-published
-            rows = await list_handoff_events(conn, campaign_run_id=run, client_id=_CLIENT)
+            rows = await list_handoff_events(conn, campaign_run_id=run, workspace_id=_CLIENT)
             assert len(rows) == 1  # exactly one durable outbox row
 
     run_async(_run())
@@ -391,8 +399,8 @@ def test_publisher_swap_leaves_outbox_unchanged() -> None:
             run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
             await _emit(conn, run_a, publisher=OutboxHandoffPublisher())
             await _emit(conn, run_b, publisher=RecordingHandoffPublisher())
-            rows_a = await list_handoff_events(conn, campaign_run_id=run_a, client_id=_CLIENT)
-            rows_b = await list_handoff_events(conn, campaign_run_id=run_b, client_id=_CLIENT)
+            rows_a = await list_handoff_events(conn, campaign_run_id=run_a, workspace_id=_CLIENT)
+            rows_b = await list_handoff_events(conn, campaign_run_id=run_b, workspace_id=_CLIENT)
             assert len(rows_a) == 1 and len(rows_b) == 1
             assert rows_a[0].schema_version == rows_b[0].schema_version == HANDOFF_SCHEMA_VERSION
 
@@ -410,7 +418,7 @@ def test_emit_unknown_run_is_empty_report() -> None:
                 assembler=HandoffAssembler(committee_reader=InMemoryHandoffCommitteeReader()),
                 readiness_reader=InMemoryHandoffReadinessReader(),  # empty
                 campaign_run_id=run,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 assembled_at=_AT,
             )
             assert report.accounts_processed == 0 and report.newly_emitted == 0

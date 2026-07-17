@@ -57,7 +57,7 @@ from clue_core.field import field_namespace
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
     PUBLIC_ONLY,
-    TenantScope,
+    WorkspaceScope,
     current_values,
     list_fields,
 )
@@ -175,7 +175,7 @@ async def _resolve_account(conn: AsyncConnection, entity_id: EntityId) -> Accoun
 
 
 async def _deep_account_gap_fields(
-    conn: AsyncConnection, account: AccountEntity, spec: ICPSpec, *, tenant_id: str | None
+    conn: AsyncConnection, account: AccountEntity, spec: ICPSpec, *, workspace_id: str | None
 ) -> list[FieldDef]:
     """The deep, account-axis fields that still need research for this account (the converge gap
     set).
@@ -197,7 +197,7 @@ async def _deep_account_gap_fields(
     if not deep_fields:
         return []
 
-    scope = TenantScope.for_tenant(tenant_id) if tenant_id is not None else PUBLIC_ONLY
+    scope = WorkspaceScope.for_workspace(workspace_id) if workspace_id is not None else PUBLIC_ONLY
     values = await current_values(
         conn, [account.id], [f.field_key for f in deep_fields], scope=scope
     )
@@ -249,7 +249,7 @@ async def profile_account(
     tier: str,
     run_id: RunId | None = None,
     campaign_run_id: CampaignRunId | None = None,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
     budget_cap_cents: CostCents | None = None,
     session_factory: ConnFactory = transaction,
     recursion_policy: RecursionPolicy | None = None,
@@ -266,7 +266,7 @@ async def profile_account(
     Returns only after every targeted field is filled or explicitly flagged, or the budget fires
     (AC1) — never silently incomplete. Aspects run **in parallel** (AC4) and return references, not
     blobs. Idempotent on ``run_id`` (the waterfall no-ops a re-run of ``(entity, field, source,
-    run)`` — AC7). ``tenant_id`` defaults to ``spec.client_id`` (a campaign's tenant is its client).
+    run)`` — AC7). ``workspace_id`` defaults to ``spec.workspace_id``.
 
     The per-aspect ``budget_envelope_cents`` is ``budget_cap_cents`` (each aspect bounded by the
     cap);
@@ -274,7 +274,7 @@ async def profile_account(
     here the cap bounds each parallel aspect and the total is reported."""
     run = run_id if run_id is not None else new_run_id()
     campaign_run = campaign_run_id if campaign_run_id is not None else new_campaign_run_id()
-    effective_tenant = tenant_id if tenant_id is not None else spec.client_id
+    effective_workspace = workspace_id if workspace_id is not None else spec.workspace_id
     policy = recursion_policy if recursion_policy is not None else RecursionPolicy()
     build_worker = (
         worker_for
@@ -299,7 +299,9 @@ async def profile_account(
                 run_id=run,
                 status=WorkerStatus.FAILED,
             )
-        gap_fields = await _deep_account_gap_fields(conn, account, spec, tenant_id=effective_tenant)
+        gap_fields = await _deep_account_gap_fields(
+            conn, account, spec, workspace_id=effective_workspace
+        )
 
     clusters = _cluster_by_aspect(gap_fields)
     aspect_keys = list(clusters)
@@ -319,10 +321,9 @@ async def profile_account(
         )
 
     params = params_for_run(
-        client_id=spec.client_id,
+        workspace_id=effective_workspace,
         icp_key=spec.icp_key,
         icp_version=spec.version,
-        tenant_id=effective_tenant,
     )
 
     async def _run_aspect(aspect: str) -> WorkerResult:

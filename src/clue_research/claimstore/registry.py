@@ -475,6 +475,7 @@ async def check_claim_writable(
         raise ReuseScopeError(
             f"field_key {field_key!r} is declared tenant_private but the claim is stamped "
             "public_footprint — refusing the write (it would leak tenant-private data into the "
-            "shared cross-tenant base). Stamp it via identity.stamp_reuse with the run's tenant_id "
+            "shared cross-tenant base). Stamp it via identity.stamp_reuse with the run's "
+            "workspace_id "
             "(substrate §2 / ENG-165)"
         )

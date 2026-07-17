@@ -35,7 +35,7 @@ def _event(*, run, account, client=_CLIENT, icp_version=1, icp_key=""):
         account_entity_id=account,
         icp_spec_version=icp_version,
         icp_key=icp_key,
-        client_id=client,
+        workspace_id=client,
         handoff_ref=handoff_ref_for(account, icp_version, icp_key),
         schema_version="1.0",
     )
@@ -66,7 +66,7 @@ def test_emit_is_idempotent_on_scope_key() -> None:
             ev = _event(run=run, account=acc)
             assert await emit_handoff_event(conn, ev) is True
             assert await emit_handoff_event(conn, ev) is False  # idempotent
-            rows = await list_handoff_events(conn, campaign_run_id=run, client_id=_CLIENT)
+            rows = await list_handoff_events(conn, campaign_run_id=run, workspace_id=_CLIENT)
             assert len(rows) == 1
             assert rows[0].status is HandoffEventStatus.PENDING
             assert rows[0].handoff_ref == ev.handoff_ref
@@ -82,13 +82,13 @@ def test_distinct_icp_segments_emit_separately() -> None:
             run, acc = new_campaign_run_id(), new_entity_id()
             assert await emit_handoff_event(conn, _event(run=run, account=acc, icp_key="a")) is True
             assert await emit_handoff_event(conn, _event(run=run, account=acc, icp_key="b")) is True
-            rows = await list_handoff_events(conn, campaign_run_id=run, client_id=_CLIENT)
+            rows = await list_handoff_events(conn, campaign_run_id=run, workspace_id=_CLIENT)
             assert {r.icp_key for r in rows} == {"a", "b"}
 
     run_async(_run())
 
 
-def test_reads_are_tenant_scoped() -> None:
+def test_reads_are_workspace_scoped() -> None:
     """A client only ever sees its own events (substrate §2)."""
 
     async def _run() -> None:
@@ -101,11 +101,11 @@ def test_reads_are_tenant_scoped() -> None:
                     campaign_run_id=run,
                     account_entity_id=acc,
                     icp_spec_version=1,
-                    client_id=_OTHER,
+                    workspace_id=_OTHER,
                 )
                 is None
             )
-            assert await list_handoff_events(conn, campaign_run_id=run, client_id=_OTHER) == []
+            assert await list_handoff_events(conn, campaign_run_id=run, workspace_id=_OTHER) == []
 
     run_async(_run())
 
@@ -122,7 +122,7 @@ def test_mark_delivered_stamps_delivered_at_and_filters() -> None:
                 campaign_run_id=run,
                 account_entity_id=acc,
                 icp_spec_version=1,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
             )
             assert row is not None and row.delivered_at is None
             await mark_handoff_event(conn, row.id, status=HandoffEventStatus.DELIVERED)
@@ -131,18 +131,21 @@ def test_mark_delivered_stamps_delivered_at_and_filters() -> None:
                 campaign_run_id=run,
                 account_entity_id=acc,
                 icp_spec_version=1,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
             )
             assert after is not None
             assert after.status is HandoffEventStatus.DELIVERED
             assert after.delivered_at is not None
             delivered = await list_handoff_events(
-                conn, campaign_run_id=run, client_id=_CLIENT, status=HandoffEventStatus.DELIVERED
+                conn, campaign_run_id=run, workspace_id=_CLIENT, status=HandoffEventStatus.DELIVERED
             )
             assert [r.id for r in delivered] == [row.id]
             assert (
                 await list_handoff_events(
-                    conn, campaign_run_id=run, client_id=_CLIENT, status=HandoffEventStatus.PENDING
+                    conn,
+                    campaign_run_id=run,
+                    workspace_id=_CLIENT,
+                    status=HandoffEventStatus.PENDING,
                 )
                 == []
             )
@@ -160,7 +163,7 @@ def test_db_check_rejects_unknown_status() -> None:
                 await conn.execute(
                     text(
                         "INSERT INTO handoff_event (campaign_run_id, account_entity_id, "
-                        "icp_spec_version, client_id, handoff_ref, schema_version, status) "
+                        "icp_spec_version, workspace_id, handoff_ref, schema_version, status) "
                         "VALUES (:r, :a, 1, :c, '/x', '1.0', 'bogus')"
                     ),
                     {"r": run, "a": str(acc), "c": _CLIENT},

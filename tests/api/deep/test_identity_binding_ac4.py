@@ -19,7 +19,7 @@ from clue_core import (
     IdentityBinding,
 )
 from clue_research.api.deep import build_deep_phase_handler
-from clue_research.claimstore import TenantScope, claims_for
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling import profile_contact
 from clue_research.profiling.contact.binding import BindingClassifier
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
@@ -45,7 +45,7 @@ def _composition_classifier() -> BindingClassifier:
     """The binding classifier the deep composition root wires (the authoritative M9 verdict behind
     M8.4's seam) — the object ``profile_contact`` is handed in production."""
     return build_deep_phase_handler(
-        spec=ICPSpec(client_id=_TENANT, icp_key="seg1", created_from=ICPCreatedFrom.SYNTHESIS),
+        spec=ICPSpec(workspace_id=_TENANT, icp_key="seg1", created_from=ICPCreatedFrom.SYNTHESIS),
         gateway=FakeGateway(),
         committee_sources=[FakeCommitteeSource(source_key="apollo_people", tier=2)],
     ).binding_classifier
@@ -68,7 +68,7 @@ def _profile_one_facet(*, resolver: FakeFacetResolver) -> tuple[Claim, object, o
                     contact_entity_id=contact.id,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     tier="top",
                     field_keys=(FACET_STATED_INTERESTS,),
                     binding_classifier=_composition_classifier(),
@@ -78,7 +78,7 @@ def _profile_one_facet(*, resolver: FakeFacetResolver) -> tuple[Claim, object, o
                         conn,
                         contact.id,
                         FACET_STATED_INTERESTS,
-                        scope=TenantScope.for_tenant(_TENANT),
+                        scope=WorkspaceScope.for_workspace(_TENANT),
                     )
                 )[0]
                 return written, contact, account

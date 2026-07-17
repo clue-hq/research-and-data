@@ -49,7 +49,7 @@ def test_each_stage_charges_exactly_once_through_the_spend_seam() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)
@@ -99,7 +99,7 @@ def test_resumed_fan_out_replays_committed_contacts_without_recharge() -> None:
         FakeProfileContact(rec),
         spend=spend,
     )
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)
@@ -150,7 +150,7 @@ def test_reservation_guard_stops_admitting_when_reservations_would_breach_the_ca
         config=config,
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -179,7 +179,7 @@ def test_uncapped_account_runs_the_reservation_guard_inert() -> None:
         config=DeepPhaseConfig(per_contact_estimate_cents=Decimal("1000"), committee_size_cap=8),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
@@ -225,7 +225,7 @@ def test_cap_saturated_resume_recovers_all_committed_contact_references() -> Non
         budget=budget,
         spend=spend,
     )
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)
@@ -259,7 +259,7 @@ def test_references_fold_does_not_write_cost_record_is_single_writer() -> None:
     )
     campaign = new_campaign_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         result = await orch.run_one(spec, campaign_run_id=campaign)

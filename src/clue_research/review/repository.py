@@ -32,7 +32,7 @@ from clue_core import (
 from clue_core.review import ReviewSessionId
 
 _SESSION_COLS = (
-    "id, account_entity_id, campaign_run_id, client_id, review_round, "
+    "id, account_entity_id, campaign_run_id, workspace_id, review_round, "
     "status, opened_by, opened_at, finalized_at"
 )
 
@@ -45,7 +45,7 @@ class ReviewSessionRow(BaseModel):
     id: ReviewSessionId
     account_entity_id: EntityId
     campaign_run_id: CampaignRunId
-    client_id: str
+    workspace_id: str
     review_round: int
     status: ReviewSessionStatus
     opened_by: str | None
@@ -59,7 +59,7 @@ def _to_session(row: Row[Any]) -> ReviewSessionRow:
         id=ReviewSessionId(m["id"]),
         account_entity_id=EntityId(m["account_entity_id"]),
         campaign_run_id=CampaignRunId(m["campaign_run_id"]),
-        client_id=m["client_id"],
+        workspace_id=m["workspace_id"],
         review_round=m["review_round"],
         status=ReviewSessionStatus(m["status"]),
         opened_by=m["opened_by"],
@@ -73,7 +73,7 @@ async def ensure_review_session(
     *,
     account_entity_id: EntityId,
     campaign_run_id: CampaignRunId,
-    client_id: str,
+    workspace_id: str,
     review_round: int = 1,
     opened_by: str | None = None,
 ) -> ReviewSessionRow:
@@ -85,7 +85,8 @@ async def ensure_review_session(
     await conn.execute(
         text(
             "INSERT INTO review_session "
-            "(id, account_entity_id, campaign_run_id, client_id, review_round, status, opened_by) "
+            "(id, account_entity_id, campaign_run_id, workspace_id, review_round, status, "
+            "opened_by) "
             "VALUES (:id, :acct, :run, :client, :round, 'open', :opened_by) "
             "ON CONFLICT (account_entity_id, campaign_run_id, review_round) DO NOTHING"
         ),
@@ -93,7 +94,7 @@ async def ensure_review_session(
             "id": uuid4(),
             "acct": account_entity_id,
             "run": campaign_run_id,
-            "client": client_id,
+            "client": workspace_id,
             "round": review_round,
             "opened_by": opened_by,
         },

@@ -32,7 +32,7 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, claims_for
+from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.resolvers import (
     RetryableResolverError,
     SynthesisResult,
@@ -302,7 +302,7 @@ def test_register_synthesis_wiring_binds_a_tier4_resolver_to_exa_deep() -> None:
 
 
 async def _claims(conn: object, entity_id: EntityId, field_key: str) -> list[Claim]:
-    return list(await claims_for(conn, entity_id, field_key, scope=ALL_TENANTS))  # type: ignore[arg-type]
+    return list(await claims_for(conn, entity_id, field_key, scope=ALL_WORKSPACES))  # type: ignore[arg-type]
 
 
 def test_exa_fires_through_the_waterfall_with_engine_stamped_provenance(require_db: None) -> None:
@@ -445,11 +445,11 @@ def test_resonance_synthesis_is_tenant_private(require_db: None) -> None:
             )
             entity = account.as_entity()
             result = await resolve_field(
-                conn, entity, field, mode=_MODE, run_id=new_run_id(), tenant_id="client-1"
+                conn, entity, field, mode=_MODE, run_id=new_run_id(), workspace_id="client-1"
             )
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             (claim,) = await _claims(conn, entity.entity_id, "account.resonance.culture")
             assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert claim.tenant_id == "client-1"
+            assert claim.workspace_id == "client-1"
 
     run_async(_run())

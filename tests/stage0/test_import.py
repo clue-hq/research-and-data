@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import AccountStatus, EntityId, IdentityBinding, ReuseScope, UseClass
-from clue_research.claimstore import TenantScope, claims_for
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.icp import assign_tier, get_rubric_version, score_entity
 from clue_research.identity import (
     DispositionPolicy,
@@ -51,8 +51,8 @@ async def _client_entity(conn: AsyncConnection, suffix: str) -> EntityId:
     )
 
 
-def _scope() -> TenantScope:
-    return TenantScope.for_tenant(_CLIENT)
+def _scope() -> WorkspaceScope:
+    return WorkspaceScope.for_workspace(_CLIENT)
 
 
 def test_duplicate_variants_collapse_to_one_entity() -> None:
@@ -61,7 +61,7 @@ def test_duplicate_variants_collapse_to_one_entity() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "dup")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
                 ImportRow(row_index=1, name="IBM", domain="ibm.com"),
                 ImportRow(row_index=2, name="I.B.M.", domain="ibm.com"),
@@ -70,7 +70,7 @@ def test_duplicate_variants_collapse_to_one_entity() -> None:
                 ),
             ]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client
             )
             assert len(result.resolved) == 3
             assert len({r.account_entity_id for r in result.resolved}) == 1
@@ -89,13 +89,13 @@ def test_registry_only_variants_collapse_to_one_entity() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "reg")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
                 ImportRow(row_index=1, name="Initech", registry_ids={"DUNS": "12-345-6789"}),
                 ImportRow(row_index=2, name="Initech Corp", registry_ids={"duns": "123 456 789"}),
             ]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client
             )
             assert len(result.resolved) == 2
             assert len({r.account_entity_id for r in result.resolved}) == 1
@@ -114,7 +114,7 @@ def test_same_name_different_company_routes_to_review() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "review")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             existing = await insert_account_entity(
                 conn,
                 canonical_name="Globex Industries",
@@ -129,7 +129,7 @@ def test_same_name_different_company_routes_to_review() -> None:
                 conn,
                 rows,
                 icp,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=client,
                 disposition_policy=policy,
             )
@@ -147,13 +147,13 @@ def test_unresolvable_row_surfaced_with_reason() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "unres")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
                 ImportRow(row_index=1, name="Acme Co", domain="acme-unres.example"),
                 ImportRow(row_index=2),  # no name, domain, or registry id
             ]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client
             )
             assert len(result.resolved) == 1
             assert len(result.unresolved) == 1
@@ -172,11 +172,11 @@ def test_resolved_account_has_provenance_and_decomposed_backscore() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "prov")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             bind_resolver("crm", FakeCrmResolver(relationship="customer"))
             rows = [ImportRow(row_index=1, name="Provence SAS", domain="provence.example")]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client, crm_enrich=True
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, crm_enrich=True
             )
             (acct,) = result.resolved
             assert acct.provenance_claim_id is not None
@@ -187,7 +187,7 @@ def test_resolved_account_has_provenance_and_decomposed_backscore() -> None:
             assert prov[0].discovery_provenance is not None
             # "which accounts this client imported" is tenant-private (not a public footprint)
             assert prov[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert prov[0].tenant_id == _CLIENT
+            assert prov[0].workspace_id == _CLIENT
             # the back-score is decomposed and the fit component links the CRM evidence claim
             assert acct.fit_score.value == pytest.approx(1.0)
             fit_components = acct.fit_score.components
@@ -202,11 +202,11 @@ def test_non_fit_flagged_but_not_excluded() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "nonfit")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT, fit_threshold=0.5)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT, fit_threshold=0.5)
             # no CRM enrichment → the rubric's only fit field is absent → fit 0.0 < 0.5
             rows = [ImportRow(row_index=1, name="Misfit Ltd", domain="misfit.example")]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client, crm_enrich=False
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, crm_enrich=False
             )
             assert len(result.resolved) == 1  # flagged, not excluded
             assert result.resolved[0].fit_flag is FitFlag.NON_FIT
@@ -221,11 +221,11 @@ def test_crm_enrich_detects_already_customer() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "crm")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             bind_resolver("crm", FakeCrmResolver(relationship="customer"))
             rows = [ImportRow(row_index=1, name="Loyal Corp", domain="loyal.example")]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client, crm_enrich=True
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, crm_enrich=True
             )
             (acct,) = result.resolved
             assert acct.already_customer is True
@@ -249,7 +249,7 @@ def test_imported_contact_carries_governance_tags() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "contact")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
                 ImportRow(
                     row_index=1,
@@ -269,7 +269,7 @@ def test_imported_contact_carries_governance_tags() -> None:
                 ),
             ]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client
             )
             assert len(result.contacts) == 3
             by_uc = {c.use_class: c for c in result.contacts}
@@ -316,14 +316,14 @@ def test_resolved_set_converges_with_discovery_path() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "converge")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             bind_resolver("crm", FakeCrmResolver(relationship="customer"))
             rows = [
                 ImportRow(row_index=1, name="Alpha LLC", domain="alpha.example"),
                 ImportRow(row_index=2, name="Beta GmbH", domain="beta.example"),
             ]
             result = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client, crm_enrich=True
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, crm_enrich=True
             )
             rubric = await get_rubric_version(conn, _CLIENT, icp.icp_key, icp.icp_version)
             assert rubric is not None
@@ -351,7 +351,7 @@ def test_import_batch_marker_written() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "batch")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
                 ImportRow(row_index=1, name="One Co", domain="one.example"),
                 ImportRow(row_index=2),  # unresolved
@@ -360,7 +360,7 @@ def test_import_batch_marker_written() -> None:
                 conn,
                 rows,
                 icp,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=client,
                 import_batch_id="batch-x",
             )
@@ -381,13 +381,13 @@ def test_reimport_same_batch_does_not_duplicate_entities() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             client = await _client_entity(conn, "reimport")
-            icp = await build_confirmed_icp(conn, client_id=_CLIENT)
+            icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [ImportRow(row_index=1, name="Repeat Inc", domain="repeat.example")]
             first = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client, import_batch_id="b1"
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, import_batch_id="b1"
             )
             second = await import_accounts(
-                conn, rows, icp, client_id=_CLIENT, client_entity_id=client, import_batch_id="b1"
+                conn, rows, icp, workspace_id=_CLIENT, client_entity_id=client, import_batch_id="b1"
             )
             assert first.resolved[0].account_entity_id == second.resolved[0].account_entity_id
             # the second pass auto-merges onto the existing entity (deterministic strong key)

@@ -118,7 +118,7 @@ async def _insert_account(conn):
     )
 
 
-def _ctx(entity_id, field_keys, *, tenant_id=_TENANT):
+def _ctx(entity_id, field_keys, *, workspace_id=_TENANT):
     return AspectContext(
         entity_id=entity_id,
         campaign_run_id=new_campaign_run_id(),
@@ -126,7 +126,7 @@ def _ctx(entity_id, field_keys, *, tenant_id=_TENANT):
         tier="top",
         aspect="account.resonance",
         field_keys=field_keys,
-        params=params_for_run(client_id=None, icp_key=None, icp_version=None, tenant_id=tenant_id),
+        params=params_for_run(workspace_id=workspace_id, icp_key=None, icp_version=None),
     )
 
 
@@ -238,7 +238,7 @@ def test_collect_resonance_entrypoint_returns_worker_result() -> None:
                 account_entity_id=acct,
                 run_id=new_run_id(),
                 tier="top",
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 field_keys=("account.resonance.employee_sentiment",),
                 worker=worker,
             )

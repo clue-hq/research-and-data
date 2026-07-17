@@ -46,7 +46,7 @@ from clue_research.api.verification.handler import (
     UseGateProvider,
     VerificationAccountResolver,
 )
-from clue_research.claimstore import TenantScope
+from clue_research.claimstore import WorkspaceScope
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 
 _PAIN = "account.operational_pain"
@@ -77,7 +77,7 @@ class FakeCorroborator:
         entity_id: EntityId,
         field_key: object,
         *,
-        scope: TenantScope,
+        scope: WorkspaceScope,
         entity_type: object = None,
     ) -> object:
         self._rec.log.append(("corroborate", str(field_key)))
@@ -148,7 +148,7 @@ def _resolver(specs: Sequence[AccountSpec]) -> VerificationAccountResolver:
 def _loader(
     by_entity: dict[EntityId, list[Claim]], *, raise_for: EntityId | None = None
 ) -> ClaimLoader:
-    async def _l(entity_id: EntityId, scope: TenantScope) -> Sequence[Claim]:
+    async def _l(entity_id: EntityId, scope: WorkspaceScope) -> Sequence[Claim]:
         if raise_for is not None and entity_id == raise_for:
             raise RuntimeError("boom — claim load failed for this account")
         return by_entity.get(entity_id, [])
@@ -157,14 +157,14 @@ def _loader(
 
 
 def _spec(entity_id: EntityId) -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier="top", tenant_id=_CLIENT)
+    return AccountSpec(entity_id=entity_id, tier="top", workspace_id=_CLIENT)
 
 
 def _ctx(campaign: object | None = None) -> PhaseContext:
     return PhaseContext(
         campaign_run_id=campaign or new_campaign_run_id(),
         phase=CampaignPhase.VERIFICATION,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
     )
@@ -206,7 +206,7 @@ def _use_gate_provider(use_gate: FakeUseGate | None) -> UseGateProvider | None:
     if use_gate is None:
         return None
 
-    async def _provide(client_id: str) -> FakeUseGate:
+    async def _provide(workspace_id: str) -> FakeUseGate:
         return use_gate
 
     return _provide

@@ -48,7 +48,7 @@ from clue_core import (
     classify_field_key,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     entities_with_field_claim,
 )
 from clue_research.discovery_scoring.claim_writes import write_icp_scoped_claim
@@ -75,7 +75,7 @@ INTENT_FIELD = "account.scoring.intent"
 
 
 async def admitted_account_ids(
-    conn: AsyncConnection, *, run_id: RunId, scope: TenantScope
+    conn: AsyncConnection, *, run_id: RunId, scope: WorkspaceScope
 ) -> list[EntityId]:
     """The surviving account ids admitted in the discovery ``run_id`` — the Pass-A score set.
 
@@ -139,7 +139,7 @@ async def score_account(
     rubric: ScoringRubric,
     fill_fields: Sequence[FieldDef],
     run_id: RunId,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     icp_version: int,
     budget_envelope: Decimal | None = None,
@@ -166,13 +166,15 @@ async def score_account(
             list(fill_fields),
             mode=ResearchMode.ACCOUNT_PROFILING,
             run_id=run_id,
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             budget_envelope=budget_envelope,
             thresholds=thresholds,
             idempotent=True,
         )
 
-    result = await score_entity(conn, rubric, account_id, scope=TenantScope.for_tenant(client_id))
+    result = await score_entity(
+        conn, rubric, account_id, scope=WorkspaceScope.for_workspace(workspace_id)
+    )
     fit = result.as_fit_score()
     intent = result.as_intent_score()
     non_fit_flag = rubric.fit_floor is not None and result.fit_score < rubric.fit_floor
@@ -185,7 +187,7 @@ async def score_account(
             fit, rubric, non_fit_flag=non_fit_flag, icp_key=icp_key, icp_version=icp_version
         ),
         run_id=run_id,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
     )
     intent_claim_id, intent_written = await _write_score_object(
@@ -194,7 +196,7 @@ async def score_account(
         field_key=INTENT_FIELD,
         value_json=_intent_value_json(intent, rubric, icp_key=icp_key, icp_version=icp_version),
         run_id=run_id,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
     )
 
@@ -316,7 +318,7 @@ async def _write_score_object(
     field_key: str,
     value_json: dict[str, JsonValue],
     run_id: RunId,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
 ) -> tuple[ClaimId, bool]:
     """Write one score claim idempotently, returning ``(claim_id, written)``.
@@ -343,14 +345,14 @@ async def _write_score_object(
             run_id=run_id,
             research_mode=ResearchMode.ACCOUNT_PROFILING,
         ),
-        tenant_id=client_id,
+        workspace_id=workspace_id,
     )
     return await write_icp_scoped_claim(
         conn,
         score_claim,
         run_id=run_id,
         icp_key=icp_key,
-        scope=TenantScope.for_tenant(client_id),
+        scope=WorkspaceScope.for_workspace(workspace_id),
     )
 
 

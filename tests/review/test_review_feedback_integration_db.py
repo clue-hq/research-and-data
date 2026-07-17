@@ -80,7 +80,7 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
             await ensure_campaign_run(
                 conn,
                 campaign_run_id=run_id,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP_KEY,
                 icp_version=_ICP_VERSION,
             )
@@ -93,7 +93,7 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
             assert isinstance(surface._emit, ReviewDispositionEmitterImpl)
 
             session = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=run_id, client_id=_CLIENT
+                account_entity_id=acct, campaign_run_id=run_id, workspace_id=_CLIENT
             )
             # A REJECT carries a reason_code; the mirrored disposition must preserve the REAL one —
             # proving the emitter read the committed ``review_action`` row, not the ``(None, now)``
@@ -113,7 +113,7 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
                     await conn.execute(
                         text(
                             "SELECT disposition_type, reason_code FROM disposition "
-                            "WHERE client_id = :c AND account_entity_id = :a"
+                            "WHERE workspace_id = :c AND account_entity_id = :a"
                         ),
                         {"c": _CLIENT, "a": str(acct)},
                     )

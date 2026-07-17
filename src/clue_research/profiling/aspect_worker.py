@@ -19,7 +19,7 @@ hit), **sources-exhausted** (ran out of resolvers — a correct empty/flagged fi
 
 The per-gap-field sequence (§C of the build contract):
 
-1. **tenant guard** — a ``tenant_private`` field (``account.resonance.*``) with no ``tenant_id``
+1. **tenant guard** — a ``tenant_private`` field (``account.resonance.*``) with no ``workspace_id``
    is left empty/flagged rather than letting the waterfall fail loud (the params-gap fail-soft).
 2. **target-lock guard** — refuse to spend open-web research on a non-lockable entity (no domain /
    registry id / name+geo); leave it empty/flagged (staged-flow §8).
@@ -29,7 +29,7 @@ The per-gap-field sequence (§C of the build contract):
    the first planned tier; a ``REJECT`` skips the field before any spend.
 5. **waterfall** — ``resolve_field`` is the *only* composer: it walks the tier plan, writes each
    claim ``unverified`` with full provenance, stamps ``research_mode=account_profiling`` + the
-   ``reuse_scope`` + the ``tenant_id``, is idempotent on ``(entity, field, source, run)``, and
+   ``reuse_scope`` + the ``workspace_id``, is idempotent on ``(entity, field, source, run)``, and
    returns claim-id **references** (never blobs). M8.1 never re-inserts or re-stamps.
 6. **post-fill target-lock + sensitivity validation** — a drift-prone (tier ≥ 3) claim that does not
    bind to the resolved entity, or (for resonance) a value smuggling a named individual's
@@ -119,7 +119,7 @@ class ProfilingFieldDisposition(StrEnum):
     SOURCES_EXHAUSTED = "sources_exhausted"  # ran (or had) no resolver that yielded — empty/flagged
     BUDGET_CAP = "budget_cap"  # the budget envelope halted the walk before this field could fill
     NOT_TARGET_LOCKABLE = "not_target_lockable"  # entity lacks a strong disambiguator — no spend
-    TENANT_REQUIRED = "tenant_required"  # a tenant_private field with no tenant_id in context
+    TENANT_REQUIRED = "tenant_required"  # a tenant_private field with no workspace_id in context
     GATE_REJECTED = "gate_rejected"  # the pre-spend gate rejected the spend
 
 
@@ -228,9 +228,9 @@ class AspectProfilingWorker:
                     },
                 )
             spec = (
-                await get_icp_version(conn, rc.client_id, rc.icp_key, rc.icp_version)
+                await get_icp_version(conn, rc.workspace_id, rc.icp_key, rc.icp_version)
                 if rc.has_icp
-                and rc.client_id is not None
+                and rc.workspace_id is not None
                 and rc.icp_key is not None
                 and rc.icp_version is not None
                 else None
@@ -282,12 +282,12 @@ class AspectProfilingWorker:
     def _source_policies(self, rc: RunContext) -> tuple[ConfidenceThresholds, SourcePlanPolicy]:
         """The per-run waterfall stop bar + planner tier reach from the layered config.
 
-        Keyed by ``(client_id, icp_key)`` when both are present (ICP overlay wins over client);
+        Keyed by ``(workspace_id, icp_key)`` when both are present (ICP overlay wins over client);
         client-only when ``icp_key`` is absent. A run with no client coordinate (a bare unit test)
         keeps the defaults — behaviour is unchanged unless an overlay is registered."""
-        if rc.client_id is None:
+        if rc.workspace_id is None:
             return DEFAULT_CONFIDENCE_THRESHOLDS, DEFAULT_SOURCE_PLAN_POLICY
-        cfg = get_config(rc.client_id, rc.icp_key, store=self._config_store)
+        cfg = get_config(rc.workspace_id, rc.icp_key, store=self._config_store)
         return cfg.confidence_thresholds, cfg.source_plan_policy
 
     # -- account resolution --
@@ -327,12 +327,12 @@ class AspectProfilingWorker:
 
         # 1. tenant guard: never let the waterfall fail loud on a tenant_private field with no
         # tenant.
-        if resolve_reuse_scope(field_def) is ReuseScope.TENANT_PRIVATE and rc.tenant_id is None:
+        if resolve_reuse_scope(field_def) is ReuseScope.TENANT_PRIVATE and rc.workspace_id is None:
             return _FieldFill(
                 field_key=field_key,
                 disposition=ProfilingFieldDisposition.TENANT_REQUIRED,
                 reasons=(
-                    "tenant_private field requires a tenant_id (absent in AspectContext.params)",
+                    "tenant_private field requires a workspace_id (absent in AspectContext.params)",
                 ),
             )
 
@@ -411,7 +411,7 @@ class AspectProfilingWorker:
             field_for_run,
             mode=self._mode,
             run_id=run_id,
-            tenant_id=rc.tenant_id,
+            workspace_id=rc.workspace_id,
             budget_envelope=budget_remaining,
             # The per-field-class stop bar from the layered config (lever 1).
             thresholds=thresholds,
@@ -458,7 +458,7 @@ class AspectProfilingWorker:
         ref_set = set(result_refs)
         written = [
             c
-            for c in await claims_for(conn, account.id, field_key, scope=rc.tenant_scope())
+            for c in await claims_for(conn, account.id, field_key, scope=rc.workspace_scope())
             if c.id in ref_set and c.run_id == run_id
         ]
         kept: list[ClaimId] = []

@@ -53,7 +53,7 @@ _PERSONA_VALUES: list[str] = [p.value for p in Persona]
 # - ``icp_spec_version``: the ICP a narrative is scoped to (D5 multi-ICP — an account under two ICPs
 #   gets a narrative per ICP; carried here because the claim row has no icp column, and it is what
 #   re-synthesis supersession keys on alongside (account, persona)).
-# - ``icp_key``: the ICP *segment* (optional). An ICP is ``(client_id, icp_key, version)`` and
+# - ``icp_key``: the ICP *segment* (optional). An ICP is ``(workspace_id, icp_key, version)`` and
 #   ``version`` restarts at 1 per ``icp_key`` (D5), so two segments can share
 # ``icp_spec_version=1``;
 #   when present it disambiguates which segment's narrative this is (M12.2 reads it; supersession

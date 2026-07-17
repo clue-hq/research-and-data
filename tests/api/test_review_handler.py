@@ -47,7 +47,7 @@ class FakeReviewSurface:
         *,
         account_entity_id: EntityId,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
     ) -> ReviewSession:
@@ -87,14 +87,14 @@ def _resolver(specs: Sequence[AccountSpec]) -> ReviewAccountResolver:
 
 
 def _spec(entity_id: EntityId) -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier="top", tenant_id=_CLIENT)
+    return AccountSpec(entity_id=entity_id, tier="top", workspace_id=_CLIENT)
 
 
 def _ctx() -> PhaseContext:
     return PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.REVIEW,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
     )

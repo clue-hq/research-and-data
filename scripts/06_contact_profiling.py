@@ -70,7 +70,9 @@ class DemoFacetResolver:
         ]
 
 
-async def main(client_id: str, tier: str, account_id: str | None, contact_id: str | None) -> None:
+async def main(
+    workspace_id: str, tier: str, account_id: str | None, contact_id: str | None
+) -> None:
     tag = uuid4().hex[:8]  # unique per run so re-runs don't collide
     contact_linkedin = f"https://linkedin.com/in/jane-cfo-{tag}"
     clear_resolver_bindings()
@@ -105,7 +107,7 @@ async def main(client_id: str, tier: str, account_id: str | None, contact_id: st
             contact_entity_id=UUID(contact_id),
             account_entity_id=UUID(account_id),
             run_id=new_run_id(),
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             tier=tier,
         )
 
@@ -124,11 +126,11 @@ async def main(client_id: str, tier: str, account_id: str | None, contact_id: st
 if __name__ == "__main__":
     clue_obs.setup()
     p = argparse.ArgumentParser(description="M4 deep contact profiling")
-    p.add_argument("--client-id", default="acme")
+    p.add_argument("--workspace-id", default="acme")
     p.add_argument("--tier", default="high")
     p.add_argument(
         "--account-id", default=None, help="UUID from script 03/05 (seeds one if omitted)"
     )
     p.add_argument("--contact-id", default=None, help="UUID from script 05 (seeds one if omitted)")
     args = p.parse_args()
-    asyncio.run(main(args.client_id, args.tier, args.account_id, args.contact_id))
+    asyncio.run(main(args.workspace_id, args.tier, args.account_id, args.contact_id))

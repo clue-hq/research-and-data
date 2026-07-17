@@ -38,7 +38,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_obs.otel.testing import collect_spans
-from clue_research.claimstore import ALL_TENANTS, claims_for
+from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.resolvers import (
     GroundedSynthesisResolver,
     RetryableResolverError,
@@ -443,7 +443,7 @@ def test_contact_entity_writes_nothing() -> None:
 
 
 async def _claims(conn: object, entity_id: EntityId, field_key: str) -> list[Claim]:
-    return list(await claims_for(conn, entity_id, field_key, scope=ALL_TENANTS))  # type: ignore[arg-type]
+    return list(await claims_for(conn, entity_id, field_key, scope=ALL_WORKSPACES))  # type: ignore[arg-type]
 
 
 def test_parallel_fires_through_the_waterfall_with_engine_stamped_provenance(

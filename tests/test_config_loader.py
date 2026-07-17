@@ -40,7 +40,7 @@ def store() -> OverlayStore:
 def test_defaults_when_no_overlays(store: OverlayStore) -> None:
     cfg = get_config("acme", store=store)
     assert isinstance(cfg, Config)
-    assert cfg.client_id == "acme"
+    assert cfg.workspace_id == "acme"
     assert cfg.icp_id is None
     assert cfg.policy.posture is Posture.CONSERVATIVE_DEFAULT
     # only the defaults layer contributed

@@ -20,7 +20,7 @@ coordination point the M8 kickoff/handoff calls out: it
 
 Not yet wired here (still deferred — they need worker/M7 code changes, not pure composition, and are
 flagged in CLAUDE.md): the committee/contact pre-spend-gate call sites (no seam on those workers
-yet) and threading the campaign coordinates (``client_id`` / ``icp_key`` / ``icp_version`` /
+yet) and threading the campaign coordinates (``workspace_id`` / ``icp_key`` / ``icp_version`` /
 ``account_entity_id``) into the graph-built ``AspectContext.params`` so committee/contact dispatch
 in-graph (today they are driven via their direct callables, which populate those explicitly).
 """

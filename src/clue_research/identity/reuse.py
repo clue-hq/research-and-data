@@ -6,10 +6,11 @@ tenant-isolated. This module is the **single point that decides reuse** — the 
 ``(field_key, extraction_method, source_tier) → reuse_scope`` from versioned policy
 (:class:`ReusePolicy`), and the writer stamps the claim before it is persisted. No caller hardcodes
 the boundary; the claim store stays config-free (it just persists the stamped fields and scopes
-reads through :class:`~clue_research.claimstore.TenantScope`).
+reads through :class:`~clue_research.claimstore.WorkspaceScope`).
 
 The classifier is the *write*-side seam; the read-side isolation is the tenant-scoped claim read
-(M1's ``current_value`` + ``TenantScope``). Together they make "a private claim is never returned to
+(M1's ``current_value`` + ``WorkspaceScope``). Together they make "a private claim is never returned
+to
 another tenant" a property of the data model, not a caller's discipline.
 """
 
@@ -23,7 +24,7 @@ from clue_core import Claim, CurrentValue, EntityId, ExtractionMethod, ReuseScop
 from clue_research.claimstore import (
     DEFAULT_MERGE_POLICY,
     MergePolicy,
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     current_value,
 )
@@ -64,14 +65,15 @@ def classify_reuse_scope(
 
 
 def stamp_reuse(
-    claim: Claim, *, tenant_id: str | None, policy: ReusePolicy = DEFAULT_REUSE_POLICY
+    claim: Claim, *, workspace_id: str | None, policy: ReusePolicy = DEFAULT_REUSE_POLICY
 ) -> Claim:
-    """Return a copy of ``claim`` with its ``reuse_scope`` classified and ``tenant_id`` set
+    """Return a copy of ``claim`` with its ``reuse_scope`` classified and ``workspace_id`` set
     accordingly — the helper every writer (resolver, scorer, synthesizer) calls before
     :func:`insert_claim`. A public-footprint claim drops the tenant (it amortizes across clients); a
-    tenant-private claim binds to ``tenant_id``.
+    tenant-private claim binds to ``workspace_id``.
 
-    ``tenant_id`` is optional so a caller that may produce either flavor (the M4.1 waterfall, which
+    ``workspace_id`` is optional so a caller that may produce either flavor (the M4.1 waterfall,
+    which
     stamps every written claim — locked decision #6) can pass its run tenant through verbatim. But a
     claim that *classifies* as ``tenant_private`` (CRM-imported, scoring, resonance, contact /
     personal) with **no** tenant supplied is a wiring error, not a public claim: stamping it public
@@ -82,15 +84,16 @@ def stamp_reuse(
         claim.field_key, claim.extraction_method, claim.source_tier, policy
     )
     if scope is ReuseScope.TENANT_PRIVATE:
-        if tenant_id is None:
+        if workspace_id is None:
             raise ValueError(
                 f"claim for field {claim.field_key!r} (extraction_method "
                 f"{claim.extraction_method.value!r}) classifies as tenant_private, but no "
-                "tenant_id was supplied to stamp_reuse; a client-private claim must bind to a "
-                "tenant — supply the run's tenant_id (never silently written public, substrate §2)"
+                "workspace_id was supplied to stamp_reuse; a client-private claim must bind to a "
+                "workspace — supply the run's workspace_id (never silently written public, "
+                "substrate §2)"
             )
-        return claim.model_copy(update={"reuse_scope": scope, "tenant_id": tenant_id})
-    return claim.model_copy(update={"reuse_scope": scope, "tenant_id": None})
+        return claim.model_copy(update={"reuse_scope": scope, "workspace_id": workspace_id})
+    return claim.model_copy(update={"reuse_scope": scope, "workspace_id": None})
 
 
 async def reusable_public_value(
@@ -108,22 +111,23 @@ async def reusable_public_value(
     exists (the resolver must then fetch).
     """
     return await current_value(
-        conn, entity_id, field_key, scope=TenantScope.public_only(), policy=policy
+        conn, entity_id, field_key, scope=WorkspaceScope.public_only(), policy=policy
     )
 
 
 async def dsar_private_claims(
-    conn: AsyncConnection, entity_id: EntityId, tenant_id: str
+    conn: AsyncConnection, entity_id: EntityId, workspace_id: str
 ) -> Sequence[Claim]:
     """The DSAR/erasure selector: exactly **this tenant's** tenant-private claims for an entity (the
     data subject's set for one controller), leaving shared non-personal company facts — and *other*
     tenants' private claims — intact (Doc D §4). A DSAR is always scoped to the requesting tenant;
-    ``tenant_id`` is required so the selector can never return another tenant's private data. M2.5
+    ``workspace_id`` is required so the selector can never return another workspace's private data.
+    M2.5
     ships the selector; the tombstoning is M10.5. Includes superseded rows — erasure reaches the
     full history."""
     return await claims_for(
         conn,
         entity_id,
         include_superseded=True,
-        scope=TenantScope.private_for_tenant(tenant_id),
+        scope=WorkspaceScope.private_for_workspace(workspace_id),
     )

@@ -47,8 +47,8 @@ from clue_core import (
     RunId,
     discovery_claim,
 )
-from clue_obs.otel import ATTR_CLIENT_ID, traced_step
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
+from clue_obs.otel import ATTR_WORKSPACE_ID, traced_step
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
 from clue_research.icp import ScoringRubric, fit_floor, get_rubric_version, score_entity
 from clue_research.identity import (
     Observation,
@@ -79,14 +79,14 @@ from clue_research.stage0.types import ClientKnowledgeBaseRef
 _MODE_DISCOVERY = ResearchMode.ACCOUNT_DISCOVERY  # the seed marker rides the discovery flavor
 
 
-def seeds_run_id(client_id: str, icp_spec_ref: ICPSpecRef) -> RunId:
+def seeds_run_id(workspace_id: str, icp_spec_ref: ICPSpecRef) -> RunId:
     """The deterministic run id for a seed-assembly pass — a re-run for the same client+ICP
     re-writes the seed markers under one stable run, so re-assembly stays idempotent on
     ``(entity, field, source, run)`` rather than accreting duplicate markers."""
     return RunId(
         uuid5(
             NAMESPACE_URL,
-            f"seed:{client_id}:{icp_spec_ref.icp_key}:{icp_spec_ref.icp_version}",
+            f"seed:{workspace_id}:{icp_spec_ref.icp_key}:{icp_spec_ref.icp_version}",
         )
     )
 
@@ -117,21 +117,21 @@ async def assemble_lookalike_seeds(
     imports against that ICP. Customer evidence carries no back-score, so it is scored fresh against
     the target ICP here and partitions correctly regardless (the asymmetry tracks availability).
     """
-    client_id = icp_spec_ref.client_id
+    workspace_id = icp_spec_ref.workspace_id
     client_entity_id = client_kb_ref.client_entity_id
 
     if not enabled:  # hybrid opt-out (Doc B §1) — suppressed set, import-only path intact
         return SeedSet(
-            client_id=client_id,
+            workspace_id=workspace_id,
             icp_key=icp_spec_ref.icp_key,
             icp_version=icp_spec_ref.icp_version,
             suppressed=True,
         )
 
-    scope = TenantScope.for_tenant(client_id)
-    run = run_id if run_id is not None else seeds_run_id(client_id, icp_spec_ref)
+    scope = WorkspaceScope.for_workspace(workspace_id)
+    run = run_id if run_id is not None else seeds_run_id(workspace_id, icp_spec_ref)
 
-    with traced_step("stage0.assemble_lookalike_seeds", **{ATTR_CLIENT_ID: client_id}):
+    with traced_step("stage0.assemble_lookalike_seeds", **{ATTR_WORKSPACE_ID: workspace_id}):
         # Resolve the client to its current survivor once: client_kb_ref captured the entity at
         # reverse-profiling time, so a later merge could leave it a non-survivor — comparing the
         # raw id would let the client slip through as its own lookalike seed (conventions §2: key on
@@ -141,7 +141,7 @@ async def assemble_lookalike_seeds(
         )
 
         rubric = await get_rubric_version(
-            conn, client_id, icp_spec_ref.icp_key, icp_spec_ref.icp_version
+            conn, workspace_id, icp_spec_ref.icp_key, icp_spec_ref.icp_version
         )
         floor = _fit_floor(rubric)
 
@@ -176,10 +176,13 @@ async def assemble_lookalike_seeds(
         # Source 1 — existing-customer evidence from the Client Knowledge Base (M5.1).
         skipped: list[SkippedSeed] = []
         for entry, justifying_id in await _customer_evidence(
-            conn, client_entity_id, client_id=client_id, version=client_kb_ref.client_kb_version
+            conn,
+            client_entity_id,
+            workspace_id=workspace_id,
+            version=client_kb_ref.client_kb_version,
         ):
             resolved = await _resolve_customer(
-                conn, entry, policy, client_id=client_id, client_entity_id=client_survivor
+                conn, entry, policy, workspace_id=workspace_id, client_entity_id=client_survivor
             )
             if resolved is None:
                 skipped.append(
@@ -212,7 +215,7 @@ async def assemble_lookalike_seeds(
                 icp_spec_ref=icp_spec_ref,
                 seed_confidence=cand.seed_confidence,
                 run_id=run,
-                client_id=client_id,
+                workspace_id=workspace_id,
             )
             seeds.append(
                 SeedAccount(
@@ -224,7 +227,7 @@ async def assemble_lookalike_seeds(
             )
 
     return SeedSet(
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_spec_ref.icp_key,
         icp_version=icp_spec_ref.icp_version,
         seeds=tuple(seeds),
@@ -340,7 +343,7 @@ def _fit_floor(rubric: ScoringRubric | None) -> float:
 
 
 async def _score_fit(
-    conn: AsyncConnection, rubric: ScoringRubric | None, entity_id: EntityId, scope: TenantScope
+    conn: AsyncConnection, rubric: ScoringRubric | None, entity_id: EntityId, scope: WorkspaceScope
 ) -> float:
     """Back-score one candidate's fit against the **target** ICP via the M3.4 scorer (the importable
     Pass-A primitive M5.3/M6 use). An entity with no scorable claims back-scores ``0.0`` — honestly
@@ -358,14 +361,14 @@ async def _customer_evidence(
     conn: AsyncConnection,
     client_entity_id: EntityId,
     *,
-    client_id: str,
+    workspace_id: str,
     version: int | None,
 ) -> list[tuple[dict[str, JsonValue], ClaimId | None]]:
     """Read the ``client.customer`` evidence list from the pinned Client Knowledge Base version,
     each paired with the claim id that justifies it (so a seed derived from it cites that client
     fact). Returns ``[]`` when the client has no customers-page / CRM customer evidence."""
     claims = await read_client_kb_claims(
-        conn, client_entity_id, client_id=client_id, version=version
+        conn, client_entity_id, workspace_id=workspace_id, version=version
     )
     claim = claims.get(CLIENT_CUSTOMER)
     if claim is None or not isinstance(claim.value_json, list):
@@ -378,7 +381,7 @@ async def _resolve_customer(
     entry: dict[str, JsonValue],
     policy: SeedPolicy,
     *,
-    client_id: str,
+    workspace_id: str,
     client_entity_id: EntityId,
 ) -> tuple[EntityId, float] | None:
     """Resolve one customer-evidence entry to a clean ``account_entity`` via the M2 identity
@@ -439,7 +442,7 @@ async def _write_seed_provenance(
     icp_spec_ref: ICPSpecRef,
     seed_confidence: float,
     run_id: RunId,
-    client_id: str,
+    workspace_id: str,
 ) -> ClaimId:
     """Record the seed-derivation as a discovery-flavored claim (``matched_channel='seed'``) on the
     seed entity — so a lookalike candidate M6 derives can cite its anchor ("lookalike of your
@@ -457,7 +460,7 @@ async def _write_seed_provenance(
     ``justifying_claim_ids`` (the store has no unique constraint to lean on, so the guard is an
     explicit read, mirroring the M4 waterfall's idempotent-skip)."""
     existing = await claims_for(
-        conn, entity_id, DISCOVERY_PROVENANCE, scope=TenantScope.for_tenant(client_id)
+        conn, entity_id, DISCOVERY_PROVENANCE, scope=WorkspaceScope.for_workspace(workspace_id)
     )
     for prior in existing:
         if (
@@ -491,5 +494,5 @@ async def _write_seed_provenance(
             f"{icp_spec_ref.icp_key} v{icp_spec_ref.icp_version}"
         ),
     )
-    claim = stamp_reuse(claim, tenant_id=client_id, policy=SEED_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=workspace_id, policy=SEED_REUSE_POLICY)
     return await insert_claim(conn, claim)

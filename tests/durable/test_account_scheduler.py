@@ -47,7 +47,7 @@ class _TrackingGraph:
         campaign_run_id: Any,
         checkpointer: Any,
         account_run_id: Any = None,
-        tenant_id: str | None = None,
+        workspace_id: str | None = None,
         field_keys: Any = None,
     ) -> AccountRunResult:
         self.ran.append(entity_id)
@@ -297,7 +297,7 @@ def test_spec_carries_tenant_and_field_scope() -> None:
     spec = AccountSpec(
         entity_id=new_entity_id(),
         tier="high",
-        tenant_id="client-7",
+        workspace_id="client-7",
         field_keys=("account.resonance.culture",),
     )
 
@@ -306,7 +306,7 @@ def test_spec_carries_tenant_and_field_scope() -> None:
             [spec], campaign_run_id=new_campaign_run_id(), checkpointer=None
         )
         assert captured["tier"] == "high"
-        assert captured["tenant_id"] == "client-7"
+        assert captured["workspace_id"] == "client-7"
         assert captured["field_keys"] == ("account.resonance.culture",)
 
     run_async(_run())

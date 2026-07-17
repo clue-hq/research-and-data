@@ -50,7 +50,7 @@ def _stat(
 def _metrics(*stats: SourceYieldStat, downstream: dict[str, float] | None = None) -> YieldMetrics:
     downstream = downstream or {}
     return YieldMetrics(
-        client_id="c",
+        workspace_id="c",
         icp_key="k",
         icp_spec_version=1,
         sources=tuple(
@@ -130,7 +130,7 @@ def _row(account: EntityId, dtype: DispositionType, *, fit_factor: float) -> Lab
         account_entity_id=account,
         claim_id=None,
         campaign_run_id=None,
-        client_id="c",
+        workspace_id="c",
         icp_key="k",
         icp_spec_version=1,
         occurred_at=_AT,

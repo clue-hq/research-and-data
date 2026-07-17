@@ -69,7 +69,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     get_corroboration_config,
     record_verification,
@@ -311,7 +311,7 @@ class Corroborator:
         entity_id: EntityId,
         field_key: FieldKey | str,
         *,
-        scope: TenantScope,
+        scope: WorkspaceScope,
         entity_type: EntityType | None = None,
     ) -> CorroborationResult:
         """Corroborate one ``(entity, field)``: group, count, promote, flag. Deterministic and
@@ -348,7 +348,7 @@ class Corroborator:
             return result
 
     async def _evaluate(
-        self, conn: AsyncConnection, entity_id: EntityId, field_key: str, scope: TenantScope
+        self, conn: AsyncConnection, entity_id: EntityId, field_key: str, scope: WorkspaceScope
     ) -> CorroborationResult:
         cfg = await get_corroboration_config(conn, field_key)
         mode = EqualityMode(cfg.equality_mode) if cfg is not None else EqualityMode.EXACT

@@ -19,7 +19,7 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
-from clue_research.claimstore import ALL_TENANTS, TenantScope, insert_claim
+from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope, insert_claim
 from clue_research.identity import (
     DispositionOutcome,
     DispositionPolicy,
@@ -343,7 +343,7 @@ def test_claims_readable_under_survivor_with_no_claim_update() -> None:
             await auto_merge(conn, loser, survivor)
 
             cv = await current_value_resolved(
-                conn, survivor, "account.recent_funding", scope=ALL_TENANTS
+                conn, survivor, "account.recent_funding", scope=ALL_WORKSPACES
             )
             assert cv is not None and cv.value_json == {"round": "B"}
 
@@ -379,24 +379,28 @@ def test_merge_resolved_read_does_not_leak_across_tenants() -> None:
                 confidence=0.9,
                 run_id=new_run_id(),
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
-            ).model_copy(update={"reuse_scope": ReuseScope.TENANT_PRIVATE, "tenant_id": "tenant-a"})
+            ).model_copy(
+                update={"reuse_scope": ReuseScope.TENANT_PRIVATE, "workspace_id": "tenant-a"}
+            )
             await insert_claim(conn, private, validate_field=False)
             await auto_merge(conn, loser, survivor)
 
             field = "account.scoring_fit"
             # Tenant B: the loser's private claim must NOT be visible under the merge.
             b = await current_value_resolved(
-                conn, survivor, field, scope=TenantScope.for_tenant("tenant-b")
+                conn, survivor, field, scope=WorkspaceScope.for_workspace("tenant-b")
             )
             assert b is None
             # Tenant A: its own private claim IS visible under the survivor.
             a = await current_value_resolved(
-                conn, survivor, field, scope=TenantScope.for_tenant("tenant-a")
+                conn, survivor, field, scope=WorkspaceScope.for_workspace("tenant-a")
             )
             assert a is not None and a.value_json == {"score": 0.9}
             # Public-only view: nothing (it is private).
             assert (
-                await current_value_resolved(conn, survivor, field, scope=TenantScope.public_only())
+                await current_value_resolved(
+                    conn, survivor, field, scope=WorkspaceScope.public_only()
+                )
                 is None
             )
 

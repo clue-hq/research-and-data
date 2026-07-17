@@ -15,7 +15,8 @@ The platform suggests, the client confirms (Doc B §1): :func:`confirm_icp` take
    picks *which* fields/packs/rubric; the compiler owns tier-plans, source-profile serving, and the
    field plan — never authored inline (conventions §2).
 
-The result is reproducible: re-reading the pinned ``(client_id, icp_key, version)`` and recompiling
+The result is reproducible: re-reading the pinned ``(workspace_id, icp_key, version)`` and
+recompiling
 yields the same ``FieldPlan`` (same ``plan_hash``) — staged-flow §2 "reproducible because
 versioned". A confirmed spec is the single contract M6/M4 execute against; the proposal is never
 seen downstream, so the synthesis model is swappable behind this seam.
@@ -40,7 +41,7 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
-from clue_obs.otel import ATTR_CLIENT_ID, ATTR_ENTITY_ID, apply_attributes, traced_step
+from clue_obs.otel import ATTR_ENTITY_ID, ATTR_WORKSPACE_ID, apply_attributes, traced_step
 from clue_research.claimstore import insert_claim
 from clue_research.icp import (
     RubricEntry,
@@ -78,7 +79,7 @@ async def confirm_icp(
     proposal: ICPProposal,
     edits: ICPProposalEdits | None = None,
     *,
-    client_id: str,
+    workspace_id: str,
     client_entity_id: EntityId,
     created_by: str | None = None,
     estimate_inputs: EstimateInputs | None = None,
@@ -94,14 +95,14 @@ async def confirm_icp(
 
     **Idempotent on an identical re-confirm:** a confirm whose compiled selection (field set, packs,
     discovery strategy, source-profile ref, rubric) equals the currently-*active* spec for
-    ``(client_id, icp_key)`` returns that spec and writes nothing — so a retried/double-clicked
+    ``(workspace_id, icp_key)`` returns that spec and writes nothing — so a retried/double-clicked
     confirm never spawns a duplicate version or diff claim. A genuinely *edited* re-confirm differs,
     so it appends a new version (and a new diff) — the intended append-only confirm history. Run
     inside a transaction (the spec write + diff claim commit together; a retry then re-reads the
     committed active spec and the idempotency check short-circuits)."""
     edits = edits if edits is not None else _EMPTY_EDITS
 
-    with traced_step("stage0.icp_confirm", **{ATTR_CLIENT_ID: client_id}) as span:
+    with traced_step("stage0.icp_confirm", **{ATTR_WORKSPACE_ID: workspace_id}) as span:
         apply_attributes(span, {ATTR_ENTITY_ID: client_entity_id})
         await load_icp_feedback_pack(conn)  # the icp.* feedback field must exist before we write it
 
@@ -113,7 +114,7 @@ async def confirm_icp(
         # The full would-be spec (all five slots), built once and reused for pre-validation, the
         # idempotency comparison, and the write — so they can never disagree.
         draft = ICPSpec(
-            client_id=client_id,
+            workspace_id=workspace_id,
             icp_key=confirmed.icp_key,
             created_from=ICPCreatedFrom.SYNTHESIS,
             field_keys=confirmed.field_keys,
@@ -128,13 +129,13 @@ async def confirm_icp(
         plan = await compile_field_plan(conn, draft)
         validate_rubric(rubric, plan)
 
-        active = await get_active_icp(conn, client_id, confirmed.icp_key)
+        active = await get_active_icp(conn, workspace_id, confirmed.icp_key)
         if active is not None and _same_selection(active, draft):
             spec = active  # idempotent re-confirm of the active spec → write nothing
         else:
             spec = await create_icp_spec(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=draft.icp_key,
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=draft.field_keys,
@@ -150,7 +151,7 @@ async def confirm_icp(
             await _persist_diff(
                 conn,
                 client_entity_id=client_entity_id,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_key=spec.icp_key,
                 icp_version=spec.version,
                 diff=diff,
@@ -158,7 +159,7 @@ async def confirm_icp(
             )
 
     return ICPConfirmation(
-        ref=ICPSpecRef(client_id=client_id, icp_key=spec.icp_key, icp_version=spec.version),
+        ref=ICPSpecRef(workspace_id=workspace_id, icp_key=spec.icp_key, icp_version=spec.version),
         diff=diff,
         estimate=estimate_campaign(estimate_inputs),
     )
@@ -382,7 +383,7 @@ async def _persist_diff(
     conn: AsyncConnection,
     *,
     client_entity_id: EntityId,
-    client_id: str,
+    workspace_id: str,
     icp_key: str,
     icp_version: int,
     diff: ICPProposalDiff,
@@ -407,6 +408,6 @@ async def _persist_diff(
         research_mode=_MODE,
         evidence_span=f"client confirmed ICP {icp_key} v{icp_version}",
     )
-    claim = stamp_reuse(claim, tenant_id=client_id, policy=ICP_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=workspace_id, policy=ICP_REUSE_POLICY)
     await insert_claim(conn, claim)
     return claim

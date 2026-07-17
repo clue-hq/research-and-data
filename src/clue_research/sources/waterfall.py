@@ -56,7 +56,7 @@ from clue_obs.otel import (
     resolve_span,
     traced_step,
 )
-from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, insert_claim
+from clue_research.claimstore import PUBLIC_ONLY, WorkspaceScope, claims_for, insert_claim
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources.registry import NoResolverBoundError, get_resolver, get_source
 from clue_research.sources.thresholds import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
@@ -157,14 +157,15 @@ async def _existing_step_claims(
     source_key: str,
     run_id: RunId,
     *,
-    scope: TenantScope,
+    scope: WorkspaceScope,
 ) -> list[Claim]:
     """Live claims already written for this ``(entity, field, source_key, run)`` — the idempotency
     key. Keyed on ``source_key``, NOT tier: a ``tier_plan`` may list >1 source at one tier
     (``[apollo, clay]``), so tier alone would conflate them on a retry (substrate §5c). Their
     presence means a retry of this step; reuse them instead of re-resolving.
 
-    The read is **tenant-scoped** (not ALL_TENANTS): idempotent reuse must never hand a caller back
+    The read is **workspace-scoped** (not ALL_WORKSPACES): idempotent reuse must never hand a caller
+    back
     a *different* tenant's ``tenant_private`` claim, even though it could only carry the id (the
     read path would still filter the value out). A tenant-scoped run reuses its own public ∪ private
     claims; a public-only run reuses only public ones — so a private claim is never reused across
@@ -180,7 +181,7 @@ async def resolve_field(
     *,
     mode: ResearchMode,
     run_id: RunId,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
     budget_envelope: Decimal | None = None,
     cost_so_far: CostCents = Decimal(0),
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
@@ -200,17 +201,20 @@ async def resolve_field(
     one place that classifies every written claim's cross-tenant ``reuse_scope`` (via
     :func:`~clue_research.identity.stamp_reuse`): public-footprint facts (firmographic /
     technographic) amortize across clients; ``crm_import`` / scoring / resonance / personal claims
-    are stamped ``tenant_private`` and bound to ``tenant_id`` so client-private data never leaks
-    into the shared pool (substrate §2). ``tenant_id`` is therefore **required whenever a resolved
+    are stamped ``tenant_private`` and bound to ``workspace_id`` so client-private data never leaks
+    into the shared pool (substrate §2). ``workspace_id`` is therefore **required whenever a
+    resolved
     field can produce a tenant-private claim** (a CRM source, a resonance/scoring field): omitting
     it makes ``stamp_reuse`` fail loud rather than silently write it public. A public-only plan
-    (the M4.1/M4.4 tier-1 enrichment path) needs no ``tenant_id``.
+    (the M4.1/M4.4 tier-1 enrichment path) needs no ``workspace_id``.
     """
     threshold = thresholds.for_field_class(field_def.field_class)
     # The idempotency read is scoped to THIS run's tenant: a tenant run reuses its own public ∪
     # private claims; a public-only run (no tenant) reuses only public ones. This keeps a
     # tenant-private claim from ever being reused across the tenant boundary (decision #6 / §2).
-    idem_scope = TenantScope.for_tenant(tenant_id) if tenant_id is not None else PUBLIC_ONLY
+    idem_scope = (
+        WorkspaceScope.for_workspace(workspace_id) if workspace_id is not None else PUBLIC_ONLY
+    )
     steps: list[TierStep] = []
     refs: list[ClaimId] = []
     spent = Decimal(
@@ -305,8 +309,8 @@ async def resolve_field(
                 # The engine (the only composer) classifies + stamps the cross-tenant reuse scope on
                 # every written claim (decision #6): a public-footprint fact drops the tenant; a
                 # crm_import / scoring / resonance / personal claim is bound tenant-private. A
-                # private-classifying claim with no tenant_id fails loud here (no silent leak).
-                final = stamp_reuse(final, tenant_id=tenant_id, policy=reuse_policy)
+                # private-classifying claim with no workspace_id fails loud here (no silent leak).
+                final = stamp_reuse(final, workspace_id=workspace_id, policy=reuse_policy)
                 refs.append(await insert_claim(conn, final))
                 step_cost += final.cost_cents
             # A *paid* call that hard-misses (returns no claims) still cost its price — but with no
@@ -361,14 +365,14 @@ async def resolve_fields(
     *,
     mode: ResearchMode,
     run_id: RunId,
-    tenant_id: str | None = None,
+    workspace_id: str | None = None,
     budget_envelope: Decimal | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
     reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
     idempotent: bool = True,
 ) -> list[WaterfallResult]:
     """Resolve several fields for one entity, threading the running spend so a single
-    ``budget_envelope`` bounds the whole batch. ``tenant_id`` / ``reuse_policy`` are threaded to
+    ``budget_envelope`` bounds the whole batch. ``workspace_id`` / ``reuse_policy`` are threaded to
     each field's tenant stamping (decision #6 — see :func:`resolve_field`)."""
     results: list[WaterfallResult] = []
     spent = Decimal(0)
@@ -379,7 +383,7 @@ async def resolve_fields(
             field_def,
             mode=mode,
             run_id=run_id,
-            tenant_id=tenant_id,
+            workspace_id=workspace_id,
             budget_envelope=budget_envelope,
             cost_so_far=spent,
             thresholds=thresholds,

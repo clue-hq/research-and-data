@@ -58,7 +58,7 @@ _COMMITTEE = [FakeCommitteeSource(source_key="apollo_people", tier=2)]
 
 
 def _spec(*, icp_key: str = _ICP) -> ICPSpec:
-    return ICPSpec(client_id=_CLIENT, icp_key=icp_key, created_from=ICPCreatedFrom.SYNTHESIS)
+    return ICPSpec(workspace_id=_CLIENT, icp_key=icp_key, created_from=ICPCreatedFrom.SYNTHESIS)
 
 
 async def _empty_resolver(_ctx: PhaseContext) -> tuple[AccountSpec, ...]:
@@ -131,7 +131,7 @@ def test_empty_high_tier_set_is_a_clean_completed_no_op() -> None:
     ctx = PhaseContext(
         campaign_run_id=new_campaign_run_id(),
         phase=CampaignPhase.DEEP,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key=_ICP,
         icp_version=1,
     )
@@ -167,7 +167,7 @@ async def _write_tier_claim(
             run_id=new_run_id(),
             research_mode=ResearchMode.ACCOUNT_PROFILING,
         ),
-        tenant_id=_CLIENT,
+        workspace_id=_CLIENT,
     )
     await insert_claim(conn, claim)
 
@@ -208,7 +208,7 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
             ctx = PhaseContext(
                 campaign_run_id=new_campaign_run_id(),
                 phase=CampaignPhase.DEEP,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 icp_version=1,
                 params={"tier_cutoffs": cutoffs.model_dump(mode="json")},
@@ -217,7 +217,7 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
 
             assert {s.entity_id for s in specs} == {high.id}
             assert specs[0].tier == "high"
-            assert specs[0].tenant_id == _CLIENT
+            assert specs[0].workspace_id == _CLIENT
 
     run_async(scenario())
 
@@ -244,7 +244,7 @@ def test_advance_dispatches_deep_and_transitions_to_verification() -> None:
             register=registry.register,
         )
         machine = CampaignRun(store=store, registry=registry)
-        run_id = await machine.start(client_id=_CLIENT, icp_key=_ICP, icp_version=1)
+        run_id = await machine.start(workspace_id=_CLIENT, icp_key=_ICP, icp_version=1)
         # Park the run at DEEP (the prior phases have their own handlers/milestones); advancing must
         # now dispatch our handler rather than raise NoPhaseHandlerRegistered(DEEP).
         await store.transition(run_id, phase=CampaignPhase.DEEP, status=CampaignRunStatus.ACTIVE)

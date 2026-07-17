@@ -215,12 +215,13 @@ async def register_source_profile(
 _SELECT_OVERRIDE = (
     "SELECT weighted_sources FROM source_profile_override WHERE pack_key = :pack_key "
     "AND field_class IS NOT DISTINCT FROM CAST(:field_class AS field_class) "
-    "AND client_id = :client_id AND icp_key IS NOT DISTINCT FROM :icp_key AND version = :version"
+    "AND workspace_id = :workspace_id AND icp_key IS NOT DISTINCT FROM :icp_key "
+    "AND version = :version"
 )
 _INSERT_OVERRIDE = text(
     "INSERT INTO source_profile_override "
-    "(pack_key, field_class, client_id, icp_key, weighted_sources, version) VALUES "
-    "(:pack_key, CAST(:field_class AS field_class), :client_id, :icp_key, "
+    "(pack_key, field_class, workspace_id, icp_key, weighted_sources, version) VALUES "
+    "(:pack_key, CAST(:field_class AS field_class), :workspace_id, :icp_key, "
     "CAST(:weighted_sources AS jsonb), :version)"
 )
 
@@ -228,7 +229,7 @@ _INSERT_OVERRIDE = text(
 async def register_source_profile_override(
     conn: AsyncConnection,
     pack_key: str,
-    client_id: str,
+    workspace_id: str,
     sources: Sequence[WeightedSource],
     *,
     field_class: FieldClass | None = None,
@@ -249,7 +250,7 @@ async def register_source_profile_override(
                 {
                     "pack_key": pack_key,
                     "field_class": fc,
-                    "client_id": client_id,
+                    "workspace_id": workspace_id,
                     "icp_key": icp_key,
                     "version": version,
                 },
@@ -263,7 +264,8 @@ async def register_source_profile_override(
         if current == incoming:
             return
         raise SourceProfileRedefinitionError(
-            f"source_profile_override for pack {pack_key!r} client {client_id!r} icp {icp_key!r} "
+            f"source_profile_override for pack {pack_key!r} workspace {workspace_id!r} "
+            f"icp {icp_key!r} "
             f"field_class {fc!r} v{version} already exists with different sources; bump version"
         )
     await conn.execute(
@@ -271,7 +273,7 @@ async def register_source_profile_override(
         {
             "pack_key": pack_key,
             "field_class": fc,
-            "client_id": client_id,
+            "workspace_id": workspace_id,
             "icp_key": icp_key,
             "weighted_sources": _dump_sources(sources),
             "version": version,
@@ -288,7 +290,7 @@ async def get_source_profile(
     conn: AsyncConnection,
     pack_key: str,
     *,
-    client_id: str | None = None,
+    workspace_id: str | None = None,
     icp_key: str | None = None,
 ) -> ResolvedSourceProfile:
     """Resolve a pack's source profile: the latest pack default per slot, with any client/ICP
@@ -315,8 +317,8 @@ async def get_source_profile(
         for row in default_rows
     }
 
-    if client_id is not None:
-        slots = _apply_overrides(slots, await _override_rows(conn, pack_key, client_id, icp_key))
+    if workspace_id is not None:
+        slots = _apply_overrides(slots, await _override_rows(conn, pack_key, workspace_id, icp_key))
 
     return ResolvedSourceProfile(
         packs=(pack_key,),
@@ -326,7 +328,7 @@ async def get_source_profile(
 
 
 async def _override_rows(
-    conn: AsyncConnection, pack_key: str, client_id: str, icp_key: str | None
+    conn: AsyncConnection, pack_key: str, workspace_id: str, icp_key: str | None
 ) -> Sequence[Mapping[str, Any]]:
     """Candidate override rows for (client, icp), most-specific + latest-version first per slot:
     a matching ``icp_key`` outranks a client-wide ``NULL`` icp_key; newer version outranks older."""
@@ -334,11 +336,11 @@ async def _override_rows(
         text(
             "SELECT DISTINCT ON (field_class) field_class, weighted_sources "
             "FROM source_profile_override "
-            "WHERE pack_key = :pack_key AND client_id = :client_id "
+            "WHERE pack_key = :pack_key AND workspace_id = :workspace_id "
             "AND (icp_key = :icp_key OR icp_key IS NULL) "
             "ORDER BY field_class, (icp_key IS NOT NULL) DESC, version DESC"
         ),
-        {"pack_key": pack_key, "client_id": client_id, "icp_key": icp_key},
+        {"pack_key": pack_key, "workspace_id": workspace_id, "icp_key": icp_key},
     )
     return [dict(row) for row in result.mappings().all()]
 

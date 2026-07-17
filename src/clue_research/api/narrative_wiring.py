@@ -76,14 +76,14 @@ class ClientKnowledgeRetrieverStub:
         self,
         *,
         client_entity_id: EntityId,
-        client_id: str,
+        workspace_id: str,
         query: str,
         kb_version: int | None = None,
         limit: int = 10,
     ) -> tuple[ClientKnowledgeChunk, ...]:
         async with self._conn_factory() as conn:
             kb = await read_client_kb_claims(
-                conn, client_entity_id, client_id=client_id, version=kb_version
+                conn, client_entity_id, workspace_id=workspace_id, version=kb_version
             )
         chunks = [
             ClientKnowledgeChunk(

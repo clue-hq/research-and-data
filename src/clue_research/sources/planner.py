@@ -320,7 +320,7 @@ async def plan_sources(
     allowed = await resolve_allowed_set(
         conn, spec, field, max_tier=tier_scope, entity_scope=entity_scope, served=served
     )
-    icp_id = f"{spec.client_id}/{spec.icp_key}@{spec.version}"
+    icp_id = f"{spec.workspace_id}/{spec.icp_key}@{spec.version}"
 
     with traced_step(
         SPAN_SOURCE_PLAN,

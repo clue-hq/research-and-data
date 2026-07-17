@@ -42,7 +42,7 @@ from clue_core import (
     SourceTier,
     revalidate_with,
 )
-from clue_research.claimstore import TenantScope, claims_for, insert_claim
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
 from clue_research.identity import stamp_reuse
 from clue_research.profiling.contact.binding import (
     DEFAULT_BINDING_CLASSIFIER,
@@ -107,7 +107,7 @@ async def fill_contact_field(
     field_def: FieldDef,
     *,
     run_id: RunId,
-    tenant_id: str,
+    workspace_id: str,
     tier: str,
     spec: ICPSpec | None = None,
     binding_classifier: BindingClassifier = DEFAULT_BINDING_CLASSIFIER,
@@ -125,7 +125,7 @@ async def fill_contact_field(
     resolver-absent plan yields an empty, flagged result (correct, not a crash)."""
     result = FacetFillResult(field_key=field_def.field_key)
     threshold = thresholds.for_field_class(field_def.field_class)
-    scope = TenantScope.for_tenant(tenant_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
     ran_any = False
 
     for source_key in await _planned_source_keys(
@@ -202,7 +202,7 @@ async def fill_contact_field(
                 research_mode=ResearchMode.CONTACT_PROFILING,
                 source_key=source_key,
             )
-            final = stamp_reuse(final, tenant_id=tenant_id)
+            final = stamp_reuse(final, workspace_id=workspace_id)
             claim_id = await insert_claim(conn, final)
             result.claim_refs.append(claim_id)
             result.profile_views.append(_to_view(claim_id, final))

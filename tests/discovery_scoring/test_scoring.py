@@ -29,7 +29,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     claims_for,
     insert_claim,
     load_core_pack,
@@ -137,7 +137,7 @@ async def _score(conn, eid, *, rubric, run_id, icp_version: int = 1):
         rubric=rubric,
         fill_fields=[],
         run_id=run_id,
-        client_id=CLIENT,
+        workspace_id=CLIENT,
         icp_key=ICP,
         icp_version=icp_version,
     )
@@ -206,7 +206,7 @@ def test_score_claims_are_tier1_and_not_synthesized() -> None:
             await _score(conn, eid, rubric=_rubric(), run_id=new_run_id())
             for field_key in (FIT_FIELD, INTENT_FIELD):
                 claims = await claims_for(
-                    conn, eid, field_key, scope=TenantScope.for_tenant(CLIENT)
+                    conn, eid, field_key, scope=WorkspaceScope.for_workspace(CLIENT)
                 )
                 assert len(claims) == 1
                 assert 1 <= claims[0].source_tier <= 3
@@ -244,7 +244,7 @@ def test_pass_a_fill_strips_tier4_sources() -> None:
                 )
             spec = await create_icp_spec(
                 conn,
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key=ICP,
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("account.test_signal",),
@@ -280,7 +280,9 @@ def test_missing_source_yields_flagged_not_fabricated() -> None:
             assert outcome.score.fit.value == pytest.approx(0.0)
             assert outcome.score.evidence[_EMP] == ()
             # no proxy claim was fabricated for the missing field
-            emp_claims = await claims_for(conn, eid, _EMP, scope=TenantScope.for_tenant(CLIENT))
+            emp_claims = await claims_for(
+                conn, eid, _EMP, scope=WorkspaceScope.for_workspace(CLIENT)
+            )
             assert emp_claims == []
 
     run_async(_run())
@@ -302,7 +304,9 @@ def test_rescore_same_run_writes_no_new_claim() -> None:
             assert second.score.fit.value == first.score.fit.value
             assert second.score.intent.value == first.score.intent.value
             for field_key in (FIT_FIELD, INTENT_FIELD):
-                live = await claims_for(conn, eid, field_key, scope=TenantScope.for_tenant(CLIENT))
+                live = await claims_for(
+                    conn, eid, field_key, scope=WorkspaceScope.for_workspace(CLIENT)
+                )
                 assert len(live) == 1  # no duplicate score claim on replay
 
     run_async(_run())
@@ -319,7 +323,7 @@ def test_non_fit_flag_below_floor_and_not_excluded() -> None:
             assert outcome.score.non_fit_flag is True
             # flag-and-proceed: still scored + persisted, with the evidence behind the low fit
             assert outcome.score.evidence[_EMP]  # the backing claim id(s)
-            fit = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT))
+            fit = await claims_for(conn, eid, FIT_FIELD, scope=WorkspaceScope.for_workspace(CLIENT))
             assert len(fit) == 1 and fit[0].value_json["non_fit_flag"] is True
             # not flagged when comfortably above the floor
             ok = await _score(
@@ -354,10 +358,16 @@ def test_new_rubric_version_supersedes_and_bumps() -> None:
 
             assert v1.score.rubric_version == 1 and v2.score.rubric_version == 2
             assert v2.written is True
-            live = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT))
+            live = await claims_for(
+                conn, eid, FIT_FIELD, scope=WorkspaceScope.for_workspace(CLIENT)
+            )
             assert len(live) == 1 and live[0].value_json["rubric_version"] == 2  # one live winner
             history = await claims_for(
-                conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT), include_superseded=True
+                conn,
+                eid,
+                FIT_FIELD,
+                scope=WorkspaceScope.for_workspace(CLIENT),
+                include_superseded=True,
             )
             assert len(history) == 2  # the v1 score is superseded, not deleted
 
@@ -371,11 +381,13 @@ def test_score_object_is_tenant_private() -> None:
             await load_core_pack(conn)
             eid = await _seed_account(conn)
             await _score(conn, eid, rubric=_rubric(), run_id=new_run_id())
-            claims = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT))
+            claims = await claims_for(
+                conn, eid, FIT_FIELD, scope=WorkspaceScope.for_workspace(CLIENT)
+            )
             assert claims[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert claims[0].tenant_id == CLIENT
+            assert claims[0].workspace_id == CLIENT
             # invisible to a public-only read (tenant isolation)
-            public = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.public_only())
+            public = await claims_for(conn, eid, FIT_FIELD, scope=WorkspaceScope.public_only())
             assert public == []
 
     run_async(_run())

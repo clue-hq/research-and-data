@@ -57,7 +57,7 @@ def _ctx(
     return PhaseContext(
         campaign_run_id=campaign_run_id if campaign_run_id is not None else new_campaign_run_id(),
         phase=CampaignPhase.REVERSE_PROFILING,
-        client_id=f"tenant-handler-{suffix}",
+        workspace_id=f"tenant-handler-{suffix}",
         icp_key="__reverse_profiling__",
         icp_version=0,
         budget_cap_cents=budget_cap_cents,

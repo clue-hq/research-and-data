@@ -80,7 +80,7 @@ async def _seed_run(conn: AsyncConnection, *, client: str = _CLIENT) -> Campaign
     await ensure_campaign_run(
         conn,
         campaign_run_id=run,
-        client_id=client,
+        workspace_id=client,
         icp_key=_ICP_KEY,
         icp_version=_ICP_VERSION,
         phase=CampaignPhase.HANDOFF,
@@ -105,18 +105,18 @@ async def _add_account_run(
         await set_account_sub_phase(conn, arid, sub_phase)
 
 
-def test_run_readiness_maps_phase_and_is_tenant_scoped() -> None:
+def test_run_readiness_maps_phase_and_is_workspace_scoped() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             run = await _seed_run(conn)
             reader = DurableHandoffReadinessReader(conn_factory=_factory(conn))
-            rr = await reader.run_readiness(campaign_run_id=run, client_id=_CLIENT)
+            rr = await reader.run_readiness(campaign_run_id=run, workspace_id=_CLIENT)
             assert rr is not None
             assert rr.phase is CampaignPhase.HANDOFF
             assert rr.icp_key == _ICP_KEY and rr.icp_version == _ICP_VERSION
             assert rr.is_terminal is False  # ACTIVE
             # cross-tenant: another client cannot see the run
-            assert await reader.run_readiness(campaign_run_id=run, client_id=_OTHER) is None
+            assert await reader.run_readiness(campaign_run_id=run, workspace_id=_OTHER) is None
 
     run_async(_run())
 
@@ -149,11 +149,11 @@ def test_ready_accounts_filters_to_m12_ready() -> None:
             )
             assert len(await list_account_runs(conn, run)) == 3
             reader = DurableHandoffReadinessReader(conn_factory=_factory(conn))
-            ready = await reader.ready_accounts(campaign_run_id=run, client_id=_CLIENT)
+            ready = await reader.ready_accounts(campaign_run_id=run, workspace_id=_CLIENT)
             assert {r.account_entity_id for r in ready} == {done}
             assert all(r.is_ready for r in ready)
             # cross-tenant: no ready accounts for another client
-            assert await reader.ready_accounts(campaign_run_id=run, client_id=_OTHER) == ()
+            assert await reader.ready_accounts(campaign_run_id=run, workspace_id=_OTHER) == ()
 
     run_async(_run())
 
@@ -178,17 +178,17 @@ def test_require_finalized_review_gates_handoff_readiness() -> None:
                 conn_factory=_factory(conn), require_finalized_review=True
             )
             # M12-ready, but the Tier-1 review is not finalized → gated out (handoff pending).
-            assert await gated.ready_accounts(campaign_run_id=run, client_id=_CLIENT) == ()
+            assert await gated.ready_accounts(campaign_run_id=run, workspace_id=_CLIENT) == ()
             # the default reader (gate OFF) still sees it ready — back-compat.
             ungated = DurableHandoffReadinessReader(conn_factory=_factory(conn))
-            ready_ungated = await ungated.ready_accounts(campaign_run_id=run, client_id=_CLIENT)
+            ready_ungated = await ungated.ready_accounts(campaign_run_id=run, workspace_id=_CLIENT)
             assert {r.account_entity_id for r in ready_ungated} == {acct}
             # finalize the review session → the gated reader now lets the account through.
             session = await ensure_review_session(
-                conn, account_entity_id=acct, campaign_run_id=run, client_id=_CLIENT
+                conn, account_entity_id=acct, campaign_run_id=run, workspace_id=_CLIENT
             )
             await finalize_review_session(conn, session.id)
-            ready = await gated.ready_accounts(campaign_run_id=run, client_id=_CLIENT)
+            ready = await gated.ready_accounts(campaign_run_id=run, workspace_id=_CLIENT)
             assert {r.account_entity_id for r in ready} == {acct}
 
     run_async(_run())
@@ -220,7 +220,7 @@ def test_phase_handler_emits_idempotently() -> None:
             ctx = PhaseContext(
                 campaign_run_id=run,
                 phase=CampaignPhase.HANDOFF,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP_KEY,
                 icp_version=_ICP_VERSION,
             )
@@ -229,7 +229,7 @@ def test_phase_handler_emits_idempotently() -> None:
             assert first.accounts_processed == 1
             assert first.payload["newly_emitted"] == 1
             assert len(pub.published) == 1
-            rows = await list_handoff_events(conn, campaign_run_id=run, client_id=_CLIENT)
+            rows = await list_handoff_events(conn, campaign_run_id=run, workspace_id=_CLIENT)
             assert len(rows) == 1
             assert rows[0].account_entity_id == acc
             assert rows[0].icp_spec_version == _ICP_VERSION and rows[0].icp_key == _ICP_KEY
@@ -238,13 +238,15 @@ def test_phase_handler_emits_idempotently() -> None:
             # surfaced on the list summary (spec §M12.3 tier filter).
             page = await HandoffService(
                 readiness_reader=DurableHandoffReadinessReader(conn_factory=_factory(conn))
-            ).list_handoffs(conn, client_id=_CLIENT, campaign_run_id=run)
+            ).list_handoffs(conn, workspace_id=_CLIENT, campaign_run_id=run)
             assert page.total == 1 and page.items[0].tier == "top"
 
             second = await handler.run(ctx)  # phase re-entry / crash-resume
             assert second.accounts_processed == 1 and second.payload["newly_emitted"] == 0
             assert len(pub.published) == 1  # not re-published
-            assert len(await list_handoff_events(conn, campaign_run_id=run, client_id=_CLIENT)) == 1
+            assert (
+                len(await list_handoff_events(conn, campaign_run_id=run, workspace_id=_CLIENT)) == 1
+            )
 
     run_async(_run())
 

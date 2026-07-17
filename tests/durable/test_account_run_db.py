@@ -28,7 +28,7 @@ from clue_core import (
 from clue_core.field import FieldDef
 from clue_db import db_lifespan, transaction
 from clue_research.claimstore import insert_claim, register_field
-from clue_research.claimstore.tenancy import TenantScope
+from clue_research.claimstore.tenancy import WorkspaceScope
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,
@@ -234,7 +234,7 @@ def test_compute_gap_fields_detects_missing_and_filled() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             await register_field(conn, _deep_field())
             entity_id = new_entity_id()
-            scope = TenantScope.public_only()
+            scope = WorkspaceScope.public_only()
 
             # No claim yet → the deep field is a gap.
             gaps = await compute_gap_fields(conn, entity_id, scope=scope, field_keys=(_DEEP_FIELD,))

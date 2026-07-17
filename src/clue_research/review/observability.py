@@ -120,7 +120,7 @@ class CampaignProgress(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     campaign_run_id: CampaignRunId
-    client_id: str
+    workspace_id: str
     current_phase: CampaignPhase
     run_status: str
     is_paused: bool = False
@@ -218,7 +218,7 @@ class RunPhaseState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     campaign_run_id: CampaignRunId
-    client_id: str
+    workspace_id: str
     current_phase: CampaignPhase
     run_status: str
     is_terminal: bool = False
@@ -232,11 +232,12 @@ class CampaignStateReader(Protocol):
     ``review`` cannot import ``durable``, so the production impl (over ``durable.get_campaign_run``
     +
     ``durable.get_checkpoint``) is injected at the ``api`` root, like
-    ``narrative.readiness.HandoffReadinessReader``. Tenant-scoped on ``client_id`` (returns ``None``
+    ``narrative.readiness.HandoffReadinessReader``. Workspace-scoped on ``workspace_id`` (returns
+    ``None``
     for a missing run / a run that is not this tenant's)."""
 
     async def run_phase_state(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> RunPhaseState | None: ...
 
 
@@ -251,7 +252,7 @@ class CostBurnDownReader(Protocol):
     ``BudgetEngine`` the deep run uses."""
 
     async def burn_down(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> BurnDown | None: ...
 
 
@@ -267,7 +268,7 @@ class PreRunEstimator(Protocol):
     async def estimate(
         self,
         *,
-        client_id: str,
+        workspace_id: str,
         discovered_count: int,
         tier_cutoffs: Mapping[str, float] | None = None,
     ) -> Estimate: ...
@@ -284,7 +285,7 @@ class VerificationHealthReader(Protocol):
     counts. Tenant-scoped; ``None`` for a missing / cross-tenant run."""
 
     async def health_counts(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> VerificationHealthCounts | None: ...
 
 
@@ -298,7 +299,7 @@ class CoverageReportReader(Protocol):
     ``None`` when a run has no discovery telemetry (e.g. an import-only campaign). Tenant-scoped."""
 
     async def coverage_for_run(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> CoverageReport | None: ...
 
 
@@ -315,10 +316,10 @@ class InMemoryCampaignStateReader:
         self._states[state.campaign_run_id] = state
 
     async def run_phase_state(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> RunPhaseState | None:
         state = self._states.get(campaign_run_id)
-        if state is None or state.client_id != client_id:
+        if state is None or state.workspace_id != workspace_id:
             return None
         return state
 
@@ -336,13 +337,15 @@ class InMemoryCostBurnDownReader:
         self._burndowns = dict(burndowns or {})
         self._owners = dict(owners or {})
 
-    def set(self, campaign_run_id: CampaignRunId, burndown: BurnDown, *, client_id: str) -> None:
+    def set(self, campaign_run_id: CampaignRunId, burndown: BurnDown, *, workspace_id: str) -> None:
         self._burndowns[campaign_run_id] = burndown
-        self._owners[campaign_run_id] = client_id
+        self._owners[campaign_run_id] = workspace_id
 
-    async def burn_down(self, *, campaign_run_id: CampaignRunId, client_id: str) -> BurnDown | None:
+    async def burn_down(
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+    ) -> BurnDown | None:
         owner = self._owners.get(campaign_run_id)
-        if owner is not None and owner != client_id:
+        if owner is not None and owner != workspace_id:
             return None
         return self._burndowns.get(campaign_run_id)
 
@@ -357,11 +360,11 @@ class InMemoryPreRunEstimator:
     async def estimate(
         self,
         *,
-        client_id: str,
+        workspace_id: str,
         discovered_count: int,
         tier_cutoffs: Mapping[str, float] | None = None,
     ) -> Estimate:
-        return self._fn(client_id, discovered_count, tier_cutoffs)
+        return self._fn(workspace_id, discovered_count, tier_cutoffs)
 
 
 class InMemoryVerificationHealthReader:
@@ -378,16 +381,16 @@ class InMemoryVerificationHealthReader:
         self._owners = dict(owners or {})
 
     def set(
-        self, campaign_run_id: CampaignRunId, counts: VerificationHealthCounts, *, client_id: str
+        self, campaign_run_id: CampaignRunId, counts: VerificationHealthCounts, *, workspace_id: str
     ) -> None:
         self._counts[campaign_run_id] = counts
-        self._owners[campaign_run_id] = client_id
+        self._owners[campaign_run_id] = workspace_id
 
     async def health_counts(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> VerificationHealthCounts | None:
         owner = self._owners.get(campaign_run_id)
-        if owner is not None and owner != client_id:
+        if owner is not None and owner != workspace_id:
             return None
         return self._counts.get(campaign_run_id)
 
@@ -405,16 +408,16 @@ class InMemoryCoverageReportReader:
         self._owners = dict(owners or {})
 
     def set(
-        self, campaign_run_id: CampaignRunId, report: CoverageReport, *, client_id: str
+        self, campaign_run_id: CampaignRunId, report: CoverageReport, *, workspace_id: str
     ) -> None:
         self._reports[campaign_run_id] = report
-        self._owners[campaign_run_id] = client_id
+        self._owners[campaign_run_id] = workspace_id
 
     async def coverage_for_run(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> CoverageReport | None:
         owner = self._owners.get(campaign_run_id)
-        if owner is not None and owner != client_id:
+        if owner is not None and owner != workspace_id:
             return None
         return self._reports.get(campaign_run_id)
 
@@ -434,11 +437,11 @@ _INSERT_COST_ESTIMATE = text(
 )
 
 
-def _default_thresholds_for(client_id: str) -> VerificationHealthThresholds:
+def _default_thresholds_for(workspace_id: str) -> VerificationHealthThresholds:
     """The per-client verification-health alert floors, read from the merged config
     (policy-as-data).
     Injectable so unit tests pin fixture floors without touching the process config store."""
-    return get_config(client_id).verification_health_thresholds
+    return get_config(workspace_id).verification_health_thresholds
 
 
 def _estimate_summary(estimate: Estimate) -> str:
@@ -499,13 +502,13 @@ class ObservabilitySurface:
         self._near_cap_fraction = Decimal(str(near_cap_remaining_fraction))
 
     async def campaign_progress(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> CampaignProgress | None:
         """Phase progress over the M7.3 state machine — current phase + per-phase completion in the
         canonical ``core.CampaignPhase`` order (so the panel tracks ground truth with no refresh of
         the underlying state). ``None`` for a missing / cross-tenant run."""
         state = await self._campaign_reader.run_phase_state(
-            campaign_run_id=campaign_run_id, client_id=client_id
+            campaign_run_id=campaign_run_id, workspace_id=workspace_id
         )
         if state is None:
             return None
@@ -521,7 +524,7 @@ class ObservabilitySurface:
         )
         return CampaignProgress(
             campaign_run_id=campaign_run_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             current_phase=state.current_phase,
             run_status=state.run_status,
             is_paused=state.run_status == _RUN_PAUSED,
@@ -531,13 +534,13 @@ class ObservabilitySurface:
         )
 
     async def cost_burndown(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> CostBurnDown | None:
         """Live cost burn-down — spent vs. estimate vs. cap vs. remaining from the authoritative
         ``BudgetEngine.burn_down``, with a derived ``status`` (``graceful_stop`` at the cap,
         ``near_cap`` approaching it, else ``ok``). ``None`` for a missing / cross-tenant run."""
         burndown = await self._burndown_reader.burn_down(
-            campaign_run_id=campaign_run_id, client_id=client_id
+            campaign_run_id=campaign_run_id, workspace_id=workspace_id
         )
         if burndown is None:
             return None
@@ -570,7 +573,7 @@ class ObservabilitySurface:
         self,
         *,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         discovered_count: int,
         tier_cutoffs: Mapping[str, float] | None = None,
         icp_spec_version: int = 1,
@@ -585,7 +588,7 @@ class ObservabilitySurface:
         materialization — the one sanctioned write, "snapshots as cutoffs change"). With no ``conn``
         it is a side-effect-free read."""
         estimate = await self._estimator.estimate(
-            client_id=client_id,
+            workspace_id=workspace_id,
             discovered_count=discovered_count,
             tier_cutoffs=tier_cutoffs,
         )
@@ -615,7 +618,7 @@ class ObservabilitySurface:
         self,
         conn: AsyncConnection,
         *,
-        client_id: str,
+        workspace_id: str,
         icp_key: str | None = None,
         icp_version: int | None = None,
     ) -> Sequence[SourceYieldStat]:
@@ -623,11 +626,11 @@ class ObservabilitySurface:
         materialization the M13.3 learning loop reweights on, so the two never diverge; a test
         asserts equality). Read-only; the surface writes no yield rows."""
         return await get_source_yield(
-            conn, client_id=client_id, icp_key=icp_key, icp_version=icp_version
+            conn, workspace_id=workspace_id, icp_key=icp_key, icp_version=icp_version
         )
 
     async def verification_health(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> VerificationHealth | None:
         """Verification-health panel (Doc C §6) — tier-4 faithfulness pass share (M9.3), strong
         identity-binding share (the at-rest ``claim.identity_binding`` scan, M9.4 — never the live
@@ -635,11 +638,11 @@ class ObservabilitySurface:
         configured
         floor (an early warning of a model/resolver regression). ``None`` for a missing run."""
         counts = await self._health_reader.health_counts(
-            campaign_run_id=campaign_run_id, client_id=client_id
+            campaign_run_id=campaign_run_id, workspace_id=workspace_id
         )
         if counts is None:
             return None
-        thresholds = self._thresholds_for(client_id)
+        thresholds = self._thresholds_for(workspace_id)
         faithfulness = _share(counts.faithfulness_passed, counts.faithfulness_total)
         strong_binding = _share(counts.strong_binding, counts.contact_total)
         corroboration = _share(counts.corroboration_passed, counts.corroboration_total)
@@ -661,29 +664,29 @@ class ObservabilitySurface:
         )
 
     async def coverage_confidence(
-        self, *, campaign_run_id: CampaignRunId, client_id: str
+        self, *, campaign_run_id: CampaignRunId, workspace_id: str
     ) -> CoverageReport | None:
         """Coverage-confidence panel (Doc C §7) — the M6.5 estimate ``%`` band **plus** the named
         unsearched channels, framed as confidence not completeness (never a "100%/complete" claim).
         ``None`` when a run has no discovery telemetry (an import-only campaign — surfaced honestly,
         never fabricated)."""
         return await self._coverage_reader.coverage_for_run(
-            campaign_run_id=campaign_run_id, client_id=client_id
+            campaign_run_id=campaign_run_id, workspace_id=workspace_id
         )
 
 
 def observability_is_client_facing(
-    client_id: str,
+    workspace_id: str,
     icp_id: str | None = None,
     *,
     config_loader: Callable[[str, str | None], bool] | None = None,
 ) -> bool:
-    """Whether the observability surface is exposed to ``client_id`` (the D7 per-client toggle).
+    """Whether the observability surface is exposed to ``workspace_id`` (the D7 per-client toggle).
 
     Reads ``config.observability_client_facing`` (defaults to the client-facing posture, Doc C §5).
     This is the *only* place the flag is consulted — a portal/api gates exposure on it; the surface
     itself stays flag-agnostic (one read-projection implementation, never two code paths). The
     ``config_loader`` seam keeps it unit-testable without the process config store."""
     if config_loader is not None:
-        return config_loader(client_id, icp_id)
-    return get_config(client_id, icp_id).observability_client_facing
+        return config_loader(workspace_id, icp_id)
+    return get_config(workspace_id, icp_id).observability_client_facing

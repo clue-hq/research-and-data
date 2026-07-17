@@ -77,7 +77,7 @@ class CurrentValue(BaseModel):
 
 class ICPSpec(BaseModel):
     """The versioned ICP spec (staged-flow §2 / Doc B; conventions §4) — the single contract M3.2 /
-    M3.4 read and M5 writes, keyed ``(client_id, icp_key, version)``.
+    M3.4 read and M5 writes, keyed ``(workspace_id, icp_key, version)``.
 
     M3.1 owns its durable, append-only storage (an ``active`` spec is immutable; an edit appends a
     new ``version`` with ``parent_version`` and activating it archives the prior). M3.2 compiles
@@ -88,7 +88,7 @@ class ICPSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # identity & versioning (M3.1)
-    client_id: str
+    workspace_id: str
     icp_key: str  # distinguishes segments under one client (D5: multi-ICP)
     created_from: ICPCreatedFrom
     version: int = 1

@@ -50,7 +50,7 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_db import ConnFactory
-from clue_research.claimstore import TenantScope, claims_by_ids, supersede_claim
+from clue_research.claimstore import WorkspaceScope, claims_by_ids, supersede_claim
 from clue_research.review.projection import ReviewProjector
 from clue_research.review.repository import (
     count_open_sessions,
@@ -112,7 +112,7 @@ def _build_correction(target: Claim, corrected_value: JsonValue, *, note: str | 
         identity_binding=(IdentityBinding.STRONG if is_facet else target.identity_binding),
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
-        tenant_id=target.tenant_id,
+        workspace_id=target.workspace_id,
     )
 
 
@@ -138,7 +138,7 @@ def _build_reject(target: Claim, *, reason: ReviewRejectReason, note: str | None
         identity_binding=(IdentityBinding.WEAK if is_facet else target.identity_binding),
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
-        tenant_id=target.tenant_id,
+        workspace_id=target.workspace_id,
     )
 
 
@@ -166,7 +166,7 @@ class ReviewSurfaceImpl:
         *,
         account_entity_id: EntityId,
         campaign_run_id: CampaignRunId,
-        client_id: str,
+        workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
     ) -> ReviewSession:
@@ -175,7 +175,7 @@ class ReviewSurfaceImpl:
                 conn,
                 account_entity_id=account_entity_id,
                 campaign_run_id=campaign_run_id,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 review_round=review_round,
                 opened_by=opened_by,
             )
@@ -184,7 +184,7 @@ class ReviewSurfaceImpl:
                 session_id=row.id,
                 account_entity_id=row.account_entity_id,
                 campaign_run_id=row.campaign_run_id,
-                client_id=row.client_id,
+                workspace_id=row.workspace_id,
                 review_round=row.review_round,
                 status=row.status,
             )
@@ -206,7 +206,7 @@ class ReviewSurfaceImpl:
                 raise ReviewSessionNotFound(str(session_id))
             if row.status is not ReviewSessionStatus.OPEN:
                 raise SessionNotOpen(f"{session_id}: {row.status.value}")
-            scope = TenantScope.for_tenant(row.client_id)
+            scope = WorkspaceScope.for_workspace(row.workspace_id)
             target = (await claims_by_ids(conn, [claim_id], scope=scope)).get(claim_id)
             if target is None:
                 raise ClaimNotInSession(str(claim_id))
@@ -277,7 +277,7 @@ class ReviewSurfaceImpl:
                 session_id=row.id,
                 account_entity_id=row.account_entity_id,
                 campaign_run_id=row.campaign_run_id,
-                client_id=row.client_id,
+                workspace_id=row.workspace_id,
                 review_round=row.review_round,
                 status=row.status,
             )

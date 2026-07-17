@@ -33,7 +33,7 @@ from clue_core import (
     new_campaign_run_id,
     new_run_id,
 )
-from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
 from clue_research.discovery_scoring import ScoringPhaseHandler, TierCheckpointPhaseHandler
 from clue_research.discovery_scoring.phases import _discovery_run_id
 from clue_research.discovery_scoring.scoring import FIT_FIELD
@@ -115,7 +115,7 @@ def _ctx(
     return PhaseContext(
         campaign_run_id=campaign_run_id,
         phase=phase,
-        client_id=CLIENT,
+        workspace_id=CLIENT,
         icp_key=ICP,
         icp_version=1,
         budget_cap_cents=budget_cap_cents,
@@ -130,7 +130,7 @@ def _decision(**fields: JsonValue) -> dict[str, JsonValue]:
 async def _seed_active_icp(conn: AsyncConnection, *, with_rubric: bool = True) -> None:
     await create_icp_spec(
         conn,
-        client_id=CLIENT,
+        workspace_id=CLIENT,
         icp_key=ICP,
         created_from=ICPCreatedFrom.SYNTHESIS,
         field_keys=(_EMP, _FUND),
@@ -340,7 +340,7 @@ def test_resume_approve_completes_and_persists_tiers() -> None:
             assert result.accounts_processed == 3
             # the per-account tier is persisted, tenant-private, with the approved cutoff version
             assert await _live_count(conn, TIER_FIELD) == 3
-            scope = TenantScope.for_tenant(CLIENT)
+            scope = WorkspaceScope.for_workspace(CLIENT)
             eid = await _account_id(conn, "high.example")
             tier_claims = await claims_for(conn, eid, TIER_FIELD, scope=scope)
             assert len(tier_claims) == 1
@@ -350,7 +350,7 @@ def test_resume_approve_completes_and_persists_tiers() -> None:
             assert value["cutoff_version"] == result.payload["cutoff_version"]
             assert "fit_score" in value and "intent_score" in value
             # invisible to a public read (tenant isolation)
-            public = await claims_for(conn, eid, TIER_FIELD, scope=TenantScope.public_only())
+            public = await claims_for(conn, eid, TIER_FIELD, scope=WorkspaceScope.public_only())
             assert public == []
 
     run_async(_run())
@@ -445,7 +445,7 @@ def test_approve_with_adjusted_cutoffs_supersedes_prior() -> None:
             # one live winner per account (3, not 6); every prior tier superseded (history = 6)
             assert await _live_count(conn, TIER_FIELD) == 3
             assert await _history_count(conn, TIER_FIELD) == 6
-            scope = TenantScope.for_tenant(CLIENT)
+            scope = WorkspaceScope.for_workspace(CLIENT)
             for domain in ("high.example", "med.example", "low.example"):
                 eid = await _account_id(conn, domain)
                 live = await claims_for(conn, eid, TIER_FIELD, scope=scope)

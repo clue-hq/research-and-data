@@ -63,7 +63,7 @@ from clue_obs.otel import (
     get_metric_sink,
     traced_step,
 )
-from clue_research.claimstore import ALL_TENANTS, TenantScope
+from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope
 from clue_research.evals import (
     EvalHarness,
     EvalReport,
@@ -527,7 +527,7 @@ async def sample_promoted_claims(
     conn: AsyncConnection,
     *,
     per_stratum: int = 3,
-    scope: TenantScope = ALL_TENANTS,
+    scope: WorkspaceScope = ALL_WORKSPACES,
     max_scan: int = 10_000,
 ) -> tuple[SpotCheckSample, ...]:
     """Pull a **stratified** sample of promoted (``verified``) production field claims for human

@@ -45,7 +45,7 @@ from clue_core import (
 from clue_core.review import ReviewActionOutcome
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import MetricSink, get_metric_sink
-from clue_research.claimstore import TenantScope, claims_by_ids
+from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,
     Observation,
@@ -85,12 +85,12 @@ _INSERT_DISPOSITION = text(
     """
     INSERT INTO disposition (
         id, disposition_type, entity_id, entity_type, account_entity_id, claim_id,
-        campaign_run_id, client_id, icp_key, icp_spec_version, actor, origin,
+        campaign_run_id, workspace_id, icp_key, icp_spec_version, actor, origin,
         review_action_id, reason_code, detail, occurred_at, natural_key
     ) VALUES (
         :id, CAST(:disposition_type AS disposition_type), :entity_id,
         CAST(:entity_type AS entity_type), :account_entity_id, :claim_id,
-        :campaign_run_id, :client_id, :icp_key, :icp_spec_version,
+        :campaign_run_id, :workspace_id, :icp_key, :icp_spec_version,
         CAST(:actor AS disposition_actor), CAST(:origin AS disposition_origin),
         :review_action_id, :reason_code, CAST(:detail AS jsonb), :occurred_at, :natural_key
     )
@@ -117,7 +117,7 @@ _INSERT_PROVENANCE = text(
 # ICP scope from the run (review can't import ``durable``; this mirrors ``get_campaign_run``'s
 # read).
 _SELECT_RUN_CONTEXT = text(
-    "SELECT client_id, icp_key, icp_version FROM campaign_run WHERE id = :id"
+    "SELECT workspace_id, icp_key, icp_version FROM campaign_run WHERE id = :id"
 )
 
 # The mirrored M13.1 audit row — the real ``occurred_at`` (``acted_at``) + the typed reject reason.
@@ -134,7 +134,7 @@ _SELECT_HANDOFF_CONTEXT = text(
                )
            ) AS claim_ids
     FROM account_handoff
-    WHERE client_id = :client_id AND account_entity_id = :account_entity_id
+    WHERE workspace_id = :workspace_id AND account_entity_id = :account_entity_id
     ORDER BY assembled_at DESC
     LIMIT 1
     """
@@ -177,7 +177,7 @@ async def record_disposition(
                 "account_entity_id": disposition.account_entity_id,
                 "claim_id": disposition.claim_id,
                 "campaign_run_id": disposition.campaign_run_id,
-                "client_id": disposition.client_id,
+                "workspace_id": disposition.workspace_id,
                 "icp_key": disposition.icp_key,
                 "icp_spec_version": disposition.icp_spec_version,
                 "actor": disposition.actor.value,
@@ -203,7 +203,7 @@ async def snapshot_claim_provenance(
     disposition_id: DispositionId,
     claim_ids: Sequence[ClaimId],
     *,
-    client_id: str,
+    workspace_id: str,
 ) -> None:
     """Freeze the contributing source/field/claim ids for ``disposition_id`` (1:1, idempotent).
 
@@ -217,7 +217,10 @@ async def snapshot_claim_provenance(
     field_keys: list[str] = []
     if claim_ids:
         claims = await claims_by_ids(
-            conn, claim_ids, scope=TenantScope.for_tenant(client_id), include_superseded=True
+            conn,
+            claim_ids,
+            scope=WorkspaceScope.for_workspace(workspace_id),
+            include_superseded=True,
         )
         source_keys = sorted({c.source_key for c in claims.values() if c.source_key})
         field_keys = sorted({str(c.field_key) for c in claims.values()})
@@ -235,13 +238,13 @@ async def snapshot_claim_provenance(
 async def _resolve_run_context(
     conn: AsyncConnection, campaign_run_id: CampaignRunId
 ) -> tuple[str, str, int] | None:
-    """``(client_id, icp_key, icp_version)`` for a run, or ``None`` if it does not exist."""
+    """``(workspace_id, icp_key, icp_version)`` for a run, or ``None`` if it does not exist."""
     row = (
         (await conn.execute(_SELECT_RUN_CONTEXT, {"id": campaign_run_id})).mappings().one_or_none()
     )
     if row is None:
         return None
-    return str(row["client_id"]), str(row["icp_key"]), int(row["icp_version"])
+    return str(row["workspace_id"]), str(row["icp_key"]), int(row["icp_version"])
 
 
 async def _read_review_action(
@@ -262,7 +265,7 @@ async def _read_review_action(
 
 
 async def _account_handoff_context(
-    conn: AsyncConnection, *, client_id: str, account_entity_id: EntityId
+    conn: AsyncConnection, *, workspace_id: str, account_entity_id: EntityId
 ) -> _HandoffContext:
     """The latest persisted M12.2 handoff's ICP context + contributing claim ids, or empties if the
     account was never handed off (a downstream outcome on an un-handed-off account still
@@ -271,7 +274,7 @@ async def _account_handoff_context(
         (
             await conn.execute(
                 _SELECT_HANDOFF_CONTEXT,
-                {"client_id": client_id, "account_entity_id": account_entity_id},
+                {"workspace_id": workspace_id, "account_entity_id": account_entity_id},
             )
         )
         .mappings()
@@ -309,7 +312,7 @@ async def capture_review_action(
         raise DispositionCaptureError(
             f"campaign_run {campaign_run_id} not found; cannot scope the disposition"
         )
-    client_id, icp_key, icp_version = run_ctx
+    workspace_id, icp_key, icp_version = run_ctx
     reason_code, occurred_at = await _read_review_action(conn, outcome.review_action_id)
 
     if contact_entity_id is not None:
@@ -324,7 +327,7 @@ async def capture_review_action(
         account_entity_id=account_entity_id,
         claim_id=outcome.claim_id,
         campaign_run_id=campaign_run_id,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         icp_spec_version=icp_version,
         review_action_id=outcome.review_action_id,
@@ -335,7 +338,7 @@ async def capture_review_action(
     disposition_id, was_new = await record_disposition(conn, disposition)
     if was_new:
         await snapshot_claim_provenance(
-            conn, disposition_id, (outcome.claim_id,), client_id=client_id
+            conn, disposition_id, (outcome.claim_id,), workspace_id=workspace_id
         )
         _emit_captured(disposition, sink)
     return disposition_id
@@ -372,7 +375,7 @@ async def capture_downstream(
         account_id = await surviving_id(conn, top.entity_id, EntityType.ACCOUNT)
 
     handoff = await _account_handoff_context(
-        conn, client_id=row.client_id, account_entity_id=account_id
+        conn, workspace_id=row.workspace_id, account_entity_id=account_id
     )
     icp_key = row.icp_key if row.icp_key is not None else (handoff.icp_key or "")
     icp_version = (
@@ -383,7 +386,7 @@ async def capture_downstream(
     disposition = FeedbackDisposition.for_downstream(
         disposition_type=row.disposition_type,
         account_entity_id=account_id,
-        client_id=row.client_id,
+        workspace_id=row.workspace_id,
         external_id=row.external_id,
         occurred_at=row.occurred_at,
         icp_key=icp_key,
@@ -397,7 +400,7 @@ async def capture_downstream(
     disposition_id, was_new = await record_disposition(conn, disposition)
     if was_new:
         await snapshot_claim_provenance(
-            conn, disposition_id, handoff.contributing_claim_ids, client_id=row.client_id
+            conn, disposition_id, handoff.contributing_claim_ids, workspace_id=row.workspace_id
         )
         _emit_captured(disposition, sink)
     return disposition_id
@@ -490,19 +493,19 @@ class DispositionStore:
                         conn,
                         disposition_id,
                         (disposition.claim_id,),
-                        client_id=disposition.client_id,
+                        workspace_id=disposition.workspace_id,
                     )
                 else:
                     handoff = await _account_handoff_context(
                         conn,
-                        client_id=disposition.client_id,
+                        workspace_id=disposition.workspace_id,
                         account_entity_id=disposition.account_entity_id,
                     )
                     await snapshot_claim_provenance(
                         conn,
                         disposition_id,
                         handoff.contributing_claim_ids,
-                        client_id=disposition.client_id,
+                        workspace_id=disposition.workspace_id,
                     )
                 _emit_captured(disposition, self._sink)
             return disposition_id
@@ -514,7 +517,7 @@ class DispositionStore:
     async def labeled_dataset(
         self,
         *,
-        client_id: str,
+        workspace_id: str,
         icp_spec_version: int | None = None,
         icp_key: str | None = None,
         campaign_run_id: CampaignRunId | None = None,
@@ -523,7 +526,7 @@ class DispositionStore:
         async with self._conn_factory() as conn:
             return await read_labeled_dataset(
                 conn,
-                client_id=client_id,
+                workspace_id=workspace_id,
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
                 campaign_run_id=campaign_run_id,

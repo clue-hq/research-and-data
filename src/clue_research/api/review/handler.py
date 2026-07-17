@@ -66,7 +66,7 @@ class ReviewPhaseHandler:
                 await self._surface.open_session(
                     account_entity_id=spec.entity_id,
                     campaign_run_id=ctx.campaign_run_id,
-                    client_id=ctx.client_id,
+                    workspace_id=ctx.workspace_id,
                     opened_by="review_phase",
                 )
                 opened += 1

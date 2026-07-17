@@ -57,9 +57,9 @@ from clue_core import (
     contact_claim,
     discovery_claim,
 )
-from clue_obs.otel import ATTR_CLIENT_ID, traced_step
+from clue_obs.otel import ATTR_WORKSPACE_ID, traced_step
 from clue_research.claimstore import (
-    TenantScope,
+    WorkspaceScope,
     current_value,
     get_field,
     insert_claim,
@@ -135,7 +135,7 @@ async def import_accounts(
     rows: Sequence[ImportRow],
     icp_spec_ref: ICPSpecRef,
     *,
-    client_id: str,
+    workspace_id: str,
     client_entity_id: EntityId,
     import_batch_id: str | None = None,
     crm_enrich: bool = False,
@@ -155,16 +155,16 @@ async def import_accounts(
     ``unresolved[]`` — one bad row never aborts the batch."""
     batch_id = import_batch_id or f"imp-{uuid4().hex[:12]}"
     run_id = import_batch_run_id(batch_id)
-    scope = TenantScope.for_tenant(client_id)
+    scope = WorkspaceScope.for_workspace(workspace_id)
 
-    with traced_step("stage0.import_accounts", **{ATTR_CLIENT_ID: client_id}):
+    with traced_step("stage0.import_accounts", **{ATTR_WORKSPACE_ID: workspace_id}):
         # account.scoring.* / account.crm_relationship_status (core) + import.* /
         # contact.import_record must exist before any claim is written (insert_claim validates it).
         await load_core_pack(conn)
         await load_import_pack(conn)
 
         rubric = await get_rubric_version(
-            conn, icp_spec_ref.client_id, icp_spec_ref.icp_key, icp_spec_ref.icp_version
+            conn, icp_spec_ref.workspace_id, icp_spec_ref.icp_key, icp_spec_ref.icp_version
         )
 
         resolvable: list[ImportRow] = []
@@ -220,7 +220,7 @@ async def import_accounts(
                         admitted=admitted_by_key,
                         rubric=rubric,
                         scope=scope,
-                        client_id=client_id,
+                        workspace_id=workspace_id,
                         run_id=run_id,
                         batch_id=batch_id,
                         crm_enrich=crm_enrich,
@@ -252,7 +252,7 @@ async def import_accounts(
         await _write_import_batch_marker(
             conn,
             client_entity_id=client_entity_id,
-            client_id=client_id,
+            workspace_id=workspace_id,
             icp_spec_ref=icp_spec_ref,
             import_batch_id=batch_id,
             run_id=run_id,
@@ -290,8 +290,8 @@ async def _resolve_row(
     strong_key: str | None,
     admitted: dict[str, EntityId],
     rubric: ScoringRubric | None,
-    scope: TenantScope,
-    client_id: str,
+    scope: WorkspaceScope,
+    workspace_id: str,
     run_id: RunId,
     batch_id: str,
     crm_enrich: bool,
@@ -313,7 +313,12 @@ async def _resolve_row(
         new_key: tuple[str, EntityId] | None = None
     else:
         disp = await disposition(
-            conn, obs, result, policy=disposition_policy, tenant_id=client_id, decided_by=decided_by
+            conn,
+            obs,
+            result,
+            policy=disposition_policy,
+            workspace_id=workspace_id,
+            decided_by=decided_by,
         )
         if disp.outcome is DispositionOutcome.ENQUEUED:
             if disp.task_id is None:  # defensive — ENQUEUED always carries a task id
@@ -350,7 +355,7 @@ async def _resolve_row(
         entity_id=entity_id,
         row=row,
         run_id=run_id,
-        client_id=client_id,
+        workspace_id=workspace_id,
         method=method,
         matched_signal=signal,
         confidence=confidence,
@@ -364,7 +369,7 @@ async def _resolve_row(
             entity_id=entity_id,
             rubric=rubric,
             scope=scope,
-            client_id=client_id,
+            workspace_id=workspace_id,
             run_id=run_id,
         )
         already_customer = crm_relationship in _CUSTOMER_RELATIONSHIPS
@@ -382,7 +387,7 @@ async def _resolve_row(
                     contact=contact,
                     account_id=entity_id,
                     row_index=row.row_index,
-                    client_id=client_id,
+                    workspace_id=workspace_id,
                     run_id=run_id,
                     import_batch_id=batch_id,
                     jurisdiction=_row_jurisdiction(row),
@@ -485,7 +490,7 @@ async def _write_resolution_provenance(
     entity_id: EntityId,
     row: ImportRow,
     run_id: RunId,
-    client_id: str,
+    workspace_id: str,
     method: str,
     matched_signal: str,
     confidence: float,
@@ -522,7 +527,7 @@ async def _write_resolution_provenance(
         discovery_confidence=confidence,
         evidence_span=f"client import row {row.row_index}",
     )
-    claim = stamp_reuse(claim, tenant_id=client_id, policy=IMPORT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=workspace_id, policy=IMPORT_REUSE_POLICY)
     return await insert_claim(conn, claim)
 
 
@@ -534,8 +539,8 @@ async def _crm_enrich(
     *,
     entity_id: EntityId,
     rubric: ScoringRubric | None,
-    scope: TenantScope,
-    client_id: str,
+    scope: WorkspaceScope,
+    workspace_id: str,
     run_id: RunId,
 ) -> str | None:
     """Resolve every ``crm``-tier field (the CRM relationship plus any rubric scoring field whose
@@ -560,7 +565,7 @@ async def _crm_enrich(
             field_def,
             mode=_MODE_PROFILING,
             run_id=run_id,
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             reuse_policy=DEFAULT_REUSE_POLICY,  # crm_import → tenant_private via default methods
         )
 
@@ -578,7 +583,7 @@ async def _back_score(
     *,
     entity_id: EntityId,
     rubric: ScoringRubric | None,
-    scope: TenantScope,
+    scope: WorkspaceScope,
 ) -> tuple[Score, Score, FitFlag]:
     """Back-score one resolved account against the confirmed rubric via the M3.4 Pass-A scorer and
     derive its D6 fit flag. With no confirmed rubric there is no ICP fit criterion, so the scores
@@ -612,7 +617,7 @@ async def _resolve_and_tag_contact(
     contact: ImportContactRow,
     account_id: EntityId,
     row_index: int,
-    client_id: str,
+    workspace_id: str,
     run_id: RunId,
     import_batch_id: str,
     jurisdiction: str | None,
@@ -662,7 +667,7 @@ async def _resolve_and_tag_contact(
         use_class=contact.use_class,
         evidence_span=f"client import row {row_index} contact",
     )
-    claim = stamp_reuse(claim, tenant_id=client_id, policy=IMPORT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=workspace_id, policy=IMPORT_REUSE_POLICY)
     await insert_claim(conn, claim)
 
     return ImportContactResult(
@@ -706,7 +711,7 @@ async def _write_import_batch_marker(
     conn: AsyncConnection,
     *,
     client_entity_id: EntityId,
-    client_id: str,
+    workspace_id: str,
     icp_spec_ref: ICPSpecRef,
     import_batch_id: str,
     run_id: RunId,
@@ -734,5 +739,5 @@ async def _write_import_batch_marker(
         research_mode=_MODE_PROFILING,
         evidence_span=f"client import batch {import_batch_id}",
     )
-    claim = stamp_reuse(claim, tenant_id=client_id, policy=IMPORT_REUSE_POLICY)
+    claim = stamp_reuse(claim, workspace_id=workspace_id, policy=IMPORT_REUSE_POLICY)
     return await insert_claim(conn, claim)
