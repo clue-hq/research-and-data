@@ -22,6 +22,14 @@ This is the one thing to get right before writing the first research agent. The 
 
 ## 1. The claim store — the spine
 
+> **Sibling substrate (Doc M).** The claim store is the substrate for **facts**. A **second shared
+> substrate** — *scoped memory* (`clue-hq-scoped-memory-and-context-assembly.md`) — holds the other
+> species, **client preferences and behavioral learnings**, behind its own two seams. The split is
+> load-bearing and never blurred: a memory record may *reference* a claim by id but never duplicate
+> its content; anything verifiable is a claim here, anything advisory is a memory there. Cross-tenant
+> reuse is the *opposite* default — public-footprint claims amortize across clients (§2); memory is
+> tenant-private, always, fail-closed. Everything below concerns facts/claims.
+
 Every fact about an account or contact is a row, not a field on a document.
 
 ```
