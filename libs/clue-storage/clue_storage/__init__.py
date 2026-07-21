@@ -1,5 +1,12 @@
 """clue-storage — durable, content-addressed artifact storage (Phase B2 / harness REQ-07)."""
 
+from clue_storage.artifacts import (
+    ArtifactRecord,
+    get_artifact,
+    live_claim_count,
+    mark_erased,
+    record_artifact,
+)
 from clue_storage.factory import storage_from_settings
 from clue_storage.fs import FsStorage
 from clue_storage.protocol import (
@@ -15,11 +22,16 @@ from clue_storage.s3 import S3Storage
 __all__ = [
     "PUBLIC_SCOPE",
     "ArtifactNotFound",
+    "ArtifactRecord",
     "FsStorage",
     "S3Storage",
     "StorageBackend",
     "StorageError",
     "artifact_key",
     "content_address",
+    "get_artifact",
+    "live_claim_count",
+    "mark_erased",
+    "record_artifact",
     "storage_from_settings",
 ]

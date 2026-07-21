@@ -317,6 +317,7 @@ source_modules = [
     "clue_storage.protocol",
     "clue_storage.fs",
     "clue_storage.factory",
+    "clue_storage.artifacts",
     "clue_research",
     "clue_memory",
     "clue_content",

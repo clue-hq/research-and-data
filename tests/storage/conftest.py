@@ -14,14 +14,24 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import Secrets, Settings
+from clue_db import db_lifespan
 from clue_storage import StorageBackend, storage_from_settings
 
-# Re-exported for the storage test modules (DRY: the M0.3 sync→async driver).
+# Re-exported for the storage test modules (DRY: the M0.3 reachable-DB probe + sync→async driver).
+from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 MINIO_ENDPOINT_ENV = "CLUE_TEST_MINIO_ENDPOINT"
 MINIO_ACCESS_KEY_ENV = "CLUE_TEST_MINIO_ACCESS_KEY"
@@ -92,3 +102,44 @@ def backend(request: pytest.FixtureRequest, tmp_path: object) -> StorageBackend:
 def unique_key() -> str:
     """A fresh workspace-scoped key per test, so the shared MinIO bucket never cross-talks."""
     return f"ws_{uuid.uuid4().hex}/{uuid.uuid4().hex}"
+
+
+# --- DB harness for the artifact-table DAL (mirrors tests/clue_spine/conftest.py) -------------
+
+
+def _alembic_config() -> Config:
+    cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+    return cfg
+
+
+@pytest.fixture(scope="session")
+def migrated_db() -> bool:
+    """Migrate to head once per session when a DB is reachable; return whether it is."""
+    if not _db_available():
+        return False
+    command.upgrade(_alembic_config(), "head")
+    return True
+
+
+@pytest.fixture
+def require_storage_db(migrated_db: bool) -> None:
+    """Skip unless a migrated, reachable DB is available."""
+    if not migrated_db:
+        pytest.skip(
+            "CLUE_DATABASE_URL unset or database unreachable; "
+            "set it and run `make db-up` to exercise the artifact-table tests"
+        )
+
+
+@asynccontextmanager
+async def rollback_conn() -> AsyncIterator[AsyncConnection]:
+    """Yield a pooled connection inside a transaction that is always rolled back."""
+    async with db_lifespan() as engine:
+        conn = await engine.connect()
+        trans = await conn.begin()
+        try:
+            yield conn
+        finally:
+            await trans.rollback()
+            await conn.close()
