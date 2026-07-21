@@ -94,6 +94,12 @@ class Secrets(BaseSettings):
     firecrawl_api_key: SecretStr | None = None
     crm_api_key: SecretStr | None = None
 
+    # --- durable artifact storage (Phase B2 / REQ-07) ---
+    # Credentials for the S3-compatible StorageBackend (AWS S3 / R2 / MinIO). Non-secret knobs
+    # (bucket, endpoint, region, backend selector) live in Settings; only the key pair is secret.
+    storage_s3_access_key_id: SecretStr | None = None
+    storage_s3_secret_access_key: SecretStr | None = None
+
     # --- LLM gateway (the single OpenRouter egress, conventions §2/§4) ---
     # One key for every *direct* LLM call (judge / planner / synthesizers). Unset in CI: the gateway
     # then runs in deterministic stub mode (no live call). Exa/Parallel above are tier-4 research
