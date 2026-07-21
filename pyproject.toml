@@ -37,8 +37,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_api", "clue_memory"]
-known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api", "clue_memory"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
@@ -400,6 +399,12 @@ forbidden_modules = [
     "clue_content",
     "clue_gateway",
     "clue_locks",
+    # F2 hardening at B2/B3 integration (PB-B1 audit note): the fleet may not reach the storage
+    # lib directly either — snapshots/artifacts are wired at the composition root, and the shell
+    # sees only durable's seam.
+    "clue_storage",
+]
+
 # Rule S3 (PB-B3) — the memory substrate is storage + seams only: it imports core (the seam
 # contracts + shared types), db, and config (caps/settings) — nothing else. The gateway concrete
 # for its reconcile judge is INJECTED at the composition root (the LLMGateway protocol lives in
@@ -414,6 +419,7 @@ forbidden_modules = [
     "clue_locks",
     "clue_obs",
     "clue_spine",
+    "clue_storage",
     "clue_toolbelt",
     "clue_agents",
     "clue_fleet",
