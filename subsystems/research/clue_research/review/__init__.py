@@ -70,6 +70,16 @@ from clue_research.review.learning import (
     LearningLoopImpl,
     PromotionBlocked,
 )
+from clue_research.review.millicredits import (
+    MILLICREDITS_PER_CREDIT,
+    MillicreditBurnDown,
+    MillicreditRate,
+    insert_millicredit_rate,
+    load_millicredit_burn_down,
+    load_millicredit_rate,
+    to_millicredit_burn_down,
+    to_millicredits,
+)
 from clue_research.review.observability import (
     COST_STATUS_GRACEFUL_STOP,
     COST_STATUS_NEAR_CAP,
@@ -127,6 +137,15 @@ from clue_research.review.surface import (
 from clue_research.review.yield_metrics import SourceYield, YieldMetrics, compute_yield
 
 __all__ = [
+    # millicredit groundwork (PB-B2.6)
+    "MILLICREDITS_PER_CREDIT",
+    "MillicreditBurnDown",
+    "MillicreditRate",
+    "insert_millicredit_rate",
+    "load_millicredit_burn_down",
+    "load_millicredit_rate",
+    "to_millicredit_burn_down",
+    "to_millicredits",
     # read projection (M13.1)
     "ReviewProjector",
     "InMemoryVerificationAnnotationReader",

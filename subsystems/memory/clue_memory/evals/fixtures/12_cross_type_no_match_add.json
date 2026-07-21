@@ -1,0 +1,34 @@
+{
+  "name": "cross_type_no_match_add",
+  "submission": {
+    "workspace_id": "ws_golden",
+    "scope": {
+      "scope_type": "brand",
+      "scope_id": "brd_golden"
+    },
+    "type": "behavioral_learning",
+    "trigger": "when writing outreach",
+    "body": "Clinical buyers engage most on Tuesday sends.",
+    "provenance_class": "user_stated"
+  },
+  "candidates": [
+    {
+      "memory_id": "mem_pref",
+      "body": "Never use fear-based hooks.",
+      "trigger": "when writing outreach",
+      "status": "active"
+    }
+  ],
+  "judgment": {
+    "verdict": "add",
+    "target_memory_id": null,
+    "species_ok": true,
+    "body_ok": true,
+    "rationale": "learning, not a restatement of the preference"
+  },
+  "expected": {
+    "kind": "disposition",
+    "verdict": "add",
+    "target_memory_id": null
+  }
+}

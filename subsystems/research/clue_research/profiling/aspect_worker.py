@@ -404,6 +404,9 @@ class AspectProfilingWorker:
         # any non-synthesis field. Raises ``SynthesisGateError`` loudly on a wiring regression.
         if self._synthesis_guard is not None:
             self._synthesis_guard(field_def, self._mode)
+        # Evidence snapshots (PB-B2.3): the worker is constructed once and registered globally,
+        # so the per-run sink/backend are NOT constructor state — resolve_field picks them up
+        # from the run-scoped ambient binding (clue_storage.bind_snapshots) the run owner set.
         result = await resolve_field(
             conn,
             entity,

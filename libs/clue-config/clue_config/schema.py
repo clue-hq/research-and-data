@@ -390,3 +390,64 @@ class VerificationHealthThresholds(BaseModel):
     faithfulness_pass_floor: float = Field(default=0.8, ge=0.0, le=1.0)
     strong_binding_floor: float = Field(default=0.5, ge=0.0, le=1.0)
     corroboration_pass_floor: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class MemoryCaps(BaseModel):
+    """Scoped-memory store caps + bundle budgets, per scope type (Doc M §14–§15 / PB-B3 §7).
+
+    Two distinct limits on opposite sides of the read seam, never conflated: a **store cap**
+    crowds a record out to ``dormant`` (a status); a **bundle budget** merely loses a record
+    today's ranking (journaled, still active). Both are policy-as-data (append-only shape, the
+    treaty §3.2 discipline): the right numbers are an empirical question answered by the
+    cap-pressure metric (reactivation rate of recently-evicted memories), so they are versioned
+    config, adjustable per client, never code constants. Keyed by ``MemoryScopeType`` value; an
+    unlisted scope type resolves to the default (a later ``account`` scope lands as one dict
+    entry, not a schema change).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    # Per-scope-instance active-set cap: keeps the active set human-auditable in one sitting and
+    # assembly O(small). Activation past the cap evicts the lowest-ranked active record → dormant.
+    store_caps: dict[str, int] = Field(
+        default_factory=lambda: {
+            "workspace": 20,
+            "brand": 30,
+            "product": 20,
+            "project": 20,
+            "account": 10,
+        }
+    )
+    default_store_cap: int = Field(default=20, ge=1)
+    # Per-scope bundle budget at assembly time (entries admitted per scope in one bundle).
+    bundle_budgets: dict[str, int] = Field(
+        default_factory=lambda: {
+            "workspace": 5,
+            "brand": 8,
+            "product": 6,
+            "project": 6,
+            "account": 4,
+        }
+    )
+    default_bundle_budget: int = Field(default=5, ge=1)
+    # Doc M §8: one edit is noise; the same edit across N artifacts is a preference. The number of
+    # corroborating observations before an ``edit_distilled`` record activates (no producer in
+    # slice 1 — the content subsystem's distiller binds to this when it lands).
+    edit_distilled_pattern_threshold: int = Field(default=3, ge=1)
+
+    @model_validator(mode="after")
+    def _check_caps_positive(self) -> MemoryCaps:
+        tables = (("store_caps", self.store_caps), ("bundle_budgets", self.bundle_budgets))
+        for name, table in tables:
+            for scope_type, cap in table.items():
+                if cap < 1:
+                    raise ValueError(f"{name}[{scope_type!r}] must be >= 1 (got {cap})")
+        return self
+
+    def store_cap_for(self, scope_type: str) -> int:
+        """The active-set cap for one scope instance of ``scope_type``."""
+        return self.store_caps.get(scope_type, self.default_store_cap)
+
+    def bundle_budget_for(self, scope_type: str) -> int:
+        """The per-scope entry budget at assembly time for ``scope_type``."""
+        return self.bundle_budgets.get(scope_type, self.default_bundle_budget)
