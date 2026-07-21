@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections import defaultdict
+from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -202,7 +204,18 @@ def build_worker() -> CampaignRunWorker:
     for phase in PHASE_SEQUENCE:
         if phase is not CampaignPhase.DEEP:
             registry.register(InstantHandler(phase))
-    scheduler = QueueBackedScheduler(window=window, stale_after=stale, poll_interval=0.05)
+    # Process-local per-entity lock factory: honest here because the run lease already guarantees a
+    # single driver per run, so an in-process asyncio.Lock is a sufficient single-flight for the
+    # stub. Production wires account_entity_lock_factory(get_redis()) at the api root (the
+    # cross-process fence — integration-owned, treaty §3.4).
+    entity_locks: dict[EntityId, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+    def lock_factory(entity_id: EntityId) -> AbstractAsyncContextManager[Any]:
+        return entity_locks[entity_id]
+
+    scheduler = QueueBackedScheduler(
+        window=window, stale_after=stale, poll_interval=0.05, lock_factory=lock_factory
+    )
     registry.register(
         StubDeepHandler(
             scheduler,

@@ -7,6 +7,7 @@ contract), and structural conformance to the seam the M8A deep handler is typed 
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from typing import Any
 
 import pytest
@@ -16,10 +17,10 @@ from clue_fleet import (
     QueueBackedScheduler,
     default_tier_priority,
 )
-from tests.fleet.conftest import FakeTaskQueue
+from tests.fleet.conftest import FakeTaskQueue, ProcessLocalLockFactory
 
 from clue_core import EntityId, new_campaign_run_id
-from clue_research.durable import AccountSpec
+from clue_research.durable import AccountSpec, LockFactory
 
 
 def _spec(name: str, tier: str) -> AccountSpec:
@@ -28,8 +29,17 @@ def _spec(name: str, tier: str) -> AccountSpec:
     return AccountSpec(entity_id=EntityId(uuid5(NAMESPACE_URL, f"sched-test-{name}")), tier=tier)
 
 
-def _scheduler(queue: FakeTaskQueue, *, window: int = 2) -> QueueBackedScheduler:
-    return QueueBackedScheduler(queue=queue, window=window, poll_interval=0.005)
+def _scheduler(
+    queue: FakeTaskQueue, *, window: int = 2, lock_factory: LockFactory | None = None
+) -> QueueBackedScheduler:
+    return QueueBackedScheduler(
+        queue=queue,
+        window=window,
+        poll_interval=0.005,
+        # Each scheduler gets a fresh process-local lock factory by default; tests exercising
+        # cross-run single-flight pass one shared factory to both schedulers.
+        lock_factory=lock_factory if lock_factory is not None else ProcessLocalLockFactory(),
+    )
 
 
 def test_default_tier_priority_orders_names_and_numbers() -> None:
@@ -223,3 +233,92 @@ def test_scheduler_satisfies_the_deep_handler_seam() -> None:
 
     scheduler: Any = _scheduler(FakeTaskQueue())
     assert isinstance(scheduler, DeepAccountScheduler)
+
+
+# --- audit finding #1: per-entity single-flight across concurrent runs -----------------------
+# The QueueBackedScheduler replaces durable.AccountScheduler at the deep seam and must carry the
+# SAME Doc C §4 guarantee: two campaign runs never deep-research the same entity at once. The
+# queue dedup key is (kind, campaign_run_id, dedup_key), so two runs holding one entity are two
+# distinct rows — the single-flight is the injected entity lock's doing, not the queue's.
+
+
+def test_cross_run_same_entity_is_single_flighted() -> None:
+    """The audit's double-research repro inverted into a gate: two runs sharing one entity, one
+    shared lock factory across both schedulers → peak concurrency for the shared entity is 1."""
+
+    async def _run() -> None:
+        queue = FakeTaskQueue()  # ONE shared durable queue for both runs
+        lock_factory = ProcessLocalLockFactory()  # ONE shared lock across both schedulers
+        run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+        shared = _spec("shared", "top")
+        # Each run also carries a distinct entity so neither run is degenerate (real parallelism).
+        specs_a = [shared, _spec("only-a", "high")]
+        specs_b = [shared, _spec("only-b", "high")]
+
+        in_flight: Counter[str] = Counter()
+        peak: Counter[str] = Counter()
+
+        async def run_one(spec: AccountSpec) -> str:
+            key = str(spec.entity_id)
+            in_flight[key] += 1
+            peak[key] = max(peak[key], in_flight[key])
+            await asyncio.sleep(0.02)
+            in_flight[key] -= 1
+            return f"result:{key}"
+
+        results_a, results_b = await asyncio.gather(
+            _scheduler(queue, lock_factory=lock_factory).run_accounts(
+                specs_a, campaign_run_id=run_a, checkpointer=None, run_one=run_one
+            ),
+            _scheduler(queue, lock_factory=lock_factory).run_accounts(
+                specs_b, campaign_run_id=run_b, checkpointer=None, run_one=run_one
+            ),
+        )
+
+        # The shared entity was never in two runs at once (the single-flight guarantee)...
+        assert peak[str(shared.entity_id)] == 1
+        # ...and both runs still completed with correct, input-ordered results.
+        assert results_a == [f"result:{s.entity_id}" for s in specs_a]
+        assert results_b == [f"result:{s.entity_id}" for s in specs_b]
+
+    asyncio.run(_run())
+
+
+def test_replayed_done_job_acquires_the_entity_lock() -> None:
+    """A done-from-a-previous-drive job is replayed through ``run_one`` (idempotent, spend-free),
+    and that replay path is covered by the single-flight invariant too — it must acquire the
+    entity lock (mirrors ``test_done_jobs_...replayed_not_reclaimed``'s enqueue + mark_done)."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue = FakeTaskQueue()
+        lock_factory = ProcessLocalLockFactory()
+        specs = [_spec("done-before", "top"), _spec("fresh", "high")]
+        # Simulate a previous (killed) drive having completed the first account.
+        await queue.enqueue(
+            kind=FleetTaskKind.ACCOUNT_JOB,
+            campaign_run_id=run_id,
+            dedup_key=str(specs[0].entity_id),
+            priority=0,
+        )
+        queue.mark_done(FleetTaskKind.ACCOUNT_JOB, run_id, str(specs[0].entity_id))
+
+        async def run_one(spec: AccountSpec) -> str:
+            return str(spec.entity_id)
+
+        results = await _scheduler(queue, lock_factory=lock_factory).run_accounts(
+            specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+        )
+        assert results == [str(s.entity_id) for s in specs]
+        # The replayed (done) job acquired the entity lock like any other executed job.
+        assert lock_factory.acquired[str(specs[0].entity_id)] == 1
+
+    asyncio.run(_run())
+
+
+def test_lock_factory_is_required() -> None:
+    """The lock factory is a REQUIRED keyword-only arg — a silent omission (as the baseline api
+    composition already did for ``AccountScheduler``) becomes a construction-time ``TypeError``
+    rather than a runtime double-research."""
+    with pytest.raises(TypeError):
+        QueueBackedScheduler(queue=FakeTaskQueue())

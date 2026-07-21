@@ -39,7 +39,7 @@ state machines (+ the M8A per-account graphs the `deep` phase fans out to) as **
 | `enums.py` | `FleetTaskKind` (`drive_run` \| `account_job`), `FleetTaskStatus` (`queued` → `claimed` → `done` \| `failed`) — package-local lifecycle enums (the `durable/enums.py` precedent), mirrored by DB enums + parity tests |
 | `lease.py` | the `run_lease` table repo + `DbLeaseStore`: atomic acquire (`INSERT … ON CONFLICT DO UPDATE … WHERE expires_at <= now()`), holder-guarded renew/release. All clock reads are DB `now()` (the M7.4 convention — no cross-worker NTP skew) |
 | `queue.py` | the `fleet_task` table repo + `DbTaskQueue`: idempotent enqueue (`ON CONFLICT DO NOTHING` on `(kind, campaign_run_id, dedup_key)`), atomic claim-next (`FOR UPDATE SKIP LOCKED`, `ORDER BY priority, enqueued_at`), holder-guarded finish/requeue, stale-reclaim window |
-| `scheduler.py` | `QueueBackedScheduler` — implements the exact `run_accounts(specs, campaign_run_id=…, checkpointer=…, run_one=…)` signature the M8A deep handler is typed against (`clue_api.deep.handler.DeepAccountScheduler`, asserted structurally in tests), so at integration it is a constructor-argument swap for `durable.AccountScheduler` — zero handler changes. Enqueues every spec as an `account_job` (priority = tier rank), drains under the concurrency window, marks tasks done/failed |
+| `scheduler.py` | `QueueBackedScheduler` — implements the exact `run_accounts(specs, campaign_run_id=…, checkpointer=…, run_one=…)` signature the M8A deep handler is typed against (`clue_api.deep.handler.DeepAccountScheduler`, asserted structurally in tests), so at integration it is a constructor-argument swap for `durable.AccountScheduler` — zero handler changes. Enqueues every spec as an `account_job` (priority = tier rank), drains under the concurrency window, marks tasks done/failed. Carries the same Doc C §4 per-entity single-flight as `AccountScheduler` via a **required** (not optional) `lock_factory` seam — every `run_one` (drain + done-replay) runs inside the injected per-entity lock, so two runs never deep-research one entity at once; the required-arg makes a forgotten factory a construction-time `TypeError` (prod wires `account_entity_lock_factory(get_redis())` at the api root) |
 | `worker.py` | `CampaignRunWorker` — the drain loop: claim a `drive_run` task → acquire the run lease → step the run via the injected `RunDriver` seam (structurally satisfied by `durable.CampaignRun`) with a concurrent lease-heartbeat → finish the task with the run's terminal/suspended status → release the lease. Graceful `stop()` between phases; lease loss aborts the drive (cooperative fencing) |
 | `runner.py` | `run_worker(...)` — the asyncio process entrypoint shell (signal handling, drain-on-SIGTERM). The *production* `__main__` (composing real phase handlers) is `clue_api` wiring and lands **at integration**, per the treaty §3.4; tests compose their own harness process |
 
@@ -116,6 +116,20 @@ guarantees, adding none:
 
 `durable/` seam edits: **none required** — the worker drives the public `CampaignRun` surface;
 the scheduler implements the public `run_accounts` seam.
+
+**Integrator checklist (the api-composition-root wiring, treaty §3.4 — integration-owned):**
+
+- **Wire the per-entity single-flight lock into `QueueBackedScheduler` (structural).** Construct
+  `account_entity_lock_factory(get_redis())` and pass it as the scheduler's `lock_factory` — it is
+  a **required** constructor arg, so the swap literally will not construct without it (a forgotten
+  factory is a `TypeError`, not a silent double-research). This restores the Doc C §4 guarantee
+  that `AccountScheduler` carried at the deep seam.
+- **Fix the pre-existing baseline omission at `platform/api/clue_api/deep/composition.py:345`.**
+  The baseline constructs `AccountScheduler(graph, max_parallel=…)` with **no** `lock_factory` —
+  there the arg is optional and defaults to `None`, so prod per-entity single-flight was silently
+  **off** wherever the baseline scheduler runs. Pass the same
+  `account_entity_lock_factory(get_redis())` there too. (Both schedulers must be wired; B1 only
+  made the *queue-backed* one fail-loud.)
 
 ## 4. Acceptance criteria (= the treaty exit gate)
 

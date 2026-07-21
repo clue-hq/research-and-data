@@ -10,8 +10,10 @@ database. The lease/queue semantics and enum-parity tests need the real Postgres
 
 from __future__ import annotations
 
+import asyncio
+from collections import Counter, defaultdict
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import count
@@ -30,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
-from clue_core import CampaignPhase, CampaignRunId, CostCents
+from clue_core import CampaignPhase, CampaignRunId, CostCents, EntityId
 from clue_db import db_lifespan
 from clue_research.durable import CampaignRunRow, CampaignRunStatus
 
@@ -87,6 +89,30 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class ProcessLocalLockFactory:
+    """A process-local per-entity lock factory for the ``QueueBackedScheduler`` tests — the
+    testable analogue of the Redis entity lock (mirrors ``tests/durable/test_account_scheduler.py``
+    's ``_per_entity_lock_factory``, DRY), plus an ``acquired`` journal so a test can assert the
+    lock was actually taken for a given entity (e.g. that a replayed done job still acquires it).
+
+    Callable as ``factory(entity_id) -> async context manager``; a per-entity ``asyncio.Lock``
+    (via ``defaultdict``, keyed on ``str(entity_id)``) single-flights same-entity runs, and the
+    ``acquired`` :class:`~collections.Counter` records one tick per successful acquisition."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self.acquired: Counter[str] = Counter()
+
+    def __call__(self, entity_id: EntityId) -> AbstractAsyncContextManager[Any]:
+        return self._guarded(str(entity_id))
+
+    @asynccontextmanager
+    async def _guarded(self, key: str) -> AsyncIterator[None]:
+        async with self._locks[key]:
+            self.acquired[key] += 1
+            yield
 
 
 class FakeLeaseStore:
