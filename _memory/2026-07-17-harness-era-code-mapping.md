@@ -173,3 +173,28 @@ suite 1924 on fresh schema; db-smoke; one head 98422adaaa38; script chain + eval
 5. Legacy-table FKs → workspace + **platform/api move (R3)** — deferred by design to step 2.
 6. One old-vocab DB name kept deliberately: claim_support_client_ids_is_array (client-KB
    concept, not tenancy).
+
+## Deferral completion (2026-07-21, founder: "proceed with these deferrals' completion")
+All four ledger items executed sequentially, each gate-verified + committed:
+- **D1 model_call_usage** (`b3318a6`): TracingGateway emits one structlog event per completion/
+  embedding (requested vs served model, tokens, duration_ms); stub path emits too; cached-prefill
+  deliberately absent (TokenUsage has no cached-token field — noted for when the gateway exposes
+  one; no purpose/caller tag exists yet either).
+- **D2 rerun-hygiene** (`71840fe`): suite now green 3x consecutively on one schema. Checkpointer
+  tables dropped by mess-owner + the m0-head test; committed-seed collisions fixed via versioned
+  re-registration / test-only maritime namespace / invariant-over-rows assertion; partial-index
+  test made stats-independent (DROP INDEX in rolled-back txn). New `make db-fresh`.
+- **D3 claim_tagger** (`e269ea6`): three delegated rulings implemented — ClaimTagger
+  (Claim→Claim|None, kept-set confident-stop/TierStep accounting), SourceGate (per-source,
+  GATE_SKIPPED, gate+audit stays in fill's closure, AC-6 untouched), tier-mismatch guarantee
+  stands + the tier-3-fake fixture re-fixtured (found in THREE test sites). fill.py's walk
+  deleted (net +13 lines — closures/prefetch replace duplication; the win is one engine).
+  M9.4-classifier upgrade still separately tracked. resolve_fields batch helper doesn't thread
+  the hooks (no caller needs them).
+- **D4 BudgetTracker** (`a065819`): scout found SEVEN sites (census said 3); consolidated the
+  shared arithmetic (strict would_exceed / inclusive exhausted — sites genuinely split at the
+  cap, boundaries preserved); BudgetEngine/SpawnGuard/resolve_fields deliberately left (policy
+  seams, not arithmetic).
+Ledger items remaining BY DESIGN (build step 2): legacy-table workspace_id→workspace FKs;
+platform/api move (R3). The old-vocab constraint claim_support_client_ids_is_array stays
+(client-KB concept). End state: make check 1158 passed; DB suite 1938 passed, rerun-idempotent.
