@@ -19,12 +19,14 @@ from clue_config import ConfigOverlay, GatewayConfig, ModelPrice, get_config
 from clue_config.loader import OverlayStore
 from clue_core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
 from clue_gateway import (
+    EVENT_MODEL_CALL_USAGE,
     GatewayError,
     OpenRouterGateway,
     StubGateway,
     TracingGateway,
     build_gateway,
 )
+from clue_obs import capture_events
 from clue_obs.otel import SPAN_LLM_GATEWAY_CALL, collect_spans
 
 # --- fixtures ---------------------------------------------------------------
@@ -125,6 +127,50 @@ def test_no_api_key_value_appears_in_span_attributes() -> None:
     attrs = exporter.get_finished_spans()[0].attributes
     assert attrs is not None
     assert all(secret not in str(v) for v in attrs.values())
+
+
+# --- the model_call_usage structured event (Doc R §4 / Doc A §1.3) ----------
+
+
+def test_complete_emits_model_call_usage_event() -> None:
+    gw = build_gateway(_priced_config())  # no key -> stub, wrapped in TracingGateway
+    with capture_events() as cap:
+        out = gw.complete(model="anthropic/claude-3.5-sonnet", messages=_PROMPT)
+    events = cap.events(EVENT_MODEL_CALL_USAGE)
+    assert len(events) == 1  # exactly one usage event per gateway call
+    ev = events[0]
+    assert ev["call_kind"] == "completion"
+    assert ev["requested_model"] == "anthropic/claude-3.5-sonnet"
+    assert ev["served_model"] == out.model  # the id that actually answered
+    assert ev["prompt_tokens"] == out.usage.prompt_tokens
+    assert ev["completion_tokens"] == out.usage.completion_tokens
+    assert ev["total_tokens"] == out.usage.total_tokens
+    assert isinstance(ev["duration_ms"], float)
+    assert ev["duration_ms"] >= 0
+
+
+def test_embed_emits_model_call_usage_event() -> None:
+    gw = build_gateway(GatewayConfig())
+    with capture_events() as cap:
+        out = gw.embed(model="text-embed", inputs=["a", "b"])
+    events = cap.events(EVENT_MODEL_CALL_USAGE)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["call_kind"] == "embedding"
+    assert ev["requested_model"] == "text-embed"
+    assert ev["served_model"] == out.model
+    assert ev["total_tokens"] == out.usage.total_tokens
+
+
+def test_model_call_usage_event_never_carries_api_key_material() -> None:
+    secret = "sk-or-supersecret-0123456789abcdef"
+    gw = build_gateway(GatewayConfig(stub=True), SecretStr(secret))  # stub even with a key
+    with capture_events() as cap:
+        gw.complete(model="m", messages=_PROMPT)
+    ev = cap.first(EVENT_MODEL_CALL_USAGE)
+    assert ev is not None
+    assert all("api_key" not in str(k).lower() for k in ev)  # no key-ish field name
+    assert all(secret not in str(v) for v in ev.values())  # no key value leaks
 
 
 # --- the factory: stub/live toggle (decision #3 — hermetic CI) --------------
