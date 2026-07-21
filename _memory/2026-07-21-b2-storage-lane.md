@@ -1,5 +1,11 @@
 # 2026-07-21 — B2 storage lane built (branch `platform/b2-storage`)
 
+> **Superseded in part by `2026-07-21-b2-audit-fixes.md`** (same day, later): a critical audit
+> found 8 issues; all fixed in commits `91bc74e`/`ff560be`/`4a9b383` + migration
+> `d0c2e361f7d4` (new single head). Read that note for the current lifecycle/wiring contracts —
+> especially follow-up #1 below, which is now "bind_snapshots per run", not per-callsite
+> threading.
+
 Worktree `puebla`, branch `platform/b2-storage` cut from the treaty commit `e615e81`. The full
 B2 lane (PB-B2 spec) is implemented and gate-green; **awaiting integration** onto
 `platform/workspace-restructure` in the treaty order B2 → B3 → B1 (§4). Local commits only.
