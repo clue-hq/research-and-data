@@ -122,16 +122,40 @@ def to_millicredits(cents: CostCents, rate: MillicreditRate) -> int:
 
 def to_millicredit_burn_down(burndown: CostBurnDown, rate: MillicreditRate) -> MillicreditBurnDown:
     """Re-express the M13.4 burn-down in millicredits — a pure view over the panel the
-    ``CostBurnDownReader`` already serves; the cents figures stay authoritative."""
+    ``CostBurnDownReader`` already serves; the cents figures stay authoritative.
+
+    ``remaining`` is **derived in credit space** (``max(cap − spent, 0)`` when a cap exists,
+    mirroring the panel's clamped remaining), never converted independently: rounding cap,
+    spent, and remaining separately can produce impossible balances (cap 0.10¢ / spent 0.05¢ at
+    HALF_UP would show cap 1, spent 1, *and* remaining 1 although cap − spent = 0). The three
+    displayed integers therefore always satisfy ``remaining = max(cap − spent, 0)``. Uncapped
+    runs keep a straight conversion of the panel's ``remaining_cents``."""
+    spent = to_millicredits(burndown.spent_cents, rate)
+    cap = to_millicredits(burndown.cap_cents, rate)
+    remaining = (
+        max(cap - spent, 0) if burndown.has_cap else to_millicredits(burndown.remaining_cents, rate)
+    )
     return MillicreditBurnDown(
         campaign_run_id=str(burndown.campaign_run_id),
-        spent_millicredits=to_millicredits(burndown.spent_cents, rate),
+        spent_millicredits=spent,
         estimated_millicredits=to_millicredits(burndown.estimated_cents, rate),
-        cap_millicredits=to_millicredits(burndown.cap_cents, rate),
-        remaining_millicredits=to_millicredits(burndown.remaining_cents, rate),
+        cap_millicredits=cap,
+        remaining_millicredits=remaining,
         status=burndown.status,
         over_cap=burndown.over_cap,
         has_cap=burndown.has_cap,
         rate_version=rate.version,
         cents_per_credit=rate.cents_per_credit,
     )
+
+
+async def load_millicredit_burn_down(
+    conn: AsyncConnection, burndown: CostBurnDown, *, workspace_id: str | None = None
+) -> MillicreditBurnDown | None:
+    """The one-call read path: load the workspace's effective rate and re-express the burn-down
+    panel in millicredits. ``None`` when no rate is configured for the scope — credits are not
+    enabled, and this layer never invents a price (the caller falls back to the cents panel)."""
+    rate = await load_millicredit_rate(conn, workspace_id)
+    if rate is None:
+        return None
+    return to_millicredit_burn_down(burndown, rate)

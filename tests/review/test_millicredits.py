@@ -17,6 +17,7 @@ from clue_research.review import (
     CostBurnDown,
     MillicreditRate,
     insert_millicredit_rate,
+    load_millicredit_burn_down,
     load_millicredit_rate,
     to_millicredit_burn_down,
     to_millicredits,
@@ -77,6 +78,44 @@ def test_burn_down_view_equals_cents_converted() -> None:
     assert view.rate_version == 1 and view.cents_per_credit == Decimal(100)
 
 
+def test_remaining_is_derived_never_independently_rounded() -> None:
+    """The audit's impossible-balance case: cap 0.10¢ / spent 0.05¢ / remaining 0.05¢ at
+    $1-per-credit each round HALF_UP to 1 — showing cap 1, spent 1, remaining 1 although
+    cap − spent = 0. Remaining is therefore derived in credit space, never converted alone."""
+    rate = _rate("100")
+    panel = CostBurnDown(
+        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        spent_cents=Decimal("0.05"),
+        estimated_cents=Decimal("0.05"),
+        cap_cents=Decimal("0.10"),
+        remaining_cents=Decimal("0.05"),
+        status="ok",
+        has_cap=True,
+    )
+    view = to_millicredit_burn_down(panel, rate)
+    assert view.cap_millicredits == 1
+    assert view.spent_millicredits == 1
+    assert view.remaining_millicredits == 0  # cap − spent, not an independent rounding
+    assert view.remaining_millicredits == max(view.cap_millicredits - view.spent_millicredits, 0)
+
+
+def test_remaining_clamps_at_zero_when_over_cap() -> None:
+    rate = _rate("100")
+    panel = CostBurnDown(
+        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        spent_cents=Decimal(1200),
+        estimated_cents=Decimal(400),
+        cap_cents=Decimal(1000),
+        remaining_cents=Decimal(0),
+        status="graceful_stop",
+        over_cap=True,
+        has_cap=True,
+    )
+    view = to_millicredit_burn_down(panel, rate)
+    assert view.spent_millicredits == 12000 and view.cap_millicredits == 10000
+    assert view.remaining_millicredits == 0  # clamped, mirroring the cents panel
+
+
 # --- the loader (DB) ----------------------------------------------------------
 
 pytestmark = pytest.mark.usefixtures("require_review_db")
@@ -127,5 +166,29 @@ def test_no_rate_configured_returns_none() -> None:
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             assert await load_millicredit_rate(conn, "ws_none") is None
+
+    run_async(scenario())
+
+
+def test_load_millicredit_burn_down_reads_rate_and_panel_together() -> None:
+    """The one-call read path (audit finding 8): rate + burn-down in one read; ``None`` when no
+    rate is configured (credits not enabled — the caller keeps the cents panel)."""
+    panel = CostBurnDown(
+        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        spent_cents=Decimal(250),
+        estimated_cents=Decimal(400),
+        cap_cents=Decimal(1000),
+        remaining_cents=Decimal(750),
+        status="ok",
+        has_cap=True,
+    )
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            assert await load_millicredit_burn_down(conn, panel, workspace_id="ws_a") is None
+            await insert_millicredit_rate(conn, cents_per_credit=Decimal(100))  # global default
+            view = await load_millicredit_burn_down(conn, panel, workspace_id="ws_a")
+            assert view is not None
+            assert view.spent_millicredits == 2500 and view.remaining_millicredits == 7500
 
     run_async(scenario())
