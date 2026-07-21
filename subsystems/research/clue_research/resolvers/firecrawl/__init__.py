@@ -45,6 +45,7 @@ from clue_research.adapters import (
     ClaimExtractor,
     FirecrawlHtmlAdapter,
     ScrapeBackend,
+    default_scrape_backend,
     register_adapter,
     run_chain,
 )
@@ -193,8 +194,15 @@ def register_scrape_resolver(
     HTML→markdown normalizer via ``scraper``) and bind the tier-2 :class:`ScrapeResolver` (holding
     the field ``extractor``) to ``firecrawl_site``. The M6/M8 orchestrator calls this with the live
     Firecrawl-backed ``ScrapeBackend`` and a field-specific extractor; tests inject doubles.
-    Idempotent (last write wins for both the adapter key and the resolver binding)."""
-    register_adapter(ADAPTER_KEY, FirecrawlHtmlAdapter(scraper=scraper))
+    Idempotent (last write wins for both the adapter key and the resolver binding).
+
+    When no ``scraper`` is injected, the backend is **settings-selected** (PB-B2.4):
+    ``CLUE_SCRAPE_BACKEND=firecrawl`` (default, paid API) or ``scrapling`` (local, credit-free) —
+    the backend swap the M4.5 seam promised, now a config knob."""
+    register_adapter(
+        ADAPTER_KEY,
+        FirecrawlHtmlAdapter(scraper=scraper if scraper is not None else default_scrape_backend()),
+    )
     bind_resolver(
         SOURCE_KEY,
         ScrapeResolver(

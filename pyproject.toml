@@ -75,8 +75,10 @@ ignore_missing_imports = true
 
 # B2 — the S3 SDK is an external boundary used ONLY behind the clue_storage.s3 seam, lazy-imported
 # and duck-typed (the client is deliberately ``Any``, same stance as the OpenAI SDK above).
+# Scrapling + markdownify (B2.4) are the credit-free ScrapeBackend's libraries, likewise lazy
+# behind adapters/concrete (Rule 4).
 [[tool.mypy.overrides]]
-module = ["aioboto3"]
+module = ["aioboto3", "scrapling.*", "markdownify"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
@@ -226,6 +228,8 @@ forbidden_modules = [
     "exa_py",
     "parallel",
     "firecrawl",
+    "scrapling",
+    "markdownify",
     "simple_salesforce",
     "hubspot",
 ]
@@ -238,7 +242,12 @@ forbidden_modules = [
 # single sanctioned edge severs that transitive path; a *direct* SDK import by any source module is a
 # different edge and is still caught. (M11 is the first api-root resolver wiring to need this; the
 # deferred firecrawl/deterministic composition-root wiring needs it identically.)
-ignore_imports = ["clue_research.adapters.concrete -> firecrawl"]
+# B2.4 adds the scrapling backend beside it — same sanctioned lazy edges, same seam.
+ignore_imports = [
+    "clue_research.adapters.concrete -> firecrawl",
+    "clue_research.adapters.concrete -> scrapling",
+    "clue_research.adapters.concrete -> markdownify",
+]
 
 # Rule 4b — the LLM-vendor SDK lives ONLY behind the gateway/ package (the model analogue of
 # Rule 4 for data-source SDKs). The gateway is the single egress for every *direct* LLM call
