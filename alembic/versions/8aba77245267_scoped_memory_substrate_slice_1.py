@@ -277,7 +277,7 @@ def upgrade() -> None:
     )
     op.execute(
         "COMMENT ON TABLE memory_switch_audit IS 'Who flipped memory on/off, when — the audit "
-        "entry that makes journal claims of \"memory was off\" verifiable (Doc M §17a). Off is "
+        'entry that makes journal claims of "memory was off" verifiable (Doc M §17a). Off is '
         "not erasure: the store freezes intact.'"
     )
     op.execute(
