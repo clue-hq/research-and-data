@@ -70,7 +70,7 @@ _SNAKE_ALLOWLIST: dict[str, int] = {
     "tests/fleet/conftest.py": 2,
     "tests/fleet/exit_gate_harness.py": 3,
     "tests/fleet/test_worker_loop.py": 4,
-    "tests/fleet/test_scheduler.py": 11,
+    "tests/fleet/test_scheduler.py": 12,
     "tests/fleet/test_exit_gate.py": 4,
     "tests/fleet/test_fleet_db.py": 5,
 }

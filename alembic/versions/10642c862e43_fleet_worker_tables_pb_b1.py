@@ -14,7 +14,10 @@ The fleet plane's two tables (harness build step 0 — ``docs/specs/PB-B1-fleet-
   ``drive_run`` jobs (drive one campaign run until it rests) and ``account_job`` rows (the
   REQ-10 tier-priority deep queue — ``priority`` = tier rank, claimed best-first under the
   concurrency window). ``UNIQUE (kind, project_run_id, dedup_key)`` makes enqueue idempotent;
-  claim-next is ``FOR UPDATE SKIP LOCKED`` over the partial claim index.
+  claim-next is ``FOR UPDATE SKIP LOCKED`` over the partial claim index. The deep drain narrows the
+  claim by ``project_run_id`` and orders by ``(priority, enqueue_seq)``, so ``fleet_task_run``
+  carries the claim order after the run key (``(project_run_id, kind, priority, enqueue_seq)``) —
+  otherwise a run's per-claim cost would scale with other runs' backlog.
 
 Soft FK to campaign_run (renames to project_run at the stage-2 rename — see
 docs/specs/PB-rename-campaign-run-to-project-run.md), no ``REFERENCES`` (mirroring
@@ -136,9 +139,14 @@ def upgrade() -> None:
             WHERE status IN ('queued', 'claimed')
         """
     )
-    # The per-run observability/drain read (deep drain narrows claim-next by run; projections
-    # read a run's queue state).
-    op.execute("CREATE INDEX fleet_task_run ON fleet_task (project_run_id, kind)")
+    # The per-run observability/drain read. The deep drain claims with
+    # ``project_run_id = :x ... ORDER BY priority, enqueue_seq LIMIT 1``, so the run key must be
+    # followed by the claim order — otherwise per-claim cost scales with *other* runs' backlog (the
+    # only ordered index, ``fleet_task_claim_next``, has no run key). The ``(project_run_id, kind)``
+    # prefix still serves the projection read that only filters on run+kind.
+    op.execute(
+        "CREATE INDEX fleet_task_run ON fleet_task (project_run_id, kind, priority, enqueue_seq)"
+    )
 
 
 def downgrade() -> None:

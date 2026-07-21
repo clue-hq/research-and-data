@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import pytest
@@ -23,6 +22,7 @@ from clue_research.durable import (
     AccountSpec,
 )
 from tests.db.conftest import run_async
+from tests.lock_factory import ProcessLocalLockFactory
 
 
 class _TrackingGraph:
@@ -69,17 +69,6 @@ class _TrackingGraph:
         )
 
 
-def _per_entity_lock_factory() -> Any:
-    """A process-local per-entity lock factory (an ``asyncio.Lock`` per entity) — the testable
-    analogue of the Redis entity lock, serializing same-entity runs."""
-    locks: dict[EntityId, asyncio.Lock] = {}
-
-    def factory(entity_id: EntityId) -> AbstractAsyncContextManager[Any]:
-        return locks.setdefault(entity_id, asyncio.Lock())
-
-    return factory
-
-
 def test_parallelism_is_capped() -> None:
     graph = _TrackingGraph()
     scheduler = AccountScheduler(graph, max_parallel=2)
@@ -112,7 +101,7 @@ def test_results_preserve_input_order() -> None:
 
 def test_entity_lock_single_flights_the_same_entity() -> None:
     graph = _TrackingGraph()
-    scheduler = AccountScheduler(graph, max_parallel=8, lock_factory=_per_entity_lock_factory())
+    scheduler = AccountScheduler(graph, max_parallel=8, lock_factory=ProcessLocalLockFactory())
     shared = new_entity_id()
     other = new_entity_id()
     # three runs for one entity (must serialize) interleaved with two for another (may overlap)
@@ -222,7 +211,7 @@ def test_run_one_callback_is_single_flighted_by_the_entity_lock() -> None:
     # The callback inherits the per-entity lock: two runs for the same entity never overlap, while
     # distinct entities still run in parallel.
     graph = _TrackingGraph()
-    scheduler = AccountScheduler(graph, max_parallel=8, lock_factory=_per_entity_lock_factory())
+    scheduler = AccountScheduler(graph, max_parallel=8, lock_factory=ProcessLocalLockFactory())
     run_one = _CallbackTracker()
     shared = new_entity_id()
     other = new_entity_id()

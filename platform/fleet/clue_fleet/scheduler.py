@@ -196,16 +196,27 @@ class QueueBackedScheduler:
             if task.status is FleetTaskStatus.DONE and task.dedup_key in by_key
         }
 
+        async def _run_locked(key: str) -> Any:
+            """The Doc C §4 single-flight core, in exactly ONE place (used by both the drain and
+            the replay paths): run one account through ``run_one`` under its per-entity lock,
+            flagging ``aborted`` and re-raising on failure. Drain-only bookkeeping (in_flight,
+            the queue ``finish``, the results map) stays at the call sites."""
+            try:
+                async with self._lock_factory(by_key[key].entity_id):
+                    return await run_one(by_key[key])
+            except Exception:
+                aborted.set()
+                raise
+
         async def _replay(key: str) -> None:
+            # A sibling failure aborts the whole gather; a replay must observe that and not start
+            # (nor keep holding a semaphore slot) — check before AND after acquiring the slot.
+            if aborted.is_set():
+                return
             async with semaphore:
-                try:
-                    # Single-flight (Doc C §4): a replay still holds the entity lock, so it can't
-                    # race a live drain of the same entity in a sibling campaign run.
-                    async with self._lock_factory(by_key[key].entity_id):
-                        results[key] = await run_one(by_key[key])
-                except Exception:
-                    aborted.set()
-                    raise
+                if aborted.is_set():
+                    return
+                results[key] = await _run_locked(key)
 
         async def _drain() -> None:
             while len(results) < len(by_key) and not aborted.is_set():
@@ -247,10 +258,10 @@ class QueueBackedScheduler:
                         # queue ``finish`` bookkeeping below.
                         in_flight.add(key)
                         try:
-                            async with self._lock_factory(by_key[key].entity_id):
-                                result = await run_one(by_key[key])
+                            result = await _run_locked(key)
                         except Exception:
-                            aborted.set()
+                            # ``_run_locked`` already set ``aborted`` and re-raised; the drain adds
+                            # the queue bookkeeping (mark the job FAILED) before propagating.
                             await self._queue.finish(
                                 task_id=task.task_id,
                                 worker_id=self._claimant_id,

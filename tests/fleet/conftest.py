@@ -11,9 +11,8 @@ database. The lease/queue semantics and enum-parity tests need the real Postgres
 from __future__ import annotations
 
 import asyncio
-from collections import Counter, defaultdict
 from collections.abc import AsyncIterator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import count
@@ -32,7 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
-from clue_core import CampaignPhase, CampaignRunId, CostCents, EntityId
+# The single shared per-entity lock factory (fleet + durable + the exit-gate harness); re-exported
+# so existing ``from tests.fleet.conftest import ProcessLocalLockFactory`` imports keep working.
+from tests.lock_factory import ProcessLocalLockFactory as ProcessLocalLockFactory
+
+from clue_core import CampaignPhase, CampaignRunId, CostCents
 from clue_db import db_lifespan
 from clue_research.durable import CampaignRunRow, CampaignRunStatus
 
@@ -89,30 +92,6 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-class ProcessLocalLockFactory:
-    """A process-local per-entity lock factory for the ``QueueBackedScheduler`` tests — the
-    testable analogue of the Redis entity lock (mirrors ``tests/durable/test_account_scheduler.py``
-    's ``_per_entity_lock_factory``, DRY), plus an ``acquired`` journal so a test can assert the
-    lock was actually taken for a given entity (e.g. that a replayed done job still acquires it).
-
-    Callable as ``factory(entity_id) -> async context manager``; a per-entity ``asyncio.Lock``
-    (via ``defaultdict``, keyed on ``str(entity_id)``) single-flights same-entity runs, and the
-    ``acquired`` :class:`~collections.Counter` records one tick per successful acquisition."""
-
-    def __init__(self) -> None:
-        self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self.acquired: Counter[str] = Counter()
-
-    def __call__(self, entity_id: EntityId) -> AbstractAsyncContextManager[Any]:
-        return self._guarded(str(entity_id))
-
-    @asynccontextmanager
-    async def _guarded(self, key: str) -> AsyncIterator[None]:
-        async with self._locks[key]:
-            self.acquired[key] += 1
-            yield
 
 
 class FakeLeaseStore:
@@ -199,8 +178,9 @@ class FakeLeaseStore:
 
 @dataclass
 class _FakeTask:
+    # The row is the single source of the FIFO key: ``row.enqueue_seq`` (minted at insert, mirroring
+    # the DB's ``GENERATED ALWAYS AS IDENTITY`` column). No separate wrapper ``seq`` — one truth.
     row: FleetTaskRow
-    seq: int
 
 
 class FakeTaskQueue:
@@ -271,7 +251,6 @@ class FakeTaskQueue:
                 )
                 return True
             return False
-        seq = next(self._seq)
         self._tasks[key] = _FakeTask(
             row=self._fresh_row(
                 kind=kind,
@@ -279,9 +258,8 @@ class FakeTaskQueue:
                 dedup_key=dedup_key,
                 priority=priority,
                 payload=payload if payload is not None else {},
-                seq=seq,
-            ),
-            seq=seq,
+                seq=next(self._seq),
+            )
         )
         return True
 
@@ -301,7 +279,7 @@ class FakeTaskQueue:
                 and task.row.status is FleetTaskStatus.QUEUED
                 and (project_run_id is None or task.row.project_run_id == project_run_id)
             ),
-            key=lambda task: (task.row.priority, task.seq),
+            key=lambda task: (task.row.priority, task.row.enqueue_seq),
         )
         if not candidates:
             return None
@@ -384,7 +362,9 @@ class FakeTaskQueue:
     ) -> list[FleetTaskRow]:
         return [
             task.row
-            for task in sorted(self._tasks.values(), key=lambda t: (t.row.priority, t.seq))
+            for task in sorted(
+                self._tasks.values(), key=lambda t: (t.row.priority, t.row.enqueue_seq)
+            )
             if task.row.project_run_id == project_run_id and task.row.kind is kind
         ]
 

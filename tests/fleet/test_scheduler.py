@@ -310,8 +310,9 @@ def test_replayed_done_job_acquires_the_entity_lock() -> None:
             specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
         )
         assert results == [str(s.entity_id) for s in specs]
-        # The replayed (done) job acquired the entity lock like any other executed job.
-        assert lock_factory.acquired[str(specs[0].entity_id)] == 1
+        # The replayed (done) job acquired the entity lock like any other executed job (the shared
+        # factory keys its ``acquired`` journal on the EntityId object, not its string form).
+        assert lock_factory.acquired[specs[0].entity_id] == 1
 
     asyncio.run(_run())
 
@@ -322,3 +323,94 @@ def test_lock_factory_is_required() -> None:
     rather than a runtime double-research."""
     with pytest.raises(TypeError):
         QueueBackedScheduler(queue=FakeTaskQueue())
+
+
+def test_replay_does_not_start_after_a_sibling_failure() -> None:
+    """Cleanup (b): once a sibling failure aborts the gather, a queued replay must OBSERVE the
+    abort and return without starting its ``run_one`` — it must not run detached after
+    ``run_accounts`` has already raised. ``window=1`` forces the replays to be pending on the
+    semaphore when the drain job fails, so the pre/post-acquire abort guard is exercised. Under the
+    old code (no guard) a replay starts anyway after the abort (RED)."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue = FakeTaskQueue()
+        fail = _spec("fail", "top")
+        replays = [_spec(f"r{i}", "low") for i in range(6)]
+        specs = [fail, *replays]
+        for s in specs:
+            await queue.enqueue(
+                kind=FleetTaskKind.ACCOUNT_JOB,
+                project_run_id=run_id,
+                dedup_key=str(s.entity_id),
+                priority=default_tier_priority(s.tier),
+            )
+        for s in replays:  # a previous (killed) drive finished these → they take the replay path
+            queue.mark_done(FleetTaskKind.ACCOUNT_JOB, run_id, str(s.entity_id))
+
+        started: list[str] = []
+        abort_index = {"n": -1}
+
+        async def run_one(spec: AccountSpec) -> dict[str, Any]:
+            if spec.entity_id == fail.entity_id:
+                abort_index["n"] = len(started)  # how many replays had started when we abort
+                raise RuntimeError("boom")
+            started.append(str(spec.entity_id))
+            await asyncio.sleep(0.1)
+            return {"ok": True}
+
+        scheduler = QueueBackedScheduler(
+            queue=queue, window=1, poll_interval=0.005, lock_factory=ProcessLocalLockFactory()
+        )
+        with pytest.raises(RuntimeError, match="boom"):
+            await scheduler.run_accounts(
+                specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+            )
+        assert abort_index["n"] == 0  # the failure fired before any replay had started
+        # No replay may START after the abort was observed.
+        assert len(started) == abort_index["n"], (
+            f"{len(started) - abort_index['n']} replay(s) started after the abort"
+        )
+
+    asyncio.run(_run())
+
+
+def test_fake_queue_claim_order_and_reopen_preserves_enqueue_seq() -> None:
+    """Fake-side parity with the DB semantics the drain relies on (cleanup c): claim order is
+    ``(priority, enqueue_seq)`` — priority beats FIFO, ties break by insertion order — and a
+    ``reopen_terminal`` re-open KEEPS the row's original ``enqueue_seq`` (the DB's
+    ``GENERATED ALWAYS AS IDENTITY`` does not re-mint on UPDATE, so a re-driven task keeps its
+    place). One FIFO truth: the sort reads ``row.enqueue_seq``, no separate wrapper sequence."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        q = FakeTaskQueue()
+        # Three same-priority jobs, then a later higher-priority (smaller) one.
+        for name in ("a", "b", "c"):
+            await q.enqueue(
+                kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=run_id, dedup_key=name, priority=0
+            )
+        seq_a = q.row(FleetTaskKind.ACCOUNT_JOB, run_id, "a").enqueue_seq
+        await q.enqueue(
+            kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=run_id, dedup_key="z", priority=-1
+        )
+        # Priority beats FIFO; then FIFO by enqueue_seq.
+        first = await q.claim_next(kind=FleetTaskKind.ACCOUNT_JOB, worker_id="w")
+        assert first is not None and first.dedup_key == "z"
+        second = await q.claim_next(kind=FleetTaskKind.ACCOUNT_JOB, worker_id="w")
+        assert second is not None and second.dedup_key == "a"
+        third = await q.claim_next(kind=FleetTaskKind.ACCOUNT_JOB, worker_id="w")
+        assert third is not None and third.dedup_key == "b"
+
+        # Reopen "a" (as a drive-style re-drive): its enqueue_seq is preserved.
+        await q.finish(task_id=second.task_id, worker_id="w", status=FleetTaskStatus.DONE)
+        await q.enqueue(
+            kind=FleetTaskKind.ACCOUNT_JOB,
+            project_run_id=run_id,
+            dedup_key="a",
+            priority=0,
+            reopen_terminal=True,
+        )
+        assert q.row(FleetTaskKind.ACCOUNT_JOB, run_id, "a").enqueue_seq == seq_a
+
+    asyncio.run(_run())
