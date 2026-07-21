@@ -31,6 +31,7 @@ from tests.profiling.conftest import (
     FakeGateway,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -51,9 +52,12 @@ def _composition_classifier() -> BindingClassifier:
     ).binding_classifier
 
 
-def _profile_one_facet(*, resolver: FakeFacetResolver) -> tuple[Claim, object, object]:
+def _profile_one_facet(
+    *, resolver: FakeFacetResolver, manifest_tier: int = 4
+) -> tuple[Claim, object, object]:
     """Drive the deep ``profile_contact`` for one facet field with the composition's classifier;
-    return the written facet claim + its contact + account."""
+    return the written facet claim + its contact + account. ``manifest_tier`` registers the facet
+    source's test manifest at that tier (the shared engine enforces claim tier == manifest tier)."""
 
     async def scenario() -> tuple[Claim, object, object]:
         clear_resolver_bindings()
@@ -61,6 +65,7 @@ def _profile_one_facet(*, resolver: FakeFacetResolver) -> tuple[Claim, object, o
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn, tier=manifest_tier)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 await profile_contact(
@@ -120,7 +125,10 @@ def test_born_binding_strong_on_verified_handle(require_profiling_db: None) -> N
 def test_born_binding_weak_and_unpromotable_on_same_name(require_profiling_db: None) -> None:
     """A lower-tier, name-only, off-handle facet is born WEAK — equal to the authoritative verdict,
     and unpromotable (the same-name trap that never drives outreach)."""
+    # Founder-sanctioned re-fixture (claim_tagger consolidation): the tier-3 fake binds behind a
+    # genuine tier-3 test manifest — the shared engine enforces claim tier == manifest tier.
     written, contact, account = _profile_one_facet(
+        manifest_tier=3,
         resolver=FakeFacetResolver(
             tier=3,  # tier-3 scrape: written-but-weak (a tier-4 same-name is rejected outright)
             extractions=[
@@ -131,7 +139,7 @@ def test_born_binding_weak_and_unpromotable_on_same_name(require_profiling_db: N
                     "confidence": 0.9,
                 }
             ],
-        )
+        ),
     )
     assert written.identity_binding is _verdict(written, contact, account)
     assert written.identity_binding is IdentityBinding.WEAK

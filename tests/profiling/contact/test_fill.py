@@ -20,6 +20,7 @@ from ..conftest import (
     icp_spec,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -77,6 +78,7 @@ def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 field = await _field_def(conn, FACET_STATED_INTERESTS)
@@ -124,6 +126,7 @@ def test_fill_rejects_tier4_same_name_stranger(require_profiling_db: None) -> No
         bind_resolver(_FACET_SOURCE, resolver)
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
@@ -161,6 +164,11 @@ def test_fill_writes_lower_tier_weak_unpromotable(require_profiling_db: None) ->
         bind_resolver(_FACET_SOURCE, resolver)
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            # Founder-sanctioned re-fixture (claim_tagger consolidation): the shared engine
+            # enforces claim.source_tier == manifest.tier, so the tier-3 fake now binds behind a
+            # genuine tier-3 manifest (a version-bumped test-local variant of the source key)
+            # instead of lying under the tier-4 seed. Product assertions below are unchanged.
+            await register_facet_source(conn, tier=3)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
@@ -202,6 +210,7 @@ def test_facet_claims_are_workspace_scoped(require_profiling_db: None) -> None:
         )
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
@@ -248,6 +257,7 @@ def test_planner_declines_when_spec_authorizes_no_source(require_profiling_db: N
         )
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
@@ -290,6 +300,7 @@ def test_fill_is_idempotent(require_profiling_db: None) -> None:
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 field = await _field_def(conn, FACET_STATED_INTERESTS)

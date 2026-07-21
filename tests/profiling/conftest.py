@@ -35,13 +35,16 @@ from clue_core import (
     EmbeddingResult,
     Entity,
     EntityId,
+    EntityScope,
     ExtractionMethod,
     FieldDef,
     ICPCreatedFrom,
     ICPSpec,
     IdentityBinding,
     Message,
+    Modality,
     ResearchMode,
+    SourceManifest,
     UseClass,
     contact_claim,
     new_run_id,
@@ -57,6 +60,7 @@ from clue_research.identity import (
 from clue_research.profiling.committee import load_committee_pack
 from clue_research.profiling.committee.sources import CommitteePersonCandidate
 from clue_research.profiling.fields import load_deep_profiling_pack
+from clue_research.sources import RegistrySourceManifest, register_source
 
 # Reuse the M0.3 helpers (DRY): the single-loop coroutine runner + the reachable-DB gate.
 from tests.db.conftest import _db_available
@@ -163,6 +167,36 @@ async def seed_packs(conn: AsyncConnection) -> None:
     await load_core_pack(conn)
     await load_deep_profiling_pack(conn)
     await load_committee_pack(conn)
+
+
+async def register_facet_source(
+    conn: AsyncConnection, source_key: str = "exa_deep", *, tier: int = 4
+) -> None:
+    """Register the facet ``tier_plan`` source a test binds its fake resolver to.
+
+    M8.4's fill now runs through the shared waterfall engine, which (correctly) SKIPS an
+    unregistered source instead of resolving it — so a bound fake must sit behind a real manifest.
+    ``exa_deep`` is also a committed production seed (v1: BOTH scope, cost 10) on a persistent
+    schema, so the test variant registers at **version 2** — a versioned update inside the test's
+    rolled-back transaction (the rerun-idempotency pattern, cf. the AC-6 gate test) — which also
+    makes the manifest deterministic regardless of suite order. ``tier`` lets the sanctioned
+    lower-tier fixtures bind a genuine tier-3 manifest (the engine enforces claim tier == manifest
+    tier)."""
+    await register_source(
+        conn,
+        RegistrySourceManifest(
+            manifest=SourceManifest(
+                source_key=source_key,
+                modality=Modality.TEXT,
+                entity_scope=EntityScope.CONTACT,
+                yields=("contact.facet",),
+                tier=tier,
+                cost_cents=Decimal(0),
+            ),
+            active=True,
+            version=2,
+        ),
+    )
 
 
 async def insert_test_account(
@@ -309,6 +343,7 @@ __all__ = [
     "require_profiling_db",
     "require_db",
     "seed_packs",
+    "register_facet_source",
     "insert_test_account",
     "insert_test_contact",
     "icp_spec",

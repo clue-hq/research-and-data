@@ -23,6 +23,7 @@ from ..conftest import (
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -53,6 +54,7 @@ async def _run_worker(tier: str, *, depth: int = 0):  # type: ignore[no-untyped-
     """Run the contact worker for one contact at ``tier``/``depth`` and return its WorkerResult."""
     async with rollback_conn() as conn:
         await seed_packs(conn)
+        await register_facet_source(conn)
         account = await insert_test_account(conn)
         contact = await insert_test_contact(conn, account)
 

@@ -32,6 +32,7 @@ from clue_core import (
     contact_claim,
     new_entity_id,
     new_run_id,
+    revalidate_with,
 )
 from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope, claims_for, current_value
 from clue_research.sources import (
@@ -711,6 +712,153 @@ def test_idempotent_reuse_is_workspace_scoped_no_cross_tenant_private_leak() -> 
                     conn, entity.entity_id, field_key, scope=WorkspaceScope.public_only()
                 )
             ) is None  # the private claims never surface publicly
+
+    run_async(_run())
+
+
+def test_claim_tagger_stamps_born_immutable_binding_pre_insert() -> None:
+    # The injected claim_tagger runs after engine validation and BEFORE the insert, so it can set a
+    # born-immutable column (identity_binding, 0004 trigger): the inserted row carries the tagger's
+    # STRONG, not the resolver's WEAK placeholder or a manifest prior (none declared here).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "crm_t", tier=1, entity_scope=EntityScope.CONTACT)
+            placeholder = contact_claim(
+                entity_id=new_entity_id(),  # overridden by the fake to the resolved entity
+                field_key="contact.facet.recent_post",
+                value_json="spoke at KubeCon",
+                source_tier=1,
+                extraction_method=ExtractionMethod.CRM_IMPORT,
+                confidence=_HI,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.CONTACT_PROFILING,
+                identity_binding=IdentityBinding.WEAK,  # placeholder the tagger must override
+                use_class=UseClass.PROFESSIONAL_PUBLIC,
+            )
+            entity = Entity(entity_id=placeholder.entity_id, entity_type=EntityType.CONTACT)
+            bind_resolver("crm_t", _Fake([placeholder]))
+            field = FieldDef(
+                field_key="contact.facet.recent_post",
+                value_type="str",
+                tier_plan=("crm_t",),
+                pass_kind=PassKind.DEEP,
+            )
+
+            def tagger(claim: Claim) -> Claim | None:
+                return revalidate_with(claim, identity_binding=IdentityBinding.STRONG)
+
+            result = await resolve_field(
+                conn,
+                entity,
+                field,
+                mode=ResearchMode.CONTACT_PROFILING,
+                run_id=new_run_id(),
+                workspace_id="tenant-x",
+                claim_tagger=tagger,
+            )
+            assert result.stop_reason is StopReason.CONFIDENT_HIT
+            written = await claims_for(
+                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_WORKSPACES
+            )
+            assert len(written) == 1
+            # born with the tagger's verdict — stamped pre-insert on the immutable column.
+            assert written[0].identity_binding is IdentityBinding.STRONG
+
+    run_async(_run())
+
+
+def test_tagger_drop_removes_claim_and_does_not_stop_the_walk() -> None:
+    # A dropped 0.9-confidence claim must NOT produce CONFIDENT_HIT with nothing written — the
+    # confident-stop and the TierStep accounting follow the KEPT (post-tagger) set, so the walk
+    # continues to the next source as if the claim had never been produced.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1)
+            await _register(conn, "t2", tier=2)
+            r1 = _Fake([_claim(100, tier=1, confidence=_HI)])  # confident — but dropped below
+            r2 = _Fake([_claim(101, tier=2, confidence=_HI)])
+            bind_resolver("t1", r1)
+            bind_resolver("t2", r2)
+
+            def drop_tier1(claim: Claim) -> Claim | None:
+                return None if claim.source_key == "t1" else claim
+
+            entity = _entity()
+            result = await resolve_field(
+                conn,
+                entity,
+                _field(("t1", "t2")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                claim_tagger=drop_tier1,
+            )
+            assert (r1.calls, r2.calls) == (1, 1)  # the walk continued past the dropped hit
+            assert result.stop_reason is StopReason.CONFIDENT_HIT  # t2's KEPT claim stopped it
+            assert len(result.claim_refs) == 1
+            t1_step = result.per_tier[0]
+            assert t1_step.outcome is StepOutcome.RESOLVED
+            assert t1_step.n_claims == 0 and not t1_step.confident  # accounting = the kept set
+            written = await claims_for(
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
+            )
+            assert len(written) == 1
+            assert written[0].source_key == "t2"  # the dropped t1 claim was never inserted
+
+    run_async(_run())
+
+
+def test_source_gate_false_skips_only_that_source_and_none_hooks_match_control() -> None:
+    # source_gate=False skips exactly THAT source (GATE_SKIPPED) and the walk continues; and with
+    # both hooks None (the default) the engine output is identical to a control run.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1)
+            await _register(conn, "t2", tier=2)
+            r1 = _Fake([_claim(100, tier=1, confidence=_HI)])
+            r2 = _Fake([_claim(101, tier=2, confidence=_HI)])
+            bind_resolver("t1", r1)
+            bind_resolver("t2", r2)
+
+            async def deny_t1(manifest: SourceManifest) -> bool:
+                return manifest.source_key != "t1"
+
+            gated = await resolve_field(
+                conn,
+                _entity(),
+                _field(("t1", "t2")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                source_gate=deny_t1,
+            )
+            assert (r1.calls, r2.calls) == (0, 1)  # exactly t1 skipped; the walk continued
+            assert gated.per_tier[0].outcome is StepOutcome.GATE_SKIPPED
+            assert gated.stop_reason is StopReason.CONFIDENT_HIT
+            assert len(gated.claim_refs) == 1
+
+            # Both hooks None == a control run with neither passed: identical engine output
+            # (stop reason, per-step accounting, spend) — only the claim ids differ per entity.
+            # Fresh fakes per run: the doubles carry client-generated claim ids, so reusing one
+            # across two written runs would collide on the claim PK.
+            bind_resolver("t1", _Fake([_claim(100, tier=1, confidence=_HI)]))
+            bind_resolver("t2", _Fake([_claim(101, tier=2, confidence=_HI)]))
+            control = await resolve_field(
+                conn, _entity(), _field(("t1", "t2")), mode=_MODE, run_id=new_run_id()
+            )
+            bind_resolver("t1", _Fake([_claim(100, tier=1, confidence=_HI)]))
+            bind_resolver("t2", _Fake([_claim(101, tier=2, confidence=_HI)]))
+            with_none = await resolve_field(
+                conn,
+                _entity(),
+                _field(("t1", "t2")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                claim_tagger=None,
+                source_gate=None,
+            )
+            assert with_none.stop_reason is control.stop_reason
+            assert with_none.per_tier == control.per_tier
+            assert with_none.total_cost_cents == control.total_cost_cents
+            assert len(with_none.claim_refs) == len(control.claim_refs)
 
     run_async(_run())
 

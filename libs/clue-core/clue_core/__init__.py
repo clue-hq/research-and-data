@@ -64,10 +64,12 @@ from clue_core.execution import (
     BudgetDecision,
     BudgetEngine,
     BurnDown,
+    ClaimTagger,
     Estimate,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
+    SourceGate,
     WorkerResult,
 )
 from clue_core.factories import (
@@ -352,6 +354,9 @@ __all__ = [
     "BudgetDecision",
     "BurnDown",
     "BudgetEngine",
+    # source-engine hooks (M4.1 resolve_field seams; the M8.4 fill is the canonical caller)
+    "ClaimTagger",
+    "SourceGate",
     # idempotency key derivation (M7.4 pure helpers)
     "idempotency_key",
     "account_step_key",

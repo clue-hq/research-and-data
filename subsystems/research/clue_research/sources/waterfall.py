@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import (
     Claim,
     ClaimId,
+    ClaimTagger,
     CostCents,
     Entity,
     EntityId,
@@ -41,6 +42,7 @@ from clue_core import (
     IdentityBinding,
     ResearchMode,
     RunId,
+    SourceGate,
     first_confident_claim,
     revalidate_with,
 )
@@ -80,6 +82,7 @@ class StepOutcome(StrEnum):
     INACTIVE = "inactive"  # registered but active=false → skipped
     BUDGET_SKIPPED = "budget_skipped"  # estimated cost would exceed the budget envelope
     IDEMPOTENT_SKIP = "idempotent_skip"  # already resolved this (entity, field, tier, run) → reused
+    GATE_SKIPPED = "gate_skipped"  # the injected source_gate declined this source; walk continues
 
 
 class TierStep(BaseModel):
@@ -187,12 +190,23 @@ async def resolve_field(
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
     reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
     idempotent: bool = True,
+    claim_tagger: ClaimTagger | None = None,
+    source_gate: SourceGate | None = None,
 ) -> WaterfallResult:
     """Fill one field by walking its ``tier_plan`` in trust order, stopping at the first confident
     hit. Writes every returned claim through M1.1 (``unverified``) and returns claim-id references.
 
     ``mode`` is the run's profiling research mode (M2/M4). ``budget_envelope`` is an optional
     total-spend cap (cents) honored against ``cost_so_far`` + this call's running spend.
+
+    ``claim_tagger`` (optional) is applied to each claim after the engine's validation/provenance
+    stamping and before the insert: it may re-tag the claim (e.g. the M8.4 per-claim
+    ``identity_binding``/``use_class``) or return ``None`` to drop it — a dropped claim is not
+    written, not surfaced, and never drives the confident-stop or the :class:`TierStep` accounting
+    (both follow the *kept* set). ``source_gate`` (optional) is consulted per source before the
+    resolver call (reuse and unbound sources spend nothing and are not gated); ``False`` skips that
+    source (``GATE_SKIPPED``) and the walk continues. With both left ``None`` the engine behaves
+    exactly as before.
 
     Call inside a caller-owned transaction (``db.transaction``): claims are inserted per step, so a
     raising step rolls back cleanly and the per-run idempotency never sees a half-written step.
@@ -284,6 +298,17 @@ async def resolve_field(
             )
             continue
 
+        # Per-source gate (injected seam): consulted only for a step that will actually call a
+        # resolver — reuse and unbound sources spend nothing and are not gated. The gate's own
+        # bookkeeping (e.g. the M9.1 gate_decision audit row) lives with the caller, not here.
+        # False skips THIS source; the walk continues to the next (a higher-trust source rejected
+        # is not the field's end).
+        if source_gate is not None and not await source_gate(manifest.manifest):
+            steps.append(
+                TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.GATE_SKIPPED)
+            )
+            continue
+
         with traced_step(
             resolve_span(source_key),
             **{
@@ -296,6 +321,7 @@ async def resolve_field(
             },
         ) as span:
             claims = list(resolver.resolve(entity, field_def))
+            kept: list[Claim] = []
             step_cost = Decimal(0)
             for c in claims:
                 final = _finalize(
@@ -306,23 +332,33 @@ async def resolve_field(
                     mode=mode,
                     identity_binding=manifest.identity_binding_strength,
                 )
+                # Pre-insert tagger (injected seam): re-tag (e.g. the M8.4 per-claim binding /
+                # use-class) or drop the claim. None = dropped — not inserted, not surfaced; the
+                # confident-stop and the TierStep accounting below follow the KEPT set, so a
+                # dropped 0.9-confidence claim never short-circuits the walk with nothing written.
+                if claim_tagger is not None:
+                    tagged = claim_tagger(final)
+                    if tagged is None:
+                        continue
+                    final = tagged
                 # The engine (the only composer) classifies + stamps the cross-tenant reuse scope on
                 # every written claim (decision #6): a public-footprint fact drops the tenant; a
                 # crm_import / scoring / resonance / personal claim is bound tenant-private. A
                 # private-classifying claim with no workspace_id fails loud here (no silent leak).
                 final = stamp_reuse(final, workspace_id=workspace_id, policy=reuse_policy)
                 refs.append(await insert_claim(conn, final))
+                kept.append(final)
                 step_cost += final.cost_cents
             # A *paid* call that hard-misses (returns no claims) still cost its price — but with no
             # claim to carry it, the per-claim sum would record 0 and the spend/per-source economics
             # the source layer exists to measure would silently under-count. Fall back to the
-            # manifest's per-call cost for an empty result (substrate §4 / D7; M4.4 cost AC). A
-            # claim-bearing result already carries that cost on its first claim, so the sum stands.
-            if not claims:
+            # manifest's per-call cost for an empty (or fully tagger-dropped) result (substrate §4 /
+            # D7; M4.4 cost AC). A claim-bearing result carries that cost on its first claim.
+            if not kept:
                 step_cost = manifest.cost_cents
-            best = first_confident_claim(claims, threshold)
+            best = first_confident_claim(kept, threshold)
             apply_attributes(
-                span, {ATTR_COST_CENTS: step_cost, "best_confidence": _max_confidence(claims)}
+                span, {ATTR_COST_CENTS: step_cost, "best_confidence": _max_confidence(kept)}
             )
 
         ran_any = True
@@ -332,8 +368,8 @@ async def resolve_field(
                 source_key=source_key,
                 tier=tier,
                 outcome=StepOutcome.RESOLVED,
-                n_claims=len(claims),
-                best_confidence=_max_confidence(claims),
+                n_claims=len(kept),
+                best_confidence=_max_confidence(kept),
                 confident=best is not None,
                 cost_cents=step_cost,
             )
