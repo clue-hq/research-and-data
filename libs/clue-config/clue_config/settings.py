@@ -35,6 +35,22 @@ class Settings(BaseSettings):
     # reuse ``GatewayConfig.synthesis_model``. Env: ``CLUE_SYNTHESIS_MODEL``.
     synthesis_model: str = DEFAULT_SYNTHESIS_MODEL
 
+    # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
+    # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
+    fleet_poll_interval_s: float = 1.0
+    # Per-run driver-lease TTL: a killed driver's run is re-drivable after this long. Must be
+    # comfortably larger than the heartbeat interval. Env: ``CLUE_FLEET_LEASE_TTL_S``.
+    fleet_lease_ttl_s: float = 30.0
+    # How often a driving worker renews (heartbeats) its run lease. Env:
+    # ``CLUE_FLEET_HEARTBEAT_INTERVAL_S``.
+    fleet_heartbeat_interval_s: float = 10.0
+    # How long a claimed ``fleet_task`` is honoured before it is presumed orphaned by a killed
+    # worker and re-owned. Sized to outlive the lease TTL (takeover is lease-gated first). Env:
+    # ``CLUE_FLEET_TASK_STALE_AFTER_S``.
+    fleet_task_stale_after_s: float = 60.0
+    # The deep-phase concurrency window — account jobs in flight at once (REQ-10 ~16–32; the
+    # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
+    fleet_deep_window: int = 16
     # --- scoped memory (PB-B3; append-only additions per treaty §3.2) -----------------------
     # Deploy-level master default for the memory substrate. The *real* mechanism is the
     # per-workspace toggle + audit journal (Doc M §17a — the ``memory_switch`` table); this flag

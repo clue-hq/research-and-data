@@ -1,10 +1,22 @@
 [project]
 name = "clue-fleet"
 version = "0.0.0"
-description = "The fleet shell — detached worker, queue, envelopes, supervisor (build step 0) (scaffold — Doc R R2)."
+description = "The fleet shell — detached ProjectRunWorker, per-run driver lease, task drain, tier-priority queue (PB-B1 / harness build step 0)."
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
-dependencies = []
+dependencies = [
+    # shared libs (Doc R)
+    "clue-core",
+    "clue-config",
+    "clue-db",
+    "clue-obs",
+    # the driven subsystem — the durable seam only (import contract "fleet touches research
+    # only through the durable seam")
+    "clue-research",
+    # runtime
+    "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -12,3 +24,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["clue_fleet"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }
+clue-config = { workspace = true }
+clue-db = { workspace = true }
+clue-obs = { workspace = true }
+clue-research = { workspace = true }

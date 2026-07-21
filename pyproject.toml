@@ -360,6 +360,46 @@ type = "forbidden"
 source_modules = ["clue_agents"]
 forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_api"]
 
+# Rule F1 — the fleet is the platform's execution shell AROUND the research subsystem: research
+# never imports it (the drive seam is one-way — the worker drives durable's public surface, and
+# no research code may learn the queue/lease exist). PB-B1.
+[[tool.importlinter.contracts]]
+name = "research never imports the fleet shell (one-way drive seam)"
+type = "forbidden"
+source_modules = ["clue_research"]
+forbidden_modules = ["clue_fleet"]
+
+# Rule F2 — the fleet touches research ONLY through the durable seam (the PB-B1 treaty
+# must-not-touch list, machine-enforced): never sources/resolvers/adapters, never the judges or
+# scorers, never the claim store or another subsystem. The worker drives CampaignRun; the
+# queue-backed scheduler implements durable's run_accounts seam — nothing else crosses.
+# Direct imports only (allow_indirect_imports): durable itself legitimately reaches
+# claimstore/locks (Beat-0), and those transitive edges are durable's business, not a fleet leak.
+[[tool.importlinter.contracts]]
+name = "fleet touches research only through the durable seam"
+type = "forbidden"
+source_modules = ["clue_fleet"]
+allow_indirect_imports = "True"
+forbidden_modules = [
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.compliance",
+    "clue_research.verification",
+    "clue_research.profiling",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.narrative",
+    "clue_research.synthesis",
+    "clue_research.review",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.icp",
+    "clue_research.evals",
+    "clue_memory",
+    "clue_content",
+    "clue_gateway",
+    "clue_locks",
 # Rule S3 (PB-B3) — the memory substrate is storage + seams only: it imports core (the seam
 # contracts + shared types), db, and config (caps/settings) — nothing else. The gateway concrete
 # for its reconcile judge is INJECTED at the composition root (the LLMGateway protocol lives in
