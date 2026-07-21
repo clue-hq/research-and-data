@@ -105,6 +105,11 @@ class Claim(BaseModel):
     # waterfall (M4.1) stamps it so per-source yield/idempotency keys on the source, not the tier
     # (a tier_plan may list >1 source per tier). Nullable: non-resolver writers leave it None.
     source_key: str | None = None
+    # The durable evidence snapshot this claim was extracted from (PB-B2 / REQ-07): the
+    # content-addressed ``artifact.storage_key`` of the bytes the fetch saw, so the evidence_span
+    # resolves offline even after the live source_url rots. Nullable: pre-B2 rows and
+    # non-snapshotting writers (tier-1 APIs) leave it None. Immutable provenance (DB trigger).
+    artifact_key: str | None = None
     source_tier: SourceTier
     extraction_method: ExtractionMethod
     evidence_span: str | None = None  # mandatory for tier-4 *promotion*, not construction

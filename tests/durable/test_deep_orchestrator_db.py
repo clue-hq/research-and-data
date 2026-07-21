@@ -22,6 +22,13 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.deep import (
+    AccountDeepOrchestrator,
+    DbAccountRunIO,
+    DbExactlyOnceSpend,
+    deep_account_run_id,
+    deep_step_key,
+)
 from clue_config import DeepPhaseConfig
 from clue_core import (
     EntityId,
@@ -34,13 +41,6 @@ from clue_core import (
 )
 from clue_core.enums import ICPCreatedFrom
 from clue_core.handoff import ICPSpec, ProfileClaimView
-from clue_research.api.deep import (
-    AccountDeepOrchestrator,
-    DbAccountRunIO,
-    DbExactlyOnceSpend,
-    deep_account_run_id,
-    deep_step_key,
-)
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,

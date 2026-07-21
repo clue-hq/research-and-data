@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.composition import VERIFICATION_GATE_ORDER
 from clue_config import Jurisdiction, Posture, SourceScope, UseDisposition
 from clue_core import (
     AccountStatus,
@@ -44,7 +45,6 @@ from clue_obs.otel import (
     InMemorySink,
     collect_spans,
 )
-from clue_research.api.composition import VERIFICATION_GATE_ORDER
 from clue_research.claimstore import insert_claim
 from clue_research.compliance import (
     DEFAULT_WORKSPACE_POLICY,

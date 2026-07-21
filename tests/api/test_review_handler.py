@@ -11,6 +11,8 @@ import asyncio
 from collections.abc import Sequence
 from uuid import uuid4
 
+from clue_api.review import ReviewPhaseHandler, build_review_phase_handler
+from clue_api.review.handler import ReviewAccountResolver
 from clue_core import (
     CampaignPhase,
     CampaignRunId,
@@ -27,8 +29,6 @@ from clue_core import (
     new_entity_id,
 )
 from clue_core.review import ReviewSessionId
-from clue_research.api.review import ReviewPhaseHandler, build_review_phase_handler
-from clue_research.api.review.handler import ReviewAccountResolver
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 
 _CLIENT = "client-acme"

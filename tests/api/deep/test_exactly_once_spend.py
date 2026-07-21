@@ -1,7 +1,7 @@
 """M8A.4 — exactly-once spend + concurrent-admit reservation, driven by fakes (no DB).
 
 These prove the *orchestration-level* exactly-once contract: every deep stage's spend routes through
-the injected :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` (so the budget charge, claim
+the injected :class:`~clue_api.deep.spend.ExactlyOnceSpend` (so the budget charge, claim
 writes, and ledger ``succeed`` commit together) keyed once per stage; a resumed fan-out **replays**
 already-committed contacts without re-charging; the references-fold never carries cost (the budget
 engine's ``record`` is the single writer); and the per-account reservation stops admitting before
@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from clue_api.deep import deep_account_run_id, deep_step_key
 from clue_config import DeepPhaseConfig
 from clue_core import (
     BudgetVerdict,
     new_campaign_run_id,
     new_entity_id,
 )
-from clue_research.api.deep import deep_account_run_id, deep_step_key
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from tests.api.deep.test_orchestrator import (
     FakeAccountRunIO,

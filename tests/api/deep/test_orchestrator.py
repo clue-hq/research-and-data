@@ -15,6 +15,12 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 
+from clue_api.deep import (
+    AccountDeepOrchestrator,
+    StepInfo,
+    deep_account_run_id,
+)
+from clue_api.deep.run_io import DeepRunState
 from clue_config import DeepPhaseConfig, RecursionPolicy
 from clue_core import (
     BudgetDecision,
@@ -34,12 +40,6 @@ from clue_core import (
 )
 from clue_core.enums import ICPCreatedFrom
 from clue_core.handoff import ICPSpec
-from clue_research.api.deep import (
-    AccountDeepOrchestrator,
-    StepInfo,
-    deep_account_run_id,
-)
-from clue_research.api.deep.run_io import DeepRunState
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,
@@ -55,7 +55,7 @@ from tests.db.conftest import run_async
 
 
 class FakeAccountRunIO:
-    """In-memory :class:`~clue_research.api.deep.run_io.AccountRunIO` (no DB).
+    """In-memory :class:`~clue_api.deep.run_io.AccountRunIO` (no DB).
 
     Records each ``fold`` and supports ``seed`` to simulate a prior run's persisted resume state
     (sub_phase + references + cost) so the resume path is exercised without a database. ``fold``
@@ -321,7 +321,7 @@ class FakeBudgetEngine:
 
 
 class FakeExactlyOnceSpend:
-    """In-memory :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` (no DB, no ledger).
+    """In-memory :class:`~clue_api.deep.spend.ExactlyOnceSpend` (no DB, no ledger).
 
     Default behaviour: run ``work`` and record its charge exactly once, returning the result + a
     fresh :class:`StepInfo`. ``replay`` maps a step ``key`` → ``(claim_ids, cost)`` to simulate a

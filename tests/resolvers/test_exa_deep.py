@@ -291,7 +291,7 @@ def test_config_default_cost_cents_is_honored_on_a_zero_cost_call() -> None:
 
 def test_register_synthesis_wiring_binds_a_tier4_resolver_to_exa_deep() -> None:
     # The PF-7 api-composition-root path (not just a direct register_exa_deep_resolver call).
-    from clue_research.api.synthesis_wiring import register_synthesis_wiring
+    from clue_api.synthesis_wiring import register_synthesis_wiring
 
     register_synthesis_wiring(accounts=_Accounts(_account()))
     resolver = get_resolver("exa_deep")

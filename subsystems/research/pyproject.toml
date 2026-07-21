@@ -13,14 +13,18 @@ dependencies = [
     "clue-gateway",
     "clue-locks",
     "clue-obs",
+    "clue-storage",
     # subsystem runtime
     "pydantic>=2.7",
     "sqlalchemy[asyncio]>=2.0",
     "pgvector",
     "pypdf>=6",
+    # B2.4 — the credit-free scrape backend (CLUE_SCRAPE_BACKEND=scrapling); both are used only
+    # behind the adapters/concrete seam (Rule 4), lazy-imported.
+    "scrapling[fetchers]>=0.4",
+    "markdownify>=1.2",
     "langgraph>=0.2",
     "langgraph-checkpoint-postgres>=2",
-    "fastapi>=0.138.0",
     "httpx>=0.28.1",
 ]
 
@@ -38,3 +42,4 @@ clue-db = { workspace = true }
 clue-gateway = { workspace = true }
 clue-locks = { workspace = true }
 clue-obs = { workspace = true }
+clue-storage = { workspace = true }

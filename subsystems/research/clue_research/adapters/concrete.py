@@ -155,6 +155,78 @@ def _firecrawl_markdown(result: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+class ScraplingScrapeBackend:
+    """Credit-free HTML→markdown scrape via **scrapling** (PB-B2.4, founder addition).
+
+    The second :class:`ScrapeBackend` — same seam, no API credits: scrapling's ``Fetcher``
+    (curl_cffi-based, local) gets the page HTML and ``markdownify`` normalizes it to markdown, so
+    downstream (adapt → extract → snapshot) is byte-for-byte the same contract as Firecrawl's.
+    Both libraries are **lazy-imported only here** (Rule 4: the provider never leaks past the
+    adapter seam; CI's double-driven path needs neither installed). The ``fetcher`` is duck-typed
+    against an injectable fake (``.get(url) -> page`` with ``.status`` / ``.html_content``),
+    mirroring :class:`FirecrawlScrapeBackend`'s injectable client.
+    """
+
+    def __init__(self, *, fetcher: Any | None = None) -> None:
+        self._fetcher = fetcher
+
+    def scrape(self, ref: str, ctx: AdaptContext) -> RawArtifact:
+        fetcher = self._fetcher or self._build_fetcher()
+        try:
+            page = fetcher.get(ref, stealthy_headers=True)
+        except Exception as exc:
+            raise FetchError(f"scrapling scrape of {ref!r} failed: {exc}") from exc
+        status = getattr(page, "status", None)
+        if status is not None and int(status) >= 400:
+            raise FetchError(f"scrapling scrape of {ref!r} returned HTTP {status}")
+        html = getattr(page, "html_content", None)
+        if not isinstance(html, str) or not html.strip():
+            raise FetchError(f"scrapling returned no HTML for {ref!r}")
+        markdown = _html_to_markdown(html, ref)
+        return RawArtifact(
+            ref=ref,
+            media_type="text/markdown",
+            content=markdown.encode("utf-8"),
+            metadata={"backend": "scrapling"},
+        )
+
+    @staticmethod
+    def _build_fetcher() -> Any:  # pragma: no cover - live path (tests inject a fake)
+        # Lazy import keeps the library out of CI and behind the adapter seam (Rule 4).
+        try:
+            from scrapling.fetchers import Fetcher
+        except ImportError as exc:
+            raise FetchError(
+                "scrapling is required for the scrapling scrape backend; "
+                "install scrapling[fetchers] (or set CLUE_SCRAPE_BACKEND=firecrawl)"
+            ) from exc
+        return Fetcher
+
+
+def _html_to_markdown(html: str, ref: str) -> str:
+    """Normalize scraped HTML to markdown via ``markdownify`` (lazy — Rule 4)."""
+    try:
+        from markdownify import markdownify
+    except ImportError as exc:  # pragma: no cover - production has the dep; CI injects fakes
+        raise AdaptError("markdownify is required for the scrapling scrape backend") from exc
+    markdown = markdownify(html)
+    if not isinstance(markdown, str) or not markdown.strip():
+        raise FetchError(f"markdown normalization produced no content for {ref!r}")
+    return markdown
+
+
+def default_scrape_backend(settings: Any | None = None) -> ScrapeBackend:
+    """The settings-selected :class:`ScrapeBackend` (``CLUE_SCRAPE_BACKEND``, PB-B2.4):
+    ``firecrawl`` (paid API, the default) or ``scrapling`` (local, credit-free). The one reader
+    of the setting — callers/tests that inject a backend explicitly never touch it."""
+    from clue_config import Settings
+
+    resolved = settings if settings is not None else Settings()
+    if resolved.scrape_backend == "scrapling":
+        return ScraplingScrapeBackend()
+    return FirecrawlScrapeBackend()
+
+
 # --- the adapters ------------------------------------------------------------
 
 

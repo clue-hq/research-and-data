@@ -497,7 +497,7 @@ class BudgetEngine:
         transaction, atomically with the claim write(s) and the M7.4 ledger ``succeed`` the caller
         does on the same connection — closing the crash window the V1 caveat below named (the deep
         committee/contact spend path is the caller that closes it; see
-        ``clue_research.api.deep.spend``). This is an extension of the frozen ``core.BudgetEngine``
+        ``clue_api.deep.spend``). This is an extension of the frozen ``core.BudgetEngine``
         protocol that lives only on the concrete engine.
 
         **Transactional caveat (V1, when ``conn`` is omitted):** the increment commits in its own
