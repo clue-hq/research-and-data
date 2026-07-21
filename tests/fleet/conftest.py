@@ -124,6 +124,12 @@ class FakeLeaseStore:
     def __init__(self) -> None:
         self.holders: dict[CampaignRunId, str] = {}
         self.deny_renewal = False
+        # Renewal-fault injection (audit finding #2): ``renew_always_raises`` makes every renew
+        # raise; ``renew_raise_budget`` raises for the next N renews then behaves normally (the
+        # transient-fault case). A raise models a DB blip on the renewal path — the exact trigger
+        # that used to silently kill the heartbeat coroutine.
+        self.renew_always_raises = False
+        self.renew_raise_budget = 0
         self.events: list[str] = []
 
     async def acquire(
@@ -140,6 +146,11 @@ class FakeLeaseStore:
     async def renew(
         self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
     ) -> bool:
+        if self.renew_always_raises or self.renew_raise_budget > 0:
+            if not self.renew_always_raises:
+                self.renew_raise_budget -= 1
+            self.events.append(f"renew-raised:{worker_id}")
+            raise RuntimeError("simulated renewal fault")
         if self.deny_renewal or self.holders.get(campaign_run_id) != worker_id:
             self.events.append(f"renew-failed:{worker_id}")
             return False
@@ -421,6 +432,12 @@ class ScriptedDriver:
     advance_delay_s: float = 0.0
     on_advance: Any = None
     advances: int = 0
+    # Phase-boundary vs mid-phase observability (audit finding #2): ``advance_started`` ticks at
+    # entry (before the delay), ``advance_finished`` only after the body completes. A phase
+    # cancelled mid-flight leaves ``advance_started > advance_finished`` — the proof that fencing
+    # is now immediate cancellation, not a wait for the next boundary.
+    advance_started: int = 0
+    advance_finished: int = 0
 
     async def status(self, campaign_run_id: CampaignRunId) -> CampaignRunRow:
         return self.initial
@@ -428,6 +445,7 @@ class ScriptedDriver:
     async def advance(self, campaign_run_id: CampaignRunId) -> CampaignRunRow:
         import asyncio
 
+        self.advance_started += 1
         if self.advance_delay_s:
             await asyncio.sleep(self.advance_delay_s)
         if self.on_advance is not None:
@@ -435,4 +453,5 @@ class ScriptedDriver:
         self.advances += 1
         if self.steps:
             self.initial = self.steps.pop(0)
+        self.advance_finished += 1
         return self.initial

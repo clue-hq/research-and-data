@@ -8,6 +8,8 @@ lease-loss abort, and one run's fault not killing the worker."""
 from __future__ import annotations
 
 import asyncio
+import time
+from datetime import timedelta
 
 import pytest
 from clue_fleet import CampaignRunWorker, FleetTaskKind, FleetTaskStatus, enqueue_drive
@@ -170,26 +172,106 @@ def test_graceful_stop_mid_drive_requeues_and_releases() -> None:
     asyncio.run(_run())
 
 
-def test_lease_loss_aborts_the_drive_between_phases() -> None:
+def test_renewal_denied_cancels_mid_phase_not_at_boundary() -> None:
+    """Behavior change (audit finding #2): a denied renewal (``renew() -> False``) now cancels the
+    in-flight phase *immediately* rather than waiting for the next phase boundary. This deliberately
+    replaces the old ``test_lease_loss_aborts_the_drive_between_phases`` boundary semantics: the
+    zombie window is now cancellation latency, not the rest of the phase."""
+
     async def _run() -> None:
         run_id = new_campaign_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
-        # A long script of *distinct consecutive* phases (never terminal), so the drive would
-        # keep advancing forever were the lease not lost.
-        cycle = list(CampaignPhase)[1:] + list(CampaignPhase)[:1]
-        many_steps = [run_row(run_id, phase=phase) for phase in cycle] * 5
-        driver = ScriptedDriver(initial=run_row(run_id), steps=many_steps, advance_delay_s=0.02)
-        leases.deny_renewal = True  # the first heartbeat fails → lease lost
-        worker = _worker(driver, queue, leases, heartbeat_interval=0.01)
+        # One long-blocking phase: if fencing waited for the boundary, the advance would run to
+        # completion (~2s). Immediate cancellation kills it mid-flight — advance never finishes.
+        driver = ScriptedDriver(
+            initial=run_row(run_id),
+            steps=[run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED)],
+            advance_delay_s=2.0,
+        )
+        leases.deny_renewal = True  # the first heartbeat's renew returns False → lease lost
+        worker = _worker(
+            driver, queue, leases, heartbeat_interval=0.05, lease_ttl=timedelta(seconds=0.5)
+        )
+        started = time.monotonic()
         await worker.drain_once()
+        elapsed = time.monotonic() - started
 
-        # Aborted well before the script ran out — cooperative fencing at a phase boundary.
-        assert driver.advances < len(many_steps)
+        assert driver.advance_started == 1  # the phase began…
+        assert driver.advance_finished == 0  # …and was cancelled mid-flight, not run to boundary
+        assert elapsed < 1.5  # well under the 2s block — cancelled, not awaited
         task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
         assert task.status is FleetTaskStatus.QUEUED  # the taker (or a retry) drives it on
         # NOT released: the lease belongs to whoever took it over.
         assert "release:worker-under-test" not in leases.events
+
+    asyncio.run(_run())
+
+
+def test_transient_renewal_exception_does_not_fence_or_kill_heartbeat() -> None:
+    """The audit's exact trigger (a renewal that RAISES) made harmless: a single transient renew
+    exception is logged and retried, the heartbeat survives, and a multi-phase drive completes
+    normally with the lease released — no fencing."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id, phase=CampaignPhase.REVERSE_PROFILING),
+            steps=[
+                run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED),
+                run_row(run_id, phase=CampaignPhase.DISCOVERY),
+                run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED),
+            ],
+            advance_delay_s=0.05,
+        )
+        leases.renew_raise_budget = 1  # the first renew raises, then all succeed
+        # Generous TTL so the transient fault is nowhere near the deadline−margin fence.
+        worker = _worker(
+            driver, queue, leases, heartbeat_interval=0.02, lease_ttl=timedelta(seconds=5)
+        )
+        await worker.drain_once()
+
+        assert "renew-raised:worker-under-test" in leases.events  # the trigger really fired…
+        assert any(e.startswith("renew:") for e in leases.events)  # …and later renews succeeded
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.DONE  # drove to completion — NOT fenced
+        assert task.result_ref["outcome"] == "completed"
+        assert leases.events[-1] == "release:worker-under-test"  # lease released, not abandoned
+        assert run_id not in leases.holders
+
+    asyncio.run(_run())
+
+
+def test_persistent_renewal_exceptions_cancel_the_phase_before_expiry() -> None:
+    """When renew keeps raising, the heartbeat cannot prove ownership; once it is within one beat
+    of true TTL expiry it declares the lease lost and the supervisor cancels the in-flight phase —
+    promptly, well before the long advance would have completed."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id),
+            steps=[run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED)],
+            advance_delay_s=2.0,  # blocks far longer than the lease TTL
+        )
+        leases.renew_always_raises = True
+        worker = _worker(
+            driver, queue, leases, heartbeat_interval=0.1, lease_ttl=timedelta(seconds=0.5)
+        )
+        started = time.monotonic()
+        await worker.drain_once()
+        elapsed = time.monotonic() - started
+
+        assert driver.advance_started == 1  # the phase began…
+        assert driver.advance_finished == 0  # …but was cancelled before it could finish
+        assert elapsed < 1.5  # near the TTL (~0.5s), well under the 2s advance
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.QUEUED  # lease_lost outcome → requeued
+        assert "release:worker-under-test" not in leases.events  # not released
 
     asyncio.run(_run())
 
