@@ -32,8 +32,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections import defaultdict
-from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -240,17 +238,20 @@ def build_worker() -> ProjectRunWorker:
     for phase in PHASE_SEQUENCE:
         if phase is not CampaignPhase.DEEP:
             registry.register(InstantHandler(phase))
-    # Process-local per-entity lock factory: honest here because the run lease already guarantees a
-    # single driver per run, so an in-process asyncio.Lock is a sufficient single-flight for the
-    # stub. Production wires account_entity_lock_factory(get_redis()) at the api root (the
-    # cross-process fence — integration-owned, treaty §3.4).
-    entity_locks: dict[EntityId, asyncio.Lock] = defaultdict(asyncio.Lock)
+    # The shared process-local per-entity lock factory (tests/lock_factory.py). Honest here because
+    # the run lease already guarantees a single driver per run, so an in-process asyncio.Lock is a
+    # sufficient single-flight for the stub. Production wires the Redis account_entity_lock_factory
+    # at the api root (the cross-process fence — integration-owned, treaty §3.4). This module also
+    # runs as a detached subprocess where the repo root is not on sys.path, so add it before the
+    # (dependency-light, pytest-free) shared import.
+    import sys
+    from pathlib import Path
 
-    def lock_factory(entity_id: EntityId) -> AbstractAsyncContextManager[Any]:
-        return entity_locks[entity_id]
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from tests.lock_factory import ProcessLocalLockFactory
 
     scheduler = QueueBackedScheduler(
-        window=window, stale_after=stale, poll_interval=0.05, lock_factory=lock_factory
+        window=window, stale_after=stale, poll_interval=0.05, lock_factory=ProcessLocalLockFactory()
     )
     registry.register(
         StubDeepHandler(
