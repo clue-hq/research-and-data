@@ -173,6 +173,24 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         requires_adapter="firecrawl_html",
         freshness_profile="livecrawl",
     ),
+    # Tier-2 official-source scrape via **scrapling** (PB-B2.4) — the credit-free sibling of
+    # firecrawl_site (same trust tier, same target-lock, same adapter contract). A DISTINCT
+    # source, not a transport swap hidden under firecrawl's manifest: cost_cents=0 and
+    # provider="scrapling" so budgets, estimates, and per-provider yield/economics attribute a
+    # free local scrape truthfully (audit finding 6). ``register_scrape_resolver`` binds the
+    # resolver to exactly one of the two keys per the selected backend; the other stays a
+    # registered-but-unbound step the waterfall walks past (NO_RESOLVER, zero spend).
+    _entry(
+        "scrapling_site",
+        modality=Modality.TEXT,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=2,
+        yields=("account",),
+        provider="scrapling",
+        cost_cents=Decimal(0),
+        requires_adapter="scrapling_html",
+        freshness_profile="livecrawl",
+    ),
     # Tier-4 research-product placeholders — REGISTERED but resolver-ABSENT until M11. Proves a
     # tier-4 source can be named in a tier_plan before its resolver exists (get_resolver raises).
     _entry(
