@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CostCents,
+    BudgetTracker,
     Entity,
     EntityScope,
     GateDecision,
@@ -368,7 +368,7 @@ async def plan_sources(
         # only — a SKIP yields nothing, spends nothing, and is not consulted (tier_plan() omits it),
         # so neither knob should count it (mirrors how budget already treats SKIP as free).
         included: list[PlannedSource] = []
-        spent: CostCents = Decimal(0)
+        budget = BudgetTracker(envelope_cents=budget_envelope)
         n_run = 0
         budget_halted = False
         for source in tier_ordered:
@@ -376,7 +376,7 @@ async def plan_sources(
             if gate is GateDecision.RUN:
                 if config.max_sources is not None and n_run >= config.max_sources:
                     break  # fan-out cap reached — don't consult another RUN source
-                if budget_envelope is not None and spent + source.cost_cents > budget_envelope:
+                if budget.would_exceed(source.cost_cents):
                     budget_halted = True
                     break  # halt before the first RUN source that would exceed the envelope
             included.append(
@@ -390,7 +390,7 @@ async def plan_sources(
                 )
             )
             if gate is GateDecision.RUN:
-                spent += source.cost_cents
+                budget.spend(source.cost_cents)
                 n_run += 1
 
         apply_attributes(span, {ATTR_N_SOURCES: len(included)})

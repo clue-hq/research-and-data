@@ -51,6 +51,7 @@ from typing_extensions import TypedDict
 from clue_config import RecursionPolicy
 from clue_core import (
     AspectContext,
+    BudgetTracker,
     CampaignRunId,
     ClaimId,
     CostCents,
@@ -590,7 +591,7 @@ class AccountResearchGraph:
         (two facets can't each pass against the full remaining) — they run concurrently, so the
         budget must be reserved sequentially as they are granted (the M7.5 envelope is the cap)."""
         granted: list[dict[str, Any]] = []
-        remaining = budget_remaining
+        budget = BudgetTracker(envelope_cents=budget_remaining)
         for req in _facet_requests(result):
             estimated = parse_cost_cents(req.get("estimated_cost_cents"))
             decision = self._guard.may_spawn(
@@ -598,13 +599,12 @@ class AccountResearchGraph:
                 depth=child_depth,
                 current_facet_count=len(granted),
                 tier=tier,
-                remaining_budget_cents=remaining,
+                remaining_budget_cents=budget.remaining_cents,
                 estimated_cost_cents=estimated,
             )
             if decision.allowed:
                 granted.append(req)
-                if remaining is not None:
-                    remaining -= estimated if estimated is not None else Decimal(0)
+                budget.spend(estimated if estimated is not None else Decimal(0))
             else:
                 self._emit_cap_hit(
                     entity_id,

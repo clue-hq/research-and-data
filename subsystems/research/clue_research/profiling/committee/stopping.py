@@ -16,12 +16,11 @@ yield falls → the walk halts without unbounded querying (M8.3 AC).
 from __future__ import annotations
 
 from collections import deque
-from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_core import CostCents
+from clue_core import BudgetTracker, CostCents
 
 
 class CommitteeStopReason(StrEnum):
@@ -60,18 +59,17 @@ class CommitteeStoppingRule:
         budget_cap_cents: CostCents | None = None,
     ) -> None:
         self._config = config
-        self._budget_cap_cents = budget_cap_cents
-        self._spent = Decimal(0)
+        self._budget = BudgetTracker(envelope_cents=budget_cap_cents)
         self._window: deque[tuple[int, int]] = deque(maxlen=config.window_size)
 
     def record(self, *, new_admits: int, candidates_seen: int, cost_cents: CostCents) -> None:
         """Record one source consultation's outcome (new admits, candidates seen, spend)."""
-        self._spent += cost_cents
+        self._budget.spend(cost_cents)
         self._window.append((new_admits, candidates_seen))
 
     @property
     def spent_cents(self) -> CostCents:
-        return self._spent
+        return self._budget.spent_cents
 
     def _window_yield(self) -> float:
         seen = sum(seen for _, seen in self._window)
@@ -85,7 +83,7 @@ class CommitteeStoppingRule:
 
         Returns ``None`` to keep consulting sources. The caller maps a clean run out of sources to
         :attr:`CommitteeStopReason.EXHAUSTED`."""
-        if self._budget_cap_cents is not None and self._spent >= self._budget_cap_cents:
+        if self._budget.exhausted:
             return CommitteeStopReason.BUDGET_CAP
         if (
             len(self._window) >= self._config.window_size

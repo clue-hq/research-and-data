@@ -61,6 +61,7 @@ from clue_config import (
 from clue_core import (
     AccountEntity,
     AspectContext,
+    BudgetTracker,
     Claim,
     ClaimId,
     CostCents,
@@ -238,8 +239,7 @@ class AspectProfilingWorker:
             lock = build_target_lock(account)
 
             fills: list[_FieldFill] = []
-            spent = Decimal(0)
-            envelope = ctx.budget_envelope_cents
+            budget = BudgetTracker(envelope_cents=ctx.budget_envelope_cents)
             for field_key in ctx.field_keys:
                 field_def = await get_field(conn, field_key)
                 if field_def is None:
@@ -251,8 +251,7 @@ class AspectProfilingWorker:
                         )
                     )
                     continue
-                remaining = (envelope - spent) if envelope is not None else None
-                if remaining is not None and remaining <= 0:
+                if budget.exhausted:
                     # The aspect's envelope is spent — the rest of the schema halts at the cap.
                     fills.append(
                         _FieldFill(
@@ -270,14 +269,14 @@ class AspectProfilingWorker:
                     rc=rc,
                     tier=ctx.tier,
                     run_id=ctx.run_id,
-                    budget_remaining=remaining,
+                    budget_remaining=budget.remaining_cents,
                     thresholds=thresholds,
                     plan_policy=plan_policy,
                 )
                 fills.append(fill)
-                spent += fill.cost_cents
+                budget.spend(fill.cost_cents)
 
-        return self._assemble(ctx.aspect, fills, spent)
+        return self._assemble(ctx.aspect, fills, budget.spent_cents)
 
     def _source_policies(self, rc: RunContext) -> tuple[ConfidenceThresholds, SourcePlanPolicy]:
         """The per-run waterfall stop bar + planner tier reach from the layered config.

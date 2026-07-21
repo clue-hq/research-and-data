@@ -22,6 +22,7 @@ docs/specs/M07-durable-execution.md.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
@@ -204,6 +205,56 @@ class BurnDown(BaseModel):
     remaining_cents: CostCents
     per_pass_spent: dict[str, CostCents] = {}
     per_source_spent: dict[str, CostCents] = {}
+
+
+@dataclass(slots=True)
+class BudgetTracker:
+    """Local envelope + running-spend arithmetic — the one shape every manual budget thread shares
+    (the waterfall walk, the source planner's halt, the aspect worker's per-field cap, Stage 0's
+    field loop, the facet-grant reservation, the discovery/committee stopping rules).
+
+    This is **not** the :class:`BudgetEngine` (the M7.5 policy/ledger seam — caps as versioned
+    config, verdicts, a persisted spend ledger). A tracker is a transient, in-process accumulator a
+    caller seeds from an envelope it was *handed*; it decides nothing and persists nothing.
+
+    ``envelope_cents=None`` means unbounded: never exceeded, never exhausted, ``remaining_cents`` is
+    ``None``. Two boundary predicates, deliberately distinct (the M7.5 convention — they differ
+    exactly at the cap):
+
+    * :meth:`would_exceed` is **strict** (``spent + next > envelope``): a spend that lands exactly
+      on the envelope is allowed (the waterfall / planner / SpawnGuard pre-spend check).
+    * :attr:`exhausted` is **inclusive** (``spent >= envelope``): at the cap the walk stops (the
+      Stage-0 / per-field "cap already reached" check, projected spend zero).
+
+    ``remaining_cents`` is **unclamped** — a tracker seeded past its envelope reports a negative
+    remainder (callers check :attr:`exhausted` first; the clamped client-facing figure is
+    :class:`BurnDown`, not this).
+    """
+
+    envelope_cents: CostCents | None = None
+    spent_cents: CostCents = Decimal(0)
+
+    def spend(self, cost_cents: CostCents) -> None:
+        """Fold one unit's realized cost into the running spend."""
+        self.spent_cents += cost_cents
+
+    def would_exceed(self, next_cost_cents: CostCents) -> bool:
+        """Whether spending ``next_cost_cents`` more would overrun the envelope (strict: an
+        exact-fit spend is allowed)."""
+        return (
+            self.envelope_cents is not None
+            and self.spent_cents + next_cost_cents > self.envelope_cents
+        )
+
+    @property
+    def exhausted(self) -> bool:
+        """Whether the envelope is already fully spent (inclusive: at the cap = exhausted)."""
+        return self.envelope_cents is not None and self.spent_cents >= self.envelope_cents
+
+    @property
+    def remaining_cents(self) -> CostCents | None:
+        """What is left of the envelope (``None`` = unbounded; unclamped — may be negative)."""
+        return None if self.envelope_cents is None else self.envelope_cents - self.spent_cents
 
 
 @runtime_checkable
