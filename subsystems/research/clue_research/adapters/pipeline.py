@@ -96,7 +96,13 @@ from clue_research.adapters.seams import AdaptError, ClaimExtractor
 from clue_research.claimstore import insert_claim
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources import RegistrySourceManifest, get_source
-from clue_storage import SnapshotSink, StorageBackend, flush_snapshots
+from clue_storage import (
+    SnapshotSink,
+    StorageBackend,
+    current_snapshot_sink,
+    current_storage,
+    flush_snapshots,
+)
 
 
 class UnknownSourceError(LookupError):
@@ -182,11 +188,12 @@ async def run_pipeline(
         params: free-form fetch params handed to the adapter via the :class:`AdaptContext`.
         snapshots: an optional per-run evidence-snapshot sink (PB-B2.3): the fetched bytes are
             captured at the moment they exist and every claim carries the snapshot's
-            ``artifact_key``, so its evidence resolves offline after the live URL rots.
-        storage: the durable backend the sink flushes to. When ``persist`` and both are supplied,
-            pending captures are flushed (blob + ``artifact`` row) *before* the claims are
-            inserted (the FK ordering). With ``persist=False`` the caller that writes the claims
-            (the waterfall) owns the flush.
+            ``artifact_key``, so its evidence resolves offline after the live URL rots. ``None``
+            defaults to the run-scoped ambient binding (``clue_storage.bind_snapshots``).
+        storage: the durable backend the sink flushes to (``None`` → the ambient binding). When
+            ``persist`` and both resolve, pending captures are flushed (``artifact`` row + blob)
+            *before* the claims are inserted (the FK ordering). With ``persist=False`` the caller
+            that writes the claims (the waterfall) owns the flush.
 
     Returns the claims (written, with persisted ids, when ``persist``). Adding a brand-new modality
     adapter makes its source consumable here with **no** change to the waterfall (M4.1) or a worker.
@@ -194,6 +201,12 @@ async def run_pipeline(
     manifest = await get_source(conn, source_key)
     if manifest is None:
         raise UnknownSourceError(f"source {source_key!r} is not registered (M4.2)")
+    # Run-scoped snapshot binding (PB-B2 audit finding 5): explicit args win over the ambient
+    # per-run sink/backend the run owner bound to the call context.
+    if snapshots is None:
+        snapshots = current_snapshot_sink()
+    if storage is None:
+        storage = current_storage()
     claims = run_chain(
         manifest,
         ref,
