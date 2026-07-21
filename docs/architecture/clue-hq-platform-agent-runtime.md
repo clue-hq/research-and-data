@@ -107,8 +107,9 @@ over 21 calls in one turn) is why nobody puts a ReAct loop inside 5,000 template
 An agent is precisely this assembly (the havana-proven shape, on the same stack —
 `deepagents`/LangGraph `create_deep_agent` or its successor):
 
-1. **An orchestrator mind** — one LLM loop with a role system prompt ending in an exhaustive
-   resource map (its tools, its workspace layout, what it does NOT have — havana M4).
+1. **An orchestrator mind** — the deepagent orchestrator (`create_deep_agent`), with a role
+   system prompt ending in an exhaustive resource map (its tools, its workspace layout, what it
+   does NOT have — havana M4). Not a hand-rolled single LLM loop.
 2. **A tool surface** — an explicit, minimal, per-role allowlist from the toolbelt. Tool absence
    is an enforcement mechanism (havana: `request_clarification` removed when not permitted).
 3. **Subagents** — invoked via `task(subagent, prompt)`; each wakes **fresh** (system prompt +
