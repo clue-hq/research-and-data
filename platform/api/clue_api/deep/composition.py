@@ -67,12 +67,14 @@ from clue_api.deep.handler import (
 from clue_api.deep.orchestrator import AccountDeepOrchestrator
 from clue_api.deep.run_io import DbAccountRunIO
 from clue_api.deep.spend import DbExactlyOnceSpend
+from clue_api.storage_wiring import bind_snapshots_around_deep
 from clue_config import DeepPhaseConfig, OverlayStore, RecursionPolicy
 from clue_core import (
     CostCents,
     ICPSpec,
     LLMGateway,
     PhaseContext,
+    PhaseHandler,
     PreSpendGate,
 )
 from clue_db import ConnFactory, transaction
@@ -97,6 +99,7 @@ from clue_research.profiling import (
 )
 from clue_research.profiling.contact.binding import BindingClassifier
 from clue_research.synthesis import guard_synthesis_resolution
+from clue_storage import StorageBackend
 
 __all__ = [
     "DeepPhaseComposition",
@@ -112,11 +115,15 @@ __all__ = [
 class DeepPhaseComposition:
     """The wired DEEP-phase collaborators (M8A.6).
 
-    :attr:`handler` is the registered article; the rest are exposed so a test can assert the
-    governance seams are the concretes (the gate + classifier the orchestrator threads into the
-    committee/contact callables) without reaching into private attributes."""
+    :attr:`handler` is the registered article — the bare :class:`DeepPhaseHandler`, or (when a B2
+    ``storage`` backend is supplied) that handler wrapped in a
+    :class:`~clue_api.storage_wiring.SnapshotBindingPhaseHandler` so each deep run captures/flushes
+    under one ambient per-run snapshot sink; either way it is a ``core.PhaseHandler`` serving
+    ``CampaignPhase.DEEP``. The rest are exposed so a test can assert the governance seams are the
+    concretes (the gate + classifier the orchestrator threads into the committee/contact callables)
+    without reaching into private attributes."""
 
-    handler: DeepPhaseHandler
+    handler: PhaseHandler
     orchestrator: AccountDeepOrchestrator
     scheduler: AccountScheduler
     budget: BudgetEngine
@@ -279,6 +286,7 @@ def build_deep_phase_handler(
     checkpointer_factory: CheckpointerFactory | None = None,
     budget_cap_cents: CostCents | None = None,
     config_store: OverlayStore | None = None,
+    storage: StorageBackend | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -288,6 +296,13 @@ def build_deep_phase_handler(
     ``pre_spend_gate`` and ``binding_classifier`` default to real M9 concretes and are **never
     None** on the orchestrator (the required-collaborator enforcement of AC-6/AC-4). Call
     :func:`register_deep_phase_handler` instead to also register the handler.
+
+    **B2 snapshot binding:** pass a ``storage`` backend (``build_storage_backend()``) and the
+    registered ``handler`` is the :class:`DeepPhaseHandler` wrapped so every deep run executes
+    inside ``bind_snapshots(SnapshotSink(workspace_id=ctx.workspace_id), storage)`` — the ambient
+    per-run sink the sink-less scrape resolver captures into and the waterfall flushes from (audit
+    finding 5). Without ``storage`` the handler is registered unwrapped (the pre-B2 no-snapshot
+    path).
     """
     config = config or DeepPhaseConfig()
     recursion_policy = recursion_policy or RecursionPolicy()
@@ -350,8 +365,14 @@ def build_deep_phase_handler(
         high_tier_resolver=resolver,
         checkpointer_factory=checkpointers,
     )
+    # B2: when a storage backend is supplied, register the run-scoped snapshot-binding wrapper so
+    # each deep run captures/flushes under one ambient per-run sink (audit finding 5). The wrapper
+    # is a transparent ``core.PhaseHandler`` for ``DEEP``, so the state machine sees no difference.
+    registered: PhaseHandler = (
+        bind_snapshots_around_deep(handler, storage=storage) if storage is not None else handler
+    )
     return DeepPhaseComposition(
-        handler=handler,
+        handler=registered,
         orchestrator=orchestrator,
         scheduler=scheduler,
         budget=budget,
@@ -365,7 +386,7 @@ def register_deep_phase_handler(
     spec: ICPSpec,
     gateway: LLMGateway,
     committee_sources: Sequence[CommitteeSource],
-    register: Callable[[DeepPhaseHandler], None] = register_phase_handler,
+    register: Callable[[PhaseHandler], None] = register_phase_handler,
     **kwargs: Any,
 ) -> DeepPhaseComposition:
     """Build the DEEP phase (:func:`build_deep_phase_handler`) and register its handler into the

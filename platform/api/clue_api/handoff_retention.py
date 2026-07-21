@@ -46,6 +46,7 @@ from clue_research.compliance import RetentionSweep
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account
 from clue_research.verification import FreshnessImpl
+from clue_storage import StorageBackend
 
 # Reuse the VERIFICATION resolver seams (DRY): the same "run's high-tier accounts" and "an account's
 # committee contacts" concepts scope the age-out to exactly the entities this run's handoff reads.
@@ -127,15 +128,25 @@ def build_retention_sweeping_handoff_handler(
     session_factory: ConnFactory = transaction,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
+    storage: StorageBackend | None = None,
 ) -> RetentionSweepHandoffHandler:
     """Wrap M12's ``inner`` HANDOFF handler with the M10.5 retention/objection sweep.
 
     Constructs the M9.5 :class:`~clue_research.verification.FreshnessImpl` (the ``due_for_age_out``
     source) and the M10.5 :class:`~clue_research.compliance.RetentionSweep` over it; scopes the
     age-out to the run's accounts + (when ``govern_contacts``) their committee contacts via
-    :func:`clue_research.identity.contact_ids_for_account`."""
+    :func:`clue_research.identity.contact_ids_for_account`.
+
+    Pass a B2 ``storage`` backend so tombstoning an EXPIRED/objected personal claim also performs
+    the refcounted deletion of any snapshot it was the last live citer of (B2.5); the sweep's
+    scan-all purge additionally converges any erased-but-unpurged marks a crashed earlier purge left
+    behind. Without it the intent (``erased_at``) is still stamped and a later storage-wired sweep
+    converges.
+    """
     freshness = FreshnessImpl(conn_factory=session_factory, sink=health_sink)
-    sweep = RetentionSweep(freshness, conn_factory=session_factory, sink=health_sink)
+    sweep = RetentionSweep(
+        freshness, conn_factory=session_factory, sink=health_sink, storage=storage
+    )
 
     contact_resolver: ContactResolver | None = None
     if govern_contacts:
@@ -161,6 +172,7 @@ def register_retention_sweeping_handoff_handler(
     session_factory: ConnFactory = transaction,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
+    storage: StorageBackend | None = None,
 ) -> RetentionSweepHandoffHandler:
     """Build + register the retention-sweeping HANDOFF handler into the M7 phase registry
     (last-write-wins over M12's direct ``register_handoff_phase_handler``)."""
@@ -170,6 +182,7 @@ def register_retention_sweeping_handoff_handler(
         session_factory=session_factory,
         govern_contacts=govern_contacts,
         health_sink=health_sink,
+        storage=storage,
     )
     register_phase_handler(handler)
     return handler
