@@ -56,6 +56,13 @@ issue spec states the exact interface it exposes/consumes.
 | M12 | Value Narrative & Handoff | `layer:narrative-handoff` | M5, M8, M9 | Medium | 3 | [M12](./M12-value-narrative-and-handoff.md) |
 | M13 | Review, Feedback & Observability | `layer:review-observability` | M6, M9, M12 | Medium | 4 | [M13](./M13-review-feedback-observability.md) |
 
+## Harness-era phases (post-M13; harness doc §9 + Doc R)
+
+| Phase | Work | Status | Spec |
+|---|---|---|---|
+| A | Restructure + spine: R0–R2, `workspace_id` rename, `libs/clue-spine`, R3 (api → `platform/api`) | **closed** | [PA](./PA-phase-a-restructure-and-spine.md) |
+| B | Platform infra core: fleet worker (step 0) · storage (step 1) · memory slice 1 (Doc M) · then toolbelt/projections (step 2) | open | [PB](./PB-phase-b-platform-infra-core.md) |
+
 ## Full issue list
 
 **M0 — Foundations & Shared Contracts**
