@@ -1,0 +1,307 @@
+"""Offline tests for the :class:`~clue_fleet.CampaignRunWorker` drive loop (PB-B1).
+
+Fake-driven (no DB): the seams (:class:`FakeLeaseStore`, :class:`FakeTaskQueue`,
+:class:`ScriptedDriver`) isolate the control flow — claim → lease → step-loop → finish — and its
+edges: terminal/paused/stalled outcomes, the lease-held-elsewhere handback, graceful stop,
+lease-loss abort, and one run's fault not killing the worker."""
+
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+from clue_fleet import CampaignRunWorker, FleetTaskKind, FleetTaskStatus, enqueue_drive
+from tests.fleet.conftest import FakeLeaseStore, FakeTaskQueue, ScriptedDriver, run_row
+
+from clue_core import CampaignPhase, new_campaign_run_id
+from clue_research.durable import CampaignRunStatus
+
+
+def _worker(
+    driver: ScriptedDriver,
+    queue: FakeTaskQueue,
+    leases: FakeLeaseStore,
+    **overrides: object,
+) -> CampaignRunWorker:
+    defaults: dict[str, object] = {
+        "worker_id": "worker-under-test",
+        "poll_interval": 0.01,
+        "heartbeat_interval": 60.0,  # quiet unless a test drives the heartbeat explicitly
+    }
+    defaults.update(overrides)
+    return CampaignRunWorker(driver=driver, queue=queue, leases=leases, **defaults)  # type: ignore[arg-type]
+
+
+def test_drive_to_completion_finishes_task_and_releases_lease() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id, phase=CampaignPhase.REVERSE_PROFILING),
+            steps=[
+                run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED),
+                run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED),
+            ],
+        )
+        worker = _worker(driver, queue, leases)
+
+        assert await worker.drain_once() is True
+
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.DONE
+        assert task.result_ref["outcome"] == "completed"
+        assert task.result_ref["status"] == "completed"
+        assert driver.advances == 2
+        # Lease was held for the drive and released after it.
+        assert "acquire:worker-under-test" in leases.events
+        assert leases.events[-1] == "release:worker-under-test"
+        assert run_id not in leases.holders
+
+    asyncio.run(_run())
+
+
+@pytest.mark.parametrize(
+    ("resting_status", "outcome"),
+    [
+        (CampaignRunStatus.PAUSED, "paused"),
+        (CampaignRunStatus.FAILED, "failed"),
+    ],
+)
+def test_suspended_and_failed_runs_finish_the_task(
+    resting_status: CampaignRunStatus, outcome: str
+) -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id),
+            steps=[run_row(run_id, phase=CampaignPhase.TIER_CHECKPOINT, status=resting_status)],
+        )
+        worker = _worker(driver, queue, leases)
+        await worker.drain_once()
+
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.DONE
+        assert task.result_ref["outcome"] == outcome
+
+    asyncio.run(_run())
+
+
+def test_already_resting_run_is_finished_without_advancing() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id, status=CampaignRunStatus.PAUSED),
+        )
+        worker = _worker(driver, queue, leases)
+        await worker.drain_once()
+
+        assert driver.advances == 0
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.result_ref["outcome"] == "paused"
+
+    asyncio.run(_run())
+
+
+def test_no_progress_run_stalls_instead_of_spinning() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        # advance() returns the same (phase, status) forever — e.g. AWAITING_INPUT not submitted.
+        driver = ScriptedDriver(initial=run_row(run_id))
+        worker = _worker(driver, queue, leases)
+        await worker.drain_once()
+
+        assert driver.advances == 1  # detected on the first repeat, no spin
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.DONE
+        assert task.result_ref["outcome"] == "stalled"
+
+    asyncio.run(_run())
+
+
+def test_lease_held_elsewhere_requeues_without_driving() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        leases.holders[run_id] = "another-worker"
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(initial=run_row(run_id))
+        worker = _worker(driver, queue, leases)
+        await worker.drain_once()
+
+        assert driver.advances == 0
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.QUEUED  # handed back for the real driver / later
+        assert leases.holders[run_id] == "another-worker"
+
+    asyncio.run(_run())
+
+
+def test_graceful_stop_mid_drive_requeues_and_releases() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id, phase=CampaignPhase.REVERSE_PROFILING),
+            steps=[
+                run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED),
+                run_row(run_id, phase=CampaignPhase.DISCOVERY),
+                run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED),
+            ],
+        )
+        worker = _worker(driver, queue, leases)
+        # Stop after the first phase completes: the in-flight advance finishes (phases are the
+        # atomic unit), then the drive stops at the boundary.
+        driver.on_advance = worker.stop
+        await worker.drain_once()
+
+        assert driver.advances == 1
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.QUEUED  # handed back, resumable by any worker
+        assert run_id not in leases.holders  # released
+
+    asyncio.run(_run())
+
+
+def test_lease_loss_aborts_the_drive_between_phases() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        # A long script of *distinct consecutive* phases (never terminal), so the drive would
+        # keep advancing forever were the lease not lost.
+        cycle = list(CampaignPhase)[1:] + list(CampaignPhase)[:1]
+        many_steps = [run_row(run_id, phase=phase) for phase in cycle] * 5
+        driver = ScriptedDriver(initial=run_row(run_id), steps=many_steps, advance_delay_s=0.02)
+        leases.deny_renewal = True  # the first heartbeat fails → lease lost
+        worker = _worker(driver, queue, leases, heartbeat_interval=0.01)
+        await worker.drain_once()
+
+        # Aborted well before the script ran out — cooperative fencing at a phase boundary.
+        assert driver.advances < len(many_steps)
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.QUEUED  # the taker (or a retry) drives it on
+        # NOT released: the lease belongs to whoever took it over.
+        assert "release:worker-under-test" not in leases.events
+
+    asyncio.run(_run())
+
+
+def test_driver_error_fails_the_task_but_not_the_worker() -> None:
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+
+        class ExplodingDriver:
+            async def status(self, campaign_run_id: object) -> object:
+                raise RuntimeError("boom")
+
+            async def advance(self, campaign_run_id: object) -> object:
+                raise RuntimeError("boom")
+
+        worker = CampaignRunWorker(
+            driver=ExplodingDriver(),  # type: ignore[arg-type]
+            queue=queue,  # type: ignore[arg-type]
+            leases=leases,  # type: ignore[arg-type]
+            worker_id="worker-under-test",
+            poll_interval=0.01,
+        )
+        assert await worker.drain_once() is True  # no raise — the fleet keeps draining
+
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.FAILED  # parked until an explicit requeue
+        assert task.result_ref["outcome"] == "error"
+        assert run_id not in leases.holders  # still released
+
+    asyncio.run(_run())
+
+
+def test_heartbeat_touches_the_drive_task_claim() -> None:
+    """Each lease renewal also re-stamps the drive task's claim, so a live long drive never
+    looks orphaned to other claimants (only a dead driver's claim goes stale)."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        cycle = list(CampaignPhase)[1:] + list(CampaignPhase)[:1]
+        steps = [run_row(run_id, phase=phase) for phase in cycle]
+        steps.append(
+            run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED)
+        )
+        driver = ScriptedDriver(initial=run_row(run_id), steps=steps, advance_delay_s=0.02)
+        worker = _worker(driver, queue, leases, heartbeat_interval=0.01)
+        await worker.drain_once()
+
+        assert queue.touches > 0
+
+    asyncio.run(_run())
+
+
+def test_paused_run_can_be_re_driven_after_resume() -> None:
+    """The pause → human decision → resume loop: the finished (outcome=paused) drive task is
+    re-opened by the next ``enqueue_drive`` and the run drives on to completion."""
+
+    async def _run() -> None:
+        run_id = new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_id)
+        driver = ScriptedDriver(
+            initial=run_row(run_id),
+            steps=[
+                run_row(
+                    run_id, phase=CampaignPhase.TIER_CHECKPOINT, status=CampaignRunStatus.PAUSED
+                )
+            ],
+        )
+        worker = _worker(driver, queue, leases)
+        await worker.drain_once()
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.DONE
+        assert task.result_ref["outcome"] == "paused"
+
+        # The human approves; the resume surface re-offers the drive.
+        assert await enqueue_drive(queue, run_id) is True
+        driver.initial = run_row(run_id, phase=CampaignPhase.DEEP)
+        driver.steps = [
+            run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED)
+        ]
+        assert await worker.drain_once() is True
+        task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
+        assert task.status is FleetTaskStatus.DONE
+        assert task.result_ref["outcome"] == "completed"
+
+    asyncio.run(_run())
+
+
+def test_run_loop_drains_until_stopped() -> None:
+    async def _run() -> None:
+        run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+        queue, leases = FakeTaskQueue(), FakeLeaseStore()
+        await enqueue_drive(queue, run_a)
+        await enqueue_drive(queue, run_b)
+        driver = ScriptedDriver(
+            initial=run_row(run_a, status=CampaignRunStatus.COMPLETED),
+        )
+        worker = _worker(driver, queue, leases)
+
+        async def _stop_when_drained() -> None:
+            while any(
+                queue.row(FleetTaskKind.DRIVE_RUN, run, str(run)).status is not FleetTaskStatus.DONE
+                for run in (run_a, run_b)
+            ):
+                await asyncio.sleep(0.01)
+            worker.stop()
+
+        await asyncio.wait_for(asyncio.gather(worker.run(), _stop_when_drained()), timeout=5)
+        assert worker.stopping
+
+    asyncio.run(_run())
