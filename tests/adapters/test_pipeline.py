@@ -140,6 +140,7 @@ async def _register(
     entity_scope: EntityScope = EntityScope.ACCOUNT,
     auth_ref: str | None = None,
     identity_binding: IdentityBinding | None = None,
+    version: int = 1,
 ) -> None:
     await register_source(
         conn,  # type: ignore[arg-type]
@@ -157,6 +158,7 @@ async def _register(
             requires_adapter=requires_adapter,
             provider=source_key,
             auth_ref=auth_ref,
+            version=version,
         ),
     )
 
@@ -878,6 +880,11 @@ def test_pdf_source_without_registered_adapter_raises() -> None:
 def test_firecrawl_html_adapter_normalizes_to_markdown_claim() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            # ``firecrawl_site`` is also a production seed manifest (sources/seeds.py) that other
+            # tests COMMIT via ``seed_source_manifests`` — on a persistent schema its v1 row may
+            # already exist with a different definition. Register the test's variant at a higher
+            # version (a versioned update, rolled back with this transaction) so the test is
+            # rerun-idempotent while still driving the pipeline off exactly this manifest.
             await _register(
                 conn,
                 "firecrawl_site",
@@ -887,6 +894,7 @@ def test_firecrawl_html_adapter_normalizes_to_markdown_claim() -> None:
                 cost_cents=Decimal(1),
                 freshness_profile="livecrawl",
                 auth_ref="CLUE_FIRECRAWL_API_KEY",
+                version=2,
             )
 
             class _Scraper:

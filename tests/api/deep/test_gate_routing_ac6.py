@@ -120,6 +120,11 @@ def test_deep_contact_facet_fill_records_a_gate_decision(require_profiling_db: N
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 # the facet gate keys on the source's manifest tier — register one for the source.
+                # ``exa_deep`` is also a production seed manifest (sources/seeds.py) other tests
+                # COMMIT via ``seed_source_manifests``; on a persistent schema its v1 row may
+                # already exist with a different definition, so register the test's variant at a
+                # higher version (a versioned update, rolled back with this transaction) to keep
+                # the test rerun-idempotent.
                 await register_source(
                     conn,
                     RegistrySourceManifest(
@@ -132,6 +137,7 @@ def test_deep_contact_facet_fill_records_a_gate_decision(require_profiling_db: N
                             cost_cents=Decimal(0),
                         ),
                         active=True,
+                        version=2,
                     ),
                 )
 
