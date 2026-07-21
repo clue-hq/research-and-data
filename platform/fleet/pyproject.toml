@@ -1,7 +1,7 @@
 [project]
 name = "clue-fleet"
 version = "0.0.0"
-description = "The fleet shell — detached CampaignRunWorker, per-run driver lease, task drain, tier-priority queue (PB-B1 / harness build step 0)."
+description = "The fleet shell — detached ProjectRunWorker, per-run driver lease, task drain, tier-priority queue (PB-B1 / harness build step 0)."
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
 dependencies = [

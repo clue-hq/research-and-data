@@ -10,17 +10,19 @@ The fleet plane's two tables (harness build step 0 — ``docs/specs/PB-B1-fleet-
   time. One row per driven run; acquire atomically re-owns an expired row (``ON CONFLICT … WHERE
   expires_at <= now()``); renew/release are holder-guarded. Enforces the single-driver-per-run
   precondition M7.3 documents ("left to the scheduler/ops layer") — this is that layer.
-* ``fleet_task`` — the durable **task queue** the detached ``CampaignRunWorker`` drains:
+* ``fleet_task`` — the durable **task queue** the detached ``ProjectRunWorker`` drains:
   ``drive_run`` jobs (drive one campaign run until it rests) and ``account_job`` rows (the
   REQ-10 tier-priority deep queue — ``priority`` = tier rank, claimed best-first under the
-  concurrency window). ``UNIQUE (kind, campaign_run_id, dedup_key)`` makes enqueue idempotent;
+  concurrency window). ``UNIQUE (kind, project_run_id, dedup_key)`` makes enqueue idempotent;
   claim-next is ``FOR UPDATE SKIP LOCKED`` over the partial claim index.
 
-Soft FKs (no ``REFERENCES``, mirroring ``claim``/``account_run``/``campaign_run``):
-``campaign_run_id`` rides as an opaque uuid so the fleet plane stays subsystem-agnostic and this
-migration is order-independent of the research tables. Both tables are *mutable* execution
-state (a lease renews; a task's status advances) — like ``account_run``, deliberately not
-append-only: the claim store keeps immutable history; these are resumable cursors over work.
+Soft FK to campaign_run (renames to project_run at the stage-2 rename — see
+docs/specs/PB-rename-campaign-run-to-project-run.md), no ``REFERENCES`` (mirroring
+``claim``/``account_run``): ``project_run_id`` rides as an opaque uuid so the fleet plane stays
+subsystem-agnostic and this migration is order-independent of the research tables. Both tables
+are *mutable* execution state (a lease renews; a task's status advances) — like ``account_run``,
+deliberately not append-only: the claim store keeps immutable history; these are resumable
+cursors over work.
 
 Enums: ``fleet_task_kind`` / ``fleet_task_status`` mirror the **package-local**
 :mod:`clue_fleet.enums` (the ``durable/enums.py`` precedent — no other package references them,
@@ -61,13 +63,13 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE run_lease (
-            campaign_run_id uuid NOT NULL,
+            project_run_id  uuid NOT NULL,
             worker_id       text NOT NULL,
             acquired_at     timestamptz NOT NULL DEFAULT now(),
             renewed_at      timestamptz NOT NULL DEFAULT now(),
             expires_at      timestamptz NOT NULL,
 
-            CONSTRAINT run_lease_pkey PRIMARY KEY (campaign_run_id)
+            CONSTRAINT run_lease_pkey PRIMARY KEY (project_run_id)
         )
         """
     )
@@ -84,7 +86,7 @@ def upgrade() -> None:
         CREATE TABLE fleet_task (
             task_id         uuid NOT NULL,
             kind            fleet_task_kind NOT NULL,
-            campaign_run_id uuid NOT NULL,
+            project_run_id  uuid NOT NULL,
             dedup_key       text NOT NULL,
             priority        integer NOT NULL DEFAULT 0,
             status          fleet_task_status NOT NULL DEFAULT 'queued',
@@ -104,7 +106,7 @@ def upgrade() -> None:
 
             CONSTRAINT fleet_task_pkey PRIMARY KEY (task_id),
             -- Idempotent enqueue: one logical task per (kind, run, unit-of-work).
-            CONSTRAINT fleet_task_dedup UNIQUE (kind, campaign_run_id, dedup_key),
+            CONSTRAINT fleet_task_dedup UNIQUE (kind, project_run_id, dedup_key),
             CONSTRAINT fleet_task_attempts_nonneg CHECK (attempts >= 0),
             CONSTRAINT fleet_task_payload_is_object CHECK (jsonb_typeof(payload_json) = 'object'),
             CONSTRAINT fleet_task_result_is_object
@@ -119,7 +121,7 @@ def upgrade() -> None:
     )
     op.execute(
         "COMMENT ON TABLE fleet_task IS 'Durable fleet task queue (PB-B1): drive_run jobs the "
-        "detached CampaignRunWorker drains and account_job rows forming the REQ-10 tier-priority "
+        "detached ProjectRunWorker drains and account_job rows forming the REQ-10 tier-priority "
         "deep queue. Claim-next = FOR UPDATE SKIP LOCKED in (priority, enqueue_seq) order; a "
         "stale claim (killed holder) is re-owned; payload/result carry references only.'"
     )
@@ -136,7 +138,7 @@ def upgrade() -> None:
     )
     # The per-run observability/drain read (deep drain narrows claim-next by run; projections
     # read a run's queue state).
-    op.execute("CREATE INDEX fleet_task_run ON fleet_task (campaign_run_id, kind)")
+    op.execute("CREATE INDEX fleet_task_run ON fleet_task (project_run_id, kind)")
 
 
 def downgrade() -> None:

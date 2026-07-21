@@ -133,42 +133,40 @@ class FakeLeaseStore:
         self.events: list[str] = []
 
     async def acquire(
-        self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
     ) -> bool:
-        holder = self.holders.get(campaign_run_id)
+        holder = self.holders.get(project_run_id)
         if holder is None or holder == worker_id:
-            self.holders[campaign_run_id] = worker_id
+            self.holders[project_run_id] = worker_id
             self.events.append(f"acquire:{worker_id}")
             return True
         self.events.append(f"acquire-denied:{worker_id}")
         return False
 
-    async def renew(
-        self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
-    ) -> bool:
+    async def renew(self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta) -> bool:
         if self.renew_always_raises or self.renew_raise_budget > 0:
             if not self.renew_always_raises:
                 self.renew_raise_budget -= 1
             self.events.append(f"renew-raised:{worker_id}")
             raise RuntimeError("simulated renewal fault")
-        if self.deny_renewal or self.holders.get(campaign_run_id) != worker_id:
+        if self.deny_renewal or self.holders.get(project_run_id) != worker_id:
             self.events.append(f"renew-failed:{worker_id}")
             return False
         self.events.append(f"renew:{worker_id}")
         return True
 
-    async def release(self, *, campaign_run_id: CampaignRunId, worker_id: str) -> None:
-        if self.holders.get(campaign_run_id) == worker_id:
-            del self.holders[campaign_run_id]
+    async def release(self, *, project_run_id: CampaignRunId, worker_id: str) -> None:
+        if self.holders.get(project_run_id) == worker_id:
+            del self.holders[project_run_id]
         self.events.append(f"release:{worker_id}")
 
-    async def get(self, campaign_run_id: CampaignRunId) -> RunLeaseRow | None:
-        holder = self.holders.get(campaign_run_id)
+    async def get(self, project_run_id: CampaignRunId) -> RunLeaseRow | None:
+        holder = self.holders.get(project_run_id)
         if holder is None:
             return None
         now = _now()
         return RunLeaseRow(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             worker_id=holder,
             acquired_at=now,
             renewed_at=now,
@@ -176,9 +174,9 @@ class FakeLeaseStore:
             live=True,
         )
 
-    def expire(self, campaign_run_id: CampaignRunId) -> None:
+    def expire(self, project_run_id: CampaignRunId) -> None:
         """Simulate the TTL lapsing (the previous holder is forgotten)."""
-        self.holders.pop(campaign_run_id, None)
+        self.holders.pop(project_run_id, None)
 
 
 @dataclass
@@ -203,7 +201,7 @@ class FakeTaskQueue:
         self,
         *,
         kind: FleetTaskKind,
-        campaign_run_id: CampaignRunId,
+        project_run_id: CampaignRunId,
         dedup_key: str,
         priority: int,
         payload: dict[str, JsonValue],
@@ -213,7 +211,7 @@ class FakeTaskQueue:
         return FleetTaskRow(
             task_id=uuid4(),
             kind=kind,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             dedup_key=dedup_key,
             priority=priority,
             status=FleetTaskStatus.QUEUED,
@@ -231,13 +229,13 @@ class FakeTaskQueue:
         self,
         *,
         kind: FleetTaskKind,
-        campaign_run_id: CampaignRunId,
+        project_run_id: CampaignRunId,
         dedup_key: str,
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
         reopen_terminal: bool = False,
     ) -> bool:
-        key = (kind, campaign_run_id, dedup_key)
+        key = (kind, project_run_id, dedup_key)
         if key in self._tasks:
             existing = self._tasks[key]
             if reopen_terminal and existing.row.status in (
@@ -259,7 +257,7 @@ class FakeTaskQueue:
         self._tasks[key] = _FakeTask(
             row=self._fresh_row(
                 kind=kind,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 dedup_key=dedup_key,
                 priority=priority,
                 payload=payload if payload is not None else {},
@@ -274,7 +272,7 @@ class FakeTaskQueue:
         *,
         kind: FleetTaskKind,
         worker_id: str,
-        campaign_run_id: CampaignRunId | None = None,
+        project_run_id: CampaignRunId | None = None,
         stale_after: timedelta | None = None,
     ) -> FleetTaskRow | None:
         candidates = sorted(
@@ -283,7 +281,7 @@ class FakeTaskQueue:
                 for task in self._tasks.values()
                 if task.row.kind is kind
                 and task.row.status is FleetTaskStatus.QUEUED
-                and (campaign_run_id is None or task.row.campaign_run_id == campaign_run_id)
+                and (project_run_id is None or task.row.project_run_id == project_run_id)
             ),
             key=lambda task: (task.row.priority, task.seq),
         )
@@ -345,12 +343,12 @@ class FakeTaskQueue:
         )
         return True
 
-    async def requeue_failed(self, *, kind: FleetTaskKind, campaign_run_id: CampaignRunId) -> int:
+    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: CampaignRunId) -> int:
         requeued = 0
         for task in self._tasks.values():
             if (
                 task.row.kind is kind
-                and task.row.campaign_run_id == campaign_run_id
+                and task.row.project_run_id == project_run_id
                 and task.row.status is FleetTaskStatus.FAILED
             ):
                 task.row = task.row.model_copy(
@@ -364,12 +362,12 @@ class FakeTaskQueue:
         return requeued
 
     async def list_tasks(
-        self, *, campaign_run_id: CampaignRunId, kind: FleetTaskKind
+        self, *, project_run_id: CampaignRunId, kind: FleetTaskKind
     ) -> list[FleetTaskRow]:
         return [
             task.row
             for task in sorted(self._tasks.values(), key=lambda t: (t.row.priority, t.seq))
-            if task.row.campaign_run_id == campaign_run_id and task.row.kind is kind
+            if task.row.project_run_id == project_run_id and task.row.kind is kind
         ]
 
     # -- test helpers --
@@ -381,20 +379,18 @@ class FakeTaskQueue:
         return None
 
     def row(
-        self, kind: FleetTaskKind, campaign_run_id: CampaignRunId, dedup_key: str
+        self, kind: FleetTaskKind, project_run_id: CampaignRunId, dedup_key: str
     ) -> FleetTaskRow:
-        return self._tasks[(kind, campaign_run_id, dedup_key)].row
+        return self._tasks[(kind, project_run_id, dedup_key)].row
 
-    def mark_done(
-        self, kind: FleetTaskKind, campaign_run_id: CampaignRunId, dedup_key: str
-    ) -> None:
+    def mark_done(self, kind: FleetTaskKind, project_run_id: CampaignRunId, dedup_key: str) -> None:
         """Simulate a previous drive having finished this task (the resume/replay path)."""
-        task = self._tasks[(kind, campaign_run_id, dedup_key)]
+        task = self._tasks[(kind, project_run_id, dedup_key)]
         task.row = task.row.model_copy(update={"status": FleetTaskStatus.DONE})
 
 
 def run_row(
-    campaign_run_id: CampaignRunId,
+    project_run_id: CampaignRunId,
     *,
     phase: CampaignPhase = CampaignPhase.REVERSE_PROFILING,
     status: CampaignRunStatus = CampaignRunStatus.ACTIVE,
@@ -405,7 +401,7 @@ def run_row(
 
     now = _now()
     return CampaignRunRow(
-        id=campaign_run_id,
+        id=project_run_id,
         workspace_id="ws-fleet-test",
         icp_key="icp",
         icp_version=1,
@@ -439,6 +435,9 @@ class ScriptedDriver:
     advance_started: int = 0
     advance_finished: int = 0
 
+    # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md) — a
+    # scripted RunDriver must keep the seam's legacy parameter names (worker.py RunDriver, checked
+    # against the untouchable durable.CampaignRun).
     async def status(self, campaign_run_id: CampaignRunId) -> CampaignRunRow:
         return self.initial
 

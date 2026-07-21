@@ -71,7 +71,7 @@ def test_accounts_execute_best_tier_first_and_results_in_input_order() -> None:
         assert executed == ["top", "high", "low"]
         # Results come back in INPUT order (the AccountScheduler contract), not execution order.
         assert results == ["result:low", "result:top", "result:high"]
-        rows = await queue.list_tasks(campaign_run_id=run_id, kind=FleetTaskKind.ACCOUNT_JOB)
+        rows = await queue.list_tasks(project_run_id=run_id, kind=FleetTaskKind.ACCOUNT_JOB)
         assert {row.status for row in rows} == {FleetTaskStatus.DONE}
 
     asyncio.run(_run())
@@ -108,7 +108,7 @@ def test_done_jobs_from_a_previous_drive_are_replayed_not_reclaimed() -> None:
         # Simulate a previous (killed) drive having completed the first account.
         await queue.enqueue(
             kind=FleetTaskKind.ACCOUNT_JOB,
-            campaign_run_id=run_id,
+            project_run_id=run_id,
             dedup_key=str(specs[0].entity_id),
             priority=0,
         )
@@ -238,7 +238,7 @@ def test_scheduler_satisfies_the_deep_handler_seam() -> None:
 # --- audit finding #1: per-entity single-flight across concurrent runs -----------------------
 # The QueueBackedScheduler replaces durable.AccountScheduler at the deep seam and must carry the
 # SAME Doc C §4 guarantee: two campaign runs never deep-research the same entity at once. The
-# queue dedup key is (kind, campaign_run_id, dedup_key), so two runs holding one entity are two
+# queue dedup key is (kind, project_run_id, dedup_key), so two runs holding one entity are two
 # distinct rows — the single-flight is the injected entity lock's doing, not the queue's.
 
 
@@ -297,7 +297,7 @@ def test_replayed_done_job_acquires_the_entity_lock() -> None:
         # Simulate a previous (killed) drive having completed the first account.
         await queue.enqueue(
             kind=FleetTaskKind.ACCOUNT_JOB,
-            campaign_run_id=run_id,
+            project_run_id=run_id,
             dedup_key=str(specs[0].entity_id),
             priority=0,
         )

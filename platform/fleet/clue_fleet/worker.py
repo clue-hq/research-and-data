@@ -1,4 +1,4 @@
-"""The detached ``CampaignRunWorker`` (PB-B1 — harness build step 0).
+"""The detached ``ProjectRunWorker`` (PB-B1 — harness build step 0).
 
 The separate process that owns *execution*: chat sessions plan and steer, the worker drives
 (harness §6 — "sessions never execute research; the worker owns execution"). Its loop is a task
@@ -81,14 +81,20 @@ class RunDriver(Protocol):
     state machine satisfies it (asserted at the bottom of this module). The worker owns the
     step loop — one ``advance`` per phase — so it can heartbeat, honour a graceful stop, and be
     fenced on lease loss. Fencing cancels the in-flight ``advance`` immediately (spec §2.3); the
-    between-phase ``lease_lost`` check in :meth:`CampaignRunWorker._drive` is only a cheap belt."""
+    between-phase ``lease_lost`` check in :meth:`ProjectRunWorker._drive` is only a cheap belt.
 
+    The ``campaign_run_id`` parameter name is a deliberate stage-1 exception: it is checked for
+    parameter-name compatibility by the static ``_CAMPAIGN_RUN_IS_A_RUN_DRIVER`` conformance
+    assertion against the untouchable ``durable.CampaignRun``, which B1 may not edit."""
+
+    # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
     async def status(self, campaign_run_id: CampaignRunId) -> CampaignRunRow: ...
 
+    # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
     async def advance(self, campaign_run_id: CampaignRunId) -> CampaignRunRow: ...
 
 
-class CampaignRunWorker:
+class ProjectRunWorker:
     """The detached worker process's engine (PB-B1). Construct with the injected collaborators,
     call :meth:`run` in the process's event loop, and :meth:`stop` (e.g. from a SIGTERM handler)
     for a graceful drain — finish the in-flight phase, hand the task back, release the lease."""
@@ -149,9 +155,9 @@ class CampaignRunWorker:
     # -- internals --
 
     async def _drive_task(self, task: FleetTaskRow) -> None:
-        run_id = task.campaign_run_id
+        run_id = task.project_run_id
         acquired = await self._leases.acquire(
-            campaign_run_id=run_id, worker_id=self.worker_id, ttl=self._lease_ttl
+            project_run_id=run_id, worker_id=self.worker_id, ttl=self._lease_ttl
         )
         if not acquired:
             # Another worker holds this run's lease live — it is the driver, not us. Hand the
@@ -217,7 +223,7 @@ class CampaignRunWorker:
                 heartbeat.cancel()
             # Release only if still ours (holder-guarded); a lost lease belongs to the taker.
             if not lease_lost.is_set():
-                await self._leases.release(campaign_run_id=run_id, worker_id=self.worker_id)
+                await self._leases.release(project_run_id=run_id, worker_id=self.worker_id)
 
         result_ref: dict[str, JsonValue] = {"outcome": outcome}
         if run is not None:
@@ -296,7 +302,7 @@ class CampaignRunWorker:
             await asyncio.sleep(self._heartbeat_interval)
             try:
                 renewed = await self._leases.renew(
-                    campaign_run_id=run_id, worker_id=self.worker_id, ttl=self._lease_ttl
+                    project_run_id=run_id, worker_id=self.worker_id, ttl=self._lease_ttl
                 )
             except Exception:
                 log.warning(
@@ -339,7 +345,7 @@ class CampaignRunWorker:
 
 
 async def enqueue_drive(
-    queue: TaskQueue, campaign_run_id: CampaignRunId, *, priority: int = 0
+    queue: TaskQueue, project_run_id: CampaignRunId, *, priority: int = 0
 ) -> bool:
     """Offer a run to the fleet: enqueue its ``drive_run`` task (dedup key = the run id — one
     drive task per run at a time; a queued/claimed one is a no-op). ``reopen_terminal``: a
@@ -348,8 +354,8 @@ async def enqueue_drive(
     ``submit_checkpoint``/``resume``; tests call it directly."""
     return await queue.enqueue(
         kind=FleetTaskKind.DRIVE_RUN,
-        campaign_run_id=campaign_run_id,
-        dedup_key=str(campaign_run_id),
+        project_run_id=project_run_id,
+        dedup_key=str(project_run_id),
         priority=priority,
         reopen_terminal=True,
     )

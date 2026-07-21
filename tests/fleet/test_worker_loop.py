@@ -1,4 +1,4 @@
-"""Offline tests for the :class:`~clue_fleet.CampaignRunWorker` drive loop (PB-B1).
+"""Offline tests for the :class:`~clue_fleet.ProjectRunWorker` drive loop (PB-B1).
 
 Fake-driven (no DB): the seams (:class:`FakeLeaseStore`, :class:`FakeTaskQueue`,
 :class:`ScriptedDriver`) isolate the control flow — claim → lease → step-loop → finish — and its
@@ -12,7 +12,7 @@ import time
 from datetime import timedelta
 
 import pytest
-from clue_fleet import CampaignRunWorker, FleetTaskKind, FleetTaskStatus, enqueue_drive
+from clue_fleet import FleetTaskKind, FleetTaskStatus, ProjectRunWorker, enqueue_drive
 from tests.fleet.conftest import FakeLeaseStore, FakeTaskQueue, ScriptedDriver, run_row
 
 from clue_core import CampaignPhase, new_campaign_run_id
@@ -24,14 +24,14 @@ def _worker(
     queue: FakeTaskQueue,
     leases: FakeLeaseStore,
     **overrides: object,
-) -> CampaignRunWorker:
+) -> ProjectRunWorker:
     defaults: dict[str, object] = {
         "worker_id": "worker-under-test",
         "poll_interval": 0.01,
         "heartbeat_interval": 60.0,  # quiet unless a test drives the heartbeat explicitly
     }
     defaults.update(overrides)
-    return CampaignRunWorker(driver=driver, queue=queue, leases=leases, **defaults)  # type: ignore[arg-type]
+    return ProjectRunWorker(driver=driver, queue=queue, leases=leases, **defaults)  # type: ignore[arg-type]
 
 
 def test_drive_to_completion_finishes_task_and_releases_lease() -> None:
@@ -283,13 +283,15 @@ def test_driver_error_fails_the_task_but_not_the_worker() -> None:
         await enqueue_drive(queue, run_id)
 
         class ExplodingDriver:
+            # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
+            # — a fake RunDriver keeps the seam's legacy parameter names.
             async def status(self, campaign_run_id: object) -> object:
                 raise RuntimeError("boom")
 
             async def advance(self, campaign_run_id: object) -> object:
                 raise RuntimeError("boom")
 
-        worker = CampaignRunWorker(
+        worker = ProjectRunWorker(
             driver=ExplodingDriver(),  # type: ignore[arg-type]
             queue=queue,  # type: ignore[arg-type]
             leases=leases,  # type: ignore[arg-type]
