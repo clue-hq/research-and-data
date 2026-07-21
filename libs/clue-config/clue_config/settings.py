@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     storage_s3_endpoint_url: str | None = None
     storage_s3_region: str | None = None
 
+    # --- scrape backend (Phase B2.4, founder addition) ---
+    # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
+    # ``firecrawl`` (the paid API, default) or ``scrapling`` (local, credit-free). Read only by
+    # ``adapters.default_scrape_backend``. Env: ``CLUE_SCRAPE_BACKEND``.
+    scrape_backend: Literal["firecrawl", "scrapling"] = "firecrawl"
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).
