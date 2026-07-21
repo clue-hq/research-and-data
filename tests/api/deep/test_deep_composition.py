@@ -109,6 +109,31 @@ def test_account_axis_registry_excludes_committee_and_contact() -> None:
     assert {"account", "account.resonance"} <= aspects
 
 
+def test_lock_factory_is_threaded_into_the_baseline_account_scheduler() -> None:
+    """Integrator checklist fix (PB-B1): the in-process ``AccountScheduler`` is now built WITH the
+    Doc C §4 per-entity lock factory. It was silently omitted before — single-flight OFF wherever
+    the baseline scheduler ran. Production passes ``account_entity_lock_factory(get_redis())``."""
+    sentinel = object()  # AccountScheduler only stores the factory; no call at construction
+    comp = _composition(lock_factory=sentinel)
+    assert comp.scheduler._lock_factory is sentinel  # type: ignore[attr-defined]
+
+
+class _FakeDeepScheduler:
+    """A minimal ``DeepAccountScheduler`` stand-in (structural seam) for the fleet-swap test."""
+
+    async def run_accounts(self, specs: object, **kwargs: object) -> list[object]:
+        return []
+
+
+def test_scheduler_param_swaps_in_an_alternative_deep_drain() -> None:
+    """A supplied ``scheduler`` (the PB-B1 ``QueueBackedScheduler`` in prod) drives the deep phase
+    in place of the in-process ``AccountScheduler`` — the fleet-mode swap, opt-in per deployment.
+    The in-process path (no ``scheduler``) stays the default."""
+    fake = _FakeDeepScheduler()
+    comp = _composition(scheduler=fake)
+    assert comp.scheduler is fake
+
+
 def test_register_makes_the_phase_dispatchable() -> None:
     """Registering the handler makes the phase resolvable through a registry — the seam that lets
     ``CampaignRun.advance()`` dispatch ``DEEP`` instead of raising ``NoPhaseHandlerRegistered``."""
