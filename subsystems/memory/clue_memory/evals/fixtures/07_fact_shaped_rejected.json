@@ -1,0 +1,26 @@
+{
+  "name": "fact_shaped_rejected",
+  "submission": {
+    "workspace_id": "ws_golden",
+    "scope": {
+      "scope_type": "brand",
+      "scope_id": "brd_golden"
+    },
+    "type": "behavioral_learning",
+    "trigger": "when writing outreach",
+    "body": "Account X raised a Series C in March.",
+    "provenance_class": "user_stated"
+  },
+  "candidates": [],
+  "judgment": {
+    "verdict": "add",
+    "target_memory_id": null,
+    "species_ok": false,
+    "body_ok": true,
+    "rationale": "a verifiable funding fact"
+  },
+  "expected": {
+    "kind": "rejected",
+    "reason": "fact_shaped"
+  }
+}

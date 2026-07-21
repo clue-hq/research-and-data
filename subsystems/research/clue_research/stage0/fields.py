@@ -20,9 +20,11 @@ Two pieces live here:
   surface classes were attempted and filled* rather than a flat field list.
 
 The per-field ``tier_plan`` is the *source profile for the client KB* expressed as data: owned
-surfaces resolve through the tier-2 official-site scrape (``firecrawl_site``); the customers/CRM
-surface adds tier-1 ``crm``; third-party and review surfaces name their tier-3 sources (wired
-later). TTLs are ~90 days because positioning and pricing drift (substrate §8 freshness).
+surfaces resolve through the tier-2 official-site scrape — both siblings are named
+(``firecrawl_site`` paid, ``scrapling_site`` credit-free; only the backend-selected one has a
+bound resolver, the other is walked past at zero spend) — the customers/CRM surface adds tier-1
+``crm``; third-party and review surfaces name their tier-3 sources (wired later). TTLs are ~90
+days because positioning and pricing drift (substrate §8 freshness).
 """
 
 from __future__ import annotations
@@ -108,42 +110,54 @@ CLIENT_KNOWLEDGE_PACK: tuple[SeedField, ...] = (
     _seed(
         CLIENT_VALUE_PROP,
         "str",
-        tier_plan=("firecrawl_site",),
+        tier_plan=(
+            "firecrawl_site",
+            "scrapling_site",
+        ),
         value_schema=_STR,
         description="What the client sells and the problem it solves (owned surfaces).",
     ),
     _seed(
         CLIENT_PRODUCT,
         "str",
-        tier_plan=("firecrawl_site",),
+        tier_plan=(
+            "firecrawl_site",
+            "scrapling_site",
+        ),
         value_schema=_STR,
         description="Product / offering description (product, docs, pricing pages).",
     ),
     _seed(
         CLIENT_DIFFERENTIATOR,
         "str",
-        tier_plan=("firecrawl_site", "g2"),
+        tier_plan=("firecrawl_site", "scrapling_site", "g2"),
         value_schema=_STR,
         description="What differentiates the client (owned positioning + third-party category).",
     ),
     _seed(
         CLIENT_PRICING_POSTURE,
         "str",
-        tier_plan=("firecrawl_site",),
+        tier_plan=(
+            "firecrawl_site",
+            "scrapling_site",
+        ),
         value_schema=_STR,
         description="Pricing posture / model (pricing page).",
     ),
     _seed(
         CLIENT_PROOF_POINT,
         "str",
-        tier_plan=("firecrawl_site",),
+        tier_plan=(
+            "firecrawl_site",
+            "scrapling_site",
+        ),
         value_schema=_STR,
         description="Case study / testimonial / logo proof point (positioning & proof).",
     ),
     _seed(
         CLIENT_CUSTOMER,
         "list",
-        tier_plan=("crm", "firecrawl_site"),
+        tier_plan=("crm", "firecrawl_site", "scrapling_site"),
         value_schema=_OBJ_LIST,
         description=(
             "Existing-customer references (name/domain) from a customers page or CRM — a LIST, "
@@ -155,7 +169,7 @@ CLIENT_KNOWLEDGE_PACK: tuple[SeedField, ...] = (
     _seed(
         CLIENT_ICP_EVIDENCE,
         "object",
-        tier_plan=("crm", "firecrawl_site"),
+        tier_plan=("crm", "firecrawl_site", "scrapling_site"),
         value_schema=_OBJ,
         description="Industries / sizes / geos of existing customers (ICP evidence for M5.2).",
     ),
