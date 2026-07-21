@@ -1,0 +1,157 @@
+"""B2 storage api-root wiring — build one backend, bind it per run, feed it to the erasure paths.
+
+The B2 storage lane (PB-B2) ships every substrate piece behind an *injected*
+:class:`~clue_storage.StorageBackend` (the ``Freshness`` pattern) and, per treaty §3.4, defers the
+composition-root wiring to the integrator. This module is that wiring — the one place ``clue_api``
+(the import-linter-exempt seam; nothing imports it) reads the ``CLUE_STORAGE_*`` settings and
+threads the resulting backend into the four B2 seams:
+
+* :func:`build_storage_backend` — the single :class:`~clue_storage.StorageBackend` for the process,
+  built from settings alone (fs default, S3 when configured). Every consumer below takes it injected
+  and never learns which impl it holds (the same split the gateway/db seams use).
+* :class:`SnapshotBindingPhaseHandler` — wraps a phase handler so **each run** executes inside
+  ``bind_snapshots(SnapshotSink(workspace_id=ctx.workspace_id), storage)``. The tier-2 scrape
+  resolver captures into, and the waterfall flushes from, this one **ambient** sink (audit finding
+  5: the registered resolver holds no sink — it reads the per-run binding), so concurrent runs never
+  cross workspaces. ``deep/composition.py`` wraps the DEEP handler with this.
+* :func:`build_data_subject_rights` — the DSAR construction site with ``storage=`` injected, so an
+  ``erase`` / objection performs the refcounted blob deletion (B2.5). Feed its result into
+  :func:`~clue_api.review_feedback_wiring.build_dsar_with_disposition_cascade` to add the M13.2
+  disposition tombstone cascade.
+* :func:`run_orphan_blob_sweep` — the scheduled op entry point for
+  :func:`clue_storage.sweep_orphan_blobs` (an abandoned rolled-back upload leaves a blob with no
+  ``artifact`` row; the grace window keeps the sweep from racing an open transaction). Analogous to
+  the retention sweep, but a maintenance op rather than a phase handler — an operator/scheduler
+  calls it periodically alongside the retention sweep.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_config import Secrets, Settings
+from clue_core import CampaignPhase, PhaseContext, PhaseHandler, PhaseResult
+from clue_db import ConnFactory, transaction
+from clue_obs.otel import MetricSink
+from clue_research.compliance import DataSubjectRightsImpl
+from clue_storage import (
+    SnapshotSink,
+    StorageBackend,
+    bind_snapshots,
+    storage_from_settings,
+    sweep_orphan_blobs,
+)
+
+__all__ = [
+    "build_storage_backend",
+    "SnapshotBindingPhaseHandler",
+    "bind_snapshots_around_deep",
+    "build_data_subject_rights",
+    "run_orphan_blob_sweep",
+    "DEFAULT_ORPHAN_SWEEP_GRACE",
+]
+
+# The default reconciliation grace for the orphan-blob sweep — far beyond any transaction lifetime,
+# so the sweep never races an in-flight upload whose ``artifact`` row is inserted-but-not-committed.
+DEFAULT_ORPHAN_SWEEP_GRACE: timedelta = timedelta(hours=24)
+
+
+def build_storage_backend(
+    settings: Settings | None = None, secrets: Secrets | None = None
+) -> StorageBackend:
+    """The single :class:`~clue_storage.StorageBackend` for the process, from settings alone.
+
+    A thin api-root wrapper over :func:`clue_storage.storage_from_settings` (the only reader of the
+    ``CLUE_STORAGE_*`` knobs) so every B2 consumer at this root shares one composed backend — the
+    same "build one concrete, inject it everywhere" shape the gateway/redis/session seams follow.
+    ``CLUE_STORAGE_BACKEND=fs`` (default) or ``s3`` (needs ``CLUE_STORAGE_S3_BUCKET``; fails loud).
+    """
+    return storage_from_settings(settings, secrets)
+
+
+class SnapshotBindingPhaseHandler:
+    """Wraps a phase handler so its ``run`` executes inside the run's ambient snapshot binding.
+
+    Each ``run(ctx)`` binds a fresh per-run :class:`~clue_storage.SnapshotSink`, workspace-scoped to
+    ``ctx.workspace_id``, plus the durable ``storage`` backend, for the duration of the inner run
+    (audit finding 5). The tier-2 scrape resolver — registered globally and therefore **sink-less**
+    — captures into this ambient sink, and the waterfall/pipeline flush from it; ContextVars are
+    task-local, so two concurrent runs never share (or swap) workspace-bound sinks. Delegates
+    ``phase`` to the inner handler so it registers under the same ``CampaignPhase``
+    (last-write-wins), exactly as
+    :class:`~clue_api.handoff_retention.RetentionSweepHandoffHandler` wraps the inner handoff
+    handler."""
+
+    def __init__(self, *, inner: PhaseHandler, storage: StorageBackend) -> None:
+        self._inner = inner
+        self._storage = storage
+        # Register under the SAME phase as the inner handler (last-write-wins) — a plain attribute,
+        # not a property, so it satisfies the mutable ``PhaseHandler.phase`` protocol member.
+        self.phase: CampaignPhase = inner.phase
+
+    async def run(self, ctx: PhaseContext) -> PhaseResult:
+        sink = SnapshotSink(workspace_id=ctx.workspace_id)
+        with bind_snapshots(sink, self._storage):
+            return await self._inner.run(ctx)
+
+
+def bind_snapshots_around_deep(
+    inner: PhaseHandler, *, storage: StorageBackend
+) -> SnapshotBindingPhaseHandler:
+    """Wrap the DEEP phase handler so every deep run captures/flushes under one per-run sink.
+
+    The DEEP run is where the tier-2 scrape resolver fetches evidence pages, so it is the run-drive
+    path that must bind the sink. ``deep/composition.py`` calls this when a ``storage`` backend is
+    supplied; without one, the handler is registered unwrapped (the pre-B2 no-snapshotting path)."""
+    return SnapshotBindingPhaseHandler(inner=inner, storage=storage)
+
+
+def build_data_subject_rights(
+    workspace_id: str,
+    *,
+    storage: StorageBackend | None = None,
+    conn_factory: ConnFactory = transaction,
+    sink: MetricSink | None = None,
+) -> DataSubjectRightsImpl:
+    """Construct the controller-scoped M10.5 DSAR service **with the storage backend injected**.
+
+    The api-root construction site for :class:`~clue_research.compliance.DataSubjectRightsImpl`: an
+    ``erase`` / ``record_objection`` tombstones the claim rows and — with ``storage`` wired —
+    performs the refcounted blob deletion for any snapshot the erased claims were the last live
+    citers of (B2.5). Without a backend the intent (``erased_at``) is still stamped and a later
+    storage-wired sweep converges, but production must inject one. Wrap the result with
+    :func:`~clue_api.review_feedback_wiring.build_dsar_with_disposition_cascade` to also cascade the
+    M13.2 disposition tombstone."""
+    return DataSubjectRightsImpl(
+        workspace_id,
+        conn_factory=conn_factory,
+        sink=sink,
+        storage=storage,
+    )
+
+
+async def run_orphan_blob_sweep(
+    conn: AsyncConnection,
+    *,
+    storage: StorageBackend | None = None,
+    grace: timedelta = DEFAULT_ORPHAN_SWEEP_GRACE,
+    now: datetime | None = None,
+) -> tuple[str, ...]:
+    """The scheduled maintenance op: delete abandoned orphan blobs (no ``artifact`` row, older than
+    ``grace``). Returns the deleted keys.
+
+    A writer records the ``artifact`` row *before* putting the blob, so a transaction that rolls
+    back and is never retried can leave a blob with no row — invisible to the DB, unreachable by
+    DSAR. :func:`clue_storage.sweep_orphan_blobs` collects those; the grace window (default 24h)
+    keeps it from racing an open transaction. This is the orphan leg the retention sweep does not
+    cover; schedule it alongside ``RetentionSweep`` at the ops layer. ``storage`` defaults to the
+    composed :func:`build_storage_backend`."""
+    backend = storage if storage is not None else build_storage_backend()
+    return await sweep_orphan_blobs(conn, backend, grace=grace, now=now)
+
+
+# Static-time conformance: the snapshot-binding wrapper is itself a ``core.PhaseHandler`` (drop-in
+# for any registration), so wrapping the DEEP handler changes nothing the state machine observes.
+_WRAPPER_IS_A_PHASE_HANDLER: type[PhaseHandler] = SnapshotBindingPhaseHandler

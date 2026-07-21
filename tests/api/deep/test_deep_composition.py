@@ -140,6 +140,30 @@ def test_empty_high_tier_set_is_a_clean_completed_no_op() -> None:
     assert result.accounts_processed == 0
 
 
+# --- B2: the registered handler is snapshot-bound when a storage backend is supplied -------------
+
+
+def test_no_storage_registers_the_bare_deep_handler() -> None:
+    """Without a B2 backend the composition registers the plain ``DeepPhaseHandler`` (the pre-B2
+    no-snapshotting path) — unchanged behavior, so the existing DEEP flow is untouched."""
+    from clue_api.deep.handler import DeepPhaseHandler
+
+    comp = _composition()
+    assert isinstance(comp.handler, DeepPhaseHandler)
+
+
+def test_storage_wraps_the_deep_handler_with_the_snapshot_binder() -> None:
+    """Passing a ``storage`` backend registers the transparent snapshot-binding wrapper (still a
+    ``PhaseHandler`` for ``DEEP``), so every deep run captures/flushes under one ambient per-run
+    sink (audit finding 5)."""
+    from clue_api.storage_wiring import SnapshotBindingPhaseHandler
+    from tests.api.test_storage_wiring import FakeStorage
+
+    comp = _composition(storage=FakeStorage())
+    assert isinstance(comp.handler, SnapshotBindingPhaseHandler)
+    assert comp.handler.phase is CampaignPhase.DEEP
+
+
 # --- the high-tier resolver (D-B) reads tier claims by the committed cutoff_version --------------
 
 

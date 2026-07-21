@@ -604,6 +604,7 @@ dependencies = [
     { name = "clue-db" },
     { name = "clue-obs" },
     { name = "clue-research" },
+    { name = "clue-storage" },
     { name = "fastapi" },
 ]
 
@@ -614,6 +615,7 @@ requires-dist = [
     { name = "clue-db", editable = "libs/clue-db" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-research", editable = "subsystems/research" },
+    { name = "clue-storage", editable = "libs/clue-storage" },
     { name = "fastapi", specifier = ">=0.138.0" },
 ]
 
