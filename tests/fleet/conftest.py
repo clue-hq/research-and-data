@@ -196,6 +196,7 @@ class FakeTaskQueue:
         dedup_key: str,
         priority: int,
         payload: dict[str, JsonValue],
+        seq: int,
     ) -> FleetTaskRow:
         now = _now()
         return FleetTaskRow(
@@ -211,6 +212,7 @@ class FakeTaskQueue:
             claimed_by=None,
             claimed_at=None,
             enqueued_at=now,
+            enqueue_seq=seq,  # the monotonic total FIFO key — matches the real identity column
             updated_at=now,
         )
 
@@ -242,6 +244,7 @@ class FakeTaskQueue:
                 )
                 return True
             return False
+        seq = next(self._seq)
         self._tasks[key] = _FakeTask(
             row=self._fresh_row(
                 kind=kind,
@@ -249,8 +252,9 @@ class FakeTaskQueue:
                 dedup_key=dedup_key,
                 priority=priority,
                 payload=payload if payload is not None else {},
+                seq=seq,
             ),
-            seq=next(self._seq),
+            seq=seq,
         )
         return True
 
