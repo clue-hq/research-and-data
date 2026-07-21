@@ -323,11 +323,18 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
                         text("DELETE FROM field_definition WHERE field_key = :k"),
                         {"k": _DEEP_FIELD},
                     )
-                    for tbl in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
-                        await conn.execute(
-                            text(f"DELETE FROM {tbl} WHERE thread_id = :tid"),
-                            {"tid": str(run_id)},
-                        )
+                    # ``AsyncPostgresSaver.setup()`` created its checkpointer tables at runtime,
+                    # OUTSIDE alembic. Drop them (not just this thread's rows) so a persistent
+                    # schema stays alembic-only afterwards — otherwise a rerun of the suite fails
+                    # tests/db/test_db_migrations.py::test_no_domain_tables_at_m0_head. They are
+                    # cheap runtime state: the next ``postgres_checkpointer()`` recreates them.
+                    for tbl in (
+                        "checkpoint_blobs",
+                        "checkpoint_writes",
+                        "checkpoints",
+                        "checkpoint_migrations",
+                    ):
+                        await conn.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
 
     run_async(_run())
 

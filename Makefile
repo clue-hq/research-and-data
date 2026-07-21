@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
-	db-up db-down migrate migrate-down db-smoke eval eval-verification redis-up redis-down
+	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification redis-up redis-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -43,6 +43,30 @@ db-up: ## Start local Postgres+pgvector (waits for healthcheck)
 
 db-down: ## Stop local Postgres+pgvector and remove its volume
 	docker compose down -v
+
+# Dependency-free schema reset (no psql needed): drops + recreates the `public` schema through
+# clue_db, honouring the same CLUE_DATABASE_URL seam everything else uses.
+define DB_FRESH_PY
+import asyncio
+
+from sqlalchemy import text
+
+from clue_db import database_url, db_lifespan
+
+
+async def main() -> None:
+    async with db_lifespan() as engine, engine.begin() as conn:
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    print(f"public schema dropped and recreated on {database_url()!r}")
+
+
+asyncio.run(main())
+endef
+export DB_FRESH_PY
+
+db-fresh: ## Drop + recreate the public schema (clean slate for a fresh test run; reads CLUE_DATABASE_URL)
+	uv run python -c "$$DB_FRESH_PY"
 
 migrate: ## Apply all migrations up to head
 	uv run alembic upgrade head

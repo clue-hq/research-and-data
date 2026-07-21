@@ -316,6 +316,13 @@ def test_live_claims_partial_index_is_used(make_account: Callable[..., Claim]) -
             # Disable seqscan so the planner must use an index if the predicate is indexable; the
             # live-claims query then proves the partial index covers it.
             await conn.execute(text("SET LOCAL enable_seqscan = off"))
+            # Depending on accumulated rows/stats on a persistent schema, the planner may instead
+            # pick the non-partial `claim_field_key` index (field_key cond + filter), which says
+            # nothing about the partial index. Drop that competitor *inside this rolled-back
+            # transaction* (DDL is transactional): the plan below can then only use an index whose
+            # partial predicate the planner PROVES is implied by `superseded_by IS NULL` — the
+            # exact guarantee this test exists for — independent of table statistics.
+            await conn.execute(text("DROP INDEX claim_field_key"))
             plan_rows = (
                 (
                     await conn.execute(
