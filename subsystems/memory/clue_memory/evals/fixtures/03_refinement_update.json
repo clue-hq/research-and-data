@@ -1,0 +1,34 @@
+{
+  "name": "refinement_update",
+  "submission": {
+    "workspace_id": "ws_golden",
+    "scope": {
+      "scope_type": "brand",
+      "scope_id": "brd_golden"
+    },
+    "type": "preference",
+    "trigger": "when writing outreach",
+    "body": "Avoid fear-based hooks; lead with ROI numbers instead.",
+    "provenance_class": "user_stated"
+  },
+  "candidates": [
+    {
+      "memory_id": "mem_a",
+      "body": "Never use fear-based hooks.",
+      "trigger": "when writing outreach",
+      "status": "active"
+    }
+  ],
+  "judgment": {
+    "verdict": "update",
+    "target_memory_id": "mem_a",
+    "species_ok": true,
+    "body_ok": true,
+    "rationale": "scripted"
+  },
+  "expected": {
+    "kind": "disposition",
+    "verdict": "update",
+    "target_memory_id": "mem_a"
+  }
+}

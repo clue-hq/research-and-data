@@ -61,6 +61,7 @@ from clue_config.schema import (
     ConfidenceThresholds,
     DeepPhaseConfig,
     FreshnessTtls,
+    MemoryCaps,
     MergePolicy,
     RecursionPolicy,
     ScoringRubric,
@@ -107,6 +108,7 @@ __all__ = [
     "STRICT_DEFAULT_REGIME",
     # config-schema placeholders
     "MergePolicy",
+    "MemoryCaps",
     "VerificationHealthThresholds",
     "ScoringRubric",
     "SourceProfile",

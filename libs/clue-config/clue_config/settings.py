@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # reuse ``GatewayConfig.synthesis_model``. Env: ``CLUE_SYNTHESIS_MODEL``.
     synthesis_model: str = DEFAULT_SYNTHESIS_MODEL
 
+    # --- scoped memory (PB-B3; append-only additions per treaty §3.2) -----------------------
+    # Deploy-level master default for the memory substrate. The *real* mechanism is the
+    # per-workspace toggle + audit journal (Doc M §17a — the ``memory_switch`` table); this flag
+    # layers above it: False blanks memory for every workspace. Env: ``CLUE_MEMORY_ENABLED``.
+    memory_enabled: bool = True
+    # OpenRouter model id for the write-time reconciliation judge (Doc M §9).
+    # Env: ``CLUE_MEMORY_RECONCILE_MODEL``.
+    memory_reconcile_model: str = DEFAULT_SYNTHESIS_MODEL
     # --- durable artifact storage (Phase B2 / REQ-07; append-only per treaty §3.2) ---
     # Which StorageBackend `clue_storage.storage_from_settings` builds. The fs ↔ S3 swap is this
     # one setting (the B2 exit gate); nothing else may branch on it.

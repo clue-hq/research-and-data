@@ -37,6 +37,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_api", "clue_memory"]
 known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
@@ -358,6 +359,26 @@ name = "agents import only the toolbelt facade + projections"
 type = "forbidden"
 source_modules = ["clue_agents"]
 forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_api"]
+
+# Rule S3 (PB-B3) — the memory substrate is storage + seams only: it imports core (the seam
+# contracts + shared types), db, and config (caps/settings) — nothing else. The gateway concrete
+# for its reconcile judge is INJECTED at the composition root (the LLMGateway protocol lives in
+# core), so a model swap never touches this package; spine scope validity is DB-constraint
+# enforcement, not a clue_spine import. (Rule S1 already keeps other subsystems out entirely.)
+[[tool.importlinter.contracts]]
+name = "memory substrate imports only core + db + config"
+type = "forbidden"
+source_modules = ["clue_memory"]
+forbidden_modules = [
+    "clue_gateway",
+    "clue_locks",
+    "clue_obs",
+    "clue_spine",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_fleet",
+    "clue_projections",
+]
 
 # Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
 # into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —
