@@ -28,6 +28,7 @@ from ..conftest import (
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -73,6 +74,7 @@ def test_profile_contact_tags_every_claim(require_profiling_db: None) -> None:
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 result = await profile_contact(
@@ -115,6 +117,7 @@ def test_tier4_without_span_stays_unverified(require_profiling_db: None) -> None
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 await profile_contact(
@@ -146,6 +149,7 @@ def test_facet_subworker_requested_only_with_budget(require_profiling_db: None) 
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
 
@@ -187,6 +191,7 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
 

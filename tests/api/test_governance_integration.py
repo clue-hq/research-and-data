@@ -71,6 +71,7 @@ from tests.profiling.conftest import (
     conn_session_factory,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -85,14 +86,18 @@ _COMMITTEE = [FakeCommitteeSource(source_key="apollo_people", tier=2)]
 # --- M9.4: the injected authoritative binding classifier stamps the born column -------------
 
 
-def _run_facet_fill(*, resolver: FakeFacetResolver) -> tuple[Claim, object, object]:
+def _run_facet_fill(
+    *, resolver: FakeFacetResolver, manifest_tier: int = 4
+) -> tuple[Claim, object, object]:
     """Drive M8.4 facet fill with the api-root binding classifier injected; return the written claim
-    plus its contact + account."""
+    plus its contact + account. ``manifest_tier`` registers the facet source's test manifest at that
+    tier (the shared engine enforces claim tier == manifest tier)."""
 
     async def scenario() -> tuple[Claim, object, object]:
         bind_resolver(_FACET_SOURCE, resolver)
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn, tier=manifest_tier)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await get_field(conn, FACET_STATED_INTERESTS)
@@ -152,7 +157,10 @@ def test_injected_classifier_born_binding_strong_on_verified_handle(
 def test_injected_classifier_born_binding_weak_on_same_name(require_profiling_db: None) -> None:
     """A lower-tier, name-only, off-handle facet claim is born WEAK — equal to the authoritative
     verdict, and unpromotable (the same-name trap)."""
+    # Founder-sanctioned re-fixture (claim_tagger consolidation): the tier-3 fake binds behind a
+    # genuine tier-3 test manifest — the shared engine enforces claim tier == manifest tier.
     written, contact, account = _run_facet_fill(
+        manifest_tier=3,
         resolver=FakeFacetResolver(
             tier=3,  # tier-3 scrape: written-but-weak (tier-4 same-name is rejected outright)
             extractions=[
@@ -163,7 +171,7 @@ def test_injected_classifier_born_binding_weak_on_same_name(require_profiling_db
                     "confidence": 0.9,
                 }
             ],
-        )
+        ),
     )
     verdict = classify_binding(
         written,

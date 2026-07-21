@@ -21,11 +21,13 @@ docs/specs/M07-durable-execution.md.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from clue_core.claim import Claim
 from clue_core.enums import (
     BudgetScope,
     BudgetVerdict,
@@ -42,6 +44,26 @@ from clue_core.primitives import (
     RunId,
     UnitInterval,
 )
+from clue_core.source import SourceManifest
+
+# --- source-engine hooks (M4.1 ``resolve_field`` seams) ----------------------
+# The waterfall engine is the only composer of resolvers; these two injectable hooks are how a
+# caller layers *governance* onto the shared walk without forking it (the M8.4 contact facet fill
+# is the canonical caller — its per-claim binding/use-class tagging and its M9.1 per-source
+# pre-spend gating ride these seams). Like the protocols above, the *types* live in ``core`` so the
+# engine (``sources``) and its callers (``profiling``) stay import-independent of each other.
+
+# Applied to each resolver claim AFTER the engine's validation/provenance stamping and BEFORE the
+# insert. Return the (re-tagged) claim to write it, or ``None`` to drop it — a dropped claim is not
+# inserted, not surfaced, and never drives the confident-stop (the walk continues as if the claim
+# had not been produced).
+ClaimTagger = Callable[[Claim], Claim | None]
+
+# Consulted before the engine spends on one source (after the resolver binding resolves, before
+# the resolver call — an idempotent reuse or an unbound source spends nothing and is not gated).
+# ``False`` skips THAT source and the walk continues; the gate's own bookkeeping (e.g. the M9.1
+# ``gate_decision`` audit row) lives with the caller, never in the engine.
+SourceGate = Callable[[SourceManifest], Awaitable[bool]]
 
 # --- phase layer (M7.3: campaign-run state machine) -------------------------
 

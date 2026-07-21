@@ -1,12 +1,17 @@
-"""Facet-aware field fill (M8.4) — dispatch M4 resolvers, tag per-claim, then write.
+"""Facet-aware field fill (M8.4) — the shared waterfall + injected per-claim governance.
 
-M8.4 fills a contact's deep fields through the M4 Source Planner + resolver seam, but it cannot use
-the generic waterfall (``sources.resolve_field``) for the **governed** ``contact.facet.*`` class:
-the waterfall auto-inserts each claim and stamps ``identity_binding`` from the *coarse manifest
-prior*, which would clobber M8.4's authoritative **per-claim** binding (the make-or-break, staged-
-flow §6). So M8.4 owns this thin fill loop — it asks the planner for the ordered, modality-gated
-source set, dispatches each bound resolver itself, and for every returned claim computes the
-extraction-time ``identity_binding`` + ``use_class`` (born-correct) *before* the write.
+M8.4 fills a contact's deep fields through the shared trust-tiered waterfall
+(``sources.resolve_field``), which owns the walk: manifest/active checks, idempotent reuse,
+provenance + tenant reuse-scope stamping, cost accounting and the confident-stop. What is M8.4's
+own — the **governed** ``contact.facet.*`` layer — rides the engine's two injected seams instead of
+a re-implemented walk:
+
+- ``claim_tagger`` — computes the authoritative extraction-time per-claim ``identity_binding`` +
+  ``use_class`` (born-correct, the make-or-break, staged-flow §6), overriding the coarse manifest
+  prior the engine stamps; a tier-4 claim whose evidence does not bind to *this* person (the
+  same-name trap) is **dropped** before the write (Decision 13) and never drives the stop.
+- ``source_gate`` — the M9.1 pre-spend gate consulted per source (REJECT skips that source; the
+  walk continues), so the ``gate_decision`` audit semantics stay here, never in the engine.
 
 Resolvers for the long-tail facet sources (and the tier-4 ``exa_deep``/``parallel_task`` synthesis)
 are M4/M11 and absent today, so this returns ``no_resolver`` (a correct flagged-empty output) until
@@ -28,6 +33,7 @@ from clue_core import (
     ClaimId,
     ContactEntity,
     CostCents,
+    EntityId,
     EntityScope,
     EntityType,
     FieldDef,
@@ -39,11 +45,12 @@ from clue_core import (
     ProfileClaimView,
     ResearchMode,
     RunId,
+    SourceGate,
+    SourceManifest,
     SourceTier,
     revalidate_with,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
-from clue_research.identity import stamp_reuse
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling.contact.binding import (
     DEFAULT_BINDING_CLASSIFIER,
     BindingClassifier,
@@ -53,10 +60,9 @@ from clue_research.profiling.contact.use_class import DEFAULT_USE_CLASS_TAGGER, 
 from clue_research.sources import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
     ConfidenceThresholds,
-    NoResolverBoundError,
-    get_resolver,
     get_source,
     plan_sources,
+    resolve_field,
 )
 
 
@@ -118,49 +124,58 @@ async def fill_contact_field(
 ) -> FacetFillResult:
     """Fill one deep contact field, tagging every claim's binding + use-class born-correct.
 
-    Walks the planned sources in trust order, dispatching each bound resolver; for each returned
-    claim it computes the per-claim ``identity_binding`` (verified-handle / co-occurrence vs name-
-    only) and ``use_class`` (hint + evidence escalation), target-locks to this contact, and writes
-    the tenant-private claim. Stops at the first confident hit (the waterfall discipline). A
+    Runs the shared waterfall over the planned sources (the planner's ordering rides the engine's
+    own ``tier_plan`` seam — the aspect-worker precedent); the injected ``claim_tagger`` computes
+    the per-claim ``identity_binding`` (verified-handle / co-occurrence vs name-only) and
+    ``use_class`` (hint + evidence escalation) before each write, dropping a tier-4 same-name claim
+    outright, and the injected ``source_gate`` consults the M9.1 pre-spend gate per source. A
     resolver-absent plan yields an empty, flagged result (correct, not a crash)."""
-    result = FacetFillResult(field_key=field_def.field_key)
-    threshold = thresholds.for_field_class(field_def.field_class)
-    scope = WorkspaceScope.for_workspace(workspace_id)
-    ran_any = False
-
-    for source_key in await _planned_source_keys(
+    plan_keys = await _planned_source_keys(
         conn, contact, field_def, spec=spec, tier=tier, plan_policy=plan_policy
-    ):
-        try:
-            resolver = get_resolver(source_key)
-        except NoResolverBoundError:
-            continue  # resolver absent (tier-4 synthesis / long-tail until M4/M11) → skip
+    )
+    field_for_run = field_def.model_copy(update={"tier_plan": tuple(plan_keys)})
 
-        # Idempotency: reuse claims already written this (contact, field, source, run).
-        existing = [
-            c
-            for c in await claims_for(conn, contact.id, field_def.field_key, scope=scope)
-            if c.source_key == source_key and c.run_id == run_id
-        ]
-        if existing:
-            ran_any = True
-            confident = False
-            for claim in existing:
-                result.claim_refs.append(claim.id)
-                result.profile_views.append(_to_view(claim.id, claim))
-                if claim.confidence >= threshold:
-                    confident = True
-            if confident:
-                result.stop_reason = "confident_hit"
-                return result
-            continue
-
+    # The source-level binding priors the classifier reads. The engine stamps a non-None manifest
+    # prior onto contact claims before the tagger runs, but the classifier must distinguish "the
+    # manifest declares no prior" from the resolver's placeholder — so look the prior up per source.
+    priors: dict[str, IdentityBinding | None] = {}
+    for source_key in field_for_run.tier_plan:
         manifest = await get_source(conn, source_key)
-        # Pre-spend gate (M9.1): a facet fill is a FIELD spend — gate before the resolver call,
-        # keyed on the contact + facet field at the source tier. REJECT skips this source (a
-        # higher-trust one can still fill it). Gated only with a manifest tier (fail-soft).
-        if pre_spend_gate is not None and manifest is not None:
-            decision = await pre_spend_gate.check(
+        priors[source_key] = manifest.identity_binding_strength if manifest is not None else None
+
+    def tag_claim(claim: Claim) -> Claim | None:
+        binding = binding_classifier.classify(
+            BindingInput(
+                contact=contact,
+                evidence_span=claim.evidence_span,
+                source_url=claim.source_url,
+                source_key=claim.source_key or "",
+                manifest_prior=priors.get(claim.source_key or ""),
+                account_name=account.canonical_name,
+                account_aliases=account.aliases,
+            )
+        )
+        # Target-lock (Decision 13): a tier-4 (LLM-synthesized) claim whose evidence does not
+        # bind to *this* person (a name-only / same-name-stranger match) is rejected BEFORE the
+        # write — the least-trusted layer must not assert an unverifiable personal fact about
+        # the contact at all. A lower-tier WEAK claim is still written-but-unpromotable
+        # (Decisions 7/10): it has a real source the M9 gate can re-judge, where a tier-4
+        # same-name claim has only the LLM's say-so.
+        if claim.source_tier >= 4 and binding is IdentityBinding.WEAK:
+            return None
+        use_class = use_class_tagger.tag(field_def, claim.value_json, claim.evidence_span)
+        return revalidate_with(claim, identity_binding=binding, use_class=use_class)
+
+    source_gate: SourceGate | None = None
+    if pre_spend_gate is not None:
+        gate = pre_spend_gate
+
+        async def check_source(manifest: SourceManifest) -> bool:
+            # Pre-spend gate (M9.1): a facet fill is a FIELD spend — gate before the resolver call,
+            # keyed on the contact + facet field at the source tier. REJECT skips this source (a
+            # higher-trust one can still fill it). The gate implementation writes the
+            # ``gate_decision`` audit row (AC-6) — the engine only sees the boolean.
+            decision = await gate.check(
                 PreSpendRequest(
                     entity_id=contact.id,
                     entity_type=EntityType.CONTACT,
@@ -169,53 +184,52 @@ async def fill_contact_field(
                     run_id=run_id,
                 )
             )
-            if decision.verdict is PreSpendVerdict.REJECT:
-                continue
-        prior = manifest.identity_binding_strength if manifest is not None else None
-        confident = False
-        for raw in resolver.resolve(contact.as_entity(), field_def):
-            binding = binding_classifier.classify(
-                BindingInput(
-                    contact=contact,
-                    evidence_span=raw.evidence_span,
-                    source_url=raw.source_url,
-                    source_key=source_key,
-                    manifest_prior=prior,
-                    account_name=account.canonical_name,
-                    account_aliases=account.aliases,
-                )
-            )
-            # Target-lock (Decision 13): a tier-4 (LLM-synthesized) claim whose evidence does not
-            # bind to *this* person (a name-only / same-name-stranger match) is rejected BEFORE the
-            # write — the least-trusted layer must not assert an unverifiable personal fact about
-            # the contact at all. A lower-tier WEAK claim is still written-but-unpromotable
-            # (Decisions 7/10): it has a real source the M9 gate can re-judge, where a tier-4
-            # same-name claim has only the LLM's say-so.
-            if raw.source_tier >= 4 and binding is IdentityBinding.WEAK:
-                continue
-            use_class = use_class_tagger.tag(field_def, raw.value_json, raw.evidence_span)
-            final = revalidate_with(
-                raw,
-                identity_binding=binding,
-                use_class=use_class,
-                run_id=run_id,
-                research_mode=ResearchMode.CONTACT_PROFILING,
-                source_key=source_key,
-            )
-            final = stamp_reuse(final, workspace_id=workspace_id)
-            claim_id = await insert_claim(conn, final)
-            result.claim_refs.append(claim_id)
-            result.profile_views.append(_to_view(claim_id, final))
-            result.cost_cents += final.cost_cents
-            if final.confidence >= threshold:
-                confident = True
-        ran_any = True
-        if confident:
-            result.stop_reason = "confident_hit"
-            return result
+            return decision.verdict is not PreSpendVerdict.REJECT
 
-    result.stop_reason = "tier_exhausted" if ran_any else "no_resolver"
-    return result
+        source_gate = check_source
+
+    result = await resolve_field(
+        conn,
+        contact.as_entity(),
+        field_for_run,
+        mode=ResearchMode.CONTACT_PROFILING,
+        run_id=run_id,
+        workspace_id=workspace_id,
+        thresholds=thresholds,
+        claim_tagger=tag_claim,
+        source_gate=source_gate,
+    )
+    refs = list(result.claim_refs)
+    return FacetFillResult(
+        field_key=field_def.field_key,
+        claim_refs=refs,
+        profile_views=await _profile_views(
+            conn,
+            contact.id,
+            field_def.field_key,
+            refs,
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        ),
+        cost_cents=result.total_cost_cents,
+        stop_reason=result.stop_reason.value,
+    )
+
+
+async def _profile_views(
+    conn: AsyncConnection,
+    entity_id: EntityId,
+    field_key: str,
+    refs: list[ClaimId],
+    *,
+    scope: WorkspaceScope,
+) -> list[ProfileClaimView]:
+    """Reconstruct the per-claim handoff views from the kept claim references. The engine returns
+    references, never blobs (conventions §2); ``Claim.id`` is client-generated, so the written
+    rows are simply re-read by id and projected — in reference order."""
+    if not refs:
+        return []
+    by_id = {claim.id: claim for claim in await claims_for(conn, entity_id, field_key, scope=scope)}
+    return [_to_view(ref, by_id[ref]) for ref in refs if ref in by_id]
 
 
 def _to_view(claim_id: ClaimId, claim: Claim) -> ProfileClaimView:

@@ -19,6 +19,7 @@ from ..conftest import (
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -55,6 +56,7 @@ def test_verified_handle_claim_is_written_strong(require_profiling_db: None) -> 
         )
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             result = await fill_contact_field(
@@ -102,6 +104,7 @@ def test_same_name_stranger_fact_not_written_to_contact(require_profiling_db: No
         )
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact_a = await insert_test_contact(
                 conn, account, full_name="Jane Smith", linkedin_url="https://linkedin.com/in/jane-a"
