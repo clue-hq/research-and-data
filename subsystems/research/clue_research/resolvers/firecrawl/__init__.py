@@ -45,17 +45,26 @@ from clue_research.adapters import (
     ClaimExtractor,
     FirecrawlHtmlAdapter,
     ScrapeBackend,
+    ScraplingScrapeBackend,
+    default_scrape_backend,
     register_adapter,
     run_chain,
 )
 from clue_research.resolvers.live import AccountLookup
 from clue_research.sources import SEED_MANIFESTS, RegistrySourceManifest, bind_resolver
+from clue_storage import SnapshotSink, current_snapshot_sink
 
 SOURCE_KEY = "firecrawl_site"
+# The credit-free sibling source (PB-B2.4): same trust tier and adapter contract, its own
+# manifest (cost 0, provider scrapling) so a free local scrape is never budgeted/attributed as
+# paid Firecrawl (audit finding 6). ``register_scrape_resolver`` binds exactly one of the two.
+SCRAPLING_SOURCE_KEY = "scrapling_site"
 AUTH_REF = "CLUE_FIRECRAWL_API_KEY"
-# The M4.3 adapter key the firecrawl_site manifest declares (``requires_adapter``); ``run_chain``
-# dispatches through it, so register_scrape_resolver registers a FirecrawlHtmlAdapter under it.
+# The M4.3 adapter key each manifest declares (``requires_adapter``); ``run_chain`` dispatches
+# through it, so register_scrape_resolver registers the HTML→markdown adapter under the selected
+# manifest's key.
 ADAPTER_KEY = "firecrawl_html"
+SCRAPLING_ADAPTER_KEY = "scrapling_html"
 
 # Build the official surfaces to scrape from a resolved account. The default is the canonical
 # homepage on the apex domain; the orchestrator (M6/M8) can inject a richer builder (careers /
@@ -128,12 +137,20 @@ class ScrapeResolver:
         extractor: ClaimExtractor,
         policy: ScrapePolicy | None = None,
         surface_builder: SurfaceBuilder = default_surfaces,
+        snapshots: SnapshotSink | None = None,
     ) -> None:
         self._manifest = manifest
         self._accounts = accounts
         self._extractor = extractor
         self._policy = policy or ScrapePolicy()
         self._surface_builder = surface_builder
+        # An OPTIONAL constructor-bound snapshot sink — for a caller that owns both this resolver
+        # instance and the sink's lifetime (tests). The registered/production resolver must leave
+        # this ``None``: the instance lives in the process-global registry, but a sink is per-run
+        # and workspace-bound, so ``resolve`` reads the run-scoped ambient binding
+        # (``clue_storage.bind_snapshots``) instead — concurrent runs each capture into their own
+        # sink (PB-B2 audit finding 5).
+        self._snapshots = snapshots
 
     def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
         if entity.entity_type is not EntityType.ACCOUNT:
@@ -170,6 +187,12 @@ class ScrapeResolver:
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
                 extractor=self._extractor,
                 params=params,
+                # Constructor-bound sink (a caller-owned instance) wins; else the run-scoped
+                # ambient binding — the waterfall re-binds its resolved sink around this call,
+                # so capture and flush always share one sink.
+                snapshots=self._snapshots
+                if self._snapshots is not None
+                else current_snapshot_sink(),
             )
         return []  # no allowed, on-domain surface → nothing scraped, a correct empty
 
@@ -181,26 +204,49 @@ def register_scrape_resolver(
     scraper: ScrapeBackend | None = None,
     policy: ScrapePolicy | None = None,
     surface_builder: SurfaceBuilder = default_surfaces,
-) -> None:
-    """Wire the firecrawl scrape source: register its M4.3 ``firecrawl_html`` adapter (the
-    HTML→markdown normalizer via ``scraper``) and bind the tier-2 :class:`ScrapeResolver` (holding
-    the field ``extractor``) to ``firecrawl_site``. The M6/M8 orchestrator calls this with the live
-    Firecrawl-backed ``ScrapeBackend`` and a field-specific extractor; tests inject doubles.
-    Idempotent (last write wins for both the adapter key and the resolver binding)."""
-    register_adapter(ADAPTER_KEY, FirecrawlHtmlAdapter(scraper=scraper))
+    snapshots: SnapshotSink | None = None,
+) -> str:
+    """Wire the official-site scrape source: register the M4.3 HTML→markdown adapter (via
+    ``scraper``) under the selected manifest's ``requires_adapter`` key and bind the tier-2
+    :class:`ScrapeResolver` (holding the field ``extractor``) to that manifest's source key. The
+    M6/M8 orchestrator calls this with the live ``ScrapeBackend`` and a field-specific extractor;
+    tests inject doubles. Idempotent (last write wins for the adapter key and the resolver
+    binding). Returns the bound source key.
+
+    When no ``scraper`` is injected, the backend is **settings-selected** (PB-B2.4):
+    ``CLUE_SCRAPE_BACKEND=firecrawl`` (default, paid API) or ``scrapling`` (local, credit-free).
+    The selection also picks the **source manifest** — ``firecrawl_site`` (cost 1¢, provider
+    firecrawl) vs ``scrapling_site`` (cost 0, provider scrapling) — so estimates, realized claim
+    cost, budget spend, and per-provider economics always attribute the scrape truthfully (audit
+    finding 6); a scrapling scrape can never consume Firecrawl budget. The unselected key stays
+    registered-but-unbound: a tier plan listing both walks past it at zero spend.
+
+    ``snapshots`` here is for a caller that owns both the registration and the sink's lifetime
+    (tests). **Production registration must not pass it** — the resolver lands in the
+    process-global registry while a sink is per-run and workspace-bound; the run owner binds the
+    per-run sink with ``clue_storage.bind_snapshots`` around the run instead (audit finding 5)."""
+    backend = scraper if scraper is not None else default_scrape_backend()
+    # The backend's identity decides the economics: an (injected or settings-selected) scrapling
+    # backend binds the credit-free manifest; anything else binds the paid firecrawl one.
+    source_key = SCRAPLING_SOURCE_KEY if isinstance(backend, ScraplingScrapeBackend) else SOURCE_KEY
+    manifest = _seed_manifest(source_key)
+    adapter_key = manifest.requires_adapter or ADAPTER_KEY
+    register_adapter(adapter_key, FirecrawlHtmlAdapter(scraper=backend))
     bind_resolver(
-        SOURCE_KEY,
+        source_key,
         ScrapeResolver(
-            _seed_manifest(),
+            manifest,
             accounts,
             extractor=extractor,
             policy=policy,
             surface_builder=surface_builder,
+            snapshots=snapshots,
         ),
     )
+    return source_key
 
 
-def _seed_manifest() -> RegistrySourceManifest:
-    """The firecrawl_site seed manifest (the in-memory source of truth for tier/cost/adapter — the
-    same pattern ``register_deterministic_resolvers`` uses for per-call cost)."""
-    return next(m for m in SEED_MANIFESTS if m.source_key == SOURCE_KEY)
+def _seed_manifest(source_key: str = SOURCE_KEY) -> RegistrySourceManifest:
+    """The seed manifest for ``source_key`` (the in-memory source of truth for tier/cost/adapter —
+    the same pattern ``register_deterministic_resolvers`` uses for per-call cost)."""
+    return next(m for m in SEED_MANIFESTS if m.source_key == source_key)

@@ -63,6 +63,14 @@ from clue_research.claimstore import PUBLIC_ONLY, WorkspaceScope, claims_for, in
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources.registry import NoResolverBoundError, get_resolver, get_source
 from clue_research.sources.thresholds import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
+from clue_storage import (
+    SnapshotSink,
+    StorageBackend,
+    bind_snapshots,
+    current_snapshot_sink,
+    current_storage,
+    flush_snapshots,
+)
 
 
 class StopReason(StrEnum):
@@ -193,6 +201,8 @@ async def resolve_field(
     idempotent: bool = True,
     claim_tagger: ClaimTagger | None = None,
     source_gate: SourceGate | None = None,
+    snapshots: SnapshotSink | None = None,
+    storage: StorageBackend | None = None,
 ) -> WaterfallResult:
     """Fill one field by walking its ``tier_plan`` in trust order, stopping at the first confident
     hit. Writes every returned claim through M1.1 (``unverified``) and returns claim-id references.
@@ -209,6 +219,15 @@ async def resolve_field(
     source (``GATE_SKIPPED``) and the walk continues. With both left ``None`` the engine behaves
     exactly as before.
 
+    ``snapshots``/``storage`` (optional, PB-B2.3) are the shared per-run evidence-snapshot sink
+    and the durable backend: captures a resolver made during ``resolve`` (the tier-2 scrape path)
+    are flushed — ``artifact`` row + blob — before the step's claims are inserted, so each claim's
+    ``artifact_key`` FK resolves. Left ``None`` they default to the **run-scoped ambient binding**
+    (``clue_storage.bind_snapshots`` — the run owner binds a per-run, workspace-bound sink around
+    the whole run; a sink must never live on a globally-registered object). The engine re-binds
+    whatever it resolved around the ``resolver.resolve`` call, so the sink a resolver captures
+    into is by construction the one flushed here. All ``None`` → no snapshotting, as before.
+
     Call inside a caller-owned transaction (``db.transaction``): claims are inserted per step, so a
     raising step rolls back cleanly and the per-run idempotency never sees a half-written step.
 
@@ -223,6 +242,12 @@ async def resolve_field(
     it makes ``stamp_reuse`` fail loud rather than silently write it public. A public-only plan
     (the M4.1/M4.4 tier-1 enrichment path) needs no ``workspace_id``.
     """
+    # Run-scoped snapshot binding (PB-B2 audit finding 5): explicit args win; otherwise pick up
+    # the sink/backend the run owner bound to the call context (never a global).
+    if snapshots is None:
+        snapshots = current_snapshot_sink()
+    if storage is None:
+        storage = current_storage()
     threshold = thresholds.for_field_class(field_def.field_class)
     # The idempotency read is scoped to THIS run's tenant: a tenant run reuses its own public ∪
     # private claims; a public-only run (no tenant) reuses only public ones. This keeps a
@@ -319,7 +344,17 @@ async def resolve_field(
                 ATTR_RESEARCH_MODE: mode,
             },
         ) as span:
-            claims = list(resolver.resolve(entity, field_def))
+            # Re-bind the resolved sink around the resolver call: the sink the resolver captures
+            # into is then, by construction, the same one flushed below — whether it arrived as
+            # an explicit argument or as the run's ambient binding.
+            with bind_snapshots(snapshots, storage):
+                claims = list(resolver.resolve(entity, field_def))
+            # Flush evidence snapshots the resolver captured (via a shared per-run SnapshotSink,
+            # PB-B2.3) BEFORE the insert loop: the claims below may carry artifact_key refs, and
+            # the FK requires the artifact row first. Content-addressed → idempotent, so a step
+            # that captured nothing (or a re-flush) is a no-op.
+            if snapshots is not None and storage is not None and snapshots.pending:
+                await flush_snapshots(conn, storage, snapshots)
             kept: list[Claim] = []
             step_cost = Decimal(0)
             for c in claims:
@@ -405,10 +440,14 @@ async def resolve_fields(
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
     reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
     idempotent: bool = True,
+    snapshots: SnapshotSink | None = None,
+    storage: StorageBackend | None = None,
 ) -> list[WaterfallResult]:
     """Resolve several fields for one entity, threading the running spend so a single
     ``budget_envelope`` bounds the whole batch. ``workspace_id`` / ``reuse_policy`` are threaded to
-    each field's tenant stamping (decision #6 — see :func:`resolve_field`)."""
+    each field's tenant stamping (decision #6 — see :func:`resolve_field`); ``snapshots`` /
+    ``storage`` to each field's evidence-snapshot capture+flush (explicit args win over the
+    run-scoped ambient binding, exactly as in :func:`resolve_field`)."""
     results: list[WaterfallResult] = []
     spent = Decimal(0)
     for field_def in field_defs:
@@ -424,6 +463,8 @@ async def resolve_fields(
             thresholds=thresholds,
             reuse_policy=reuse_policy,
             idempotent=idempotent,
+            snapshots=snapshots,
+            storage=storage,
         )
         results.append(result)
         spent += result.total_cost_cents

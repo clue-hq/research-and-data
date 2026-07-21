@@ -96,6 +96,13 @@ from clue_research.adapters.seams import AdaptError, ClaimExtractor
 from clue_research.claimstore import insert_claim
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources import RegistrySourceManifest, get_source
+from clue_storage import (
+    SnapshotSink,
+    StorageBackend,
+    current_snapshot_sink,
+    current_storage,
+    flush_snapshots,
+)
 
 
 class UnknownSourceError(LookupError):
@@ -149,6 +156,8 @@ async def run_pipeline(
     workspace_id: str | None = None,
     reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
     params: dict[str, JsonValue] | None = None,
+    snapshots: SnapshotSink | None = None,
+    storage: StorageBackend | None = None,
 ) -> list[Claim]:
     """Run ``source_key``'s ``fetch → adapt → extract`` for ``ref`` and return the resulting claims.
 
@@ -177,6 +186,14 @@ async def run_pipeline(
             private claim with **no** ``workspace_id`` fails loud, never silently written public.
         reuse_policy: the versioned reuse-classification policy the stamping reads.
         params: free-form fetch params handed to the adapter via the :class:`AdaptContext`.
+        snapshots: an optional per-run evidence-snapshot sink (PB-B2.3): the fetched bytes are
+            captured at the moment they exist and every claim carries the snapshot's
+            ``artifact_key``, so its evidence resolves offline after the live URL rots. ``None``
+            defaults to the run-scoped ambient binding (``clue_storage.bind_snapshots``).
+        storage: the durable backend the sink flushes to (``None`` → the ambient binding). When
+            ``persist`` and both resolve, pending captures are flushed (``artifact`` row + blob)
+            *before* the claims are inserted (the FK ordering). With ``persist=False`` the caller
+            that writes the claims (the waterfall) owns the flush.
 
     Returns the claims (written, with persisted ids, when ``persist``). Adding a brand-new modality
     adapter makes its source consumable here with **no** change to the waterfall (M4.1) or a worker.
@@ -184,6 +201,12 @@ async def run_pipeline(
     manifest = await get_source(conn, source_key)
     if manifest is None:
         raise UnknownSourceError(f"source {source_key!r} is not registered (M4.2)")
+    # Run-scoped snapshot binding (PB-B2 audit finding 5): explicit args win over the ambient
+    # per-run sink/backend the run owner bound to the call context.
+    if snapshots is None:
+        snapshots = current_snapshot_sink()
+    if storage is None:
+        storage = current_storage()
     claims = run_chain(
         manifest,
         ref,
@@ -196,8 +219,14 @@ async def run_pipeline(
         cache=cache,
         clock=clock,
         params=params,
+        snapshots=snapshots,
     )
     if persist:
+        # Flush captured evidence snapshots BEFORE the claims that reference them (the
+        # claim.artifact_key FK lands on an existing artifact row). Idempotent: a re-run or a
+        # shared sink converges on one blob + one row per distinct content.
+        if snapshots is not None and storage is not None and snapshots.pending:
+            await flush_snapshots(conn, storage, snapshots)
         # As a composer (the writer), stamp the cross-tenant reuse scope on every claim before
         # insert — identical to the M4.1 waterfall (decision #6), so an adapter-backed
         # tenant-private claim (M8 resonance/facet) is never written public_footprint by default.
@@ -228,6 +257,7 @@ def run_chain(
     cache: ArtifactCache | None = None,
     clock: Callable[[], datetime] = utc_now,
     params: dict[str, JsonValue] | None = None,
+    snapshots: SnapshotSink | None = None,
 ) -> list[Claim]:
     """The **synchronous** ``fetch → adapt → extract → materialize`` core of :func:`run_pipeline`,
     over an already-loaded ``manifest`` and **without** persistence — the seam a *resolver* uses.
@@ -272,8 +302,15 @@ def run_chain(
             return []
 
         adapter = _select_adapter(manifest)
-        normalized, realized_cost, cache_hit = _fetch_and_adapt(
-            adapter, ref, ctx, manifest, cache=cache, clock=clock, estimate=estimate
+        normalized, realized_cost, cache_hit, snapshot_key = _fetch_and_adapt(
+            adapter,
+            ref,
+            ctx,
+            manifest,
+            cache=cache,
+            clock=clock,
+            estimate=estimate,
+            snapshots=snapshots,
         )
         drafts = _extract(extractor, normalized, entity, field, source_key)
         claims = _materialize(
@@ -284,6 +321,7 @@ def run_chain(
             research_mode=research_mode,
             entity=entity,
             realized_cost=realized_cost,
+            artifact_key=snapshot_key,
         )
         # The realized cost lives on the fetch/adapt *stage* span (a child of this one), not here:
         # emitting it on both levels would double-count a span-tree SUM of cost_cents. The parent
@@ -325,11 +363,13 @@ def _fetch_and_adapt(
     cache: ArtifactCache | None,
     clock: Callable[[], datetime],
     estimate: CostCents,
-) -> tuple[NormalizedText, CostCents, bool]:
+    snapshots: SnapshotSink | None = None,
+) -> tuple[NormalizedText, CostCents, bool, str | None]:
     """Run transport + normalization (with per-stage cost+latency spans + the content-addressed
-    cache). Returns ``(normalized, realized_cost, cache_hit)``; a cache hit costs nothing to
-    re-incur. The realized cost is attributed to the ``adapt`` span for audio/video (the distinct
-    transcription cost) and to the ``fetch`` span otherwise (the scrape/download)."""
+    cache). Returns ``(normalized, realized_cost, cache_hit, artifact_key)``; a cache hit costs
+    nothing to re-incur and re-uses the original fetch's snapshot key. The realized cost is
+    attributed to the ``adapt`` span for audio/video (the distinct transcription cost) and to the
+    ``fetch`` span otherwise (the scrape/download)."""
     source_key = manifest.source_key
     cost_on_adapt = manifest.modality in _TRANSCRIBED_MODALITIES
     ttl = freshness_ttl(manifest.freshness_profile)
@@ -337,7 +377,7 @@ def _fetch_and_adapt(
     if cache is not None:
         cached = cache.get(content_key(source_key, ref))
         if cached is not None and is_fresh(cached, ttl, now=clock()):
-            return cached.normalized, Decimal(0), True
+            return cached.normalized, Decimal(0), True, cached.artifact_key
 
     with traced_step(
         adapter_span("fetch", source_key),
@@ -349,6 +389,12 @@ def _fetch_and_adapt(
         if not cost_on_adapt:
             fetch_attrs[ATTR_COST_CENTS] = estimate
         apply_attributes(fetch_span, fetch_attrs)
+
+    # Capture the evidence snapshot at the exact moment the fetched bytes exist (PB-B2.3): pure
+    # sha256 work into the caller-owned sink — the durable put/row happen at the async flush.
+    snapshot_key = (
+        snapshots.capture(artifact, source_key=source_key) if snapshots is not None else None
+    )
 
     with traced_step(
         adapter_span("adapt", source_key),
@@ -364,9 +410,14 @@ def _fetch_and_adapt(
     if cache is not None and ttl > timedelta(0):
         cache.put(
             content_key(source_key, ref),
-            CachedArtifact(normalized=normalized, stored_at=clock(), cost_cents=estimate),
+            CachedArtifact(
+                normalized=normalized,
+                stored_at=clock(),
+                cost_cents=estimate,
+                artifact_key=snapshot_key,
+            ),
         )
-    return normalized, estimate, False
+    return normalized, estimate, False, snapshot_key
 
 
 def _extract(
@@ -406,6 +457,7 @@ def _materialize(
     research_mode: ResearchMode,
     entity: Entity,
     realized_cost: CostCents,
+    artifact_key: str | None = None,
 ) -> list[Claim]:
     """Turn drafts into typed ``Claim``s, stamping tier/extraction_method/source_key from the
     manifest (never the extractor). The per-call cost goes to the first claim (a source call costs
@@ -465,16 +517,17 @@ def _materialize(
                 observed_at=draft.observed_at,
                 cost_cents=cost,
             )
-        claims.append(_stamp_source_key(claim, manifest.source_key))
+        claims.append(_stamp_source_key(claim, manifest.source_key, artifact_key))
     return claims
 
 
-def _stamp_source_key(claim: Claim, source_key: str) -> Claim:
-    """Stamp the producing ``source_key`` (the factories don't take it) and re-validate, via the
-    shared :func:`~clue_core.revalidate_with` helper — the same provenance-stamp path the
-    M4.1 waterfall uses, so the model_copy-skips-validators subtlety lives in exactly one place
-    (conventions §2 DRY) and per-source yield/telemetry keys on the source."""
-    return revalidate_with(claim, source_key=source_key)
+def _stamp_source_key(claim: Claim, source_key: str, artifact_key: str | None = None) -> Claim:
+    """Stamp the producing ``source_key`` + the evidence snapshot's ``artifact_key`` (the
+    factories don't take them) and re-validate, via the shared :func:`~clue_core.revalidate_with`
+    helper — the same provenance-stamp path the M4.1 waterfall uses, so the
+    model_copy-skips-validators subtlety lives in exactly one place (conventions §2 DRY) and
+    per-source yield/telemetry keys on the source."""
+    return revalidate_with(claim, source_key=source_key, artifact_key=artifact_key)
 
 
 def _extraction_method(manifest: RegistrySourceManifest) -> ExtractionMethod:
