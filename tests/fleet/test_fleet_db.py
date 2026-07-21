@@ -585,6 +585,132 @@ def test_cross_run_same_entity_is_single_flighted_on_the_real_queue() -> None:
     run_async(_run())
 
 
+def test_heartbeat_death_never_yields_two_concurrent_drivers() -> None:
+    """The audit repro (finding #2) inverted into a live gate: worker A's renewal path keeps
+    raising while it is mid-*phase* (a long ``advance``); the supervised heartbeat declares the
+    lease lost at ``deadline − heartbeat`` and cancels A's phase *before* the TTL lapses, so when
+    worker B takes over (only after expiry) the two never ``advance()`` the same run concurrently.
+    Real ``DbLeaseStore`` + ``DbTaskQueue``; a shared probe counts in-flight advances and its
+    peak. Before the fix, A's heartbeat died silently, A's phase ran on past expiry, B took the
+    lease, and peak concurrent drivers hit 2."""
+
+    async def _run() -> None:
+        import asyncio
+
+        from clue_fleet import CampaignRunWorker, DbLeaseStore, DbTaskQueue, enqueue_drive
+        from tests.fleet.conftest import run_row
+
+        from clue_core import CampaignPhase
+        from clue_db import db_lifespan
+        from clue_research.durable import CampaignRunStatus
+
+        run_id = new_campaign_run_id()
+        advance_s = 4.0  # far longer than the lease TTL — A must be cancelled mid-flight
+
+        class _Probe:
+            def __init__(self) -> None:
+                self.in_flight = 0
+                self.peak = 0
+                self.starts: list[str] = []
+                self.completions: list[str] = []
+
+        probe = _Probe()
+
+        class _ProbeDriver:
+            def __init__(self, label: str) -> None:
+                self.label = label
+
+            async def status(self, campaign_run_id: object) -> object:
+                done = bool(probe.completions)
+                return run_row(
+                    run_id,
+                    phase=CampaignPhase.DEEP,
+                    status=CampaignRunStatus.COMPLETED if done else CampaignRunStatus.ACTIVE,
+                )
+
+            async def advance(self, campaign_run_id: object) -> object:
+                probe.starts.append(self.label)
+                probe.in_flight += 1
+                probe.peak = max(probe.peak, probe.in_flight)
+                try:
+                    await asyncio.sleep(advance_s)
+                finally:
+                    probe.in_flight -= 1
+                probe.completions.append(self.label)
+                return run_row(
+                    run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED
+                )
+
+        class _RaisingRenewLease:
+            """A real ``DbLeaseStore`` whose renew always raises — the audit's exact trigger."""
+
+            def __init__(self, inner: DbLeaseStore) -> None:
+                self._inner = inner
+
+            async def acquire(self, **kw: object) -> bool:
+                return await self._inner.acquire(**kw)  # type: ignore[arg-type]
+
+            async def renew(self, **kw: object) -> bool:
+                raise RuntimeError("simulated renewal fault")
+
+            async def release(self, **kw: object) -> None:
+                await self._inner.release(**kw)  # type: ignore[arg-type]
+
+            async def get(self, campaign_run_id: object) -> object:
+                return await self._inner.get(campaign_run_id)  # type: ignore[arg-type]
+
+        # A short task-stale window lets B reclaim A's drive task while A is still mid-phase, so
+        # the LEASE (not the queue) is what must block B: under the old silent-heartbeat-death,
+        # A drives on past lease expiry and B takes over → peak 2; with the fix A is cancelled at
+        # deadline−heartbeat (~1.2s), strictly before B's acquire at TTL expiry (~1.5s) → peak 1.
+        timings = {
+            "poll_interval": 0.1,
+            "lease_ttl": timedelta(seconds=1.5),
+            "heartbeat_interval": 0.3,
+            "task_stale_after": timedelta(seconds=0.5),
+        }
+
+        async with db_lifespan():
+            queue = DbTaskQueue()
+            await enqueue_drive(queue, run_id)
+            worker_a = CampaignRunWorker(
+                driver=_ProbeDriver("A"),  # type: ignore[arg-type]
+                queue=queue,
+                leases=_RaisingRenewLease(DbLeaseStore()),  # type: ignore[arg-type]
+                worker_id="fence-A",
+                **timings,  # type: ignore[arg-type]
+            )
+            worker_b = CampaignRunWorker(
+                driver=_ProbeDriver("B"),  # type: ignore[arg-type]
+                queue=queue,
+                leases=DbLeaseStore(),
+                worker_id="fence-B",
+                **timings,  # type: ignore[arg-type]
+            )
+
+            async def _watch() -> None:
+                deadline = asyncio.get_running_loop().time() + 25
+                while not probe.completions:
+                    if asyncio.get_running_loop().time() >= deadline:
+                        break
+                    await asyncio.sleep(0.1)
+                worker_b.stop()
+
+            # A claims + starts its long phase first; B starts polling a beat later.
+            a_task = asyncio.create_task(worker_a.drain_once())
+            await asyncio.sleep(0.2)
+            b_task = asyncio.create_task(worker_b.run())
+            watch_task = asyncio.create_task(_watch())
+            await asyncio.wait_for(asyncio.gather(a_task, b_task, watch_task), timeout=30)
+
+        assert probe.peak == 1, f"two concurrent drivers: {probe.peak}"
+        assert "A" in probe.starts, "worker A should have started its phase"
+        assert "A" not in probe.completions, "A's phase must have been cancelled, not completed"
+        assert "B" in probe.completions, "worker B should have taken over and completed the run"
+
+    run_async(_run())
+
+
 def test_claim_scopes_by_run_and_kind() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:

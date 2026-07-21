@@ -40,7 +40,7 @@ state machines (+ the M8A per-account graphs the `deep` phase fans out to) as **
 | `lease.py` | the `run_lease` table repo + `DbLeaseStore`: atomic acquire (`INSERT … ON CONFLICT DO UPDATE … WHERE expires_at <= now()`), holder-guarded renew/release. All clock reads are DB `now()` (the M7.4 convention — no cross-worker NTP skew) |
 | `queue.py` | the `fleet_task` table repo + `DbTaskQueue`: idempotent enqueue (`ON CONFLICT DO NOTHING` on `(kind, campaign_run_id, dedup_key)`), atomic claim-next (`FOR UPDATE SKIP LOCKED`, `ORDER BY priority, enqueued_at`), holder-guarded finish/requeue, stale-reclaim window |
 | `scheduler.py` | `QueueBackedScheduler` — implements the exact `run_accounts(specs, campaign_run_id=…, checkpointer=…, run_one=…)` signature the M8A deep handler is typed against (`clue_api.deep.handler.DeepAccountScheduler`, asserted structurally in tests), so at integration it is a constructor-argument swap for `durable.AccountScheduler` — zero handler changes. Enqueues every spec as an `account_job` (priority = tier rank), drains under the concurrency window, marks tasks done/failed. Carries the same Doc C §4 per-entity single-flight as `AccountScheduler` via a **required** (not optional) `lock_factory` seam — every `run_one` (drain + done-replay) runs inside the injected per-entity lock, so two runs never deep-research one entity at once; the required-arg makes a forgotten factory a construction-time `TypeError` (prod wires `account_entity_lock_factory(get_redis())` at the api root) |
-| `worker.py` | `CampaignRunWorker` — the drain loop: claim a `drive_run` task → acquire the run lease → step the run via the injected `RunDriver` seam (structurally satisfied by `durable.CampaignRun`) with a concurrent lease-heartbeat → finish the task with the run's terminal/suspended status → release the lease. Graceful `stop()` between phases; lease loss aborts the drive (cooperative fencing) |
+| `worker.py` | `CampaignRunWorker` — the drain loop: claim a `drive_run` task → acquire the run lease → step the run via the injected `RunDriver` seam (structurally satisfied by `durable.CampaignRun`) with a concurrent, **supervised** lease-heartbeat → finish the task with the run's terminal/suspended status → release the lease. Graceful `stop()` between phases; lease loss **cancels the in-flight phase immediately** (supervised-heartbeat fencing — §2.3) |
 | `runner.py` | `run_worker(...)` — the asyncio process entrypoint shell (signal handling, drain-on-SIGTERM). The *production* `__main__` (composing real phase handlers) is `clue_api` wiring and lands **at integration**, per the treaty §3.4; tests compose their own harness process |
 
 ### 2.2 The tables (one migration, hash id off `98422adaaa38`)
@@ -76,11 +76,27 @@ guarantees, adding none:
    re-owned, `queued` tasks drain in tier order. Exactly-once **spend** is the ledger's
    guarantee, exactly like today's resume path; the queue adds ordering + visibility + at-most-
    one concurrent executor per task.
-4. A zombie driver (alive but lease-expired) is fenced cooperatively: heartbeat failure aborts
-   its drive between phases, and its task/lease writes are holder-guarded no-ops. The residual —
-   a zombie mid-*phase* write racing the takeover's re-run — is exactly the window the account-
-   step ledger (non-zero staleness) and the M2.4 entity locks already govern in real runs;
-   recorded as a known bound, not solved twice.
+4. A zombie driver (alive but lease-expired) is fenced by **supervised heartbeat + immediate
+   mid-phase cancellation** (the ruling below, superseding the earlier "cooperative fencing /
+   aborts at the next phase boundary" language). The heartbeat is a *supervised* task, not a
+   fire-and-forget coroutine: `_drive_task` waits on the drive and the heartbeat together
+   (`asyncio.wait(FIRST_COMPLETED)`), and the heartbeat completing first is a fencing event that
+   **cancels the in-flight `advance()` immediately**. The heartbeat itself is resilient (a renew
+   that *raises* is logged and retried — the audit's finding #2 trigger no longer silently kills
+   it) and authoritative (it proves lease ownership against the event loop's monotonic clock, and
+   declares the lease lost once it can no longer land a beat before true TTL expiry). The zombie
+   window thus shrinks from "the rest of the phase" (unbounded) to **cancellation latency**; a
+   cancelled phase is safe by construction because SIGKILL mid-phase is already proven resumable
+   by the exit gate and cancellation is strictly gentler.
+
+   **Hard fence tokens are explicitly deferred.** True hard fencing — a lease token stamped on
+   acquire and re-checked on *every* durable write — requires changing the `durable/` ledger and
+   state-machine write paths, outside B1's treaty scope; it is recorded as an integration /
+   Temporal-era follow-up (and in the cross-milestone backlog). The residual: `advance()`'s
+   durable writes are still un-fenced during the cancellation-latency window — the same class as
+   today's documented resume-path residual (a zombie mid-*phase* write racing the takeover's
+   re-run), bounded by the M7 account-step ledger (non-zero staleness) and the `ce6a147`
+   per-entity single-flight locks. Must be re-examined before multi-worker production deployment.
 
 ### 2.4 Drive semantics
 

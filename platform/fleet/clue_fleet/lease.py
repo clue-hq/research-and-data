@@ -10,9 +10,12 @@ atomically re-owns it — takeover is possible *only* after expiry (the exit-gat
 All clock reads are database ``now()`` (the M7.4 ledger convention — no cross-worker NTP skew),
 and every mutation after acquire is **holder-guarded** (``WHERE worker_id = :me``): a fenced-out
 zombie's renew/release matches zero rows instead of stealing the lease back. Fencing is
-cooperative — a driver that loses its lease aborts its drive at the next phase boundary; the
-residual zombie-mid-phase window is governed by the account-step ledger and the M2.4 entity
-locks, exactly as on today's resume path (spec §2.3).
+**supervised-heartbeat + immediate mid-phase cancellation** (see :mod:`clue_fleet.worker` and
+spec §2.3): the worker supervises its lease heartbeat and cancels the in-flight phase the moment
+the lease is lost, rather than waiting for the next phase boundary. Hard fence tokens (a lease
+token checked on every durable write) are deferred to integration; the residual zombie-mid-phase
+window is now cancellation latency, governed by the account-step ledger and the entity locks,
+exactly as on today's resume path (spec §2.3).
 
 Repository shape mirrors ``durable/campaign_run.py``: module-level ``text(...)`` + ``async def``
 helpers over an :class:`~sqlalchemy.ext.asyncio.AsyncConnection`; :class:`DbLeaseStore` wraps
