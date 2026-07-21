@@ -130,11 +130,23 @@ class FakeLeaseStore:
         # that used to silently kill the heartbeat coroutine.
         self.renew_always_raises = False
         self.renew_raise_budget = 0
+        # Round-trip latency injection (review finding a): ``latency_s`` sleeps at the start of
+        # both acquire and renew, modelling the server round-trip. The conservative-deadline fix
+        # seeds the ownership deadline from the loop time captured *before* acquire/renew (so the
+        # local deadline is never later than the DB's ``expires_at``); with a non-zero latency the
+        # old post-round-trip seed drifts the fence past true expiry.
+        self.latency_s = 0.0
+        # Photo-finish injection (review finding e): when ``renew_gate`` is an ``asyncio.Event``,
+        # a renew blocks on it and returns ``False`` when it is set — so a scripted driver can make
+        # its final advance and the fencing renew resolve on the same tick.
+        self.renew_gate: asyncio.Event | None = None
         self.events: list[str] = []
 
     async def acquire(
         self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
     ) -> bool:
+        if self.latency_s:
+            await asyncio.sleep(self.latency_s)
         holder = self.holders.get(project_run_id)
         if holder is None or holder == worker_id:
             self.holders[project_run_id] = worker_id
@@ -144,11 +156,17 @@ class FakeLeaseStore:
         return False
 
     async def renew(self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta) -> bool:
+        if self.latency_s:
+            await asyncio.sleep(self.latency_s)
         if self.renew_always_raises or self.renew_raise_budget > 0:
             if not self.renew_always_raises:
                 self.renew_raise_budget -= 1
             self.events.append(f"renew-raised:{worker_id}")
             raise RuntimeError("simulated renewal fault")
+        if self.renew_gate is not None:
+            await self.renew_gate.wait()
+            self.events.append(f"renew-gated-false:{worker_id}")
+            return False
         if self.deny_renewal or self.holders.get(project_run_id) != worker_id:
             self.events.append(f"renew-failed:{worker_id}")
             return False

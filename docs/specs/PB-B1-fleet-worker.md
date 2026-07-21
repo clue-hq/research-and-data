@@ -119,9 +119,23 @@ guarantees, adding none:
    (`asyncio.wait(FIRST_COMPLETED)`), and the heartbeat completing first is a fencing event that
    **cancels the in-flight `advance()` immediately**. The heartbeat itself is resilient (a renew
    that *raises* is logged and retried — the audit's finding #2 trigger no longer silently kills
-   it) and authoritative (it proves lease ownership against the event loop's monotonic clock, and
-   declares the lease lost once it can no longer land a beat before true TTL expiry). The zombie
-   window thus shrinks from "the rest of the phase" (unbounded) to **cancellation latency**; a
+   it; retries pack denser as the deadline nears, and the drive-task claim is re-stamped on
+   *every* beat, including error beats, so a live driver's claim can't go stale under a sustained
+   transient fault) and authoritative (it proves lease ownership against the event loop's monotonic
+   clock, and declares the lease lost once it can no longer land a beat before true TTL expiry).
+   The ownership deadline is **conservative**: seeded from the loop instant captured *before* each
+   acquire/renew round-trip (never after it returns), so the local deadline is always ≤ the DB's
+   server-stamped `expires_at` — the fence can never fire *after* true expiry. A construction-time
+   **`2·heartbeat_interval < lease_ttl`** invariant guarantees at least a beat of margin, so a
+   single transient blip can't false-fence a healthy lease (a config violating it is a
+   `ValueError` at construction — closing part of the settings-validation backlog; full
+   Settings-level validation remains open). On a same-tick photo finish (the final `advance()` and
+   the fencing renew both resolving at once) the drive's real terminal result wins — a completed
+   run is never misreported `lease_lost` and requeued. After both children are fully unwound the
+   lease is **released unconditionally** (holder-guarded — a no-op after a genuine takeover, but a
+   transient-error fence still holds the lease, so releasing frees it at once rather than stalling
+   a full TTL for expiry). The zombie window thus shrinks from "the rest of the phase" (unbounded)
+   to **cancellation latency** (residual = cancellation latency only, no longer a full phase); a
    cancelled phase is safe by construction because SIGKILL mid-phase is already proven resumable
    by the exit gate and cancellation is strictly gentler.
 

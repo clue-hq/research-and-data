@@ -20,12 +20,21 @@ that replaces the earlier "cooperative fencing / abort at the next phase boundar
 heartbeat is a *supervised* task, not a fire-and-forget coroutine: a renewal that raises no
 longer silently kills it (the audit's finding #2 — a dead heartbeat while the phase runs on past
 expiry lets a takeover worker drive the same run). Instead the heartbeat is resilient (a
-transient renew fault is logged and retried) and authoritative (it proves lease ownership against
-the event loop's monotonic clock and, once it can no longer prove ownership before true expiry,
-declares the lease lost). ``_drive_task`` supervises the drive *and* the heartbeat together
-(``asyncio.wait(FIRST_COMPLETED)``): the heartbeat finishing first is a fencing event that
-**cancels the in-flight phase immediately**, so the zombie window shrinks from "the rest of the
-phase" (unbounded) to cancellation latency. Hard fence tokens (a lease token checked on every
+transient renew fault is logged, the drive-task claim re-stamped, and the renew retried — with
+denser retries as the deadline nears) and authoritative (it proves lease ownership against the
+event loop's monotonic clock — a *conservative* deadline seeded from the pre-call instant of each
+acquire/renew so the local deadline is never later than the DB's server-stamped ``expires_at`` —
+and, once it can no longer prove ownership before true expiry, declares the lease lost). A
+construction-time ``2·heartbeat_interval < lease_ttl`` invariant guarantees a healthy lease always
+has a beat of margin, so a lone transient blip can't false-fence it. ``_drive_task`` supervises the
+drive *and* the heartbeat together (``asyncio.wait(FIRST_COMPLETED)``): a heartbeat finishing while
+the drive is still pending is a fencing event that **cancels the in-flight phase immediately**, so
+the zombie window shrinks from "the rest of the phase" (unbounded) to cancellation latency (on a
+same-tick photo finish the drive's real terminal result wins, never a spurious ``lease_lost``).
+Once both children are fully unwound, ``_drive_task`` releases the lease **unconditionally** — a
+holder-guarded no-op after a genuine takeover, but after a transient-error fence it frees the
+still-held lease at once so a takeover needn't wait a full TTL for expiry. Hard fence tokens (a
+lease token checked on every
 durable write) are explicitly **deferred** — they touch ``durable/`` write paths outside B1's
 treaty scope and are an integration/Temporal-era follow-up; the residual is that ``advance()``'s
 durable writes are still un-fenced during the cancellation-latency window, the same class as the
@@ -111,6 +120,19 @@ class ProjectRunWorker:
         heartbeat_interval: float = 10.0,
         task_stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
     ) -> None:
+        # Config validation (review finding c): a lease needs at least *two* heartbeats of margin
+        # inside one TTL. When ``2·heartbeat_interval >= lease_ttl`` the first post-renew beat is
+        # already inside the ``deadline − heartbeat_interval`` loss margin, so a single transient
+        # renew blip false-fences a perfectly healthy lease. Reject that config at construction
+        # rather than let it fence at runtime. (This closes part of the settings-validation backlog
+        # item; full Settings-level validation of the ``CLUE_FLEET_*`` knobs remains open.)
+        if heartbeat_interval * 2 >= lease_ttl.total_seconds():
+            raise ValueError(
+                "heartbeat_interval * 2 must be < lease_ttl "
+                f"(got heartbeat_interval={heartbeat_interval}s, "
+                f"lease_ttl={lease_ttl.total_seconds()}s): a lease needs two heartbeats of margin "
+                "inside one TTL, else a single transient renew fault false-fences a live lease."
+            )
         self._driver = driver
         self._queue: TaskQueue = queue if queue is not None else DbTaskQueue()
         self._leases: LeaseStore = leases if leases is not None else DbLeaseStore()
@@ -156,6 +178,11 @@ class ProjectRunWorker:
 
     async def _drive_task(self, task: FleetTaskRow) -> None:
         run_id = task.project_run_id
+        # Capture the loop clock BEFORE the acquire round-trip (review finding a): the DB stamps
+        # ``expires_at`` server-side at statement time, so seeding the heartbeat's ownership
+        # deadline from *this* pre-call instant (rather than from the time the round-trip returns)
+        # keeps the local deadline ≤ the DB expiry — the fence never fires after true expiry.
+        t_acquire = asyncio.get_running_loop().time()
         acquired = await self._leases.acquire(
             project_run_id=run_id, worker_id=self.worker_id, ttl=self._lease_ttl
         )
@@ -170,19 +197,30 @@ class ProjectRunWorker:
 
         lease_lost = asyncio.Event()
         drive = asyncio.create_task(self._drive(run_id, lease_lost))
-        heartbeat = asyncio.create_task(self._heartbeat(run_id, task.task_id, lease_lost))
+        heartbeat = asyncio.create_task(
+            self._heartbeat(run_id, task.task_id, lease_lost, t_acquire)
+        )
         outcome: str
         run: CampaignRunRow | None
         try:
             done, _pending = await asyncio.wait(
                 {drive, heartbeat}, return_when=asyncio.FIRST_COMPLETED
             )
-            if heartbeat in done:
-                # FENCING EVENT: the heartbeat finished before the drive — the lease is gone (or
-                # is about to expire). Ensure the flag is set, surface any crash (never silently
-                # drop the heartbeat's exception — that was the bug), then cancel the in-flight
-                # phase IMMEDIATELY (mid-phase, not at the next boundary — the zombie window is
-                # now cancellation latency) and take the lease_lost outcome path.
+            if drive in done:
+                # The DRIVE finished first — its result is authoritative even on a same-tick photo
+                # finish where the heartbeat also completed (review finding e): a terminal drive
+                # must never be misreported ``lease_lost`` and requeued for a redundant re-drive.
+                # Stop heartbeating and read the drive's result (or re-raise its exception).
+                heartbeat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat
+                outcome, run = drive.result()
+            else:
+                # FENCING EVENT: only the heartbeat finished (the drive is still pending) — the
+                # lease is gone (or is about to expire). Ensure the flag is set, surface any crash
+                # (never silently drop the heartbeat's exception — that was the bug), then cancel
+                # the in-flight phase IMMEDIATELY (mid-phase, not at the next boundary — the zombie
+                # window is now cancellation latency) and take the lease_lost outcome path.
                 lease_lost.set()
                 hb_exc = heartbeat.exception()
                 if hb_exc is not None:
@@ -198,12 +236,6 @@ class ProjectRunWorker:
                 with contextlib.suppress(asyncio.CancelledError):
                     await drive
                 outcome, run = "lease_lost", None
-            else:
-                # The drive finished first — stop heartbeating and read its result.
-                heartbeat.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat
-                outcome, run = drive.result()
         except Exception:
             # One run's fault must not kill the worker (the fleet keeps draining other runs):
             # record the task FAILED — it stays parked until an explicit requeue — and move on.
@@ -216,14 +248,29 @@ class ProjectRunWorker:
             )
             return
         finally:
-            # Neither child may outlive us (e.g. on a worker-level cancellation unwinding here).
+            # Fully unwind BOTH children before touching the lease (review finding d): cancel any
+            # still-running child and gather both so a cancelled ``advance`` can never still be
+            # mid-write when we release. ``return_exceptions=True`` also retrieves any stray
+            # exception so it isn't logged as never-retrieved.
             if not drive.done():
                 drive.cancel()
             if not heartbeat.done():
                 heartbeat.cancel()
-            # Release only if still ours (holder-guarded); a lost lease belongs to the taker.
-            if not lease_lost.is_set():
+            await asyncio.gather(drive, heartbeat, return_exceptions=True)
+            # Release UNCONDITIONALLY, now that the drive is fully unwound. Release is
+            # holder-guarded (``WHERE worker_id = :me``): after a genuine takeover it is a safe
+            # no-op (the lease belongs to the taker), but after a *transient-error* fence we may
+            # still hold the lease — releasing frees it at once so a takeover need not wait a full
+            # TTL for expiry. Never let a release fault mask the real drive outcome.
+            try:
                 await self._leases.release(project_run_id=run_id, worker_id=self.worker_id)
+            except Exception:
+                log.warning(
+                    "worker.release_error",
+                    worker_id=self.worker_id,
+                    run_id=str(run_id),
+                    exc_info=True,
+                )
 
         result_ref: dict[str, JsonValue] = {"outcome": outcome}
         if run is not None:
@@ -270,7 +317,7 @@ class ProjectRunWorker:
                 return "stalled", run
 
     async def _heartbeat(
-        self, run_id: CampaignRunId, task_id: UUID, lease_lost: asyncio.Event
+        self, run_id: CampaignRunId, task_id: UUID, lease_lost: asyncio.Event, t_acquire: float
     ) -> None:
         """The supervised, authoritative lease heartbeat (spec §2.3 — replaces cooperative
         fencing). Renews the lease each beat; when it can no longer prove ownership it sets
@@ -284,22 +331,36 @@ class ProjectRunWorker:
         * ``renew()`` RAISES → a transient fault (a DB blip on the renewal path — the audit's
           exact trigger). Log it (keep the traceback) and keep beating; the coroutine must NOT
           die. But we can only keep driving while we can still prove ownership — ownership is
-          tracked against the event loop's monotonic clock (``deadline``, refreshed after every
-          successful renew, seeded at start because the acquire just succeeded). Once we are
-          within one ``heartbeat_interval`` of true expiry (no beat of safety margin left before
-          the lease lapses) we can no longer guarantee a renewal in time, so we declare the lease
-          lost and let the supervisor fence the phase.
+          tracked against the event loop's monotonic clock (``deadline``). Once we are within one
+          ``heartbeat_interval`` of true expiry (no beat of safety margin left before the lease
+          lapses) we can no longer guarantee a renewal in time, so we declare the lease lost and
+          let the supervisor fence the phase.
 
-        ``touch()`` failures (``False`` or exception) are logged and ignored — the drive-task
-        claim heartbeat keeps a *live* long drive out of the staleness window, but its churn is
-        recoverable and holder-guarded; it is not a fencing matter. (The ``heartbeat_interval <
-        lease_ttl`` relation is the existing settings-validation backlog item; not enforced
-        here.)"""
+        **Conservative deadline** (review finding a): ``deadline`` is seeded from ``t_acquire`` —
+        the loop time captured *before* the acquire round-trip in ``_drive_task`` — and refreshed
+        after each successful renew from ``t0``, the loop time captured *before* that renew's
+        round-trip. Since the DB stamps ``expires_at`` server-side at statement time, the local
+        deadline is thus always ≤ the DB's true expiry (monotonic-vs-DB-clock drift over one TTL is
+        negligible). That, plus the construction-time ``2·heartbeat_interval < lease_ttl``
+        guarantee, means declaring loss at ``deadline − heartbeat_interval`` genuinely leaves a
+        beat of margin before any takeover is possible.
+
+        **Denser retries near the deadline** (review finding b): on the renew-error path we retry
+        after a fraction of the remaining margin (bounded below by 50ms) rather than a full beat,
+        so a transient blip gets several attempts inside the remaining margin, not one.
+
+        ``touch()`` re-stamps the drive-task claim EVERY beat — including error beats (review
+        finding f) — so a sustained renew fault can't let a live driver's claim cross
+        ``task_stale_after`` and be re-owned by a sibling. ``touch()`` failures (``False`` or
+        exception) are logged and ignored — the churn is recoverable and holder-guarded; it is not
+        a fencing matter."""
         loop = asyncio.get_running_loop()
-        # The acquire just succeeded → we own the lease for a full TTL from now.
-        deadline = loop.time() + self._lease_ttl.total_seconds()
+        # The acquire just succeeded → we own the lease for a full TTL from the pre-acquire instant.
+        deadline = t_acquire + self._lease_ttl.total_seconds()
+        sleep_for = self._heartbeat_interval
         while True:
-            await asyncio.sleep(self._heartbeat_interval)
+            await asyncio.sleep(sleep_for)
+            t0 = loop.time()  # capture BEFORE the renew round-trip (conservative deadline)
             try:
                 renewed = await self._leases.renew(
                     project_run_id=run_id, worker_id=self.worker_id, ttl=self._lease_ttl
@@ -321,22 +382,32 @@ class ProjectRunWorker:
                     )
                     lease_lost.set()
                     return
+                # Still within margin: keep the drive-task claim fresh (finding f) and retry sooner
+                # than a full beat — several attempts inside the shrinking margin (finding b).
+                await self._touch(task_id, run_id)
+                sleep_for = min(self._heartbeat_interval, max(0.05, (deadline - loop.time()) / 4))
                 continue
             if not renewed:
                 log.warning("worker.lease_lost", worker_id=self.worker_id, run_id=str(run_id))
                 lease_lost.set()
                 return
-            # Renewed → ownership proven for another full TTL from now.
-            deadline = loop.time() + self._lease_ttl.total_seconds()
-            try:
-                await self._queue.touch(task_id=task_id, worker_id=self.worker_id)
-            except Exception:
-                log.warning(
-                    "worker.touch_error",
-                    worker_id=self.worker_id,
-                    run_id=str(run_id),
-                    exc_info=True,
-                )
+            # Renewed → ownership proven for another full TTL from the pre-renew instant ``t0``.
+            deadline = t0 + self._lease_ttl.total_seconds()
+            sleep_for = self._heartbeat_interval
+            await self._touch(task_id, run_id)
+
+    async def _touch(self, task_id: UUID, run_id: CampaignRunId) -> None:
+        """Re-stamp the drive-task claim so a live long drive never looks orphaned; failures are
+        logged and ignored (holder-guarded, recoverable — not a fencing matter)."""
+        try:
+            await self._queue.touch(task_id=task_id, worker_id=self.worker_id)
+        except Exception:
+            log.warning(
+                "worker.touch_error",
+                worker_id=self.worker_id,
+                run_id=str(run_id),
+                exc_info=True,
+            )
 
     async def _sleep(self, seconds: float) -> None:
         """Sleep, but wake immediately on :meth:`stop` (a draining worker exits promptly)."""
