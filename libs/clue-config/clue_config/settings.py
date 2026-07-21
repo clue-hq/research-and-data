@@ -12,7 +12,7 @@ The ICP synthesis model id (M5.2) is the first live setting here; it also feeds
 
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -43,6 +43,24 @@ class Settings(BaseSettings):
     # OpenRouter model id for the write-time reconciliation judge (Doc M §9).
     # Env: ``CLUE_MEMORY_RECONCILE_MODEL``.
     memory_reconcile_model: str = DEFAULT_SYNTHESIS_MODEL
+    # --- durable artifact storage (Phase B2 / REQ-07; append-only per treaty §3.2) ---
+    # Which StorageBackend `clue_storage.storage_from_settings` builds. The fs ↔ S3 swap is this
+    # one setting (the B2 exit gate); nothing else may branch on it.
+    storage_backend: Literal["fs", "s3"] = "fs"
+    # Root directory for the fs backend. Env: ``CLUE_STORAGE_FS_ROOT``.
+    storage_fs_root: str = ".artifacts"
+    # S3-compatible backend knobs (endpoint config covers AWS S3 / R2 / MinIO). The bucket is
+    # required when ``storage_backend=s3`` (the factory fails loud). Credentials are Secrets
+    # (``CLUE_STORAGE_S3_ACCESS_KEY_ID`` / ``CLUE_STORAGE_S3_SECRET_ACCESS_KEY``), not settings.
+    storage_s3_bucket: str | None = None
+    storage_s3_endpoint_url: str | None = None
+    storage_s3_region: str | None = None
+
+    # --- scrape backend (Phase B2.4, founder addition) ---
+    # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
+    # ``firecrawl`` (the paid API, default) or ``scrapling`` (local, credit-free). Read only by
+    # ``adapters.default_scrape_backend``. Env: ``CLUE_SCRAPE_BACKEND``.
+    scrape_backend: Literal["firecrawl", "scrapling"] = "firecrawl"
 
 
 def load_settings(**kwargs: Any) -> Settings:

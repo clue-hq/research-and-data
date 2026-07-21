@@ -69,6 +69,11 @@ class CachedArtifact(BaseModel):
     normalized: NormalizedText
     stored_at: UtcDatetime
     cost_cents: CostCents
+    # The durable snapshot key of the fetch this entry came from (PB-B2.3): a cache *hit* re-stamps
+    # the original's artifact ref onto its claims instead of losing it (no bytes are re-fetched on
+    # a hit, so this is the only way a hit's claims keep offline-resolvable evidence). None when
+    # the entry predates snapshotting or no sink was active.
+    artifact_key: str | None = None
 
 
 def is_fresh(entry: CachedArtifact, ttl: timedelta, *, now: datetime) -> bool:

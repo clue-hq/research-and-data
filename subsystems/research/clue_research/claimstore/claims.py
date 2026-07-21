@@ -48,13 +48,14 @@ from clue_research.claimstore.tenancy import WorkspaceScope
 _INSERT_SQL = text(
     """
     INSERT INTO claim (
-        id, entity_id, entity_type, field_key, value_json, source_url, source_key, source_tier,
+        id, entity_id, entity_type, field_key, value_json, source_url, source_key, artifact_key,
+        source_tier,
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
         identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
-        CAST(:value_json AS jsonb), :source_url, :source_key, :source_tier,
+        CAST(:value_json AS jsonb), :source_url, :source_key, :artifact_key, :source_tier,
         CAST(:extraction_method AS extraction_method), :evidence_span,
         :confidence, :corroborations, :observed_at, :collected_at, :cost_cents, :run_id,
         CAST(:research_mode AS research_mode), :superseded_by,
@@ -70,7 +71,8 @@ _INSERT_SQL = text(
 # Selected columns, in a stable order, for reconstructing a Claim. One list so the reader and any
 # future column add stay in one place.
 _SELECT_COLUMNS = (
-    "id, entity_id, entity_type, field_key, value_json, source_url, source_key, source_tier, "
+    "id, entity_id, entity_type, field_key, value_json, source_url, source_key, artifact_key, "
+    "source_tier, "
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
     "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id"
@@ -88,6 +90,7 @@ def _insert_params(claim: Claim) -> dict[str, object]:
         "value_json": serialize_value_json(claim.value_json),
         "source_url": claim.source_url,
         "source_key": claim.source_key,
+        "artifact_key": claim.artifact_key,
         "source_tier": claim.source_tier,
         "extraction_method": claim.extraction_method.value,
         "evidence_span": claim.evidence_span,
@@ -131,6 +134,7 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "value_json": value_json,
             "source_url": row["source_url"],
             "source_key": row.get("source_key"),
+            "artifact_key": row.get("artifact_key"),
             "source_tier": row["source_tier"],
             "extraction_method": row["extraction_method"],
             "evidence_span": row["evidence_span"],

@@ -1,0 +1,31 @@
+[project]
+name = "clue-storage"
+version = "0.0.0"
+description = "Clue platform durable artifact storage — StorageBackend protocol + fs & S3-compatible impls over content-addressed keys (Phase B2 / REQ-07)."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+    "clue-core",
+    "clue-db",
+    "clue-config",
+]
+
+[project.optional-dependencies]
+# The S3-compatible impl (endpoint config covers AWS S3 / R2 / MinIO). The SDK is lazy-imported
+# only inside ``clue_storage/s3.py`` (the Rule-4 pattern: provider SDKs stay behind their seam),
+# so the base install never needs it.
+s3 = ["aioboto3>=13"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clue_storage"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }
+clue-db = { workspace = true }
+clue-config = { workspace = true }
