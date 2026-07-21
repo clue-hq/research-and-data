@@ -1,13 +1,20 @@
 """The PB-B1 exit gate (treaty §2-B1): kill -9 at ~40% of a 500-account stub-mode run →
-restart → resume completes **exactly-once**; a second worker may not drive a leased run and
-takes over only after expiry.
+restart → resume completes; a second worker may not drive a leased run and takes over only after
+expiry.
 
 Real OS processes (``exit_gate_harness.py``), real SIGKILL, the real M7 state machine + M7.4
-ledger + PB-B1 lease/queue underneath; only the phase *bodies* are stubs. The double-spend
-detector is the ``exit_gate_spend_journal`` table the stub job writes atomically with its ledger
-finish: after the resumed run completes, every ``(account, field, tier)`` key must have exactly
-one journal row and one ``succeeded`` ledger row, and every ``(campaign_run, phase)`` key one
-``succeeded`` ledger row — no double spend anywhere despite the kill.
+ledger + PB-B1 lease/queue underneath; only the phase *bodies* are stubs.
+
+**What "exactly-once" this proves, precisely** (narrowed from the earlier overstatement — audit
+finding #4): exactly-once is proven for **DB effects and the ledger** — the
+``exit_gate_spend_journal`` row and the ledger ``succeeded`` finish commit in ONE transaction, so
+every ``(account, field, tier)`` key has exactly one journal row and one ``succeeded`` ledger
+row, and every ``(campaign_run, phase)`` key one ``succeeded`` ledger row, despite the kill. The
+**provider boundary is at-least-once**: a kill between provider-accept and ledger-commit repeats
+that call on takeover — *observably*, via the second ``exit_gate_provider_calls`` journal the stub
+writes in its own committed transaction *before* the "paid" call, and bounded by the in-flight
+drain window. True provider-boundary exactly-once needs provider-side idempotency keys and belongs
+to the resolver layer (integration scope), not the fleet shell.
 """
 
 from __future__ import annotations
@@ -51,6 +58,10 @@ _HARNESS = Path(__file__).with_name("exit_gate_harness.py")
 N_ACCOUNTS = 500
 KILL_AT = int(N_ACCOUNTS * 0.4)
 LEASE_TTL_S = 2.0
+# The deep drain's bounded concurrency window — also the in-flight set at the instant of the
+# kill, hence the upper bound on how many keys can have a duplicated provider call across the
+# kill boundary. Passed to the harness via EXIT_GATE_WINDOW.
+EXIT_GATE_WINDOW = 16
 
 _CREATE_JOURNAL = text(
     """
@@ -63,11 +74,29 @@ _CREATE_JOURNAL = text(
     """
 )
 
+# The provider-boundary journal (audit finding #4): the stub records here, in its OWN committed
+# transaction, at the moment a real resolver would be invoked — BEFORE the "paid" call — so every
+# provider-boundary attempt is observable even under a SIGKILL immediately after. A kill between
+# provider-accept and the atomic ledger commit thus shows up as a *second* row on takeover
+# (at-least-once at the provider boundary), while the spend journal above stays exactly-once.
+_CREATE_PROVIDER_CALLS = text(
+    """
+    CREATE TABLE IF NOT EXISTS exit_gate_provider_calls (
+        run_id    uuid NOT NULL,
+        step_key  text NOT NULL,
+        worker    text NOT NULL,
+        call_id   uuid NOT NULL,
+        called_at timestamptz NOT NULL DEFAULT now()
+    )
+    """
+)
+
 
 async def _setup(run_id: CampaignRunId) -> None:
     async with db_lifespan() as engine:
         async with engine.begin() as conn:
             await conn.execute(_CREATE_JOURNAL)
+            await conn.execute(_CREATE_PROVIDER_CALLS)
         # The real start path (idempotent on the minted id) + the drive offer.
         machine = CampaignRun(store=DbCampaignRunStore())
         await machine.start(
@@ -149,6 +178,37 @@ async def _assert_exactly_once(run_id: CampaignRunId, worker_a: str, worker_b: s
     }
     assert workers == {worker_a, worker_b}
 
+    # 1b. The provider-boundary journal — the TRUE contract (audit finding #4): every completed
+    # key was invoked at least once; duplicates arise ONLY across the kill boundary and are
+    # bounded by the in-flight drain window. This is at-least-once at the provider boundary — a
+    # kill between provider-accept and ledger-commit repeats the call on takeover, observably.
+    provider_rows = await _query(
+        "SELECT step_key, worker FROM exit_gate_provider_calls WHERE run_id = :run", run=run_id
+    )
+    provider_workers: dict[str, list[str]] = {}
+    for key, worker in provider_rows:
+        provider_workers.setdefault(str(key), []).append(str(worker))
+    journal_rows = await _query(
+        "SELECT step_key, worker FROM exit_gate_spend_journal WHERE run_id = :run", run=run_id
+    )
+    journal_worker = {str(key): str(worker) for key, worker in journal_rows}
+    # Every key that completed (one spend-journal row) had at least one provider-boundary call.
+    for key in expected_keys:
+        assert provider_workers.get(key), f"no provider call recorded for completed key {key}"
+    # Duplicated keys: the provider was called more than once. Legitimately, ONLY when the kill
+    # orphaned an accepted call — so worker A must be among the callers and worker B must own the
+    # single completing spend-journal row (a healthy single driver never double-calls a key).
+    duplicated = {key: ws for key, ws in provider_workers.items() if len(ws) > 1}
+    assert len(duplicated) <= EXIT_GATE_WINDOW, (
+        f"{len(duplicated)} keys duplicated at the provider boundary, "
+        f"more than the in-flight window ({EXIT_GATE_WINDOW}): {duplicated}"
+    )
+    for key, ws in duplicated.items():
+        assert worker_a in ws, f"duplicated key {key} not attributable to the killed worker A: {ws}"
+        assert journal_worker[key] == worker_b, (
+            f"duplicated key {key} completed by {journal_worker[key]}, expected the takeover B"
+        )
+
     # 2. The account-step ledger: every key succeeded once with the single charge.
     async with db_lifespan() as engine, engine.connect() as conn:
         for i in range(N_ACCOUNTS):
@@ -189,7 +249,7 @@ def _spawn(worker_id: str, run_id: CampaignRunId, log_path: Path) -> subprocess.
         "EXIT_GATE_LEASE_TTL_S": str(LEASE_TTL_S),
         "EXIT_GATE_HEARTBEAT_S": "0.5",
         "EXIT_GATE_STALE_S": "2",
-        "EXIT_GATE_WINDOW": "16",
+        "EXIT_GATE_WINDOW": str(EXIT_GATE_WINDOW),
         # keep the run id in the env purely for debuggability of the log files
         "EXIT_GATE_RUN_ID": str(run_id),
     }
@@ -264,7 +324,8 @@ def test_kill9_at_40_percent_resumes_exactly_once(tmp_path: Path) -> None:
             if proc is not None and proc.poll() is None:
                 proc.kill()
                 proc.wait(timeout=10)
-        # Drop the (non-alembic) journal table so it cannot leak into other suites —
+        # Drop the (non-alembic) journal tables so they cannot leak into other suites —
         # ``test_no_domain_tables_at_m0_head`` asserts a downgraded schema holds *only*
         # alembic-managed tables. Worker/failure diagnostics live in the log files, not here.
         run_async(_execute("DROP TABLE IF EXISTS exit_gate_spend_journal"))
+        run_async(_execute("DROP TABLE IF EXISTS exit_gate_provider_calls"))

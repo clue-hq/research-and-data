@@ -9,10 +9,20 @@ job per account, whose "paid resolver call" is a sleep and whose spend is record
 real M7.4 account-step idempotency ledger.
 
 The stub job mirrors the M8 exactly-once pattern precisely: claim the ``(account, field, tier)``
-key, do the "spend", then — in ONE transaction — write the effect (a row in the test's
-``exit_gate_spend_journal``) and finish the ledger ``succeeded``. That journal is the test's
-double-spend detector: kill -9 at any instant leaves either no row + a re-ownable claim, or
-exactly one row + a replayable success — never two rows for one key.
+key, record the provider invocation (in its own committed transaction, at the moment a real
+resolver would be called), do the "spend", then — in ONE transaction — write the effect (a row in
+the test's ``exit_gate_spend_journal``) and finish the ledger ``succeeded``.
+
+Two journals with two different, honest contracts:
+
+* ``exit_gate_spend_journal`` proves **DB-effect / ledger exactly-once**: the effect row and the
+  ledger ``succeeded`` finish share ONE transaction, so kill -9 at any instant leaves either no
+  row + a re-ownable claim, or exactly one row + a replayable success — never two rows for one key.
+* ``exit_gate_provider_calls`` measures the **provider boundary**, which is *at-least-once*: the
+  invocation is recorded before the "paid" call, so a kill between provider-accept and the atomic
+  ledger commit shows up as a second row on takeover — observable, and bounded by the in-flight
+  drain window. True provider-boundary exactly-once needs provider-side idempotency keys and lives
+  in the resolver layer (integration scope), not this fleet shell.
 
 Configured entirely by ``EXIT_GATE_*`` env vars (plus the standard ``CLUE_DATABASE_URL``); the
 key/entity derivations live here so the pytest side imports and recomputes the exact same keys.
@@ -27,7 +37,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from clue_fleet import CampaignRunWorker, QueueBackedScheduler, run_worker
 from sqlalchemy import text
@@ -68,6 +78,11 @@ _TIERS = ("top", "high", "low")
 _JOURNAL_INSERT = text(
     "INSERT INTO exit_gate_spend_journal (run_id, step_key, worker) "
     "VALUES (:run_id, :step_key, :worker)"
+)
+
+_PROVIDER_CALL_INSERT = text(
+    "INSERT INTO exit_gate_provider_calls (run_id, step_key, worker, call_id) "
+    "VALUES (:run_id, :step_key, :worker, :call_id)"
 )
 
 
@@ -155,6 +170,21 @@ class StubDeepHandler:
                 await asyncio.sleep(0.2)
             if claim.outcome is ClaimOutcome.REPLAY:
                 return {"entity": str(spec.entity_id), "replayed": True}
+            # Record the provider invocation FIRST, in its own committed transaction, at the exact
+            # moment a real resolver would be called — so a SIGKILL immediately after the "spend"
+            # (but before the atomic ledger commit) leaves this row as durable evidence that the
+            # provider was already invoked. On takeover the re-claim writes a second row (same key,
+            # the takeover worker) — the observable, bounded at-least-once at the provider boundary.
+            async with transaction() as conn:
+                await conn.execute(
+                    _PROVIDER_CALL_INSERT,
+                    {
+                        "run_id": campaign_run_id,
+                        "step_key": key,
+                        "worker": self._worker_label,
+                        "call_id": uuid4(),
+                    },
+                )
             # The "paid resolver call".
             await asyncio.sleep(self._job_sleep_s)
             # The M8 exactly-once shape: the effect (journal row) and the ledger ``succeeded``
