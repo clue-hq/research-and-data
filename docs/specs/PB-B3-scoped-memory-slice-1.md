@@ -25,6 +25,20 @@
    `{workspace, brand, product, project}`; `account` is a later **append-only** addition (enum
    member + FK column + CHECK arm + spine-anchor) once the account⇄spine linkage question is
    settled. `project` from birth, never `campaign` (treaty binding).
+
+   > **Addendum — 2026-07-22 founder ruling (RESOLVED; deferral lifted).** The prerequisite is
+   > settled: **accounts are workspace-local entities** — no global account identity, no
+   > cross-tenant enrichment reuse (grounds: provider licensing — enrichment data is licensed per
+   > controller, not poolable across clients — and GDPR controller-separation, each workspace its
+   > own controller). Company X in workspaces A and B is two separate `account_entity` rows.
+   > `account` scope is now **IMPLEMENTED** in migration `50b778e4009a`: the `MemoryScopeType.ACCOUNT`
+   > enum member, a `memory.scope_account_entity_id` composite FK anchored to the memory's own
+   > workspace (`account_entity` gains nullable `workspace_id`/`brand_id` + an `(id, workspace_id)`
+   > anchor), the CHECK arm, and the regenerated `scope_id`. A legacy account row with NULL
+   > `workspace_id` can never own workspace-scoped memory (the FK is unrepresentable — fail-closed).
+   > **Still research-lane follow-up (NOT done here):** the full account localization — workspace-local
+   > domain/registry uniqueness, contact locality, resolver/cache keying by workspace, and superseding
+   > the cross-tenant `reuse_scope` language — see the CLAUDE.md backlog entry `[B3×research]`.
 6. **Q6 — caps/budgets shape lives in `clue-config` `schema.py`** (append-only, `MergePolicy`
    pattern), default-constructed + injectable; per-client `config_revision` plumbing rides at
    integration.
@@ -51,9 +65,12 @@ append-only (one new import-linter contract; memory package deps). **Must not to
 - The DSAR cascade *from claim erasure* (compliance-side, integration) — memory ships its own
   `erase_subject` / `lock_memory` engine verbs; the cross-subsystem trigger wires at the api root
   with the Doc D backlog. Incidental-ref severance rides the same follow-up.
-- Claim-churn staleness signals (ruling 1), `account` scope (ruling 5), run-manifest recording of
-  the toggle state (fleet-owned, B1/Phase C), and everything in Doc M Part VII (search,
-  consolidation, vectors, type→scope matrix, per-project kill-switch override, multi-brand).
+- Claim-churn staleness signals (ruling 1), the research-side account localization (workspace-local
+  domain/registry uniqueness, contact locality, resolver/cache keying by workspace, superseding the
+  cross-tenant `reuse_scope` language — CLAUDE.md `[B3×research]`; the memory `account` scope itself
+  is now IN via migration `50b778e4009a`), run-manifest recording of the toggle state (fleet-owned,
+  B1/Phase C), and everything in Doc M Part VII (search, consolidation, vectors, type→scope matrix,
+  per-project kill-switch override, multi-brand).
 
 ## 2. Package layout (`clue_memory`)
 
@@ -91,16 +108,27 @@ PKs (`mem_` prefixed uuid4 hex), invalid states die at the schema.
 **`memory`**
 - `memory_id text PK`
 - `workspace_id text NOT NULL REFERENCES workspace` — tenancy root, fail-closed at both seams
-- `scope_type text NOT NULL CHECK IN ('workspace','brand','product','project')`
+- `scope_type text NOT NULL CHECK IN ('workspace','brand','product','project','account')`
+  (the `account` value added by migration `50b778e4009a`, 2026-07-22 ruling).
 - `scope_brand_id / scope_product_id / scope_project_id` — nullable **composite FKs pinned to the
   memory's own `workspace_id`** via the spine anchors (`brand_workspace_anchor`,
   `product_workspace_anchor`, and a new `project_workspace_anchor UNIQUE (project_id, workspace_id)`
   added to `project` by this migration — append-only, mirrors the existing anchors). A
   cross-workspace scope reference is unrepresentable.
+- `scope_account_entity_id uuid` (migration `50b778e4009a`) — the workspace-local account arm:
+  composite FK `(scope_account_entity_id, workspace_id) → account_entity (id, workspace_id)`, the
+  same anchor pattern. This migration adds the prerequisite columns/anchor to `account_entity`:
+  nullable `workspace_id text → workspace`, nullable `brand_id text` (composite FK `(brand_id,
+  workspace_id) → brand`), a `brand_id IS NULL OR workspace_id IS NOT NULL` CHECK, and
+  `account_entity_workspace_anchor UNIQUE (id, workspace_id)`. A NULL-`workspace_id` legacy account
+  can never be referenced (`memory.workspace_id` is NOT NULL) — no global memory, fail-closed.
 - `scope_check`: exactly the column matching `scope_type` is NOT NULL (`workspace` scope → all
-  three NULL; the workspace itself is the scope instance).
+  scope columns NULL; the workspace itself is the scope instance; `account` scope → only
+  `scope_account_entity_id` set).
 - `scope_id text GENERATED ALWAYS AS (…CASE on scope_type…) STORED` — one canonical grouping key
-  for reconciliation/assembly/indexing.
+  for reconciliation/assembly/indexing (the `account` arm projects `scope_account_entity_id::text`,
+  an immutable cast; migration `50b778e4009a` regenerates the column since a generated expression
+  cannot be ALTERed in place).
 - `type text NOT NULL CHECK IN ('preference','behavioral_learning')`
 - `trigger text NOT NULL` — applicability description (labeling in v1)
 - `body text NOT NULL` — the learning; **never quoted personal-claim content** (write-seam rule)
@@ -152,8 +180,10 @@ submits; no writer inserts rows. The enforcement chain, in order, identically fo
 1. **Kill-switch** (workspace toggle ∧ settings default) → typed **`MemoryDisabled`** outcome —
    a quiet no-op, *not* an error.
 2. **Tenancy + scope validity** — `workspace_id` stamped fail-closed; the scope FK insert dies at
-   the schema on a cross-workspace/dangling scope (IntegrityError = enforcement, spine style);
-   an `account`-scope submission → `PreconditionFailed` naming the deferral.
+   the schema on a cross-workspace/dangling scope (IntegrityError = enforcement, spine style). An
+   `account`-scope submission requires a scope_id that parses as a uuid (→ `PreconditionFailed`
+   otherwise); its existence + workspace-locality is the composite FK's job (IntegrityError on a
+   cross-workspace or NULL-`workspace_id` legacy account — no global memory, fail-closed).
 3. **Subject binding** — person-adjacent content without `subject_entity_id` →
    **`PreconditionFailed`** (an *error*: the proposal is malformed). Person-adjacency in v1 =
    writer-declared (`subject_entity_id` present ⇒ `retention_class='person_adjacent'`) plus
@@ -251,7 +281,9 @@ Treaty exit gate + Doc M §19 minus deferrals — the test battery (`tests/memor
 **Model & seams:** seam-only access (import guard on `_store` + Rule S1 already machine-checked) ·
 fact-shaped submission rejected naming the CKB path · body-rule rejection · cross-tenant fuzz
 matrix over workspaces ⇒ zero cross-tenant rows/bundles (fail-closed) · cross-workspace/dangling
-scope dies at the schema (IntegrityError) · `account` scope → `PreconditionFailed` (deferral note).
+scope dies at the schema (IntegrityError) · account scope is workspace-local: a cross-workspace or
+NULL-`workspace_id` legacy account reference dies at the schema (IntegrityError, no global memory);
+a malformed (non-uuid) account scope_id → `PreconditionFailed`.
 
 **Write path:** born-trust matrix (provenance × born status) · reconciliation over active ∪
 dormant · zombie-twin test (dormant restatement reactivates with history intact) · same-scope
@@ -283,8 +315,11 @@ green · `_memory/` session note.
 
 ## 9. Follow-ups recorded (integration / Phase C)
 
-1. `account` scope: append enum member + `scope_account_entity_id uuid` FK + CHECK arm (+ decide
-   the account⇄spine anchor); until then the write seam rejects it loudly.
+1. `account` scope — **RESOLVED 2026-07-22** (migration `50b778e4009a`): the enum member,
+   `scope_account_entity_id uuid` composite FK, CHECK arm, and the `account_entity` workspace-local
+   columns/anchor all landed. Accounts are workspace-local (founder ruling). The remaining
+   research-lane localization work is tracked in CLAUDE.md `[B3×research]` (stamping, domain/registry
+   re-scoping, resolver/cache keying, superseding the cross-tenant `reuse_scope` language).
 2. Claim-churn staleness (reference health, scope churn) — needs a sanctioned read over `claim`;
    decide raw-SQL vs seam at integration.
 3. DSAR cascade from claim erasure → `erase_subject`/ref-severance wiring at the api root

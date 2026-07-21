@@ -78,8 +78,35 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
 # --- fixtures over the spine + research tables ------------------------------
 
 
+async def seed_account(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str | None,
+    brand_id: str | None = None,
+    canonical_name: str = "Company X",
+) -> UUID:
+    """A workspace-local ``account_entity`` (founder ruling 2026-07-22). ``workspace_id=None``
+    seeds a legacy/global account that cannot own workspace-scoped memory (the fail-closed case).
+    Raw SQL: the research-side writer that stamps workspace/brand is future work."""
+    account_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO account_entity (id, canonical_name, workspace_id, brand_id) "
+            "VALUES (:id, :name, :workspace_id, :brand_id)"
+        ),
+        {
+            "id": account_id,
+            "name": canonical_name,
+            "workspace_id": workspace_id,
+            "brand_id": brand_id,
+        },
+    )
+    return account_id
+
+
 async def seed_spine(conn: AsyncConnection, tag: str = "") -> SimpleNamespace:
-    """A workspace with brand, product, project — the scope tree a memory attaches to."""
+    """A workspace with brand, product, project, and a workspace-local account — the scope tree
+    a memory attaches to."""
     ws = await create_workspace(conn, name=f"Acme{tag}")
     brand = await create_brand(conn, workspace_id=ws.workspace_id, name=f"Acme Brand{tag}")
     product = await create_product(
@@ -88,11 +115,18 @@ async def seed_spine(conn: AsyncConnection, tag: str = "") -> SimpleNamespace:
     project = await create_project(
         conn, workspace_id=ws.workspace_id, brand_id=brand.brand_id, name=f"Q3 ABM{tag}"
     )
+    account_id = await seed_account(
+        conn,
+        workspace_id=ws.workspace_id,
+        brand_id=brand.brand_id,
+        canonical_name=f"Company X{tag}",
+    )
     return SimpleNamespace(
         workspace_id=ws.workspace_id,
         brand_id=brand.brand_id,
         product_id=product.product_id,
         project_id=project.project_id,
+        account_entity_id=account_id,
     )
 
 
