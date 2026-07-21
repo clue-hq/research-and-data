@@ -39,6 +39,7 @@ from clue_core import (
 from clue_research.adapters import (
     CallableClaimExtractor,
     FirecrawlHtmlAdapter,
+    ScraplingScrapeBackend,
     register_adapter,
     span_for,
 )
@@ -46,6 +47,7 @@ from clue_research.resolvers import ScrapePolicy, ScrapeResolver, register_scrap
 from clue_research.sources import (
     SEED_MANIFESTS,
     RegistrySourceManifest,
+    StepOutcome,
     StopReason,
     bind_resolver,
     register_source,
@@ -350,6 +352,62 @@ def test_waterfall_consults_crm_then_firecrawl_then_tier3() -> None:
             assert tier3.calls == 0 and len(scraper.calls) == 1
 
     run_async(_run())
+
+
+# --- AC (PB-B2.4 / audit finding 6): scrapling binds its own credit-free source -------------------
+
+
+class _ScraplingPage:
+    status = 200
+    html_content = f"<html><body><h1>Acme</h1><p>{_FACT}.</p></body></html>"
+
+
+class _ScraplingFetcher:
+    def get(self, ref: str, *, stealthy_headers: bool = True) -> _ScraplingPage:
+        return _ScraplingPage()
+
+
+def test_scrapling_binds_its_own_source_and_never_spends_firecrawl_budget() -> None:
+    """Selecting scrapling swaps the *source*, not just the transport: claims attribute to
+    ``scrapling_site`` (provider scrapling, cost 0), the paid ``firecrawl_site`` step is walked
+    past unbound at zero spend — a credit-free scrape can no longer consume internal budget or
+    distort provider economics."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = _account()
+            bound = register_scrape_resolver(
+                extractor=_extractor(),
+                accounts=_Accounts(account),
+                scraper=ScraplingScrapeBackend(fetcher=_ScraplingFetcher()),
+            )
+            assert bound == "scrapling_site"
+            field = FieldDef(
+                field_key=_FIELD_KEY,
+                value_type="str",
+                tier_plan=("firecrawl_site", "scrapling_site"),
+                pass_kind=PassKind.DEEP,
+            )
+            result = await resolve_field(
+                conn, account.as_entity(), field, mode=_MODE, run_id=new_run_id()
+            )
+            assert result.stop_reason is StopReason.CONFIDENT_HIT
+            outcomes = {s.source_key: s for s in result.per_tier}
+            assert outcomes["firecrawl_site"].outcome is StepOutcome.NO_RESOLVER
+            assert outcomes["firecrawl_site"].cost_cents == Decimal(0)
+            (claim,) = await claims_for_field(conn, account.as_entity().entity_id, _FIELD_KEY)
+            assert claim.source_key == "scrapling_site"
+            assert claim.cost_cents == Decimal(0)
+            assert result.total_cost_cents == Decimal(0)
+
+    run_async(_run())
+
+
+def test_firecrawl_backend_still_binds_the_paid_source() -> None:
+    bound = register_scrape_resolver(
+        extractor=_extractor(), accounts=_Accounts(_account()), scraper=_RecordingScraper()
+    )
+    assert bound == "firecrawl_site"
 
 
 # --- helpers ----------------------------------------------------------------

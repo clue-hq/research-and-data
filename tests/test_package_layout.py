@@ -63,6 +63,7 @@ MILESTONE_PACKAGES: dict[str, list[str]] = {
 # Promoted homes that don't follow the mechanical name mapping.
 _SPECIAL_HOMES = {
     "obs": LIBS / "clue-obs" / "clue_obs" / "otel",  # folds into clue-obs at A2/R1
+    "api": REPO / "platform" / "api" / "clue_api",  # composition root promoted at R3
 }
 
 

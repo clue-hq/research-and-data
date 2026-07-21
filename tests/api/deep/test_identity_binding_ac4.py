@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from clue_api.deep import build_deep_phase_handler
 from clue_core import (
     Claim,
     ICPCreatedFrom,
     ICPSpec,
     IdentityBinding,
 )
-from clue_research.api.deep import build_deep_phase_handler
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling import profile_contact
 from clue_research.profiling.contact.binding import BindingClassifier
@@ -149,6 +149,6 @@ def test_born_binding_weak_and_unpromotable_on_same_name(require_profiling_db: N
 def test_composition_classifier_is_the_verification_adapter() -> None:
     """The composition's classifier is the M9 ``classify_binding`` adapter (not the M8 default) — so
     the born binding above is the authoritative verdict, not the placeholder (DB-free check)."""
-    from clue_research.api.composition import VerificationBindingClassifier
+    from clue_api.composition import VerificationBindingClassifier
 
     assert isinstance(_composition_classifier(), VerificationBindingClassifier)

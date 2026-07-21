@@ -14,6 +14,7 @@ import pytest
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import build_backtest_gate
 from clue_core import (
     AccountStatus,
     ConfigRevisionStatus,
@@ -26,7 +27,6 @@ from clue_core import (
     account_claim,
     new_run_id,
 )
-from clue_research.api import build_backtest_gate
 from clue_research.claimstore import insert_claim
 from clue_research.icp import (
     create_icp_spec,

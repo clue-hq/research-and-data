@@ -105,7 +105,7 @@ async def load_narrative_pack(conn: AsyncConnection) -> None:
 
     Additive and namespaced — never collides with ``CORE_PACK`` / ``DEEP_PROFILING_PACK`` / the
     committee or icp packs. Wire at the ``api`` composition root via
-    :func:`clue_research.api.narrative_wiring.register_narrative_wiring` (appended to
+    :func:`clue_api.narrative_wiring.register_narrative_wiring` (appended to
     ``RESEARCH_PACK_LOADERS``); until then the M12 tests load it per-transaction.
     """
     await load_pack(conn, NARRATIVE_PACK)

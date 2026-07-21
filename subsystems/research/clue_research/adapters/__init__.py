@@ -50,7 +50,9 @@ from clue_research.adapters.concrete import (
     PassthroughAdapter,
     PdfAdapter,
     PypdfTextExtractor,
+    ScraplingScrapeBackend,
     TranscriptionAdapter,
+    default_scrape_backend,
 )
 from clue_research.adapters.extractors import CallableClaimExtractor, ExtractFn, span_for
 from clue_research.adapters.pipeline import (
@@ -118,6 +120,8 @@ __all__ = [
     "FileBytesFetcher",
     "PypdfTextExtractor",
     "FirecrawlScrapeBackend",
+    "ScraplingScrapeBackend",
+    "default_scrape_backend",
     # extraction helpers
     "CallableClaimExtractor",
     "ExtractFn",

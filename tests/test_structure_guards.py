@@ -14,7 +14,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 # Packages promoted out of clue_research in Phase A (old dotted path is dead vocabulary).
-_MOVED = ("core", "db", "config", "gateway", "locks", "obs")
+# "api" joined at R3 (2026-07-21): clue_research/api -> platform/api (clue_api).
+_MOVED = ("core", "db", "config", "gateway", "locks", "obs", "api")
 _PATTERN = re.compile(r"\bclue_research\.(?:" + "|".join(_MOVED) + r")\b")
 
 _SCAN_ROOTS = ("subsystems", "platform", "libs", "scripts", "tests")
