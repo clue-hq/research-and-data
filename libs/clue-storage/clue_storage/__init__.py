@@ -2,11 +2,16 @@
 
 from clue_storage.artifacts import (
     ArtifactRecord,
+    PurgeResult,
+    erase_if_unreferenced,
     get_artifact,
     live_claim_count,
     mark_erased,
+    purge_erased_artifacts,
     record_artifact,
+    sweep_orphan_blobs,
 )
+from clue_storage.context import bind_snapshots, current_snapshot_sink, current_storage
 from clue_storage.factory import storage_from_settings
 from clue_storage.fs import FsStorage
 from clue_storage.protocol import (
@@ -26,16 +31,23 @@ __all__ = [
     "ArtifactRecord",
     "FsStorage",
     "PendingSnapshot",
+    "PurgeResult",
     "S3Storage",
     "SnapshotSink",
     "StorageBackend",
     "StorageError",
     "artifact_key",
+    "bind_snapshots",
     "content_address",
+    "current_snapshot_sink",
+    "current_storage",
+    "erase_if_unreferenced",
     "flush_snapshots",
     "get_artifact",
     "live_claim_count",
     "mark_erased",
+    "purge_erased_artifacts",
     "record_artifact",
     "storage_from_settings",
+    "sweep_orphan_blobs",
 ]

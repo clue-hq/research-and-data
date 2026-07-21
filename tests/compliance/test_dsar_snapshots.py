@@ -3,8 +3,10 @@
 The exit gate: erase of the *only* claim citing a snapshot deletes the physical blob and stamps
 ``erased_at`` on the (retained, personal-content-free) artifact row; erase while another data
 subject's live claim still cites the same snapshot leaves the blob — the last erasure removes it
-(the Jana/Raj scenario). Retention age-out gets the same reach; without an injected backend the
-behavior is exactly pre-B2.
+(the Jana/Raj scenario). Retention age-out gets the same reach. Erasure is **two-phase** (audit
+finding 1/3): the refcount decision + ``erased_at`` happen under the artifact row lock inside the
+DSAR transaction; the physical delete is a post-commit purge — so without an injected backend the
+durable *intent* is still recorded and a later storage-wired sweep converges on it.
 """
 
 from __future__ import annotations
@@ -163,7 +165,14 @@ def test_retention_sweep_reaches_snapshots(tmp_path: object) -> None:
     run_async(scenario())
 
 
-def test_without_injected_storage_behavior_is_pre_b2(tmp_path: object) -> None:
+def test_without_injected_storage_intent_is_durable_and_a_later_sweep_converges(
+    tmp_path: object,
+) -> None:
+    """No backend injected → no storage mutation, but the erasure *intent* (``erased_at``) is
+    still stamped in the transaction — so a later, storage-wired retention sweep (or a purge
+    after a crash between the two phases) physically deletes the blob. The mark is durable; the
+    delete is convergent."""
+
     async def scenario() -> None:
         storage = FsStorage(str(tmp_path))
         async with rollback_conn() as conn:
@@ -174,8 +183,20 @@ def test_without_injected_storage_behavior_is_pre_b2(tmp_path: object) -> None:
             rights = DataSubjectRightsImpl(_CLIENT, conn_factory=lambda: _yield(conn))
             await rights.erase(jana)  # no storage injected
 
-            assert await storage.exists(key)  # blob untouched
+            assert await storage.exists(key)  # blob untouched (phase 2 needs a backend)
             record = await get_artifact(conn, key)
-            assert record is not None and record.erased_at is None
+            assert record is not None
+            assert record.erased_at is not None  # …but the durable intent is recorded
+            assert record.purged_at is None
+
+            # A later maintenance sweep WITH storage (no new candidates) converges: its
+            # scan-all purge picks up the erased-unpurged mark and deletes the blob.
+            sweep = RetentionSweep(
+                _StubFreshness(()), conn_factory=lambda: _yield(conn), storage=storage
+            )
+            await sweep.sweep_expired()
+            assert not await storage.exists(key)
+            record = await get_artifact(conn, key)
+            assert record is not None and record.purged_at is not None
 
     run_async(scenario())

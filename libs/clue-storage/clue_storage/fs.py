@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from clue_storage.protocol import ArtifactNotFound, StorageError
@@ -62,6 +64,16 @@ class FsStorage:
 
     async def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        if not self._root.is_dir():
+            return
+        for path in sorted(self._root.rglob("*")):
+            # Skip in-flight atomic-put temp files — they are not stored blobs.
+            if not path.is_file() or path.name.startswith(".put-"):
+                continue
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+            yield path.relative_to(self._root).as_posix(), mtime
 
     async def presign(self, key: str, *, expires_in: int = 3600) -> str:
         # ``file://`` placeholder (no expiry semantics on a local path); the frontend-serving

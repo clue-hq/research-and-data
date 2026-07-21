@@ -1,23 +1,46 @@
-"""The ``artifact`` table DAL (PB-B2.2) — snapshot rows + the DSAR refcount read.
+"""The ``artifact`` table DAL (PB-B2.2) — snapshot rows + the durable erasure lifecycle.
 
 Plain async functions over ``AsyncConnection`` in the repo's raw-SQL style (the ``clue_spine``
 pattern: one implementation will ever exist, so no repository/service layer). The table's UNIQUE
 ``storage_key`` makes :func:`record_artifact` the dedup — identical bytes in one workspace land
 on one row, however many times a fetch (or a re-flush of the same sink) records them.
 
-``live_claim_count`` is the PB-B2 ruling-2 refcount: how many *live* (non-superseded) claims
-still cite a snapshot as evidence. DSAR erasure deletes the physical blob only when it reaches
-zero; the row itself is never deleted — :func:`mark_erased` stamps ``erased_at`` and the metadata
-(key/hash/size — no personal content) survives as the audit trail.
+**The lifecycle** (the audit's findings 1/3/4 — upload, erasure, concurrency, rollback, and
+resurrection handled by one design):
+
+* The **artifact row is the serialization point**. Writers upsert the row *before* putting the
+  blob (:func:`record_artifact` — ``ON CONFLICT DO UPDATE`` takes the row lock and *resurrects*
+  an erased row), and erasure decisions read the refcount **under ``SELECT … FOR UPDATE``**
+  (:func:`erase_if_unreferenced`), so two concurrent erasures of the last two citers serialize
+  — the second recounts after the first commits and sees zero. A concurrent claim insert citing
+  the key blocks on the same lock via its FK (``FOR KEY SHARE`` conflicts with ``FOR UPDATE``).
+* **Erasure is two-phase.** Phase 1, inside the erasing transaction: ``erased_at`` is stamped
+  (the durable intent) and ``source_url`` is nulled (the one potentially-personal metadata
+  column — the retained row is then genuinely metadata-only). Phase 2, **after commit**:
+  :func:`purge_erased_artifacts` deletes the physical blob and stamps ``purged_at`` — external
+  storage is never mutated inside a database transaction, so a rollback can never un-commit a
+  claim whose evidence was already destroyed. A crash between the phases leaves
+  ``erased_at IS NOT NULL AND purged_at IS NULL``, which the next purge/sweep converges on.
+* **Resurrection is explicit, not accidental.** Re-capturing bytes whose row was erased clears
+  ``erased_at``/``purged_at`` in :func:`record_artifact` (the row again owns a live blob, put
+  *after* the row write); conversely the purge re-checks the refcount under its lock and
+  *un-erases* instead of deleting when a claim re-cited the snapshot in the window.
+* **Rollback orphans converge.** A transaction that put a blob and then rolled back leaves a
+  blob with no row; a retry re-records/re-puts the same content-addressed key, and
+  :func:`sweep_orphan_blobs` collects abandoned ones (blobs older than a grace window with no
+  ``artifact`` row).
 """
 
 from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime
+from clue_storage.protocol import StorageBackend
 
 
 class ArtifactRecord(BaseModel):
@@ -35,11 +58,21 @@ class ArtifactRecord(BaseModel):
     source_url: str | None = None
     created_at: UtcDatetime
     erased_at: UtcDatetime | None = None
+    purged_at: UtcDatetime | None = None
+
+
+class PurgeResult(BaseModel):
+    """The outcome of one :func:`purge_erased_artifacts` pass."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    purged_keys: tuple[str, ...] = ()
+    resurrected_keys: tuple[str, ...] = ()
 
 
 _COLUMNS = (
     "artifact_id, storage_key, workspace_id, content_sha256, media_type, size_bytes, "
-    "source_key, source_url, created_at, erased_at"
+    "source_key, source_url, created_at, erased_at, purged_at"
 )
 
 
@@ -54,11 +87,16 @@ async def record_artifact(
     source_key: str | None = None,
     source_url: str | None = None,
 ) -> ArtifactRecord:
-    """Upsert one snapshot row and return the canonical record.
+    """Upsert one snapshot row and return the canonical record. **Call before the blob put** —
+    the row is the lock that serializes writers against a concurrent erasure.
 
-    ``ON CONFLICT (storage_key) DO NOTHING``: the key is content-addressed, so a conflict means
-    the identical bytes are already recorded — the existing row (with its original timestamps
-    and source link) wins, and re-flushing a snapshot sink is a true no-op.
+    On conflict (the key is content-addressed, so the identical bytes are already recorded) the
+    existing row wins — original timestamps and source link preserved — but its erasure state is
+    **cleared**: recording is the caller's statement that a live blob (re-)exists under this key,
+    so an ``erased_at``/``purged_at`` left by a prior DSAR purge must not survive (the
+    silent-resurrection contradiction, audit finding 4). ``DO UPDATE`` (unlike ``DO NOTHING``)
+    also takes the row lock, which is what serializes this writer against an in-flight
+    :func:`erase_if_unreferenced` / :func:`purge_erased_artifacts` on the same key.
     """
     await conn.execute(
         text(
@@ -66,7 +104,7 @@ async def record_artifact(
             "size_bytes, source_key, source_url) "
             "VALUES (:storage_key, :workspace_id, :content_sha256, :media_type, :size_bytes, "
             ":source_key, :source_url) "
-            "ON CONFLICT (storage_key) DO NOTHING"
+            "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL"
         ),
         {
             "storage_key": storage_key,
@@ -103,6 +141,9 @@ async def live_claim_count(conn: AsyncConnection, storage_key: str) -> int:
     Deliberately counts *all* non-superseded claims regardless of verification status (the
     fail-safe direction: an unverified-but-live claim keeps its evidence). Erasure tombstones
     supersede the claim row, so an erased person's claims drop out of this count.
+
+    **Race warning:** an unlocked count is only advisory. An erasure decision must go through
+    :func:`erase_if_unreferenced`, which recounts under the artifact row lock.
     """
     result = await conn.execute(
         text(
@@ -114,11 +155,126 @@ async def live_claim_count(conn: AsyncConnection, storage_key: str) -> int:
 
 
 async def mark_erased(conn: AsyncConnection, storage_key: str) -> None:
-    """Stamp ``erased_at`` (idempotent — the first erasure's timestamp is the audit fact)."""
+    """Stamp ``erased_at`` (idempotent — the first erasure's timestamp is the audit fact) and
+    null ``source_url``, the one metadata column that can itself identify a person (a profile
+    URL, a sensitive path/query) — the retained row is then genuinely metadata-only, as the
+    migration comment promises. Key/hash/size survive as the audit trail.
+
+    This is phase-1 bookkeeping only; callers wanting the race-free refcount decision use
+    :func:`erase_if_unreferenced`, and the physical blob delete is phase 2
+    (:func:`purge_erased_artifacts`, after commit)."""
     await conn.execute(
         text(
-            "UPDATE artifact SET erased_at = now() "
+            "UPDATE artifact SET erased_at = now(), source_url = NULL "
             "WHERE storage_key = :storage_key AND erased_at IS NULL"
         ),
         {"storage_key": storage_key},
     )
+
+
+async def erase_if_unreferenced(conn: AsyncConnection, storage_key: str) -> bool:
+    """Phase 1 of erasure: under the artifact **row lock**, recount live citers and stamp
+    ``erased_at`` iff the count is zero. Returns whether the row was marked (the caller then
+    schedules the post-commit :func:`purge_erased_artifacts` for the key).
+
+    The ``FOR UPDATE`` lock is what makes the refcount decision race-free (audit finding 3):
+    two concurrent erasures of the final two citers serialize here — the loser blocks, then
+    recounts *after* the winner's supersede committed and sees zero; and a concurrent claim
+    insert citing this key blocks on the same lock (its FK takes ``FOR KEY SHARE``, which
+    conflicts with ``FOR UPDATE``), so the count can never go stale mid-decision. A key with no
+    ``artifact`` row (pre-B2 claim, or a never-flushed ref) is a no-op ``False``."""
+    locked = await conn.execute(
+        text("SELECT erased_at FROM artifact WHERE storage_key = :storage_key FOR UPDATE"),
+        {"storage_key": storage_key},
+    )
+    row = locked.first()
+    if row is None:
+        return False
+    if await live_claim_count(conn, storage_key) != 0:
+        return False
+    await mark_erased(conn, storage_key)
+    return True
+
+
+async def purge_erased_artifacts(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    keys: tuple[str, ...] | None = None,
+) -> PurgeResult:
+    """Phase 2 of erasure: physically delete the blobs of erased-but-unpurged rows and stamp
+    ``purged_at``. Run in a **fresh transaction after** the transaction that stamped
+    ``erased_at`` committed — never inside it (a rollback must not be able to restore a claim
+    whose evidence is already destroyed, audit finding 1).
+
+    ``keys=None`` scans every erased-unpurged row (the crash-recovery sweep); a caller that just
+    erased passes its own keys. Each row is re-checked under ``FOR UPDATE``:
+
+    * a claim re-cited the snapshot in the window (e.g. a cache-hit writer that stamps
+      ``artifact_key`` without re-capturing) → the row is **un-erased** instead of deleted —
+      live evidence beats a stale intent;
+    * still unreferenced → the blob is deleted while the row lock is held (a concurrent
+      :func:`record_artifact` upsert blocks until this commits, then resurrects and re-puts),
+      and ``purged_at`` is stamped. ``delete`` is idempotent, so a crash after delete but
+      before commit converges on the next pass.
+    """
+    where = "erased_at IS NOT NULL AND purged_at IS NULL"
+    params: dict[str, object] = {}
+    if keys is not None:
+        if not keys:
+            return PurgeResult()
+        where += " AND storage_key = ANY(:keys)"
+        params["keys"] = list(keys)
+    result = await conn.execute(
+        # Ordered so two concurrent purges lock rows in the same order (no deadlock).
+        text(f"SELECT storage_key FROM artifact WHERE {where} ORDER BY storage_key FOR UPDATE"),
+        params,
+    )
+    purged: list[str] = []
+    resurrected: list[str] = []
+    for (storage_key,) in result.all():
+        if await live_claim_count(conn, storage_key) != 0:
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET erased_at = NULL, purged_at = NULL "
+                    "WHERE storage_key = :storage_key"
+                ),
+                {"storage_key": storage_key},
+            )
+            resurrected.append(storage_key)
+            continue
+        await storage.delete(storage_key)
+        await conn.execute(
+            text("UPDATE artifact SET purged_at = now() WHERE storage_key = :storage_key"),
+            {"storage_key": storage_key},
+        )
+        purged.append(storage_key)
+    return PurgeResult(purged_keys=tuple(purged), resurrected_keys=tuple(resurrected))
+
+
+async def sweep_orphan_blobs(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    grace: timedelta = timedelta(hours=24),
+    now: datetime | None = None,
+) -> tuple[str, ...]:
+    """Delete blobs that have **no** ``artifact`` row and are older than ``grace`` — the
+    reconciliation backstop for a rolled-back-and-abandoned upload (the blob was put inside a
+    transaction whose row insert rolled back; audit finding 1's residual state). Returns the
+    deleted keys.
+
+    Writers record the row *before* putting the blob, so a legitimately in-flight blob's row is
+    already inserted (just not yet committed/visible) — the grace window (default 24h, far
+    beyond any transaction lifetime) is what keeps this sweep from racing an open transaction.
+    Purged rows keep their row forever, so an erased blob's key never reads as an orphan."""
+    cutoff = (now or datetime.now(UTC)) - grace
+    deleted: list[str] = []
+    async for key, last_modified in storage.list_blobs():
+        if last_modified >= cutoff:
+            continue
+        if await get_artifact(conn, key) is not None:
+            continue
+        await storage.delete(key)
+        deleted.append(key)
+    return tuple(deleted)

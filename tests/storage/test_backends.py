@@ -64,6 +64,24 @@ def test_presign_missing_raises(backend: StorageBackend, unique_key: str) -> Non
         run_async(backend.presign(unique_key))
 
 
+def test_list_blobs_surfaces_stored_keys_with_utc_mtime(
+    backend: StorageBackend, unique_key: str
+) -> None:
+    """The reconciliation read (orphan-blob sweep): a stored key appears with a tz-aware UTC
+    last-modified; a deleted key disappears."""
+
+    async def listing() -> dict[str, object]:
+        return {key: modified async for key, modified in backend.list_blobs()}
+
+    run_async(backend.put(unique_key, b"listed", media_type="text/plain"))
+    entries = run_async(listing())
+    assert unique_key in entries
+    modified = entries[unique_key]
+    assert getattr(modified, "tzinfo", None) is not None  # tz-aware
+    run_async(backend.delete(unique_key))
+    assert unique_key not in run_async(listing())
+
+
 # --- content addressing (pure) ------------------------------------------------
 
 
