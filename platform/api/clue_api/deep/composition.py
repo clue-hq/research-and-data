@@ -61,6 +61,7 @@ from clue_api.composition import (
 )
 from clue_api.deep.handler import (
     CheckpointerFactory,
+    DeepAccountScheduler,
     DeepPhaseHandler,
     HighTierResolver,
 )
@@ -85,6 +86,7 @@ from clue_research.durable import (
     AccountScheduler,
     AccountSpec,
     BudgetEngine,
+    LockFactory,
     WorkerRegistry,
     register_phase_handler,
 )
@@ -125,7 +127,7 @@ class DeepPhaseComposition:
 
     handler: PhaseHandler
     orchestrator: AccountDeepOrchestrator
-    scheduler: AccountScheduler
+    scheduler: DeepAccountScheduler
     budget: BudgetEngine
     pre_spend_gate: PreSpendGate
     binding_classifier: BindingClassifier
@@ -287,6 +289,8 @@ def build_deep_phase_handler(
     budget_cap_cents: CostCents | None = None,
     config_store: OverlayStore | None = None,
     storage: StorageBackend | None = None,
+    lock_factory: LockFactory | None = None,
+    scheduler: DeepAccountScheduler | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -303,6 +307,17 @@ def build_deep_phase_handler(
     per-run sink the sink-less scrape resolver captures into and the waterfall flushes from (audit
     finding 5). Without ``storage`` the handler is registered unwrapped (the pre-B2 no-snapshot
     path).
+
+    **B1 single-flight + fleet swap:** ``lock_factory`` (the Doc C §4 per-entity single-flight seam)
+    is threaded into the default in-process :class:`AccountScheduler` — production passes
+    ``account_entity_lock_factory(get_redis())`` (via ``clue_api.fleet_wiring``) so two runs never
+    deep-research one ``entity_id`` at once. It was previously omitted here (single-flight silently
+    off — the integrator checklist fix). Pass ``scheduler`` to drive the deep phase over an
+    alternative :data:`DeepAccountScheduler` — the PB-B1
+    :class:`~clue_fleet.QueueBackedScheduler` (durable tier-priority queue) for the worker
+    deployment; the in-process ``AccountScheduler`` stays the default (fleet mode is opt-in). When a
+    ``scheduler`` is supplied it already carries its own ``lock_factory``, so ``lock_factory`` is
+    ignored.
     """
     config = config or DeepPhaseConfig()
     recursion_policy = recursion_policy or RecursionPolicy()
@@ -348,16 +363,24 @@ def build_deep_phase_handler(
         budget_cap_cents=budget_cap_cents,
     )
 
-    registry = build_account_axis_registry(
-        gateway=gateway,
-        pre_spend_gate=gate,
-        session_factory=session_factory,
-        planner_model=planner_model,
-        synthesis_guard=synthesis_guard,
-        config_store=config_store,
-    )
-    graph = AccountResearchGraph(workers=registry, recursion_policy=recursion_policy)
-    scheduler = AccountScheduler(graph, max_parallel=config.max_parallel_accounts)
+    if scheduler is None:
+        registry = build_account_axis_registry(
+            gateway=gateway,
+            pre_spend_gate=gate,
+            session_factory=session_factory,
+            planner_model=planner_model,
+            synthesis_guard=synthesis_guard,
+            config_store=config_store,
+        )
+        graph = AccountResearchGraph(workers=registry, recursion_policy=recursion_policy)
+        # The Doc C §4 per-entity single-flight seam (integrator checklist fix): the baseline
+        # omitted ``lock_factory`` here, so prod single-flight was silently OFF. Threaded through
+        # now — production wires ``account_entity_lock_factory(get_redis())`` at the api root.
+        scheduler = AccountScheduler(
+            graph,
+            max_parallel=config.max_parallel_accounts,
+            lock_factory=lock_factory,
+        )
 
     handler = DeepPhaseHandler(
         scheduler=scheduler,
