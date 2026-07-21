@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     # reuse ``GatewayConfig.synthesis_model``. Env: ``CLUE_SYNTHESIS_MODEL``.
     synthesis_model: str = DEFAULT_SYNTHESIS_MODEL
 
+    # --- scoped memory (PB-B3; append-only additions per treaty §3.2) -----------------------
+    # Deploy-level master default for the memory substrate. The *real* mechanism is the
+    # per-workspace toggle + audit journal (Doc M §17a — the ``memory_switch`` table); this flag
+    # layers above it: False blanks memory for every workspace. Env: ``CLUE_MEMORY_ENABLED``.
+    memory_enabled: bool = True
+    # OpenRouter model id for the write-time reconciliation judge (Doc M §9).
+    # Env: ``CLUE_MEMORY_RECONCILE_MODEL``.
+    memory_reconcile_model: str = DEFAULT_SYNTHESIS_MODEL
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).
