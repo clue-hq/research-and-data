@@ -73,9 +73,13 @@ guarantees, adding none:
    single-driver precondition it was designed around).
 3. Re-entering `deep`: `done` account tasks re-invoke `run_one` (idempotent replay — the M8A
    sub-phase markers + the account-step ledger make it spend-free), `claimed`-stale tasks are
-   re-owned, `queued` tasks drain in tier order. Exactly-once **spend** is the ledger's
-   guarantee, exactly like today's resume path; the queue adds ordering + visibility + at-most-
-   one concurrent executor per task.
+   re-owned, `queued` tasks drain in tier order. Exactly-once **DB effect / ledger** is the
+   ledger's guarantee, exactly like today's resume path; the queue adds ordering + visibility +
+   at-most-one concurrent executor per task. The **external-provider** call is at-least-once — a
+   kill between provider-accept and the atomic ledger commit repeats it on takeover (audit finding
+   #4); the exit gate observes this via the `exit_gate_provider_calls` journal and bounds it by the
+   in-flight window. Provider-boundary exactly-once needs provider-side idempotency keys (resolver
+   layer), out of B1 scope.
 4. A zombie driver (alive but lease-expired) is fenced by **supervised heartbeat + immediate
    mid-phase cancellation** (the ruling below, superseding the earlier "cooperative fencing /
    aborts at the next phase boundary" language). The heartbeat is a *supervised* task, not a
@@ -149,11 +153,20 @@ the scheduler implements the public `run_accounts` seam.
 
 ## 4. Acceptance criteria (= the treaty exit gate)
 
-1. **Kill-resume exactly-once:** kill -9 the worker process at ~40% of a 500-account stub-mode
-   run → start a fresh worker → the run completes; every `(account, field, tier)` account-step
-   key and every `(campaign_run, phase)` phase key has **exactly one** `succeeded` ledger row,
-   and total recorded spend equals the single-run expectation exactly (no double spend).
-   [`tests/fleet/test_exit_gate.py`, real OS processes + SIGKILL]
+1. **Kill-resume exactly-once (DB effect + ledger; provider boundary at-least-once):** kill -9 the
+   worker process at ~40% of a 500-account stub-mode run → start a fresh worker → the run
+   completes; every `(account, field, tier)` account-step key and every `(campaign_run, phase)`
+   phase key has **exactly one** `succeeded` ledger row and exactly one `exit_gate_spend_journal`
+   row — the effect row and the ledger `succeeded` finish share ONE transaction, so DB effects and
+   the ledger are exactly-once despite the kill. The **provider boundary is at-least-once** (audit
+   finding #4, narrowed from the earlier "no double spend anywhere" overstatement): the
+   `exit_gate_provider_calls` journal (written before the "paid" call, in its own committed
+   transaction) shows every key was invoked ≥1×, and a key whose provider-accept was orphaned by
+   the kill is re-invoked on takeover — bounded by the in-flight drain window (`EXIT_GATE_WINDOW`),
+   with worker A among the callers and worker B owning the single completing spend-journal row.
+   True provider-boundary exactly-once requires provider-side idempotency keys (resolver /
+   integration scope), not the fleet shell. [`tests/fleet/test_exit_gate.py`, real OS processes +
+   SIGKILL]
 2. **Lease takeover:** while worker A holds a run's lease, worker B cannot drive the run; after
    the lease expires without renewal, B acquires it and drives. [same test + focused DB tests]
 3. **Tier-priority order:** account jobs execute best-tier-first under the concurrency window.
