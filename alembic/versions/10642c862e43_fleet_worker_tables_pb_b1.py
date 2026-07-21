@@ -94,6 +94,12 @@ def upgrade() -> None:
             claimed_by      text,
             claimed_at      timestamptz,
             enqueued_at     timestamptz NOT NULL DEFAULT now(),
+            -- The total FIFO order key. now() is transaction-stable, so same-priority rows
+            -- enqueued in one transaction share an enqueued_at and tie with no final key; a
+            -- monotonic insertion sequence breaks the tie deterministically. GENERATED ALWAYS
+            -- AS IDENTITY does not re-mint on UPDATE, so a reopen_terminal re-drive keeps its
+            -- original place ahead of newer work (intended).
+            enqueue_seq     bigint GENERATED ALWAYS AS IDENTITY,
             updated_at      timestamptz NOT NULL DEFAULT now(),
 
             CONSTRAINT fleet_task_pkey PRIMARY KEY (task_id),
@@ -114,15 +120,17 @@ def upgrade() -> None:
     op.execute(
         "COMMENT ON TABLE fleet_task IS 'Durable fleet task queue (PB-B1): drive_run jobs the "
         "detached CampaignRunWorker drains and account_job rows forming the REQ-10 tier-priority "
-        "deep queue. Claim-next = FOR UPDATE SKIP LOCKED in (priority, enqueued_at) order; a "
+        "deep queue. Claim-next = FOR UPDATE SKIP LOCKED in (priority, enqueue_seq) order; a "
         "stale claim (killed holder) is re-owned; payload/result carry references only.'"
     )
-    # The claim-next hot path: runnable rows of one kind in claim order. Partial — done/failed
-    # rows leave the index as they leave the drain.
+    # The claim-next hot path: runnable rows of one kind in claim order. Ordered by the monotonic
+    # enqueue_seq (not enqueued_at) so same-priority rows have a total FIFO order — timestamps
+    # alone cannot: now() is transaction-stable. Partial — done/failed rows leave the index as
+    # they leave the drain.
     op.execute(
         """
         CREATE INDEX fleet_task_claim_next
-            ON fleet_task (kind, priority, enqueued_at)
+            ON fleet_task (kind, priority, enqueue_seq)
             WHERE status IN ('queued', 'claimed')
         """
     )

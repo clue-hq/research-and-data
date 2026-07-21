@@ -10,10 +10,14 @@ Semantics, all decided at the database (no read-then-write races):
 
 * **enqueue** is idempotent on ``(kind, campaign_run_id, dedup_key)`` (``ON CONFLICT DO
   NOTHING``) — re-entering a drive re-offers the same work without duplicating rows.
-* **claim-next** is one atomic ``UPDATE … FROM (SELECT … ORDER BY priority, enqueued_at LIMIT 1
-  FOR UPDATE SKIP LOCKED)``: concurrent claimants never receive the same row. A ``CLAIMED`` row
-  whose ``claimed_at`` has passed the staleness window is re-owned (its holder is presumed
-  killed) — the M7.4 ledger's recovery shape.
+* **claim-next** is one atomic ``UPDATE … FROM (SELECT … ORDER BY priority, enqueue_seq LIMIT 1
+  FOR UPDATE SKIP LOCKED)`` — the best runnable row in ``(priority, enqueue_seq)`` order, where
+  ``enqueue_seq`` is a monotonic insertion sequence (a ``GENERATED ALWAYS AS IDENTITY`` column):
+  timestamps alone cannot provide FIFO because ``now()`` is transaction-stable, so same-priority
+  rows enqueued in one transaction share ``enqueued_at`` and tie with no final key. Concurrent
+  claimants never receive the same row. A ``CLAIMED`` row whose ``claimed_at`` has passed the
+  staleness window is re-owned (its holder is presumed killed) — the M7.4 ledger's recovery
+  shape.
 * **finish / requeue** are holder-guarded (``WHERE claimed_by = :me AND status = 'claimed'``): a
   fenced-out zombie's write matches zero rows.
 * **requeue_failed** is the explicit retry gate — a fresh drive re-entering the work re-offers
@@ -61,12 +65,13 @@ class FleetTaskRow(BaseModel):
     claimed_by: str | None
     claimed_at: UtcDatetime | None
     enqueued_at: UtcDatetime
+    enqueue_seq: int
     updated_at: UtcDatetime
 
 
 _COLUMNS = (
     "task_id, kind, campaign_run_id, dedup_key, priority, status, attempts, "
-    "payload_json, result_ref_json, claimed_by, claimed_at, enqueued_at, updated_at"
+    "payload_json, result_ref_json, claimed_by, claimed_at, enqueued_at, enqueue_seq, updated_at"
 )
 
 # The claim-next RETURNING joins ``fleet_task`` with the ``candidate`` subquery, which also
@@ -88,7 +93,9 @@ _ENQUEUE_SQL = text(
 # Re-offering variant: like _ENQUEUE_SQL, but a *terminal* (done/failed) row on the dedup key is
 # re-opened back to ``queued`` — the ``enqueue_drive`` path, where "drive this run" is a
 # recurring offer (a paused run's finished drive task must not block the post-resume re-drive).
-# A queued/claimed row is still a no-op (the work is already offered/owned).
+# A queued/claimed row is still a no-op (the work is already offered/owned). The re-opened row
+# KEEPS its original ``enqueue_seq`` — an identity column does not re-mint on UPDATE — so a
+# resumed run retains its FIFO place ahead of newer work (intended, not incidental).
 _ENQUEUE_REOPEN_SQL = text(
     """
     INSERT INTO fleet_task (task_id, kind, campaign_run_id, dedup_key, priority, payload_json)
@@ -109,10 +116,12 @@ _ENQUEUE_REOPEN_SQL = text(
 )
 
 # Atomic claim-next. The inner SELECT picks the single best runnable row — ``queued``, or
-# ``claimed`` past the staleness window — in ``(priority, enqueued_at)`` order, locking it with
+# ``claimed`` past the staleness window — in ``(priority, enqueue_seq)`` order, locking it with
 # SKIP LOCKED so concurrent claimants (in-process drainers or a second worker process) fall
-# through to the next row instead of blocking or double-claiming. ``:campaign_run_id`` narrows to
-# one run's tasks (the deep drain) or, when NULL, spans all runs (the worker's drive-task drain).
+# through to the next row instead of blocking or double-claiming. ``enqueue_seq`` (not
+# ``enqueued_at``) is the FIFO key — the transaction-stable ``now()`` cannot break same-priority
+# ties. ``:campaign_run_id`` narrows to one run's tasks (the deep drain) or, when NULL, spans all
+# runs (the worker's drive-task drain).
 _CLAIM_NEXT_SQL = text(
     f"""
     UPDATE fleet_task
@@ -130,7 +139,7 @@ _CLAIM_NEXT_SQL = text(
                 status = 'queued'
                 OR (status = 'claimed' AND claimed_at <= now() - CAST(:stale AS interval))
               )
-        ORDER BY priority, enqueued_at
+        ORDER BY priority, enqueue_seq
         LIMIT 1
         FOR UPDATE SKIP LOCKED
     ) AS candidate
@@ -187,7 +196,7 @@ _LIST_SQL = text(
     f"""
     SELECT {_COLUMNS} FROM fleet_task
     WHERE campaign_run_id = :campaign_run_id AND kind = CAST(:kind AS fleet_task_kind)
-    ORDER BY priority, enqueued_at
+    ORDER BY priority, enqueue_seq
     """
 )
 
@@ -214,6 +223,7 @@ def _row_to_task(row: dict[str, object]) -> FleetTaskRow:
             "claimed_by": row["claimed_by"],
             "claimed_at": row["claimed_at"],
             "enqueued_at": row["enqueued_at"],
+            "enqueue_seq": row["enqueue_seq"],
             "updated_at": row["updated_at"],
         }
     )

@@ -272,6 +272,46 @@ def test_claim_order_is_priority_then_fifo() -> None:
     run_async(_run())
 
 
+def test_same_transaction_enqueues_claim_in_insertion_order() -> None:
+    """Total-FIFO regression (audit finding #3): same-priority rows enqueued inside ONE
+    transaction all share the frozen ``now()`` as ``enqueued_at``, so ``(priority, enqueued_at)``
+    alone leaves ties with no final key and claim order is plan/physical-order-sensitive
+    (nondeterministic). The monotonic ``enqueue_seq`` identity column is the total order that makes
+    claim order exactly the insertion order regardless of timestamp collisions."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            run_id = new_campaign_run_id()
+            order = [f"seq-{i}" for i in range(6)]
+            for key in order:  # all same priority, all one frozen-now() transaction
+                await enqueue_task(
+                    conn,
+                    kind=FleetTaskKind.ACCOUNT_JOB,
+                    campaign_run_id=run_id,
+                    dedup_key=key,
+                    priority=5,
+                )
+            claimed = []
+            seqs = []
+            while True:
+                task = await claim_next_task(
+                    conn,
+                    kind=FleetTaskKind.ACCOUNT_JOB,
+                    worker_id="w",
+                    campaign_run_id=run_id,
+                    stale_after=_FRESH,
+                )
+                if task is None:
+                    break
+                claimed.append(task.dedup_key)
+                seqs.append(task.enqueue_seq)
+            assert claimed == order, claimed
+            # The total order is the monotonic insertion sequence, not the frozen timestamp.
+            assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs), seqs
+
+    run_async(_run())
+
+
 def test_claimed_task_is_not_reclaimable_until_stale() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
