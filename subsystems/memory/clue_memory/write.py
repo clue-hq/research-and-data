@@ -17,6 +17,7 @@ Scope validity is the schema's job: a dangling or cross-workspace scope id dies 
 from __future__ import annotations
 
 import re
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -286,6 +287,16 @@ def _check_scope_shape(submission: MemorySubmission) -> None:
         raise MemoryPreconditionFailed(
             f"{scope.scope_type.value} scope requires a scope_id naming a spine row"
         )
+    elif scope.scope_type is MemoryScopeType.ACCOUNT:
+        # account scope_id is a workspace-local account_entity uuid; the id's shape is validated
+        # here, its existence/workspace-locality by the schema's composite FK (IntegrityError,
+        # deliberately uncaught — a dangling/cross-workspace/NULL-workspace account dies there).
+        try:
+            UUID(scope.scope_id)
+        except (ValueError, AttributeError) as exc:
+            raise MemoryPreconditionFailed(
+                "account scope_id must be a workspace-local account_entity uuid"
+            ) from exc
 
 
 async def _judge_or_none(

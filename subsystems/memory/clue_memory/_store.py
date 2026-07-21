@@ -79,6 +79,7 @@ async def insert_memory(
         MemoryScopeType.BRAND: "scope_brand_id",
         MemoryScopeType.PRODUCT: "scope_product_id",
         MemoryScopeType.PROJECT: "scope_project_id",
+        MemoryScopeType.ACCOUNT: "scope_account_entity_id",
     }[scope_type]
     params: dict[str, Any] = {
         "memory_id": memory_id or new_memory_id(),
@@ -87,6 +88,7 @@ async def insert_memory(
         "scope_brand_id": None,
         "scope_product_id": None,
         "scope_project_id": None,
+        "scope_account_entity_id": None,
         "type": type_.value,
         "trigger": trigger,
         "body": body,
@@ -98,15 +100,23 @@ async def insert_memory(
         "retention_class": "person_adjacent" if subject_entity_id is not None else "standard",
     }
     if scope_columns is not None:
-        params[scope_columns] = scope_id
+        # account scope_id is the account_entity uuid carried as a string — bind the uuid type
+        # (asyncpg needs it; the column is uuid, unlike the other scope FKs which are text).
+        params[scope_columns] = (
+            UUID(scope_id)
+            if scope_type is MemoryScopeType.ACCOUNT and scope_id is not None
+            else scope_id
+        )
     result = await conn.execute(
         text(
             "INSERT INTO memory (memory_id, workspace_id, scope_type, scope_brand_id, "
-            "scope_product_id, scope_project_id, type, trigger, body, provenance_class, "
-            "trust_grade, creating_quote, status, subject_entity_id, retention_class) "
+            "scope_product_id, scope_project_id, scope_account_entity_id, type, trigger, body, "
+            "provenance_class, trust_grade, creating_quote, status, subject_entity_id, "
+            "retention_class) "
             "VALUES (:memory_id, :workspace_id, :scope_type, :scope_brand_id, "
-            ":scope_product_id, :scope_project_id, :type, :trigger, :body, :provenance_class, "
-            ":trust_grade, :creating_quote, :status, :subject_entity_id, :retention_class) "
+            ":scope_product_id, :scope_project_id, :scope_account_entity_id, :type, :trigger, "
+            ":body, :provenance_class, :trust_grade, :creating_quote, :status, "
+            ":subject_entity_id, :retention_class) "
             f"RETURNING {_MEMORY_COLUMNS}"
         ),
         params,

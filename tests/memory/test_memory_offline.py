@@ -34,6 +34,10 @@ from .conftest import submission
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MIGRATION = _REPO_ROOT / "alembic" / "versions" / "8aba77245267_scoped_memory_substrate_slice_1.py"
+# The account-scope follow-up re-adds the memory_scope_type / memory_scope_shape CHECKs here.
+_ACCOUNT_MIGRATION = (
+    _REPO_ROOT / "alembic" / "versions" / "50b778e4009a_account_memory_scope_workspace_local_.py"
+)
 
 
 # --- born trust & vocabulary -------------------------------------------------
@@ -54,22 +58,28 @@ def test_born_trust_and_status_cover_every_provenance_class() -> None:
     )
 
 
-def test_scope_type_has_project_from_birth_and_no_account_yet() -> None:
+def test_scope_type_has_project_and_account_but_not_campaign() -> None:
     values = {m.value for m in MemoryScopeType}
     assert "project" in values and "campaign" not in values
-    # Deferred, not forgotten (PB-B3 ruling 5): appending `account` later is additive.
-    assert "account" not in values
+    # `account` is live (founder ruling 2026-07-22): accounts are workspace-local entities.
+    assert "account" in values
 
 
 # --- enum ↔ migration CHECK parity ------------------------------------------
 
 
 def _check_values(constraint: str) -> set[str]:
-    """The quoted values inside the named CHECK of the memory migration."""
-    source = _MIGRATION.read_text()
-    match = re.search(rf"CONSTRAINT {constraint} CHECK \((.*?)\)\s*,?\n", source, re.DOTALL)
-    assert match, f"CHECK {constraint} not found in migration"
-    return set(re.findall(r"'([a-z_]+)'", match.group(1)))
+    """The quoted values inside the named CHECK — the account follow-up migration re-adds the
+    scope CHECKs, so search it first and fall back to the slice-1 migration for the rest."""
+    for migration in (_ACCOUNT_MIGRATION, _MIGRATION):
+        match = re.search(
+            rf"(?:ADD )?CONSTRAINT {constraint} CHECK \((.*?)\)\s*,?\n",
+            migration.read_text(),
+            re.DOTALL,
+        )
+        if match:
+            return set(re.findall(r"'([a-z_]+)'", match.group(1)))
+    raise AssertionError(f"CHECK {constraint} not found in either migration")
 
 
 def test_db_checks_mirror_core_enums() -> None:

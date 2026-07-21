@@ -152,6 +152,9 @@ async def record_kickoff(
     (Doc M §12). **Off-cycles do not count** (§17b): when memory is off for the workspace this
     is a no-op — a client returning from off-campaigns must not find a store wrongly stale.
     The Phase-C kickoff interview is the caller. Returns the aged ids.
+
+    Account-scoped memories persist across campaigns (Doc M §4); a kickoff of a stack carrying an
+    ``account_entity_id`` ages that account's records like any other scope.
     """
     if not await is_memory_enabled(conn, scope_stack.workspace_id, settings):
         return []
@@ -163,6 +166,8 @@ async def record_kickoff(
         scopes.append((MemoryScopeType.PRODUCT, scope_stack.product_id))
     if scope_stack.project_id is not None:
         scopes.append((MemoryScopeType.PROJECT, scope_stack.project_id))
+    if scope_stack.account_entity_id is not None:
+        scopes.append((MemoryScopeType.ACCOUNT, str(scope_stack.account_entity_id)))
     aged: list[str] = []
     for scope_type, scope_id in scopes:
         ids = await _store.increment_cycles(

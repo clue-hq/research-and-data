@@ -410,12 +410,24 @@ class MemoryCaps(BaseModel):
     # Per-scope-instance active-set cap: keeps the active set human-auditable in one sitting and
     # assembly O(small). Activation past the cap evicts the lowest-ranked active record → dormant.
     store_caps: dict[str, int] = Field(
-        default_factory=lambda: {"workspace": 20, "brand": 30, "product": 20, "project": 20}
+        default_factory=lambda: {
+            "workspace": 20,
+            "brand": 30,
+            "product": 20,
+            "project": 20,
+            "account": 10,
+        }
     )
     default_store_cap: int = Field(default=20, ge=1)
     # Per-scope bundle budget at assembly time (entries admitted per scope in one bundle).
     bundle_budgets: dict[str, int] = Field(
-        default_factory=lambda: {"workspace": 5, "brand": 8, "product": 6, "project": 6}
+        default_factory=lambda: {
+            "workspace": 5,
+            "brand": 8,
+            "product": 6,
+            "project": 6,
+            "account": 4,
+        }
     )
     default_bundle_budget: int = Field(default=5, ge=1)
     # Doc M §8: one edit is noise; the same edit across N artifacts is a preference. The number of

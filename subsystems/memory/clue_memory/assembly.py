@@ -12,6 +12,7 @@ request ⇒ byte-identical bundle; the journal's ``bundle_hash`` witnesses it.
 
 from __future__ import annotations
 
+import itertools
 import json
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -29,13 +30,23 @@ from clue_memory.lifecycle import losing_comparison, rank_key
 from clue_memory.model import Memory
 from clue_memory.switch import is_memory_enabled
 
-#: Assembly order over scopes — the stable prefix first (brand changes least). Doc M §10.3:
-#: this order is CACHE semantics; no future implementer may read priority into position.
+#: Assembly order over scopes — the stable prefix first (brand changes least), the least-stable
+#: scope (account) last. Doc M §10.3: this order is CACHE semantics; no future implementer may
+#: read priority into position.
 _STABILITY_ORDER = (
     MemoryScopeType.WORKSPACE,
     MemoryScopeType.BRAND,
     MemoryScopeType.PRODUCT,
     MemoryScopeType.PROJECT,
+    MemoryScopeType.ACCOUNT,
+)
+
+#: The sibling branch scopes (Doc M §4): a three-way branch over orthogonal axes. Cross-branch
+#: tension among any two present at assembly is surfaced and journaled, never arbitrated (§10).
+_BRANCH_SCOPES = (
+    MemoryScopeType.PRODUCT,
+    MemoryScopeType.PROJECT,
+    MemoryScopeType.ACCOUNT,
 )
 
 
@@ -67,6 +78,8 @@ class Assembly:
             scopes.append((MemoryScopeType.PRODUCT, stack.product_id))
         if stack.project_id is not None:
             scopes.append((MemoryScopeType.PROJECT, stack.project_id))
+        if stack.account_entity_id is not None:
+            scopes.append((MemoryScopeType.ACCOUNT, str(stack.account_entity_id)))
 
         included: list[Memory] = []
         excluded: list[tuple[Memory, str]] = []  # (record, losing comparison)
@@ -128,16 +141,19 @@ class Assembly:
         excluded_meta = [
             {"memory_id": m.memory_id, "losing_comparison": why} for m, why in excluded
         ]
-        # Cross-branch tension (Doc M §10): sibling-scope (product × project) entries of the
-        # same type are included-and-labeled, never arbitrated; the journaled pairs are the
-        # empirical evidence a future type→scope validity matrix is designed from (§17).
+        # Cross-branch tension (Doc M §10): sibling-scope entries of the same type are
+        # included-and-labeled, never arbitrated. Product / project / account are a three-way
+        # branch, so every unordered pair of present sibling branches is journaled ("a" from the
+        # earlier branch in stability order) — the empirical evidence a future type→scope validity
+        # matrix is designed from (§17).
         by_branch: dict[MemoryScopeType, list[Memory]] = {}
         for m in included:
             by_branch.setdefault(m.scope_type, []).append(m)
         pairs = [
             {"a": a.memory_id, "b": b.memory_id, "type": a.type.value}
-            for a in by_branch.get(MemoryScopeType.PRODUCT, ())
-            for b in by_branch.get(MemoryScopeType.PROJECT, ())
+            for earlier, later in itertools.combinations(_BRANCH_SCOPES, 2)
+            for a in by_branch.get(earlier, ())
+            for b in by_branch.get(later, ())
             if a.type == b.type
         ]
         return await _store.insert_bundle_journal(

@@ -15,11 +15,15 @@ submissions (:class:`MemoryRejected`), and person-adjacent content without a res
 a malformed proposal (:class:`MemoryPreconditionFailed` — an *error*, unlike the quiet typed
 :class:`MemoryDisabled` no-op the kill-switch returns).
 
-Scope vocabulary note (founder rulings 2026-07-17 / 2026-07-21): the third-level scope is
-``project`` **from birth** (never ``campaign`` — harness doc §1a), and the ``account`` scope of
-Doc M §4 is **deferred**: appending it later (enum member + FK column + CHECK arm) is additive;
-until then the write seam rejects it loudly rather than the enum advertising support that does
-not exist (PB-B3 §0 ruling 5).
+Scope vocabulary note (founder rulings 2026-07-17 / 2026-07-21 / 2026-07-22): the third-level
+scope is ``project`` **from birth** (never ``campaign`` — harness doc §1a). The ``account`` scope
+of Doc M §4 is now **live** (founder ruling 2026-07-22, superseding the PB-B3 §0 ruling-5
+deferral): accounts are **workspace-local** entities — no global account identity, no
+cross-tenant enrichment reuse (provider-licensing + GDPR controller-separation grounds). Company X
+in workspaces A and B is two separate ``account_entity`` rows, so a memory's account scope is
+pinned to the memory's own workspace structurally (the ``memory.scope_account_entity_id`` composite
+FK anchors to the workspace an account row belongs to; a legacy account row with no workspace can
+never own workspace-scoped memory — fail-closed).
 """
 
 from __future__ import annotations
@@ -38,15 +42,20 @@ from pydantic import BaseModel, ConfigDict, Field
 class MemoryScopeType(StrEnum):
     """The owning scope of a memory record — the object-spine level it attaches to (Doc M §4).
 
-    A three-level tree, not a chain: ``product`` and ``project`` are siblings (orthogonal axes),
-    so "most-specific-wins" is undefined between them — cross-branch tension is surfaced and
-    labeled, never resolved (Doc M §10). ``account`` is deferred (module docstring).
+    Not a single chain: ``product``, ``project``, and ``account`` are SIBLINGS (a three-way
+    branch over orthogonal axes), so "most-specific-wins" is undefined among them — cross-branch
+    tension is surfaced and labeled, never resolved (Doc M §10). ``account`` is live (founder
+    ruling 2026-07-22): accounts are workspace-local, so an account-scoped memory's ``scope_id``
+    is the workspace-local ``account_entity`` id (a uuid, carried in its string form).
     """
 
     WORKSPACE = "workspace"
     BRAND = "brand"
     PRODUCT = "product"
     PROJECT = "project"
+    # Workspace-local: scope_id is the account_entity id (uuid, as its string form). Accounts are
+    # workspace-local entities (founder ruling 2026-07-22) — no global account identity.
+    ACCOUNT = "account"
 
 
 class MemoryType(StrEnum):
@@ -141,10 +150,11 @@ BORN_STATUS: dict[MemoryProvenanceClass, MemoryStatus] = {
 class MemoryPreconditionFailed(ValueError):
     """The submission/request is malformed — not merely unwelcome (Doc M §7).
 
-    Raised for: person-adjacent content without ``subject_entity_id``; an unknown/deferred scope
-    (``account``); a scope id that does not name a live spine row in the submission's workspace.
-    Distinct from :class:`MemoryRejected` (a well-formed proposal the species/body rules refuse)
-    and from :class:`MemoryDisabled` (a quiet typed no-op — the user chose that state).
+    Raised for: person-adjacent content without ``subject_entity_id``; a malformed scope id (an
+    ``account`` scope id that is not a uuid); a scope id that does not name a live spine row in
+    the submission's workspace. Distinct from :class:`MemoryRejected` (a well-formed proposal the
+    species/body rules refuse) and from :class:`MemoryDisabled` (a quiet typed no-op — the user
+    chose that state).
     """
 
 
@@ -237,8 +247,10 @@ class MemoryWriteSeam(Protocol):
 
 
 class ScopeStack(BaseModel):
-    """The scope stack a recipe execution carries: ``(workspace, brand, product?, project?)``
-    (Doc M §4). Assembly gates on membership; order here carries no semantics."""
+    """The scope stack a recipe execution carries: ``(workspace, brand, product?, project?,
+    account?)`` (Doc M §4). Assembly gates on membership; order here carries no semantics.
+    ``account_entity_id`` is the workspace-local account the recipe execution is working, when
+    any (product/project/account are siblings — a three-way branch)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -246,6 +258,7 @@ class ScopeStack(BaseModel):
     brand_id: str
     product_id: str | None = None
     project_id: str | None = None
+    account_entity_id: UUID | None = None
 
 
 class AssemblyRequest(BaseModel):
