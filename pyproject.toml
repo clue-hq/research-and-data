@@ -318,6 +318,7 @@ source_modules = [
     "clue_storage.fs",
     "clue_storage.factory",
     "clue_storage.artifacts",
+    "clue_storage.snapshot",
     "clue_research",
     "clue_memory",
     "clue_content",

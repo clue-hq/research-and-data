@@ -50,6 +50,7 @@ from clue_research.adapters import (
 )
 from clue_research.resolvers.live import AccountLookup
 from clue_research.sources import SEED_MANIFESTS, RegistrySourceManifest, bind_resolver
+from clue_storage import SnapshotSink
 
 SOURCE_KEY = "firecrawl_site"
 AUTH_REF = "CLUE_FIRECRAWL_API_KEY"
@@ -128,12 +129,16 @@ class ScrapeResolver:
         extractor: ClaimExtractor,
         policy: ScrapePolicy | None = None,
         surface_builder: SurfaceBuilder = default_surfaces,
+        snapshots: SnapshotSink | None = None,
     ) -> None:
         self._manifest = manifest
         self._accounts = accounts
         self._extractor = extractor
         self._policy = policy or ScrapePolicy()
         self._surface_builder = surface_builder
+        # The shared per-run evidence-snapshot sink (PB-B2.3): ``run_chain`` captures the fetched
+        # page into it, and the waterfall (which holds the same instance) flushes before insert.
+        self._snapshots = snapshots
 
     def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
         if entity.entity_type is not EntityType.ACCOUNT:
@@ -170,6 +175,7 @@ class ScrapeResolver:
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
                 extractor=self._extractor,
                 params=params,
+                snapshots=self._snapshots,
             )
         return []  # no allowed, on-domain surface → nothing scraped, a correct empty
 
@@ -181,6 +187,7 @@ def register_scrape_resolver(
     scraper: ScrapeBackend | None = None,
     policy: ScrapePolicy | None = None,
     surface_builder: SurfaceBuilder = default_surfaces,
+    snapshots: SnapshotSink | None = None,
 ) -> None:
     """Wire the firecrawl scrape source: register its M4.3 ``firecrawl_html`` adapter (the
     HTML→markdown normalizer via ``scraper``) and bind the tier-2 :class:`ScrapeResolver` (holding
@@ -196,6 +203,7 @@ def register_scrape_resolver(
             extractor=extractor,
             policy=policy,
             surface_builder=surface_builder,
+            snapshots=snapshots,
         ),
     )
 

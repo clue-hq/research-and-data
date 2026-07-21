@@ -13,6 +13,7 @@ dependencies = [
     "clue-gateway",
     "clue-locks",
     "clue-obs",
+    "clue-storage",
     # subsystem runtime
     "pydantic>=2.7",
     "sqlalchemy[asyncio]>=2.0",
@@ -37,3 +38,4 @@ clue-db = { workspace = true }
 clue-gateway = { workspace = true }
 clue-locks = { workspace = true }
 clue-obs = { workspace = true }
+clue-storage = { workspace = true }
