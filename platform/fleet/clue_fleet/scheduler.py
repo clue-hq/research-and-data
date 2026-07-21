@@ -24,7 +24,7 @@ per job; it is not a second idempotency layer.
 
 **Per-entity single-flight (Doc C §4).** This scheduler carries the *same* guarantee as the
 ``AccountScheduler`` it replaces: two campaign runs never deep-research the same ``entity_id`` at
-once (substrate §5c). The queue's dedup key is ``(kind, campaign_run_id, dedup_key)``, so two runs
+once (substrate §5c). The queue's dedup key is ``(kind, project_run_id, dedup_key)``, so two runs
 holding one entity are two *distinct* rows — the queue alone cannot serialize them. So, exactly
 like ``AccountScheduler._run_one``, every ``run_one`` (both the drain and the done-replay paths)
 runs inside an injected per-entity lock (M2.4 :func:`~clue_locks.entity_lock` in prod, wired from
@@ -126,6 +126,10 @@ class QueueBackedScheduler:
         self,
         specs: Iterable[AccountSpec],
         *,
+        # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md).
+        # This keyword is the structural seam conformance-tested against
+        # clue_api.deep.handler.DeepAccountScheduler (see test_scheduler_satisfies_the_deep_
+        # handler_seam); B1 may not edit clue_api, so it flips with the deep handler at stage 2.
         campaign_run_id: CampaignRunId,
         checkpointer: Any,
         run_one: RunOne[Any],
@@ -155,18 +159,18 @@ class QueueBackedScheduler:
         for spec in ordered:
             await self._queue.enqueue(
                 kind=FleetTaskKind.ACCOUNT_JOB,
-                campaign_run_id=campaign_run_id,
+                project_run_id=campaign_run_id,
                 dedup_key=str(spec.entity_id),
                 priority=self._priority_for(spec.tier),
                 payload={"tier": spec.tier},
             )
         requeued = await self._queue.requeue_failed(
-            kind=FleetTaskKind.ACCOUNT_JOB, campaign_run_id=campaign_run_id
+            kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=campaign_run_id
         )
         if requeued:
             log.info(
                 "deep_drain.requeued_failed",
-                campaign_run_id=str(campaign_run_id),
+                project_run_id=str(campaign_run_id),
                 count=requeued,
             )
 
@@ -187,7 +191,7 @@ class QueueBackedScheduler:
         done_keys = {
             task.dedup_key
             for task in await self._queue.list_tasks(
-                campaign_run_id=campaign_run_id, kind=FleetTaskKind.ACCOUNT_JOB
+                project_run_id=campaign_run_id, kind=FleetTaskKind.ACCOUNT_JOB
             )
             if task.status is FleetTaskStatus.DONE and task.dedup_key in by_key
         }
@@ -209,7 +213,7 @@ class QueueBackedScheduler:
                     task = await self._queue.claim_next(
                         kind=FleetTaskKind.ACCOUNT_JOB,
                         worker_id=self._claimant_id,
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=campaign_run_id,
                         stale_after=self._stale_after,
                     )
                     if task is None:

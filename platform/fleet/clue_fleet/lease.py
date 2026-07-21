@@ -48,7 +48,7 @@ class RunLeaseRow(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: CampaignRunId
     worker_id: str
     acquired_at: UtcDatetime
     renewed_at: UtcDatetime
@@ -62,16 +62,16 @@ class RunLeaseRow(BaseModel):
 # two racing acquirers can never both get a returned row.
 _ACQUIRE_SQL = text(
     """
-    INSERT INTO run_lease (campaign_run_id, worker_id, acquired_at, renewed_at, expires_at)
-    VALUES (:campaign_run_id, :worker_id, now(), now(), now() + CAST(:ttl AS interval))
-    ON CONFLICT (campaign_run_id) DO UPDATE
+    INSERT INTO run_lease (project_run_id, worker_id, acquired_at, renewed_at, expires_at)
+    VALUES (:project_run_id, :worker_id, now(), now(), now() + CAST(:ttl AS interval))
+    ON CONFLICT (project_run_id) DO UPDATE
         SET worker_id = :worker_id,
             acquired_at = now(),
             renewed_at = now(),
             expires_at = now() + CAST(:ttl AS interval)
         WHERE run_lease.expires_at <= now()
            OR run_lease.worker_id = :worker_id
-    RETURNING campaign_run_id
+    RETURNING project_run_id
     """
 )
 
@@ -83,10 +83,10 @@ _RENEW_SQL = text(
     """
     UPDATE run_lease
     SET renewed_at = now(), expires_at = now() + CAST(:ttl AS interval)
-    WHERE campaign_run_id = :campaign_run_id
+    WHERE project_run_id = :project_run_id
       AND worker_id = :worker_id
       AND expires_at > now()
-    RETURNING campaign_run_id
+    RETURNING project_run_id
     """
 )
 
@@ -94,16 +94,16 @@ _RENEW_SQL = text(
 _RELEASE_SQL = text(
     """
     DELETE FROM run_lease
-    WHERE campaign_run_id = :campaign_run_id AND worker_id = :worker_id
+    WHERE project_run_id = :project_run_id AND worker_id = :worker_id
     """
 )
 
 _GET_SQL = text(
     """
-    SELECT campaign_run_id, worker_id, acquired_at, renewed_at, expires_at,
+    SELECT project_run_id, worker_id, acquired_at, renewed_at, expires_at,
            (expires_at > now()) AS live
     FROM run_lease
-    WHERE campaign_run_id = :campaign_run_id
+    WHERE project_run_id = :project_run_id
     """
 )
 
@@ -111,18 +111,18 @@ _GET_SQL = text(
 async def acquire_run_lease(
     conn: AsyncConnection,
     *,
-    campaign_run_id: CampaignRunId,
+    project_run_id: CampaignRunId,
     worker_id: str,
     ttl: timedelta = DEFAULT_LEASE_TTL,
 ) -> bool:
-    """Atomically acquire (or re-enter) the driver lease for ``campaign_run_id``.
+    """Atomically acquire (or re-enter) the driver lease for ``project_run_id``.
 
     ``True`` when this worker now holds the lease (fresh, re-owned-after-expiry, or its own
     re-acquire); ``False`` when another worker holds it live — the caller must not drive."""
     row = (
         await conn.execute(
             _ACQUIRE_SQL,
-            {"campaign_run_id": campaign_run_id, "worker_id": worker_id, "ttl": ttl},
+            {"project_run_id": project_run_id, "worker_id": worker_id, "ttl": ttl},
         )
     ).first()
     return row is not None
@@ -131,7 +131,7 @@ async def acquire_run_lease(
 async def renew_run_lease(
     conn: AsyncConnection,
     *,
-    campaign_run_id: CampaignRunId,
+    project_run_id: CampaignRunId,
     worker_id: str,
     ttl: timedelta = DEFAULT_LEASE_TTL,
 ) -> bool:
@@ -140,28 +140,24 @@ async def renew_run_lease(
     row = (
         await conn.execute(
             _RENEW_SQL,
-            {"campaign_run_id": campaign_run_id, "worker_id": worker_id, "ttl": ttl},
+            {"project_run_id": project_run_id, "worker_id": worker_id, "ttl": ttl},
         )
     ).first()
     return row is not None
 
 
 async def release_run_lease(
-    conn: AsyncConnection, *, campaign_run_id: CampaignRunId, worker_id: str
+    conn: AsyncConnection, *, project_run_id: CampaignRunId, worker_id: str
 ) -> None:
     """Release the lease if this worker still holds it (holder-guarded; a lost lease is a
     no-op)."""
-    await conn.execute(_RELEASE_SQL, {"campaign_run_id": campaign_run_id, "worker_id": worker_id})
+    await conn.execute(_RELEASE_SQL, {"project_run_id": project_run_id, "worker_id": worker_id})
 
 
-async def get_run_lease(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
-) -> RunLeaseRow | None:
+async def get_run_lease(conn: AsyncConnection, project_run_id: CampaignRunId) -> RunLeaseRow | None:
     """Read the lease row (with its DB-clock ``live`` verdict), or ``None`` if never leased."""
     row = (
-        (await conn.execute(_GET_SQL, {"campaign_run_id": campaign_run_id}))
-        .mappings()
-        .one_or_none()
+        (await conn.execute(_GET_SQL, {"project_run_id": project_run_id})).mappings().one_or_none()
     )
     return RunLeaseRow.model_validate(dict(row)) if row is not None else None
 
@@ -176,16 +172,16 @@ class LeaseStore(Protocol):
     :class:`DbLeaseStore` (conventions §2)."""
 
     async def acquire(
-        self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
     ) -> bool: ...
 
     async def renew(
-        self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
     ) -> bool: ...
 
-    async def release(self, *, campaign_run_id: CampaignRunId, worker_id: str) -> None: ...
+    async def release(self, *, project_run_id: CampaignRunId, worker_id: str) -> None: ...
 
-    async def get(self, campaign_run_id: CampaignRunId) -> RunLeaseRow | None: ...
+    async def get(self, project_run_id: CampaignRunId) -> RunLeaseRow | None: ...
 
 
 class DbLeaseStore:
@@ -194,25 +190,23 @@ class DbLeaseStore:
     single atomic statement, never part of a larger unit of work."""
 
     async def acquire(
-        self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
     ) -> bool:
         async with transaction() as conn:
             return await acquire_run_lease(
-                conn, campaign_run_id=campaign_run_id, worker_id=worker_id, ttl=ttl
+                conn, project_run_id=project_run_id, worker_id=worker_id, ttl=ttl
             )
 
-    async def renew(
-        self, *, campaign_run_id: CampaignRunId, worker_id: str, ttl: timedelta
-    ) -> bool:
+    async def renew(self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta) -> bool:
         async with transaction() as conn:
             return await renew_run_lease(
-                conn, campaign_run_id=campaign_run_id, worker_id=worker_id, ttl=ttl
+                conn, project_run_id=project_run_id, worker_id=worker_id, ttl=ttl
             )
 
-    async def release(self, *, campaign_run_id: CampaignRunId, worker_id: str) -> None:
+    async def release(self, *, project_run_id: CampaignRunId, worker_id: str) -> None:
         async with transaction() as conn:
-            await release_run_lease(conn, campaign_run_id=campaign_run_id, worker_id=worker_id)
+            await release_run_lease(conn, project_run_id=project_run_id, worker_id=worker_id)
 
-    async def get(self, campaign_run_id: CampaignRunId) -> RunLeaseRow | None:
+    async def get(self, project_run_id: CampaignRunId) -> RunLeaseRow | None:
         async with transaction() as conn:
-            return await get_run_lease(conn, campaign_run_id)
+            return await get_run_lease(conn, project_run_id)

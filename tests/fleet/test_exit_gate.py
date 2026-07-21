@@ -121,7 +121,7 @@ async def _execute(sql: str) -> None:
 
 async def _done_account_jobs(run_id: CampaignRunId) -> int:
     rows = await _query(
-        "SELECT count(*) FROM fleet_task WHERE campaign_run_id = :run "
+        "SELECT count(*) FROM fleet_task WHERE project_run_id = :run "
         "AND kind = 'account_job' AND status = 'done'",
         run=run_id,
     )
@@ -147,7 +147,7 @@ async def _assert_lease_blocks_second_driver(run_id: CampaignRunId, holder: str)
         try:
             acquired = await acquire_run_lease(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 worker_id="probe-worker",
                 ttl=timedelta(seconds=LEASE_TTL_S),
             )
@@ -226,14 +226,14 @@ async def _assert_exactly_once(run_id: CampaignRunId, worker_a: str, worker_b: s
         assert await get_run_lease(conn, run_id) is None
 
     statuses = await _query(
-        "SELECT status, count(*) FROM fleet_task WHERE campaign_run_id = :run "
+        "SELECT status, count(*) FROM fleet_task WHERE project_run_id = :run "
         "AND kind = 'account_job' GROUP BY status",
         run=run_id,
     )
     assert {str(s): int(n) for s, n in statuses} == {FleetTaskStatus.DONE.value: N_ACCOUNTS}
     drive = await _query(
         "SELECT status, result_ref_json->>'outcome' FROM fleet_task "
-        "WHERE campaign_run_id = :run AND kind = 'drive_run'",
+        "WHERE project_run_id = :run AND kind = 'drive_run'",
         run=run_id,
     )
     assert len(drive) == 1 and str(drive[0][0]) == FleetTaskStatus.DONE.value

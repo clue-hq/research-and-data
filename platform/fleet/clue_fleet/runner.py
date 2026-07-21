@@ -1,4 +1,4 @@
-"""The worker-process shell (PB-B1) — run a :class:`~clue_fleet.worker.CampaignRunWorker` as a
+"""The worker-process shell (PB-B1) — run a :class:`~clue_fleet.worker.ProjectRunWorker` as a
 detached OS process with signal-driven graceful drain.
 
 This is the *shell only*: it owns the event-loop entry and SIGTERM/SIGINT → :meth:`stop` wiring.
@@ -14,12 +14,12 @@ import asyncio
 import contextlib
 import signal
 
-from clue_fleet.worker import CampaignRunWorker
+from clue_fleet.worker import ProjectRunWorker
 
 _DRAIN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 
 
-async def run_worker(worker: CampaignRunWorker, *, install_signal_handlers: bool = True) -> None:
+async def run_worker(worker: ProjectRunWorker, *, install_signal_handlers: bool = True) -> None:
     """Drive ``worker.run()`` to completion, draining gracefully on SIGTERM/SIGINT.
 
     A second signal does not escalate — kill -9 is the unclean path the lease/queue staleness

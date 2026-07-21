@@ -2,7 +2,7 @@
 
 A real, killable OS process (spawned by ``tests/fleet/test_exit_gate.py``) that composes the
 *actual* production machinery — ``CampaignRun`` + ``DbCampaignRunStore`` + ``DbIdempotencyStore``
-(the M7 state machine and ledger), ``CampaignRunWorker`` + ``DbTaskQueue`` + ``DbLeaseStore``
+(the M7 state machine and ledger), ``ProjectRunWorker`` + ``DbTaskQueue`` + ``DbLeaseStore``
 (the PB-B1 shell), and the ``QueueBackedScheduler`` deep drain — with **stub phase bodies**:
 every phase except ``deep`` completes instantly; the ``deep`` phase fans out one stub account
 job per account, whose "paid resolver call" is a sleep and whose spend is recorded through the
@@ -39,7 +39,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from clue_fleet import CampaignRunWorker, QueueBackedScheduler, run_worker
+from clue_fleet import ProjectRunWorker, QueueBackedScheduler, run_worker
 from sqlalchemy import text
 
 from clue_core import (
@@ -86,27 +86,27 @@ _PROVIDER_CALL_INSERT = text(
 )
 
 
-def entity_for(campaign_run_id: CampaignRunId, index: int) -> EntityId:
+def entity_for(project_run_id: CampaignRunId, index: int) -> EntityId:
     """The i-th stub account's entity id — deterministic per run, stable across restarts."""
-    return EntityId(uuid5(NAMESPACE_URL, f"exit-gate:{campaign_run_id}:acct:{index}"))
+    return EntityId(uuid5(NAMESPACE_URL, f"exit-gate:{project_run_id}:acct:{index}"))
 
 
 def tier_for(index: int) -> str:
     return _TIERS[index % len(_TIERS)]
 
 
-def account_run_for(campaign_run_id: CampaignRunId) -> RunId:
+def account_run_for(project_run_id: CampaignRunId) -> RunId:
     """The stub deep pass's account-run id (one per campaign run, stable across restarts) — the
     first component of every account-step key."""
-    return RunId(uuid5(NAMESPACE_URL, f"exit-gate:{campaign_run_id}:account-run"))
+    return RunId(uuid5(NAMESPACE_URL, f"exit-gate:{project_run_id}:account-run"))
 
 
-def step_key_for(campaign_run_id: CampaignRunId, index: int) -> str:
+def step_key_for(project_run_id: CampaignRunId, index: int) -> str:
     """The exact ``(account_run, entity, field, tier)`` ledger key the stub job spends under —
     recomputed identically by the test's exactly-once assertions."""
     return account_step_key(
-        account_run_for(campaign_run_id),
-        entity_for(campaign_run_id, index),
+        account_run_for(project_run_id),
+        entity_for(project_run_id, index),
         STUB_FIELD,
         STUB_TIER,
     )
@@ -145,10 +145,12 @@ class StubDeepHandler:
         self._worker_label = worker_label
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        campaign_run_id = ctx.campaign_run_id
-        account_run_id = account_run_for(campaign_run_id)
+        # ctx.campaign_run_id is the durable PhaseContext attribute (imported from clue_core) —
+        # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md).
+        project_run_id = ctx.campaign_run_id
+        account_run_id = account_run_for(project_run_id)
         specs = [
-            AccountSpec(entity_id=entity_for(campaign_run_id, i), tier=tier_for(i))
+            AccountSpec(entity_id=entity_for(project_run_id, i), tier=tier_for(i))
             for i in range(self._accounts)
         ]
 
@@ -179,7 +181,7 @@ class StubDeepHandler:
                 await conn.execute(
                     _PROVIDER_CALL_INSERT,
                     {
-                        "run_id": campaign_run_id,
+                        "run_id": project_run_id,
                         "step_key": key,
                         "worker": self._worker_label,
                         "call_id": uuid4(),
@@ -193,7 +195,7 @@ class StubDeepHandler:
                 await conn.execute(
                     _JOURNAL_INSERT,
                     {
-                        "run_id": campaign_run_id,
+                        "run_id": project_run_id,
                         "step_key": key,
                         "worker": self._worker_label,
                     },
@@ -208,7 +210,11 @@ class StubDeepHandler:
             return {"entity": str(spec.entity_id)}
 
         results = await self._scheduler.run_accounts(
-            specs, campaign_run_id=campaign_run_id, checkpointer=None, run_one=run_one
+            # §1a rename: run_accounts keeps the legacy keyword (seam exception 1) until stage 2.
+            specs,
+            campaign_run_id=project_run_id,
+            checkpointer=None,
+            run_one=run_one,
         )
         executed = sum(1 for r in results if not r.get("replayed"))
         cost: CostCents = STUB_COST * executed
@@ -220,7 +226,7 @@ class StubDeepHandler:
         )
 
 
-def build_worker() -> CampaignRunWorker:
+def build_worker() -> ProjectRunWorker:
     """Compose the stub-mode worker from ``EXIT_GATE_*`` env (the test controls every knob)."""
     accounts = int(os.environ["EXIT_GATE_ACCOUNTS"])
     worker_id = os.environ["EXIT_GATE_WORKER_ID"]
@@ -256,7 +262,7 @@ def build_worker() -> CampaignRunWorker:
         )
     )
     driver = CampaignRun(store=DbCampaignRunStore(), registry=registry, ledger=DbIdempotencyStore())
-    return CampaignRunWorker(
+    return ProjectRunWorker(
         driver=driver,
         worker_id=worker_id,
         poll_interval=0.1,

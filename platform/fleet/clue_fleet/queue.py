@@ -3,12 +3,12 @@
 One table holds both task kinds (:class:`~clue_fleet.enums.FleetTaskKind`): ``drive_run`` jobs
 any worker may claim, and ``account_job`` rows that give the ``deep`` phase its tier-priority
 order (REQ-10 — "budget exhaustion still researched the *best* accounts first"). Rows are
-*fleet-plane* state: ``campaign_run_id`` rides as an opaque id (a soft FK, like every M7 table)
+*fleet-plane* state: ``project_run_id`` rides as an opaque id (a soft FK, like every M7 table)
 and ``payload_json`` / ``result_ref_json`` carry references only, never blobs (substrate §5b).
 
 Semantics, all decided at the database (no read-then-write races):
 
-* **enqueue** is idempotent on ``(kind, campaign_run_id, dedup_key)`` (``ON CONFLICT DO
+* **enqueue** is idempotent on ``(kind, project_run_id, dedup_key)`` (``ON CONFLICT DO
   NOTHING``) — re-entering a drive re-offers the same work without duplicating rows.
 * **claim-next** is one atomic ``UPDATE … FROM (SELECT … ORDER BY priority, enqueue_seq LIMIT 1
   FOR UPDATE SKIP LOCKED)`` — the best runnable row in ``(priority, enqueue_seq)`` order, where
@@ -55,7 +55,7 @@ class FleetTaskRow(BaseModel):
 
     task_id: UUID
     kind: FleetTaskKind
-    campaign_run_id: CampaignRunId
+    project_run_id: CampaignRunId
     dedup_key: str
     priority: int
     status: FleetTaskStatus
@@ -70,7 +70,7 @@ class FleetTaskRow(BaseModel):
 
 
 _COLUMNS = (
-    "task_id, kind, campaign_run_id, dedup_key, priority, status, attempts, "
+    "task_id, kind, project_run_id, dedup_key, priority, status, attempts, "
     "payload_json, result_ref_json, claimed_by, claimed_at, enqueued_at, enqueue_seq, updated_at"
 )
 
@@ -80,12 +80,12 @@ _QUALIFIED_COLUMNS = ", ".join(f"fleet_task.{col}" for col in _COLUMNS.split(", 
 
 _ENQUEUE_SQL = text(
     """
-    INSERT INTO fleet_task (task_id, kind, campaign_run_id, dedup_key, priority, payload_json)
+    INSERT INTO fleet_task (task_id, kind, project_run_id, dedup_key, priority, payload_json)
     VALUES (
-        :task_id, CAST(:kind AS fleet_task_kind), :campaign_run_id, :dedup_key, :priority,
+        :task_id, CAST(:kind AS fleet_task_kind), :project_run_id, :dedup_key, :priority,
         CAST(:payload AS jsonb)
     )
-    ON CONFLICT (kind, campaign_run_id, dedup_key) DO NOTHING
+    ON CONFLICT (kind, project_run_id, dedup_key) DO NOTHING
     RETURNING task_id
     """
 )
@@ -98,12 +98,12 @@ _ENQUEUE_SQL = text(
 # resumed run retains its FIFO place ahead of newer work (intended, not incidental).
 _ENQUEUE_REOPEN_SQL = text(
     """
-    INSERT INTO fleet_task (task_id, kind, campaign_run_id, dedup_key, priority, payload_json)
+    INSERT INTO fleet_task (task_id, kind, project_run_id, dedup_key, priority, payload_json)
     VALUES (
-        :task_id, CAST(:kind AS fleet_task_kind), :campaign_run_id, :dedup_key, :priority,
+        :task_id, CAST(:kind AS fleet_task_kind), :project_run_id, :dedup_key, :priority,
         CAST(:payload AS jsonb)
     )
-    ON CONFLICT (kind, campaign_run_id, dedup_key) DO UPDATE
+    ON CONFLICT (kind, project_run_id, dedup_key) DO UPDATE
         SET status = 'queued',
             claimed_by = NULL,
             claimed_at = NULL,
@@ -120,7 +120,7 @@ _ENQUEUE_REOPEN_SQL = text(
 # SKIP LOCKED so concurrent claimants (in-process drainers or a second worker process) fall
 # through to the next row instead of blocking or double-claiming. ``enqueue_seq`` (not
 # ``enqueued_at``) is the FIFO key — the transaction-stable ``now()`` cannot break same-priority
-# ties. ``:campaign_run_id`` narrows to one run's tasks (the deep drain) or, when NULL, spans all
+# ties. ``:project_run_id`` narrows to one run's tasks (the deep drain) or, when NULL, spans all
 # runs (the worker's drive-task drain).
 _CLAIM_NEXT_SQL = text(
     f"""
@@ -134,7 +134,7 @@ _CLAIM_NEXT_SQL = text(
         SELECT task_id
         FROM fleet_task
         WHERE kind = CAST(:kind AS fleet_task_kind)
-          AND (CAST(:campaign_run_id AS uuid) IS NULL OR campaign_run_id = :campaign_run_id)
+          AND (CAST(:project_run_id AS uuid) IS NULL OR project_run_id = :project_run_id)
           AND (
                 status = 'queued'
                 OR (status = 'claimed' AND claimed_at <= now() - CAST(:stale AS interval))
@@ -185,7 +185,7 @@ _REQUEUE_FAILED_SQL = text(
     UPDATE fleet_task
     SET status = 'queued', claimed_by = NULL, claimed_at = NULL, updated_at = now()
     WHERE kind = CAST(:kind AS fleet_task_kind)
-      AND campaign_run_id = :campaign_run_id
+      AND project_run_id = :project_run_id
       AND status = 'failed'
     """
 )
@@ -195,7 +195,7 @@ _GET_SQL = text(f"SELECT {_COLUMNS} FROM fleet_task WHERE task_id = :task_id")
 _LIST_SQL = text(
     f"""
     SELECT {_COLUMNS} FROM fleet_task
-    WHERE campaign_run_id = :campaign_run_id AND kind = CAST(:kind AS fleet_task_kind)
+    WHERE project_run_id = :project_run_id AND kind = CAST(:kind AS fleet_task_kind)
     ORDER BY priority, enqueue_seq
     """
 )
@@ -213,7 +213,7 @@ def _row_to_task(row: dict[str, object]) -> FleetTaskRow:
         {
             "task_id": row["task_id"],
             "kind": row["kind"],
-            "campaign_run_id": row["campaign_run_id"],
+            "project_run_id": row["project_run_id"],
             "dedup_key": row["dedup_key"],
             "priority": row["priority"],
             "status": row["status"],
@@ -233,7 +233,7 @@ async def enqueue_task(
     conn: AsyncConnection,
     *,
     kind: FleetTaskKind,
-    campaign_run_id: CampaignRunId,
+    project_run_id: CampaignRunId,
     dedup_key: str,
     priority: int = 0,
     payload: dict[str, JsonValue] | None = None,
@@ -242,7 +242,7 @@ async def enqueue_task(
     """Idempotently enqueue one task; ``True`` iff the work is newly offered (a fresh row, or —
     with ``reopen_terminal`` — a terminal row re-opened to ``queued``).
 
-    Default (``reopen_terminal=False``): a duplicate ``(kind, campaign_run_id, dedup_key)`` is a
+    Default (``reopen_terminal=False``): a duplicate ``(kind, project_run_id, dedup_key)`` is a
     pure no-op whatever its state — the ``account_job`` semantics, where a ``done`` row is this
     run's exactly-once completion marker and must stay done across re-entries. With
     ``reopen_terminal=True`` (the ``drive_run`` semantics — see :func:`~clue_fleet.worker.
@@ -256,7 +256,7 @@ async def enqueue_task(
             {
                 "task_id": uuid4(),
                 "kind": kind.value,
-                "campaign_run_id": campaign_run_id,
+                "project_run_id": project_run_id,
                 "dedup_key": dedup_key,
                 "priority": priority,
                 "payload": serialize_value_json(payload if payload is not None else {}),
@@ -271,7 +271,7 @@ async def claim_next_task(
     *,
     kind: FleetTaskKind,
     worker_id: str,
-    campaign_run_id: CampaignRunId | None = None,
+    project_run_id: CampaignRunId | None = None,
     stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
 ) -> FleetTaskRow | None:
     """Atomically claim the best runnable task (priority, then FIFO), or ``None`` when nothing is
@@ -284,7 +284,7 @@ async def claim_next_task(
                 {
                     "kind": kind.value,
                     "worker_id": worker_id,
-                    "campaign_run_id": campaign_run_id,
+                    "project_run_id": project_run_id,
                     "stale": stale_after,
                 },
             )
@@ -338,12 +338,12 @@ async def requeue_task(conn: AsyncConnection, *, task_id: UUID, worker_id: str) 
 
 
 async def requeue_failed_tasks(
-    conn: AsyncConnection, *, kind: FleetTaskKind, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, *, kind: FleetTaskKind, project_run_id: CampaignRunId
 ) -> int:
     """Re-offer every ``FAILED`` task of ``kind`` for this run (the explicit retry gate a fresh
     drive opens on re-entry). Returns how many rows were requeued."""
     result = await conn.execute(
-        _REQUEUE_FAILED_SQL, {"kind": kind.value, "campaign_run_id": campaign_run_id}
+        _REQUEUE_FAILED_SQL, {"kind": kind.value, "project_run_id": project_run_id}
     )
     return result.rowcount or 0
 
@@ -355,11 +355,11 @@ async def get_task(conn: AsyncConnection, task_id: UUID) -> FleetTaskRow | None:
 
 
 async def list_tasks(
-    conn: AsyncConnection, *, campaign_run_id: CampaignRunId, kind: FleetTaskKind
+    conn: AsyncConnection, *, project_run_id: CampaignRunId, kind: FleetTaskKind
 ) -> list[FleetTaskRow]:
     """Every task of ``kind`` for this run in claim order — the drain/observability read."""
     rows = (
-        (await conn.execute(_LIST_SQL, {"campaign_run_id": campaign_run_id, "kind": kind.value}))
+        (await conn.execute(_LIST_SQL, {"project_run_id": project_run_id, "kind": kind.value}))
         .mappings()
         .all()
     )
@@ -378,7 +378,7 @@ class TaskQueue(Protocol):
         self,
         *,
         kind: FleetTaskKind,
-        campaign_run_id: CampaignRunId,
+        project_run_id: CampaignRunId,
         dedup_key: str,
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
@@ -390,7 +390,7 @@ class TaskQueue(Protocol):
         *,
         kind: FleetTaskKind,
         worker_id: str,
-        campaign_run_id: CampaignRunId | None = None,
+        project_run_id: CampaignRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
     ) -> FleetTaskRow | None: ...
 
@@ -408,11 +408,11 @@ class TaskQueue(Protocol):
     async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
     async def requeue_failed(
-        self, *, kind: FleetTaskKind, campaign_run_id: CampaignRunId
+        self, *, kind: FleetTaskKind, project_run_id: CampaignRunId
     ) -> int: ...
 
     async def list_tasks(
-        self, *, campaign_run_id: CampaignRunId, kind: FleetTaskKind
+        self, *, project_run_id: CampaignRunId, kind: FleetTaskKind
     ) -> list[FleetTaskRow]: ...
 
 
@@ -425,7 +425,7 @@ class DbTaskQueue:
         self,
         *,
         kind: FleetTaskKind,
-        campaign_run_id: CampaignRunId,
+        project_run_id: CampaignRunId,
         dedup_key: str,
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
@@ -435,7 +435,7 @@ class DbTaskQueue:
             return await enqueue_task(
                 conn,
                 kind=kind,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 dedup_key=dedup_key,
                 priority=priority,
                 payload=payload,
@@ -447,7 +447,7 @@ class DbTaskQueue:
         *,
         kind: FleetTaskKind,
         worker_id: str,
-        campaign_run_id: CampaignRunId | None = None,
+        project_run_id: CampaignRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
     ) -> FleetTaskRow | None:
         async with transaction() as conn:
@@ -455,7 +455,7 @@ class DbTaskQueue:
                 conn,
                 kind=kind,
                 worker_id=worker_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 stale_after=stale_after,
             )
 
@@ -480,12 +480,12 @@ class DbTaskQueue:
         async with transaction() as conn:
             return await requeue_task(conn, task_id=task_id, worker_id=worker_id)
 
-    async def requeue_failed(self, *, kind: FleetTaskKind, campaign_run_id: CampaignRunId) -> int:
+    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: CampaignRunId) -> int:
         async with transaction() as conn:
-            return await requeue_failed_tasks(conn, kind=kind, campaign_run_id=campaign_run_id)
+            return await requeue_failed_tasks(conn, kind=kind, project_run_id=project_run_id)
 
     async def list_tasks(
-        self, *, campaign_run_id: CampaignRunId, kind: FleetTaskKind
+        self, *, project_run_id: CampaignRunId, kind: FleetTaskKind
     ) -> list[FleetTaskRow]:
         async with transaction() as conn:
-            return await list_tasks(conn, campaign_run_id=campaign_run_id, kind=kind)
+            return await list_tasks(conn, project_run_id=project_run_id, kind=kind)
