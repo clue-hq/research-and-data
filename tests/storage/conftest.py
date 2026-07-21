@@ -133,12 +133,20 @@ def require_storage_db(migrated_db: bool) -> None:
 
 
 @asynccontextmanager
-async def rollback_conn() -> AsyncIterator[AsyncConnection]:
-    """Yield a pooled connection inside a transaction that is always rolled back."""
+async def rollback_conn(*, seed_core: bool = True) -> AsyncIterator[AsyncConnection]:
+    """Yield a pooled connection inside a transaction that is always rolled back.
+
+    Defaults to seeding the M1 core pack (the adapters-harness pattern) so the snapshot-wiring
+    tests can write claims against registered field_keys.
+    """
     async with db_lifespan() as engine:
         conn = await engine.connect()
         trans = await conn.begin()
         try:
+            if seed_core:
+                from clue_research.claimstore import load_core_pack
+
+                await load_core_pack(conn)
             yield conn
         finally:
             await trans.rollback()

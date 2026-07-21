@@ -63,6 +63,7 @@ from clue_research.claimstore import PUBLIC_ONLY, WorkspaceScope, claims_for, in
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources.registry import NoResolverBoundError, get_resolver, get_source
 from clue_research.sources.thresholds import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
+from clue_storage import SnapshotSink, StorageBackend, flush_snapshots
 
 
 class StopReason(StrEnum):
@@ -193,6 +194,8 @@ async def resolve_field(
     idempotent: bool = True,
     claim_tagger: ClaimTagger | None = None,
     source_gate: SourceGate | None = None,
+    snapshots: SnapshotSink | None = None,
+    storage: StorageBackend | None = None,
 ) -> WaterfallResult:
     """Fill one field by walking its ``tier_plan`` in trust order, stopping at the first confident
     hit. Writes every returned claim through M1.1 (``unverified``) and returns claim-id references.
@@ -208,6 +211,11 @@ async def resolve_field(
     resolver call (reuse and unbound sources spend nothing and are not gated); ``False`` skips that
     source (``GATE_SKIPPED``) and the walk continues. With both left ``None`` the engine behaves
     exactly as before.
+
+    ``snapshots``/``storage`` (optional, PB-B2.3) are the shared per-run evidence-snapshot sink
+    and the durable backend: captures a resolver made during ``resolve`` (the tier-2 scrape path)
+    are flushed — blob + ``artifact`` row — before the step's claims are inserted, so each claim's
+    ``artifact_key`` FK resolves. Both left ``None`` → no snapshotting, exactly as before.
 
     Call inside a caller-owned transaction (``db.transaction``): claims are inserted per step, so a
     raising step rolls back cleanly and the per-run idempotency never sees a half-written step.
@@ -320,6 +328,12 @@ async def resolve_field(
             },
         ) as span:
             claims = list(resolver.resolve(entity, field_def))
+            # Flush evidence snapshots the resolver captured (via a shared per-run SnapshotSink,
+            # PB-B2.3) BEFORE the insert loop: the claims below may carry artifact_key refs, and
+            # the FK requires the artifact row first. Content-addressed → idempotent, so a step
+            # that captured nothing (or a re-flush) is a no-op.
+            if snapshots is not None and storage is not None and snapshots.pending:
+                await flush_snapshots(conn, storage, snapshots)
             kept: list[Claim] = []
             step_cost = Decimal(0)
             for c in claims:
