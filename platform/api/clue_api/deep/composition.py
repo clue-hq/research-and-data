@@ -3,7 +3,7 @@
 This is the one co-import point for the deep phase: the ``api`` composition root where the otherwise
 independent milestone packages meet (import-linter Rule 5 — ``api`` is exempt; nothing imports
 ``api``). It constructs the concretes the M8A.1 orchestrator + M8A.2 handler are *typed against* and
-injects them, then registers the :class:`~clue_research.api.deep.DeepPhaseHandler` so
+injects them, then registers the :class:`~clue_api.deep.DeepPhaseHandler` so
 ``CampaignRun.advance()`` dispatches ``CampaignPhase.DEEP`` with zero new dispatch code (the run no
 longer raises ``NoPhaseHandlerRegistered(DEEP)``).
 
@@ -15,11 +15,11 @@ What it wires, and where each piece comes from:
   graph dispatch; committee + contact run as direct callables, **not** registered as graph aspects
   (spec §M8A.6 — "committee/contact run as callables and are NOT registered as aspects").
 * **The M9 governance seams** (reused from the M8 composition root,
-  :mod:`clue_research.api.composition`) — the concrete :class:`PreSpendGate`
-  (:func:`~clue_research.api.composition.build_pre_spend_gate`) threaded into **all three** axes so
+  :mod:`clue_api.composition`) — the concrete :class:`PreSpendGate`
+  (:func:`~clue_api.composition.build_pre_spend_gate`) threaded into **all three** axes so
   every claim-producing path gates before it spends (the deferred M9.1 routing, M8A.6 AC-6), and
   ``verification.classify_binding`` behind M8.4's ``BindingClassifier``
-  (:func:`~clue_research.api.composition.production_binding_classifier`) so a born
+  (:func:`~clue_api.composition.production_binding_classifier`) so a born
   ``contact.facet.*`` ``identity_binding`` is the authoritative immutable M9 verdict (the deferred
   M9.4 stamp, AC-4).
   The injected gate is a **required, non-None** collaborator here (it defaults to a real gate) — the
@@ -54,6 +54,19 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import JsonValue
 
+from clue_api.composition import (
+    build_pre_spend_gate,
+    load_research_packs,
+    production_binding_classifier,
+)
+from clue_api.deep.handler import (
+    CheckpointerFactory,
+    DeepPhaseHandler,
+    HighTierResolver,
+)
+from clue_api.deep.orchestrator import AccountDeepOrchestrator
+from clue_api.deep.run_io import DbAccountRunIO
+from clue_api.deep.spend import DbExactlyOnceSpend
 from clue_config import DeepPhaseConfig, OverlayStore, RecursionPolicy
 from clue_core import (
     CostCents,
@@ -63,19 +76,6 @@ from clue_core import (
     PreSpendGate,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.api.composition import (
-    build_pre_spend_gate,
-    load_research_packs,
-    production_binding_classifier,
-)
-from clue_research.api.deep.handler import (
-    CheckpointerFactory,
-    DeepPhaseHandler,
-    HighTierResolver,
-)
-from clue_research.api.deep.orchestrator import AccountDeepOrchestrator
-from clue_research.api.deep.run_io import DbAccountRunIO
-from clue_research.api.deep.spend import DbExactlyOnceSpend
 from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (
@@ -133,7 +133,7 @@ def build_high_tier_resolver(
     session_factory: ConnFactory = transaction,
     deep_tiers: frozenset[str] | None = None,
 ) -> HighTierResolver:
-    """The :data:`~clue_research.api.deep.handler.HighTierResolver` that reads the human-approved
+    """The :data:`~clue_api.deep.handler.HighTierResolver` that reads the human-approved
     high-tier set from the claim store (D-B), mapping each to a ``durable.AccountSpec``.
 
     The committed decision arrives two ways and we honour both: ``ctx.params["tier_cutoffs"]`` (the

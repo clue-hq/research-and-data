@@ -7,7 +7,7 @@ handler into the M7.3 phase registry. Mirrors ``api/verification``."""
 
 from __future__ import annotations
 
-from clue_research.api.review.composition import (
+from clue_api.review.composition import (
     CampaignRunResumeHook,
     DbVerificationAnnotationReader,
     NoopReviewDispositionEmitter,
@@ -16,7 +16,7 @@ from clue_research.api.review.composition import (
     build_review_surface,
     register_review_phase_handler,
 )
-from clue_research.api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
+from clue_api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
 
 __all__ = [
     "ReviewPhaseHandler",

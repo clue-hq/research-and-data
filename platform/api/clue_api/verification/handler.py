@@ -1,7 +1,7 @@
 """The ``CampaignPhase.VERIFICATION`` phase handler (integration) — runs the gate chain live.
 
 This is the keystone the three-way integration (M10 + M11 + M12) adds: the live call site that
-drives the frozen :data:`~clue_research.api.composition.VERIFICATION_GATE_ORDER` over the claims the
+drives the frozen :data:`~clue_api.composition.VERIFICATION_GATE_ORDER` over the claims the
 ``DEEP`` phase produced and left ``unverified``. Until it runs, the M1.2 merge
 (:class:`~clue_research.claimstore.MergePolicy` ``require_verified_tier4=True``) leaves
 ``current_value`` **empty** for every tier-4 synthesis field — so M11's Output-2

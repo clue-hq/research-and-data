@@ -9,7 +9,7 @@ binds the durable M7.1 ``account_run`` repository + the M8A.0 sub-phase setter.
 :meth:`DbAccountRunIO.fold` takes the **caller's connection** (M8A.4) and writes the references +
 sub-phase advance on it — so a stage's marker + folded references commit in the **same** transaction
 as the spend (claim writes + charge + ledger ``succeed``) the orchestrator runs through
-:class:`~clue_research.api.deep.spend.ExactlyOnceSpend` on that connection. It does **not** write
+:class:`~clue_api.deep.spend.ExactlyOnceSpend` on that connection. It does **not** write
 ``cost_cents``: :meth:`~clue_research.durable.budget.BudgetEngine.record` is the single live writer
 of the per-account spend (the single-writer reconciliation, spec §M8A.4), so the fold must not
 clobber it. The orchestrator only ever holds claim-id *references* here, never bodies (§5b).

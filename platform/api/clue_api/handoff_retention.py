@@ -10,7 +10,7 @@ sensitive ``contact.facet`` claim is EXPIRED-to-retention yet FRESH-to-merge —
 M12 is deliberately built to *not* special-case ``EXPIRED`` (PF-1 D-EXP) on the standing assumption
 that this sweep runs before its merge read; this handler is what makes that assumption true.
 
-M12's :class:`~clue_research.api.handoff_wiring.HandoffPhaseHandler` assembles + materialises +
+M12's :class:`~clue_api.handoff_wiring.HandoffPhaseHandler` assembles + materialises +
 emits inside its ``run`` (the merge read), so :class:`RetentionSweepHandoffHandler` runs the M10.5
 :class:`~clue_research.compliance.RetentionSweep` **before** delegating to it:
 
@@ -32,6 +32,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
+from clue_api.verification.handler import ContactResolver, VerificationAccountResolver
 from clue_core import (
     CampaignPhase,
     EntityId,
@@ -41,7 +42,6 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import MetricSink
-from clue_research.api.verification.handler import ContactResolver, VerificationAccountResolver
 from clue_research.compliance import RetentionSweep
 from clue_research.durable import register_phase_handler
 from clue_research.identity import contact_ids_for_account

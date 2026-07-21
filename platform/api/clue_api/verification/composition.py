@@ -1,6 +1,6 @@
 """The ``CampaignPhase.VERIFICATION`` composition root — wires the concrete M9/M10 seams.
 
-Constructs :class:`~clue_research.api.verification.handler.VerificationPhaseHandler` with the real
+Constructs :class:`~clue_api.verification.handler.VerificationPhaseHandler` with the real
 M9.2 :class:`~clue_research.verification.Corroborator`, the M9.3
 :class:`~clue_research.verification.FaithfulnessJudgeImpl` (over the shared
 :class:`~clue_core.gateway.LLMGateway`), the live-claims loader
@@ -17,7 +17,7 @@ phase-handler registry so ``CampaignRun.advance()`` dispatches ``VERIFICATION`` 
 ``api`` — Rule 5).
 
 **Account set:** pass the SAME ``account_resolver`` the DEEP composition built
-(:func:`clue_research.api.deep.composition.build_high_tier_resolver`), so verification runs over
+(:func:`clue_api.deep.composition.build_high_tier_resolver`), so verification runs over
 exactly the accounts DEEP processed — one source of the high-tier set.
 
 **Contacts + use-gate (M10.3):** with ``govern_contacts=True`` (the default), each account's
@@ -30,18 +30,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from clue_core import Claim, EntityId
-from clue_core.compliance import UseGate
-from clue_core.gateway import LLMGateway
-from clue_db import ConnFactory, transaction
-from clue_obs.otel import MetricSink
-from clue_research.api.verification.handler import (
+from clue_api.verification.handler import (
     ClaimCorroborator,
     ContactResolver,
     UseGateProvider,
     VerificationAccountResolver,
     VerificationPhaseHandler,
 )
+from clue_core import Claim, EntityId
+from clue_core.compliance import UseGate
+from clue_core.gateway import LLMGateway
+from clue_db import ConnFactory, transaction
+from clue_obs.otel import MetricSink
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.compliance import UseGateImpl, load_workspace_policy
 from clue_research.durable import register_phase_handler

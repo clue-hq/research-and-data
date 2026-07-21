@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "clue-agents",
+    "clue-api",
     "clue-config",
     "clue-content",
     "clue-core",
@@ -259,6 +260,29 @@ version = "0.0.0"
 source = { editable = "platform/agents" }
 
 [[package]]
+name = "clue-api"
+version = "0.0.0"
+source = { editable = "platform/api" }
+dependencies = [
+    { name = "clue-config" },
+    { name = "clue-core" },
+    { name = "clue-db" },
+    { name = "clue-obs" },
+    { name = "clue-research" },
+    { name = "fastapi" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-config", editable = "libs/clue-config" },
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-db", editable = "libs/clue-db" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "clue-research", editable = "subsystems/research" },
+    { name = "fastapi", specifier = ">=0.138.0" },
+]
+
+[[package]]
 name = "clue-config"
 version = "0.0.0"
 source = { editable = "libs/clue-config" }
@@ -389,7 +413,6 @@ dependencies = [
     { name = "clue-gateway" },
     { name = "clue-locks" },
     { name = "clue-obs" },
-    { name = "fastapi" },
     { name = "httpx" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-postgres" },
@@ -407,7 +430,6 @@ requires-dist = [
     { name = "clue-gateway", editable = "libs/clue-gateway" },
     { name = "clue-locks", editable = "libs/clue-locks" },
     { name = "clue-obs", editable = "libs/clue-obs" },
-    { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langgraph", specifier = ">=0.2" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=2" },

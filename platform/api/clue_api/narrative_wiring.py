@@ -29,10 +29,10 @@ per the pre-flight overrides. The M12.2 handoff assembler + M12.3 publisher are 
 
 from __future__ import annotations
 
+from clue_api.composition import RESEARCH_PACK_LOADERS
 from clue_core import EntityId
 from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_db import ConnFactory, transaction
-from clue_research.api.composition import RESEARCH_PACK_LOADERS
 from clue_research.narrative import (
     HandoffAssembler,
     HandoffCommitteeReader,

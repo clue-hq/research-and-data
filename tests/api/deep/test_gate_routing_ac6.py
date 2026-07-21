@@ -1,7 +1,7 @@
 """M8A.6 AC-6 — the deep committee/contact spend paths route through the pre-spend gate.
 
 The deferred M9.1 routing (CLAUDE.md ENG-130), closed at the deep composition root: the gate the
-composition builds (:func:`~clue_research.api.composition.build_pre_spend_gate`) is the one the
+composition builds (:func:`~clue_api.composition.build_pre_spend_gate`) is the one the
 orchestrator threads into the committee + contact callables, so neither people-enumeration nor a
 facet fill can spend without a recorded ``gate_decision`` first. These drive the **exact callables**
 ``AccountDeepOrchestrator`` invokes (``discover_committee`` / ``profile_contact``) with that gate
@@ -18,12 +18,12 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import build_pre_spend_gate
 from clue_core import (
     EntityScope,
     Modality,
     SourceManifest,
 )
-from clue_research.api import build_pre_spend_gate
 from clue_research.profiling import discover_committee, profile_contact
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import (

@@ -19,6 +19,7 @@ import asyncio
 from uuid import UUID, uuid4
 
 import clue_obs
+from clue_api.composition import load_research_packs
 from clue_core import (
     Claim,
     Entity,
@@ -31,7 +32,6 @@ from clue_core import (
     new_run_id,
 )
 from clue_db import db_lifespan, transaction
-from clue_research.api.composition import load_research_packs
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.profiling import profile_contact
 from clue_research.sources import bind_resolver, clear_resolver_bindings

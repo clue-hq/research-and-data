@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from clue_api.deep import deep_account_run_id
 from clue_config import DeepPhaseConfig, RecursionPolicy, TierRecursionCaps
 from clue_core import (
     BudgetScope,
@@ -29,7 +30,6 @@ from clue_core import (
     new_campaign_run_id,
     new_entity_id,
 )
-from clue_research.api.deep import deep_account_run_id
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import ContactProfileResult
 from tests.api.deep.test_orchestrator import (

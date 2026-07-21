@@ -13,6 +13,12 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
+from clue_api.deep import (
+    AccountDeepResult,
+    AccountHandoffSkeleton,
+    DeepCompleteManifest,
+    build_handoff_skeleton,
+)
 from clue_core import (
     EntityId,
     Persona,
@@ -24,12 +30,6 @@ from clue_core import (
 )
 from clue_core.enums import IdentityBinding, UseClass
 from clue_core.handoff import ProfileClaimView
-from clue_research.api.deep import (
-    AccountDeepResult,
-    AccountHandoffSkeleton,
-    DeepCompleteManifest,
-    build_handoff_skeleton,
-)
 from clue_research.durable import AccountRunSubPhase
 from clue_research.profiling import (
     AccountProfileResult,

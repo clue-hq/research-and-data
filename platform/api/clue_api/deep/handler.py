@@ -6,7 +6,7 @@ run no longer raises ``NoPhaseHandlerRegistered(DEEP)`` the moment it enters Pas
 
 The handler is thin: it (1) resolves the human-approved high-tier account set via the injected
 :data:`HighTierResolver`, (2) drives the M7 :class:`~clue_research.durable.AccountScheduler` with
-the M8A.1 :class:`~clue_research.api.deep.AccountDeepOrchestrator` bound as the per-account
+the M8A.1 :class:`~clue_api.deep.AccountDeepOrchestrator` bound as the per-account
 ``run_one`` callback — so each account's ``account → committee → contact`` sequence runs inside the
 scheduler's bounded-parallelism + per-entity single-flight slot — and (3) aggregates the
 references-only per-account outcomes into a deep-complete manifest. **It owns the per-account
@@ -46,6 +46,12 @@ from typing import Any, Protocol, runtime_checkable
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import JsonValue
 
+from clue_api.deep.handoff_skeleton import build_handoff_skeleton
+from clue_api.deep.orchestrator import (
+    AccountDeepOrchestrator,
+    AccountDeepResult,
+    deep_account_run_id,
+)
 from clue_core import (
     BudgetVerdict,
     CampaignPhase,
@@ -58,12 +64,6 @@ from clue_core import (
     RunId,
 )
 from clue_db import ConnFactory, transaction
-from clue_research.api.deep.handoff_skeleton import build_handoff_skeleton
-from clue_research.api.deep.orchestrator import (
-    AccountDeepOrchestrator,
-    AccountDeepResult,
-    deep_account_run_id,
-)
 from clue_research.durable import (
     AccountRunStatus,
     AccountScheduler,
@@ -123,7 +123,7 @@ class DeepAccountOrchestrator(Protocol):
     """The per-account sequence the handler binds as the scheduler's ``run_one`` (M8A.2).
 
     Typed as a seam so the handler is fake-testable; the M8A.1
-    :class:`~clue_research.api.deep.AccountDeepOrchestrator` satisfies it (asserted below)."""
+    :class:`~clue_api.deep.AccountDeepOrchestrator` satisfies it (asserted below)."""
 
     async def run_one(
         self, spec: AccountSpec, *, campaign_run_id: CampaignRunId
