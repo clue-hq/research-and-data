@@ -148,7 +148,10 @@ table name.
    contract-deltas — e.g. the M9.5 `Freshness` promotions): `CampaignRunId → ProjectRunId`,
    `CampaignPhase → ProjectPhase`, `new_campaign_run_id → new_project_run_id`,
    `IdempotencyScope`/`phase_key`/`account_step_key` helpers that name campaign_run. `PhaseContext.
-   campaign_run_id → project_run_id`.
+   campaign_run_id → project_run_id`. **`IdempotencyScope` member NAMES and helper/param names flip
+   here, but the member VALUE strings (`"account_step"`, `"campaign_phase"`) DO NOT — they are frozen
+   durable data baked into every ledger key at rest; see the §4.5 judgment-review bullet before
+   touching this enum.**
 2. **`clue_research.durable`**: `CampaignRun → ProjectRun`, `CampaignRunRow → ProjectRunRow`,
    `CampaignRunStatus → ProjectRunStatus`, `DbCampaignRunStore → DbProjectRunStore`,
    `AccountScheduler` and the `RunOne`/`AccountSpec` seams' `campaign_run_id` kwargs, the
@@ -167,6 +170,24 @@ table name.
      `machine.start(campaign_run_id=…)`.
    After this pass, **the marker comments themselves are deleted** (the exception no longer exists).
 5. **Judgment-review list (do NOT blind-sweep):**
+   - **durable idempotency-key strings are immutable DATA, not code** (replay-critical — the
+     single most dangerous mechanical mistake in this rename). `clue_core.idempotency.
+     idempotency_key(scope, *parts)` returns `f"{scope}:{sha256(scope‖parts)}"`, so the
+     `IdempotencyScope` member *VALUE* strings (`"account_step"`, `"campaign_phase"`) are baked
+     into **every** durable ledger key **at rest** — as the key prefix *and* inside the hash
+     payload — and are also written verbatim into the `idempotency_ledger.scope` column (a
+     Postgres `idempotency_scope` ENUM whose DB values are `'account_step'`/`'campaign_phase'` —
+     migration `df78df38b168`; those DB enum values are pinned for the same reason). Stage 2
+     renames the Python member *NAME* only (`CAMPAIGN_PHASE → PROJECT_PHASE`) plus the
+     helper/parameter names (`phase_key`/`account_step_key`/kwargs); **the value strings
+     (`"account_step"`, `"campaign_phase"`) are frozen forever.** A mechanical executor that
+     "helpfully" renames the value to `"project_phase"` changes the derived key for every
+     in-flight run → at the rename deploy, runs re-execute already-committed phases (a double-spend
+     / double-write regression the M7.4 ledger exists to prevent). During the stage-2 contract-delta
+     add a mandatory inline comment at the enum member —
+     `# value frozen: baked into ledger keys at rest — never rename; see PB-rename playbook §4.5`.
+     Renaming a value would require a key-rewrite data migration over the entire idempotency
+     ledger (and its `scope` column) — **explicitly out of stage-2 scope.**
    - **enum VALUE strings vs type names** — the DB `campaign_phase`/`campaign_run_status` *values*
      do not carry the token; rename only the type names and the Python enum *class* names, never
      the member string values.
