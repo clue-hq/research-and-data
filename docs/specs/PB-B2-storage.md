@@ -1,7 +1,8 @@
 # PB-B2 — Storage: durable artifacts, evidence snapshots, DSAR reach, millicredit groundwork
 
-**Status:** in progress (spec ratified 2026-07-21; worktree `platform/b2-storage`, cut from the
-treaty commit `e615e81` on `platform/workspace-restructure`)
+**Status:** built (2026-07-21) — all six issues implemented and gate-green on `platform/b2-storage`;
+awaiting the B2→B3→B1 integration merge (treaty §4). Spec ratified 2026-07-21; worktree cut from
+the treaty commit `e615e81` on `platform/workspace-restructure`.
 **Phase:** B (see `PB-phase-b-platform-infra-core.md` §2 — the scope treaty; this spec refines the
 B2 lane only and adds no architecture)
 **Authority:** harness doc REQ-07 (§ Design/Acceptance), REQ-06 (downstream consumer), harness A7
