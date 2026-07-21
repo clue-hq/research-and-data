@@ -18,10 +18,9 @@ genuinely saturated. The rule is pure and deterministic for fixed inputs.
 from __future__ import annotations
 
 from collections import deque
-from decimal import Decimal
 from enum import StrEnum
 
-from clue_core import CostCents
+from clue_core import BudgetTracker, CostCents
 
 
 class StoppingReason(StrEnum):
@@ -64,14 +63,13 @@ class StoppingRule:
             raise ValueError(f"window_size must be >= 1 (got {window_size})")
         self._window_size = window_size
         self._threshold = marginal_yield_threshold
-        self._budget_cap = budget_cap_cents
+        self._budget = BudgetTracker(envelope_cents=budget_cap_cents)
         self._new_window: deque[int] = deque(maxlen=window_size)
         self._seen_window: deque[int] = deque(maxlen=window_size)
-        self._spent: CostCents = Decimal(0)
 
     @property
     def spent_cents(self) -> CostCents:
-        return self._spent
+        return self._budget.spent_cents
 
     def record_round(
         self, *, new_candidates: int, records_seen: int, cost_cents: CostCents
@@ -79,14 +77,14 @@ class StoppingRule:
         """Record one expand round's outcome into the window + cumulative spend."""
         self._new_window.append(new_candidates)
         self._seen_window.append(records_seen)
-        self._spent += cost_cents
+        self._budget.spend(cost_cents)
 
     def window_yield(self) -> float:
         """The marginal yield over the current window (new / seen)."""
         return marginal_yield(sum(self._new_window), sum(self._seen_window))
 
     def budget_exceeded(self) -> bool:
-        return self._budget_cap is not None and self._spent >= self._budget_cap
+        return self._budget.exhausted
 
     def reason(self) -> StoppingReason | None:
         """The firing stop reason, or ``None`` to keep going. Budget is checked first (a cost cap

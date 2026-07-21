@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     AccountStatus,
+    BudgetTracker,
     Claim,
     Entity,
     EntityId,
@@ -154,7 +155,7 @@ async def reverse_profile(
             if c.run_id == run and c.extraction_method is ExtractionMethod.HUMAN
         }
 
-        spent = Decimal(0)
+        budget = BudgetTracker(envelope_cents=budget_cap_cents)
         claims_written = 0
         filled_fields: set[str] = set()  # fields with a live claim in this run
         attempted_fields: set[str] = set()  # fields the run actually reached (vs cut off by budget)
@@ -178,7 +179,7 @@ async def reverse_profile(
         for field_key in CLIENT_KNOWLEDGE_FIELDS:
             if field_key in material_fields:
                 continue  # a volunteered fact already fills it — do not spend to re-derive
-            if budget_cap_cents is not None and spent >= budget_cap_cents:
+            if budget.exhausted:
                 budget_exhausted = True
                 break  # outer cap: do not reach later fields (they stay un-attempted)
             field_def = await get_field(conn, field_key)
@@ -193,10 +194,10 @@ async def reverse_profile(
                 run_id=run,
                 workspace_id=workspace_id,
                 budget_envelope=budget_cap_cents,
-                cost_so_far=spent,
+                cost_so_far=budget.spent_cents,
                 reuse_policy=CLIENT_KNOWLEDGE_REUSE_POLICY,
             )
-            spent += result.total_cost_cents
+            budget.spend(result.total_cost_cents)
             claims_written += len(result.claim_refs)
             if result.claim_refs:
                 filled_fields.add(field_key)
@@ -218,13 +219,13 @@ async def reverse_profile(
             coverage=coverage,
         )
 
-        apply_attributes(span, {ATTR_COST_CENTS: spent, ATTR_N_CLAIMS: claims_written})
+        apply_attributes(span, {ATTR_COST_CENTS: budget.spent_cents, ATTR_N_CLAIMS: claims_written})
 
     return ReverseProfileResult(
         ref=ClientKnowledgeBaseRef(client_entity_id=client_entity_id, client_kb_version=version),
         run_id=run,
         coverage=coverage,
-        cost_cents=spent,
+        cost_cents=budget.spent_cents,
         fields_resolved=len(filled_fields),
         budget_exhausted=budget_exhausted,
     )

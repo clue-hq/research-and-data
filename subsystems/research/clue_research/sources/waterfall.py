@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    BudgetTracker,
     Claim,
     ClaimId,
     ClaimTagger,
@@ -231,9 +232,9 @@ async def resolve_field(
     )
     steps: list[TierStep] = []
     refs: list[ClaimId] = []
-    spent = Decimal(
-        0
-    )  # this call's spend (cost_so_far is the caller's prior spend, for the budget)
+    # Seeded with the caller's prior spend so the envelope bounds (cost_so_far + this call); the
+    # result's total_cost_cents is the delta (this call's spend only).
+    budget = BudgetTracker(envelope_cents=budget_envelope, spent_cents=cost_so_far)
     ran_any = False
     stop_reason: StopReason | None = None
 
@@ -258,7 +259,8 @@ async def resolve_field(
             if existing:
                 best = first_confident_claim(existing, threshold)
                 step_cost = sum((c.cost_cents for c in existing), Decimal(0))
-                spent += step_cost  # folds into the budget for *subsequent* steps, not this one
+                # Folds into the budget for *subsequent* steps, not this one.
+                budget.spend(step_cost)
                 refs.extend(c.id for c in existing)
                 steps.append(
                     TierStep(
@@ -279,10 +281,7 @@ async def resolve_field(
 
         # Budget pre-check (only for a step that will actually call a resolver): the manifest cost
         # is the pre-spend estimate (substrate §4 / D7).
-        if (
-            budget_envelope is not None
-            and cost_so_far + spent + manifest.cost_cents > budget_envelope
-        ):
+        if budget.would_exceed(manifest.cost_cents):
             steps.append(
                 TierStep(source_key=source_key, tier=tier, outcome=StepOutcome.BUDGET_SKIPPED)
             )
@@ -362,7 +361,7 @@ async def resolve_field(
             )
 
         ran_any = True
-        spent += step_cost
+        budget.spend(step_cost)
         steps.append(
             TierStep(
                 source_key=source_key,
@@ -390,7 +389,7 @@ async def resolve_field(
         claim_refs=tuple(refs),
         stop_reason=stop_reason,
         per_tier=tuple(steps),
-        total_cost_cents=spent,
+        total_cost_cents=budget.spent_cents - cost_so_far,  # this call's spend only
     )
 
 

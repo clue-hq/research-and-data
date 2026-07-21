@@ -63,6 +63,7 @@ from clue_core.execution import (
     AspectWorker,
     BudgetDecision,
     BudgetEngine,
+    BudgetTracker,
     BurnDown,
     ClaimTagger,
     Estimate,
@@ -354,6 +355,7 @@ __all__ = [
     "BudgetDecision",
     "BurnDown",
     "BudgetEngine",
+    "BudgetTracker",
     # source-engine hooks (M4.1 resolve_field seams; the M8.4 fill is the canonical caller)
     "ClaimTagger",
     "SourceGate",
