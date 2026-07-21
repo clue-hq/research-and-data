@@ -22,6 +22,8 @@ made durable.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 # The scope segment used when a snapshot backs public-footprint (workspace-less) claims.
@@ -87,4 +89,11 @@ class StorageBackend(Protocol):
     async def presign(self, key: str, *, expires_in: int = 3600) -> str:
         """A URL/URI a client can fetch ``key`` from without credentials, valid ``expires_in``
         seconds (frontend serving, treaty §2.8 — nothing consumes this yet in Phase B)."""
+        ...
+
+    def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        """Iterate every stored ``(key, last_modified)`` — the reconciliation read
+        (:func:`clue_storage.artifacts.sweep_orphan_blobs`): a blob older than the sweep's
+        grace window with no ``artifact`` row is a rolled-back upload's orphan. ``last_modified``
+        is timezone-aware UTC."""
         ...

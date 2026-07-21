@@ -48,7 +48,9 @@ from clue_storage import (
     FsStorage,
     SnapshotSink,
     artifact_key,
+    bind_snapshots,
     content_address,
+    current_snapshot_sink,
     flush_snapshots,
     get_artifact,
     live_claim_count,
@@ -94,7 +96,9 @@ def test_flush_is_idempotent_and_fk_ordered(tmp_path: object) -> None:
             sink = SnapshotSink(workspace_id="ws_flush")
             key = sink.capture(_raw(), source_key="firecrawl_site")
             assert await flush_snapshots(conn, storage, sink) == 1
-            assert sink.pending == ()  # drained
+            # NOT drained: captures stay pending for the sink's (run's) lifetime, so a rolled-back
+            # transaction's rows can be re-flushed by the retry (rollback survival, finding 1).
+            assert len(sink.pending) == 1
             assert await storage.get(key) == _PAGE  # byte-identical
             record = await get_artifact(conn, key)
             assert record is not None
@@ -106,6 +110,29 @@ def test_flush_is_idempotent_and_fk_ordered(tmp_path: object) -> None:
             assert await flush_snapshots(conn, storage, sink) == 1
             again = await get_artifact(conn, key)
             assert again is not None and again.artifact_id == record.artifact_id
+
+    run_async(scenario())
+
+
+def test_flush_survives_rollback_and_reconverges(tmp_path: object) -> None:
+    """Audit finding 1 (upload half): a transaction that flushed and then rolled back must not
+    strand the run — the sink still holds the bytes, so the retry's flush restores the artifact
+    row for the same content-addressed key and the claims' FK resolves again."""
+
+    async def scenario() -> None:
+        storage = FsStorage(str(tmp_path))
+        sink = SnapshotSink(workspace_id="ws_retry")
+        key = sink.capture(_raw(), source_key="firecrawl_site")
+        async with rollback_conn() as conn:
+            await flush_snapshots(conn, storage, sink)
+        # The transaction rolled back: the artifact row is gone, the blob is an orphan, but the
+        # capture is still pending — the divergence is recoverable, not permanent.
+        assert len(sink.pending) == 1
+        async with rollback_conn() as conn:
+            assert await get_artifact(conn, key) is None  # the rollback took the row
+            assert await flush_snapshots(conn, storage, sink) == 1  # the retry re-flushes
+            assert await get_artifact(conn, key) is not None
+            assert await storage.get(key) == _PAGE
 
     run_async(scenario())
 
@@ -239,15 +266,19 @@ def test_cache_hit_reuses_the_original_artifact_key(tmp_path: object) -> None:
 
 class _SnapshottingResolver:
     """A resolver double that captures its page into the shared sink (what the tier-2 scrape
-    resolver does via ``run_chain``) and returns claims stamped with the snapshot's key."""
+    resolver does via ``run_chain``) and returns claims stamped with the snapshot's key.
+    Constructed with ``sink=None`` it reads the run-scoped ambient binding at resolve time —
+    the production shape (audit finding 5: a per-run sink never lives on a registered object)."""
 
     tier = 2
 
-    def __init__(self, sink: SnapshotSink) -> None:
+    def __init__(self, sink: SnapshotSink | None = None) -> None:
         self._sink = sink
 
     def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
-        key = self._sink.capture(_raw(), source_key="snap_site")
+        sink = self._sink if self._sink is not None else current_snapshot_sink()
+        assert sink is not None
+        key = sink.capture(_raw(), source_key="snap_site")
         claim = account_claim(
             entity_id=entity.entity_id,
             field_key=field.field_key,
@@ -303,5 +334,45 @@ def test_waterfall_flushes_snapshots_before_insert(tmp_path: object) -> None:
             assert await storage.exists(key)
             assert await get_artifact(conn, key) is not None
             assert await live_claim_count(conn, key) == len(result.claim_refs)
+
+    run_async(scenario())
+
+
+def test_waterfall_uses_the_run_scoped_ambient_binding(tmp_path: object) -> None:
+    """Finding 5: nothing holds the sink — not the resolver (globally registered), not the
+    ``resolve_field`` call. The run owner binds it to the call context; the resolver captures
+    into it and the waterfall flushes it, both via the ambient binding."""
+
+    async def scenario() -> None:
+        storage = FsStorage(str(tmp_path))
+        async with rollback_conn() as conn:
+            await register_source(
+                conn,
+                RegistrySourceManifest(
+                    manifest=SourceManifest(
+                        source_key="snap_site",
+                        modality=Modality.STRUCTURED,
+                        entity_scope=EntityScope.ACCOUNT,
+                        yields=("account",),
+                        tier=2,
+                        cost_cents=Decimal(0),
+                    ),
+                ),
+            )
+            bind_resolver("snap_site", _SnapshottingResolver())  # holds NO sink
+            entity = Entity(entity_id=new_entity_id(), entity_type=EntityType.ACCOUNT)
+            field = FieldDef(
+                field_key="account.operational_pain",
+                value_type="str",
+                tier_plan=("snap_site",),
+                pass_kind=PassKind.DEEP,
+            )
+            sink = SnapshotSink(workspace_id=None)
+            with bind_snapshots(sink, storage):
+                result = await resolve_field(conn, entity, field, mode=_MODE, run_id=new_run_id())
+            assert result.claim_refs
+            key = artifact_key(None, content_address(_PAGE))
+            assert await storage.exists(key)
+            assert await get_artifact(conn, key) is not None
 
     run_async(scenario())

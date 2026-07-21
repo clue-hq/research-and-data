@@ -96,7 +96,7 @@ from clue_research.claimstore import (
 )
 from clue_research.compliance.lawful_basis import LawfulBasisRecord, load_lawful_basis
 from clue_research.identity import dsar_private_claims, stamp_reuse
-from clue_storage import StorageBackend, live_claim_count, mark_erased
+from clue_storage import StorageBackend, erase_if_unreferenced, purge_erased_artifacts
 
 _log = get_logger(__name__)
 
@@ -252,7 +252,7 @@ async def _apply_tombstone(
     run_id: RunId,
     scope_desc: str | None,
     sink: MetricSink,
-    storage: StorageBackend | None = None,
+    erased_keys: list[str],
 ) -> ClaimId | None:
     """Tombstone one **live** ``target``: record the ``dsar_tombstone`` audit row, then supersede
     the
@@ -300,21 +300,50 @@ async def _apply_tombstone(
     # validate_field=False caller (documented on claimstore.supersede_claim).
     tombstone_id = await supersede_claims(conn, [target.id], tombstone, validate_field=False)
     sink.add(METRIC_DSAR_TOMBSTONED, 1, {"reason": reason.value})
-    # PB-B2.5 — erasure reaches stored evidence snapshots (refcounted, ruling 2). The supersede
-    # above severed THIS subject's link (the tombstone copies no artifact_key, so the target
-    # dropped out of the live count). Delete the physical blob only when no other live claim
-    # still cites the snapshot — another subject's evidence must survive — and keep the artifact
-    # row as audit (mark_erased stamps erased_at; the row holds no personal content). Both
-    # operations are idempotent, so a retried erase converges.
-    if (
-        storage is not None
-        and target.artifact_key is not None
-        and await live_claim_count(conn, target.artifact_key) == 0
-    ):
-        await storage.delete(target.artifact_key)
-        await mark_erased(conn, target.artifact_key)
-        sink.add(METRIC_DSAR_SNAPSHOT_ERASED, 1, {"reason": reason.value})
+    # PB-B2.5 — erasure reaches stored evidence snapshots (refcounted, ruling 2), in TWO phases.
+    # The supersede above severed THIS subject's link (the tombstone copies no artifact_key, so
+    # the target dropped out of the live count). Phase 1, here inside the transaction:
+    # erase_if_unreferenced recounts UNDER THE ARTIFACT ROW LOCK (race-free — a concurrent
+    # erasure of the other last citer, or a concurrent writer, serializes on that lock) and
+    # stamps erased_at, the durable intent; the row survives as audit with source_url nulled.
+    # Phase 2 — the physical storage.delete — runs AFTER this transaction commits (the caller
+    # purges the collected keys), so external storage is never mutated inside a transaction
+    # that could still roll back and restore the claim.
+    if target.artifact_key is not None and await erase_if_unreferenced(conn, target.artifact_key):
+        erased_keys.append(target.artifact_key)
     return tombstone_id
+
+
+async def _purge_marked(
+    conn_factory: ConnFactory,
+    storage: StorageBackend | None,
+    *,
+    keys: Sequence[str],
+    reason: TombstoneReason,
+    sink: MetricSink,
+    scan_all: bool = False,
+) -> None:
+    """Phase 2 of snapshot erasure: physically delete the blobs whose rows were marked
+    ``erased_at`` by a just-committed transaction. Runs in its **own** transaction; best-effort
+    — a failure (storage down, crash) leaves the durable erased-unpurged marks for the next
+    purge/sweep to converge on, and must not fail the already-committed DSAR operation.
+    ``scan_all`` additionally collects marks left behind by any previously crashed purge (the
+    retention sweep runs with this on)."""
+    if storage is None or (not keys and not scan_all):
+        return
+    try:
+        async with conn_factory() as conn:
+            result = await purge_erased_artifacts(
+                conn, storage, keys=None if scan_all else tuple(keys)
+            )
+        if result.purged_keys:
+            sink.add(METRIC_DSAR_SNAPSHOT_ERASED, len(result.purged_keys), {"reason": reason.value})
+    except Exception:
+        _log.exception(
+            "snapshot purge failed after DSAR commit; erased_at marks remain durable and the "
+            "next purge/retention sweep will converge (keys=%s)",
+            list(keys),
+        )
 
 
 # --- the data-subject rights service (controller-scoped) --------------------
@@ -436,6 +465,7 @@ class DataSubjectRightsImpl:
         no-op. Afterward ``current_value`` and the handoff return none of the erased values."""
         scope_desc = _scope_desc(scope)
         run_id = new_run_id()
+        erased_keys: list[str] = []
         with traced_step(SPAN_COMPLIANCE_DSAR, **{ATTR_ENTITY_ID: str(contact_entity_id)}) as span:
             async with self._conn_factory() as conn:
                 targets = [
@@ -450,7 +480,16 @@ class DataSubjectRightsImpl:
                     contact_entity_id=contact_entity_id,
                     scope_desc=scope_desc,
                     run_id=run_id,
+                    erased_keys=erased_keys,
                 )
+            # Phase 2 — the physical blob deletes, only now that the tombstones committed.
+            await _purge_marked(
+                self._conn_factory,
+                self._storage,
+                keys=erased_keys,
+                reason=TombstoneReason.ERASURE,
+                sink=self._metric_sink,
+            )
             apply_attributes(
                 span,
                 {
@@ -477,6 +516,7 @@ class DataSubjectRightsImpl:
         marker lets :meth:`RetentionSweep.sweep_objections` re-suppress any hooks collected
         later."""
         run_id = new_run_id()
+        erased_keys: list[str] = []
         with traced_step(SPAN_COMPLIANCE_DSAR, **{ATTR_ENTITY_ID: str(contact_entity_id)}) as span:
             async with self._conn_factory() as conn:
                 marker = await conn.execute(
@@ -502,7 +542,15 @@ class DataSubjectRightsImpl:
                     contact_entity_id=contact_entity_id,
                     scope_desc="contact.facet.*",
                     run_id=run_id,
+                    erased_keys=erased_keys,
                 )
+            await _purge_marked(
+                self._conn_factory,
+                self._storage,
+                keys=erased_keys,
+                reason=TombstoneReason.OBJECTION,
+                sink=self._metric_sink,
+            )
             apply_attributes(
                 span,
                 {
@@ -528,10 +576,13 @@ class DataSubjectRightsImpl:
         contact_entity_id: EntityId,
         scope_desc: str | None,
         run_id: RunId,
+        erased_keys: list[str],
     ) -> tuple[list[ClaimId], int]:
         tombstoned: list[ClaimId] = []
         already = 0
-        for target in targets:
+        # Stable-sorted by artifact ref so two concurrent erasures acquire the artifact row
+        # locks in the same order (no lock-order deadlock across shared snapshots).
+        for target in sorted(targets, key=lambda c: c.artifact_key or ""):
             workspace_id = target.workspace_id or self._workspace_id
             tombstone_id = await _apply_tombstone(
                 conn,
@@ -542,7 +593,7 @@ class DataSubjectRightsImpl:
                 run_id=run_id,
                 scope_desc=scope_desc,
                 sink=self._metric_sink,
-                storage=self._storage,
+                erased_keys=erased_keys,
             )
             if tombstone_id is None:
                 already += 1
@@ -605,12 +656,25 @@ class RetentionSweep:
         )
         run_id = new_run_id()
         tombstoned: list[ClaimId] = []
+        erased_keys: list[str] = []
         with traced_step(SPAN_COMPLIANCE_RETENTION_SWEEP) as span:
             async with self._conn_factory() as conn:
                 for candidate in candidates:
-                    tombstone_id = await self._tombstone_candidate(conn, candidate, run_id=run_id)
+                    tombstone_id = await self._tombstone_candidate(
+                        conn, candidate, run_id=run_id, erased_keys=erased_keys
+                    )
                     if tombstone_id is not None:
                         tombstoned.append(tombstone_id)
+            # Phase 2 with scan_all: the sweep is the operator-wide maintenance pass, so it also
+            # converges any erased-but-unpurged marks a crashed earlier purge left behind.
+            await _purge_marked(
+                self._conn_factory,
+                self._storage,
+                keys=erased_keys,
+                reason=TombstoneReason.RETENTION_EXPIRY,
+                sink=self._metric_sink,
+                scan_all=True,
+            )
             apply_attributes(
                 span, {_ATTR_SCANNED: len(candidates), _ATTR_TOMBSTONED: len(tombstoned)}
             )
@@ -622,7 +686,12 @@ class RetentionSweep:
             )
 
     async def _tombstone_candidate(
-        self, conn: AsyncConnection, candidate: AgeOutCandidate, *, run_id: RunId
+        self,
+        conn: AsyncConnection,
+        candidate: AgeOutCandidate,
+        *,
+        run_id: RunId,
+        erased_keys: list[str],
     ) -> ClaimId | None:
         """Resolve the live target claim for an age-out candidate and tombstone it. The candidate
         carries only ids (no value), so the live target is fetched (operator scope) to copy its
@@ -663,7 +732,7 @@ class RetentionSweep:
             run_id=run_id,
             scope_desc=str(candidate.field_key),
             sink=self._metric_sink,
-            storage=self._storage,
+            erased_keys=erased_keys,
         )
 
     async def sweep_objections(self) -> SweepResult:
@@ -672,6 +741,7 @@ class RetentionSweep:
         registered). Idempotent — already-tombstoned hooks are not live."""
         run_id = new_run_id()
         tombstoned: list[ClaimId] = []
+        erased_keys: list[str] = []
         scanned = 0
         with traced_step(SPAN_COMPLIANCE_RETENTION_SWEEP) as span:
             async with self._conn_factory() as conn:
@@ -688,7 +758,7 @@ class RetentionSweep:
                         if _erasable(c) and _is_outreach_hook(c)
                     ]
                     scanned += len(hooks)
-                    for hook in hooks:
+                    for hook in sorted(hooks, key=lambda c: c.artifact_key or ""):
                         tombstone_id = await _apply_tombstone(
                             conn,
                             hook,
@@ -698,10 +768,17 @@ class RetentionSweep:
                             run_id=run_id,
                             scope_desc="contact.facet.*",
                             sink=self._metric_sink,
-                            storage=self._storage,
+                            erased_keys=erased_keys,
                         )
                         if tombstone_id is not None:
                             tombstoned.append(tombstone_id)
+            await _purge_marked(
+                self._conn_factory,
+                self._storage,
+                keys=erased_keys,
+                reason=TombstoneReason.OBJECTION,
+                sink=self._metric_sink,
+            )
             apply_attributes(span, {_ATTR_SCANNED: scanned, _ATTR_TOMBSTONED: len(tombstoned)})
             return SweepResult(
                 reason=TombstoneReason.OBJECTION,

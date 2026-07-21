@@ -14,6 +14,8 @@ loops in tests).
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 from clue_storage.protocol import ArtifactNotFound, StorageError
@@ -92,6 +94,17 @@ class S3Storage:
                     return False
                 raise StorageError(f"could not stat {key!r}: {exc}") from exc
             return True
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        async with self._client() as s3:
+            try:
+                paginator = s3.get_paginator("list_objects_v2")
+                async for page in paginator.paginate(Bucket=self._bucket):
+                    for obj in page.get("Contents", ()):
+                        modified: datetime = obj["LastModified"]
+                        yield str(obj["Key"]), modified
+            except Exception as exc:
+                raise StorageError(f"could not list bucket {self._bucket!r}: {exc}") from exc
 
     async def presign(self, key: str, *, expires_in: int = 3600) -> str:
         async with self._client() as s3:
