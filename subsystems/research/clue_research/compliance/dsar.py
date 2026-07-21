@@ -96,12 +96,14 @@ from clue_research.claimstore import (
 )
 from clue_research.compliance.lawful_basis import LawfulBasisRecord, load_lawful_basis
 from clue_research.identity import dsar_private_claims, stamp_reuse
+from clue_storage import StorageBackend, live_claim_count, mark_erased
 
 _log = get_logger(__name__)
 
 # --- M10-local metric names (mirrors the M9 / M10.1 / M10.3 milestone-local pattern) ----------
 METRIC_DSAR_OPERATIONS = "research.compliance.dsar.operations"  # by op
 METRIC_DSAR_TOMBSTONED = "research.compliance.dsar.tombstoned"  # by reason
+METRIC_DSAR_SNAPSHOT_ERASED = "research.compliance.dsar.snapshot_erased"  # by reason (PB-B2.5)
 METRIC_RETENTION_EXPIRED = "research.compliance.retention.expired"
 
 # --- M10-local span attribute keys (short, non-secret enum/int values) ------------------------
@@ -250,6 +252,7 @@ async def _apply_tombstone(
     run_id: RunId,
     scope_desc: str | None,
     sink: MetricSink,
+    storage: StorageBackend | None = None,
 ) -> ClaimId | None:
     """Tombstone one **live** ``target``: record the ``dsar_tombstone`` audit row, then supersede
     the
@@ -297,6 +300,20 @@ async def _apply_tombstone(
     # validate_field=False caller (documented on claimstore.supersede_claim).
     tombstone_id = await supersede_claims(conn, [target.id], tombstone, validate_field=False)
     sink.add(METRIC_DSAR_TOMBSTONED, 1, {"reason": reason.value})
+    # PB-B2.5 — erasure reaches stored evidence snapshots (refcounted, ruling 2). The supersede
+    # above severed THIS subject's link (the tombstone copies no artifact_key, so the target
+    # dropped out of the live count). Delete the physical blob only when no other live claim
+    # still cites the snapshot — another subject's evidence must survive — and keep the artifact
+    # row as audit (mark_erased stamps erased_at; the row holds no personal content). Both
+    # operations are idempotent, so a retried erase converges.
+    if (
+        storage is not None
+        and target.artifact_key is not None
+        and await live_claim_count(conn, target.artifact_key) == 0
+    ):
+        await storage.delete(target.artifact_key)
+        await mark_erased(conn, target.artifact_key)
+        sink.add(METRIC_DSAR_SNAPSHOT_ERASED, 1, {"reason": reason.value})
     return tombstone_id
 
 
@@ -336,10 +353,14 @@ class DataSubjectRightsImpl:
         *,
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
+        storage: StorageBackend | None = None,
     ) -> None:
         self._workspace_id = workspace_id
         self._conn_factory = conn_factory
         self._sink = sink
+        # PB-B2.5: the durable snapshot backend erasure must reach (refcounted blob deletion).
+        # Optional — injected at the api root like Freshness; None = pre-B2 behavior (no blobs).
+        self._storage = storage
 
     @property
     def _metric_sink(self) -> MetricSink:
@@ -521,6 +542,7 @@ class DataSubjectRightsImpl:
                 run_id=run_id,
                 scope_desc=scope_desc,
                 sink=self._metric_sink,
+                storage=self._storage,
             )
             if tombstone_id is None:
                 already += 1
@@ -554,10 +576,13 @@ class RetentionSweep:
         *,
         conn_factory: ConnFactory = transaction,
         sink: MetricSink | None = None,
+        storage: StorageBackend | None = None,
     ) -> None:
         self._freshness = freshness
         self._conn_factory = conn_factory
         self._sink = sink
+        # PB-B2.5: same optional snapshot backend as DataSubjectRightsImpl (api-root injected).
+        self._storage = storage
 
     @property
     def _metric_sink(self) -> MetricSink:
@@ -638,6 +663,7 @@ class RetentionSweep:
             run_id=run_id,
             scope_desc=str(candidate.field_key),
             sink=self._metric_sink,
+            storage=self._storage,
         )
 
     async def sweep_objections(self) -> SweepResult:
@@ -672,6 +698,7 @@ class RetentionSweep:
                             run_id=run_id,
                             scope_desc="contact.facet.*",
                             sink=self._metric_sink,
+                            storage=self._storage,
                         )
                         if tombstone_id is not None:
                             tombstoned.append(tombstone_id)
