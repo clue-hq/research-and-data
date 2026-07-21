@@ -8,10 +8,10 @@ Kept in its OWN module so M10 / M11 / M12 never co-edit ``api/composition.py`` w
   / ``("parallel_task", ParallelTaskResolver())``. The resolver classes + provider SDKs live under
   ``resolvers/exa`` / ``resolvers/parallel`` (forbidden-SDK contract), never ``synthesis``;
 * append any tier-4 synthesis field-pack loader to
-  :data:`~clue_research.api.composition.RESEARCH_PACK_LOADERS` (the seeded synthesis fields already
+  :data:`~clue_api.composition.RESEARCH_PACK_LOADERS` (the seeded synthesis fields already
   live in the core pack);
 * register the synthesis aspect workers, judge-gated per
-  :data:`~clue_research.api.composition.VERIFICATION_GATE_ORDER` (faithfulness M9.3 → promotion).
+  :data:`~clue_api.composition.VERIFICATION_GATE_ORDER` (faithfulness M9.3 → promotion).
 
 **M11.1** binds Exa Deep to the already-seeded ``exa_deep`` manifest. **M11.2 (this commit)** also
 binds Parallel Task to the seeded ``parallel_task`` manifest — a *second*, independent tier-4

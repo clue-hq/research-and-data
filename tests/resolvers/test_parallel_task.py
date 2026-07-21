@@ -312,7 +312,7 @@ def test_config_default_cost_cents_is_honored_on_a_zero_cost_call() -> None:
 
 
 def test_register_synthesis_wiring_binds_parallel_task_at_tier4() -> None:
-    from clue_research.api.synthesis_wiring import register_synthesis_wiring
+    from clue_api.synthesis_wiring import register_synthesis_wiring
 
     register_synthesis_wiring(accounts=_Accounts(_account()))
     assert get_resolver("parallel_task").tier == 4

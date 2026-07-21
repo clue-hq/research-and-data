@@ -1,4 +1,4 @@
-"""``clue_research.api.deep`` — campaign-run deep orchestration (M8A).
+"""``clue_api.deep`` — campaign-run deep orchestration (M8A).
 
 The composition-layer package that sequences the M8 deep-research worker families per high-tier
 account (``account → committee → contact``) under the M7 durable substrate — the milestone
@@ -19,7 +19,7 @@ M12-ready. The composition root that injects the concretes (M8A.6) builds agains
 
 from __future__ import annotations
 
-from clue_research.api.deep.composition import (
+from clue_api.deep.composition import (
     DeepPhaseComposition,
     build_account_axis_registry,
     build_deep_phase_handler,
@@ -27,7 +27,7 @@ from clue_research.api.deep.composition import (
     load_research_packs,
     register_deep_phase_handler,
 )
-from clue_research.api.deep.handler import (
+from clue_api.deep.handler import (
     CheckpointerFactory,
     DeepAccountOrchestrator,
     DeepAccountScheduler,
@@ -36,12 +36,12 @@ from clue_research.api.deep.handler import (
     HighTierResolver,
     db_finalize_failed_account,
 )
-from clue_research.api.deep.handoff_skeleton import (
+from clue_api.deep.handoff_skeleton import (
     AccountHandoffSkeleton,
     DeepCompleteManifest,
     build_handoff_skeleton,
 )
-from clue_research.api.deep.orchestrator import (
+from clue_api.deep.orchestrator import (
     AccountDeepOrchestrator,
     AccountDeepResult,
     DiscoverCommitteeFn,
@@ -49,12 +49,12 @@ from clue_research.api.deep.orchestrator import (
     ProfileContactFn,
     deep_account_run_id,
 )
-from clue_research.api.deep.run_io import (
+from clue_api.deep.run_io import (
     AccountRunIO,
     DbAccountRunIO,
     DeepRunState,
 )
-from clue_research.api.deep.spend import (
+from clue_api.deep.spend import (
     DbExactlyOnceSpend,
     ExactlyOnceSpend,
     Spendable,

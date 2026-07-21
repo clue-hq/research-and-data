@@ -17,6 +17,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.deep import DbExactlyOnceSpend, already_done, deep_step_key
 from clue_core import (
     BudgetScope,
     CampaignRunId,
@@ -28,7 +29,6 @@ from clue_core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.api.deep import DbExactlyOnceSpend, already_done, deep_step_key
 from clue_research.durable import (
     AccountRunStatus,
     BudgetEngine,
@@ -50,7 +50,7 @@ class _Boom(Exception):
 
 @dataclass(frozen=True)
 class _Work:
-    """A minimal :class:`~clue_research.api.deep.spend.Spendable` for one deep spend step."""
+    """A minimal :class:`~clue_api.deep.spend.Spendable` for one deep spend step."""
 
     cost_cents: CostCents
     claim_refs: tuple[ClaimId, ...] = ()

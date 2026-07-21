@@ -16,6 +16,11 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import (
+    DurableHandoffReadinessReader,
+    HandoffPhaseHandler,
+    build_handoff_service,
+)
 from clue_core import (
     AccountStatus,
     CampaignPhase,
@@ -25,11 +30,6 @@ from clue_core import (
     PhaseStatus,
     new_campaign_run_id,
     new_run_id,
-)
-from clue_research.api import (
-    DurableHandoffReadinessReader,
-    HandoffPhaseHandler,
-    build_handoff_service,
 )
 from clue_research.durable import (
     AccountRunStatus,

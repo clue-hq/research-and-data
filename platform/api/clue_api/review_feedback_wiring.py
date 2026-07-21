@@ -46,16 +46,16 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from clue_core import Claim, ClaimId, EntityId
-from clue_core.review import ReviewDispositionEmitter
-from clue_db import ConnFactory, connection, transaction
-from clue_obs.otel import MetricSink
-from clue_research.api.disposition_wiring import build_review_disposition_emitter
-from clue_research.api.review import (
+from clue_api.disposition_wiring import build_review_disposition_emitter
+from clue_api.review import (
     ReviewPhaseHandler,
     build_review_phase_handler,
     register_review_phase_handler,
 )
+from clue_core import Claim, ClaimId, EntityId
+from clue_core.review import ReviewDispositionEmitter
+from clue_db import ConnFactory, connection, transaction
+from clue_obs.otel import MetricSink
 from clue_research.compliance import (
     ERASE_ALL,
     DataSubjectExport,

@@ -1,4 +1,4 @@
-# `clue_research/api/` — composition root + FastAPI app layer
+# `clue_api/` — composition root + FastAPI app layer
 
 **Status:** the deep-profiling composition root (`composition.py`), the M12 narrative wiring (`narrative_wiring.py`), and the **M12.3 output/handoff FastAPI surface** (`handoff_app.py` + `handoff_wiring.py`) are shipped. The front-edge (M5) and review (M13) surfaces are still to come.
 

@@ -18,6 +18,11 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import (
+    build_pre_spend_gate,
+    build_profiling_workers,
+    production_binding_classifier,
+)
 from clue_core import (
     AccountStatus,
     AspectContext,
@@ -37,11 +42,6 @@ from clue_core import (
     new_campaign_run_id,
     new_entity_id,
     new_run_id,
-)
-from clue_research.api import (
-    build_pre_spend_gate,
-    build_profiling_workers,
-    production_binding_classifier,
 )
 from clue_research.claimstore import (
     PUBLIC_ONLY,

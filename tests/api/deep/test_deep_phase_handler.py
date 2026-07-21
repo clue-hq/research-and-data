@@ -20,6 +20,12 @@ from typing import Any
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
+from clue_api.deep import (
+    AccountDeepResult,
+    DeepPhaseHandler,
+    HighTierResolver,
+    deep_account_run_id,
+)
 from clue_core import (
     BudgetVerdict,
     CampaignPhase,
@@ -34,12 +40,6 @@ from clue_core import (
     new_campaign_run_id,
     new_claim_id,
     new_entity_id,
-)
-from clue_research.api.deep import (
-    AccountDeepResult,
-    DeepPhaseHandler,
-    HighTierResolver,
-    deep_account_run_id,
 )
 from clue_research.durable import AccountRunSubPhase, AccountSpec, PhaseHandlerRegistry
 from clue_research.profiling import (

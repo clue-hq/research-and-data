@@ -24,7 +24,7 @@ the :class:`~clue_research.review.ObservabilitySurface`:
 
 Each reader is tenant-scoped (a run whose ``workspace_id`` is not the caller's resolves to ``None``,
 substrate §2) and manages its own short read transaction via an injected ``conn_factory`` (mirroring
-:class:`~clue_research.api.handoff_wiring.DurableHandoffReadinessReader`). Nothing imports ``api``
+:class:`~clue_api.handoff_wiring.DurableHandoffReadinessReader`). Nothing imports ``api``
 (Rule 5); this module is a leaf wired only at an app/test composition root — and it does **not**
 edit
 ``api/composition.py`` (the shared join), per the M13.4 brief.

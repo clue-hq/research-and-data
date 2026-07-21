@@ -17,6 +17,7 @@ from fastapi.routing import APIRoute
 from httpx import ASGITransport
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api import HANDOFF_SCHEMA_HEADER, create_handoff_app
 from clue_core import (
     AccountHandoff,
     CampaignPhase,
@@ -32,7 +33,6 @@ from clue_core import (
     new_claim_id,
     new_entity_id,
 )
-from clue_research.api import HANDOFF_SCHEMA_HEADER, create_handoff_app
 from clue_research.narrative import (
     HANDOFF_SCHEMA_VERSION,
     AssembledHandoff,

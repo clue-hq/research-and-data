@@ -14,6 +14,16 @@ import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
 
+from clue_api.verification import (
+    VerificationPhaseHandler,
+    build_verification_phase_handler,
+)
+from clue_api.verification.handler import (
+    ClaimLoader,
+    ContactResolver,
+    UseGateProvider,
+    VerificationAccountResolver,
+)
 from clue_core import (
     CampaignPhase,
     Claim,
@@ -36,16 +46,6 @@ from clue_core.enums import JudgeVerdict, UseReason
 from clue_core.gateway import Completion, Message
 from clue_core.verification import JudgeResult
 from clue_obs.otel.metrics import METRIC_TIER4_TOTAL, InMemorySink
-from clue_research.api.verification import (
-    VerificationPhaseHandler,
-    build_verification_phase_handler,
-)
-from clue_research.api.verification.handler import (
-    ClaimLoader,
-    ContactResolver,
-    UseGateProvider,
-    VerificationAccountResolver,
-)
 from clue_research.claimstore import WorkspaceScope
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 

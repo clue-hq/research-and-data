@@ -25,7 +25,7 @@ semaphore. A budget ``DENY`` yields a partial committee (coverage-confidence, no
 ``GRACEFUL_STOP`` is surfaced so the handler suspends the phase.
 
 **Exactly-once spend (M8A.4).** Each stage's spend runs through the injected
-:class:`~clue_research.api.deep.spend.ExactlyOnceSpend`. For the **committee and contact** axes the
+:class:`~clue_api.deep.spend.ExactlyOnceSpend`. For the **committee and contact** axes the
 worker's claim write(s), the :meth:`~clue_research.durable.budget.BudgetEngine.record` charge, and
 the M7.4 ledger ``succeed`` all commit on **one** connection — so a crash never leaves the client
 hard-cap counter desynced from those claims (no under-count, no double-charge). The **account** axis
@@ -59,6 +59,13 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_api.deep.run_io import AccountRunIO
+from clue_api.deep.spend import (
+    ExactlyOnceSpend,
+    StepInfo,
+    already_done,
+    deep_step_key,
+)
 from clue_config import DeepPhaseConfig, RecursionPolicy
 from clue_core import (
     BudgetEngine,
@@ -75,13 +82,6 @@ from clue_core import (
     WorkerStatus,
 )
 from clue_db import ConnFactory
-from clue_research.api.deep.run_io import AccountRunIO
-from clue_research.api.deep.spend import (
-    ExactlyOnceSpend,
-    StepInfo,
-    already_done,
-    deep_step_key,
-)
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,
@@ -172,7 +172,7 @@ class AccountDeepResult(BaseModel):
 class _ContactOutcome:
     """One contact's exactly-once spend outcome (M8A.4): the contact id, the worker result (``None``
     on a ``REPLAY`` — a resumed fan-out recovers the references from the ledger, not a re-run), and
-    the references-only :class:`~clue_research.api.deep.spend.StepInfo` (claim ids + cost + the
+    the references-only :class:`~clue_api.deep.spend.StepInfo` (claim ids + cost + the
     ``replayed`` flag the orchestrator reads to avoid double-counting an already-booked charge)."""
 
     contact_entity_id: EntityId
@@ -217,7 +217,7 @@ class AccountDeepOrchestrator:
     :meth:`run_one` per account — it is the ``run_one`` callback the M8A.0 scheduler runs inside its
     semaphore + entity-lock slot. All *behavior* is injected (the three worker callables, the run-IO
     cursor, the M7.5 budget engine that admits the per-contact fan-out, and the M8A.4
-    :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` that commits each stage's claim writes +
+    :class:`~clue_api.deep.spend.ExactlyOnceSpend` that commits each stage's claim writes +
     charge + ledger in one transaction); only types + the workers' inert default-arg sentinels are
     imported, never a worker body — so the sequencing logic is unit-testable with fakes (no DB)."""
 

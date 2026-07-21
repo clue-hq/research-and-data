@@ -28,8 +28,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_api.deep.orchestrator import AccountDeepResult
 from clue_core import ClaimId, CommitteeMember, CostCents, EntityId, RunId
-from clue_research.api.deep.orchestrator import AccountDeepResult
 from clue_research.profiling.committee.coverage import CommitteeCoverage
 
 # The ``references_index`` section keys (ids only). Account + resonance claims are folded together

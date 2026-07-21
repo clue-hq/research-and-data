@@ -11,6 +11,9 @@ import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
 
+from clue_api.handoff_retention import (
+    RetentionSweepHandoffHandler,
+)
 from clue_core import (
     CampaignPhase,
     EntityId,
@@ -20,9 +23,6 @@ from clue_core import (
     PhaseStatus,
     new_campaign_run_id,
     new_entity_id,
-)
-from clue_research.api.handoff_retention import (
-    RetentionSweepHandoffHandler,
 )
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 
