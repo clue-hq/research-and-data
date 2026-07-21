@@ -439,6 +439,7 @@ def test_deep_drain_never_double_runs_a_job_whose_claim_went_stale_mid_flight() 
         from uuid import NAMESPACE_URL, uuid5
 
         from clue_fleet import DbTaskQueue, QueueBackedScheduler
+        from tests.fleet.conftest import ProcessLocalLockFactory
 
         from clue_core import EntityId
         from clue_research.durable import AccountSpec
@@ -465,12 +466,81 @@ def test_deep_drain_never_double_runs_a_job_whose_claim_went_stale_mid_flight() 
                 window=3,
                 stale_after=timedelta(0),  # every claim is instantly "stale"
                 poll_interval=0.01,
+                lock_factory=ProcessLocalLockFactory(),
             )
             results = await scheduler.run_accounts(
                 specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
             )
         assert results == ["ok"] * 4
         assert all(count == 1 for count in executions.values()), dict(executions)
+
+    run_async(_run())
+
+
+def test_cross_run_same_entity_is_single_flighted_on_the_real_queue() -> None:
+    """The DB-gated twin of the offline single-flight gate: two campaign runs share one entity on
+    the real ``DbTaskQueue`` (committed rows, run-scoped ``uuid5`` entity ids, the real claim
+    path), one shared entity-lock factory across both schedulers. Uses the real DB because the
+    two runs' account jobs are two distinct committed rows on distinct ``campaign_run_id``s — the
+    single-flight can only be the injected entity lock's doing, not any queue-level dedup — and
+    that cross-row concurrency is exactly what the in-memory fake cannot model."""
+
+    async def _run() -> None:
+        import asyncio
+        from collections import Counter
+        from uuid import NAMESPACE_URL, uuid5
+
+        from clue_fleet import DbTaskQueue, QueueBackedScheduler
+        from tests.fleet.conftest import ProcessLocalLockFactory
+
+        from clue_core import EntityId
+        from clue_research.durable import AccountSpec
+
+        run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+        shared = EntityId(uuid5(NAMESPACE_URL, f"single-flight:shared:{run_a}:{run_b}"))
+        specs_a = [
+            AccountSpec(entity_id=shared, tier="top"),
+            AccountSpec(entity_id=EntityId(uuid5(NAMESPACE_URL, f"only-a:{run_a}")), tier="high"),
+        ]
+        specs_b = [
+            AccountSpec(entity_id=shared, tier="top"),
+            AccountSpec(entity_id=EntityId(uuid5(NAMESPACE_URL, f"only-b:{run_b}")), tier="high"),
+        ]
+
+        in_flight: Counter[str] = Counter()
+        peak: Counter[str] = Counter()
+
+        async def run_one(spec: AccountSpec) -> str:
+            key = str(spec.entity_id)
+            in_flight[key] += 1
+            peak[key] = max(peak[key], in_flight[key])
+            await asyncio.sleep(0.05)
+            in_flight[key] -= 1
+            return f"result:{key}"
+
+        from clue_db import db_lifespan
+
+        lock_factory = ProcessLocalLockFactory()  # ONE shared lock across both schedulers
+
+        def _sched() -> QueueBackedScheduler:
+            return QueueBackedScheduler(
+                queue=DbTaskQueue(), window=3, poll_interval=0.01, lock_factory=lock_factory
+            )
+
+        async with db_lifespan():
+            results_a, results_b = await asyncio.gather(
+                _sched().run_accounts(
+                    specs_a, campaign_run_id=run_a, checkpointer=None, run_one=run_one
+                ),
+                _sched().run_accounts(
+                    specs_b, campaign_run_id=run_b, checkpointer=None, run_one=run_one
+                ),
+            )
+        # The shared entity was single-flighted across the two committed runs...
+        assert peak[str(shared)] == 1, dict(peak)
+        # ...and both runs completed with correct, input-ordered results.
+        assert results_a == [f"result:{s.entity_id}" for s in specs_a]
+        assert results_b == [f"result:{s.entity_id}" for s in specs_b]
 
     run_async(_run())
 

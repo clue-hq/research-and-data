@@ -22,6 +22,20 @@ handler's ``_isolated`` wrapper — mirroring ``AccountScheduler``'s "one accoun
 propagates" contract. The queue adds ordering, visibility, and at-most-one concurrent executor
 per job; it is not a second idempotency layer.
 
+**Per-entity single-flight (Doc C §4).** This scheduler carries the *same* guarantee as the
+``AccountScheduler`` it replaces: two campaign runs never deep-research the same ``entity_id`` at
+once (substrate §5c). The queue's dedup key is ``(kind, campaign_run_id, dedup_key)``, so two runs
+holding one entity are two *distinct* rows — the queue alone cannot serialize them. So, exactly
+like ``AccountScheduler._run_one``, every ``run_one`` (both the drain and the done-replay paths)
+runs inside an injected per-entity lock (M2.4 :func:`~clue_locks.entity_lock` in prod, wired from
+``clue_research.durable.account_entity_lock_factory`` at the api root), acquired inside the
+semaphore slot (semaphore → entity lock → ``run_one``). The lock covers ``run_one`` only, not the
+queue ``finish`` bookkeeping. The ``lock_factory`` is a **required** constructor argument — never
+defaulted — so a composition site cannot silently omit it and turn single-flight off (the baseline
+api composition already did exactly that for ``AccountScheduler``, where the factory is optional;
+making it required here turns that omission into a construction-time ``TypeError``). An explicit
+opt-out is still possible by passing a null context-manager factory, but it must be *written*.
+
 Single-driver context: the run's driver lease (``clue_fleet.lease``) guarantees only one process
 drains a run's account jobs at a time, so a ``claimed``-but-unfinished job either belongs to a
 live sibling drainer in this process (its result lands here) or to a killed driver (re-owned
@@ -41,7 +55,7 @@ from clue_core import CampaignRunId
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.queue import DEFAULT_TASK_STALE_AFTER, DbTaskQueue, TaskQueue
 from clue_obs import get_logger
-from clue_research.durable import AccountSpec, RunOne
+from clue_research.durable import AccountSpec, LockFactory, RunOne
 
 log = get_logger("clue_fleet.scheduler")
 
@@ -71,16 +85,27 @@ class QueueBackedScheduler:
     """Drain a run's account jobs from the durable tier-priority queue (PB-B1).
 
     Construct with the :class:`~clue_fleet.queue.TaskQueue` (Postgres by default), the
-    concurrency ``window``, and optionally a tier-priority policy; the deep handler drives
-    :meth:`run_accounts` exactly as it drives ``AccountScheduler``. ``checkpointer`` is accepted
-    for seam parity and unused on the ``run_one`` path (the same note as the deep handler's
-    ``CheckpointerFactory``)."""
+    concurrency ``window``, the **required** per-entity ``lock_factory`` (single-flight, below),
+    and optionally a tier-priority policy; the deep handler drives :meth:`run_accounts` exactly as
+    it drives ``AccountScheduler``. ``checkpointer`` is accepted for seam parity and unused on the
+    ``run_one`` path (the same note as the deep handler's ``CheckpointerFactory``).
+
+    ``lock_factory`` is a :data:`~clue_research.durable.LockFactory` (same seam as
+    ``AccountScheduler``) called per ``entity_id`` to obtain the in-flight lock; every ``run_one``
+    runs inside it, so two campaign runs never deep-research the same entity at once (Doc C §4 —
+    module docstring). It is **required, not optional**: unlike ``AccountScheduler`` (where it
+    defaults to ``None`` and the baseline api composition *forgot* to pass it —
+    ``platform/api/clue_api/deep/composition.py:345`` — silently disabling single-flight), omitting
+    it here is a construction-time ``TypeError``. Prod wires
+    ``clue_research.durable.account_entity_lock_factory(get_redis())`` at the api root; an explicit
+    Redis-free opt-out passes a null context-manager factory (written, never defaulted)."""
 
     def __init__(
         self,
         *,
         queue: TaskQueue | None = None,
         window: int = 16,
+        lock_factory: LockFactory,
         priority_for: TierPriority = default_tier_priority,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
         poll_interval: float = 0.2,
@@ -89,6 +114,7 @@ class QueueBackedScheduler:
             raise ValueError(f"window must be >= 1 (got {window})")
         self._queue: TaskQueue = queue if queue is not None else DbTaskQueue()
         self._window = window
+        self._lock_factory = lock_factory
         self._priority_for = priority_for
         self._stale_after = stale_after
         self._poll_interval = poll_interval
@@ -111,7 +137,12 @@ class QueueBackedScheduler:
         re-claiming — idempotent and spend-free (the M8A sub-phase markers + account-step
         ledger), exactly like today's resume path — so the caller still receives one result per
         spec. An exception from ``run_one`` marks that job ``FAILED`` and propagates (the caller
-        owns isolation, per the seam contract)."""
+        owns isolation, per the seam contract).
+
+        Every ``run_one`` (both the drain and the replay paths) runs inside the per-entity
+        ``lock_factory`` lock, in the semaphore slot (semaphore → entity lock → ``run_one``),
+        mirroring ``AccountScheduler._run_one`` — the Doc C §4 single-flight guarantee that two
+        campaign runs never deep-research the same entity at once (class/module docstrings)."""
         ordered: Sequence[AccountSpec] = tuple(specs)
         by_key: dict[str, AccountSpec] = {str(spec.entity_id): spec for spec in ordered}
         if len(by_key) != len(ordered):
@@ -164,7 +195,10 @@ class QueueBackedScheduler:
         async def _replay(key: str) -> None:
             async with semaphore:
                 try:
-                    results[key] = await run_one(by_key[key])
+                    # Single-flight (Doc C §4): a replay still holds the entity lock, so it can't
+                    # race a live drain of the same entity in a sibling campaign run.
+                    async with self._lock_factory(by_key[key].entity_id):
+                        results[key] = await run_one(by_key[key])
                 except Exception:
                     aborted.set()
                     raise
@@ -201,9 +235,16 @@ class QueueBackedScheduler:
                         pass
                     else:
                         key = task.dedup_key
+                        # Mark in-flight BEFORE awaiting the entity lock: while this drainer blocks
+                        # on a lock held by another run, its claimed row can cross the staleness
+                        # window and look orphaned to a sibling's claim-next; the in_flight guard
+                        # must cover the lock wait so the sibling's stale re-claim can't double-run
+                        # this job. The lock (Doc C §4 single-flight) covers run_one only — not the
+                        # queue ``finish`` bookkeeping below.
                         in_flight.add(key)
                         try:
-                            result = await run_one(by_key[key])
+                            async with self._lock_factory(by_key[key].entity_id):
+                                result = await run_one(by_key[key])
                         except Exception:
                             aborted.set()
                             await self._queue.finish(
