@@ -59,7 +59,7 @@ from clue_core import (
     parse_value_json,
     serialize_value_json,
 )
-from clue_db import transaction
+from clue_db import ConnFactory, transaction
 from clue_research.durable.enums import IdempotencyStatus
 
 # An ``in_progress`` ledger row older than this is presumed crashed (its holder died mid-step) and
@@ -286,16 +286,22 @@ class DbIdempotencyStore:
     append-only/supersede policy dedups any equivalent observation a partial-failure replay
     re-emits."""
 
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+        # B4 slice-2 (S6): an injectable ``ConnFactory`` so a test/toolbelt composition can
+        # bind a savepoint-scoped factory; defaults to the process ``transaction`` (the
+        # production path, byte-identical behaviour).
+        self._conn_factory = conn_factory
+
     async def claim(
         self, *, key: str, scope: IdempotencyScope, stale_after: timedelta
     ) -> ClaimResult:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await claim_idempotency_step(conn, key=key, scope=scope, stale_after=stale_after)
 
     async def succeed(
         self, *, key: str, result_ref: dict[str, JsonValue], cost_cents: CostCents
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await finish_idempotency_step(
                 conn,
                 key=key,
@@ -305,7 +311,7 @@ class DbIdempotencyStore:
             )
 
     async def fail(self, *, key: str) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await finish_idempotency_step(
                 conn,
                 key=key,
@@ -315,7 +321,7 @@ class DbIdempotencyStore:
             )
 
     async def get(self, key: str) -> IdempotencyLedgerRow | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_idempotency_ledger(conn, key)
 
 

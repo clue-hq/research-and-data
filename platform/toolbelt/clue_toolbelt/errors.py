@@ -59,14 +59,28 @@ class PreconditionFailed(ToolbeltError):
 
 
 class IdempotencyConflict(ToolbeltError):
-    """An ``idempotency_key`` was reused within its TTL with a *different* request body (D6).
+    """An ``idempotency_key`` cannot be honoured as a safe replay (D6) — the invocation is refused.
 
-    Same key + same body replays the stored response (safe retry); same key + a changed body is a
-    client bug — the key no longer identifies the same request — so the invocation is refused rather
-    than silently executed or silently replayed against a stale body."""
+    Three refusal shapes, distinguished by ``reason``:
 
-    def __init__(self, key: str) -> None:
+    * ``"body"`` (default) — the key was reused within its TTL with a *different* request body: the
+      key no longer identifies the same request (a client bug), so it is neither replayed against a
+      stale body nor silently re-executed.
+    * ``"tool"`` — the key was reused within its TTL against a *different* tool: the same key
+      identifying two capabilities is a wiring/client bug (this is the pause/resume same-body trap —
+      two different tools, one caller-reused key).
+    * ``"pending"`` — a same-key invocation is *in flight* (a live un-finished reservation): a
+      concurrent double-submit. At-least-once — the caller retries after the in-flight one settles.
+
+    The scope is ``(workspace_id, idempotency_key)``: the same key in a *different* workspace is a
+    clean miss (a fresh execution), never a cross-tenant replay or conflict."""
+
+    def __init__(self, key: str, *, reason: str = "body") -> None:
         self.key = key
-        super().__init__(
-            f"idempotency key {key!r} was already used within its TTL with a different request body"
-        )
+        self.reason = reason
+        detail = {
+            "body": "with a different request body",
+            "tool": "against a different tool",
+            "pending": "while a same-key invocation is still in flight",
+        }.get(reason, "with a different request body")
+        super().__init__(f"idempotency key {key!r} was already used within its TTL {detail}")

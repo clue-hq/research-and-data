@@ -47,7 +47,7 @@ from clue_core import (
     parse_cost_cents,
 )
 from clue_core.idempotency import phase_key
-from clue_db import transaction
+from clue_db import ConnFactory, transaction
 from clue_obs.otel import (
     ATTR_PROJECT_RUN_ID,
     apply_attributes,
@@ -211,6 +211,12 @@ class DbProjectRunStore:
     recovered idempotently. ``adjust`` updates the run field(s) **and** journals each change in one
     transaction (atomic + audited)."""
 
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+        # B4 slice-2 (S6): an injectable ``ConnFactory`` so a test/toolbelt composition can
+        # bind a savepoint-scoped factory; defaults to the process ``transaction`` (the
+        # production path, byte-identical behaviour).
+        self._conn_factory = conn_factory
+
     async def create(
         self,
         *,
@@ -221,7 +227,7 @@ class DbProjectRunStore:
         budget_cap_cents: CostCents | None,
         tier_cutoffs: TierCutoffs,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await ensure_project_run(
                 conn,
                 project_run_id=project_run_id,
@@ -233,13 +239,13 @@ class DbProjectRunStore:
             )
 
     async def get(self, project_run_id: ProjectRunId) -> ProjectRunRow | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_project_run(conn, project_run_id)
 
     async def transition(
         self, project_run_id: ProjectRunId, *, phase: ProjectPhase, status: ProjectRunStatus
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_phase(conn, project_run_id, phase=phase, status=status)
 
     async def mark_status(
@@ -250,7 +256,7 @@ class DbProjectRunStore:
         stamp_paused: bool = False,
         stamp_resumed: bool = False,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_run_status(
                 conn,
                 project_run_id,
@@ -268,7 +274,7 @@ class DbProjectRunStore:
         status: PhaseCheckpointStatus,
         payload: dict[str, JsonValue],
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await upsert_checkpoint(
                 conn,
                 project_run_id=project_run_id,
@@ -281,7 +287,7 @@ class DbProjectRunStore:
     async def get_checkpoint(
         self, project_run_id: ProjectRunId, phase: ProjectPhase
     ) -> ProjectPhaseCheckpointRow | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_checkpoint(conn, project_run_id, phase)
 
     async def adjust(
@@ -292,7 +298,7 @@ class DbProjectRunStore:
         budget_cap_cents: CostCents | None = None,
         tier_cutoffs: TierCutoffs | None = None,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             if icp_version is not None:
                 await set_icp_version(conn, project_run_id, icp_version)
                 await insert_adjustment(
