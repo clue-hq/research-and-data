@@ -46,7 +46,7 @@ def new_run_id() -> RunId:
 
 
 def new_project_run_id() -> ProjectRunId:
-    """Mint a fresh ``ProjectRunId``. The campaign-run state machine (M7.3) owns this."""
+    """Mint a fresh ``ProjectRunId``. The project-run state machine (M7.3) owns this."""
     return ProjectRunId(uuid4())
 
 

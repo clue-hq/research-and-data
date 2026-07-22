@@ -1,13 +1,13 @@
 """The ``REVERSE_PROFILING`` phase handler (M5.1).
 
-M5 owns the campaign-run's first phase (Doc C §4). The handler *implements* the frozen
+M5 owns the project-run's first phase (Doc C §4). The handler *implements* the frozen
 :class:`~clue_core.execution.PhaseHandler` protocol from ``core`` (Beat-0) — it imports
 ``core``, never M7's ``durable``; the concrete instance is constructed (with the injected M9 judge
 / M0.4 gateway) and registered into the ``ProjectRun`` state machine at the ``api`` composition
 root, which dispatches by the declared ``phase`` attribute without importing this package.
 
 The handler is a thin durable wrapper: it opens its own transaction, derives a **stable run id**
-from the campaign run id (so a resumed phase re-enters the *same* reverse-profiling run and the
+from the project run id (so a resumed phase re-enters the *same* reverse-profiling run and the
 pipeline deduplicates instead of double-spending), runs
 :func:`~clue_research.stage0.client_kb.reverse_profile`, and reports the versioned base by
 reference (never claim bodies). A budget graceful-stop returns ``PAUSED`` so the state machine

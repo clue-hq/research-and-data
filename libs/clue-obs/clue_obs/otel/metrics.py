@@ -151,7 +151,7 @@ def record_cost_burndown(
 def record_phase_progress(
     phase: str, *, completed: int, total: int, sink: MetricSink | None = None
 ) -> None:
-    """Phase progress 0..1 for a campaign-run phase (Doc C §6). M7 supplies the counts."""
+    """Phase progress 0..1 for a project-run phase (Doc C §6). M7 supplies the counts."""
     if phase not in PROJECT_PHASES:
         raise ValueError(f"unknown campaign phase {phase!r}; expected one of {PROJECT_PHASES}")
     sink = sink or get_metric_sink()

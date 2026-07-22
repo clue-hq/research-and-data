@@ -42,9 +42,9 @@ live in the owning milestone's package and are wired together only at the `api` 
 | `IdentityBindingGate`, `Binding` | `core/verification.py` | M9 implements; M8 calls |
 | `Freshness`, `Staleness`, `ReResearchCandidate` | `core/verification.py` | M9 implements; M7 calls |
 | `idempotency_key`, `account_step_key`, `phase_key` | `core/idempotency.py` | pure helpers (M7 uses) |
-| `CampaignPhase`, `PhaseStatus`, `WorkerStatus`, `BudgetScope`, `BudgetVerdict`, `PreSpendVerdict`, `JudgeVerdict`, `IdempotencyScope` | `core/enums.py` | shared closed taxonomies |
-| `CampaignRunId` + `new_campaign_run_id` | `core/primitives.py` | the outer-run id (distinct from `RunId`) |
-| `CAMPAIGN_PHASES` now **derived from** `CampaignPhase` | `obs/spans.py` | one source of truth for phase tokens |
+| `ProjectPhase`, `PhaseStatus`, `WorkerStatus`, `BudgetScope`, `BudgetVerdict`, `PreSpendVerdict`, `JudgeVerdict`, `IdempotencyScope` | `core/enums.py` | shared closed taxonomies |
+| `ProjectRunId` + `new_project_run_id` | `core/primitives.py` | the outer-run id (distinct from `RunId`) |
+| `CAMPAIGN_PHASES` now **derived from** `ProjectPhase` | `obs/spans.py` | one source of truth for phase tokens |
 | Independence contract widened to all milestone packages | `pyproject.toml` | machine-enforced isolation |
 
 Everything is signature-only: protocols have `...` bodies, value types are frozen pydantic models.
@@ -65,7 +65,7 @@ otherwise):
   M5 resolves imports, etc.
 - A milestone implements a `core` protocol (e.g. `PhaseHandler`); the **concrete instance is
   constructed and registered at the `api` composition root**, which is the only layer allowed to
-  import every package (nothing imports `api` — Rule 5). M7's `CampaignRun.register_phase_handler`
+  import every package (nothing imports `api` — Rule 5). M7's `ProjectRun.register_phase_handler`
   is called there, not inside the phase packages.
 - This is *why* M5↔M6 convergence (the Pass-A bridge) is **store/phase-mediated, not an import**:
   M5's import pipeline writes resolved candidate accounts; M6's scoring phase scores all candidates
@@ -92,7 +92,7 @@ migration**, so all four branches fork with this as their migration base.
 
 | Branch | New tables | New DB enums | Alters to shared tables |
 |---|---|---|---|
-| **M7 `durable`** | `campaign_run`, `account_run`, `campaign_phase_checkpoint`, `idempotency_ledger`, `budget_event`, `adjustment_journal`, + LangGraph `AsyncPostgresSaver` tables | `campaign_phase` (mirrors `core.CampaignPhase`), `campaign_run_status`, `account_run_status` (M7 owns these two lifecycle enums — they are `durable`-internal, **not** in Beat-0 `core`) | none — `claim.run_id`/`research_mode` already exist |
+| **M7 `durable`** | `project_run`, `account_run`, `project_phase_checkpoint`, `idempotency_ledger`, `budget_event`, `adjustment_journal`, + LangGraph `AsyncPostgresSaver` tables | `campaign_phase` (mirrors `core.ProjectPhase`), `project_run_status`, `account_run_status` (M7 owns these two lifecycle enums — they are `durable`-internal, **not** in Beat-0 `core`) | none — `claim.run_id`/`research_mode` already exist |
 | **M9 `verification`** | `pre_spend_policy`, `gate_decision`, `conflict_flag`, `judge_policy`, `faithfulness_verdict`, `binding_policy`, `identity_binding_eval`, `cadence_policy`, `re_research_candidate`, `golden_fixture`, `eval_run` | mirror `core.PreSpendVerdict`/`JudgeVerdict` if used as columns; `FreshnessState.EXPIRED` added here (M9-internal; coordinate with `merge.py` + M10.5) | none — `claim.verification_status`/`identity_binding`/`use_class`/`corroborations` already exist |
 | **M6 `discovery_scoring`** | `account_tier` (or model tiers as claims) + run telemetry (per-channel yield, coverage report, checkpoint record) — **coordinate with M7** on the run-telemetry tables (`source_yield_telemetry` already exists @ `eab62cbb1366`) | none | none — writes claims/rows only |
 | **M5 `stage0`** | none (writes claims + `account_entity` rows via existing APIs) | `ResolveOption` is **M5-internal** (`stage0`, not `core`) | none |
@@ -112,7 +112,7 @@ gated on `M6 + M7 + M9`; pour parallelism into those three to shorten the path t
 
 ## What each branch implements against the frozen seam
 
-- **M7 `durable`** — `CampaignRun` (state machine over `CampaignPhase`, calling registered
+- **M7 `durable`** — `ProjectRun` (state machine over `ProjectPhase`, calling registered
   `PhaseHandler`s), `AccountResearchGraph` (LangGraph + `AsyncPostgresSaver`, spawning `AspectWorker`s),
   the recursion knob + `SpawnGuard`, a `BudgetEngine` impl, the ledger-backed `idempotent()` context
   manager (using `core.idempotency` keys), and the M7 tables.

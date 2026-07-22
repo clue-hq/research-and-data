@@ -21,7 +21,7 @@ emits inside its ``run`` (the merge read), so :class:`RetentionSweepHandoffHandl
 3. delegate to the inner HANDOFF handler, which now assembles over the post-tombstone merge.
 
 Registered last-write-wins for ``ProjectPhase.HANDOFF`` (replacing M12's direct registration), so a
-campaign-run reaching handoff sweeps before it serves. The sweeps are idempotent (an already-
+project-run reaching handoff sweeps before it serves. The sweeps are idempotent (an already-
 tombstoned claim is no longer live), so a crash-resume re-entry is safe. ``api`` is the
 import-linter-exempt seam, so this composes the otherwise-independent ``compliance`` (M10) and
 ``narrative``/handoff (M12) packages (nothing imports ``api`` — Rule 5).

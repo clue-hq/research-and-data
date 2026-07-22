@@ -199,7 +199,7 @@ class ICPCreatedFrom(StrEnum):
 
 
 class ProjectPhase(StrEnum):
-    """The campaign-run phase sequence (Doc C §4 / conventions §3) — the ordered states the M7.3
+    """The project-run phase sequence (Doc C §4 / conventions §3) — the ordered states the M7.3
     state machine advances through. Each phase is owned by a registered ``PhaseHandler`` (M5 owns
     ``REVERSE_PROFILING``/``ICP_CONFIRMED``; M6 ``DISCOVERY``/``SCORING``/``TIER_CHECKPOINT``; M8
     ``DEEP``; M9 ``VERIFICATION``; M13 ``REVIEW`` — the Tier-1 human gate; M12 ``HANDOFF``). Single
@@ -254,7 +254,7 @@ class IdempotencyScope(StrEnum):
 
 class BudgetScope(StrEnum):
     """The scope a budget check / charge applies to (M7.5): one account, one pass (Pass A / Pass B),
-    or the whole campaign run. The cost dial is fan-out-per-account × accounts-per-pass."""
+    or the whole project run. The cost dial is fan-out-per-account × accounts-per-pass."""
 
     ACCOUNT = "account"
     PASS = "pass"

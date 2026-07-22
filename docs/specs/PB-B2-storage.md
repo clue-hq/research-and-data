@@ -23,7 +23,7 @@ migration conventions.
 3. **Millicredit groundwork = (a) only:** a versioned rate-mapping table + a read path converting
    the M13.4 burn-down to integer millicredits. **No** ledger table now (guessing A7's shape wrong
    costs a migration later). Zero changes to `durable/budget.py`, `budget_event`, `cost_estimate`,
-   or the `campaign_run`/`account_run` counters.
+   or the `project_run`/`account_run` counters.
 4. **S3 leg:** tested against **MinIO** (real S3 API; endpoint config covers R2/S3/MinIO). SDK:
    **aioboto3**, confined behind the S3 impl module by an import-linter contract.
 5. **Snapshot boundary:** everything through the modality-adapter fetch seam (all scrape/fetch
@@ -163,7 +163,7 @@ responses; re-verification flows that *read* snapshots (REQ-14, Phase C).
   lane): `load_millicredit_rate(conn, workspace_id)` (workspace override → global default),
   `to_millicredits(cents, rate) -> int` (Decimal in, integer millicredits out — 1 credit =
   `cents_per_credit` cents = 1000 millicredits; round half-up, exact Decimal arithmetic), and
-  `millicredit_burn_down(conn, campaign_run_id, …)` wrapping the existing M13.4
+  `millicredit_burn_down(conn, project_run_id, …)` wrapping the existing M13.4
   `CostBurnDown` reader — a *view over* `spent_cents`, touching none of the ledger machinery.
 - **Acceptance:** conversion is exact/deterministic (Decimal, no float); workspace override beats
   global; duplicate `(NULL, version)` rows impossible (constraint test); reading burn-down in

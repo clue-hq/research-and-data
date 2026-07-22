@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-23 · **Branch:** `m8a/fanout-budget` (off `m8a/orchestrator`-equiv tip = M8A.0 + M8A.1 +
 docs; created in this workspace as a NEW branch because M8A.2 is being implemented in parallel on
-`m8a/orchestrator`) · **Spec:** `docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.3 · **Handoff:**
+`m8a/orchestrator`) · **Spec:** `docs/specs/M8A-project-run-deep-orchestration.md` §M8A.3 · **Handoff:**
 [[2026-06-23-m8a3-handoff]] (pulled onto this branch from `m8a/orchestrator`) · **Plan:**
 [[2026-06-23-m8a-implementation-plan]] · builds on [[2026-06-23-m8a1-orchestrator-implementation]].
 

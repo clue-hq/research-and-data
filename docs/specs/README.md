@@ -117,8 +117,8 @@ issue spec states the exact interface it exposes/consumes.
 **M7 — Durable Execution**
 - M7.1 Per-account orchestrator-worker graph (LangGraph + AsyncPostgresSaver; workers return references)
 - M7.2 Bounded recursion knob (aspect/facet sub-workers; per-tier depth & worker caps)
-- M7.3 Campaign-run state machine (phases, checkpointing, pause/resume/adjust)
-- M7.4 Idempotency keys ((account,field,tier) + (campaign_run,phase))
+- M7.3 Project-run state machine (phases, checkpointing, pause/resume/adjust)
+- M7.4 Idempotency keys ((account,field,tier) + (project_run,phase))
 - M7.5 Budget caps & cost-governance engine (per-account, per-run hard stops)
 
 **M8 — Deep Profiling (modes M2/M3/M4)**

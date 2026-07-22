@@ -1,7 +1,7 @@
-"""The injected **readiness** seam the M12.3 handoff API consumes (M12 ↔ M7 campaign-run state).
+"""The injected **readiness** seam the M12.3 handoff API consumes (M12 ↔ M7 project-run state).
 
 A handoff is only servable once the account has passed verification (M9) and assembly (M12.2), and
-the API must expose the campaign-run ``handoff`` phase so a content-layer consumer can *poll* rather
+the API must expose the project-run ``handoff`` phase so a content-layer consumer can *poll* rather
 than guess (Doc C §4 — the ``handoff`` phase is the readiness gate). That state lives in the M7
 ``project_run`` / ``account_run`` tables, owned by the ``durable`` package — which ``narrative`` (a
 worker under the import-linter independence contract) may NOT import. So readiness reaches the
@@ -28,7 +28,7 @@ from clue_core import EntityId, ProjectPhase, ProjectRunId
 
 
 class RunReadiness(BaseModel):
-    """The campaign-run's readiness, as the handoff API exposes it. ``phase`` is the current
+    """The project-run's readiness, as the handoff API exposes it. ``phase`` is the current
     :class:`ProjectPhase` (``HANDOFF`` ⟹ the run reached the handoff gate); ``is_terminal`` is
     ``True`` once the run is ``COMPLETED``/``FAILED`` (no further handoffs will appear). A consumer
     polls this to decide whether to keep waiting or start pulling.
@@ -65,7 +65,7 @@ class AccountReadiness(BaseModel):
 
 @runtime_checkable
 class HandoffReadinessReader(Protocol):
-    """Read campaign-run + per-account readiness for the handoff API (the M12.3 ↔ M7 seam).
+    """Read project-run + per-account readiness for the handoff API (the M12.3 ↔ M7 seam).
 
     Workspace-scoped on ``workspace_id`` (a workspace only sees its own runs). ``run_readiness``
     returns the

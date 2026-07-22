@@ -163,7 +163,7 @@ class BudgetCapsPreRunEstimator:
 
 class ClaimScanVerificationHealthReader:
     """The production :class:`VerificationHealthReader` — the at-rest verification-health scan over
-    one campaign run's claims.
+    one project run's claims.
 
     Enumerates the campaign's account runs (``durable.list_account_runs``), reads their claims in
     one

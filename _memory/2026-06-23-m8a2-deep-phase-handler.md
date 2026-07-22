@@ -1,7 +1,7 @@
 # M8A.2 — `DeepPhaseHandler` (the `CampaignPhase.DEEP` handler) — implementation
 
 **Date:** 2026-06-23 · **Branch:** `m8a/deep-handler` (off `m8a/orchestrator` = M8A.1) · **Spec:**
-`docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.2 · **Plan:**
+`docs/specs/M8A-project-run-deep-orchestration.md` §M8A.2 · **Plan:**
 [[2026-06-23-m8a-implementation-plan]] · trunk note [[2026-06-23-m8a1-orchestrator-implementation]].
 
 The `core.PhaseHandler` for `CampaignPhase.DEEP`. Resolves the human-approved high-tier accounts and

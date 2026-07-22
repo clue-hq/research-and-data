@@ -1,6 +1,6 @@
 """The ``ProjectPhase.REVIEW`` phase handler (M13.1) — the Tier-1 human gate.
 
-When the campaign-run state machine enters the REVIEW phase (between VERIFICATION and HANDOFF), this
+When the project-run state machine enters the REVIEW phase (between VERIFICATION and HANDOFF), this
 handler opens a durable ``review_session`` per ready high-tier account and returns ``PAUSED`` — the
 state machine then parks the run at an ``AWAITING_INPUT`` checkpoint (Option B: the human gate
 reuses the M7.3 suspend/resume the state machine already reserves for M13, not a per-account

@@ -221,7 +221,7 @@ __all__ = [
     "HandoffPublisher",
     "OutboxHandoffPublisher",
     "RecordingHandoffPublisher",
-    # the readiness seam (M12.3 ↔ M7 campaign-run state)
+    # the readiness seam (M12.3 ↔ M7 project-run state)
     "HandoffReadinessReader",
     "RunReadiness",
     "AccountReadiness",

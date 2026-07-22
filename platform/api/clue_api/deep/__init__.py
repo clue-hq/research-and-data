@@ -1,4 +1,4 @@
-"""``clue_api.deep`` — campaign-run deep orchestration (M8A).
+"""``clue_api.deep`` — project-run deep orchestration (M8A).
 
 The composition-layer package that sequences the M8 deep-research worker families per high-tier
 account (``account → committee → contact``) under the M7 durable substrate — the milestone

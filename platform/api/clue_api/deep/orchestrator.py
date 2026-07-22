@@ -119,7 +119,7 @@ _COMMITTEE_CONTACTS_KEY = "committee_contacts"
 
 
 def deep_account_run_id(project_run_id: ProjectRunId, entity_id: EntityId) -> RunId:
-    """The deterministic ``account_run`` id for one account in one campaign run (M8A.1).
+    """The deterministic ``account_run`` id for one account in one project run (M8A.1).
 
     Deterministic (``uuid5``) so a resumed phase re-derives the SAME id and resumes the existing
     row rather than minting a fresh one — the per-account analogue of the M7 graph reusing its

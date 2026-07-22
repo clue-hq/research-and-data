@@ -105,7 +105,7 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
 - **One reversible migration**: `ALTER TABLE … RENAME COLUMN` on all 19 tables (4 × tenant_id:
   `claim`, `identity_review_task`, `dsar_tombstone`, `outreach_objected`; 15 × client_id:
   `icp_spec`, `source_profile_override`, `pre_spend_policy`, `judge_policy`, `binding_policy`,
-  `cadence_policy`, `positioning_policy`, `client_policy`, `campaign_run`, `source_yield`,
+  `cadence_policy`, `positioning_policy`, `client_policy`, `project_run`, `source_yield`,
   `account_handoff`, `handoff_event`, `disposition`, `config_revision`, `review_session`);
   rename the ~20 named indexes/constraints to workspace-vocabulary names (`icp_spec_client` →
   `icp_spec_workspace`, `pre_spend_policy_scope_version` keeps its name but its column list
@@ -144,7 +144,7 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
   - `project(project_id PK, workspace_id REFERENCES workspace, brand_id + workspace_id
     composite FK, product_id NULL REFERENCES product, name, status CHECK
     ('draft','active','archived'), created_at)`.
-  - `campaign_run.project_id` — nullable `REFERENCES project` column (runs execute *for* a
+  - `project_run.project_id` — nullable `REFERENCES project` column (runs execute *for* a
     project; nullable because pre-spine runs have none).
 - **Deliberately deferred**: FKs from legacy tables' `workspace_id` text columns to
   `workspace` — existing dev data has no workspace rows; the backfill + constraint lands when a

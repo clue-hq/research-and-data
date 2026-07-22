@@ -67,3 +67,25 @@ Harness §1a update line; CLAUDE.md orientation bullet + `[rename]` backlog entr
 - Fable review of the rename commit (session requirement) — next step this session.
 - docs/architecture + older docs/specs still use historical vocabulary in prose (harness §1a
   reading rule covers them; docs are governed separately from the code guard).
+
+## Fable review outcome (post-commit `acfac61`) + fix pass
+Reviewer verdict: **no blocking defects** — frozen-ledger invariant machine-verified (runtime
+`phase_key` prefix check, DB enum values, zero `project_phase:` expectations anywhere); migration
+re-verified up→down→up on the reviewer's own throwaway incl. one-step downgrade name-restore;
+guard proven against a planted regression; module renames history-preserving; pure-rename
+semantics confirmed on durable/project*.py. Applied from the report:
+- **SF-1**: the playbook §4.5 prose flip (74 `campaign run`/`campaign-run` docstring lines,
+  all run-meaning; zero channel-program collisions) — done. Gotcha: the prose sed clipped the
+  playbook FILENAME inside the guard docstring (`PB-rename-campaign-run-to…` → mangled) — the
+  A3.1 gotcha-3 class, fixed by rewording so the filename isn't line-wrapped.
+- **SF-2**: docs/specs swept to project vocabulary (tokens + prose; PB-rename playbook excluded
+  — it documents the rename; the one frozen-value mention in PB-B1 stays);
+  `M8A-campaign-run-deep-orchestration.md` → `M8A-project-run-deep-orchestration.md` with all
+  refs (specs README, 11 _memory notes) fixed. The M12 spec's handoff route now matches the
+  code's `/project_runs/{project_run_id}/handoffs`.
+- **N-1/N-2**: guard hardened — resolved-path self-exclusion; `campaign_phase_checkpoint`
+  added to the pattern (old table name; cannot collide with the frozen value).
+- Declined (recorded): N-3 stale index attnames (cosmetic pg_attribute residue — expected for
+  future catalog audits); N-4 `CampaignStateReader`/`CampaignProgress` stay per the bare-campaign
+  ruling (latent §1a debt only if the ruling is ever revisited).
+Final gates after fixes: make check green (1260 offline incl. guard); DB suite 2143 passed.

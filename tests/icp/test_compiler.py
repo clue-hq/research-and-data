@@ -285,7 +285,7 @@ def test_compile_active_icp_reads_the_active_spec() -> None:
 
 def test_pinned_version_recompiles_identically_after_refetch() -> None:
     """Criterion 1, clause 2: re-fetching the pinned ICP-spec version (the DB serialize→deserialize
-    round-trip) and recompiling yields an identical plan — the reproducibility campaign-run re-entry
+    round-trip) and recompiling yields an identical plan — the reproducibility project-run re-entry
     (M6/M8 'execute exactly what was compiled') depends on."""
 
     async def _run() -> None:

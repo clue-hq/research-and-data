@@ -1,7 +1,7 @@
 """§1a stage-2 rename guard — the ``campaign_run`` vocabulary is dead; allowlist EMPTY.
 
-The A3.1-style lock on the 2026-07-22 stage-2 rename (`docs/specs/PB-rename-campaign-run-to-
-project-run.md` §5): no ``campaign_run`` / ``CampaignRun`` / ``CampaignPhase`` (or screaming
+The A3.1-style lock on the 2026-07-22 stage-2 rename (playbook §5:
+`docs/specs/PB-rename-campaign-run-to-project-run.md`): no old run token (or screaming
 ``CAMPAIGN_RUN``) token may reappear anywhere in the five code roots. Complements
 ``tests/test_workspace_rename_guard.py`` (A3.1) and ``tests/test_structure_guards.py``.
 
@@ -24,7 +24,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
-_PATTERN = re.compile(r"campaign_run|CampaignRun|CampaignPhase|CAMPAIGN_RUN")
+# campaign_phase_checkpoint: the old TABLE name — guarded even though lowercase campaign_phase
+# alone is not (the frozen IdempotencyScope ledger value); the table token cannot collide with it.
+_PATTERN = re.compile(
+    r"campaign_run|CampaignRun|CampaignPhase|CAMPAIGN_RUN|campaign_phase_checkpoint"
+)
 
 _SCAN_ROOTS = ("libs", "subsystems", "platform", "tests", "scripts")
 
@@ -39,7 +43,7 @@ def test_no_campaign_run_vocabulary_survives() -> None:
         base = REPO / root
         assert base.is_dir(), f"scan root missing: {root}/ (guard would pass vacuously)"
         for path in base.rglob("*.py"):
-            if path == Path(__file__):
+            if path.resolve() == Path(__file__).resolve():
                 continue
             scanned += 1
             if _PATTERN.search(path.read_text(encoding="utf-8")):

@@ -134,7 +134,7 @@ async def read_labeled_dataset(
     since: UtcDatetime | None = None,
 ) -> list[LabeledRow]:
     """Read the labeled dataset for a client, optionally narrowed to one ICP segment/version, one
-    campaign run, and/or dispositions recorded ``since`` a watermark.
+    project run, and/or dispositions recorded ``since`` a watermark.
 
     ``workspace_id`` is **required** — the dataset is tenant-private (the fit/intent score claims it
     snapshots are ``tenant_private``, M2.5). Deterministic order (``recorded_at``, then

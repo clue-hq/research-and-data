@@ -23,7 +23,7 @@ propagates" contract. The queue adds ordering, visibility, and at-most-one concu
 per job; it is not a second idempotency layer.
 
 **Per-entity single-flight (Doc C §4).** This scheduler carries the *same* guarantee as the
-``AccountScheduler`` it replaces: two campaign runs never deep-research the same ``entity_id`` at
+``AccountScheduler`` it replaces: two project runs never deep-research the same ``entity_id`` at
 once (substrate §5c). The queue's dedup key is ``(kind, project_run_id, dedup_key)``, so two runs
 holding one entity are two *distinct* rows — the queue alone cannot serialize them. So, exactly
 like ``AccountScheduler._run_one``, every ``run_one`` (both the drain and the done-replay paths)
@@ -92,7 +92,7 @@ class QueueBackedScheduler:
 
     ``lock_factory`` is a :data:`~clue_research.durable.LockFactory` (same seam as
     ``AccountScheduler``) called per ``entity_id`` to obtain the in-flight lock; every ``run_one``
-    runs inside it, so two campaign runs never deep-research the same entity at once (Doc C §4 —
+    runs inside it, so two project runs never deep-research the same entity at once (Doc C §4 —
     module docstring). It is **required, not optional**: unlike ``AccountScheduler`` (where it
     defaults to ``None`` and the baseline api composition *forgot* to pass it —
     ``platform/api/clue_api/deep/composition.py:345`` — silently disabling single-flight), omitting
@@ -144,7 +144,7 @@ class QueueBackedScheduler:
         Every ``run_one`` (both the drain and the replay paths) runs inside the per-entity
         ``lock_factory`` lock, in the semaphore slot (semaphore → entity lock → ``run_one``),
         mirroring ``AccountScheduler._run_one`` — the Doc C §4 single-flight guarantee that two
-        campaign runs never deep-research the same entity at once (class/module docstrings)."""
+        project runs never deep-research the same entity at once (class/module docstrings)."""
         ordered: Sequence[AccountSpec] = tuple(specs)
         by_key: dict[str, AccountSpec] = {str(spec.entity_id): spec for spec in ordered}
         if len(by_key) != len(ordered):

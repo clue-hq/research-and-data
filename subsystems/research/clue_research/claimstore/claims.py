@@ -428,7 +428,7 @@ async def claims_for_runs(
     (``account_run.id`` == ``claim.run_id``), so the union of claims over a campaign's account
     ``run_id``s is exactly that campaign's deep-produced claims (account *and* contact). The M13.4
     observability surface uses this for the at-rest verification-health scan (tier-4 faithfulness,
-    strong identity-binding share, corroboration) over one campaign run — the set-shaped sibling of
+    strong identity-binding share, corroboration) over one project run — the set-shaped sibling of
     :func:`entities_with_field_claim` and :func:`claims_by_ids`, so no caller hand-writes SQL
     against
     ``claim`` (conventions §2 — the table stays behind this seam).

@@ -12,7 +12,7 @@ owned by M6 / M4 / M3.4).
 Versioning discipline (the same the claim store uses in M1): an ``active`` spec is immutable; an
 edit appends a new ``version`` (``parent_version`` links the lineage); activating a version archives
 the prior atomically (never deletes). A pinned ``(workspace_id, icp_key, version)`` re-reads
-identically, so a campaign run (M7) is reproducible. ``icp_key`` distinguishes segments per client.
+identically, so a project run (M7) is reproducible. ``icp_key`` distinguishes segments per client.
 """
 
 from __future__ import annotations

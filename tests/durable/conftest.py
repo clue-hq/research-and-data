@@ -211,7 +211,7 @@ class StubAspectWorker:
         )
 
 
-# --- in-memory fakes for the campaign-run state machine (M7.3) ---------------
+# --- in-memory fakes for the project-run state machine (M7.3) ---------------
 
 from datetime import UTC, datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402

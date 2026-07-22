@@ -132,7 +132,7 @@ class HandoffSummary(BaseModel):
 
 
 class HandoffListPage(BaseModel):
-    """The list-serve envelope for one campaign run: the run's readiness (so a consumer knows
+    """The list-serve envelope for one project run: the run's readiness (so a consumer knows
     whether
     to keep polling) + the ready handoff summaries. ``run_phase`` is ``None`` when the run is
     unknown
@@ -187,7 +187,7 @@ def _summary(icp_key: str, tier: str | None, assembled: AssembledHandoff) -> Han
 class HandoffService:
     """The transport-agnostic read API over assembled handoffs (M12.3). Constructed with the
     injected
-    :class:`HandoffReadinessReader` (the M7 campaign-run phase seam) at the ``api`` root; all reads
+    :class:`HandoffReadinessReader` (the M7 project-run phase seam) at the ``api`` root; all reads
     are pure, tenant-scoped store reads — no synthesis, no write-back."""
 
     def __init__(
@@ -276,7 +276,7 @@ class HandoffService:
         persona: Persona | None = None,
         min_verification_pass_rate: UnitInterval | None = None,
     ) -> HandoffListPage:
-        """List the **ready** handoffs for a campaign run (only materialised → only handoff-phase
+        """List the **ready** handoffs for a project run (only materialised → only handoff-phase
         accounts; an account in deep/verification is absent — AC2). Workspace-scoped on
         ``workspace_id``;
         a run unknown to this tenant yields an empty page with ``run_phase=None`` (no cross-tenant
@@ -366,7 +366,7 @@ async def emit_ready_handoffs(
 ) -> EmitReport:
     """Assemble + materialise + emit a durable ``handoff_event`` for every account in
     ``project_run_id``
-    that has reached handoff-readiness — the emit path the campaign-run state machine fires when it
+    that has reached handoff-readiness — the emit path the project-run state machine fires when it
     enters the ``handoff`` phase (M12.3 emit/notify).
 
     Idempotent: each account's emit is ``ON CONFLICT DO NOTHING`` on

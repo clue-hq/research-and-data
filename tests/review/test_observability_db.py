@@ -5,7 +5,7 @@ Covers the spec §M13.4 criteria that need real Postgres: per-source yield equal
 verification-health reader is built on; the ``cost_estimate`` snapshot the ``pre_run_estimate``
 panel
 writes (and its named CHECKs); and the no-domain-mutation guarantee (a read call writes nothing into
-the claim/campaign-run write path). These ``pytest.skip`` without a reachable DB.
+the claim/project-run write path). These ``pytest.skip`` without a reachable DB.
 """
 
 from __future__ import annotations

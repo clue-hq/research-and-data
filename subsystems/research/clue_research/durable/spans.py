@@ -27,7 +27,7 @@ SPAN_FANOUT_SUMMARY = "account.graph.fanout_summary"
 # ``obs`` STANDARD_ATTRIBUTES, so they are value-shape-redacted like any extra attribute).
 ATTR_ASPECT = "aspect"
 ATTR_TIER = "tier"
-# M7.3 campaign-run state-machine attributes: the phase being run and the run-level status it
+# M7.3 project-run state-machine attributes: the phase being run and the run-level status it
 # resolved to. The phase *span name* comes from the frozen ``obs.phase_span``; these ride as
 # attributes on it so a phase's outcome is queryable.
 ATTR_PHASE = "phase"

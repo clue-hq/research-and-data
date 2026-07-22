@@ -153,7 +153,7 @@ _LIST_BY_CAMPAIGN_SQL = text(
 async def list_account_runs(
     conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> list[AccountRunRow]:
-    """All ``account_run`` rows for a campaign run, ordered by ``entity_id`` (a stable page).
+    """All ``account_run`` rows for a project run, ordered by ``entity_id`` (a stable page).
 
     The read the M12.3 handoff emit path needs: it filters the returned rows to the handoff-ready
     accounts (``status = DONE`` AND ``sub_phase = CONTACTS_COMPLETE`` — "M12-ready", per

@@ -45,7 +45,7 @@ Hybrid (campaign-state-machine phase + per-account orchestrator object), driving
 
 ## RESOLVED (2026-06-23)
 Design workflow `wf_1288315a-c58` completed (23 agents): 3 designs × 3 judge lenses + synthesis. Chosen **Approach C (hybrid)**; B rejected (unproven 2nd-Send LangGraph replay in the most load-bearing durable file), A-as-written rejected (false "reuse scheduler for free" — no callback seam; defers exactly-once). Deliverables written:
-- **Spec:** `docs/specs/M8A-campaign-run-deep-orchestration.md` — milestone + issues M8A.0…M8A.6.
+- **Spec:** `docs/specs/M8A-project-run-deep-orchestration.md` — milestone + issues M8A.0…M8A.6.
 - **Impl plan:** [[2026-06-23-m8a-implementation-plan]] — code-level steps, signatures, tests, merge order, risk register.
 
 **Two corrections to the synthesis I verified first-hand and folded in:** (1) #1's gate hooks ALREADY exist on BOTH `discover_committee` (gates enumeration `:259` + role inference `:311`) AND `profile_contact`→`fill_contact_field` (`:155`) — my earlier read just truncated at `worker.py:85`; so M8A only *injects* the concrete gate (M8A.6), composes not owns. (2) high-tier source-of-truth default FLIPPED → claimstore `account.scoring.tier ≥ cutoff` keyed by committed `cutoff_version` (the COMMITTED tier_checkpoint payload carries aggregate `tier_distribution`+`cutoff_version`, NOT the per-account list; `persist_tier` writes per-account as claims).

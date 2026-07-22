@@ -85,7 +85,7 @@ SPAN_COMPLIANCE_DSAR = "compliance.dsar"
 # merge read — a substrate exclusion, not a use-gate reason (D-EXP).
 SPAN_COMPLIANCE_RETENTION_SWEEP = "compliance.retention_sweep"
 
-# --- campaign-run phases (Doc C §4) ----------------------------------------
+# --- project-run phases (Doc C §4) ----------------------------------------
 # Exactly the Doc C §4 / conventions §3 phase sequence (annotations like "(Pass A)"/"(human)" are
 # not part of the token). M7 owns the state machine that opens these spans. Derived from the
 # canonical ``core.enums.ProjectPhase`` (Beat-0) so the phase tokens have one source of truth —
@@ -94,7 +94,7 @@ PROJECT_PHASES: tuple[str, ...] = tuple(phase.value for phase in ProjectPhase)
 
 
 def phase_span(phase: str) -> str:
-    """Span name for a campaign-run phase (M7), e.g. ``campaign.phase.discovery``."""
+    """Span name for a project-run phase (M7), e.g. ``campaign.phase.discovery``."""
     if phase not in PROJECT_PHASES:
         raise ValueError(f"unknown campaign phase {phase!r}; expected one of {PROJECT_PHASES}")
     return f"campaign.phase.{phase}"

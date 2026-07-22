@@ -1,4 +1,4 @@
-"""The per-run driver lease (PB-B1) — at most one worker drives a campaign run at a time.
+"""The per-run driver lease (PB-B1) — at most one worker drives a project run at a time.
 
 M7.3's state machine *documents* single-driver-per-run as a precondition ("a per-run driver lock
 that would enforce this … is left to the scheduler/ops layer" — ``durable/campaign.py``); this

@@ -1,7 +1,7 @@
 """Durable-execution seams — the M7 contracts every phase/worker is wired against (Beat-0).
 
 M7 (``durable``) is the runtime *underneath* every phase: M5/M6/M8/M9/M12 register as
-:class:`PhaseHandler`\\ s into the campaign-run state machine, and M8's deep workers implement
+:class:`PhaseHandler`\\ s into the project-run state machine, and M8's deep workers implement
 :class:`AspectWorker`. Per the project's seam rule (conventions §2) — and exactly like the
 :class:`~clue_core.resolver.Resolver` and :class:`~clue_core.gateway.LLMGateway`
 protocols — the *contract* lives in ``core`` while the *implementation* lives in its package
@@ -66,11 +66,11 @@ ClaimTagger = Callable[[Claim], Claim | None]
 # ``gate_decision`` audit row) lives with the caller, never in the engine.
 SourceGate = Callable[[SourceManifest], Awaitable[bool]]
 
-# --- phase layer (M7.3: campaign-run state machine) -------------------------
+# --- phase layer (M7.3: project-run state machine) -------------------------
 
 
 class PhaseContext(BaseModel):
-    """The context a phase handler receives for one phase of one campaign run (M7.3).
+    """The context a phase handler receives for one phase of one project run (M7.3).
 
     Identifies the run and the active ICP version; ``params`` is the escape hatch for phase-specific
     inputs (e.g. tier cutoffs at ``SCORING``) so adding one does not force a ``core`` change. The
@@ -195,7 +195,7 @@ class BudgetDecision(BaseModel):
 
 
 class BurnDown(BaseModel):
-    """Live cost accounting for a campaign run (M7.5) — the client-facing burn-down (Doc C §5)."""
+    """Live cost accounting for a project run (M7.5) — the client-facing burn-down (Doc C §5)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
