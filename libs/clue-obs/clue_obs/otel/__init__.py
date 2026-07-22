@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from clue_obs.otel.attributes import (
     ATTR_CACHE_HIT,
-    ATTR_CAMPAIGN_RUN_ID,
     ATTR_COMPLETION_TOKENS,
     ATTR_COST_CENTS,
     ATTR_COST_ESTIMATE_CENTS,
@@ -30,6 +29,7 @@ from clue_obs.otel.attributes import (
     ATTR_MODEL,
     ATTR_N_CLAIMS,
     ATTR_N_SOURCES,
+    ATTR_PROJECT_RUN_ID,
     ATTR_PROMPT_TOKENS,
     ATTR_RESEARCH_MODE,
     ATTR_RUN_ID,
@@ -65,7 +65,7 @@ from clue_obs.otel.metrics import (
     set_metric_sink,
 )
 from clue_obs.otel.spans import (
-    CAMPAIGN_PHASES,
+    PROJECT_PHASES,
     SPAN_ADAPTER_ADAPT,
     SPAN_ADAPTER_EXTRACT,
     SPAN_ADAPTER_FETCH,
@@ -118,7 +118,7 @@ __all__ = [
     "SPAN_COMPLIANCE_DSAR",
     "SPAN_COMPLIANCE_RETENTION_SWEEP",
     "SPAN_LLM_GATEWAY_CALL",
-    "CAMPAIGN_PHASES",
+    "PROJECT_PHASES",
     "phase_span",
     # attributes
     "ATTR_ENTITY_ID",
@@ -131,7 +131,7 @@ __all__ = [
     "ATTR_COST_CENTS",
     "ATTR_WORKSPACE_ID",
     "ATTR_ICP_ID",
-    "ATTR_CAMPAIGN_RUN_ID",
+    "ATTR_PROJECT_RUN_ID",
     "ATTR_MODEL",
     "ATTR_PROMPT_TOKENS",
     "ATTR_COMPLETION_TOKENS",

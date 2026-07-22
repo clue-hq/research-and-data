@@ -91,7 +91,12 @@ LinkedIn ads campaign, the micro-site campaign). One workspace → many projects
 multiple channel campaigns → artifacts. New documents (Doc A, Doc S) use the new vocabulary;
 existing docs retain the historical term until their own revision — readers map "campaign" →
 "project" when reading pre-v1.2 text. A mechanical rename across docs/schema is deliberately
-deferred to avoid churning built substrate identifiers.
+deferred to avoid churning built substrate identifiers. **Update (2026-07-22): the mechanical
+`campaign_run` → `project_run` rename landed** (stage 1 on the fleet lane; stage 2 — schema,
+code, and the empty-allowlist guard — immediately after Phase-B integration, per
+`docs/specs/PB-rename-campaign-run-to-project-run.md`). Bare "campaign" remains the
+channel-program concept; the frozen `IdempotencyScope` ledger *value* `"campaign_phase"` is
+durable data and deliberately unrenamed.
 
 ### 2. Inherited invariants (restated as binding)
 

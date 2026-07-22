@@ -1,14 +1,14 @@
 """The canonical campaign phase sequence (M7.3) — pure, no DB.
 
 M7.3 AC: "the phase set and ordering exactly match the conventions §3 / Doc C §4 sequence." These
-lock that ordering and the ``next_phase`` walk to the single source of truth (``core.CampaignPhase``
-/ ``obs.CAMPAIGN_PHASES``), so a reordering or a dropped phase fails loudly here.
+lock that ordering and the ``next_phase`` walk to the single source of truth (``core.ProjectPhase``
+/ ``obs.PROJECT_PHASES``), so a reordering or a dropped phase fails loudly here.
 """
 
 from __future__ import annotations
 
-from clue_core import CampaignPhase
-from clue_obs.otel import CAMPAIGN_PHASES
+from clue_core import ProjectPhase
+from clue_obs.otel import PROJECT_PHASES
 from clue_research.durable import PHASE_SEQUENCE, next_phase
 
 # conventions §3 / Doc C §4 — the exact phase list, written out so a reorder of the enum is caught
@@ -32,12 +32,12 @@ def test_phase_sequence_matches_conventions() -> None:
 
 def test_phase_sequence_is_the_core_enum_order() -> None:
     # Single source of truth: the state machine order is exactly the core enum's definition order.
-    assert tuple(CampaignPhase) == PHASE_SEQUENCE
+    assert tuple(ProjectPhase) == PHASE_SEQUENCE
 
 
 def test_phase_sequence_matches_obs_span_tokens() -> None:
     # The obs span tokens and the state-machine order derive from the same enum — they cannot drift.
-    assert tuple(p.value for p in PHASE_SEQUENCE) == CAMPAIGN_PHASES
+    assert tuple(p.value for p in PHASE_SEQUENCE) == PROJECT_PHASES
 
 
 def test_next_phase_walks_the_sequence() -> None:
@@ -46,6 +46,6 @@ def test_next_phase_walks_the_sequence() -> None:
 
 
 def test_next_phase_terminal_is_none() -> None:
-    assert next_phase(CampaignPhase.HANDOFF) is None
+    assert next_phase(ProjectPhase.HANDOFF) is None
     # tier_checkpoint resumes into deep — the human-gate transition.
-    assert next_phase(CampaignPhase.TIER_CHECKPOINT) is CampaignPhase.DEEP
+    assert next_phase(ProjectPhase.TIER_CHECKPOINT) is ProjectPhase.DEEP

@@ -15,14 +15,14 @@ from clue_api.handoff_retention import (
     RetentionSweepHandoffHandler,
 )
 from clue_core import (
-    CampaignPhase,
     EntityId,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 
@@ -68,9 +68,9 @@ class FakeSweep:
 
 
 class FakeHandoff:
-    """A stand-in inner ``CampaignPhase.HANDOFF`` handler (M12's emit path)."""
+    """A stand-in inner ``ProjectPhase.HANDOFF`` handler (M12's emit path)."""
 
-    phase = CampaignPhase.HANDOFF
+    phase = ProjectPhase.HANDOFF
 
     def __init__(self, rec: _Recorder) -> None:
         self._rec = rec
@@ -105,8 +105,8 @@ def _spec(entity_id: EntityId) -> AccountSpec:
 
 def _ctx() -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.HANDOFF,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.HANDOFF,
         workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
@@ -119,12 +119,12 @@ def test_conforms_and_replaces_the_handoff_handler() -> None:
         sweep=FakeSweep(rec), inner=FakeHandoff(rec), account_resolver=_resolver(())
     )
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.HANDOFF
+    assert handler.phase is ProjectPhase.HANDOFF
     # last-write-wins: registering it makes the registry resolve HANDOFF to the sweeping wrapper.
     registry = PhaseHandlerRegistry()
     registry.register(FakeHandoff(rec))
     registry.register(handler)
-    assert registry.get(CampaignPhase.HANDOFF) is handler
+    assert registry.get(ProjectPhase.HANDOFF) is handler
 
 
 def test_sweeps_before_the_inner_handoff_runs() -> None:

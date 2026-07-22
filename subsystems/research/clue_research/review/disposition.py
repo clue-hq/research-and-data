@@ -31,10 +31,10 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
 from clue_core import (
-    CampaignRunId,
     ClaimId,
     EntityId,
     EntityType,
+    ProjectRunId,
     ReviewAction,
     UtcDatetime,
 )
@@ -119,7 +119,7 @@ def review_natural_key(review_action_id: UUID) -> str:
 
     Keys on the **``review_action_id``** — the durable, 1:1 ``review_action`` audit-row id the
     frozen ``ReviewActionOutcome`` already carries. This deliberately supersedes the brief's earlier
-    ``review_surface:{campaign_run}:{claim_id}:{type}:{round}`` formula: the seam evolved to hand
+    ``review_surface:{project_run}:{claim_id}:{type}:{round}`` formula: the seam evolved to hand
     M13.2 a strictly-stronger unique token (the brief pre-dated the frozen ``core.review`` contract,
     whose emitter signature carries no ``review_round``), and M13.1 guarantees exactly one
     ``review_action`` row per logical action (its AC: "replaying the same action is idempotent"). So
@@ -164,7 +164,7 @@ class FeedbackDisposition(BaseModel):
     entity_type: EntityType
     account_entity_id: EntityId  # the parent account (the dataset / source-rollup key)
     claim_id: ClaimId | None = None  # the reviewed claim (claim_* dispositions only)
-    campaign_run_id: CampaignRunId | None = None
+    project_run_id: ProjectRunId | None = None
     workspace_id: str
     icp_key: str = ""
     icp_spec_version: int | None = None
@@ -203,7 +203,7 @@ class FeedbackDisposition(BaseModel):
         entity_type: EntityType,
         account_entity_id: EntityId,
         claim_id: ClaimId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         workspace_id: str,
         icp_key: str,
         icp_spec_version: int | None,
@@ -222,7 +222,7 @@ class FeedbackDisposition(BaseModel):
             entity_type=entity_type,
             account_entity_id=account_entity_id,
             claim_id=claim_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             workspace_id=workspace_id,
             icp_key=icp_key,
             icp_spec_version=icp_spec_version,
@@ -246,7 +246,7 @@ class FeedbackDisposition(BaseModel):
         occurred_at: UtcDatetime,
         icp_key: str = "",
         icp_spec_version: int | None = None,
-        campaign_run_id: CampaignRunId | None = None,
+        project_run_id: ProjectRunId | None = None,
         actor: DispositionActor = DispositionActor.CLIENT_SALES,
         origin: DispositionOrigin = DispositionOrigin.CRM_INGEST,
         reason_code: str | None = None,
@@ -263,7 +263,7 @@ class FeedbackDisposition(BaseModel):
             entity_id=account_entity_id,
             entity_type=EntityType.ACCOUNT,
             account_entity_id=account_entity_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             workspace_id=workspace_id,
             icp_key=icp_key,
             icp_spec_version=icp_spec_version,
@@ -309,7 +309,7 @@ class DownstreamOutcome(BaseModel):
     origin: DispositionOrigin = DispositionOrigin.CRM_INGEST
     icp_key: str | None = None
     icp_spec_version: int | None = None
-    campaign_run_id: CampaignRunId | None = None
+    project_run_id: ProjectRunId | None = None
     reason_code: str | None = None
     detail: dict[str, JsonValue] = {}
 

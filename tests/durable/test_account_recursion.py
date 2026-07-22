@@ -14,7 +14,7 @@ from decimal import Decimal
 from langgraph.checkpoint.memory import InMemorySaver
 
 from clue_config import RecursionPolicy, TierRecursionCaps
-from clue_core import new_campaign_run_id, new_entity_id
+from clue_core import new_entity_id, new_project_run_id
 from clue_obs.otel import collect_spans
 from clue_research.durable import (
     AccountResearchGraph,
@@ -56,7 +56,7 @@ def _run(graph: AccountResearchGraph, *, tier: str) -> object:
         return await graph.run(
             new_entity_id(),
             tier=tier,
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
 

@@ -1,7 +1,7 @@
 """Idempotency key derivation — the two durable-execution key shapes (Beat-0; M7.4).
 
 Durable execution is idempotent on two keys (substrate §5c): a per-account research *step*
-``(account_run, entity, field, tier)`` and a per-campaign *phase* ``(campaign_run, phase)``. The
+``(account_run, entity, field, tier)`` and a per-campaign *phase* ``(project_run, phase)``. The
 key *derivation* is a pure, dependency-free function, so it lives in ``core`` (M0.2) where every
 package shares one definition; the ledger-backed ``idempotent(...)`` context manager that *uses*
 these keys (and its Postgres ``idempotency_ledger`` table) is built on the M7 branch in ``durable``.
@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import hashlib
 
-from clue_core.enums import CampaignPhase, IdempotencyScope
+from clue_core.enums import IdempotencyScope, ProjectPhase
 from clue_core.field import FieldKey
 from clue_core.primitives import (
-    CampaignRunId,
     EntityId,
+    ProjectRunId,
     RunId,
     SourceTier,
 )
@@ -55,7 +55,7 @@ def account_step_key(
     )
 
 
-def phase_key(campaign_run_id: CampaignRunId, phase: CampaignPhase) -> str:
-    """The idempotency key for one campaign-run phase ``(campaign_run, phase)`` (substrate §5c). A
+def phase_key(project_run_id: ProjectRunId, phase: ProjectPhase) -> str:
+    """The idempotency key for one campaign-run phase ``(project_run, phase)`` (substrate §5c). A
     re-entered phase reuses this key, so the phase commits its effects exactly once."""
-    return idempotency_key(IdempotencyScope.CAMPAIGN_PHASE, campaign_run_id, phase)
+    return idempotency_key(IdempotencyScope.PROJECT_PHASE, project_run_id, phase)

@@ -16,21 +16,21 @@ Shipped so far:
   Parallel Task tier-4 resolvers behind the shared ``Resolver`` seam.
 * the **M10 compliance wiring** (:mod:`clue_api.compliance_wiring`): registers the
   ``contact.jurisdiction`` + shorter personal-data retention TTL field pack (the use-gate /
-  retention-sweep runtime seams land with the ``CampaignPhase.VERIFICATION`` handler).
+  retention-sweep runtime seams land with the ``ProjectPhase.VERIFICATION`` handler).
 * the **M12 narrative wiring** (:mod:`clue_api.narrative_wiring`): the
 ``account.value_narrative``
   field pack, the Client-Knowledge retriever stub, and the M12.2 handoff assembler construction.
 * the **VERIFICATION composition root** (:mod:`clue_api.verification`): the
-  ``CampaignPhase.VERIFICATION`` phase handler that drives the frozen ``VERIFICATION_GATE_ORDER``
+  ``ProjectPhase.VERIFICATION`` phase handler that drives the frozen ``VERIFICATION_GATE_ORDER``
   (corroboration → faithfulness → use-gate last) over the deep-produced claims and records per-field
   verification-health — the integration keystone that makes tier-4 ``current_value`` non-empty.
 * the **M12.3 output/handoff boundary** — the FastAPI read API
   (:mod:`clue_api.handoff_app`) and its wiring (:mod:`clue_api.handoff_wiring`):
   the
   durable-backed readiness reader, the :class:`~clue_research.narrative.HandoffService`, and the
-  ``CampaignPhase.HANDOFF`` phase handler that drives the durable emit/notify path. This is the
+  ``ProjectPhase.HANDOFF`` phase handler that drives the durable emit/notify path. This is the
   terminal seam of the subsystem (overview §3).
-* the **M13 Review/Feedback/Observability wiring** — the ``CampaignPhase.REVIEW`` handler
+* the **M13 Review/Feedback/Observability wiring** — the ``ProjectPhase.REVIEW`` handler
   (:mod:`clue_api.review`), the M13.2 disposition substrate
   (:mod:`clue_api.disposition_wiring`), the M13.4 read-only observability surface
   (:mod:`clue_api.observability_wiring`), and the integration join
@@ -110,9 +110,9 @@ from clue_api.observability_wiring import (
     build_verification_health_reader,
 )
 from clue_api.review import (
-    CampaignRunResumeHook,
     DbVerificationAnnotationReader,
     NoopReviewDispositionEmitter,
+    ProjectRunResumeHook,
     ReviewPhaseHandler,
     build_review_account_resolver,
     build_review_phase_handler,
@@ -194,7 +194,7 @@ __all__ = [
     # M13.1 review-surface wiring
     "ReviewPhaseHandler",
     "DbVerificationAnnotationReader",
-    "CampaignRunResumeHook",
+    "ProjectRunResumeHook",
     "NoopReviewDispositionEmitter",
     "build_review_account_resolver",
     "build_review_surface",

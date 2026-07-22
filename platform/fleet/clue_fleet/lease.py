@@ -17,7 +17,7 @@ token checked on every durable write) are deferred to integration; the residual 
 window is now cancellation latency, governed by the account-step ledger and the entity locks,
 exactly as on today's resume path (spec §2.3).
 
-Repository shape mirrors ``durable/campaign_run.py``: module-level ``text(...)`` + ``async def``
+Repository shape mirrors ``durable/project_run.py``: module-level ``text(...)`` + ``async def``
 helpers over an :class:`~sqlalchemy.ext.asyncio.AsyncConnection`; :class:`DbLeaseStore` wraps
 them in ``db.transaction()`` behind the :class:`LeaseStore` seam so the worker loop is testable
 on an in-memory store (conventions §2).
@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import CampaignRunId, UtcDatetime
+from clue_core import ProjectRunId, UtcDatetime
 from clue_db import transaction
 
 # Default driver-lease TTL. Generous enough that a healthy heartbeat (a fraction of this — see
@@ -48,7 +48,7 @@ class RunLeaseRow(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    project_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     worker_id: str
     acquired_at: UtcDatetime
     renewed_at: UtcDatetime
@@ -111,7 +111,7 @@ _GET_SQL = text(
 async def acquire_run_lease(
     conn: AsyncConnection,
     *,
-    project_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     worker_id: str,
     ttl: timedelta = DEFAULT_LEASE_TTL,
 ) -> bool:
@@ -131,7 +131,7 @@ async def acquire_run_lease(
 async def renew_run_lease(
     conn: AsyncConnection,
     *,
-    project_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     worker_id: str,
     ttl: timedelta = DEFAULT_LEASE_TTL,
 ) -> bool:
@@ -147,14 +147,14 @@ async def renew_run_lease(
 
 
 async def release_run_lease(
-    conn: AsyncConnection, *, project_run_id: CampaignRunId, worker_id: str
+    conn: AsyncConnection, *, project_run_id: ProjectRunId, worker_id: str
 ) -> None:
     """Release the lease if this worker still holds it (holder-guarded; a lost lease is a
     no-op)."""
     await conn.execute(_RELEASE_SQL, {"project_run_id": project_run_id, "worker_id": worker_id})
 
 
-async def get_run_lease(conn: AsyncConnection, project_run_id: CampaignRunId) -> RunLeaseRow | None:
+async def get_run_lease(conn: AsyncConnection, project_run_id: ProjectRunId) -> RunLeaseRow | None:
     """Read the lease row (with its DB-clock ``live`` verdict), or ``None`` if never leased."""
     row = (
         (await conn.execute(_GET_SQL, {"project_run_id": project_run_id})).mappings().one_or_none()
@@ -172,16 +172,16 @@ class LeaseStore(Protocol):
     :class:`DbLeaseStore` (conventions §2)."""
 
     async def acquire(
-        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta
     ) -> bool: ...
 
     async def renew(
-        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta
     ) -> bool: ...
 
-    async def release(self, *, project_run_id: CampaignRunId, worker_id: str) -> None: ...
+    async def release(self, *, project_run_id: ProjectRunId, worker_id: str) -> None: ...
 
-    async def get(self, project_run_id: CampaignRunId) -> RunLeaseRow | None: ...
+    async def get(self, project_run_id: ProjectRunId) -> RunLeaseRow | None: ...
 
 
 class DbLeaseStore:
@@ -190,23 +190,23 @@ class DbLeaseStore:
     single atomic statement, never part of a larger unit of work."""
 
     async def acquire(
-        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta
     ) -> bool:
         async with transaction() as conn:
             return await acquire_run_lease(
                 conn, project_run_id=project_run_id, worker_id=worker_id, ttl=ttl
             )
 
-    async def renew(self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta) -> bool:
+    async def renew(self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta) -> bool:
         async with transaction() as conn:
             return await renew_run_lease(
                 conn, project_run_id=project_run_id, worker_id=worker_id, ttl=ttl
             )
 
-    async def release(self, *, project_run_id: CampaignRunId, worker_id: str) -> None:
+    async def release(self, *, project_run_id: ProjectRunId, worker_id: str) -> None:
         async with transaction() as conn:
             await release_run_lease(conn, project_run_id=project_run_id, worker_id=worker_id)
 
-    async def get(self, project_run_id: CampaignRunId) -> RunLeaseRow | None:
+    async def get(self, project_run_id: ProjectRunId) -> RunLeaseRow | None:
         async with transaction() as conn:
             return await get_run_lease(conn, project_run_id)

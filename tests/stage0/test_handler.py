@@ -16,13 +16,13 @@ from uuid import uuid4
 import pytest
 
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     CostCents,
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
+    ProjectRunId,
+    new_project_run_id,
 )
 from clue_db import db_lifespan, transaction
 from clue_research.claimstore import load_core_pack
@@ -38,7 +38,7 @@ pytestmark = pytest.mark.usefixtures("require_stage0_db", "resolver_bindings")
 def test_handler_conforms_to_protocol() -> None:
     handler = ReverseProfilingHandler()
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.REVERSE_PROFILING
+    assert handler.phase is ProjectPhase.REVERSE_PROFILING
 
 
 async def _seed_committed() -> None:
@@ -51,12 +51,12 @@ async def _seed_committed() -> None:
 def _ctx(
     suffix: str,
     *,
-    campaign_run_id: CampaignRunId | None = None,
+    project_run_id: ProjectRunId | None = None,
     budget_cap_cents: CostCents | None = None,
 ) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=campaign_run_id if campaign_run_id is not None else new_campaign_run_id(),
-        phase=CampaignPhase.REVERSE_PROFILING,
+        project_run_id=project_run_id if project_run_id is not None else new_project_run_id(),
+        phase=ProjectPhase.REVERSE_PROFILING,
         workspace_id=f"tenant-handler-{suffix}",
         icp_key="__reverse_profiling__",
         icp_version=0,
@@ -111,9 +111,9 @@ def test_handler_idempotent_resume_across_commits() -> None:
             # client resolves to the same entity — the "no double-charge" half of the AC, proven
             # across a real commit boundary (not just within one rolled-back transaction).
             suffix = uuid4().hex[:12]
-            crid = new_campaign_run_id()
-            first = await ReverseProfilingHandler().run(_ctx(suffix, campaign_run_id=crid))
-            second = await ReverseProfilingHandler().run(_ctx(suffix, campaign_run_id=crid))
+            crid = new_project_run_id()
+            first = await ReverseProfilingHandler().run(_ctx(suffix, project_run_id=crid))
+            second = await ReverseProfilingHandler().run(_ctx(suffix, project_run_id=crid))
             assert first.payload["client_kb_version"] == 1
             assert second.payload["client_kb_version"] == 1  # re-entry did not bump the version
             assert second.payload["client_entity_id"] == first.payload["client_entity_id"]

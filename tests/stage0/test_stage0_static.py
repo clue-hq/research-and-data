@@ -6,7 +6,7 @@ reverse-profiling tests rely on.
 
 from __future__ import annotations
 
-from clue_core import ExtractionMethod, ReuseScope, can_be_promoted, new_campaign_run_id
+from clue_core import ExtractionMethod, ReuseScope, can_be_promoted, new_project_run_id
 from clue_core.field import classify_field_key, is_valid_field_key
 from clue_research.identity import DEFAULT_REUSE_POLICY, classify_reuse_scope
 from clue_research.stage0 import (
@@ -80,9 +80,9 @@ def test_surface_taxonomy_covers_all_four_surfaces_and_all_fields() -> None:
 
 
 def test_reverse_profiling_run_id_is_deterministic() -> None:
-    crid = new_campaign_run_id()
+    crid = new_project_run_id()
     assert reverse_profiling_run_id(crid) == reverse_profiling_run_id(crid)
-    assert reverse_profiling_run_id(crid) != reverse_profiling_run_id(new_campaign_run_id())
+    assert reverse_profiling_run_id(crid) != reverse_profiling_run_id(new_project_run_id())
 
 
 def test_client_input_from_params_nested_and_flat() -> None:

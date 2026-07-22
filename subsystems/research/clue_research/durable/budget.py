@@ -18,7 +18,7 @@ Three scopes, all real (:class:`~clue_core.BudgetScope`):
   (:attr:`~clue_config.BudgetCaps.pass_a_cap_cents_per_account`); a runaway scoring cost on
   one account is ``DENY``\\ed. (There is no per-pass *aggregate* spend counter in V1 — Pass A is
   deterministic-only and cheap; this is the per-account-rate guard the spec names.)
-* **RUN** — the per-campaign hard cap (``campaign_run.budget_cap_cents``). A breach is a
+* **RUN** — the per-campaign hard cap (``project_run.budget_cap_cents``). A breach is a
   ``GRACEFUL_STOP`` — the campaign is brought to a clean stop at the next checkpoint (via M7.3),
   never hard-killed mid-step.
 
@@ -29,7 +29,7 @@ backend is swappable (Postgres now, Temporal-shaped later) — exactly the conve
 replaceability rule the rest of M7 follows.
 
 **Exactly-once charge.** :meth:`record` is the single live increment of the spend counters
-(``campaign_run.spent_cents`` + ``account_run.cost_cents``). It is called once per ledger charge —
+(``project_run.spent_cents`` + ``account_run.cost_cents``). It is called once per ledger charge —
 inside the M7.4 ``idempotent`` EXECUTE branch, *not* on a replay — so the counters tie exactly to
 the ledger's ``cost_cents_charged`` (no double-count, no missed charge; substrate §5c). A *charge*
 is never a ``budget_event``; events are governance decisions (deny / graceful-stop / breach /
@@ -51,15 +51,15 @@ from clue_core import (
     BudgetScope,
     BudgetVerdict,
     BurnDown,
-    CampaignRunId,
     CostCents,
     EntityId,
     Estimate,
+    ProjectRunId,
     RunId,
 )
 from clue_db import transaction
 from clue_obs.otel import (
-    ATTR_CAMPAIGN_RUN_ID,
+    ATTR_PROJECT_RUN_ID,
     METRIC_COST_CAP_CENTS,
     METRIC_COST_CENTS,
     apply_attributes,
@@ -77,8 +77,8 @@ from clue_research.durable.budget_event import (
     set_account_budget_cap,
     set_estimated_cents,
 )
-from clue_research.durable.campaign_run import set_budget_cap
 from clue_research.durable.enums import BudgetEventKind
+from clue_research.durable.project_run import set_budget_cap
 from clue_research.durable.spans import (
     ATTR_BUDGET_SCOPE,
     ATTR_BUDGET_VERDICT,
@@ -97,7 +97,7 @@ class BudgetError(Exception):
 
 class BudgetStateNotFound(BudgetError):
     """A :meth:`BudgetEngine.check` / :meth:`BudgetEngine.burn_down` needed an ``account_run`` /
-    ``campaign_run`` row that does not exist — a misrouted check, not a budget outcome (it is
+    ``project_run`` row that does not exist — a misrouted check, not a budget outcome (it is
     raised, never silently treated as "uncapped", so a missing row can never let spend slip past
     the gate)."""
 
@@ -192,33 +192,33 @@ class BudgetStore(Protocol):
     store without Postgres, and keeps the accounting backend swappable (conventions §2). The
     production implementation is :class:`DbBudgetStore`."""
 
-    async def run_state(self, campaign_run_id: CampaignRunId) -> RunBudgetState | None: ...
+    async def run_state(self, project_run_id: ProjectRunId) -> RunBudgetState | None: ...
 
     async def account_state(self, account_run_id: RunId) -> AccountBudgetState | None: ...
 
     async def add_spend(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None = None,
         conn: AsyncConnection | None = None,
     ) -> None: ...
 
     async def set_campaign_cap(
-        self, campaign_run_id: CampaignRunId, cap_cents: CostCents
+        self, project_run_id: ProjectRunId, cap_cents: CostCents
     ) -> None: ...
 
     async def set_account_cap(self, account_run_id: RunId, cap_cents: CostCents | None) -> None: ...
 
     async def set_estimated(
-        self, campaign_run_id: CampaignRunId, estimated_cents: CostCents
+        self, project_run_id: ProjectRunId, estimated_cents: CostCents
     ) -> None: ...
 
     async def record_event(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         scope: BudgetScope,
         kind: BudgetEventKind,
         projected_cents: CostCents,
@@ -230,14 +230,14 @@ class BudgetStore(Protocol):
 class DbBudgetStore:
     """The Postgres :class:`BudgetStore` — the production cost-accounting path (M7.5).
 
-    Each method runs in its own ``db.transaction()`` (mirroring :class:`DbCampaignRunStore` /
+    Each method runs in its own ``db.transaction()`` (mirroring :class:`DbProjectRunStore` /
     :class:`DbIdempotencyStore`). ``add_spend`` increments the run total and, when an
     ``account_run_id`` is given, the per-account total in the **same** transaction, so the two
     counters never drift across a crash between them."""
 
-    async def run_state(self, campaign_run_id: CampaignRunId) -> RunBudgetState | None:
+    async def run_state(self, project_run_id: ProjectRunId) -> RunBudgetState | None:
         async with transaction() as conn:
-            return await get_run_budget_state(conn, campaign_run_id)
+            return await get_run_budget_state(conn, project_run_id)
 
     async def account_state(self, account_run_id: RunId) -> AccountBudgetState | None:
         async with transaction() as conn:
@@ -246,7 +246,7 @@ class DbBudgetStore:
     async def add_spend(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None = None,
         conn: AsyncConnection | None = None,
@@ -261,44 +261,42 @@ class DbBudgetStore:
         # docstring deferred to "the M8 claim-write path"). When omitted, the increments open their
         # own transaction exactly as before (today's M6/M7/M9 callers are unchanged).
         if conn is not None:
-            await self._add_spend(conn, campaign_run_id, cost_cents, account_run_id)
+            await self._add_spend(conn, project_run_id, cost_cents, account_run_id)
             return
         async with transaction() as own_conn:
-            await self._add_spend(own_conn, campaign_run_id, cost_cents, account_run_id)
+            await self._add_spend(own_conn, project_run_id, cost_cents, account_run_id)
 
     @staticmethod
     async def _add_spend(
         conn: AsyncConnection,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None,
     ) -> None:
-        if await add_run_spend(conn, campaign_run_id, cost_cents) == 0:
-            raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+        if await add_run_spend(conn, project_run_id, cost_cents) == 0:
+            raise BudgetStateNotFound(f"project_run {project_run_id}")
         if (
             account_run_id is not None
             and await add_account_spend(conn, account_run_id, cost_cents) == 0
         ):
             raise BudgetStateNotFound(f"account_run {account_run_id}")
 
-    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
+    async def set_campaign_cap(self, project_run_id: ProjectRunId, cap_cents: CostCents) -> None:
         async with transaction() as conn:
-            await set_budget_cap(conn, campaign_run_id, cap_cents)
+            await set_budget_cap(conn, project_run_id, cap_cents)
 
     async def set_account_cap(self, account_run_id: RunId, cap_cents: CostCents | None) -> None:
         async with transaction() as conn:
             await set_account_budget_cap(conn, account_run_id, cap_cents)
 
-    async def set_estimated(
-        self, campaign_run_id: CampaignRunId, estimated_cents: CostCents
-    ) -> None:
+    async def set_estimated(self, project_run_id: ProjectRunId, estimated_cents: CostCents) -> None:
         async with transaction() as conn:
-            await set_estimated_cents(conn, campaign_run_id, estimated_cents)
+            await set_estimated_cents(conn, project_run_id, estimated_cents)
 
     async def record_event(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         scope: BudgetScope,
         kind: BudgetEventKind,
         projected_cents: CostCents,
@@ -308,7 +306,7 @@ class DbBudgetStore:
         async with transaction() as conn:
             await insert_budget_event(
                 conn,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 scope=scope,
                 kind=kind,
                 projected_cents=projected_cents,
@@ -347,7 +345,7 @@ class BudgetEngine:
 
     async def estimate(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
         discovered_count: int,
         tier_cutoffs: dict[str, float] | None = None,
@@ -361,9 +359,9 @@ class BudgetEngine:
         )
         with traced_step(
             SPAN_BUDGET_ESTIMATE,
-            **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id)},
+            **{ATTR_PROJECT_RUN_ID: str(project_run_id)},
         ) as span:
-            await self._store.set_estimated(campaign_run_id, estimate.estimated_cost_cents)
+            await self._store.set_estimated(project_run_id, estimate.estimated_cost_cents)
             apply_attributes(
                 span,
                 {
@@ -379,7 +377,7 @@ class BudgetEngine:
         *,
         scope: BudgetScope,
         projected_cents: CostCents,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> BudgetDecision:
@@ -423,9 +421,9 @@ class BudgetEngine:
                 inclusive=False,
             )
         else:  # RUN
-            run = await self._store.run_state(campaign_run_id)
+            run = await self._store.run_state(project_run_id)
             if run is None:
-                raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+                raise BudgetStateNotFound(f"project_run {project_run_id}")
             cap = run.cap_cents
             verdict = self._verdict(
                 spent=run.spent_cents,
@@ -441,7 +439,7 @@ class BudgetEngine:
             projected_cents=projected_cents,
             cap_cents=cap if cap is not None else Decimal(0),
         )
-        with traced_step(SPAN_BUDGET_CHECK, **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id)}) as span:
+        with traced_step(SPAN_BUDGET_CHECK, **{ATTR_PROJECT_RUN_ID: str(project_run_id)}) as span:
             apply_attributes(
                 span,
                 {
@@ -463,7 +461,7 @@ class BudgetEngine:
             if account_run_id is not None:
                 detail["account_run_id"] = str(account_run_id)
             await self._store.record_event(
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 scope=scope,
                 kind=kind,
                 projected_cents=projected_cents,
@@ -477,13 +475,13 @@ class BudgetEngine:
         *,
         cost_cents: CostCents,
         scope: BudgetScope,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
         conn: AsyncConnection | None = None,
     ) -> None:
         """Record an actual charge — the **single** live increment of the spend counters
-        (``campaign_run.spent_cents``, plus ``account_run.cost_cents`` when ``account_run_id`` is
+        (``project_run.spent_cents``, plus ``account_run.cost_cents`` when ``account_run_id`` is
         given). Call exactly once per ledger charge, inside the M7.4 ``idempotent`` EXECUTE branch
         (never on a replay), so the counters track the ledger's ``cost_cents_charged``.
 
@@ -508,13 +506,13 @@ class BudgetEngine:
         if cost_cents < 0:
             raise ValueError(f"cost_cents must be >= 0 (got {cost_cents})")
         await self._store.add_spend(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             cost_cents=cost_cents,
             account_run_id=account_run_id,
             conn=conn,
         )
 
-    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
+    async def set_campaign_cap(self, project_run_id: ProjectRunId, cap_cents: CostCents) -> None:
         """Set the per-campaign hard cap (the client raise/lower loop). Always records a
         ``cap_raised`` governance event (the single cap-change kind); when current spend has reached
         the new cap (``spent >= cap``) it additionally records ``breach_pending`` — the run is now
@@ -524,11 +522,11 @@ class BudgetEngine:
         the pre-gate will then graceful-stop on — the two boundaries are provably consistent."""
         if cap_cents < 0:
             raise ValueError(f"cap_cents must be >= 0 (got {cap_cents})")
-        await self._store.set_campaign_cap(campaign_run_id, cap_cents)
-        run = await self._store.run_state(campaign_run_id)
+        await self._store.set_campaign_cap(project_run_id, cap_cents)
+        run = await self._store.run_state(project_run_id)
         spent = run.spent_cents if run is not None else Decimal(0)
         await self._store.record_event(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             scope=BudgetScope.RUN,
             kind=BudgetEventKind.CAP_RAISED,
             projected_cents=spent,
@@ -536,23 +534,23 @@ class BudgetEngine:
         )
         if run is not None and spent >= cap_cents:
             await self._store.record_event(
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 scope=BudgetScope.RUN,
                 kind=BudgetEventKind.BREACH_PENDING,
                 projected_cents=spent,
                 cap_cents=cap_cents,
             )
 
-    async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown:
+    async def burn_down(self, project_run_id: ProjectRunId) -> BurnDown:
         """The live cost accounting (Doc C §5/§6) — spent vs estimate vs cap vs remaining for the
         run. ``remaining_cents`` is ``max(0, cap − spent)`` (clamped: ``CostCents`` is non-negative,
         so an over-budget run reads 0 remaining, not a negative); both ``cap_cents`` and
         ``estimated_cents`` read 0 when never set. Emits the Doc C §6 cost gauges for the M13.4
         surface. Per-pass / per-source breakdowns are left to M13 (derived from claim provenance via
         :func:`clue_obs.otel.record_source_yield`), so they default empty here."""
-        run = await self._store.run_state(campaign_run_id)
+        run = await self._store.run_state(project_run_id)
         if run is None:
-            raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+            raise BudgetStateNotFound(f"project_run {project_run_id}")
         spent = run.spent_cents
         cap = run.cap_cents if run.cap_cents is not None else Decimal(0)
         estimated = run.estimated_cents if run.estimated_cents is not None else Decimal(0)
@@ -560,12 +558,12 @@ class BudgetEngine:
             max(Decimal(0), run.cap_cents - spent) if run.cap_cents is not None else Decimal(0)
         )
         sink = get_metric_sink()
-        sink.gauge(METRIC_COST_CENTS, float(spent), {ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id)})
+        sink.gauge(METRIC_COST_CENTS, float(spent), {ATTR_PROJECT_RUN_ID: str(project_run_id)})
         if run.cap_cents is not None:
             sink.gauge(
                 METRIC_COST_CAP_CENTS,
                 float(run.cap_cents),
-                {ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id)},
+                {ATTR_PROJECT_RUN_ID: str(project_run_id)},
             )
         return BurnDown(
             spent_cents=spent,

@@ -12,7 +12,7 @@ Own module so M10 / M11 / M12 never co-edit ``api/composition.py``. M10 fills
   (``compliance.UseGateImpl``), registered **last** in the verification sequence per
   :data:`~clue_api.composition.VERIFICATION_GATE_ORDER` — after M9.4 identity-binding /
   M9.3 faithfulness (Doc D §7: "is it this person?" before "may we use it?"). The live call site is
-  the ``CampaignPhase.VERIFICATION`` handler, which does not exist yet;
+  the ``ProjectPhase.VERIFICATION`` handler, which does not exist yet;
 * **[deferred]** wire the DSAR / retention sweep (``compliance.RetentionSweep``) — drain
   ``core.verification.Freshness.due_for_age_out`` → M10.5 tombstone the objected + retention-EXPIRED
   claims **before** the next merge read, so ``current_value`` / the M12 handoff stop seeing them
@@ -38,7 +38,7 @@ def register_compliance_wiring() -> None:
     The runtime governance seams M10 supplies — the ``UseGateImpl`` (the last verification gate),
     the ``RetentionSweep`` tombstone-before-merge-read pass, and the
     ``WorkspacePolicy.gather_scope``
-    source-scoping hook — are injected at their live call sites (the ``CampaignPhase.VERIFICATION``
+    source-scoping hook — are injected at their live call sites (the ``ProjectPhase.VERIFICATION``
     handler and the HANDOFF-phase pre-read sweep) as those land; see the module docstring.
     """
     if load_compliance_pack not in RESEARCH_PACK_LOADERS:

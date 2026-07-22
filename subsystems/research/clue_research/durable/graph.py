@@ -52,10 +52,10 @@ from clue_config import RecursionPolicy
 from clue_core import (
     AspectContext,
     BudgetTracker,
-    CampaignRunId,
     ClaimId,
     CostCents,
     EntityId,
+    ProjectRunId,
     RunId,
     WorkerResult,
     WorkerStatus,
@@ -64,8 +64,8 @@ from clue_core import (
 )
 from clue_db import database_url, transaction
 from clue_obs.otel import (
-    ATTR_CAMPAIGN_RUN_ID,
     ATTR_ENTITY_ID,
+    ATTR_PROJECT_RUN_ID,
     apply_attributes,
     traced_step,
 )
@@ -113,7 +113,7 @@ class AccountRunStore(Protocol):
         self,
         *,
         account_run_id: RunId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId,
         tier: str,
         workspace_id: str | None,
@@ -185,7 +185,7 @@ class DbAccountRunStore:
         self,
         *,
         account_run_id: RunId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId,
         tier: str,
         workspace_id: str | None,
@@ -202,7 +202,7 @@ class DbAccountRunStore:
             await ensure_account_run(
                 conn,
                 account_run_id=account_run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier=tier,
             )
@@ -287,7 +287,7 @@ def _accumulate(left: list[Any], right: list[Any]) -> list[Any]:
 class _GraphState(TypedDict, total=False):
     # inputs (set once at run start)
     entity_id: str
-    campaign_run_id: str
+    project_run_id: str
     account_run_id: str
     tier: str
     workspace_id: str | None
@@ -375,14 +375,14 @@ class AccountResearchGraph:
         with traced_step(
             graph_node_span("plan"),
             **{
-                ATTR_CAMPAIGN_RUN_ID: state["campaign_run_id"],
+                ATTR_PROJECT_RUN_ID: state["project_run_id"],
                 ATTR_ENTITY_ID: state["entity_id"],
                 ATTR_TIER: state["tier"],
             },
         ) as span:
             plan = await self._store.begin(
                 account_run_id=RunId(UUID(state["account_run_id"])),
-                campaign_run_id=CampaignRunId(UUID(state["campaign_run_id"])),
+                project_run_id=ProjectRunId(UUID(state["project_run_id"])),
                 entity_id=EntityId(UUID(state["entity_id"])),
                 tier=state["tier"],
                 workspace_id=state.get("workspace_id"),
@@ -411,7 +411,7 @@ class AccountResearchGraph:
         for dropped in aspects[caps.max_aspect_workers :]:
             self._emit_cap_hit(
                 state["entity_id"],
-                state["campaign_run_id"],
+                state["project_run_id"],
                 aspect=dropped["aspect"],
                 depth=0,
                 reason=SpawnDenyReason.COUNT_EXCEEDED,
@@ -424,7 +424,7 @@ class AccountResearchGraph:
                 {
                     "aspect_spec": aspect,
                     "entity_id": state["entity_id"],
-                    "campaign_run_id": state["campaign_run_id"],
+                    "project_run_id": state["project_run_id"],
                     "account_run_id": state["account_run_id"],
                     "tier": state["tier"],
                 },
@@ -442,7 +442,7 @@ class AccountResearchGraph:
             aspect=spec["aspect"],
             field_keys=tuple(spec.get("field_keys", ())),
             entity_id=state["entity_id"],
-            campaign_run_id=state["campaign_run_id"],
+            project_run_id=state["project_run_id"],
             account_run_id=state["account_run_id"],
             tier=state["tier"],
             depth=0,
@@ -452,7 +452,7 @@ class AccountResearchGraph:
         # telemetry feeding M7.5/M13). The aspect worker itself is results[0]; the rest are facets.
         self._emit_fanout_summary(
             state["entity_id"],
-            state["campaign_run_id"],
+            state["project_run_id"],
             aspect=spec["aspect"],
             facet_count=len(results) - 1,
             depth_reached=depth_reached,
@@ -465,7 +465,7 @@ class AccountResearchGraph:
         aspect: str,
         field_keys: tuple[str, ...],
         entity_id: str,
-        campaign_run_id: str,
+        project_run_id: str,
         account_run_id: str,
         tier: str,
         depth: int,
@@ -480,7 +480,7 @@ class AccountResearchGraph:
         caps = self._guard.policy.caps_for(tier)
         ctx = AspectContext(
             entity_id=EntityId(UUID(entity_id)),
-            campaign_run_id=CampaignRunId(UUID(campaign_run_id)),
+            project_run_id=ProjectRunId(UUID(project_run_id)),
             run_id=RunId(UUID(account_run_id)),
             tier=tier,
             aspect=aspect,
@@ -498,7 +498,7 @@ class AccountResearchGraph:
                 }
             },
         )
-        result = await self._run_one_worker(ctx, entity_id, campaign_run_id)
+        result = await self._run_one_worker(ctx, entity_id, project_run_id)
         results = [result]
         deepest = depth
 
@@ -509,7 +509,7 @@ class AccountResearchGraph:
             tier=tier,
             budget_remaining=budget_remaining,
             entity_id=entity_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
         )
         if granted:
             subtrees = await asyncio.gather(
@@ -518,7 +518,7 @@ class AccountResearchGraph:
                         aspect=req["aspect"],
                         field_keys=tuple(req.get("field_keys", ())),
                         entity_id=entity_id,
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         account_run_id=account_run_id,
                         tier=tier,
                         depth=depth + 1,
@@ -533,7 +533,7 @@ class AccountResearchGraph:
         return results, deepest
 
     async def _run_one_worker(
-        self, ctx: AspectContext, entity_id: str, campaign_run_id: str
+        self, ctx: AspectContext, entity_id: str, project_run_id: str
     ) -> WorkerResult:
         """Run one registered worker for ``ctx.aspect`` inside a ``fan_out`` span, isolating a
         failing worker (its aspect is marked ``FAILED``; siblings continue — M7.1 AC). Only
@@ -543,7 +543,7 @@ class AccountResearchGraph:
         with traced_step(
             graph_node_span("fan_out"),
             **{
-                ATTR_CAMPAIGN_RUN_ID: campaign_run_id,
+                ATTR_PROJECT_RUN_ID: project_run_id,
                 ATTR_ENTITY_ID: entity_id,
                 ATTR_ASPECT: ctx.aspect,
                 ATTR_DEPTH: ctx.depth,
@@ -582,7 +582,7 @@ class AccountResearchGraph:
         tier: str,
         budget_remaining: CostCents | None,
         entity_id: str,
-        campaign_run_id: str,
+        project_run_id: str,
     ) -> list[dict[str, Any]]:
         """Run the worker's facet requests through the SpawnGuard, returning the granted ones and
         emitting a ``cap_hit`` for each denial. The guard's ``current_facet_count`` rises only on a
@@ -608,7 +608,7 @@ class AccountResearchGraph:
             else:
                 self._emit_cap_hit(
                     entity_id,
-                    campaign_run_id,
+                    project_run_id,
                     aspect=parent_aspect,
                     depth=child_depth,
                     reason=decision.reason,
@@ -618,7 +618,7 @@ class AccountResearchGraph:
     def _emit_cap_hit(
         self,
         entity_id: str,
-        campaign_run_id: str,
+        project_run_id: str,
         *,
         aspect: str,
         depth: int,
@@ -628,7 +628,7 @@ class AccountResearchGraph:
         with traced_step(
             SPAN_CAP_HIT,
             **{
-                ATTR_CAMPAIGN_RUN_ID: campaign_run_id,
+                ATTR_PROJECT_RUN_ID: project_run_id,
                 ATTR_ENTITY_ID: entity_id,
                 ATTR_ASPECT: aspect,
                 ATTR_DEPTH: depth,
@@ -640,7 +640,7 @@ class AccountResearchGraph:
     def _emit_fanout_summary(
         self,
         entity_id: str,
-        campaign_run_id: str,
+        project_run_id: str,
         *,
         aspect: str,
         facet_count: int,
@@ -650,7 +650,7 @@ class AccountResearchGraph:
         with traced_step(
             SPAN_FANOUT_SUMMARY,
             **{
-                ATTR_CAMPAIGN_RUN_ID: campaign_run_id,
+                ATTR_PROJECT_RUN_ID: project_run_id,
                 ATTR_ENTITY_ID: entity_id,
                 ATTR_ASPECT: aspect,
                 ATTR_FACET_COUNT: facet_count,
@@ -672,7 +672,7 @@ class AccountResearchGraph:
         with traced_step(
             graph_node_span("collect"),
             **{
-                ATTR_CAMPAIGN_RUN_ID: state["campaign_run_id"],
+                ATTR_PROJECT_RUN_ID: state["project_run_id"],
                 ATTR_ENTITY_ID: state["entity_id"],
             },
         ) as span:
@@ -699,7 +699,7 @@ class AccountResearchGraph:
         with traced_step(
             graph_node_span("handoff"),
             **{
-                ATTR_CAMPAIGN_RUN_ID: state["campaign_run_id"],
+                ATTR_PROJECT_RUN_ID: state["project_run_id"],
                 ATTR_ENTITY_ID: state["entity_id"],
             },
         ):
@@ -712,7 +712,7 @@ class AccountResearchGraph:
         entity_id: EntityId,
         *,
         tier: str,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         account_run_id: RunId | None = None,
         workspace_id: str | None = None,
@@ -731,7 +731,7 @@ class AccountResearchGraph:
         config: RunnableConfig = {"configurable": {"thread_id": str(run_id)}}
         initial: _GraphState = {
             "entity_id": str(entity_id),
-            "campaign_run_id": str(campaign_run_id),
+            "project_run_id": str(project_run_id),
             "account_run_id": str(run_id),
             "tier": tier,
             "workspace_id": workspace_id,

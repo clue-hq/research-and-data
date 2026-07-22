@@ -34,7 +34,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 import clue_obs
-from clue_core import CampaignRunId, ClaimId, EntityId, Persona
+from clue_core import ClaimId, EntityId, Persona, ProjectRunId
 from clue_db import connection, db_lifespan
 from clue_research.narrative import (
     HANDOFF_SCHEMA_VERSION,
@@ -91,9 +91,9 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
     is deliberately no write path (AC4)."""
     router = APIRouter()
 
-    @router.get("/campaign_runs/{campaign_run_id}/handoffs", response_model=HandoffListPage)
+    @router.get("/project_runs/{project_run_id}/handoffs", response_model=HandoffListPage)
     async def list_run_handoffs(
-        campaign_run_id: UUID,
+        project_run_id: UUID,
         response: Response,
         conn: ConnDep,
         workspace_id: WorkspaceDep,
@@ -109,7 +109,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         return await service.list_handoffs(
             conn,
             workspace_id=workspace_id,
-            campaign_run_id=CampaignRunId(campaign_run_id),
+            project_run_id=ProjectRunId(project_run_id),
             tier=tier,
             persona=persona,
             min_verification_pass_rate=min_verification_pass_rate,

@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from clue_core import EntityId, new_campaign_run_id, new_entity_id, new_run_id
+from clue_core import EntityId, new_entity_id, new_project_run_id, new_run_id
 from clue_research.durable import (
     AccountRunResult,
     AccountRunStatus,
@@ -44,7 +44,7 @@ class _TrackingGraph:
         entity_id: EntityId,
         *,
         tier: str,
-        campaign_run_id: Any,
+        project_run_id: Any,
         checkpointer: Any,
         account_run_id: Any = None,
         workspace_id: str | None = None,
@@ -76,7 +76,7 @@ def test_parallelism_is_capped() -> None:
 
     async def _run() -> None:
         results = await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None
+            specs, project_run_id=new_project_run_id(), checkpointer=None
         )
         assert len(results) == 6
         assert graph.peak <= 2  # the semaphore held the line
@@ -92,7 +92,7 @@ def test_results_preserve_input_order() -> None:
 
     async def _run() -> None:
         results = await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None
+            specs, project_run_id=new_project_run_id(), checkpointer=None
         )
         assert [r.entity_id for r in results] == [s.entity_id for s in specs]
 
@@ -114,9 +114,7 @@ def test_entity_lock_single_flights_the_same_entity() -> None:
     ]
 
     async def _run() -> None:
-        await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None
-        )
+        await scheduler.run_accounts(specs, project_run_id=new_project_run_id(), checkpointer=None)
         # the lock prevented two concurrent runs for the same entity...
         assert graph.same_entity_overlap is False
         # ...but distinct entities still overlapped (real parallelism, not accidental serialization)
@@ -134,9 +132,7 @@ def test_without_lock_same_entity_overlaps() -> None:
     specs = [AccountSpec(entity_id=shared, tier="top") for _ in range(3)]
 
     async def _run() -> None:
-        await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None
-        )
+        await scheduler.run_accounts(specs, project_run_id=new_project_run_id(), checkpointer=None)
         assert graph.same_entity_overlap is True
 
     run_async(_run())
@@ -196,7 +192,7 @@ def test_run_one_callback_runs_capped_in_order_and_bypasses_the_graph() -> None:
 
     async def _run() -> None:
         results = await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=run_one
+            specs, project_run_id=new_project_run_id(), checkpointer=None, run_one=run_one
         )
         assert len(results) == 6
         assert [r.entity_id for r in results] == [s.entity_id for s in specs]  # input order
@@ -225,7 +221,7 @@ def test_run_one_callback_is_single_flighted_by_the_entity_lock() -> None:
 
     async def _run() -> None:
         await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=run_one
+            specs, project_run_id=new_project_run_id(), checkpointer=None, run_one=run_one
         )
         assert run_one.same_entity_overlap is False  # the lock serialized the same entity...
         assert run_one.peak >= 2  # ...but distinct entities still overlapped
@@ -246,7 +242,7 @@ def test_run_one_callback_may_return_a_non_account_run_result() -> None:
 
     async def _run() -> None:
         results = await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=deep_run_one
+            specs, project_run_id=new_project_run_id(), checkpointer=None, run_one=deep_run_one
         )
         assert results == [f"deep:{s.entity_id}" for s in specs]
         assert graph.ran == []
@@ -263,7 +259,7 @@ def test_run_one_omitted_drives_the_graph_unchanged() -> None:
 
     async def _run() -> None:
         results = await scheduler.run_accounts(
-            specs, campaign_run_id=new_campaign_run_id(), checkpointer=None
+            specs, project_run_id=new_project_run_id(), checkpointer=None
         )
         assert [r.entity_id for r in results] == [s.entity_id for s in specs]
         assert sorted(graph.ran) == sorted(s.entity_id for s in specs)  # the graph WAS driven
@@ -291,9 +287,7 @@ def test_spec_carries_tenant_and_field_scope() -> None:
     )
 
     async def _run() -> None:
-        await scheduler.run_accounts(
-            [spec], campaign_run_id=new_campaign_run_id(), checkpointer=None
-        )
+        await scheduler.run_accounts([spec], project_run_id=new_project_run_id(), checkpointer=None)
         assert captured["tier"] == "high"
         assert captured["workspace_id"] == "client-7"
         assert captured["field_keys"] == ("account.resonance.culture",)

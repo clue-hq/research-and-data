@@ -11,7 +11,7 @@ client claims, and M5.2's synthesis calls the M0.4 ``LLMGateway`` (injected). Im
 seeds reach M6 through the **claim store** — M5 imports no sibling milestone package
 (machine-enforced by the import-linter independence contract); it consumes the M1–M4 services
 (claimstore/identity/icp/sources) directly. The concrete handlers/gateway are wired into the
-``CampaignRun`` at the ``api`` composition root.
+``ProjectRun`` at the ``api`` composition root.
 
 M5.1 lands: the ``client.*`` field set, the reverse-profiling orchestration, the claim-native
 Client-KB version ledger, and the ``REVERSE_PROFILING`` phase handler. M5.2 lands: ICP synthesis

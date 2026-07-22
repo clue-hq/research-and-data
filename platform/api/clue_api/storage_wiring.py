@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import Secrets, Settings
-from clue_core import CampaignPhase, PhaseContext, PhaseHandler, PhaseResult
+from clue_core import PhaseContext, PhaseHandler, PhaseResult, ProjectPhase
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import MetricSink
 from clue_research.compliance import DataSubjectRightsImpl
@@ -79,7 +79,7 @@ class SnapshotBindingPhaseHandler:
     (audit finding 5). The tier-2 scrape resolver — registered globally and therefore **sink-less**
     — captures into this ambient sink, and the waterfall/pipeline flush from it; ContextVars are
     task-local, so two concurrent runs never share (or swap) workspace-bound sinks. Delegates
-    ``phase`` to the inner handler so it registers under the same ``CampaignPhase``
+    ``phase`` to the inner handler so it registers under the same ``ProjectPhase``
     (last-write-wins), exactly as
     :class:`~clue_api.handoff_retention.RetentionSweepHandoffHandler` wraps the inner handoff
     handler."""
@@ -89,7 +89,7 @@ class SnapshotBindingPhaseHandler:
         self._storage = storage
         # Register under the SAME phase as the inner handler (last-write-wins) — a plain attribute,
         # not a property, so it satisfies the mutable ``PhaseHandler.phase`` protocol member.
-        self.phase: CampaignPhase = inner.phase
+        self.phase: ProjectPhase = inner.phase
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         # Fail closed on a missing workspace scope: an empty ``workspace_id`` would key every

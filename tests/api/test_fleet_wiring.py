@@ -29,12 +29,12 @@ from clue_api.fleet_wiring import (
 )
 from clue_config import Settings
 from clue_core import (
-    CampaignPhase,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
+    new_project_run_id,
 )
 from clue_fleet import (
     FleetTaskKind,
@@ -43,11 +43,11 @@ from clue_fleet import (
     default_tier_priority,
     enqueue_drive,
 )
-from clue_research.durable import CampaignRun, CampaignRunStatus, PhaseHandlerRegistry
+from clue_research.durable import PhaseHandlerRegistry, ProjectRun, ProjectRunStatus
 from clue_research.icp.rubric import TierBand, TierCutoffs
 from tests.api.test_storage_wiring import FakeStorage
 from tests.db.conftest import run_async
-from tests.durable.conftest import FakeCampaignRunStore
+from tests.durable.conftest import FakeProjectRunStore
 from tests.fleet.conftest import FakeLeaseStore, FakeTaskQueue
 
 
@@ -122,8 +122,8 @@ def test_default_tier_priority_alone_cannot_rank_rubric_names() -> None:
 # --- (d) the fleet-main composition builds a worker + driver from settings, no live redis ---
 
 
-def test_build_fleet_run_driver_is_a_campaign_run() -> None:
-    assert isinstance(build_fleet_run_driver(), CampaignRun)
+def test_build_fleet_run_driver_is_a_project_run() -> None:
+    assert isinstance(build_fleet_run_driver(), ProjectRun)
 
 
 def test_build_account_lock_factory_needs_no_live_redis_at_construction() -> None:
@@ -162,7 +162,7 @@ class _RecordingQueue:
 
 def test_enqueue_run_drive_offers_a_reopenable_drive_run() -> None:
     queue = _RecordingQueue()
-    run_id = new_campaign_run_id()
+    run_id = new_project_run_id()
     ok = run_async(enqueue_run_drive(run_id, queue=queue))  # type: ignore[arg-type]
     assert ok
     (call,) = queue.calls
@@ -179,7 +179,7 @@ class _StubPhaseHandler:
     per-``(client, icp)`` handler the enqueuing app registers at run start (e.g. DEEP), so the boot
     registry can be driven offline without the DB-bound REVIEW resolver."""
 
-    def __init__(self, phase: CampaignPhase) -> None:
+    def __init__(self, phase: ProjectPhase) -> None:
         self.phase = phase
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
@@ -189,35 +189,35 @@ class _StubPhaseHandler:
 _STUB_IS_A_PHASE_HANDLER: type[PhaseHandler] = _StubPhaseHandler
 
 
-def test_register_boot_handlers_registers_review_and_skips_per_campaign_phases() -> None:
+def test_register_boot_handlers_registers_review_and_skips_per_project_phases() -> None:
     """The boot composition registers the one process-wide-composable handler (REVIEW) and skips
     the per-``(client, icp)`` / not-yet-integrable phases (DEEP/VERIFICATION/HANDOFF) — so the
     registry is non-empty (the worker starts) without inventing stubs for campaign handlers."""
     registry = PhaseHandlerRegistry()
     phases = register_boot_handlers(_settings(), storage=FakeStorage(), registry=registry)
-    assert CampaignPhase.REVIEW in phases
-    assert registry.get(CampaignPhase.REVIEW) is not None
-    for skipped in (CampaignPhase.DEEP, CampaignPhase.VERIFICATION, CampaignPhase.HANDOFF):
+    assert ProjectPhase.REVIEW in phases
+    assert registry.get(ProjectPhase.REVIEW) is not None
+    for skipped in (ProjectPhase.DEEP, ProjectPhase.VERIFICATION, ProjectPhase.HANDOFF):
         assert skipped not in phases
     # storage=None is the written opt-out; the surface stays composable without a backend.
     none_phases = register_boot_handlers(_settings(), storage=None, registry=PhaseHandlerRegistry())
-    assert CampaignPhase.REVIEW in none_phases
+    assert ProjectPhase.REVIEW in none_phases
 
 
 def test_boot_registry_drives_a_run_through_the_fleet_worker() -> None:
     """End-to-end (fakes for queue/lease, in-memory run store): the registry that
     ``register_boot_handlers`` populated drives a run through the real :class:`ProjectRunWorker` →
-    :class:`CampaignRun` loop. A boot-/run-registered phase advances; the next phase — with no
+    :class:`ProjectRun` loop. A boot-/run-registered phase advances; the next phase — with no
     handler — makes the drive stop with ``outcome=error`` (the documented fail-loud behavior)."""
 
     async def scenario() -> None:
         registry = PhaseHandlerRegistry()
         phases = register_boot_handlers(_settings(), storage=FakeStorage(), registry=registry)
-        assert CampaignPhase.REVIEW in phases  # the boot contribution to the registry
+        assert ProjectPhase.REVIEW in phases  # the boot contribution to the registry
         # A run-start handler (mirrors DEEP being registered per run) so the drive is DB-free.
-        registry.register(_StubPhaseHandler(CampaignPhase.REVERSE_PROFILING))
+        registry.register(_StubPhaseHandler(ProjectPhase.REVERSE_PROFILING))
 
-        machine = CampaignRun(store=FakeCampaignRunStore(), registry=registry)
+        machine = ProjectRun(store=FakeProjectRunStore(), registry=registry)
         run_id = await machine.start(workspace_id="ws", icp_key="icp", icp_version=1)
 
         queue = FakeTaskQueue()
@@ -237,8 +237,8 @@ def test_boot_registry_drives_a_run_through_the_fleet_worker() -> None:
 
         run = await machine.status(run_id)
         # the registered REVERSE_PROFILING advanced; ICP_CONFIRMED (no handler) is where it stopped.
-        assert run.phase is CampaignPhase.ICP_CONFIRMED
-        assert run.status is CampaignRunStatus.ACTIVE
+        assert run.phase is ProjectPhase.ICP_CONFIRMED
+        assert run.status is ProjectRunStatus.ACTIVE
         task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
         assert task.result_ref.get("outcome") == "error"  # unregistered next phase → fail-loud
 
@@ -250,7 +250,7 @@ def test_empty_boot_registry_refuses_to_start() -> None:
     task it claims. A non-empty set passes the gate."""
     with pytest.raises(NoBootHandlersRegistered):
         _require_registered(frozenset())
-    _require_registered(frozenset({CampaignPhase.REVIEW}))  # non-empty → no raise
+    _require_registered(frozenset({ProjectPhase.REVIEW}))  # non-empty → no raise
 
 
 # --- the background orphan-blob sweep task (Fix 5) -----------------------------------------------

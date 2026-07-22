@@ -27,8 +27,8 @@ from clue_core import (
     ResearchMode,
     SourceManifest,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import register_field
@@ -121,7 +121,7 @@ def test_real_worker_runs_inside_account_research_graph() -> None:
             result = await graph.run(
                 acct,
                 tier="top",
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 checkpointer=InMemorySaver(),
             )
 

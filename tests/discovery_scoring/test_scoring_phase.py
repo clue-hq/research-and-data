@@ -17,16 +17,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignPhase,
     EntityType,
     ExtractionMethod,
     ICPCreatedFrom,
     PhaseContext,
     PhaseStatus,
+    ProjectPhase,
     ResearchMode,
     account_claim,
     discovery_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
@@ -84,8 +84,8 @@ def _rubric() -> ScoringRubric:
 
 def _ctx(*, icp_version: int = 1) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.SCORING,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.SCORING,
         workspace_id=CLIENT,
         icp_key=ICP,
         icp_version=icp_version,

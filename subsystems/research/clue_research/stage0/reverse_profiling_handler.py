@@ -3,7 +3,7 @@
 M5 owns the campaign-run's first phase (Doc C §4). The handler *implements* the frozen
 :class:`~clue_core.execution.PhaseHandler` protocol from ``core`` (Beat-0) — it imports
 ``core``, never M7's ``durable``; the concrete instance is constructed (with the injected M9 judge
-/ M0.4 gateway) and registered into the ``CampaignRun`` state machine at the ``api`` composition
+/ M0.4 gateway) and registered into the ``ProjectRun`` state machine at the ``api`` composition
 root, which dispatches by the declared ``phase`` attribute without importing this package.
 
 The handler is a thin durable wrapper: it opens its own transaction, derives a **stable run id**
@@ -22,12 +22,12 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import JsonValue
 
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     FaithfulnessJudge,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     RunId,
 )
 from clue_db import transaction
@@ -35,12 +35,12 @@ from clue_research.stage0.client_kb import reverse_profile
 from clue_research.stage0.types import ClientInput
 
 
-def reverse_profiling_run_id(campaign_run_id: CampaignRunId) -> RunId:
+def reverse_profiling_run_id(project_run_id: ProjectRunId) -> RunId:
     """Derive the deterministic per-client research run id for a campaign's reverse-profiling phase.
 
     Stable across retries/restarts (no clock, no randomness — like ``core.idempotency``), so a
     re-entered phase reuses it and the waterfall/material/marker writes deduplicate."""
-    return RunId(uuid5(NAMESPACE_URL, f"reverse_profiling:{campaign_run_id}"))
+    return RunId(uuid5(NAMESPACE_URL, f"reverse_profiling:{project_run_id}"))
 
 
 def _client_input_from_params(params: dict[str, JsonValue]) -> ClientInput:
@@ -61,14 +61,14 @@ def _client_input_from_params(params: dict[str, JsonValue]) -> ClientInput:
 class ReverseProfilingHandler:
     """Implements :class:`~clue_core.execution.PhaseHandler` for ``REVERSE_PROFILING``."""
 
-    phase = CampaignPhase.REVERSE_PROFILING
+    phase = ProjectPhase.REVERSE_PROFILING
 
     def __init__(self, *, judge: FaithfulnessJudge | None = None) -> None:
         self._judge = judge
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         client_input = _client_input_from_params(ctx.params)
-        run_id = reverse_profiling_run_id(ctx.campaign_run_id)
+        run_id = reverse_profiling_run_id(ctx.project_run_id)
 
         async with transaction() as conn:
             result = await reverse_profile(

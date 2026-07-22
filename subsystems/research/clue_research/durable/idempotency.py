@@ -9,7 +9,7 @@ restartable: a single Postgres ``idempotency_ledger`` row per derived key, and a
 
 The two key *shapes* are the stable contract and live in ``core`` (pure, dependency-free):
 :func:`~clue_core.idempotency.account_step_key` ``(account_run, entity, field, tier)`` and
-:func:`~clue_core.idempotency.phase_key` ``(campaign_run, phase)``. The ledger *backend*
+:func:`~clue_core.idempotency.phase_key` ``(project_run, phase)``. The ledger *backend*
 sits behind the :class:`IdempotencyStore` seam, so the dedup mechanism is swappable (Postgres now,
 Temporal-native activity dedup later) without changing a single caller — exactly the conventions §2
 replaceability rule the rest of M7 follows.
@@ -32,8 +32,8 @@ re-executes; on a crash the row is left ``in_progress`` and recovered after a st
 
 Scope of the guarantee: an **account-step** is exactly-once end to end when its caller writes the
 claim and finishes the ledger in one transaction (M8). The **phase** wiring in
-:class:`~clue_research.durable.campaign.CampaignRun` brackets the finalize on ``phase_key`` but
-keeps the ``campaign_phase_checkpoint`` as the authoritative "phase done" record, so a crash in the
+:class:`~clue_research.durable.project.ProjectRun` brackets the finalize on ``phase_key`` but
+keeps the ``project_phase_checkpoint`` as the authoritative "phase done" record, so a crash in the
 narrow window between the durable ``COMMITTED`` checkpoint and the ledger ``succeed`` can leave a
 (nominal) phase charge unrecorded — see ``_finalize_phase`` for the precise boundary.
 """
@@ -277,7 +277,7 @@ class IdempotencyStore(Protocol):
 class DbIdempotencyStore:
     """The Postgres :class:`IdempotencyStore` — the production dedup path (M7.4).
 
-    Each method runs in its own ``db.transaction()`` (mirroring :class:`DbCampaignRunStore`). The
+    Each method runs in its own ``db.transaction()`` (mirroring :class:`DbProjectRunStore`). The
     ``claim`` and the terminal ``succeed`` / ``fail`` are deliberately separate transactions: a
     crash *between* a claim and its finish leaves the row ``in_progress``, recovered by the next
     claimant's staleness check — there is no orphan. For crash-atomicity of the *effect itself*

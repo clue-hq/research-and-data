@@ -29,10 +29,10 @@ from clue_core.enums import (
 )
 from clue_core.field import FieldKey
 from clue_core.primitives import (
-    CampaignRunId,
     ClaimId,
     Confidence,
     EntityId,
+    ProjectRunId,
     SourceTier,
     UnitInterval,
     UtcDatetime,
@@ -191,7 +191,7 @@ class AccountHandoff(BaseModel):
     ``provenance_index`` that makes "every fact links to its source" literally true.
     Assembly is M12; this is the shape only.
 
-    The ``icp_spec_version`` / ``campaign_run_id`` / ``assembled_at`` stamps are **additive +
+    The ``icp_spec_version`` / ``project_run_id`` / ``assembled_at`` stamps are **additive +
     defaulted** (phase-3 pre-flight contract-delta) so M13's existing reads don't break, but M12's
     assembler MUST set them — ``(account_entity_id, icp_spec_version)`` is the handoff scope. They
     are added here, not as M12-runtime extras, because the model is ``frozen, extra="forbid"`` and
@@ -210,7 +210,7 @@ class AccountHandoff(BaseModel):
     # phase-3 pre-flight additive stamps — M12's assembler sets the first three (the scope key +
     # provenance of *when/which run* assembled this); defaulted so M13's reads stay back-compatible.
     icp_spec_version: int | None = None  # with account_entity_id, the handoff scope
-    campaign_run_id: CampaignRunId | None = None
+    project_run_id: ProjectRunId | None = None
     assembled_at: UtcDatetime | None = None
     coverage_confidence: UnitInterval | None = (
         None  # M6.5 coverage estimate (confidence, not a guarantee)

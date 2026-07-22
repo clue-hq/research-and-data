@@ -193,18 +193,18 @@ class ICPCreatedFrom(StrEnum):
 # the milestone that owns the behaviour (M7 ``durable`` / M9 ``verification``) without breaking
 # worker independence (the import-linter contract). The *implementations* and the mirrored DB enum
 # types land in the owning milestone branch; these Python members are the shared vocabulary the
-# branches fork against. (M7's ``campaign_run`` / ``account_run`` lifecycle enums are NOT here —
+# branches fork against. (M7's ``project_run`` / ``account_run`` lifecycle enums are NOT here —
 # they are table-column taxonomies internal to ``durable``, added by the M7 branch with its tables.)
 # ---------------------------------------------------------------------------
 
 
-class CampaignPhase(StrEnum):
+class ProjectPhase(StrEnum):
     """The campaign-run phase sequence (Doc C §4 / conventions §3) — the ordered states the M7.3
     state machine advances through. Each phase is owned by a registered ``PhaseHandler`` (M5 owns
     ``REVERSE_PROFILING``/``ICP_CONFIRMED``; M6 ``DISCOVERY``/``SCORING``/``TIER_CHECKPOINT``; M8
     ``DEEP``; M9 ``VERIFICATION``; M13 ``REVIEW`` — the Tier-1 human gate; M12 ``HANDOFF``). Single
     source of truth for the phase tokens:
-    ``obs.spans.CAMPAIGN_PHASES`` is derived from this enum, and the M7 ``campaign_run.phase`` DB
+    ``obs.spans.PROJECT_PHASES`` is derived from this enum, and the M7 ``project_run.phase`` DB
     enum mirrors it (parity-tested in the M7 branch)."""
 
     REVERSE_PROFILING = "reverse_profiling"
@@ -241,11 +241,15 @@ class WorkerStatus(StrEnum):
 
 class IdempotencyScope(StrEnum):
     """The two idempotency-key shapes the durable layer keys on (M7.4): a per-account research
-    *step* ``(account_run, entity, field, tier)`` and a per-campaign *phase* ``(campaign_run,
-    phase)``. See :mod:`clue_core.idempotency` for the pure key-derivation helpers."""
+    *step* ``(account_run, entity, field, tier)`` and a per-run *phase* ``(project_run, phase)``.
+    See :mod:`clue_core.idempotency` for the pure key-derivation helpers.
+
+    The §1a stage-2 rename flipped the member NAME (``CAMPAIGN_PHASE`` → ``PROJECT_PHASE``); the
+    value string is durable ledger data, not vocabulary — see the pin below."""
 
     ACCOUNT_STEP = "account_step"
-    CAMPAIGN_PHASE = "campaign_phase"
+    # value frozen: baked into ledger keys at rest — never rename; see PB-rename playbook §4.5
+    PROJECT_PHASE = "campaign_phase"
 
 
 class BudgetScope(StrEnum):

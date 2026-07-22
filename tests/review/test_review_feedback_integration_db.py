@@ -26,11 +26,11 @@ from clue_core import (
     ReviewAction,
     ReviewRejectReason,
     account_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import insert_claim
-from clue_research.durable.campaign_run import ensure_campaign_run
+from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_research.review.disposition_store import ReviewDispositionEmitterImpl
 
@@ -76,10 +76,10 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
             )
             orig = _orig(acct)
             await insert_claim(conn, orig)
-            run_id = new_campaign_run_id()
-            await ensure_campaign_run(
+            run_id = new_project_run_id()
+            await ensure_project_run(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 workspace_id=_CLIENT,
                 icp_key=_ICP_KEY,
                 icp_version=_ICP_VERSION,
@@ -93,7 +93,7 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
             assert isinstance(surface._emit, ReviewDispositionEmitterImpl)
 
             session = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=run_id, workspace_id=_CLIENT
+                account_entity_id=acct, project_run_id=run_id, workspace_id=_CLIENT
             )
             # A REJECT carries a reason_code; the mirrored disposition must preserve the REAL one —
             # proving the emitter read the committed ``review_action`` row, not the ``(None, now)``

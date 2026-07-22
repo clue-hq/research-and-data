@@ -9,7 +9,7 @@ ledger + PB-B1 lease/queue underneath; only the phase *bodies* are stubs.
 finding #4): exactly-once is proven for **DB effects and the ledger** — the
 ``exit_gate_spend_journal`` row and the ledger ``succeeded`` finish commit in ONE transaction, so
 every ``(account, field, tier)`` key has exactly one journal row and one ``succeeded`` ledger
-row, and every ``(campaign_run, phase)`` key one ``succeeded`` ledger row, despite the kill. The
+row, and every ``(project_run, phase)`` key one ``succeeded`` ledger row, despite the kill. The
 **provider boundary is at-least-once**: a kill between provider-accept and ledger-commit repeats
 that call on takeover — *observably*, via the second ``exit_gate_provider_calls`` journal the stub
 writes in its own committed transaction *before* the "paid" call, and bounded by the in-flight
@@ -32,7 +32,7 @@ from sqlalchemy import text
 from tests.fleet.conftest import run_async
 from tests.fleet.exit_gate_harness import STUB_COST, step_key_for
 
-from clue_core import CampaignRunId, new_campaign_run_id
+from clue_core import ProjectRunId, new_project_run_id
 from clue_core.idempotency import phase_key
 from clue_db import db_lifespan
 from clue_fleet import (
@@ -44,10 +44,10 @@ from clue_fleet import (
 )
 from clue_research.durable import (
     PHASE_SEQUENCE,
-    CampaignRun,
-    CampaignRunStatus,
-    DbCampaignRunStore,
+    DbProjectRunStore,
     IdempotencyStatus,
+    ProjectRun,
+    ProjectRunStatus,
     get_idempotency_ledger,
 )
 
@@ -92,18 +92,18 @@ _CREATE_PROVIDER_CALLS = text(
 )
 
 
-async def _setup(run_id: CampaignRunId) -> None:
+async def _setup(run_id: ProjectRunId) -> None:
     async with db_lifespan() as engine:
         async with engine.begin() as conn:
             await conn.execute(_CREATE_JOURNAL)
             await conn.execute(_CREATE_PROVIDER_CALLS)
         # The real start path (idempotent on the minted id) + the drive offer.
-        machine = CampaignRun(store=DbCampaignRunStore())
+        machine = ProjectRun(store=DbProjectRunStore())
         await machine.start(
             workspace_id="ws-exit-gate",
             icp_key="icp-exit-gate",
             icp_version=1,
-            campaign_run_id=run_id,
+            project_run_id=run_id,
         )
         await enqueue_drive(DbTaskQueue(), run_id)
 
@@ -119,7 +119,7 @@ async def _execute(sql: str) -> None:
         await conn.execute(text(sql))
 
 
-async def _done_account_jobs(run_id: CampaignRunId) -> int:
+async def _done_account_jobs(run_id: ProjectRunId) -> int:
     rows = await _query(
         "SELECT count(*) FROM fleet_task WHERE project_run_id = :run "
         "AND kind = 'account_job' AND status = 'done'",
@@ -128,12 +128,12 @@ async def _done_account_jobs(run_id: CampaignRunId) -> int:
     return int(rows[0][0])
 
 
-async def _run_status(run_id: CampaignRunId) -> str | None:
-    rows = await _query("SELECT status FROM campaign_run WHERE id = :run", run=run_id)
+async def _run_status(run_id: ProjectRunId) -> str | None:
+    rows = await _query("SELECT status FROM project_run WHERE id = :run", run=run_id)
     return str(rows[0][0]) if rows else None
 
 
-async def _assert_lease_blocks_second_driver(run_id: CampaignRunId, holder: str) -> None:
+async def _assert_lease_blocks_second_driver(run_id: ProjectRunId, holder: str) -> None:
     """The takeover gate, observed live: the killed worker's lease is still live, and an
     acquire by another worker id fails while it is."""
     async with db_lifespan() as engine:
@@ -157,7 +157,7 @@ async def _assert_lease_blocks_second_driver(run_id: CampaignRunId, holder: str)
             await conn.close()
 
 
-async def _assert_exactly_once(run_id: CampaignRunId, worker_a: str, worker_b: str) -> None:
+async def _assert_exactly_once(run_id: ProjectRunId, worker_a: str, worker_b: str) -> None:
     # 1. The spend journal — the airtight no-double-spend record (one row per key, ever).
     rows = await _query(
         "SELECT step_key, count(*) FROM exit_gate_spend_journal WHERE run_id = :run "
@@ -215,7 +215,7 @@ async def _assert_exactly_once(run_id: CampaignRunId, worker_a: str, worker_b: s
             row = await get_idempotency_ledger(conn, step_key_for(run_id, i))
             assert row is not None and row.status is IdempotencyStatus.SUCCEEDED
             assert row.cost_cents_charged == STUB_COST
-        # 3. The phase ledger: every (campaign_run, phase) key succeeded exactly once.
+        # 3. The phase ledger: every (project_run, phase) key succeeded exactly once.
         for phase in PHASE_SEQUENCE:
             row = await get_idempotency_ledger(conn, phase_key(run_id, phase))
             assert row is not None and row.status is IdempotencyStatus.SUCCEEDED, (
@@ -240,7 +240,7 @@ async def _assert_exactly_once(run_id: CampaignRunId, worker_a: str, worker_b: s
     assert drive[0][1] == "completed"
 
 
-def _spawn(worker_id: str, run_id: CampaignRunId, log_path: Path) -> subprocess.Popen[bytes]:
+def _spawn(worker_id: str, run_id: ProjectRunId, log_path: Path) -> subprocess.Popen[bytes]:
     env = {
         **os.environ,
         "EXIT_GATE_ACCOUNTS": str(N_ACCOUNTS),
@@ -260,7 +260,7 @@ def _spawn(worker_id: str, run_id: CampaignRunId, log_path: Path) -> subprocess.
 
 
 def test_kill9_at_40_percent_resumes_exactly_once(tmp_path: Path) -> None:
-    run_id = new_campaign_run_id()
+    run_id = new_project_run_id()
     run_async(_setup(run_id))
 
     worker_a_log = tmp_path / "worker-a.log"
@@ -278,7 +278,7 @@ def test_kill9_at_40_percent_resumes_exactly_once(tmp_path: Path) -> None:
             if done >= KILL_AT:
                 break
             status = run_async(_run_status(run_id))
-            assert status != CampaignRunStatus.COMPLETED.value, (
+            assert status != ProjectRunStatus.COMPLETED.value, (
                 "run completed before the kill point — raise EXIT_GATE_JOB_SLEEP_S"
             )
             assert time.monotonic() < deadline, (
@@ -299,7 +299,7 @@ def test_kill9_at_40_percent_resumes_exactly_once(tmp_path: Path) -> None:
         deadline = time.monotonic() + 120
         while True:
             status = run_async(_run_status(run_id))
-            if status == CampaignRunStatus.COMPLETED.value:
+            if status == ProjectRunStatus.COMPLETED.value:
                 break
             assert proc_b.poll() is None, (
                 f"worker B died; log:\n{worker_b_log.read_text(errors='replace')}"

@@ -41,7 +41,7 @@ durable writes are still un-fenced during the cancellation-latency window, the s
 documented resume-path residual, bounded by the M7 ledgers + the per-entity locks.
 
 The worker never composes phase handlers: it drives the injected :class:`RunDriver` seam, which
-:class:`~clue_research.durable.CampaignRun` satisfies structurally (asserted below). The
+:class:`~clue_research.durable.ProjectRun` satisfies structurally (asserted below). The
 production composition (real handlers, budget engine, ledger) is ``clue_api`` wiring and lands
 at integration (treaty §3.4); tests compose stub-handler drivers.
 """
@@ -56,7 +56,7 @@ from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 
-from clue_core import CampaignRunId
+from clue_core import ProjectRunId
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import DEFAULT_LEASE_TTL, DbLeaseStore, LeaseStore
 from clue_fleet.queue import (
@@ -66,7 +66,7 @@ from clue_fleet.queue import (
     TaskQueue,
 )
 from clue_obs import get_logger
-from clue_research.durable import CampaignRun, CampaignRunRow, CampaignRunStatus
+from clue_research.durable import ProjectRun, ProjectRunRow, ProjectRunStatus
 
 log = get_logger("clue_fleet.worker")
 
@@ -76,15 +76,15 @@ log = get_logger("clue_fleet.worker")
 # enqueue by the resume surface); ``stalled`` is an ACTIVE run that made no progress (awaiting a
 # checkpoint submission), mirroring ``run_to_completion``'s no-progress guard.
 _TERMINAL_OUTCOMES = {
-    CampaignRunStatus.COMPLETED: "completed",
-    CampaignRunStatus.FAILED: "failed",
-    CampaignRunStatus.PAUSED: "paused",
+    ProjectRunStatus.COMPLETED: "completed",
+    ProjectRunStatus.FAILED: "failed",
+    ProjectRunStatus.PAUSED: "paused",
 }
 
 
 @runtime_checkable
 class RunDriver(Protocol):
-    """The slice of :class:`~clue_research.durable.CampaignRun` the worker drives (PB-B1).
+    """The slice of :class:`~clue_research.durable.ProjectRun` the worker drives (PB-B1).
 
     A structural seam (conventions §2) so the loop is testable with a fake driver; the real
     state machine satisfies it (asserted at the bottom of this module). The worker owns the
@@ -92,15 +92,13 @@ class RunDriver(Protocol):
     fenced on lease loss. Fencing cancels the in-flight ``advance`` immediately (spec §2.3); the
     between-phase ``lease_lost`` check in :meth:`ProjectRunWorker._drive` is only a cheap belt.
 
-    The ``campaign_run_id`` parameter name is a deliberate stage-1 exception: it is checked for
-    parameter-name compatibility by the static ``_CAMPAIGN_RUN_IS_A_RUN_DRIVER`` conformance
-    assertion against the untouchable ``durable.CampaignRun``, which B1 may not edit."""
+    The ``project_run_id`` parameter name is checked for parameter-name compatibility by the
+    static ``_PROJECT_RUN_IS_A_RUN_DRIVER`` conformance assertion against ``durable.ProjectRun``
+    (§1a stage-2 rename complete — one vocabulary, no exceptions)."""
 
-    # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
-    async def status(self, campaign_run_id: CampaignRunId) -> CampaignRunRow: ...
+    async def status(self, project_run_id: ProjectRunId) -> ProjectRunRow: ...
 
-    # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
-    async def advance(self, campaign_run_id: CampaignRunId) -> CampaignRunRow: ...
+    async def advance(self, project_run_id: ProjectRunId) -> ProjectRunRow: ...
 
 
 class ProjectRunWorker:
@@ -201,7 +199,7 @@ class ProjectRunWorker:
             self._heartbeat(run_id, task.task_id, lease_lost, t_acquire)
         )
         outcome: str
-        run: CampaignRunRow | None
+        run: ProjectRunRow | None
         try:
             done, _pending = await asyncio.wait(
                 {drive, heartbeat}, return_when=asyncio.FIRST_COMPLETED
@@ -291,8 +289,8 @@ class ProjectRunWorker:
         )
 
     async def _drive(
-        self, run_id: CampaignRunId, lease_lost: asyncio.Event
-    ) -> tuple[str, CampaignRunRow | None]:
+        self, run_id: ProjectRunId, lease_lost: asyncio.Event
+    ) -> tuple[str, ProjectRunRow | None]:
         """Advance the run phase-by-phase until it rests. Returns the drive outcome and the last
         observed run row (``None`` only if the first status read raised). Lease loss now fences by
         *cancelling* this coroutine mid-phase (``_drive_task`` supervises the heartbeat); the
@@ -317,7 +315,7 @@ class ProjectRunWorker:
                 return "stalled", run
 
     async def _heartbeat(
-        self, run_id: CampaignRunId, task_id: UUID, lease_lost: asyncio.Event, t_acquire: float
+        self, run_id: ProjectRunId, task_id: UUID, lease_lost: asyncio.Event, t_acquire: float
     ) -> None:
         """The supervised, authoritative lease heartbeat (spec §2.3 — replaces cooperative
         fencing). Renews the lease each beat; when it can no longer prove ownership it sets
@@ -396,7 +394,7 @@ class ProjectRunWorker:
             sleep_for = self._heartbeat_interval
             await self._touch(task_id, run_id)
 
-    async def _touch(self, task_id: UUID, run_id: CampaignRunId) -> None:
+    async def _touch(self, task_id: UUID, run_id: ProjectRunId) -> None:
         """Re-stamp the drive-task claim so a live long drive never looks orphaned; failures are
         logged and ignored (holder-guarded, recoverable — not a fencing matter)."""
         try:
@@ -416,7 +414,7 @@ class ProjectRunWorker:
 
 
 async def enqueue_drive(
-    queue: TaskQueue, project_run_id: CampaignRunId, *, priority: int = 0
+    queue: TaskQueue, project_run_id: ProjectRunId, *, priority: int = 0
 ) -> bool:
     """Offer a run to the fleet: enqueue its ``drive_run`` task (dedup key = the run id — one
     drive task per run at a time; a queued/claimed one is a no-op). ``reopen_terminal``: a
@@ -435,4 +433,4 @@ async def enqueue_drive(
 # Static conformance (the ``deep/handler.py`` pattern): the real state machine must satisfy the
 # seam the worker is typed against, so fake-driven loop tests exercise the surface the
 # integration wiring will bind.
-_CAMPAIGN_RUN_IS_A_RUN_DRIVER: type[RunDriver] = CampaignRun
+_PROJECT_RUN_IS_A_RUN_DRIVER: type[RunDriver] = ProjectRun

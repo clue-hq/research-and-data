@@ -36,11 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     BudgetScope,
-    CampaignRunId,
     ClaimId,
     CostCents,
     EntityId,
     IdempotencyScope,
+    ProjectRunId,
     RunId,
     idempotency_key,
 )
@@ -106,7 +106,7 @@ class ExactlyOnceSpend(Protocol):
         conn: AsyncConnection,
         *,
         key: str,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         account_run_id: RunId,
         entity_id: EntityId,
         work: Callable[[AsyncConnection], Awaitable[R]],
@@ -166,7 +166,7 @@ class DbExactlyOnceSpend:
         conn: AsyncConnection,
         *,
         key: str,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         account_run_id: RunId,
         entity_id: EntityId,
         work: Callable[[AsyncConnection], Awaitable[R]],
@@ -194,7 +194,7 @@ class DbExactlyOnceSpend:
         await self._budget.record(
             cost_cents=result.cost_cents,
             scope=BudgetScope.ACCOUNT,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             entity_id=entity_id,
             account_run_id=account_run_id,
             conn=conn,

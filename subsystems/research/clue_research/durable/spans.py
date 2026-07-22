@@ -1,7 +1,7 @@
 """Span names for the durable-execution layer (M7) — owned here, not in ``obs`` (frozen, M0.5).
 
 ``obs/spans.py`` is the frozen shared surface: it owns the *campaign-phase* tokens
-(``phase_span`` / ``CAMPAIGN_PHASES``, derived from ``core.CampaignPhase``) that every milestone's
+(``phase_span`` / ``PROJECT_PHASES``, derived from ``core.ProjectPhase``) that every milestone's
 phase handler shares. The *per-account graph* node spans (``plan`` / ``fan_out`` / ``collect``) and
 the budget ``cap_hit`` event are M7-internal, so their names live here and are passed to the stable
 ``obs.traced_step`` seam — exactly the pattern the spec prescribes (M7.1 "named trace spans

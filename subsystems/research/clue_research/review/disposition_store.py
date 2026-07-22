@@ -18,7 +18,7 @@ review action), then resolved to source/field keys via ``claimstore.claims_by_id
 later config change can't rewrite history (spec §M13.2 AC3).
 
 ``review`` may import shared services (``claimstore``/``identity``) + ``core``/``obs``/``db`` but
-**not** ``durable``/``narrative`` (the worker-independence contract) — so the ``campaign_run`` ICP
+**not** ``durable``/``narrative`` (the worker-independence contract) — so the ``project_run`` ICP
 context and the ``account_handoff`` provenance index are read here via **raw SQL**, not by importing
 those packages. Idempotency is the DB's: ``record`` is ``INSERT … ON CONFLICT (natural_key) DO
 NOTHING`` and the provenance snapshot is keyed 1:1 on ``disposition_id``.
@@ -35,10 +35,10 @@ from sqlalchemy import ARRAY, String, bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignRunId,
     ClaimId,
     EntityId,
     EntityType,
+    ProjectRunId,
     UtcDatetime,
     serialize_value_json,
 )
@@ -74,7 +74,7 @@ _RESOLVE_CONFIDENCE = DEFAULT_DISPOSITION_POLICY.auto_merge_threshold
 
 
 class DispositionCaptureError(RuntimeError):
-    """A review action could not be captured (e.g. its ``campaign_run`` is missing, so the
+    """A review action could not be captured (e.g. its ``project_run`` is missing, so the
     disposition can't be tenant-scoped). The ``review_action`` audit row is the durable backstop —
     M13.2 can re-mirror it — so failing loud here never loses the signal."""
 
@@ -85,12 +85,12 @@ _INSERT_DISPOSITION = text(
     """
     INSERT INTO disposition (
         id, disposition_type, entity_id, entity_type, account_entity_id, claim_id,
-        campaign_run_id, workspace_id, icp_key, icp_spec_version, actor, origin,
+        project_run_id, workspace_id, icp_key, icp_spec_version, actor, origin,
         review_action_id, reason_code, detail, occurred_at, natural_key
     ) VALUES (
         :id, CAST(:disposition_type AS disposition_type), :entity_id,
         CAST(:entity_type AS entity_type), :account_entity_id, :claim_id,
-        :campaign_run_id, :workspace_id, :icp_key, :icp_spec_version,
+        :project_run_id, :workspace_id, :icp_key, :icp_spec_version,
         CAST(:actor AS disposition_actor), CAST(:origin AS disposition_origin),
         :review_action_id, :reason_code, CAST(:detail AS jsonb), :occurred_at, :natural_key
     )
@@ -114,10 +114,10 @@ _INSERT_PROVENANCE = text(
     bindparam("claim_ids", type_=ARRAY(String())),
 )
 
-# ICP scope from the run (review can't import ``durable``; this mirrors ``get_campaign_run``'s
+# ICP scope from the run (review can't import ``durable``; this mirrors ``get_project_run``'s
 # read).
 _SELECT_RUN_CONTEXT = text(
-    "SELECT workspace_id, icp_key, icp_version FROM campaign_run WHERE id = :id"
+    "SELECT workspace_id, icp_key, icp_version FROM project_run WHERE id = :id"
 )
 
 # The mirrored M13.1 audit row — the real ``occurred_at`` (``acted_at``) + the typed reject reason.
@@ -127,7 +127,7 @@ _SELECT_REVIEW_ACTION = text("SELECT reason_code, acted_at FROM review_action WH
 # the latest assembly of this account. ``review`` can't import ``narrative``; this reads the table.
 _SELECT_HANDOFF_CONTEXT = text(
     """
-    SELECT icp_key, icp_spec_version, campaign_run_id,
+    SELECT icp_key, icp_spec_version, project_run_id,
            ARRAY(
                SELECT jsonb_object_keys(
                    COALESCE(payload -> 'handoff' -> 'provenance_index', '{}'::jsonb)
@@ -153,7 +153,7 @@ _TOMBSTONE_CONTACT = text(
 class _HandoffContext(NamedTuple):
     icp_key: str | None
     icp_spec_version: int | None
-    campaign_run_id: CampaignRunId | None
+    project_run_id: ProjectRunId | None
     contributing_claim_ids: tuple[ClaimId, ...]
 
 
@@ -176,7 +176,7 @@ async def record_disposition(
                 "entity_type": disposition.entity_type.value,
                 "account_entity_id": disposition.account_entity_id,
                 "claim_id": disposition.claim_id,
-                "campaign_run_id": disposition.campaign_run_id,
+                "project_run_id": disposition.project_run_id,
                 "workspace_id": disposition.workspace_id,
                 "icp_key": disposition.icp_key,
                 "icp_spec_version": disposition.icp_spec_version,
@@ -236,12 +236,10 @@ async def snapshot_claim_provenance(
 
 
 async def _resolve_run_context(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> tuple[str, str, int] | None:
     """``(workspace_id, icp_key, icp_version)`` for a run, or ``None`` if it does not exist."""
-    row = (
-        (await conn.execute(_SELECT_RUN_CONTEXT, {"id": campaign_run_id})).mappings().one_or_none()
-    )
+    row = (await conn.execute(_SELECT_RUN_CONTEXT, {"id": project_run_id})).mappings().one_or_none()
     if row is None:
         return None
     return str(row["workspace_id"]), str(row["icp_key"]), int(row["icp_version"])
@@ -283,12 +281,12 @@ async def _account_handoff_context(
     if row is None:
         return _HandoffContext(None, None, None, ())
     raw_version = row["icp_spec_version"]
-    raw_run = row["campaign_run_id"]
+    raw_run = row["project_run_id"]
     claim_ids = tuple(ClaimId(UUID(str(s))) for s in (row["claim_ids"] or ()))
     return _HandoffContext(
         icp_key=str(row["icp_key"]) if row["icp_key"] is not None else None,
         icp_spec_version=int(raw_version) if raw_version is not None else None,
-        campaign_run_id=CampaignRunId(raw_run) if raw_run is not None else None,
+        project_run_id=ProjectRunId(raw_run) if raw_run is not None else None,
         contributing_claim_ids=claim_ids,
     )
 
@@ -299,7 +297,7 @@ async def capture_review_action(
     *,
     account_entity_id: EntityId,
     contact_entity_id: EntityId | None,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     actor: str,
     sink: MetricSink | None = None,
 ) -> DispositionId:
@@ -307,10 +305,10 @@ async def capture_review_action(
     ``review_action_id``),
     snapshotting the reviewed claim's provenance. Raises :class:`DispositionCaptureError` if the run
     is missing (the audit row preserves the signal for re-mirroring)."""
-    run_ctx = await _resolve_run_context(conn, campaign_run_id)
+    run_ctx = await _resolve_run_context(conn, project_run_id)
     if run_ctx is None:
         raise DispositionCaptureError(
-            f"campaign_run {campaign_run_id} not found; cannot scope the disposition"
+            f"project_run {project_run_id} not found; cannot scope the disposition"
         )
     workspace_id, icp_key, icp_version = run_ctx
     reason_code, occurred_at = await _read_review_action(conn, outcome.review_action_id)
@@ -326,7 +324,7 @@ async def capture_review_action(
         entity_type=entity_type,
         account_entity_id=account_entity_id,
         claim_id=outcome.claim_id,
-        campaign_run_id=campaign_run_id,
+        project_run_id=project_run_id,
         workspace_id=workspace_id,
         icp_key=icp_key,
         icp_spec_version=icp_version,
@@ -381,7 +379,7 @@ async def capture_downstream(
     icp_version = (
         row.icp_spec_version if row.icp_spec_version is not None else handoff.icp_spec_version
     )
-    campaign_run_id = row.campaign_run_id or handoff.campaign_run_id
+    project_run_id = row.project_run_id or handoff.project_run_id
 
     disposition = FeedbackDisposition.for_downstream(
         disposition_type=row.disposition_type,
@@ -391,7 +389,7 @@ async def capture_downstream(
         occurred_at=row.occurred_at,
         icp_key=icp_key,
         icp_spec_version=icp_version,
-        campaign_run_id=campaign_run_id,
+        project_run_id=project_run_id,
         actor=row.actor,
         origin=row.origin,
         reason_code=row.reason_code,
@@ -520,7 +518,7 @@ class DispositionStore:
         workspace_id: str,
         icp_spec_version: int | None = None,
         icp_key: str | None = None,
-        campaign_run_id: CampaignRunId | None = None,
+        project_run_id: ProjectRunId | None = None,
         since: UtcDatetime | None = None,
     ) -> list[LabeledRow]:
         async with self._conn_factory() as conn:
@@ -529,7 +527,7 @@ class DispositionStore:
                 workspace_id=workspace_id,
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 since=since,
             )
 
@@ -554,7 +552,7 @@ class ReviewDispositionEmitterImpl:
         *,
         account_entity_id: EntityId,
         contact_entity_id: EntityId | None,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         actor: str,
     ) -> None:
         async with self._conn_factory() as conn:
@@ -563,7 +561,7 @@ class ReviewDispositionEmitterImpl:
                 outcome,
                 account_entity_id=account_entity_id,
                 contact_entity_id=contact_entity_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 actor=actor,
                 sink=self._sink,
             )

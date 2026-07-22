@@ -26,10 +26,10 @@ from pydantic import AwareDatetime
 EntityId = NewType("EntityId", UUID)
 ClaimId = NewType("ClaimId", UUID)
 RunId = NewType("RunId", UUID)
-# The outer durable-execution job id (M7.3 ``campaign_run.id``). Distinct from ``RunId``, which is a
+# The outer durable-execution job id (M7.3 ``project_run.id``). Distinct from ``RunId``, which is a
 # *per-account* research run (``account_run.id`` — the ``claim.run_id`` provenance). One campaign
 # run fans out into many account runs; distinct types stop the two ids being transposed.
-CampaignRunId = NewType("CampaignRunId", UUID)
+ProjectRunId = NewType("ProjectRunId", UUID)
 
 
 def new_entity_id() -> EntityId:
@@ -45,9 +45,9 @@ def new_run_id() -> RunId:
     return RunId(uuid4())
 
 
-def new_campaign_run_id() -> CampaignRunId:
-    """Mint a fresh ``CampaignRunId``. The campaign-run state machine (M7.3) owns this."""
-    return CampaignRunId(uuid4())
+def new_project_run_id() -> ProjectRunId:
+    """Mint a fresh ``ProjectRunId``. The campaign-run state machine (M7.3) owns this."""
+    return ProjectRunId(uuid4())
 
 
 # --- constrained scalars ----------------------------------------------------

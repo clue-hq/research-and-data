@@ -29,10 +29,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignRunId,
     ClaimId,
     EntityId,
     EntityType,
+    ProjectRunId,
     UtcDatetime,
     decode_jsonb,
 )
@@ -45,7 +45,7 @@ from clue_research.review.disposition import (
 
 _VIEW_COLUMNS = (
     "disposition_id, disposition_type, actor, origin, entity_id, entity_type, account_entity_id, "
-    "claim_id, campaign_run_id, workspace_id, icp_key, icp_spec_version, occurred_at, recorded_at, "
+    "claim_id, project_run_id, workspace_id, icp_key, icp_spec_version, occurred_at, recorded_at, "
     "contributing_source_keys, contributing_field_keys, contributing_claim_ids, "
     "fit_score_json, intent_score_json, scoring_rubric, icp_label"
 )
@@ -65,7 +65,7 @@ class LabeledRow(BaseModel):
     entity_type: EntityType
     account_entity_id: EntityId
     claim_id: ClaimId | None
-    campaign_run_id: CampaignRunId | None
+    project_run_id: ProjectRunId | None
     workspace_id: str
     icp_key: str
     icp_spec_version: int | None
@@ -107,7 +107,7 @@ def _row_to_labeled(row: dict[str, object]) -> LabeledRow:
             "entity_type": row["entity_type"],
             "account_entity_id": row["account_entity_id"],
             "claim_id": row["claim_id"],
-            "campaign_run_id": row["campaign_run_id"],
+            "project_run_id": row["project_run_id"],
             "workspace_id": row["workspace_id"],
             "icp_key": row["icp_key"],
             "icp_spec_version": row["icp_spec_version"],
@@ -130,7 +130,7 @@ async def read_labeled_dataset(
     workspace_id: str,
     icp_spec_version: int | None = None,
     icp_key: str | None = None,
-    campaign_run_id: CampaignRunId | None = None,
+    project_run_id: ProjectRunId | None = None,
     since: UtcDatetime | None = None,
 ) -> list[LabeledRow]:
     """Read the labeled dataset for a client, optionally narrowed to one ICP segment/version, one
@@ -151,8 +151,8 @@ async def read_labeled_dataset(
                       AND (CAST(:icp_spec_version AS int) IS NULL
                            OR icp_spec_version = :icp_spec_version)
                       AND (CAST(:icp_key AS text) IS NULL OR icp_key = :icp_key)
-                      AND (CAST(:campaign_run_id AS uuid) IS NULL
-                           OR campaign_run_id = :campaign_run_id)
+                      AND (CAST(:project_run_id AS uuid) IS NULL
+                           OR project_run_id = :project_run_id)
                       AND (CAST(:since AS timestamptz) IS NULL OR recorded_at >= :since)
                     ORDER BY recorded_at, disposition_id
                     """
@@ -161,7 +161,7 @@ async def read_labeled_dataset(
                     "workspace_id": workspace_id,
                     "icp_spec_version": icp_spec_version,
                     "icp_key": icp_key,
-                    "campaign_run_id": campaign_run_id,
+                    "project_run_id": project_run_id,
                     "since": since,
                 },
             )

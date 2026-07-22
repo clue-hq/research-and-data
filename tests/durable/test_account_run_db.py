@@ -20,9 +20,9 @@ from clue_core import (
     PassKind,
     ResearchMode,
     account_claim,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_core.field import FieldDef
@@ -98,13 +98,13 @@ def test_account_run_repository_round_trip() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             run_id = new_run_id()
-            campaign_run_id = new_campaign_run_id()
+            project_run_id = new_project_run_id()
             entity_id = new_entity_id()
 
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier="top",
             )
@@ -118,7 +118,7 @@ def test_account_run_repository_round_trip() -> None:
             await ensure_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier="ignored-on-conflict",
             )
@@ -163,7 +163,7 @@ def test_account_run_sub_phase_repository_round_trip() -> None:
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 entity_id=new_entity_id(),
                 tier="top",
             )
@@ -198,7 +198,7 @@ def test_db_store_sub_phase_round_trips_through_the_seam() -> None:
                     await insert_account_run(
                         conn,
                         account_run_id=committed_id,
-                        campaign_run_id=new_campaign_run_id(),
+                        project_run_id=new_project_run_id(),
                         entity_id=new_entity_id(),
                         tier="top",
                     )
@@ -271,7 +271,7 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
     async def _run() -> None:
         run_id = new_run_id()
         entity_id = new_entity_id()
-        campaign_run_id = new_campaign_run_id()
+        project_run_id = new_project_run_id()
         worker = StubAspectWorker("account", n_claims=2, cost_cents=Decimal("5"))
         registry = WorkerRegistry()
         registry.register(worker)
@@ -286,7 +286,7 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
                     result = await graph.run(
                         entity_id,
                         tier="top",
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         checkpointer=saver,
                         account_run_id=run_id,
                         field_keys=(_DEEP_FIELD,),
@@ -307,7 +307,7 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
                     again = await graph.run(
                         entity_id,
                         tier="top",
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         checkpointer=saver,
                         account_run_id=run_id,
                         field_keys=(_DEEP_FIELD,),
@@ -346,7 +346,7 @@ def test_db_store_fail_marks_status() -> None:
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 entity_id=new_entity_id(),
                 tier="top",
             )
@@ -359,7 +359,7 @@ def test_db_store_fail_marks_status() -> None:
                     await insert_account_run(
                         conn,
                         account_run_id=committed_id,
-                        campaign_run_id=new_campaign_run_id(),
+                        project_run_id=new_project_run_id(),
                         entity_id=new_entity_id(),
                         tier="top",
                     )

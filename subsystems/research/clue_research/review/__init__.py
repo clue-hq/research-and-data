@@ -5,7 +5,7 @@ M13.1 (Tier-1 review surface) lives here: the read projection over one ``account
 gate (:class:`~clue_research.review.surface.ReviewSurfaceImpl` — approve/correct/reject, finalize).
 The frozen contract both this impl and the ``api`` composition root bind to is
 :mod:`clue_core.review` (``ReviewSurface`` / ``VerificationAnnotationReader`` …); the
-``CampaignPhase.REVIEW`` handler + its wiring live under ``api/review`` (the composition root).
+``ProjectPhase.REVIEW`` handler + its wiring live under ``api/review`` (the composition root).
 
 M13.2 (disposition capture) lives here too: :class:`FeedbackDisposition` (named to avoid colliding
 with ``clue_research.identity.Disposition``) + its taxonomies, the :class:`DispositionStore` capture

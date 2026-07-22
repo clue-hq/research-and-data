@@ -1,5 +1,5 @@
 """DB-gated tests for the M7.5 cost-governance persistence — the ``budget_event`` table, the
-``account_run.budget_cap_cents`` / ``campaign_run.estimated_cents`` columns, and the cost-accounting
+``account_run.budget_cap_cents`` / ``project_run.estimated_cents`` columns, and the cost-accounting
 repository helpers.
 
 These need a reachable, migrated Postgres and ``pytest.skip`` without one. They cover: the two enum
@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     BudgetScope,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.durable import (
@@ -28,7 +28,7 @@ from clue_research.durable import (
     BudgetEventKind,
     add_account_spend,
     add_run_spend,
-    ensure_campaign_run,
+    ensure_project_run,
     get_account_budget_state,
     get_run_budget_state,
     insert_account_run,
@@ -80,11 +80,11 @@ def test_budget_event_kind_enum_matches_db() -> None:
 
 def test_budget_event_insert_and_list_ordered_by_seq() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await insert_budget_event(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 scope=BudgetScope.ACCOUNT,
                 kind=BudgetEventKind.CHECK_DENY,
                 projected_cents=Decimal("120"),
@@ -93,7 +93,7 @@ def test_budget_event_insert_and_list_ordered_by_seq() -> None:
             )
             await insert_budget_event(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 scope=BudgetScope.RUN,
                 kind=BudgetEventKind.GRACEFUL_STOP,
                 projected_cents=Decimal("0"),
@@ -119,11 +119,11 @@ def test_budget_event_insert_and_list_ordered_by_seq() -> None:
 
 def test_budget_event_nullable_cap() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await insert_budget_event(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 scope=BudgetScope.PASS,
                 kind=BudgetEventKind.CHECK_DENY,
                 projected_cents=Decimal("9"),
@@ -139,12 +139,12 @@ def test_budget_event_nullable_cap() -> None:
 def test_budget_event_kind_scope_check_rejects_mismatch() -> None:
     # The DB refuses a semantically impossible (scope, kind): cap_raised is run-scoped, not account.
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             with pytest.raises(Exception, match="budget_event_kind_scope"):
                 await insert_budget_event(
                     conn,
-                    campaign_run_id=run_id,
+                    project_run_id=run_id,
                     scope=BudgetScope.ACCOUNT,  # mismatched: cap_raised is RUN-only
                     kind=BudgetEventKind.CAP_RAISED,
                     projected_cents=Decimal("0"),
@@ -156,11 +156,11 @@ def test_budget_event_kind_scope_check_rejects_mismatch() -> None:
 
 def test_budget_event_is_immutable_update() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await insert_budget_event(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 scope=BudgetScope.RUN,
                 kind=BudgetEventKind.CAP_RAISED,
                 projected_cents=Decimal("0"),
@@ -168,7 +168,7 @@ def test_budget_event_is_immutable_update() -> None:
             )
             with pytest.raises(Exception, match="append-only"):
                 await conn.execute(
-                    text("UPDATE budget_event SET kind = 'check_deny' WHERE campaign_run_id = :r"),
+                    text("UPDATE budget_event SET kind = 'check_deny' WHERE project_run_id = :r"),
                     {"r": run_id},
                 )
 
@@ -177,11 +177,11 @@ def test_budget_event_is_immutable_update() -> None:
 
 def test_budget_event_rejects_delete() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
             await insert_budget_event(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 scope=BudgetScope.RUN,
                 kind=BudgetEventKind.CAP_RAISED,
                 projected_cents=Decimal("0"),
@@ -189,23 +189,23 @@ def test_budget_event_rejects_delete() -> None:
             )
             with pytest.raises(Exception, match="append-only"):
                 await conn.execute(
-                    text("DELETE FROM budget_event WHERE campaign_run_id = :r"),
+                    text("DELETE FROM budget_event WHERE project_run_id = :r"),
                     {"r": run_id},
                 )
 
     run_async(_run())
 
 
-# --- run-scope counters / cap / estimate (campaign_run columns) ------------------------------
+# --- run-scope counters / cap / estimate (project_run columns) ------------------------------
 
 
 def test_run_budget_state_spend_and_estimate() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
-            await ensure_campaign_run(
+            await ensure_project_run(
                 conn,
-                campaign_run_id=run_id,
+                project_run_id=run_id,
                 workspace_id="c",
                 icp_key="k",
                 icp_version=1,
@@ -232,22 +232,22 @@ def test_run_budget_state_spend_and_estimate() -> None:
 def test_run_budget_state_missing_is_none() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            state = await get_run_budget_state(conn, new_campaign_run_id())
+            state = await get_run_budget_state(conn, new_project_run_id())
         assert state is None
 
     run_async(_run())
 
 
-def test_campaign_run_estimated_nonneg_check() -> None:
+def test_project_run_estimated_nonneg_check() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
-            await ensure_campaign_run(
-                conn, campaign_run_id=run_id, workspace_id="c", icp_key="k", icp_version=1
+            await ensure_project_run(
+                conn, project_run_id=run_id, workspace_id="c", icp_key="k", icp_version=1
             )
             with pytest.raises(Exception, match="estimated_nonneg"):
                 await conn.execute(
-                    text("UPDATE campaign_run SET estimated_cents = -1 WHERE id = :id"),
+                    text("UPDATE project_run SET estimated_cents = -1 WHERE id = :id"),
                     {"id": run_id},
                 )
 
@@ -262,7 +262,7 @@ async def _seed_account(conn: AsyncConnection, *, tier: str) -> tuple[object, ob
     await insert_account_run(
         conn,
         account_run_id=run_id,
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         entity_id=new_entity_id(),
         tier=tier,
         status=AccountRunStatus.RUNNING,

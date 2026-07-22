@@ -84,7 +84,7 @@ def test_degenerate_cutoffs_are_clamped() -> None:
 
 def test_non_numeric_and_non_finite_cutoffs_dropped() -> None:
     # The cutoffs are client input (carried as JSON): bool / NaN / inf are dropped defensively so a
-    # malformed value never crashes or skews the projection (mirrors CampaignRun._to_float_cutoffs).
+    # malformed value never crashes or skews the projection (mirrors ProjectRun._to_float_cutoffs).
     est = project_spend(
         _POLICY,
         discovered_count=100,

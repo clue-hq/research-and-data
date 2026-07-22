@@ -6,7 +6,7 @@ builders the worker ``__main__`` (:mod:`clue_api.fleet_main`) and any resume/too
 pure composition, no logic:
 
 * :func:`register_boot_handlers` — the worker-boot phase-handler composition: register every handler
-  composable **process-wide from settings** (today: ``CampaignPhase.REVIEW``) into the registry the
+  composable **process-wide from settings** (today: ``ProjectPhase.REVIEW``) into the registry the
   worker drives, so a detached worker is not born with an empty registry that FAILs every task. The
   per-``(client, icp)`` handlers (DEEP/VERIFICATION) are registered per run, not at boot (skipped +
   documented on the function).
@@ -23,14 +23,14 @@ pure composition, no logic:
 * :func:`build_fleet_deep_scheduler` — the queue-backed deep drain (fleet mode) built from settings
   + the lock factory, a drop-in :data:`~clue_api.deep.handler.DeepAccountScheduler` the deep
   composition accepts via its ``scheduler`` param.
-* :func:`build_fleet_run_driver` — the durable-backed :class:`~clue_research.durable.CampaignRun`
+* :func:`build_fleet_run_driver` — the durable-backed :class:`~clue_research.durable.ProjectRun`
   the worker drives (the ``RunDriver`` seam), over the real M7 store + ledger + budget engine.
 * :func:`build_fleet_worker` — the :class:`~clue_fleet.ProjectRunWorker` with every ``CLUE_FLEET_*``
   policy knob threaded from :class:`~clue_config.Settings` (policy as data, no magic numbers).
 * :func:`enqueue_run_drive` — the resume-surface helper (per spec §2.4: re-driving a paused run
   after ``submit_checkpoint``/``resume`` is a *fresh* ``enqueue_drive``). The B4 toolbelt calls
   this; there is no HTTP resume surface at the api root yet (the in-process
-  :class:`~clue_api.review.CampaignRunResumeHook` drives via ``run_to_completion``, the opt-out).
+  :class:`~clue_api.review.ProjectRunResumeHook` drives via ``run_to_completion``, the opt-out).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from datetime import timedelta
 
 from clue_api.locks import build_account_lock_factory, lazy_account_lock_factory
 from clue_config import Settings
-from clue_core import CampaignPhase, CampaignRunId
+from clue_core import ProjectPhase, ProjectRunId
 from clue_fleet import (
     DbLeaseStore,
     DbTaskQueue,
@@ -55,13 +55,13 @@ from clue_fleet import (
 from clue_obs import get_logger
 from clue_research.durable import (
     BudgetEngine,
-    CampaignRun,
-    CampaignRunStore,
-    DbCampaignRunStore,
     DbIdempotencyStore,
+    DbProjectRunStore,
     IdempotencyStore,
     LockFactory,
     PhaseHandlerRegistry,
+    ProjectRun,
+    ProjectRunStore,
     default_phase_handler_registry,
 )
 from clue_research.icp.rubric import TierCutoffs
@@ -86,7 +86,7 @@ def register_boot_handlers(
     *,
     storage: StorageBackend | None,
     registry: PhaseHandlerRegistry | None = None,
-) -> frozenset[CampaignPhase]:
+) -> frozenset[ProjectPhase]:
     """Register every phase handler the fleet worker can compose **process-wide from settings** and
     return the set of phases now bound. The worker owns *execution*, but the phase-handler registry
     it drives is populated by the composition root (``durable`` never imports a handler) — so a
@@ -95,21 +95,21 @@ def register_boot_handlers(
 
     **What composes at boot (process-wide, no per-run inputs):**
 
-    * ``CampaignPhase.REVIEW`` — via ``review_feedback_wiring.build_reviewed_phase_handler`` (the
+    * ``ProjectPhase.REVIEW`` — via ``review_feedback_wiring.build_reviewed_phase_handler`` (the
       M13.1 ↔ M13.2 production surface: the human-review gate whose actions mirror into
       dispositions). Its account set is the durable M12-ready readiness reader (no ICP spec) and its
       collaborators all default from process-wide state, so it is fully composable here.
 
     **What is deliberately NOT registrable at boot (skipped, documented):**
 
-    * ``CampaignPhase.DEEP`` — the handler is **campaign-scoped**: it holds one ``ICPSpec`` and its
+    * ``ProjectPhase.DEEP`` — the handler is **campaign-scoped**: it holds one ``ICPSpec`` and its
       committee ``sources``, both per-``(client, icp)``. It is registered per run at run start (the
       in-process path already does; the fleet path is the B4 delegation contract), never at boot.
-    * ``CampaignPhase.VERIFICATION`` — ``register_verification_phase_handler`` needs both a
+    * ``ProjectPhase.VERIFICATION`` — ``register_verification_phase_handler`` needs both a
       ``gateway`` (buildable from ``GatewayConfig``/settings) **and** a required resolver whose
       production form (``build_high_tier_resolver``) is keyed on the per-``(client, icp)``
       high-tier set (the same reason DEEP is per-campaign). So it is per-run, not boot — skipped.
-    * ``CampaignPhase.HANDOFF`` — both the M12 narrative handler
+    * ``ProjectPhase.HANDOFF`` — both the M12 narrative handler
       (``register_handoff_phase_handler``, needing an assembler over a production
       ``HandoffCommitteeReader`` that only exists once M8/M10 integrate — no boot concrete) and the
       retention-sweep wrapper (``register_retention_sweeping_handoff_handler``, needing that inner
@@ -205,13 +205,13 @@ def build_fleet_deep_scheduler(
 def build_fleet_run_driver(
     *,
     registry: PhaseHandlerRegistry | None = None,
-    store: CampaignRunStore | None = None,
+    store: ProjectRunStore | None = None,
     ledger: IdempotencyStore | None = None,
     budget_engine: BudgetEngine | None = None,
 ) -> RunDriver:
     """The durable-backed ``RunDriver`` the worker drives: a
-    :class:`~clue_research.durable.CampaignRun` over the real M7 persistence
-    (:class:`DbCampaignRunStore`), the M7.4 exactly-once ledger (:class:`DbIdempotencyStore`), a
+    :class:`~clue_research.durable.ProjectRun` over the real M7 persistence
+    (:class:`DbProjectRunStore`), the M7.4 exactly-once ledger (:class:`DbIdempotencyStore`), a
     :class:`BudgetEngine`, and the process phase-handler registry.
 
     ``registry`` defaults to the process-default registry the ``register_*_phase_handler`` binders
@@ -219,8 +219,8 @@ def build_fleet_run_driver(
     ``(client, icp)`` at run start — over the fleet :func:`build_fleet_deep_scheduler` for the
     worker deployment (``build_deep_phase_handler(scheduler=…)``) — exactly as the in-process path
     already registers it at run start; the worker never composes handlers (spec §2.4, worker.py)."""
-    return CampaignRun(
-        store=store if store is not None else DbCampaignRunStore(),
+    return ProjectRun(
+        store=store if store is not None else DbProjectRunStore(),
         registry=registry if registry is not None else default_phase_handler_registry(),
         budget_engine=budget_engine if budget_engine is not None else BudgetEngine(),
         ledger=ledger if ledger is not None else DbIdempotencyStore(),
@@ -252,7 +252,7 @@ def build_fleet_worker(
 
 
 async def enqueue_run_drive(
-    project_run_id: CampaignRunId, *, queue: TaskQueue | None = None, priority: int = 0
+    project_run_id: ProjectRunId, *, queue: TaskQueue | None = None, priority: int = 0
 ) -> bool:
     """Offer a run to the fleet — the resume-surface helper (spec §2.4). Re-driving a paused run
     after ``submit_checkpoint``/``resume`` is a *fresh* :func:`~clue_fleet.enqueue_drive`, which

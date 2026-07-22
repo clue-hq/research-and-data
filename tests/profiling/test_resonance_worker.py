@@ -26,8 +26,8 @@ from clue_core import (
     SourceManifest,
     WorkerStatus,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import register_field
@@ -121,7 +121,7 @@ async def _insert_account(conn):
 def _ctx(entity_id, field_keys, *, workspace_id=_TENANT):
     return AspectContext(
         entity_id=entity_id,
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         run_id=new_run_id(),
         tier="top",
         aspect="account.resonance",

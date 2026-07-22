@@ -20,9 +20,9 @@ from sqlalchemy import Row, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignRunId,
     ClaimId,
     EntityId,
+    ProjectRunId,
     ReviewAction,
     ReviewRejectReason,
     ReviewSessionStatus,
@@ -32,7 +32,7 @@ from clue_core import (
 from clue_core.review import ReviewSessionId
 
 _SESSION_COLS = (
-    "id, account_entity_id, campaign_run_id, workspace_id, review_round, "
+    "id, account_entity_id, project_run_id, workspace_id, review_round, "
     "status, opened_by, opened_at, finalized_at"
 )
 
@@ -44,7 +44,7 @@ class ReviewSessionRow(BaseModel):
 
     id: ReviewSessionId
     account_entity_id: EntityId
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     workspace_id: str
     review_round: int
     status: ReviewSessionStatus
@@ -58,7 +58,7 @@ def _to_session(row: Row[Any]) -> ReviewSessionRow:
     return ReviewSessionRow(
         id=ReviewSessionId(m["id"]),
         account_entity_id=EntityId(m["account_entity_id"]),
-        campaign_run_id=CampaignRunId(m["campaign_run_id"]),
+        project_run_id=ProjectRunId(m["project_run_id"]),
         workspace_id=m["workspace_id"],
         review_round=m["review_round"],
         status=ReviewSessionStatus(m["status"]),
@@ -72,12 +72,12 @@ async def ensure_review_session(
     conn: AsyncConnection,
     *,
     account_entity_id: EntityId,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     workspace_id: str,
     review_round: int = 1,
     opened_by: str | None = None,
 ) -> ReviewSessionRow:
-    """Idempotently open a session for ``(account, campaign_run, review_round)`` and return it.
+    """Idempotently open a session for ``(account, project_run, review_round)`` and return it.
 
     Idempotent on the UNIQUE scope: a second call returns the existing row unchanged — so the REVIEW
     phase handler re-opening on resume, and the UI re-reading the same candidate, never create a
@@ -85,15 +85,15 @@ async def ensure_review_session(
     await conn.execute(
         text(
             "INSERT INTO review_session "
-            "(id, account_entity_id, campaign_run_id, workspace_id, review_round, status, "
+            "(id, account_entity_id, project_run_id, workspace_id, review_round, status, "
             "opened_by) "
             "VALUES (:id, :acct, :run, :client, :round, 'open', :opened_by) "
-            "ON CONFLICT (account_entity_id, campaign_run_id, review_round) DO NOTHING"
+            "ON CONFLICT (account_entity_id, project_run_id, review_round) DO NOTHING"
         ),
         {
             "id": uuid4(),
             "acct": account_entity_id,
-            "run": campaign_run_id,
+            "run": project_run_id,
             "client": workspace_id,
             "round": review_round,
             "opened_by": opened_by,
@@ -103,9 +103,9 @@ async def ensure_review_session(
         await conn.execute(
             text(
                 f"SELECT {_SESSION_COLS} FROM review_session WHERE account_entity_id = :acct "
-                "AND campaign_run_id = :run AND review_round = :round"
+                "AND project_run_id = :run AND review_round = :round"
             ),
-            {"acct": account_entity_id, "run": campaign_run_id, "round": review_round},
+            {"acct": account_entity_id, "run": project_run_id, "round": review_round},
         )
     ).one()
     return _to_session(row)
@@ -145,22 +145,22 @@ async def finalize_review_session(
     return await get_review_session(conn, session_id), False
 
 
-async def count_open_sessions(conn: AsyncConnection, campaign_run_id: CampaignRunId) -> int:
+async def count_open_sessions(conn: AsyncConnection, project_run_id: ProjectRunId) -> int:
     """How many sessions for this run are still OPEN — the resume gate (0 ⇒ review complete)."""
     count = (
         await conn.execute(
             text(
                 "SELECT count(*) FROM review_session "
-                "WHERE campaign_run_id = :run AND status = 'open'"
+                "WHERE project_run_id = :run AND status = 'open'"
             ),
-            {"run": campaign_run_id},
+            {"run": project_run_id},
         )
     ).scalar_one()
     return int(count)
 
 
 async def finalized_review_account_ids(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> frozenset[EntityId]:
     """The account ids whose review session for this run is FINALIZED — the M13.1 handoff gate (an
     account hands off only if its session is finalized; un-finalized leaves it pending)."""
@@ -169,9 +169,9 @@ async def finalized_review_account_ids(
             await conn.execute(
                 text(
                     "SELECT account_entity_id FROM review_session "
-                    "WHERE campaign_run_id = :run AND status = 'finalized'"
+                    "WHERE project_run_id = :run AND status = 'finalized'"
                 ),
-                {"run": campaign_run_id},
+                {"run": project_run_id},
             )
         )
         .scalars()

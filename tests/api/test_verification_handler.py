@@ -1,4 +1,4 @@
-"""The ``CampaignPhase.VERIFICATION`` handler (integration keystone) — driven entirely by fakes (no
+"""The ``ProjectPhase.VERIFICATION`` handler (integration keystone) — driven entirely by fakes (no
 DB). These prove the handler *policy*: it drives the frozen ``VERIFICATION_GATE_ORDER`` over each
 high-tier account's claims in order — corroboration (per ``(entity, field)``) → faithfulness (every
 live tier-4 claim) → use-gate (``contact.facet.*`` claims) **last** — records per-field
@@ -25,7 +25,6 @@ from clue_api.verification.handler import (
     VerificationAccountResolver,
 )
 from clue_core import (
-    CampaignPhase,
     Claim,
     EntityId,
     ExtractionMethod,
@@ -33,12 +32,13 @@ from clue_core import (
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
+    ProjectPhase,
     ResearchMode,
     UseClass,
     account_claim,
     contact_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_core.compliance import UseDecision
@@ -162,8 +162,8 @@ def _spec(entity_id: EntityId) -> AccountSpec:
 
 def _ctx(campaign: object | None = None) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=campaign or new_campaign_run_id(),
-        phase=CampaignPhase.VERIFICATION,
+        project_run_id=campaign or new_project_run_id(),
+        phase=ProjectPhase.VERIFICATION,
         workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
@@ -249,11 +249,11 @@ def test_handler_conforms_to_protocol_and_registers() -> None:
     rec = _Recorder()
     handler = _handler(specs=(), by_entity={}, rec=rec, use_gate=FakeUseGate(rec))
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.VERIFICATION
+    assert handler.phase is ProjectPhase.VERIFICATION
     registry = PhaseHandlerRegistry()
-    assert registry.get(CampaignPhase.VERIFICATION) is None
+    assert registry.get(ProjectPhase.VERIFICATION) is None
     registry.register(handler)
-    assert registry.get(CampaignPhase.VERIFICATION) is handler
+    assert registry.get(ProjectPhase.VERIFICATION) is handler
 
 
 def test_runs_full_gate_chain_with_use_gate_last() -> None:
@@ -470,4 +470,4 @@ def test_build_verification_phase_handler_wires_the_concrete_seams() -> None:
         account_resolver=_resolver(()),
     )
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.VERIFICATION
+    assert handler.phase is ProjectPhase.VERIFICATION

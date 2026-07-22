@@ -1,7 +1,7 @@
 """Tier-1 review-surface contracts (M13.1) — the ``REVIEW`` campaign-phase seam.
 
 M13.1 puts a human review surface immediately before the M12 handoff. The chosen design (locked
-2026-06-26) models Tier-1 review as a **new ``CampaignPhase.REVIEW`` between ``VERIFICATION`` and
+2026-06-26) models Tier-1 review as a **new ``ProjectPhase.REVIEW`` between ``VERIFICATION`` and
 ``HANDOFF``** that suspends via the existing durable ``AWAITING_INPUT`` checkpoint (M7.3) — *not* a
 new per-account-graph ``interrupt()`` node. This reuses tested, crash-safe, idempotent machinery the
 state machine already reserves for M13 (the ``PhaseCheckpointStatus.AWAITING_INPUT`` docstring names
@@ -53,10 +53,10 @@ from clue_core.enums import (
 from clue_core.field import FieldKey
 from clue_core.handoff import ProvenanceRef, Score, ValueNarrativeItem
 from clue_core.primitives import (
-    CampaignRunId,
     ClaimId,
     Confidence,
     EntityId,
+    ProjectRunId,
     SourceTier,
     UtcDatetime,
 )
@@ -146,7 +146,7 @@ class FieldConflict(BaseModel):
 
 class ReviewSession(BaseModel):
     """The read projection for one ``account_handoff`` candidate under review (M13.1) — one
-    high-tier ``account_entity_id`` within a ``campaign_run`` at a ``review_round``.
+    high-tier ``account_entity_id`` within a ``project_run`` at a ``review_round``.
 
     A pure projection over the claim store (M1), identity (M2), the decomposed scores (M6), and the
     verification results (M9/M10 via the annotation seam). ``value_narrative`` is best-effort (the
@@ -157,7 +157,7 @@ class ReviewSession(BaseModel):
 
     session_id: ReviewSessionId
     account_entity_id: EntityId
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     review_round: int = 1
     status: ReviewSessionStatus = ReviewSessionStatus.OPEN
     fit_score: Score | None = None
@@ -213,7 +213,7 @@ class ReviewSurface(Protocol):
     """The Tier-1 review surface contract (M13.1). A pure client (an internal admin UI today, a
     client portal later) drives this; the surface is swappable behind it.
 
-    ``open_session`` is idempotent on ``(account_entity_id, campaign_run_id, review_round)``: it
+    ``open_session`` is idempotent on ``(account_entity_id, project_run_id, review_round)``: it
     ensures the durable ``review_session`` row exists (status ``OPEN``) and returns its read
     projection — so the ``REVIEW`` phase handler can open a session per ready account, and the UI
     can re-read the same session. ``apply_action`` records the action (and writes the
@@ -225,7 +225,7 @@ class ReviewSurface(Protocol):
         self,
         *,
         account_entity_id: EntityId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
@@ -250,12 +250,12 @@ class ReviewSurface(Protocol):
 class ReviewResumeHook(Protocol):
     """Resumes the paused campaign once review is complete (the ``finalize → resume`` seam, M13.1).
 
-    ``review`` cannot import ``durable``, so the campaign resume (``CampaignRun.submit_checkpoint``)
+    ``review`` cannot import ``durable``, so the campaign resume (``ProjectRun.submit_checkpoint``)
     is injected as this hook at the ``api`` root. Called by ``finalize`` when the last open session
     for the run is finalized; a ``None`` hook (unit tests / account-only runs) just leaves the
     campaign suspended for an explicit operator resume."""
 
-    async def resume_review(self, campaign_run_id: CampaignRunId) -> None: ...
+    async def resume_review(self, project_run_id: ProjectRunId) -> None: ...
 
 
 @runtime_checkable
@@ -274,6 +274,6 @@ class ReviewDispositionEmitter(Protocol):
         *,
         account_entity_id: EntityId,
         contact_entity_id: EntityId | None,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         actor: str,
     ) -> None: ...

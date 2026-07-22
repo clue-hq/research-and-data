@@ -1,4 +1,4 @@
-"""The ``CampaignPhase.VERIFICATION`` phase handler (integration) — runs the gate chain live.
+"""The ``ProjectPhase.VERIFICATION`` phase handler (integration) — runs the gate chain live.
 
 This is the keystone the three-way integration (M10 + M11 + M12) adds: the live call site that
 drives the frozen :data:`~clue_api.composition.VERIFICATION_GATE_ORDER` over the claims the
@@ -45,7 +45,6 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from clue_core import (
-    CampaignPhase,
     Claim,
     CostCents,
     EntityId,
@@ -55,6 +54,7 @@ from clue_core import (
     PhaseHandler,
     PhaseResult,
     PhaseStatus,
+    ProjectPhase,
 )
 from clue_core.compliance import UseGate
 from clue_core.verification import FaithfulnessJudge
@@ -116,13 +116,13 @@ class _AccountVerification:
 
 
 class VerificationPhaseHandler:
-    """The ``CampaignPhase.VERIFICATION`` :class:`~clue_core.PhaseHandler`.
+    """The ``ProjectPhase.VERIFICATION`` :class:`~clue_core.PhaseHandler`.
 
     Drives corroboration → faithfulness → (use-gate last) → verification-health over each high-tier
     account's deep claims, isolated per account. Construct once per campaign with the injected
     collaborators and register it at the api composition root (mirrors the DEEP handler)."""
 
-    phase = CampaignPhase.VERIFICATION
+    phase = ProjectPhase.VERIFICATION
 
     def __init__(
         self,

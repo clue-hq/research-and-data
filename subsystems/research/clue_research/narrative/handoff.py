@@ -45,7 +45,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     AccountHandoff,
-    CampaignRunId,
     ClaimId,
     CommitteeMember,
     CurrentValue,
@@ -55,6 +54,7 @@ from clue_core import (
     NarrativeSupport,
     Persona,
     ProfileClaimView,
+    ProjectRunId,
     ProvenanceRef,
     Score,
     UnitInterval,
@@ -243,7 +243,7 @@ class HandoffAssembler:
         workspace_id: str,
         assembled_at: UtcDatetime,
         icp_key: str | None = None,
-        campaign_run_id: CampaignRunId | None = None,
+        project_run_id: ProjectRunId | None = None,
         coverage_confidence: UnitInterval | None = None,
     ) -> AssembledHandoff:
         """Assemble the ``account_handoff`` for one ``(account_entity_id, icp_spec_version)``.
@@ -332,7 +332,7 @@ class HandoffAssembler:
                 value_narrative=narrative,
                 provenance_index=provenance,
                 icp_spec_version=icp_spec_version,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 assembled_at=assembled_at,
                 coverage_confidence=coverage_confidence,
                 field_conflicts=field_conflicts,

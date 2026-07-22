@@ -37,7 +37,7 @@ seam discipline. The in-boundary panels — per-source yield (``sources.get_sour
   the
   configured alert. See backlog item ``[M9.4×M13.4]``.
 * *Cost burn-down* uses the **live ``core.BudgetEngine.burn_down``** number (the authoritative
-  ``campaign_run.spent_cents`` counter), **never** re-derived from ``Σ claim.cost_cents`` or the
+  ``project_run.spent_cents`` counter), **never** re-derived from ``Σ claim.cost_cents`` or the
   in-memory ``obs`` gauges — one materialization, so M13.3/M13.4 and the engine never diverge.
 
 Architecture sources: Doc C §5 (cost dial & governance — pre-run estimate, client-set hard cap,
@@ -62,11 +62,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_config import VerificationHealthThresholds, get_config
 from clue_core import (
     BurnDown,
-    CampaignPhase,
-    CampaignRunId,
     CostCents,
     CoverageReport,
     Estimate,
+    ProjectPhase,
+    ProjectRunId,
     UnitInterval,
     serialize_value_json,
 )
@@ -77,7 +77,7 @@ from clue_research.sources import SourceYieldStat, get_source_yield
 _CHECKPOINT_COMMITTED = "committed"  # PhaseCheckpointStatus.COMMITTED
 _CHECKPOINT_AWAITING_INPUT = "awaiting_input"  # PhaseCheckpointStatus.AWAITING_INPUT
 _PHASE_PENDING = "pending"  # a phase with no checkpoint row yet (not a durable status)
-_RUN_PAUSED = "paused"  # CampaignRunStatus.PAUSED
+_RUN_PAUSED = "paused"  # ProjectRunStatus.PAUSED
 
 # A run is "near cap" once remaining spend falls to this fraction of the cap (a surfacing threshold;
 # the engine itself has no warning band — only the discrete graceful-stop at the cap).
@@ -102,7 +102,7 @@ class PhaseProgress(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    phase: CampaignPhase
+    phase: ProjectPhase
     status: str
     is_current: bool = False
     is_complete: bool = False
@@ -119,9 +119,9 @@ class CampaignProgress(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     workspace_id: str
-    current_phase: CampaignPhase
+    current_phase: ProjectPhase
     run_status: str
     is_paused: bool = False
     is_terminal: bool = False
@@ -137,7 +137,7 @@ class CostBurnDown(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     spent_cents: CostCents
     estimated_cents: CostCents
     cap_cents: CostCents
@@ -154,7 +154,7 @@ class PreRunEstimate(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     discovered_count: int
     projected_deep_count: int
     estimated_cents: CostCents
@@ -192,7 +192,7 @@ class VerificationHealth(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     faithfulness_pass_share: float | None = None
     strong_binding_share: float | None = None
     corroboration_pass_rate: float | None = None
@@ -213,13 +213,13 @@ class RunPhaseState(BaseModel):
     projected off ``durable`` enums into ``core``/``str`` (so ``review`` never learns the durable
     enum tokens). ``checkpoints`` lists only the phases that have a checkpoint row; the surface
     fills
-    in ``"pending"`` for the rest from ``core.CampaignPhase``."""
+    in ``"pending"`` for the rest from ``core.ProjectPhase``."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     workspace_id: str
-    current_phase: CampaignPhase
+    current_phase: ProjectPhase
     run_status: str
     is_terminal: bool = False
     checkpoints: tuple[PhaseProgress, ...] = ()
@@ -229,7 +229,7 @@ class RunPhaseState(BaseModel):
 class CampaignStateReader(Protocol):
     """Reads the M7.3 campaign-run phase state for the progress panel (the M13.4 ↔ M7 seam).
 
-    ``review`` cannot import ``durable``, so the production impl (over ``durable.get_campaign_run``
+    ``review`` cannot import ``durable``, so the production impl (over ``durable.get_project_run``
     +
     ``durable.get_checkpoint``) is injected at the ``api`` root, like
     ``narrative.readiness.HandoffReadinessReader``. Workspace-scoped on ``workspace_id`` (returns
@@ -237,7 +237,7 @@ class CampaignStateReader(Protocol):
     for a missing run / a run that is not this tenant's)."""
 
     async def run_phase_state(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> RunPhaseState | None: ...
 
 
@@ -246,13 +246,13 @@ class CostBurnDownReader(Protocol):
     """Reads the live ``core.BudgetEngine.burn_down`` for the cost panel (the M13.4 ↔ M7.5 seam).
 
     Returns the authoritative :class:`~clue_core.BurnDown` (the
-    ``campaign_run.spent_cents``
+    ``project_run.spent_cents``
     counter, clamped remaining) — the single cost materialization, never re-derived. Tenant-scoped;
     ``None`` for a missing / cross-tenant run. Injected at the ``api`` root over the same
     ``BudgetEngine`` the deep run uses."""
 
     async def burn_down(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> BurnDown | None: ...
 
 
@@ -260,7 +260,7 @@ class CostBurnDownReader(Protocol):
 class PreRunEstimator(Protocol):
     """Computes the pre-run spend projection (the pure ``project_spend`` math, Doc C §5).
 
-    Side-effect free — it must NOT persist onto ``campaign_run`` (the durable
+    Side-effect free — it must NOT persist onto ``project_run`` (the durable
     ``BudgetEngine.estimate``
     does; this read surface uses the pure projection so a "read" never mutates the domain). Injected
     at the ``api`` root, reading the client's ``config.BudgetCaps``."""
@@ -285,7 +285,7 @@ class VerificationHealthReader(Protocol):
     counts. Tenant-scoped; ``None`` for a missing / cross-tenant run."""
 
     async def health_counts(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> VerificationHealthCounts | None: ...
 
 
@@ -299,7 +299,7 @@ class CoverageReportReader(Protocol):
     ``None`` when a run has no discovery telemetry (e.g. an import-only campaign). Tenant-scoped."""
 
     async def coverage_for_run(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> CoverageReport | None: ...
 
 
@@ -307,47 +307,47 @@ class CoverageReportReader(Protocol):
 
 
 class InMemoryCampaignStateReader:
-    """A fixture :class:`CampaignStateReader` — backed by a map keyed on ``campaign_run_id``."""
+    """A fixture :class:`CampaignStateReader` — backed by a map keyed on ``project_run_id``."""
 
-    def __init__(self, states: Mapping[CampaignRunId, RunPhaseState] | None = None) -> None:
+    def __init__(self, states: Mapping[ProjectRunId, RunPhaseState] | None = None) -> None:
         self._states = dict(states or {})
 
     def set(self, state: RunPhaseState) -> None:
-        self._states[state.campaign_run_id] = state
+        self._states[state.project_run_id] = state
 
     async def run_phase_state(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> RunPhaseState | None:
-        state = self._states.get(campaign_run_id)
+        state = self._states.get(project_run_id)
         if state is None or state.workspace_id != workspace_id:
             return None
         return state
 
 
 class InMemoryCostBurnDownReader:
-    """A fixture :class:`CostBurnDownReader` — backed by a map keyed on ``campaign_run_id``. The
+    """A fixture :class:`CostBurnDownReader` — backed by a map keyed on ``project_run_id``. The
     second map records which client each run belongs to (tenant isolation in tests)."""
 
     def __init__(
         self,
-        burndowns: Mapping[CampaignRunId, BurnDown] | None = None,
+        burndowns: Mapping[ProjectRunId, BurnDown] | None = None,
         *,
-        owners: Mapping[CampaignRunId, str] | None = None,
+        owners: Mapping[ProjectRunId, str] | None = None,
     ) -> None:
         self._burndowns = dict(burndowns or {})
         self._owners = dict(owners or {})
 
-    def set(self, campaign_run_id: CampaignRunId, burndown: BurnDown, *, workspace_id: str) -> None:
-        self._burndowns[campaign_run_id] = burndown
-        self._owners[campaign_run_id] = workspace_id
+    def set(self, project_run_id: ProjectRunId, burndown: BurnDown, *, workspace_id: str) -> None:
+        self._burndowns[project_run_id] = burndown
+        self._owners[project_run_id] = workspace_id
 
     async def burn_down(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> BurnDown | None:
-        owner = self._owners.get(campaign_run_id)
+        owner = self._owners.get(project_run_id)
         if owner is not None and owner != workspace_id:
             return None
-        return self._burndowns.get(campaign_run_id)
+        return self._burndowns.get(project_run_id)
 
 
 class InMemoryPreRunEstimator:
@@ -369,57 +369,57 @@ class InMemoryPreRunEstimator:
 
 class InMemoryVerificationHealthReader:
     """A fixture :class:`VerificationHealthReader` — backed by a map keyed on
-    ``campaign_run_id``."""
+    ``project_run_id``."""
 
     def __init__(
         self,
-        counts: Mapping[CampaignRunId, VerificationHealthCounts] | None = None,
+        counts: Mapping[ProjectRunId, VerificationHealthCounts] | None = None,
         *,
-        owners: Mapping[CampaignRunId, str] | None = None,
+        owners: Mapping[ProjectRunId, str] | None = None,
     ) -> None:
         self._counts = dict(counts or {})
         self._owners = dict(owners or {})
 
     def set(
-        self, campaign_run_id: CampaignRunId, counts: VerificationHealthCounts, *, workspace_id: str
+        self, project_run_id: ProjectRunId, counts: VerificationHealthCounts, *, workspace_id: str
     ) -> None:
-        self._counts[campaign_run_id] = counts
-        self._owners[campaign_run_id] = workspace_id
+        self._counts[project_run_id] = counts
+        self._owners[project_run_id] = workspace_id
 
     async def health_counts(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> VerificationHealthCounts | None:
-        owner = self._owners.get(campaign_run_id)
+        owner = self._owners.get(project_run_id)
         if owner is not None and owner != workspace_id:
             return None
-        return self._counts.get(campaign_run_id)
+        return self._counts.get(project_run_id)
 
 
 class InMemoryCoverageReportReader:
-    """A fixture :class:`CoverageReportReader` — backed by a map keyed on ``campaign_run_id``."""
+    """A fixture :class:`CoverageReportReader` — backed by a map keyed on ``project_run_id``."""
 
     def __init__(
         self,
-        reports: Mapping[CampaignRunId, CoverageReport] | None = None,
+        reports: Mapping[ProjectRunId, CoverageReport] | None = None,
         *,
-        owners: Mapping[CampaignRunId, str] | None = None,
+        owners: Mapping[ProjectRunId, str] | None = None,
     ) -> None:
         self._reports = dict(reports or {})
         self._owners = dict(owners or {})
 
     def set(
-        self, campaign_run_id: CampaignRunId, report: CoverageReport, *, workspace_id: str
+        self, project_run_id: ProjectRunId, report: CoverageReport, *, workspace_id: str
     ) -> None:
-        self._reports[campaign_run_id] = report
-        self._owners[campaign_run_id] = workspace_id
+        self._reports[project_run_id] = report
+        self._owners[project_run_id] = workspace_id
 
     async def coverage_for_run(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> CoverageReport | None:
-        owner = self._owners.get(campaign_run_id)
+        owner = self._owners.get(project_run_id)
         if owner is not None and owner != workspace_id:
             return None
-        return self._reports.get(campaign_run_id)
+        return self._reports.get(project_run_id)
 
 
 # --- the cost_estimate snapshot write (M13.4-owned materialization) ------------------------------
@@ -427,10 +427,10 @@ class InMemoryCoverageReportReader:
 _INSERT_COST_ESTIMATE = text(
     """
     INSERT INTO cost_estimate (
-        campaign_run_id, icp_spec_version, discovered_count, projected_deep_count,
+        project_run_id, icp_spec_version, discovered_count, projected_deep_count,
         cutoffs_json, estimated_cents
     ) VALUES (
-        :campaign_run_id, :icp_spec_version, :discovered_count, :projected_deep_count,
+        :project_run_id, :icp_spec_version, :discovered_count, :projected_deep_count,
         CAST(:cutoffs AS jsonb), :estimated_cents
     )
     """
@@ -502,13 +502,13 @@ class ObservabilitySurface:
         self._near_cap_fraction = Decimal(str(near_cap_remaining_fraction))
 
     async def campaign_progress(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> CampaignProgress | None:
         """Phase progress over the M7.3 state machine — current phase + per-phase completion in the
-        canonical ``core.CampaignPhase`` order (so the panel tracks ground truth with no refresh of
+        canonical ``core.ProjectPhase`` order (so the panel tracks ground truth with no refresh of
         the underlying state). ``None`` for a missing / cross-tenant run."""
         state = await self._campaign_reader.run_phase_state(
-            campaign_run_id=campaign_run_id, workspace_id=workspace_id
+            project_run_id=project_run_id, workspace_id=workspace_id
         )
         if state is None:
             return None
@@ -520,10 +520,10 @@ class ObservabilitySurface:
                 is_current=phase == state.current_phase,
                 is_complete=by_phase.get(phase) == _CHECKPOINT_COMMITTED,
             )
-            for phase in CampaignPhase
+            for phase in ProjectPhase
         )
         return CampaignProgress(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             workspace_id=workspace_id,
             current_phase=state.current_phase,
             run_status=state.run_status,
@@ -534,13 +534,13 @@ class ObservabilitySurface:
         )
 
     async def cost_burndown(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> CostBurnDown | None:
         """Live cost burn-down — spent vs. estimate vs. cap vs. remaining from the authoritative
         ``BudgetEngine.burn_down``, with a derived ``status`` (``graceful_stop`` at the cap,
         ``near_cap`` approaching it, else ``ok``). ``None`` for a missing / cross-tenant run."""
         burndown = await self._burndown_reader.burn_down(
-            campaign_run_id=campaign_run_id, workspace_id=workspace_id
+            project_run_id=project_run_id, workspace_id=workspace_id
         )
         if burndown is None:
             return None
@@ -559,7 +559,7 @@ class ObservabilitySurface:
             else COST_STATUS_OK
         )
         return CostBurnDown(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             spent_cents=burndown.spent_cents,
             estimated_cents=burndown.estimated_cents,
             cap_cents=burndown.cap_cents,
@@ -572,7 +572,7 @@ class ObservabilitySurface:
     async def pre_run_estimate(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         workspace_id: str,
         discovered_count: int,
         tier_cutoffs: Mapping[str, float] | None = None,
@@ -582,7 +582,7 @@ class ObservabilitySurface:
         """Pre-run "~N → ~M deep → ~\\$X" projection (Doc C §5), recomputed as ``tier_cutoffs``
         change.
 
-        Pure projection (the injected :class:`PreRunEstimator` never writes ``campaign_run``); when
+        Pure projection (the injected :class:`PreRunEstimator` never writes ``project_run``); when
         a
         ``conn`` is supplied it additionally appends a ``cost_estimate`` snapshot (the M13.4-owned
         materialization — the one sanctioned write, "snapshots as cutoffs change"). With no ``conn``
@@ -596,7 +596,7 @@ class ObservabilitySurface:
             await conn.execute(
                 _INSERT_COST_ESTIMATE,
                 {
-                    "campaign_run_id": campaign_run_id,
+                    "project_run_id": project_run_id,
                     "icp_spec_version": icp_spec_version,
                     "discovered_count": estimate.discovered_count,
                     "projected_deep_count": estimate.projected_deep_count,
@@ -605,7 +605,7 @@ class ObservabilitySurface:
                 },
             )
         return PreRunEstimate(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             discovered_count=estimate.discovered_count,
             projected_deep_count=estimate.projected_deep_count,
             estimated_cents=estimate.estimated_cost_cents,
@@ -630,7 +630,7 @@ class ObservabilitySurface:
         )
 
     async def verification_health(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> VerificationHealth | None:
         """Verification-health panel (Doc C §6) — tier-4 faithfulness pass share (M9.3), strong
         identity-binding share (the at-rest ``claim.identity_binding`` scan, M9.4 — never the live
@@ -638,7 +638,7 @@ class ObservabilitySurface:
         configured
         floor (an early warning of a model/resolver regression). ``None`` for a missing run."""
         counts = await self._health_reader.health_counts(
-            campaign_run_id=campaign_run_id, workspace_id=workspace_id
+            project_run_id=project_run_id, workspace_id=workspace_id
         )
         if counts is None:
             return None
@@ -650,7 +650,7 @@ class ObservabilitySurface:
         strong_binding_alert = _alerts(strong_binding, thresholds.strong_binding_floor)
         corroboration_alert = _alerts(corroboration, thresholds.corroboration_pass_floor)
         return VerificationHealth(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             faithfulness_pass_share=faithfulness,
             strong_binding_share=strong_binding,
             corroboration_pass_rate=corroboration,
@@ -664,14 +664,14 @@ class ObservabilitySurface:
         )
 
     async def coverage_confidence(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> CoverageReport | None:
         """Coverage-confidence panel (Doc C §7) — the M6.5 estimate ``%`` band **plus** the named
         unsearched channels, framed as confidence not completeness (never a "100%/complete" claim).
         ``None`` when a run has no discovery telemetry (an import-only campaign — surfaced honestly,
         never fabricated)."""
         return await self._coverage_reader.coverage_for_run(
-            campaign_run_id=campaign_run_id, workspace_id=workspace_id
+            project_run_id=project_run_id, workspace_id=workspace_id
         )
 
 

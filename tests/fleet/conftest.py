@@ -34,10 +34,10 @@ from tests.db.conftest import run_async as run_async
 # so existing ``from tests.fleet.conftest import ProcessLocalLockFactory`` imports keep working.
 from tests.lock_factory import ProcessLocalLockFactory as ProcessLocalLockFactory
 
-from clue_core import CampaignPhase, CampaignRunId, CostCents
+from clue_core import CostCents, ProjectPhase, ProjectRunId
 from clue_db import db_lifespan
 from clue_fleet import FleetTaskKind, FleetTaskRow, FleetTaskStatus, RunLeaseRow
-from clue_research.durable import CampaignRunRow, CampaignRunStatus
+from clue_research.durable import ProjectRunRow, ProjectRunStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -101,7 +101,7 @@ class FakeLeaseStore:
     makes the next renew fail (the lease-lost path). Calls are journaled for assertions."""
 
     def __init__(self) -> None:
-        self.holders: dict[CampaignRunId, str] = {}
+        self.holders: dict[ProjectRunId, str] = {}
         self.deny_renewal = False
         # Renewal-fault injection (audit finding #2): ``renew_always_raises`` makes every renew
         # raise; ``renew_raise_budget`` raises for the next N renews then behaves normally (the
@@ -122,7 +122,7 @@ class FakeLeaseStore:
         self.events: list[str] = []
 
     async def acquire(
-        self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta
+        self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta
     ) -> bool:
         if self.latency_s:
             await asyncio.sleep(self.latency_s)
@@ -134,7 +134,7 @@ class FakeLeaseStore:
         self.events.append(f"acquire-denied:{worker_id}")
         return False
 
-    async def renew(self, *, project_run_id: CampaignRunId, worker_id: str, ttl: timedelta) -> bool:
+    async def renew(self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta) -> bool:
         if self.latency_s:
             await asyncio.sleep(self.latency_s)
         if self.renew_always_raises or self.renew_raise_budget > 0:
@@ -152,12 +152,12 @@ class FakeLeaseStore:
         self.events.append(f"renew:{worker_id}")
         return True
 
-    async def release(self, *, project_run_id: CampaignRunId, worker_id: str) -> None:
+    async def release(self, *, project_run_id: ProjectRunId, worker_id: str) -> None:
         if self.holders.get(project_run_id) == worker_id:
             del self.holders[project_run_id]
         self.events.append(f"release:{worker_id}")
 
-    async def get(self, project_run_id: CampaignRunId) -> RunLeaseRow | None:
+    async def get(self, project_run_id: ProjectRunId) -> RunLeaseRow | None:
         holder = self.holders.get(project_run_id)
         if holder is None:
             return None
@@ -171,7 +171,7 @@ class FakeLeaseStore:
             live=True,
         )
 
-    def expire(self, project_run_id: CampaignRunId) -> None:
+    def expire(self, project_run_id: ProjectRunId) -> None:
         """Simulate the TTL lapsing (the previous holder is forgotten)."""
         self.holders.pop(project_run_id, None)
 
@@ -191,7 +191,7 @@ class FakeTaskQueue:
     task here stays claimed until finished/requeued."""
 
     def __init__(self) -> None:
-        self._tasks: dict[tuple[FleetTaskKind, CampaignRunId, str], _FakeTask] = {}
+        self._tasks: dict[tuple[FleetTaskKind, ProjectRunId, str], _FakeTask] = {}
         self._seq = count()
         self.touches = 0
 
@@ -199,7 +199,7 @@ class FakeTaskQueue:
         self,
         *,
         kind: FleetTaskKind,
-        project_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         dedup_key: str,
         priority: int,
         payload: dict[str, JsonValue],
@@ -227,7 +227,7 @@ class FakeTaskQueue:
         self,
         *,
         kind: FleetTaskKind,
-        project_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         dedup_key: str,
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
@@ -268,7 +268,7 @@ class FakeTaskQueue:
         *,
         kind: FleetTaskKind,
         worker_id: str,
-        project_run_id: CampaignRunId | None = None,
+        project_run_id: ProjectRunId | None = None,
         stale_after: timedelta | None = None,
     ) -> FleetTaskRow | None:
         candidates = sorted(
@@ -339,7 +339,7 @@ class FakeTaskQueue:
         )
         return True
 
-    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: CampaignRunId) -> int:
+    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int:
         requeued = 0
         for task in self._tasks.values():
             if (
@@ -358,7 +358,7 @@ class FakeTaskQueue:
         return requeued
 
     async def list_tasks(
-        self, *, project_run_id: CampaignRunId, kind: FleetTaskKind
+        self, *, project_run_id: ProjectRunId, kind: FleetTaskKind
     ) -> list[FleetTaskRow]:
         return [
             task.row
@@ -377,28 +377,28 @@ class FakeTaskQueue:
         return None
 
     def row(
-        self, kind: FleetTaskKind, project_run_id: CampaignRunId, dedup_key: str
+        self, kind: FleetTaskKind, project_run_id: ProjectRunId, dedup_key: str
     ) -> FleetTaskRow:
         return self._tasks[(kind, project_run_id, dedup_key)].row
 
-    def mark_done(self, kind: FleetTaskKind, project_run_id: CampaignRunId, dedup_key: str) -> None:
+    def mark_done(self, kind: FleetTaskKind, project_run_id: ProjectRunId, dedup_key: str) -> None:
         """Simulate a previous drive having finished this task (the resume/replay path)."""
         task = self._tasks[(kind, project_run_id, dedup_key)]
         task.row = task.row.model_copy(update={"status": FleetTaskStatus.DONE})
 
 
 def run_row(
-    project_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     *,
-    phase: CampaignPhase = CampaignPhase.REVERSE_PROFILING,
-    status: CampaignRunStatus = CampaignRunStatus.ACTIVE,
+    phase: ProjectPhase = ProjectPhase.REVERSE_PROFILING,
+    status: ProjectRunStatus = ProjectRunStatus.ACTIVE,
     spent_cents: CostCents | None = None,
-) -> CampaignRunRow:
-    """A minimal :class:`CampaignRunRow` for scripting fake drivers."""
+) -> ProjectRunRow:
+    """A minimal :class:`ProjectRunRow` for scripting fake drivers."""
     from decimal import Decimal
 
     now = _now()
-    return CampaignRunRow(
+    return ProjectRunRow(
         id=project_run_id,
         workspace_id="ws-fleet-test",
         icp_key="icp",
@@ -421,8 +421,8 @@ class ScriptedDriver:
     pops the next row from ``steps`` (repeating the last one when exhausted — the no-progress
     shape). ``on_advance`` lets a test trigger side effects (e.g. ``worker.stop()``) mid-drive."""
 
-    initial: CampaignRunRow
-    steps: list[CampaignRunRow] = field(default_factory=list)
+    initial: ProjectRunRow
+    steps: list[ProjectRunRow] = field(default_factory=list)
     advance_delay_s: float = 0.0
     on_advance: Any = None
     advances: int = 0
@@ -433,13 +433,10 @@ class ScriptedDriver:
     advance_started: int = 0
     advance_finished: int = 0
 
-    # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md) — a
-    # scripted RunDriver must keep the seam's legacy parameter names (worker.py RunDriver, checked
-    # against the untouchable durable.CampaignRun).
-    async def status(self, campaign_run_id: CampaignRunId) -> CampaignRunRow:
+    async def status(self, project_run_id: ProjectRunId) -> ProjectRunRow:
         return self.initial
 
-    async def advance(self, campaign_run_id: CampaignRunId) -> CampaignRunRow:
+    async def advance(self, project_run_id: ProjectRunId) -> ProjectRunRow:
         import asyncio
 
         self.advance_started += 1

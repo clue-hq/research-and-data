@@ -1,4 +1,4 @@
-"""The ``CampaignPhase.REVIEW`` composition root (M13.1) — wires the concrete seams.
+"""The ``ProjectPhase.REVIEW`` composition root (M13.1) — wires the concrete seams.
 
 ``api`` is the import-linter-exempt seam, so it may import both the otherwise-independent ``review``
 package and the ``verification``/``compliance``/``durable`` packages whose data the review surface
@@ -9,8 +9,8 @@ displays / whose state machine it resumes. This module assembles:
   (M9.3), ``use_decision`` (M10.3), and ``conflict_flag`` (M9.2) side tables (read by raw SQL, the
   composition root — these could be promoted to public reader fns in
   ``verification``/``compliance`` later; tracked follow-up);
-* :class:`CampaignRunResumeHook` — the ``finalize → resume`` seam over
-  ``CampaignRun.submit_checkpoint`` (``review`` may not import ``durable``);
+* :class:`ProjectRunResumeHook` — the ``finalize → resume`` seam over
+  ``ProjectRun.submit_checkpoint`` (``review`` may not import ``durable``);
 * :class:`NoopReviewDispositionEmitter` — the M13.2 seam, a no-op until M13.2 supplies the
   ``DispositionStore``-backed emitter (review actions are still recorded as ``review_action`` rows,
   so no disposition is lost);
@@ -28,11 +28,11 @@ from sqlalchemy import bindparam, text
 from clue_api.handoff_wiring import DurableHandoffReadinessReader
 from clue_api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
 from clue_core import (
-    CampaignRunId,
     ClaimId,
     EntityId,
     JudgeVerdict,
     PhaseContext,
+    ProjectRunId,
     ReviewActionOutcome,
     UseDecision,
     UseReason,
@@ -45,7 +45,7 @@ from clue_core.review import (
 )
 from clue_db import ConnFactory, connection, transaction
 from clue_research.durable import AccountSpec, register_phase_handler
-from clue_research.durable.campaign import CampaignRun, CheckpointNotAwaiting
+from clue_research.durable.project import CheckpointNotAwaiting, ProjectRun
 from clue_research.review import ReviewProjector, ReviewSurfaceImpl
 
 
@@ -145,22 +145,22 @@ class DbVerificationAnnotationReader:
         )
 
 
-class CampaignRunResumeHook:
+class ProjectRunResumeHook:
     """The ``finalize → resume`` seam (M13.1): resumes the paused campaign by submitting the REVIEW
     checkpoint and driving the run to completion (through HANDOFF). ``review`` may not import
     ``durable``, so the campaign machine is injected here. Idempotent — a re-fire after the run has
     already advanced is a no-op (``CheckpointNotAwaiting`` is swallowed)."""
 
-    def __init__(self, *, campaign_run: CampaignRun | None = None) -> None:
-        self._run = campaign_run
+    def __init__(self, *, project_run: ProjectRun | None = None) -> None:
+        self._run = project_run
 
-    async def resume_review(self, campaign_run_id: CampaignRunId) -> None:
-        run = self._run if self._run is not None else CampaignRun()
+    async def resume_review(self, project_run_id: ProjectRunId) -> None:
+        run = self._run if self._run is not None else ProjectRun()
         try:
-            await run.submit_checkpoint(campaign_run_id, decision={"action": "approve"})
+            await run.submit_checkpoint(project_run_id, decision={"action": "approve"})
         except CheckpointNotAwaiting:
             return  # already resumed/advanced (idempotent re-fire)
-        await run.run_to_completion(campaign_run_id)
+        await run.run_to_completion(project_run_id)
 
 
 class NoopReviewDispositionEmitter:
@@ -174,7 +174,7 @@ class NoopReviewDispositionEmitter:
         *,
         account_entity_id: EntityId,
         contact_entity_id: EntityId | None,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         actor: str,
     ) -> None:
         return None
@@ -190,7 +190,7 @@ def build_review_account_resolver(
 
     async def resolve(ctx: PhaseContext) -> Sequence[AccountSpec]:
         ready = await reader.ready_accounts(
-            campaign_run_id=ctx.campaign_run_id, workspace_id=ctx.workspace_id
+            project_run_id=ctx.project_run_id, workspace_id=ctx.workspace_id
         )
         return [
             AccountSpec(
@@ -206,7 +206,7 @@ def build_review_surface(
     *,
     conn_factory: ConnFactory = connection,
     session_factory: ConnFactory = transaction,
-    campaign_run: CampaignRun | None = None,
+    project_run: ProjectRun | None = None,
     annotation_reader: VerificationAnnotationReader | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewSurfaceImpl:
@@ -221,7 +221,7 @@ def build_review_surface(
     return ReviewSurfaceImpl(
         projector=ReviewProjector(annotation_reader=reader),
         session_factory=session_factory,
-        resume_hook=CampaignRunResumeHook(campaign_run=campaign_run),
+        resume_hook=ProjectRunResumeHook(project_run=project_run),
         disposition_emitter=disposition_emitter or NoopReviewDispositionEmitter(),
     )
 
@@ -232,10 +232,10 @@ def build_review_phase_handler(
     surface: ReviewSurfaceImpl | None = None,
     conn_factory: ConnFactory = connection,
     session_factory: ConnFactory = transaction,
-    campaign_run: CampaignRun | None = None,
+    project_run: ProjectRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:
-    """Construct the ``CampaignPhase.REVIEW`` handler with the concrete seams (mirrors
+    """Construct the ``ProjectPhase.REVIEW`` handler with the concrete seams (mirrors
     ``build_verification_phase_handler``). ``disposition_emitter`` is threaded into the default
     surface (None → the M13.1 no-op); the integration root passes M13.2's concrete emitter."""
     return ReviewPhaseHandler(
@@ -245,7 +245,7 @@ def build_review_phase_handler(
         or build_review_surface(
             conn_factory=conn_factory,
             session_factory=session_factory,
-            campaign_run=campaign_run,
+            project_run=project_run,
             disposition_emitter=disposition_emitter,
         ),
     )
@@ -257,7 +257,7 @@ def register_review_phase_handler(
     surface: ReviewSurfaceImpl | None = None,
     conn_factory: ConnFactory = connection,
     session_factory: ConnFactory = transaction,
-    campaign_run: CampaignRun | None = None,
+    project_run: ProjectRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
 ) -> ReviewPhaseHandler:
     """Build + register the REVIEW handler into the M7.3 process-default ``PhaseHandlerRegistry``
@@ -269,7 +269,7 @@ def register_review_phase_handler(
         surface=surface,
         conn_factory=conn_factory,
         session_factory=session_factory,
-        campaign_run=campaign_run,
+        project_run=project_run,
         disposition_emitter=disposition_emitter,
     )
     register_phase_handler(handler)

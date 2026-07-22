@@ -52,37 +52,13 @@ from clue_research.durable.budget_event import (
     set_account_budget_cap,
     set_estimated_cents,
 )
-from clue_research.durable.campaign import (
-    PHASE_SEQUENCE,
-    BudgetEngineNotConfigured,
-    CampaignRun,
-    CampaignRunError,
-    CampaignRunNotFound,
-    CampaignRunStore,
-    CheckpointNotAwaiting,
-    DbCampaignRunStore,
-    NoPhaseHandlerRegistered,
-    next_phase,
-)
-from clue_research.durable.campaign_run import (
-    AdjustmentRow,
-    CampaignPhaseCheckpointRow,
-    CampaignRunRow,
-    TierCutoffs,
-    ensure_campaign_run,
-    get_campaign_run,
-    get_checkpoint,
-    insert_adjustment,
-    list_adjustments,
-    upsert_checkpoint,
-)
 from clue_research.durable.enums import (
     AccountRunStatus,
     AccountRunSubPhase,
     BudgetEventKind,
-    CampaignRunStatus,
     IdempotencyStatus,
     PhaseCheckpointStatus,
+    ProjectRunStatus,
 )
 from clue_research.durable.graph import (
     AccountResearchGraph,
@@ -117,6 +93,30 @@ from clue_research.durable.planning import (
     build_plan,
     compute_gap_fields,
 )
+from clue_research.durable.project import (
+    PHASE_SEQUENCE,
+    BudgetEngineNotConfigured,
+    CheckpointNotAwaiting,
+    DbProjectRunStore,
+    NoPhaseHandlerRegistered,
+    ProjectRun,
+    ProjectRunError,
+    ProjectRunNotFound,
+    ProjectRunStore,
+    next_phase,
+)
+from clue_research.durable.project_run import (
+    AdjustmentRow,
+    ProjectPhaseCheckpointRow,
+    ProjectRunRow,
+    TierCutoffs,
+    ensure_project_run,
+    get_checkpoint,
+    get_project_run,
+    insert_adjustment,
+    list_adjustments,
+    upsert_checkpoint,
+)
 from clue_research.durable.recursion import (
     SpawnDecision,
     SpawnDenyReason,
@@ -139,7 +139,7 @@ __all__ = [
     # enums
     "AccountRunStatus",
     "AccountRunSubPhase",
-    "CampaignRunStatus",
+    "ProjectRunStatus",
     "PhaseCheckpointStatus",
     "IdempotencyStatus",
     "BudgetEventKind",
@@ -189,23 +189,23 @@ __all__ = [
     "DbAccountRunStore",
     "postgres_checkpointer",
     # campaign-run state machine (M7.3)
-    "CampaignRun",
-    "CampaignRunStore",
-    "DbCampaignRunStore",
+    "ProjectRun",
+    "ProjectRunStore",
+    "DbProjectRunStore",
     "PHASE_SEQUENCE",
     "next_phase",
-    "CampaignRunError",
-    "CampaignRunNotFound",
+    "ProjectRunError",
+    "ProjectRunNotFound",
     "NoPhaseHandlerRegistered",
     "CheckpointNotAwaiting",
     "BudgetEngineNotConfigured",
-    # campaign_run / checkpoint / journal repository (M7.3)
-    "CampaignRunRow",
-    "CampaignPhaseCheckpointRow",
+    # project_run / checkpoint / journal repository (M7.3)
+    "ProjectRunRow",
+    "ProjectPhaseCheckpointRow",
     "AdjustmentRow",
     "TierCutoffs",
-    "ensure_campaign_run",
-    "get_campaign_run",
+    "ensure_project_run",
+    "get_project_run",
     "get_checkpoint",
     "upsert_checkpoint",
     "insert_adjustment",

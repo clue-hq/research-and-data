@@ -20,7 +20,7 @@ from clue_api.review_feedback_wiring import (
     build_dsar_with_disposition_cascade,
     build_reviewed_phase_handler,
 )
-from clue_core import CampaignPhase, EntityId, new_claim_id, new_entity_id
+from clue_core import EntityId, ProjectPhase, new_claim_id, new_entity_id
 from clue_research.compliance import ERASE_ALL, DataSubjectRights
 from clue_research.review.disposition_store import ReviewDispositionEmitterImpl
 
@@ -117,7 +117,7 @@ def test_build_reviewed_phase_handler_wires_the_concrete_emitter() -> None:
     Construction touches no DB."""
     handler = build_reviewed_phase_handler()
 
-    assert handler.phase is CampaignPhase.REVIEW
+    assert handler.phase is ProjectPhase.REVIEW
     assert isinstance(handler._surface._emit, ReviewDispositionEmitterImpl)
 
 

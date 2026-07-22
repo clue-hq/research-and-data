@@ -23,7 +23,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import CampaignRunId, CostCents, EntityId, RunId
+from clue_core import CostCents, EntityId, ProjectRunId, RunId
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
     AccountRunStatus,
@@ -64,7 +64,7 @@ class AccountRunIO(Protocol):
         self,
         *,
         account_run_id: RunId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId,
         tier: str,
     ) -> None:
@@ -110,7 +110,7 @@ class DbAccountRunIO:
         self,
         *,
         account_run_id: RunId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId,
         tier: str,
     ) -> None:
@@ -118,7 +118,7 @@ class DbAccountRunIO:
             await ensure_account_run(
                 conn,
                 account_run_id=account_run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier=tier,
             )

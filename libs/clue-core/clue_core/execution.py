@@ -7,10 +7,10 @@ M7 (``durable``) is the runtime *underneath* every phase: M5/M6/M8/M9/M12 regist
 protocols — the *contract* lives in ``core`` while the *implementation* lives in its package
 (``durable``). That is what lets every milestone package stay import-independent of the others
 (the import-linter independence contract): a handler imports ``core``, never ``durable``; the
-concrete handlers are wired into the ``CampaignRun`` at the ``api`` composition root.
+concrete handlers are wired into the ``ProjectRun`` at the ``api`` composition root.
 
 Beat-0 ships **only the seam** — the protocols and the frozen value types they exchange. The
-``CampaignRun`` state machine, the ``AccountResearchGraph`` (LangGraph + ``AsyncPostgresSaver``),
+``ProjectRun`` state machine, the ``AccountResearchGraph`` (LangGraph + ``AsyncPostgresSaver``),
 the recursion knob, the ``BudgetEngine`` implementation, and the M7 tables are built on the M7
 branch against these contracts. Workers return *references* (claim ids), never claim bodies
 (substrate §5b).
@@ -32,16 +32,16 @@ from clue_core.claim import Claim
 from clue_core.enums import (
     BudgetScope,
     BudgetVerdict,
-    CampaignPhase,
     PhaseStatus,
+    ProjectPhase,
     WorkerStatus,
 )
 from clue_core.field import FieldKey
 from clue_core.primitives import (
-    CampaignRunId,
     ClaimId,
     CostCents,
     EntityId,
+    ProjectRunId,
     RunId,
     UnitInterval,
 )
@@ -79,8 +79,8 @@ class PhaseContext(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
-    phase: CampaignPhase
+    project_run_id: ProjectRunId
+    phase: ProjectPhase
     workspace_id: str
     icp_key: str
     icp_version: int
@@ -107,11 +107,11 @@ class PhaseHandler(Protocol):
     """A registered phase implementation (M5/M6/M8/M9/M12 supply these; M7.3 invokes them).
 
     The state machine owns ordering, checkpointing, pause/resume and idempotency; the handler owns
-    only the phase's work. It declares which phase it serves so the ``CampaignRun`` can dispatch by
-    ``CampaignPhase`` without importing the handler's package (``@runtime_checkable`` asserts
+    only the phase's work. It declares which phase it serves so the ``ProjectRun`` can dispatch by
+    ``ProjectPhase`` without importing the handler's package (``@runtime_checkable`` asserts
     ``phase`` + ``run`` are present; mypy checks the full signature)."""
 
-    phase: CampaignPhase
+    phase: ProjectPhase
 
     async def run(self, ctx: PhaseContext) -> PhaseResult: ...
 
@@ -128,7 +128,7 @@ class AspectContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     entity_id: EntityId
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     run_id: RunId  # the per-account research run (claim.run_id provenance)
     tier: str
     aspect: str
@@ -267,7 +267,7 @@ class BudgetEngine(Protocol):
 
     async def estimate(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
         discovered_count: int,
         tier_cutoffs: dict[str, float] | None = None,
@@ -278,7 +278,7 @@ class BudgetEngine(Protocol):
         *,
         scope: BudgetScope,
         projected_cents: CostCents,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> BudgetDecision: ...
@@ -288,13 +288,13 @@ class BudgetEngine(Protocol):
         *,
         cost_cents: CostCents,
         scope: BudgetScope,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> None: ...
 
     async def set_campaign_cap(
-        self, campaign_run_id: CampaignRunId, cap_cents: CostCents
+        self, project_run_id: ProjectRunId, cap_cents: CostCents
     ) -> None: ...
 
-    async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown: ...
+    async def burn_down(self, project_run_id: ProjectRunId) -> BurnDown: ...

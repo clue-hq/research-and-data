@@ -39,8 +39,8 @@ from clue_core import (
     ResearchMode,
     SourceManifest,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import (
@@ -330,7 +330,7 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
             run_id = new_run_id()
             ctx = AspectContext(
                 entity_id=account_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 run_id=run_id,
                 tier="top",
                 aspect="account",
@@ -461,7 +461,7 @@ def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db:
             run_id = new_run_id()
             ctx = AspectContext(
                 entity_id=account_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 run_id=run_id,
                 tier="top",
                 aspect="account",

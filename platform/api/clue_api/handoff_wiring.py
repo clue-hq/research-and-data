@@ -4,12 +4,12 @@ The composition root (only ``api`` may import both ``narrative`` and ``durable``
 independence contract) wires:
 
 * the **durable-backed readiness reader** — the production
-  :class:`~clue_research.narrative.readiness.HandoffReadinessReader` over the M7 ``campaign_run`` /
+  :class:`~clue_research.narrative.readiness.HandoffReadinessReader` over the M7 ``project_run`` /
   ``account_run`` tables (``narrative`` may not import ``durable``, so this lands here, like the
   M12.1 positioner's committee reader and the M12.2 assembler's committee reader);
 * the :class:`~clue_research.narrative.HandoffService` (the read API) over that reader;
 * the **handoff phase handler** — a :class:`~clue_core.PhaseHandler` for
-  ``CampaignPhase.HANDOFF`` that, when the campaign-run state machine enters the handoff phase,
+  ``ProjectPhase.HANDOFF`` that, when the campaign-run state machine enters the handoff phase,
   assembles + materialises + emits a durable ``handoff_event`` for every ready account (the M12.3
   emit/notify path), registered into the M7.3 :class:`PhaseHandlerRegistry`
   (``durable.register_phase_handler``) — so the state machine dispatches it by phase without
@@ -25,12 +25,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     EntityId,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     UnitInterval,
     UtcDatetime,
 )
@@ -38,8 +38,8 @@ from clue_db import ConnFactory, connection, transaction
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,
-    CampaignRunStatus,
-    get_campaign_run,
+    ProjectRunStatus,
+    get_project_run,
     list_account_runs,
     register_phase_handler,
 )
@@ -59,7 +59,7 @@ _Clock = Callable[[], UtcDatetime]
 
 # A campaign run past these statuses will produce no further handoffs (the API tells consumers to
 # stop polling).
-_TERMINAL_RUN_STATUSES = frozenset({CampaignRunStatus.COMPLETED, CampaignRunStatus.FAILED})
+_TERMINAL_RUN_STATUSES = frozenset({ProjectRunStatus.COMPLETED, ProjectRunStatus.FAILED})
 
 
 def _utc_now() -> UtcDatetime:
@@ -67,7 +67,7 @@ def _utc_now() -> UtcDatetime:
 
 
 class DurableHandoffReadinessReader:
-    """The production :class:`HandoffReadinessReader` over the M7 ``campaign_run`` / ``account_run``
+    """The production :class:`HandoffReadinessReader` over the M7 ``project_run`` / ``account_run``
     tables. Manages its own short read transaction (the seam carries no connection, like the M12.1
     retriever stub). Tenant-scoped: a run whose ``workspace_id`` is not the caller's resolves to
     ``None`` / no ready accounts (cross-tenant isolation — substrate §2)."""
@@ -83,14 +83,14 @@ class DurableHandoffReadinessReader:
         self._require_finalized_review = require_finalized_review
 
     async def run_readiness(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> RunReadiness | None:
         async with self._conn_factory() as conn:
-            run = await get_campaign_run(conn, campaign_run_id)
+            run = await get_project_run(conn, project_run_id)
         if run is None or run.workspace_id != workspace_id:
             return None
         return RunReadiness(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             workspace_id=workspace_id,
             phase=run.phase,
             icp_key=run.icp_key,
@@ -99,15 +99,15 @@ class DurableHandoffReadinessReader:
         )
 
     async def ready_accounts(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> tuple[AccountReadiness, ...]:
         async with self._conn_factory() as conn:
-            run = await get_campaign_run(conn, campaign_run_id)
+            run = await get_project_run(conn, project_run_id)
             if run is None or run.workspace_id != workspace_id:
                 return ()
-            rows = await list_account_runs(conn, campaign_run_id)
+            rows = await list_account_runs(conn, project_run_id)
             finalized_review = (
-                await finalized_review_account_ids(conn, campaign_run_id)
+                await finalized_review_account_ids(conn, project_run_id)
                 if self._require_finalized_review
                 else None
             )
@@ -153,20 +153,20 @@ def build_handoff_service(
 
 
 class HandoffPhaseHandler:
-    """The ``CampaignPhase.HANDOFF`` :class:`~clue_core.PhaseHandler` (M12.3 emit path).
+    """The ``ProjectPhase.HANDOFF`` :class:`~clue_core.PhaseHandler` (M12.3 emit path).
 
     When the campaign-run state machine enters the handoff phase, :meth:`run` assembles +
     materialises
     + emits a durable ``handoff_event`` for every handoff-ready account in the run (via
     :func:`~clue_research.narrative.emit_ready_handoffs`) — idempotent on
-    ``(campaign_run, account, icp_spec_version, icp_key)`` so a re-entry / crash-resume never
+    ``(project_run, account, icp_spec_version, icp_key)`` so a re-entry / crash-resume never
     double-emits (mirrors the campaign-phase idempotency, Doc C §4 / M7.4). The optional push fires
     once per newly-emitted row through the injected :class:`HandoffPublisher` (default: the durable
     outbox, pull). It reads the ICP segment off the run, so segment A never assembles under segment
     B's
     version (D5)."""
 
-    phase: CampaignPhase = CampaignPhase.HANDOFF
+    phase: ProjectPhase = ProjectPhase.HANDOFF
 
     def __init__(
         self,
@@ -191,7 +191,7 @@ class HandoffPhaseHandler:
             assembler=self._assembler,
             readiness_reader=self._readiness_reader,
             publisher=self._publisher,
-            campaign_run_id=ctx.campaign_run_id,
+            project_run_id=ctx.project_run_id,
             workspace_id=ctx.workspace_id,
             assembled_at=self._clock(),
             coverage_confidence=self._coverage_confidence,
@@ -228,7 +228,7 @@ def build_handoff_phase_handler(
 
 def register_handoff_phase_handler(handler: HandoffPhaseHandler) -> None:
     """Register the handoff phase handler into the M7.3 process-default
-    :class:`PhaseHandlerRegistry` (``CampaignPhase.HANDOFF`` → ``handler``), so the campaign-run
+    :class:`PhaseHandlerRegistry` (``ProjectPhase.HANDOFF`` → ``handler``), so the campaign-run
     state
     machine dispatches the emit path by phase without importing ``narrative`` (mirrors
     ``register_profiling_workers`` / ``register_aspect_worker``)."""

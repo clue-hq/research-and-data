@@ -38,7 +38,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import CampaignRunId, UtcDatetime, parse_value_json, serialize_value_json
+from clue_core import ProjectRunId, UtcDatetime, parse_value_json, serialize_value_json
 from clue_db import transaction
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 
@@ -55,7 +55,7 @@ class FleetTaskRow(BaseModel):
 
     task_id: UUID
     kind: FleetTaskKind
-    project_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     dedup_key: str
     priority: int
     status: FleetTaskStatus
@@ -233,7 +233,7 @@ async def enqueue_task(
     conn: AsyncConnection,
     *,
     kind: FleetTaskKind,
-    project_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     dedup_key: str,
     priority: int = 0,
     payload: dict[str, JsonValue] | None = None,
@@ -271,7 +271,7 @@ async def claim_next_task(
     *,
     kind: FleetTaskKind,
     worker_id: str,
-    project_run_id: CampaignRunId | None = None,
+    project_run_id: ProjectRunId | None = None,
     stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
 ) -> FleetTaskRow | None:
     """Atomically claim the best runnable task (priority, then FIFO), or ``None`` when nothing is
@@ -338,7 +338,7 @@ async def requeue_task(conn: AsyncConnection, *, task_id: UUID, worker_id: str) 
 
 
 async def requeue_failed_tasks(
-    conn: AsyncConnection, *, kind: FleetTaskKind, project_run_id: CampaignRunId
+    conn: AsyncConnection, *, kind: FleetTaskKind, project_run_id: ProjectRunId
 ) -> int:
     """Re-offer every ``FAILED`` task of ``kind`` for this run (the explicit retry gate a fresh
     drive opens on re-entry). Returns how many rows were requeued."""
@@ -355,7 +355,7 @@ async def get_task(conn: AsyncConnection, task_id: UUID) -> FleetTaskRow | None:
 
 
 async def list_tasks(
-    conn: AsyncConnection, *, project_run_id: CampaignRunId, kind: FleetTaskKind
+    conn: AsyncConnection, *, project_run_id: ProjectRunId, kind: FleetTaskKind
 ) -> list[FleetTaskRow]:
     """Every task of ``kind`` for this run in claim order — the drain/observability read."""
     rows = (
@@ -378,7 +378,7 @@ class TaskQueue(Protocol):
         self,
         *,
         kind: FleetTaskKind,
-        project_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         dedup_key: str,
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
@@ -390,7 +390,7 @@ class TaskQueue(Protocol):
         *,
         kind: FleetTaskKind,
         worker_id: str,
-        project_run_id: CampaignRunId | None = None,
+        project_run_id: ProjectRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
     ) -> FleetTaskRow | None: ...
 
@@ -407,12 +407,10 @@ class TaskQueue(Protocol):
 
     async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
-    async def requeue_failed(
-        self, *, kind: FleetTaskKind, project_run_id: CampaignRunId
-    ) -> int: ...
+    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int: ...
 
     async def list_tasks(
-        self, *, project_run_id: CampaignRunId, kind: FleetTaskKind
+        self, *, project_run_id: ProjectRunId, kind: FleetTaskKind
     ) -> list[FleetTaskRow]: ...
 
 
@@ -425,7 +423,7 @@ class DbTaskQueue:
         self,
         *,
         kind: FleetTaskKind,
-        project_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         dedup_key: str,
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
@@ -447,7 +445,7 @@ class DbTaskQueue:
         *,
         kind: FleetTaskKind,
         worker_id: str,
-        project_run_id: CampaignRunId | None = None,
+        project_run_id: ProjectRunId | None = None,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
     ) -> FleetTaskRow | None:
         async with transaction() as conn:
@@ -480,12 +478,12 @@ class DbTaskQueue:
         async with transaction() as conn:
             return await requeue_task(conn, task_id=task_id, worker_id=worker_id)
 
-    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: CampaignRunId) -> int:
+    async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int:
         async with transaction() as conn:
             return await requeue_failed_tasks(conn, kind=kind, project_run_id=project_run_id)
 
     async def list_tasks(
-        self, *, project_run_id: CampaignRunId, kind: FleetTaskKind
+        self, *, project_run_id: ProjectRunId, kind: FleetTaskKind
     ) -> list[FleetTaskRow]:
         async with transaction() as conn:
             return await list_tasks(conn, project_run_id=project_run_id, kind=kind)

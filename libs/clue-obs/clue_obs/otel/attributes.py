@@ -34,7 +34,7 @@ ATTR_RUN_ID = "run_id"
 ATTR_COST_CENTS = "cost_cents"
 ATTR_WORKSPACE_ID = "workspace_id"
 ATTR_ICP_ID = "icp_id"
-ATTR_CAMPAIGN_RUN_ID = "campaign_run_id"
+ATTR_PROJECT_RUN_ID = "project_run_id"
 # LLM gateway (M0.4) — the llm.gateway_call span tags these. `model` is the id that answered;
 # token counts feed the cost surface (Doc C §6). None are secrets (a model id is public).
 ATTR_MODEL = "model"
@@ -67,7 +67,7 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_COST_CENTS,
         ATTR_WORKSPACE_ID,
         ATTR_ICP_ID,
-        ATTR_CAMPAIGN_RUN_ID,
+        ATTR_PROJECT_RUN_ID,
         ATTR_MODEL,
         ATTR_PROMPT_TOKENS,
         ATTR_COMPLETION_TOKENS,
@@ -99,7 +99,7 @@ class SpanAttributes(TypedDict, total=False):
     cost_cents: Decimal | float
     workspace_id: UUID | str
     icp_id: UUID | str
-    campaign_run_id: UUID | str
+    project_run_id: UUID | str
     model: str
     prompt_tokens: int
     completion_tokens: int

@@ -46,7 +46,7 @@ class MillicreditBurnDown(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: str
+    project_run_id: str
     spent_millicredits: int
     estimated_millicredits: int
     cap_millicredits: int
@@ -136,7 +136,7 @@ def to_millicredit_burn_down(burndown: CostBurnDown, rate: MillicreditRate) -> M
         max(cap - spent, 0) if burndown.has_cap else to_millicredits(burndown.remaining_cents, rate)
     )
     return MillicreditBurnDown(
-        campaign_run_id=str(burndown.campaign_run_id),
+        project_run_id=str(burndown.project_run_id),
         spent_millicredits=spent,
         estimated_millicredits=to_millicredits(burndown.estimated_cents, rate),
         cap_millicredits=cap,

@@ -14,9 +14,9 @@ from datetime import timedelta
 import pytest
 from tests.fleet.conftest import FakeLeaseStore, FakeTaskQueue, ScriptedDriver, run_row
 
-from clue_core import CampaignPhase, new_campaign_run_id
+from clue_core import ProjectPhase, new_project_run_id
 from clue_fleet import FleetTaskKind, FleetTaskStatus, ProjectRunWorker, enqueue_drive
-from clue_research.durable import CampaignRunStatus
+from clue_research.durable import ProjectRunStatus
 
 
 def _worker(
@@ -39,14 +39,14 @@ def _worker(
 
 def test_drive_to_completion_finishes_task_and_releases_lease() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
-            initial=run_row(run_id, phase=CampaignPhase.REVERSE_PROFILING),
+            initial=run_row(run_id, phase=ProjectPhase.REVERSE_PROFILING),
             steps=[
-                run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED),
-                run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED),
+                run_row(run_id, phase=ProjectPhase.ICP_CONFIRMED),
+                run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED),
             ],
         )
         worker = _worker(driver, queue, leases)
@@ -69,20 +69,20 @@ def test_drive_to_completion_finishes_task_and_releases_lease() -> None:
 @pytest.mark.parametrize(
     ("resting_status", "outcome"),
     [
-        (CampaignRunStatus.PAUSED, "paused"),
-        (CampaignRunStatus.FAILED, "failed"),
+        (ProjectRunStatus.PAUSED, "paused"),
+        (ProjectRunStatus.FAILED, "failed"),
     ],
 )
 def test_suspended_and_failed_runs_finish_the_task(
-    resting_status: CampaignRunStatus, outcome: str
+    resting_status: ProjectRunStatus, outcome: str
 ) -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
             initial=run_row(run_id),
-            steps=[run_row(run_id, phase=CampaignPhase.TIER_CHECKPOINT, status=resting_status)],
+            steps=[run_row(run_id, phase=ProjectPhase.TIER_CHECKPOINT, status=resting_status)],
         )
         worker = _worker(driver, queue, leases)
         await worker.drain_once()
@@ -96,11 +96,11 @@ def test_suspended_and_failed_runs_finish_the_task(
 
 def test_already_resting_run_is_finished_without_advancing() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
-            initial=run_row(run_id, status=CampaignRunStatus.PAUSED),
+            initial=run_row(run_id, status=ProjectRunStatus.PAUSED),
         )
         worker = _worker(driver, queue, leases)
         await worker.drain_once()
@@ -114,7 +114,7 @@ def test_already_resting_run_is_finished_without_advancing() -> None:
 
 def test_no_progress_run_stalls_instead_of_spinning() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         # advance() returns the same (phase, status) forever — e.g. AWAITING_INPUT not submitted.
@@ -132,7 +132,7 @@ def test_no_progress_run_stalls_instead_of_spinning() -> None:
 
 def test_lease_held_elsewhere_requeues_without_driving() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         leases.holders[run_id] = "another-worker"
         await enqueue_drive(queue, run_id)
@@ -150,15 +150,15 @@ def test_lease_held_elsewhere_requeues_without_driving() -> None:
 
 def test_graceful_stop_mid_drive_requeues_and_releases() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
-            initial=run_row(run_id, phase=CampaignPhase.REVERSE_PROFILING),
+            initial=run_row(run_id, phase=ProjectPhase.REVERSE_PROFILING),
             steps=[
-                run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED),
-                run_row(run_id, phase=CampaignPhase.DISCOVERY),
-                run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED),
+                run_row(run_id, phase=ProjectPhase.ICP_CONFIRMED),
+                run_row(run_id, phase=ProjectPhase.DISCOVERY),
+                run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED),
             ],
         )
         worker = _worker(driver, queue, leases)
@@ -182,14 +182,14 @@ def test_renewal_denied_cancels_mid_phase_not_at_boundary() -> None:
     zombie window is now cancellation latency, not the rest of the phase."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         # One long-blocking phase: if fencing waited for the boundary, the advance would run to
         # completion (~2s). Immediate cancellation kills it mid-flight — advance never finishes.
         driver = ScriptedDriver(
             initial=run_row(run_id),
-            steps=[run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED)],
+            steps=[run_row(run_id, phase=ProjectPhase.ICP_CONFIRMED)],
             advance_delay_s=2.0,
         )
         leases.deny_renewal = True  # the first heartbeat's renew returns False → lease lost
@@ -218,15 +218,15 @@ def test_transient_renewal_exception_does_not_fence_or_kill_heartbeat() -> None:
     normally with the lease released — no fencing."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
-            initial=run_row(run_id, phase=CampaignPhase.REVERSE_PROFILING),
+            initial=run_row(run_id, phase=ProjectPhase.REVERSE_PROFILING),
             steps=[
-                run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED),
-                run_row(run_id, phase=CampaignPhase.DISCOVERY),
-                run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED),
+                run_row(run_id, phase=ProjectPhase.ICP_CONFIRMED),
+                run_row(run_id, phase=ProjectPhase.DISCOVERY),
+                run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED),
             ],
             advance_delay_s=0.05,
         )
@@ -254,12 +254,12 @@ def test_persistent_renewal_exceptions_cancel_the_phase_before_expiry() -> None:
     promptly, well before the long advance would have completed."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
             initial=run_row(run_id),
-            steps=[run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED)],
+            steps=[run_row(run_id, phase=ProjectPhase.ICP_CONFIRMED)],
             advance_delay_s=2.0,  # blocks far longer than the lease TTL
         )
         leases.renew_always_raises = True
@@ -284,17 +284,15 @@ def test_persistent_renewal_exceptions_cancel_the_phase_before_expiry() -> None:
 
 def test_driver_error_fails_the_task_but_not_the_worker() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
 
         class ExplodingDriver:
-            # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
-            # — a fake RunDriver keeps the seam's legacy parameter names.
-            async def status(self, campaign_run_id: object) -> object:
+            async def status(self, project_run_id: object) -> object:
                 raise RuntimeError("boom")
 
-            async def advance(self, campaign_run_id: object) -> object:
+            async def advance(self, project_run_id: object) -> object:
                 raise RuntimeError("boom")
 
         worker = ProjectRunWorker(
@@ -319,14 +317,12 @@ def test_heartbeat_touches_the_drive_task_claim() -> None:
     looks orphaned to other claimants (only a dead driver's claim goes stale)."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
-        cycle = list(CampaignPhase)[1:] + list(CampaignPhase)[:1]
+        cycle = list(ProjectPhase)[1:] + list(ProjectPhase)[:1]
         steps = [run_row(run_id, phase=phase) for phase in cycle]
-        steps.append(
-            run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED)
-        )
+        steps.append(run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED))
         driver = ScriptedDriver(initial=run_row(run_id), steps=steps, advance_delay_s=0.02)
         worker = _worker(driver, queue, leases, heartbeat_interval=0.01)
         await worker.drain_once()
@@ -341,15 +337,13 @@ def test_paused_run_can_be_re_driven_after_resume() -> None:
     re-opened by the next ``enqueue_drive`` and the run drives on to completion."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         driver = ScriptedDriver(
             initial=run_row(run_id),
             steps=[
-                run_row(
-                    run_id, phase=CampaignPhase.TIER_CHECKPOINT, status=CampaignRunStatus.PAUSED
-                )
+                run_row(run_id, phase=ProjectPhase.TIER_CHECKPOINT, status=ProjectRunStatus.PAUSED)
             ],
         )
         worker = _worker(driver, queue, leases)
@@ -360,9 +354,9 @@ def test_paused_run_can_be_re_driven_after_resume() -> None:
 
         # The human approves; the resume surface re-offers the drive.
         assert await enqueue_drive(queue, run_id) is True
-        driver.initial = run_row(run_id, phase=CampaignPhase.DEEP)
+        driver.initial = run_row(run_id, phase=ProjectPhase.DEEP)
         driver.steps = [
-            run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED)
+            run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED)
         ]
         assert await worker.drain_once() is True
         task = queue.row(FleetTaskKind.DRIVE_RUN, run_id, str(run_id))
@@ -384,7 +378,7 @@ def test_conservative_deadline_declares_loss_no_later_than_true_expiry() -> None
     (observed ~1.1s vs the fix's ~0.7s for a 0.6s TTL with 0.3s store latency)."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         leases.latency_s = 0.3  # a slow store: acquire and every renew take ~0.3s
@@ -396,11 +390,10 @@ def test_conservative_deadline_declares_loss_no_later_than_true_expiry() -> None
             def __init__(self) -> None:
                 self.cancelled_at: float | None = None
 
-            # §1a rename: flips at stage 2 — a fake RunDriver keeps the seam's legacy param names.
-            async def status(self, campaign_run_id: object) -> object:
+            async def status(self, project_run_id: object) -> object:
                 return run_row(run_id)
 
-            async def advance(self, campaign_run_id: object) -> object:
+            async def advance(self, project_run_id: object) -> object:
                 try:
                     await asyncio.sleep(10)  # long-blocking phase; only cancellation ends it
                 except asyncio.CancelledError:
@@ -436,7 +429,7 @@ def test_constructor_rejects_too_wide_heartbeat() -> None:
     """Review finding (c): ``2·heartbeat_interval < lease_ttl`` is enforced at construction — a
     config where a single transient renew blip would false-fence a healthy lease is a build error,
     not a latent runtime hazard."""
-    driver = ScriptedDriver(initial=run_row(new_campaign_run_id()))
+    driver = ScriptedDriver(initial=run_row(new_project_run_id()))
     with pytest.raises(ValueError, match="heartbeat_interval"):
         ProjectRunWorker(
             driver=driver,  # type: ignore[arg-type]
@@ -459,13 +452,13 @@ def test_release_after_transient_error_fence_frees_the_lease_immediately() -> No
     ``release`` event; the holder slot stays ours; a second worker's acquire is denied)."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         leases.renew_always_raises = True  # persistent renew fault → transient-error fence
         driver = ScriptedDriver(
             initial=run_row(run_id),
-            steps=[run_row(run_id, phase=CampaignPhase.ICP_CONFIRMED)],
+            steps=[run_row(run_id, phase=ProjectPhase.ICP_CONFIRMED)],
             advance_delay_s=2.0,  # long phase; the fence cancels it mid-flight
         )
         worker = _worker(
@@ -494,7 +487,7 @@ def test_photo_finish_prefers_the_drives_terminal_result() -> None:
 
     async def _run() -> None:
         for i in range(25):
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             queue, leases = FakeTaskQueue(), FakeLeaseStore()
             await enqueue_drive(queue, run_id)
             gate = asyncio.Event()
@@ -502,7 +495,7 @@ def test_photo_finish_prefers_the_drives_terminal_result() -> None:
             driver = ScriptedDriver(
                 initial=run_row(run_id),
                 steps=[
-                    run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED)
+                    run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED)
                 ],
                 advance_delay_s=0.002,  # slightly longer than the beat, so the renew is parked
                 on_advance=gate.set,  # the final advance releases the fencing renew, same tick
@@ -533,15 +526,13 @@ def test_touch_runs_on_the_renew_error_path_too() -> None:
     (RED: ``queue.touches == 0``)."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_id)
         leases.renew_always_raises = True  # every renew errors → no successful renew, ever
-        cycle = list(CampaignPhase)[1:]
+        cycle = list(ProjectPhase)[1:]
         steps = [run_row(run_id, phase=phase) for phase in cycle]
-        steps.append(
-            run_row(run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED)
-        )
+        steps.append(run_row(run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED))
         driver = ScriptedDriver(initial=run_row(run_id), steps=steps, advance_delay_s=0.03)
         # A large TTL so the drive completes long before the deadline-margin fence — the point is
         # to observe error-beat touches, not a fence.
@@ -558,12 +549,12 @@ def test_touch_runs_on_the_renew_error_path_too() -> None:
 
 def test_run_loop_drains_until_stopped() -> None:
     async def _run() -> None:
-        run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+        run_a, run_b = new_project_run_id(), new_project_run_id()
         queue, leases = FakeTaskQueue(), FakeLeaseStore()
         await enqueue_drive(queue, run_a)
         await enqueue_drive(queue, run_b)
         driver = ScriptedDriver(
-            initial=run_row(run_a, status=CampaignRunStatus.COMPLETED),
+            initial=run_row(run_a, status=ProjectRunStatus.COMPLETED),
         )
         worker = _worker(driver, queue, leases)
 
