@@ -17,7 +17,7 @@ from enum import StrEnum
 class FleetTaskKind(StrEnum):
     """What a ``fleet_task`` row asks a worker to do (PB-B1).
 
-    * ``DRIVE_RUN`` — drive one campaign run forward until it can't advance (terminal, paused, or
+    * ``DRIVE_RUN`` — drive one project run forward until it can't advance (terminal, paused, or
       stalled). Claimed by any :class:`~clue_fleet.worker.ProjectRunWorker`; guarded by the
       per-run driver lease.
     * ``ACCOUNT_JOB`` — one per-account deep-research job inside a run's ``deep`` phase (the

@@ -1,6 +1,6 @@
 # M8A — Campaign-Run Deep Orchestration — implementation plan
 
-**Date:** 2026-06-23 · **Spec:** `docs/specs/M8A-campaign-run-deep-orchestration.md` · **Design session:** [[2026-06-22-m8a-orchestration-design]] (verified facts) + workflow `wf_1288315a-c58` (design panel + judge scores + synthesis).
+**Date:** 2026-06-23 · **Spec:** `docs/specs/M8A-project-run-deep-orchestration.md` · **Design session:** [[2026-06-22-m8a-orchestration-design]] (verified facts) + workflow `wf_1288315a-c58` (design panel + judge scores + synthesis).
 **Approach chosen:** C (hybrid) — a thin `DeepPhaseHandler` for `CampaignPhase.DEEP` delegating per-account to an `AccountDeepOrchestrator` that sequences `profile_account → discover_committee → bounded profile_contact fan-out` via **direct callables**, inside the existing `AccountScheduler` slot, all in a new **`api/deep/`** package. Rejected: B (parent LangGraph w/ 2nd Send super-step — unproven replay semantics in the most load-bearing durable file), A-as-written (false "reuse scheduler for free" — no callback seam; defers exactly-once).
 
 This is the operational companion to the spec. The spec owns scope/AC/deps; this owns the code-level *how*, exact signatures, test plans, and merge order.
@@ -120,6 +120,6 @@ class DeepPhaseHandler:  # implements core.PhaseHandler
 
 ## TODO
 - [x] verified facts + design panel + synthesis integrated
-- [x] spec `docs/specs/M8A-campaign-run-deep-orchestration.md`
+- [x] spec `docs/specs/M8A-project-run-deep-orchestration.md`
 - [x] implementation plan (this doc)
 - [ ] **awaiting user go-ahead** to create the M8A milestone + ENG issues (M8A.0…M8A.6) in Linear (Engineering team / "Research Subsystem" project `2c743aca-0c49-4b3b-b845-6ff23e957fd1`; new label `layer:deep-orchestration`; format `M8A.# — …` + spec backlink + blockedBy DAG).

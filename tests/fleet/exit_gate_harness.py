@@ -94,7 +94,7 @@ def tier_for(index: int) -> str:
 
 
 def account_run_for(project_run_id: ProjectRunId) -> RunId:
-    """The stub deep pass's account-run id (one per campaign run, stable across restarts) — the
+    """The stub deep pass's account-run id (one per project run, stable across restarts) — the
     first component of every account-step key."""
     return RunId(uuid5(NAMESPACE_URL, f"exit-gate:{project_run_id}:account-run"))
 

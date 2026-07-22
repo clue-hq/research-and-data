@@ -18,7 +18,7 @@ Per harness doc §1a (*project* = the end-to-end ABM motion, historically "proje
 B1-owned run-machinery identifiers were renamed on this lane (**stage 1**: `ProjectRunWorker`,
 fleet-owned `project_run_id` end-to-end). The four seam exceptions that pinned the legacy
 spelling flipped at **stage 2** (2026-07-22, right after Phase-B integration — playbook at
-`docs/specs/PB-rename-campaign-run-to-project-run.md`, executed): the whole repo now speaks
+`docs/specs/PB-rename-project-run-to-project-run.md`, executed): the whole repo now speaks
 `project_run` (`ProjectRun*` types via a `clue_core` contract-delta; the durable table/types
 renamed by migration `814a272f79a5`), the in-code markers are deleted, and the empty-allowlist
 guard `tests/test_project_rename_guard.py` replaced the interim fleet guard. Bare "campaign" is
@@ -28,7 +28,7 @@ deliberately keep their spellings.
 
 ## 1. Goal
 
-The detached **`ProjectRunWorker`**: a separate OS process that drives existing M7 campaign-run
+The detached **`ProjectRunWorker`**: a separate OS process that drives existing M7 project-run
 state machines (+ the M8A per-account graphs the `deep` phase fans out to) as **jobs**:
 
 - a **per-run driver lease** — at most one worker drives a given `project_run` at a time; a
@@ -54,7 +54,7 @@ state machines (+ the M8A per-account graphs the `deep` phase fans out to) as **
 | `lease.py` | the `run_lease` table repo + `DbLeaseStore`: atomic acquire (`INSERT … ON CONFLICT DO UPDATE … WHERE expires_at <= now()`), holder-guarded renew/release. All clock reads are DB `now()` (the M7.4 convention — no cross-worker NTP skew) |
 | `queue.py` | the `fleet_task` table repo + `DbTaskQueue`: idempotent enqueue (`ON CONFLICT DO NOTHING` on `(kind, project_run_id, dedup_key)`), atomic claim-next (`FOR UPDATE SKIP LOCKED`, `ORDER BY priority, enqueued_at`), holder-guarded finish/requeue, stale-reclaim window |
 | `scheduler.py` | `QueueBackedScheduler` — implements the exact `run_accounts(specs, project_run_id=…, checkpointer=…, run_one=…)` signature the M8A deep handler is typed against (`clue_api.deep.handler.DeepAccountScheduler`, asserted structurally in tests), so at integration it is a constructor-argument swap for `durable.AccountScheduler` — zero handler changes. Enqueues every spec as an `account_job` (priority = tier rank), drains under the concurrency window, marks tasks done/failed. Carries the same Doc C §4 per-entity single-flight as `AccountScheduler` via a **required** (not optional) `lock_factory` seam — every `run_one` (drain + done-replay) runs inside the injected per-entity lock, so two runs never deep-research one entity at once; the required-arg makes a forgotten factory a construction-time `TypeError` (prod wires `account_entity_lock_factory(get_redis())` at the api root) |
-| `worker.py` | `ProjectRunWorker` — the drain loop: claim a `drive_run` task → acquire the run lease → step the run via the injected `RunDriver` seam (structurally satisfied by `durable.CampaignRun`) with a concurrent, **supervised** lease-heartbeat → finish the task with the run's terminal/suspended status → release the lease. Graceful `stop()` between phases; lease loss **cancels the in-flight phase immediately** (supervised-heartbeat fencing — §2.3) |
+| `worker.py` | `ProjectRunWorker` — the drain loop: claim a `drive_run` task → acquire the run lease → step the run via the injected `RunDriver` seam (structurally satisfied by `durable.ProjectRun`) with a concurrent, **supervised** lease-heartbeat → finish the task with the run's terminal/suspended status → release the lease. Graceful `stop()` between phases; lease loss **cancels the in-flight phase immediately** (supervised-heartbeat fencing — §2.3) |
 | `runner.py` | `run_worker(...)` — the asyncio process entrypoint shell (signal handling, drain-on-SIGTERM). The *production* `__main__` (composing real phase handlers) is `clue_api` wiring and lands **at integration**, per the treaty §3.4; tests compose their own harness process |
 
 ### 2.2 The tables (one migration, hash id off `98422adaaa38`)
@@ -162,7 +162,7 @@ guarantees, adding none:
 | Root `pyproject.toml` | `clue_fleet` already registered (R2); append two import contracts (research ⊄ fleet; fleet touches only `durable` inside research) |
 | `clue_api` | **no wiring committed** (treaty §3.4); the scheduler-swap + worker `__main__` land at integration |
 
-`durable/` seam edits: **none required** — the worker drives the public `CampaignRun` surface;
+`durable/` seam edits: **none required** — the worker drives the public `ProjectRun` surface;
 the scheduler implements the public `run_accounts` seam.
 
 **Integrator checklist (the api-composition-root wiring, treaty §3.4 — integration-owned):**

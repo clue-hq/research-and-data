@@ -1,6 +1,6 @@
 """M13.4 — the client-facing cost & progress surface (the read-only ``ObservabilitySurface``).
 
-Doc C §6 requires a long campaign run never leave the client staring at a spinner: this surface
+Doc C §6 requires a long project run never leave the client staring at a spinner: this surface
 exposes **phase progress**, live **cost burn-down vs estimate vs cap**, a **pre-run estimate**,
 **per-source yield**, **verification health**, and **coverage confidence** — every panel a *read
 projection* over the Postgres provenance the rest of the subsystem already writes (substrate §9).
@@ -209,7 +209,7 @@ class VerificationHealth(BaseModel):
 
 
 class RunPhaseState(BaseModel):
-    """What :class:`CampaignStateReader` returns — the durable phase snapshot for one campaign run,
+    """What :class:`CampaignStateReader` returns — the durable phase snapshot for one project run,
     projected off ``durable`` enums into ``core``/``str`` (so ``review`` never learns the durable
     enum tokens). ``checkpoints`` lists only the phases that have a checkpoint row; the surface
     fills
@@ -227,7 +227,7 @@ class RunPhaseState(BaseModel):
 
 @runtime_checkable
 class CampaignStateReader(Protocol):
-    """Reads the M7.3 campaign-run phase state for the progress panel (the M13.4 ↔ M7 seam).
+    """Reads the M7.3 project-run phase state for the progress panel (the M13.4 ↔ M7 seam).
 
     ``review`` cannot import ``durable``, so the production impl (over ``durable.get_project_run``
     +
@@ -276,7 +276,7 @@ class PreRunEstimator(Protocol):
 
 @runtime_checkable
 class VerificationHealthReader(Protocol):
-    """Reads the verification-health counts for one campaign run (the M13.4 ↔ M9 seam).
+    """Reads the verification-health counts for one project run (the M13.4 ↔ M9 seam).
 
     ``review`` cannot import ``verification``; the production impl is injected at the ``api`` root,
     where it scans the campaign's claims (``claimstore``) — strong identity-binding via the at-rest
@@ -291,7 +291,7 @@ class VerificationHealthReader(Protocol):
 
 @runtime_checkable
 class CoverageReportReader(Protocol):
-    """Reads the M6.5 coverage estimate for one campaign run (the M13.4 ↔ M6 seam).
+    """Reads the M6.5 coverage estimate for one project run (the M13.4 ↔ M6 seam).
 
     ``review`` cannot import ``discovery_scoring``; the production impl is injected at the ``api``
     root, mapping the ``discovery_scoring`` coverage report (or its serialized copy on the M6.4

@@ -79,7 +79,7 @@ class AccountScheduler:
     Construct with the :class:`~clue_research.durable.graph.AccountResearchGraph`, a parallelism
     cap, and (in prod) a ``lock_factory``; call :meth:`run_accounts` with the accounts to research.
     Each account is gated by the semaphore *and* its per-entity lock, so neither the in-process
-    fan-out nor a concurrent campaign run can exceed the cap or double-research an entity."""
+    fan-out nor a concurrent project run can exceed the cap or double-research an entity."""
 
     def __init__(
         self,

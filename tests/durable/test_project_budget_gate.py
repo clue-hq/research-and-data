@@ -1,6 +1,6 @@
 """M7.5 × M7.3 coupling — the per-run budget cap graceful-stops the campaign state machine.
 
-The acceptance criteria: a campaign run that has reached its per-run cap performs a *graceful stop
+The acceptance criteria: a project run that has reached its per-run cap performs a *graceful stop
 at the next checkpoint* (via M7.3) instead of overspending, and raising the cap then lets ``resume``
 continue the same phase. These wire the real :class:`BudgetEngine` (on an in-memory store) into a
 :class:`ProjectRun` (on the in-memory campaign store) — exactly the production seam, fakes for

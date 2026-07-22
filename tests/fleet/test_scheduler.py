@@ -237,7 +237,7 @@ def test_scheduler_satisfies_the_deep_handler_seam() -> None:
 
 # --- audit finding #1: per-entity single-flight across concurrent runs -----------------------
 # The QueueBackedScheduler replaces durable.AccountScheduler at the deep seam and must carry the
-# SAME Doc C §4 guarantee: two campaign runs never deep-research the same entity at once. The
+# SAME Doc C §4 guarantee: two project runs never deep-research the same entity at once. The
 # queue dedup key is (kind, project_run_id, dedup_key), so two runs holding one entity are two
 # distinct rows — the single-flight is the injected entity lock's doing, not the queue's.
 

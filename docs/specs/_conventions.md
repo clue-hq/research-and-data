@@ -104,7 +104,7 @@ specs write research modes as "mode M1…M4".)
 
 **Identity-binding strength** (staged-flow §6): `strong` · `weak`. Weak never promotes / drives outreach.
 
-**Campaign-run phases** (Doc C §4):
+**Project-run phases** (Doc C §4):
 `reverse_profiling → icp_confirmed → discovery → scoring → tier_checkpoint(human) → deep → verification → handoff`.
 
 ---

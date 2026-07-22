@@ -86,7 +86,7 @@ against so none co-edits `core` after the fork.
   re-exports it. **Design decision (review):** `record_re_research_candidates` is NOT promoted — it
   takes an `AsyncConnection` and would pull a DB dependency into the pure `core` kernel; it stays
   impl-only (M7 calls it via the concrete impl at `api`).
-- **(e)** `core.handoff.AccountHandoff`: additive + defaulted `icp_spec_version`, `campaign_run_id`,
+- **(e)** `core.handoff.AccountHandoff`: additive + defaulted `icp_spec_version`, `project_run_id`,
   `assembled_at`, `coverage_confidence`, `field_conflicts`. Added in `core` (not as M12 runtime
   extras) because the model is `frozen, extra="forbid"` and M12 must not edit `core`; M12's assembler
   sets the scope stamps.

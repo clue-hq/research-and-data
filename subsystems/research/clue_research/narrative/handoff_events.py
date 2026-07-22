@@ -14,7 +14,7 @@ Emission is **idempotent on ``(project_run_id, account_entity_id, icp_spec_versi
 (an
 ``ON CONFLICT DO NOTHING`` on the unique scope key) — re-entering the handoff phase, or a
 crash-resume
-of the campaign-run state machine, never double-emits (M12.3 AC; mirrors the campaign-phase
+of the project-run state machine, never double-emits (M12.3 AC; mirrors the campaign-phase
 idempotency on ``(project_run, phase)``, Doc C §4 / M7.4). ``emit_handoff_event`` returns whether
 the
 row was *newly* inserted so the caller fires the push exactly once.

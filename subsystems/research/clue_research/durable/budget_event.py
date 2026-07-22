@@ -56,7 +56,7 @@ class BudgetEventRow(BaseModel):
 
 
 class RunBudgetState(BaseModel):
-    """The campaign-run cost figures the budget engine reads (M7.5) — the per-run scope.
+    """The project-run cost figures the budget engine reads (M7.5) — the per-run scope.
 
     ``spent_cents`` is the live running total (incremented per charge); ``cap_cents`` is the
     per-campaign hard cap (``None`` = uncapped); ``estimated_cents`` is the latest persisted pre-run
@@ -160,7 +160,7 @@ _SET_ESTIMATED_SQL = text(
 async def get_run_budget_state(
     conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> RunBudgetState | None:
-    """The per-run spend / cap / estimate, or ``None`` if the campaign run does not exist."""
+    """The per-run spend / cap / estimate, or ``None`` if the project run does not exist."""
     row = (await conn.execute(_GET_RUN_BUDGET_SQL, {"id": project_run_id})).mappings().one_or_none()
     if row is None:
         return None

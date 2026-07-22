@@ -1,6 +1,6 @@
-"""The outer campaign-run state machine (M7.3) — the durable scheduler over the phase sequence.
+"""The outer project-run state machine (M7.3) — the durable scheduler over the phase sequence.
 
-The substrate nails *per-account* durable execution (M7.1) but not the **campaign run** — the
+The substrate nails *per-account* durable execution (M7.1) but not the **project run** — the
 long-lived job spanning ``reverse_profiling → icp_confirmed → discovery → scoring → tier_checkpoint
 → deep → verification → handoff`` (Doc C §4). :class:`ProjectRun` owns that lifecycle: explicit
 phase ordering, per-phase checkpointing so a crash resumes at the last committed phase, the durable
@@ -90,7 +90,7 @@ def next_phase(phase: ProjectPhase) -> ProjectPhase | None:
     return PHASE_SEQUENCE[idx + 1] if idx + 1 < len(PHASE_SEQUENCE) else None
 
 
-# A campaign run has a *single driver* (M7.3 owns its phase progression), so a ledger row found
+# A project run has a *single driver* (M7.3 owns its phase progression), so a ledger row found
 # ``in_progress`` on re-entry is always *this* run's own crashed/partial attempt resuming — never a
 # live concurrent holder. Phase idempotency therefore claims with a zero staleness window: any
 # ``in_progress`` is immediately re-ownable (the re-entry executes), so re-entry can never raise a
@@ -119,7 +119,7 @@ _BUDGET_GATED_PHASES: frozenset[ProjectPhase] = frozenset(
 
 
 class ProjectRunError(Exception):
-    """Base error for the campaign-run state machine (M7.3)."""
+    """Base error for the project-run state machine (M7.3)."""
 
 
 class ProjectRunNotFound(ProjectRunError):
@@ -323,7 +323,7 @@ class DbProjectRunStore:
 
 
 class ProjectRun:
-    """The outer campaign-run state machine (M7.3). Construct once with a :class:`ProjectRunStore`,
+    """The outer project-run state machine (M7.3). Construct once with a :class:`ProjectRunStore`,
     a :class:`PhaseHandlerRegistry`, and (optionally) a :class:`~clue_core.BudgetEngine`;
     drive a run with :meth:`start` then :meth:`run_to_completion` (or step it with :meth:`advance`).
 
@@ -378,7 +378,7 @@ class ProjectRun:
         tier_cutoffs: TierCutoffs | None = None,
         project_run_id: ProjectRunId | None = None,
     ) -> ProjectRunId:
-        """Create a campaign run at the first phase (``reverse_profiling``, ``ACTIVE``) and return
+        """Create a project run at the first phase (``reverse_profiling``, ``ACTIVE``) and return
         its id. Idempotent on a supplied ``project_run_id`` (a re-``start`` never resets a run that
         already advanced), so the caller can mint the id and retry safely."""
         run_id = project_run_id if project_run_id is not None else new_project_run_id()

@@ -70,7 +70,7 @@ class AccountRunSubPhase(StrEnum):
 
 
 class ProjectRunStatus(StrEnum):
-    """Lifecycle of one campaign run (``project_run.status``; M7.3).
+    """Lifecycle of one project run (``project_run.status``; M7.3).
 
     The *outer* state machine's run-level status, distinct from the per-phase
     :class:`PhaseCheckpointStatus` and the inner :class:`AccountRunStatus`:

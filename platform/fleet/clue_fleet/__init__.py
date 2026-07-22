@@ -2,7 +2,7 @@
 tier-priority queue (PB-B1 / harness build step 0).
 
 The governance shell around the existing research pipeline (harness §6, Doc A §1.3 — "always
-mechanical"): the :class:`ProjectRunWorker` process drives M7 campaign-run state machines as
+mechanical"): the :class:`ProjectRunWorker` process drives M7 project-run state machines as
 ``drive_run`` jobs under a per-run :mod:`~clue_fleet.lease`; the ``deep`` phase's account jobs
 drain from the durable tier-priority :mod:`~clue_fleet.queue` via the
 :class:`QueueBackedScheduler`. No new research behavior — the pipeline gains kill-resumability,

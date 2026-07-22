@@ -9,7 +9,7 @@ independence contract) wires:
   M12.1 positioner's committee reader and the M12.2 assembler's committee reader);
 * the :class:`~clue_research.narrative.HandoffService` (the read API) over that reader;
 * the **handoff phase handler** — a :class:`~clue_core.PhaseHandler` for
-  ``ProjectPhase.HANDOFF`` that, when the campaign-run state machine enters the handoff phase,
+  ``ProjectPhase.HANDOFF`` that, when the project-run state machine enters the handoff phase,
   assembles + materialises + emits a durable ``handoff_event`` for every ready account (the M12.3
   emit/notify path), registered into the M7.3 :class:`PhaseHandlerRegistry`
   (``durable.register_phase_handler``) — so the state machine dispatches it by phase without
@@ -57,7 +57,7 @@ from clue_research.review import finalized_review_account_ids
 
 _Clock = Callable[[], UtcDatetime]
 
-# A campaign run past these statuses will produce no further handoffs (the API tells consumers to
+# A project run past these statuses will produce no further handoffs (the API tells consumers to
 # stop polling).
 _TERMINAL_RUN_STATUSES = frozenset({ProjectRunStatus.COMPLETED, ProjectRunStatus.FAILED})
 
@@ -155,7 +155,7 @@ def build_handoff_service(
 class HandoffPhaseHandler:
     """The ``ProjectPhase.HANDOFF`` :class:`~clue_core.PhaseHandler` (M12.3 emit path).
 
-    When the campaign-run state machine enters the handoff phase, :meth:`run` assembles +
+    When the project-run state machine enters the handoff phase, :meth:`run` assembles +
     materialises
     + emits a durable ``handoff_event`` for every handoff-ready account in the run (via
     :func:`~clue_research.narrative.emit_ready_handoffs`) — idempotent on
@@ -228,7 +228,7 @@ def build_handoff_phase_handler(
 
 def register_handoff_phase_handler(handler: HandoffPhaseHandler) -> None:
     """Register the handoff phase handler into the M7.3 process-default
-    :class:`PhaseHandlerRegistry` (``ProjectPhase.HANDOFF`` → ``handler``), so the campaign-run
+    :class:`PhaseHandlerRegistry` (``ProjectPhase.HANDOFF`` → ``handler``), so the project-run
     state
     machine dispatches the emit path by phase without importing ``narrative`` (mirrors
     ``register_profiling_workers`` / ``register_aspect_worker``)."""

@@ -188,7 +188,7 @@ __all__ = [
     "AccountRunStore",
     "DbAccountRunStore",
     "postgres_checkpointer",
-    # campaign-run state machine (M7.3)
+    # project-run state machine (M7.3)
     "ProjectRun",
     "ProjectRunStore",
     "DbProjectRunStore",

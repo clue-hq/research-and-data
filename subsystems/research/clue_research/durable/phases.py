@@ -1,6 +1,6 @@
 """The phase-handler registry — :class:`~clue_core.ProjectPhase` → handler dispatch.
 
-The campaign-run state machine (M7.3) advances through phases but must not import the packages that
+The project-run state machine (M7.3) advances through phases but must not import the packages that
 implement them (M5/M6/M8/M9/M12 own the bodies; the import-linter independence contract forbids
 ``durable → discovery_scoring`` etc.). So, exactly like the aspect-worker registry
 (``durable/workers.py``) and the source layer's resolver binding (``sources.registry``), concrete

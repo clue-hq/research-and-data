@@ -1,6 +1,6 @@
 """The ``ICP_CONFIRMED`` phase handler (M5.2).
 
-M5 owns the campaign-run's first two phases (Doc C §4). After ``REVERSE_PROFILING``, the
+M5 owns the project-run's first two phases (Doc C §4). After ``REVERSE_PROFILING``, the
 ``ICP_CONFIRMED`` phase is the **checkpoint over an already-confirmed ICP spec**: the interactive
 synthesize → edit → confirm flow (:mod:`clue_research.stage0.icp_synthesis` /
 :mod:`clue_research.stage0.icp_confirm`) produced and activated the versioned ``ICPSpec`` for this

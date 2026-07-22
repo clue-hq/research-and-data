@@ -106,7 +106,7 @@ def test_handler_idempotent_resume_across_commits() -> None:
         async with db_lifespan():
             await _seed_committed()
             bind_resolver("firecrawl_site", FakeResolver(tier=2, values={CLIENT_VALUE_PROP: "ci"}))
-            # Same campaign run id → same derived run id. Two separate committing handler runs
+            # Same project run id → same derived run id. Two separate committing handler runs
             # (a crash-and-resume) must NOT double-write: the version stays 1 (no bump) and the
             # client resolves to the same entity — the "no double-charge" half of the AC, proven
             # across a real commit boundary (not just within one rolled-back transaction).

@@ -500,7 +500,7 @@ class GroundedSynthesisResolver:
                     extraction_method=ExtractionMethod.LLM_SYNTHESIS,
                     confidence=sf.confidence,
                     # run_id / research_mode are placeholders the waterfall's _finalize restamps
-                    # with the run's real values (the resolver cannot know the campaign run/mode).
+                    # with the run's real values (the resolver cannot know the project run/mode).
                     run_id=new_run_id(),
                     research_mode=ResearchMode.ACCOUNT_PROFILING,
                     source_url=sf.source_url,

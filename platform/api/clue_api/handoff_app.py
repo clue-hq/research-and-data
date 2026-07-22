@@ -12,7 +12,7 @@ lifespan/``asynccontextmanager`` pattern the rest of the stack uses for pools (s
 **Read-only by construction:** every route is a ``GET``. There is no write endpoint — no
 content/design write ever flows back through this API into the claim store (Postgres-only source of
 truth, conventions §6 / substrate §5c). The emit/notify *push* is the one-directional
-``handoff_event`` outbox, driven by the campaign-run state machine (``api/handoff_wiring``), never
+``handoff_event`` outbox, driven by the project-run state machine (``api/handoff_wiring``), never
 by a request here.
 
 **Tenancy:** access is scoped to ``workspace_id`` via the injected ``workspace_resolver`` dependency

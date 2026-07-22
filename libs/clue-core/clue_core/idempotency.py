@@ -56,6 +56,6 @@ def account_step_key(
 
 
 def phase_key(project_run_id: ProjectRunId, phase: ProjectPhase) -> str:
-    """The idempotency key for one campaign-run phase ``(project_run, phase)`` (substrate §5c). A
+    """The idempotency key for one project-run phase ``(project_run, phase)`` (substrate §5c). A
     re-entered phase reuses this key, so the phase commits its effects exactly once."""
     return idempotency_key(IdempotencyScope.PROJECT_PHASE, project_run_id, phase)

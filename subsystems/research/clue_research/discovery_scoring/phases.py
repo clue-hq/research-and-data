@@ -1,4 +1,4 @@
-"""M6's campaign-run phase handlers (M6.1+M6.2 → DISCOVERY; M6.3 → SCORING; M6.4 → TIER_CHECKPOINT).
+"""M6's project-run phase handlers (M6.1+M6.2 → DISCOVERY; M6.3 → SCORING; M6.4 → TIER_CHECKPOINT).
 
 The frozen ``PhaseHandler`` seam (Beat-0, ``core.execution``) lets the M7 state machine drive a
 phase without importing this package. ``DiscoveryPhaseHandler`` is the integrated DISCOVERY phase:

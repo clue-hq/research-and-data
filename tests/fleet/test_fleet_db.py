@@ -518,7 +518,7 @@ def test_deep_drain_never_double_runs_a_job_whose_claim_went_stale_mid_flight() 
 
 
 def test_cross_run_same_entity_is_single_flighted_on_the_real_queue() -> None:
-    """The DB-gated twin of the offline single-flight gate: two campaign runs share one entity on
+    """The DB-gated twin of the offline single-flight gate: two project runs share one entity on
     the real ``DbTaskQueue`` (committed rows, run-scoped ``uuid5`` entity ids, the real claim
     path), one shared entity-lock factory across both schedulers. Uses the real DB because the
     two runs' account jobs are two distinct committed rows on distinct ``project_run_id``s — the

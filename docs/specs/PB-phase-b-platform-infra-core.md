@@ -41,8 +41,8 @@ criteria = the exit gate below), then implementation, per the M0–M13 workflow.
 
 ### B1 — fleet worker (build step 0)
 
-**Goal.** The detached `CampaignRunWorker`: a separate process that drives existing M7
-campaign-run state machines + M8A per-account graphs as jobs — per-run **driver lease**, task
+**Goal.** The detached `ProjectRunWorker`: a separate process that drives existing M7
+project-run state machines + M8A per-account graphs as jobs — per-run **driver lease**, task
 drain, tier-priority queue. No new research behavior; the pipeline gains kill-resumability.
 
 **Owns (may create/edit):**
@@ -58,7 +58,7 @@ drain, tier-priority queue. No new research behavior; the pipeline gains kill-re
 
 **Exit gate:** kill -9 the worker at ~40% of a 500-account stub-mode run → restart → resume
 completes **exactly-once** (no double spend on the `(account, field, tier)` and
-`(campaign_run, phase)` idempotency keys); plus lease takeover (a second worker may not drive a
+`(project_run, phase)` idempotency keys); plus lease takeover (a second worker may not drive a
 leased run; takes over after expiry).
 
 ### B2 — storage (build step 1)

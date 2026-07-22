@@ -2,7 +2,7 @@
 
 The testable analogue of the production Redis entity lock (``clue_locks.entity_lock`` /
 ``clue_research.durable.account_entity_lock_factory``): an ``asyncio.Lock`` per entity that
-single-flights same-entity ``run_one`` calls, so two campaign runs never deep-research one entity
+single-flights same-entity ``run_one`` calls, so two project runs never deep-research one entity
 at once (Doc C §4). One implementation, shared by ``tests/fleet`` (its conftest fakes and the
 exit-gate harness subprocess) and ``tests/durable`` — previously three near-identical copies.
 
