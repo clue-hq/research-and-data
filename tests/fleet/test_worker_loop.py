@@ -12,10 +12,10 @@ import time
 from datetime import timedelta
 
 import pytest
-from clue_fleet import FleetTaskKind, FleetTaskStatus, ProjectRunWorker, enqueue_drive
 from tests.fleet.conftest import FakeLeaseStore, FakeTaskQueue, ScriptedDriver, run_row
 
 from clue_core import CampaignPhase, new_campaign_run_id
+from clue_fleet import FleetTaskKind, FleetTaskStatus, ProjectRunWorker, enqueue_drive
 from clue_research.durable import CampaignRunStatus
 
 

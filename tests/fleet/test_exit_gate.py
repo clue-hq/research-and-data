@@ -28,13 +28,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from clue_fleet import (
-    DbTaskQueue,
-    FleetTaskStatus,
-    acquire_run_lease,
-    enqueue_drive,
-    get_run_lease,
-)
 from sqlalchemy import text
 from tests.fleet.conftest import run_async
 from tests.fleet.exit_gate_harness import STUB_COST, step_key_for
@@ -42,6 +35,13 @@ from tests.fleet.exit_gate_harness import STUB_COST, step_key_for
 from clue_core import CampaignRunId, new_campaign_run_id
 from clue_core.idempotency import phase_key
 from clue_db import db_lifespan
+from clue_fleet import (
+    DbTaskQueue,
+    FleetTaskStatus,
+    acquire_run_lease,
+    enqueue_drive,
+    get_run_lease,
+)
 from clue_research.durable import (
     PHASE_SEQUENCE,
     CampaignRun,

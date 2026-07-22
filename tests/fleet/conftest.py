@@ -23,7 +23,6 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from clue_fleet import FleetTaskKind, FleetTaskRow, FleetTaskStatus, RunLeaseRow
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -37,6 +36,7 @@ from tests.lock_factory import ProcessLocalLockFactory as ProcessLocalLockFactor
 
 from clue_core import CampaignPhase, CampaignRunId, CostCents
 from clue_db import db_lifespan
+from clue_fleet import FleetTaskKind, FleetTaskRow, FleetTaskStatus, RunLeaseRow
 from clue_research.durable import CampaignRunRow, CampaignRunStatus
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]

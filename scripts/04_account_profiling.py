@@ -73,7 +73,7 @@ async def main(
         print(f"  aspect {cov.aspect}: filled={cov.fields_filled}")
     print(
         "\nNext: scripts/05_committee_discovery.py "
-        f"--workspace-id {workspace_id} --account-id {result.account_entity_id}"
+        f"--workspace-id {workspace_id} --account-id {result.account_entity_id} --tier {tier}"
     )
 
 

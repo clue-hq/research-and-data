@@ -14,6 +14,11 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+from tests.fleet.conftest import rollback_conn, run_async
+
+from clue_core import new_campaign_run_id
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -29,11 +34,6 @@ from clue_fleet import (
     requeue_failed_tasks,
     requeue_task,
 )
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection
-from tests.fleet.conftest import rollback_conn, run_async
-
-from clue_core import new_campaign_run_id
 
 pytestmark = pytest.mark.usefixtures("require_fleet_db")
 
@@ -478,10 +478,10 @@ def test_deep_drain_never_double_runs_a_job_whose_claim_went_stale_mid_flight() 
         from collections import Counter
         from uuid import NAMESPACE_URL, uuid5
 
-        from clue_fleet import DbTaskQueue, QueueBackedScheduler
         from tests.fleet.conftest import ProcessLocalLockFactory
 
         from clue_core import EntityId
+        from clue_fleet import DbTaskQueue, QueueBackedScheduler
         from clue_research.durable import AccountSpec
 
         run_id = new_campaign_run_id()
@@ -530,10 +530,10 @@ def test_cross_run_same_entity_is_single_flighted_on_the_real_queue() -> None:
         from collections import Counter
         from uuid import NAMESPACE_URL, uuid5
 
-        from clue_fleet import DbTaskQueue, QueueBackedScheduler
         from tests.fleet.conftest import ProcessLocalLockFactory
 
         from clue_core import EntityId
+        from clue_fleet import DbTaskQueue, QueueBackedScheduler
         from clue_research.durable import AccountSpec
 
         run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
@@ -597,11 +597,11 @@ def test_heartbeat_death_never_yields_two_concurrent_drivers() -> None:
     async def _run() -> None:
         import asyncio
 
-        from clue_fleet import DbLeaseStore, DbTaskQueue, ProjectRunWorker, enqueue_drive
         from tests.fleet.conftest import run_row
 
         from clue_core import CampaignPhase
         from clue_db import db_lifespan
+        from clue_fleet import DbLeaseStore, DbTaskQueue, ProjectRunWorker, enqueue_drive
         from clue_research.durable import CampaignRunStatus
 
         run_id = new_campaign_run_id()

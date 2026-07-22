@@ -37,7 +37,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api", "clue_memory"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api", "clue_memory", "clue_content", "clue_toolbelt", "clue_agents", "clue_fleet", "clue_projections"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]

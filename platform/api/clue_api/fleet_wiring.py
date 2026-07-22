@@ -33,6 +33,8 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+from clue_config import Settings
+from clue_core import CampaignRunId
 from clue_fleet import (
     DbLeaseStore,
     DbTaskQueue,
@@ -45,9 +47,6 @@ from clue_fleet import (
     default_tier_priority,
     enqueue_drive,
 )
-
-from clue_config import Settings
-from clue_core import CampaignRunId
 from clue_locks import get_redis
 from clue_research.durable import (
     BudgetEngine,
