@@ -122,6 +122,11 @@ from clue_api.phase_wiring import (
     register_tier_checkpoint_handler,
     snapshot_bound,
 )
+from clue_api.projections_app import (
+    PROJECTIONS_SCHEMA_HEADER,
+    create_projections_app,
+    create_projections_router,
+)
 from clue_api.review import (
     DbVerificationAnnotationReader,
     NoopReviewDispositionEmitter,
@@ -146,6 +151,12 @@ from clue_api.run_composition import (
     CompositionUnavailable,
     SpecLoader,
 )
+from clue_api.run_events_wiring import (
+    DbRunEventEmitter,
+    NullRunEventEmitter,
+    RunEventEmitter,
+    build_run_event_emitter,
+)
 from clue_api.storage_wiring import (
     DEFAULT_ORPHAN_SWEEP_GRACE,
     SnapshotBindingPhaseHandler,
@@ -154,6 +165,7 @@ from clue_api.storage_wiring import (
     build_storage_backend,
     run_orphan_blob_sweep,
 )
+from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_api.synthesis_wiring import register_synthesis_wiring
 from clue_api.toolbelt_wiring import (
     GatewayRequired,
@@ -274,4 +286,15 @@ __all__ = [
     # B4 slice 2: the concrete toolbelt over the existing capabilities (toolbelt_wiring)
     "build_toolbelt",
     "GatewayRequired",
+    # B4 slice 3: the read-side HTTP surface (projections + tool route + manifest ops + SSE)
+    "create_projections_app",
+    "create_projections_router",
+    "PROJECTIONS_SCHEMA_HEADER",
+    # B4 slice 3: the run_event SSE emitter (drive-path write) + stream-token store
+    "RunEventEmitter",
+    "DbRunEventEmitter",
+    "NullRunEventEmitter",
+    "build_run_event_emitter",
+    "mint_stream_token",
+    "consume_stream_token",
 ]

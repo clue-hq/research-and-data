@@ -1,0 +1,448 @@
+"""The B4 read-side HTTP surface (PB-B4 slice 3) — projections, the tool route, manifest ops, SSE.
+
+The composition-root FastAPI app that serves the ``clue_projections`` read views, the single typed
+**write path** (the slice-2 toolbelt over ``POST /tools/{name}`` with A9 idempotency at the HTTP
+edge), the manifest **ops** (pause/adjust mapped to the run machine — everything else refused 422),
+and the treaty **SSE** stream (``Last-Event-ID`` replay, ``stream.hello`` / ``stream.reset``,
+single-use stream tokens). Built in the ``handoff_app`` style: thin routes over injected
+collaborators, a workspace/actor auth seam swapped via ``dependency_overrides``, schema-versioned
+DTOs.
+
+Everything the surface *reads* comes from ``clue_projections`` (pure, MVCC-only); everything it
+*writes* — tool invocations (the toolbelt runner), the ``run_event`` outbox (via the drive path, not
+here), the single-use ``stream_token`` — is composition-root machinery. The auth seam is the same
+``X-Workspace-Id`` tenant header as the handoff API (production swaps real service-auth of the same
+shape); the actor (``X-Actor``: human|agent, REQ-20) is stamped on every tool invocation span.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import Annotated, Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ValidationError
+
+import clue_obs
+from clue_api.stream_tokens import consume_stream_token, mint_stream_token
+from clue_config import Settings, load_settings
+from clue_core import EntityId, ProjectRunId
+from clue_db import ConnFactory, db_lifespan, transaction
+from clue_projections import (
+    MANIFEST_OP_TOOLS,
+    PROJECTIONS_SCHEMA_VERSION,
+    account_progress,
+    plan_replay,
+    run_manifest,
+    run_overview,
+    run_readiness,
+    validate_manifest_op,
+)
+from clue_research.durable import list_run_events
+from clue_research.review import ObservabilitySurface
+from clue_toolbelt import (
+    Actor,
+    IdempotencyConflict,
+    IdempotencyStore,
+    PreconditionFailed,
+    ToolContext,
+    ToolRegistry,
+    ToolResult,
+    UnknownTool,
+    invoke_tool,
+)
+
+# Served on every projection/tool response so a consumer can confirm the shape it negotiated.
+PROJECTIONS_SCHEMA_HEADER = "X-Projections-Schema-Version"
+
+WorkspaceResolver = Callable[..., str]
+ActorResolver = Callable[..., Actor]
+
+
+def header_workspace_resolver(
+    x_workspace_id: Annotated[str | None, Header(alias="X-Workspace-Id")] = None,
+) -> str:
+    """The default tenant/auth seam: derive ``workspace_id`` from ``X-Workspace-Id`` (``401`` if
+    absent). Production swaps real service-auth of the same ``-> workspace_id`` shape via
+    ``dependency_overrides``; the routes never change."""
+    if not x_workspace_id:
+        raise HTTPException(status_code=401, detail="missing X-Workspace-Id (tenant) header")
+    return x_workspace_id
+
+
+def header_actor_resolver(
+    x_actor: Annotated[str | None, Header(alias="X-Actor")] = None,
+) -> Actor:
+    """The actor seam (REQ-20): ``X-Actor`` is ``human`` (default) or ``agent`` — stamped on every
+    tool invocation span so a write is attributable and human/agent parity is observable. Any other
+    value is a ``422`` (a typo'd actor never silently defaults)."""
+    if x_actor is None or x_actor == "human":
+        return "human"
+    if x_actor == "agent":
+        return "agent"
+    raise HTTPException(status_code=422, detail="X-Actor must be 'human' or 'agent'")
+
+
+# Module-level Annotated aliases (FastAPI resolves the stringified annotations against module
+# globals — a closure-local alias would be mistaken for a query param; the handoff_app idiom).
+WorkspaceDep = Annotated[str, Depends(header_workspace_resolver)]
+ActorDep = Annotated[Actor, Depends(header_actor_resolver)]
+
+
+class ToolInvokeResponse(BaseModel):
+    """The ``POST /tools/{name}`` response envelope: the tool's :class:`ToolResult` + the schema
+    version. ``replayed`` distinguishes a fresh execution from an idempotent replay (D6)."""
+
+    schema_version: str
+    result: ToolResult
+
+
+class MintTokenResponse(BaseModel):
+    """The ``POST …/stream_token`` response — the opaque single-use SSE stream token."""
+
+    schema_version: str
+    stream_token: str
+
+
+class ManifestOpRequest(BaseModel):
+    """A ``PATCH …/manifest`` op: ``op`` is one of the accepted manifest ops
+    (:data:`~clue_projections.MANIFEST_OP_TOOLS`); ``budget_cap_cents`` is required for ``adjust``.
+    Any other ``op`` is refused ``422`` (D7 — ops accepted only where the machine has real
+    semantics)."""
+
+    op: str
+    budget_cap_cents: int | None = None
+
+
+def _sse_frame(*, event: str, data: dict[str, Any], seq: int | None = None) -> str:
+    """Format one SSE frame: ``id:`` (the seq, for ``Last-Event-ID`` tracking) + ``event:`` (the
+    topic) + ``data:`` (compact JSON), terminated by a blank line."""
+    lines: list[str] = []
+    if seq is not None:
+        lines.append(f"id: {seq}")
+    lines.append(f"event: {event}")
+    lines.append(f"data: {json.dumps(data, separators=(',', ':'), default=str)}")
+    return "\n".join(lines) + "\n\n"
+
+
+def create_projections_router(
+    *,
+    surface: ObservabilitySurface,
+    registry: ToolRegistry,
+    idempotency_store: IdempotencyStore,
+    settings: Settings,
+    conn_factory: ConnFactory,
+    sse_poll_interval_s: float,
+    sse_live_tail: bool,
+) -> APIRouter:
+    """Build the projection + tool + SSE :class:`APIRouter` over the injected collaborators. The
+    auth/actor seams are the module-level :data:`WorkspaceDep` / :data:`ActorDep` deps (swapped via
+    ``dependency_overrides``)."""
+    router = APIRouter()
+
+    # -- read projections (clue_projections; MVCC-only) --
+
+    @router.get("/project_runs/{project_run_id}/overview")
+    async def get_overview(project_run_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await run_overview(
+            surface=surface,
+            conn_factory=conn_factory,
+            project_run_id=ProjectRunId(project_run_id),
+            workspace_id=workspace_id,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such project run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "overview": view.model_dump(mode="json"),
+        }
+
+    @router.get("/project_runs/{project_run_id}/accounts/{account_id}/progress")
+    async def get_account_progress(
+        project_run_id: UUID, account_id: UUID, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        view = await account_progress(
+            conn_factory=conn_factory,
+            project_run_id=ProjectRunId(project_run_id),
+            workspace_id=workspace_id,
+            account_entity_id=EntityId(account_id),
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such account in this run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "progress": view.model_dump(mode="json"),
+        }
+
+    @router.get("/project_runs/{project_run_id}/manifest")
+    async def get_manifest(project_run_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await run_manifest(
+            conn_factory=conn_factory,
+            project_run_id=ProjectRunId(project_run_id),
+            workspace_id=workspace_id,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such project run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "manifest": view.model_dump(mode="json"),
+        }
+
+    @router.get("/project_runs/{project_run_id}/readiness")
+    async def get_readiness(project_run_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await run_readiness(
+            surface=surface,
+            conn_factory=conn_factory,
+            project_run_id=ProjectRunId(project_run_id),
+            workspace_id=workspace_id,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such project run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "readiness": view.model_dump(mode="json"),
+        }
+
+    # -- the tool-invocation route (the single typed write path; A9 idempotency at HTTP) --
+
+    async def _invoke(
+        name: str,
+        body: dict[str, Any],
+        *,
+        workspace_id: str,
+        actor: Actor,
+        quality_mode: str | None,
+        idempotency_key: str | None,
+    ) -> ToolResult:
+        ctx = ToolContext(
+            workspace_id=workspace_id,
+            actor=actor,
+            conn_factory=conn_factory,
+            quality_mode=quality_mode,
+        )
+        try:
+            return await invoke_tool(
+                registry,
+                name,
+                body,
+                ctx,
+                idempotency_key=idempotency_key,
+                store=idempotency_store,
+                idempotency_ttl_s=settings.toolbelt_idempotency_ttl_s,
+            )
+        except UnknownTool as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        except PreconditionFailed as exc:
+            # 422 with the machine-readable reason codes (pre-mortem #2 — a loud typed refusal, the
+            # out-of-order-matrix assertion surface), never a silent-empty success.
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "precondition_failed",
+                    "reason_codes": list(exc.reason_codes),
+                    "failures": [
+                        {"reason_code": f.reason_code, "message": f.message} for f in exc.failures
+                    ],
+                },
+            ) from exc
+        except IdempotencyConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "idempotency_conflict", "reason": exc.reason, "key": exc.key},
+            ) from exc
+
+    @router.post("/tools/{name}")
+    async def post_tool(
+        name: str,
+        body: dict[str, Any],
+        workspace_id: WorkspaceDep,
+        actor: ActorDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+        quality_mode: Annotated[str | None, Header(alias="X-Quality-Mode")] = None,
+    ) -> ToolInvokeResponse:
+        result = await _invoke(
+            name,
+            body,
+            workspace_id=workspace_id,
+            actor=actor,
+            quality_mode=quality_mode,
+            idempotency_key=idempotency_key,
+        )
+        return ToolInvokeResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, result=result)
+
+    # -- manifest ops (pause/adjust mapped to the run machine via the toolbelt; else 422) --
+
+    @router.patch("/project_runs/{project_run_id}/manifest")
+    async def patch_manifest(
+        project_run_id: UUID,
+        op_request: ManifestOpRequest,
+        workspace_id: WorkspaceDep,
+        actor: ActorDep,
+    ) -> ToolInvokeResponse:
+        reason = validate_manifest_op(op_request.op)
+        if reason is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "unsupported_manifest_op",
+                    "reason": reason,
+                    "accepted_ops": sorted(MANIFEST_OP_TOOLS),
+                },
+            )
+        tool_name = MANIFEST_OP_TOOLS[op_request.op]
+        tool_body: dict[str, Any] = {"project_run_id": str(project_run_id)}
+        if op_request.op == "adjust":
+            if op_request.budget_cap_cents is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "unsupported_manifest_op",
+                        "reason": "missing_budget_cap_cents",
+                    },
+                )
+            tool_body["budget_cap_cents"] = op_request.budget_cap_cents
+        result = await _invoke(
+            tool_name,
+            tool_body,
+            workspace_id=workspace_id,
+            actor=actor,
+            quality_mode=None,
+            idempotency_key=None,
+        )
+        return ToolInvokeResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, result=result)
+
+    # -- SSE: mint a single-use token, then open the stream --
+
+    @router.post("/project_runs/{project_run_id}/stream_token")
+    async def post_stream_token(
+        project_run_id: UUID, workspace_id: WorkspaceDep
+    ) -> MintTokenResponse:
+        async with conn_factory() as conn:
+            token = await mint_stream_token(
+                conn,
+                workspace_id=workspace_id,
+                run_id=ProjectRunId(project_run_id),
+                ttl_s=settings.sse_stream_token_ttl_s,
+            )
+        return MintTokenResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, stream_token=str(token))
+
+    @router.get("/project_runs/{project_run_id}/events")
+    async def get_events(
+        project_run_id: UUID,
+        workspace_id: WorkspaceDep,
+        stream_token: Annotated[str, Query()],
+        last_event_id_header: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+        last_event_id_query: Annotated[int | None, Query(alias="last_event_id")] = None,
+    ) -> StreamingResponse:
+        # Consume the single-use token up-front (a used/expired/cross-tenant token → 401, no leak).
+        try:
+            token_uuid = UUID(stream_token)
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise HTTPException(status_code=401, detail="invalid stream token") from exc
+        async with conn_factory() as conn:
+            ok = await consume_stream_token(conn, token=token_uuid, workspace_id=workspace_id)
+        if not ok:
+            raise HTTPException(status_code=401, detail="invalid or already-used stream token")
+
+        run_id = ProjectRunId(project_run_id)
+        # Last-Event-ID: the header (EventSource reconnect) wins; a query fallback for a first open.
+        cursor: int | None = last_event_id_query
+        if last_event_id_header is not None:
+            try:
+                cursor = int(last_event_id_header)
+            except ValueError:
+                cursor = None
+
+        async def _stream() -> AsyncIterator[str]:
+            yield _sse_frame(event="stream.hello", data={"run_id": str(run_id)})
+            async with conn_factory() as conn:
+                plan = await plan_replay(
+                    conn,
+                    workspace_id=workspace_id,
+                    run_id=run_id,
+                    last_event_id=cursor,
+                    horizon_s=settings.sse_replay_horizon_s,
+                )
+            if plan.reset:
+                yield _sse_frame(event="stream.reset", data={"reason": "cursor_older_than_horizon"})
+            last_seq = cursor or 0
+            for ev in plan.backlog:
+                yield _sse_frame(event=ev.topic, data=ev.payload, seq=ev.seq)
+                last_seq = ev.seq
+            if not sse_live_tail:
+                return
+            # Live tail: poll the outbox for new events until the client disconnects (the ASGI
+            # server cancels this generator on disconnect). Deliberately unbounded in production.
+            while True:
+                await asyncio.sleep(sse_poll_interval_s)
+                async with conn_factory() as conn:
+                    new = await list_run_events(
+                        conn, workspace_id=workspace_id, run_id=run_id, after_seq=last_seq
+                    )
+                for ev in new:
+                    yield _sse_frame(event=ev.topic, data=ev.payload, seq=ev.seq)
+                    last_seq = ev.seq
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
+
+    return router
+
+
+@asynccontextmanager
+async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
+    clue_obs.setup()
+    async with db_lifespan():
+        yield
+
+
+def create_projections_app(
+    *,
+    surface: ObservabilitySurface,
+    registry: ToolRegistry,
+    idempotency_store: IdempotencyStore,
+    settings: Settings | None = None,
+    conn_factory: ConnFactory = transaction,
+    workspace_resolver: WorkspaceResolver | None = None,
+    actor_resolver: ActorResolver | None = None,
+    sse_poll_interval_s: float = 1.0,
+    sse_live_tail: bool = True,
+    manage_db_lifespan: bool = True,
+) -> FastAPI:
+    """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
+
+    ``surface`` / ``registry`` / ``idempotency_store`` are the injected M13.4 observability surface,
+    the slice-2 toolbelt, and the A9 store. ``conn_factory`` is the connection seam every projection
+    read + tool precondition + stream-token write uses (tests bind a savepoint-scoped factory).
+    ``workspace_resolver`` / ``actor_resolver`` swap the auth seams via ``dependency_overrides``.
+    ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
+    production leaves it ``True`` (an open live stream)."""
+    resolved = settings if settings is not None else load_settings()
+    app = FastAPI(
+        title="Clue-HQ platform — projections + toolbelt + SSE",
+        version=PROJECTIONS_SCHEMA_VERSION,
+        lifespan=_projections_lifespan if manage_db_lifespan else None,
+    )
+    if workspace_resolver is not None:
+        app.dependency_overrides[header_workspace_resolver] = workspace_resolver
+    if actor_resolver is not None:
+        app.dependency_overrides[header_actor_resolver] = actor_resolver
+    app.include_router(
+        create_projections_router(
+            surface=surface,
+            registry=registry,
+            idempotency_store=idempotency_store,
+            settings=resolved,
+            conn_factory=conn_factory,
+            sse_poll_interval_s=sse_poll_interval_s,
+            sse_live_tail=sse_live_tail,
+        )
+    )
+    return app

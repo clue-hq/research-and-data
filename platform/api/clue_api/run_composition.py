@@ -74,6 +74,7 @@ from clue_api.phase_wiring import (
     register_tier_checkpoint_handler,
     snapshot_bound,
 )
+from clue_api.run_events_wiring import NullRunEventEmitter, RunEventEmitter
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.verification import build_verification_phase_handler
 from clue_config import Secrets, Settings, default_gateway_config, load_settings
@@ -288,6 +289,7 @@ class ComposingRunDriver:
         client_input_provider: ClientInputProvider | None = None,
         cache_size: int | None = None,
         session_factory: ConnFactory = transaction,
+        event_emitter: RunEventEmitter | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -302,6 +304,13 @@ class ComposingRunDriver:
         self._channels = channels if channels is not None else ChannelRegistry()
         self._client_input_provider = client_input_provider
         self._session_factory = session_factory
+        # D8: the SSE run-event emitter fired at every advance boundary. Defaults to the no-op
+        # emitter (a composer driven in a unit test emits nothing); ``fleet_main`` binds the
+        # production ``DbRunEventEmitter`` over the ``run_event`` outbox so the detached worker's
+        # drives are visible on the SSE stream. Best-effort — a failed emit never sinks the drive.
+        self._event_emitter: RunEventEmitter = (
+            event_emitter if event_emitter is not None else NullRunEventEmitter()
+        )
         self._spec_loader: SpecLoader = spec_loader if spec_loader is not None else self._load_spec
         # The reverse-profiling faithfulness judge over the shared gateway — one instance, reused
         # across every composed registry (it holds no per-run state).
@@ -321,10 +330,13 @@ class ComposingRunDriver:
         return await self._probe.status(project_run_id)
 
     async def advance(self, project_run_id: ProjectRunId) -> ProjectRunRow:
-        """Compose (or reuse) the run's per-registry ``ProjectRun`` and step it one phase."""
-        row = await self._probe.status(project_run_id)
-        composed = await self.composed(row)
-        return await composed.run.advance(project_run_id)
+        """Compose (or reuse) the run's per-registry ``ProjectRun``, step it one phase, and emit the
+        transition's SSE ``run_event`` rows (D8, best-effort post-advance)."""
+        before = await self._probe.status(project_run_id)
+        composed = await self.composed(before)
+        after = await composed.run.advance(project_run_id)
+        await self._event_emitter.phase_transition(before, after)
+        return after
 
     # -- composition --
 

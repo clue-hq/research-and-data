@@ -1,10 +1,20 @@
 [project]
 name = "clue-projections"
 version = "0.0.0"
-description = "Read side — run views, cards, catalog, review surfaces (build step 2) (scaffold — Doc R R2)."
+description = "Read side — run views, the A4 run-manifest, readiness/coverage, SSE replay planner (build step 2 / PB-B4 slice 3)."
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
-dependencies = []
+dependencies = [
+    # research READ surfaces + shared base only (the projections import contract — never toolbelt /
+    # agents / fleet / api / memory / content / gateway / locks). The concrete durable-backed
+    # readers are injected from the clue_api composition root.
+    "clue-core",
+    "clue-db",
+    "clue-research",
+    # runtime
+    "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -12,3 +22,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["clue_projections"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }
+clue-db = { workspace = true }
+clue-research = { workspace = true }

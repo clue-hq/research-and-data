@@ -122,6 +122,14 @@ from clue_research.durable.recursion import (
     SpawnDenyReason,
     SpawnGuard,
 )
+from clue_research.durable.run_events import (
+    RUN_EVENT_TOPICS,
+    RunEventRow,
+    RunEventTopic,
+    emit_run_event,
+    event_created_at,
+    list_run_events,
+)
 from clue_research.durable.scheduler import (
     AccountScheduler,
     AccountSpec,
@@ -210,6 +218,13 @@ __all__ = [
     "upsert_checkpoint",
     "insert_adjustment",
     "list_adjustments",
+    # run_event SSE outbox (PB-B4 slice 3, D8)
+    "RunEventTopic",
+    "RUN_EVENT_TOPICS",
+    "RunEventRow",
+    "emit_run_event",
+    "list_run_events",
+    "event_created_at",
     # phase-handler registry (M7.3)
     "PhaseHandlerRegistry",
     "default_phase_handler_registry",
