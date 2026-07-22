@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     # ``adapters.default_scrape_backend``. Env: ``CLUE_SCRAPE_BACKEND``.
     scrape_backend: Literal["firecrawl", "scrapling"] = "firecrawl"
 
+    # --- orphan-blob sweep cadence (Phase B2 review-hardening; append-only per treaty §3.2) ---
+    # How often the fleet worker process runs ``clue_storage.sweep_orphan_blobs`` in the background
+    # (the orphan leg the retention sweep does not cover — an abandoned rolled-back upload leaves a
+    # blob with no ``artifact`` row). ``0`` (or any non-positive value) disables the loop. Sized
+    # well above any transaction lifetime; the sweep's own grace window is the actual race guard.
+    # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
+    storage_orphan_sweep_interval_s: float = 21600.0  # 6h
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).

@@ -48,7 +48,7 @@ import functools
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -68,6 +68,7 @@ from clue_api.deep.handler import (
 from clue_api.deep.orchestrator import AccountDeepOrchestrator
 from clue_api.deep.run_io import DbAccountRunIO
 from clue_api.deep.spend import DbExactlyOnceSpend
+from clue_api.locks import lazy_account_lock_factory
 from clue_api.storage_wiring import bind_snapshots_around_deep
 from clue_config import DeepPhaseConfig, OverlayStore, RecursionPolicy
 from clue_core import (
@@ -111,6 +112,15 @@ __all__ = [
     "register_deep_phase_handler",
     "load_research_packs",
 ]
+
+
+class _LazyLockDefault:
+    """Sentinel distinguishing "``lock_factory`` was not passed" (→ the lazy production default,
+    single-flight on) from an explicit ``lock_factory=None`` (→ the written opt-out, single-flight
+    off — for tests). ``None`` cannot serve as the sentinel because it is the opt-out value."""
+
+
+_LAZY_LOCK_DEFAULT: Final[_LazyLockDefault] = _LazyLockDefault()
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,7 +299,7 @@ def build_deep_phase_handler(
     budget_cap_cents: CostCents | None = None,
     config_store: OverlayStore | None = None,
     storage: StorageBackend | None = None,
-    lock_factory: LockFactory | None = None,
+    lock_factory: LockFactory | None | _LazyLockDefault = _LAZY_LOCK_DEFAULT,
     scheduler: DeepAccountScheduler | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
@@ -309,16 +319,23 @@ def build_deep_phase_handler(
     path).
 
     **B1 single-flight + fleet swap:** ``lock_factory`` (the Doc C §4 per-entity single-flight seam)
-    is threaded into the default in-process :class:`AccountScheduler` — production passes
-    ``account_entity_lock_factory(get_redis())`` (via ``clue_api.fleet_wiring``) so two runs never
-    deep-research one ``entity_id`` at once. It was previously omitted here (single-flight silently
-    off — the integrator checklist fix). Pass ``scheduler`` to drive the deep phase over an
-    alternative :data:`DeepAccountScheduler` — the PB-B1
+    is threaded into the default in-process :class:`AccountScheduler`. It **defaults to the lazy
+    production factory** (:func:`~clue_api.locks.lazy_account_lock_factory`), which resolves
+    ``get_redis()`` only when a run actually acquires an entity lock — so single-flight ships **on**
+    by default without this construction needing an active ``redis_lifespan``, and a run that never
+    acquires (an empty high-tier set) does zero Redis I/O. Passing ``lock_factory=None``
+    **explicitly** is the written opt-out (single-flight off — for tests); omitting it is *not* the
+    same as ``None`` (the required-collaborator posture: forgetting the factory no longer silently
+    disables single-flight, which was the pre-B1 prod bug). Pass ``scheduler`` to drive the deep
+    phase over an alternative :data:`DeepAccountScheduler` — the PB-B1
     :class:`~clue_fleet.QueueBackedScheduler` (durable tier-priority queue) for the worker
     deployment; the in-process ``AccountScheduler`` stays the default (fleet mode is opt-in). When a
     ``scheduler`` is supplied it already carries its own ``lock_factory``, so ``lock_factory`` is
     ignored.
     """
+    resolved_lock_factory: LockFactory | None = (
+        lazy_account_lock_factory() if isinstance(lock_factory, _LazyLockDefault) else lock_factory
+    )
     config = config or DeepPhaseConfig()
     recursion_policy = recursion_policy or RecursionPolicy()
     budget = budget or BudgetEngine()
@@ -374,12 +391,13 @@ def build_deep_phase_handler(
         )
         graph = AccountResearchGraph(workers=registry, recursion_policy=recursion_policy)
         # The Doc C §4 per-entity single-flight seam (integrator checklist fix): the baseline
-        # omitted ``lock_factory`` here, so prod single-flight was silently OFF. Threaded through
-        # now — production wires ``account_entity_lock_factory(get_redis())`` at the api root.
+        # omitted ``lock_factory`` here, so prod single-flight was silently OFF. Now it defaults to
+        # the lazy production factory (single-flight ON) — an explicit ``lock_factory=None`` is the
+        # written test opt-out; production may also pass an eager ``account_entity_lock_factory``.
         scheduler = AccountScheduler(
             graph,
             max_parallel=config.max_parallel_accounts,
-            lock_factory=lock_factory,
+            lock_factory=resolved_lock_factory,
         )
 
     handler = DeepPhaseHandler(
@@ -409,15 +427,26 @@ def register_deep_phase_handler(
     spec: ICPSpec,
     gateway: LLMGateway,
     committee_sources: Sequence[CommitteeSource],
+    storage: StorageBackend | None,
     register: Callable[[PhaseHandler], None] = register_phase_handler,
     **kwargs: Any,
 ) -> DeepPhaseComposition:
     """Build the DEEP phase (:func:`build_deep_phase_handler`) and register its handler into the
     process phase-handler registry — the api-root binder that makes ``CampaignRun.advance()``
     dispatch ``CampaignPhase.DEEP``. ``register`` is injectable so a test can register into a fresh
-    :class:`~clue_research.durable.PhaseHandlerRegistry` instead of the process default."""
+    :class:`~clue_research.durable.PhaseHandlerRegistry` instead of the process default.
+
+    ``storage`` is a **required** keyword (unlike :func:`build_deep_phase_handler`, where it
+    defaults to ``None``): the *production registration* surface makes the B2 snapshot-binding
+    decision explicit — pass ``build_storage_backend()`` to register the snapshot-binding wrapper,
+    or pass ``None`` to register the bare (pre-B2) handler. Forgetting it is a ``TypeError``, never
+    a silent no-snapshot registration."""
     composition = build_deep_phase_handler(
-        spec=spec, gateway=gateway, committee_sources=committee_sources, **kwargs
+        spec=spec,
+        gateway=gateway,
+        committee_sources=committee_sources,
+        storage=storage,
+        **kwargs,
     )
     register(composition.handler)
     return composition

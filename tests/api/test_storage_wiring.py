@@ -156,6 +156,19 @@ def test_wrapper_binds_per_run_sink_scoped_to_workspace() -> None:
     assert current_storage() is None
 
 
+def test_empty_workspace_id_is_refused() -> None:
+    """Fail closed (Fix, B2 review): an empty ``ctx.workspace_id`` would key the run's snapshots
+    into the ``public/{sha}`` scope (the sink's public fallback) — a scope-mismatched,
+    cross-tenant-public ``artifact`` row, against the workspace-local ruling. The wrapper raises."""
+    inner = _SinkObservingHandler()
+    wrapper = SnapshotBindingPhaseHandler(inner=inner, storage=FakeStorage())
+    with pytest.raises(ValueError, match="workspace"):
+        run_async(wrapper.run(_ctx(workspace_id="")))
+    # the inner handler never ran, and no binding leaked
+    assert inner.seen_sink is None
+    assert current_snapshot_sink() is None
+
+
 def test_each_run_gets_a_fresh_sink() -> None:
     inner = _SinkObservingHandler()
     wrapper = SnapshotBindingPhaseHandler(inner=inner, storage=FakeStorage())

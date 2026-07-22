@@ -169,13 +169,20 @@ def register_retention_sweeping_handoff_handler(
     *,
     inner: PhaseHandler,
     account_resolver: HandoffAccountResolver,
+    storage: StorageBackend | None,
     session_factory: ConnFactory = transaction,
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
-    storage: StorageBackend | None = None,
 ) -> RetentionSweepHandoffHandler:
     """Build + register the retention-sweeping HANDOFF handler into the M7 phase registry
-    (last-write-wins over M12's direct ``register_handoff_phase_handler``)."""
+    (last-write-wins over M12's direct ``register_handoff_phase_handler``).
+
+    ``storage`` is a **required** keyword on this production registration surface (unlike
+    :func:`build_retention_sweeping_handoff_handler`, where it defaults to ``None``): tombstoning an
+    EXPIRED/objected personal claim must make its refcounted blob-deletion decision explicit — pass
+    ``build_storage_backend()`` to enable the deletion, or ``None`` for the intent-only path (a
+    later storage-wired sweep converges). Forgetting it is a ``TypeError``, never a silent
+    no-deletion registration."""
     handler = build_retention_sweeping_handoff_handler(
         inner=inner,
         account_resolver=account_resolver,

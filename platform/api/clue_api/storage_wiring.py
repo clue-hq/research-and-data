@@ -92,6 +92,17 @@ class SnapshotBindingPhaseHandler:
         self.phase: CampaignPhase = inner.phase
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
+        # Fail closed on a missing workspace scope: an empty ``workspace_id`` would key every
+        # captured snapshot into the ``public/{sha}`` scope (the sink's public fallback), so a
+        # tenant run's evidence blobs would land in the cross-tenant public namespace with a
+        # scope-mismatched ``artifact`` row — against the workspace-local ruling (B3). A run must
+        # carry a real workspace to capture snapshots; an unset one is a composition/state-machine
+        # bug, not a silently-public capture.
+        if not ctx.workspace_id:
+            raise ValueError(
+                "SnapshotBindingPhaseHandler.run requires a non-empty ctx.workspace_id "
+                "(an empty workspace would key tenant snapshots into the public scope)"
+            )
         sink = SnapshotSink(workspace_id=ctx.workspace_id)
         with bind_snapshots(sink, self._storage):
             return await self._inner.run(ctx)
@@ -146,8 +157,18 @@ async def run_orphan_blob_sweep(
     back and is never retried can leave a blob with no row — invisible to the DB, unreachable by
     DSAR. :func:`clue_storage.sweep_orphan_blobs` collects those; the grace window (default 24h)
     keeps it from racing an open transaction. This is the orphan leg the retention sweep does not
-    cover; schedule it alongside ``RetentionSweep`` at the ops layer. ``storage`` defaults to the
-    composed :func:`build_storage_backend`."""
+    cover; schedule it alongside ``RetentionSweep`` at the ops layer (the fleet worker process runs
+    it on ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``; see :mod:`clue_api.fleet_main`).
+
+    **Compose-if-None asymmetry (deliberate).** Unlike the production *registration* surfaces
+    (:func:`~clue_api.deep.composition.register_deep_phase_handler`,
+    :func:`~clue_api.handoff_retention.register_retention_sweeping_handoff_handler`), where a
+    missing ``storage`` is a ``TypeError`` (a forgotten backend must fail loud, not run
+    un-snapshotted / un-deleting), this is an **ops convenience** entry point: ``storage=None``
+    composes the process backend via :func:`build_storage_backend`. A maintenance op invoked ad hoc
+    (a cron/ops shell) should not have to construct the backend itself, and there is no correctness
+    hazard in the default — the sweep only ever *deletes* orphans, so the worst case of a wrong
+    backend is a no-op, not a leak. Pass ``storage`` explicitly to sweep a specific backend."""
     backend = storage if storage is not None else build_storage_backend()
     return await sweep_orphan_blobs(conn, backend, grace=grace, now=now)
 
