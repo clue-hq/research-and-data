@@ -118,6 +118,11 @@ ICP specs drive concurrently on one worker with no handler cross-talk (the D1 ra
 (c) resume exercises ledger + budget (parity assertion vs the worker path); (d) migration
 up→down→up; duplicate global `pre_spend_policy` rows impossible + deterministic load order.
 
+**Recorded from the slice-1 review:** tier-priority authority is deliberately split — the run's
+cutoffs decide *who* gets deep-researched (ctx.params), the ICP rubric's band order decides
+*when* (queue priority); a checkpoint-supplied band rename falls through to the stock ladder
+(bounded, deterministic). Revisit only if checkpoint cutoffs ever rename bands in practice.
+
 ### Slice 2 — the toolbelt (step-2 core)
 1. `clue_toolbelt`: envelope/registry/PreconditionFailed/idempotency seam per D5/D6/D9.
 2. `tool_invocation` migration.
@@ -141,7 +146,10 @@ log_span with actor.
    `Idempotency-Key` middleware (A9 at HTTP), SSE endpoint.
 **Exit gates:** treaty SSE replay test (disconnect → reconnect with `Last-Event-ID` → zero gap,
 duplicates tolerated by seq); projection reads during a driving worker (no writes, MVCC only);
-manifest projection renders a live run; invalid manifest ops → 422 with reason.
+manifest projection renders a live run; invalid manifest ops → 422 with reason; **the HANDOFF
+narrative-gap marker (`narrative_emit_skipped`, slice-1 review #10) surfaces in the run
+projection** — a gap-completed run must be distinguishable from a truly-handed-off one by any
+UI/tool reading the projection, and the slice-2 handoff/export tools must read the same flag.
 
 ## 3. Shared-surface manifest (treaty §3 discipline)
 Alembic: one migration per slice, hash ids, sequential (no merge expected). `clue_config`
