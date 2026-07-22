@@ -59,6 +59,16 @@ from clue_api.disposition_wiring import (
     build_disposition_store,
     build_review_disposition_emitter,
 )
+from clue_api.fleet_wiring import (
+    build_account_lock_factory,
+    build_fleet_deep_scheduler,
+    build_fleet_run_driver,
+    build_fleet_worker,
+    enqueue_run_drive,
+    lazy_account_lock_factory,
+    register_boot_handlers,
+    tier_priority_from_rubric,
+)
 from clue_api.handoff_app import (
     HANDOFF_SCHEMA_HEADER,
     create_handoff_app,
@@ -115,6 +125,14 @@ from clue_api.review_feedback_wiring import (
     build_dsar_with_disposition_cascade,
     build_reviewed_phase_handler,
     register_reviewed_phase_handler,
+)
+from clue_api.storage_wiring import (
+    DEFAULT_ORPHAN_SWEEP_GRACE,
+    SnapshotBindingPhaseHandler,
+    bind_snapshots_around_deep,
+    build_data_subject_rights,
+    build_storage_backend,
+    run_orphan_blob_sweep,
 )
 from clue_api.synthesis_wiring import register_synthesis_wiring
 from clue_api.verification import (
@@ -195,4 +213,20 @@ __all__ = [
     "LabeledDatasetBacktestGate",
     "build_backtest_gate",
     "build_learning_loop",
+    # B2 storage wiring (one backend, per-run snapshot binding, erasure + orphan-sweep paths)
+    "build_storage_backend",
+    "SnapshotBindingPhaseHandler",
+    "bind_snapshots_around_deep",
+    "build_data_subject_rights",
+    "run_orphan_blob_sweep",
+    "DEFAULT_ORPHAN_SWEEP_GRACE",
+    # B1 fleet wiring (boot handlers, single-flight lock factory, scheduler/driver/worker, resume)
+    "register_boot_handlers",
+    "build_account_lock_factory",
+    "lazy_account_lock_factory",
+    "tier_priority_from_rubric",
+    "build_fleet_deep_scheduler",
+    "build_fleet_run_driver",
+    "build_fleet_worker",
+    "enqueue_run_drive",
 ]

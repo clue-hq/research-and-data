@@ -118,6 +118,22 @@ def test_lock_factory_is_threaded_into_the_baseline_account_scheduler() -> None:
     assert comp.scheduler._lock_factory is sentinel  # type: ignore[attr-defined]
 
 
+def test_default_composition_carries_a_lazy_lock_factory() -> None:
+    """Fix (PB-B1 review): omitting ``lock_factory`` now ships single-flight ON — the scheduler
+    carries the lazy production factory (resolves ``get_redis()`` only at acquisition, so building
+    needs no live redis), never ``None``. This closes the pre-B1 silent-off default."""
+    comp = _composition()
+    assert comp.scheduler._lock_factory is not None  # type: ignore[attr-defined]
+    assert callable(comp.scheduler._lock_factory)  # type: ignore[attr-defined]
+
+
+def test_explicit_none_lock_factory_opts_out_of_single_flight() -> None:
+    """Passing ``lock_factory=None`` *explicitly* remains the written opt-out (single-flight off) —
+    distinct from omitting it (the lazy default). Tests rely on this to stay Redis-free."""
+    comp = _composition(lock_factory=None)
+    assert comp.scheduler._lock_factory is None  # type: ignore[attr-defined]
+
+
 class _FakeDeepScheduler:
     """A minimal ``DeepAccountScheduler`` stand-in (structural seam) for the fleet-swap test."""
 
@@ -142,6 +158,7 @@ def test_register_makes_the_phase_dispatchable() -> None:
         spec=_spec(),
         gateway=FakeGateway(),
         committee_sources=_COMMITTEE,
+        storage=None,  # storage is a REQUIRED kw on the register surface; None = the opt-out
         register=registry.register,
     )
     assert registry.get(CampaignPhase.DEEP) is comp.handler
@@ -289,6 +306,7 @@ def test_advance_dispatches_deep_and_transitions_to_verification() -> None:
             spec=_spec(),
             gateway=FakeGateway(),
             committee_sources=_COMMITTEE,
+            storage=None,  # required kw; None = the pre-B2 no-snapshot registration
             high_tier_resolver=_empty_resolver,
             register=registry.register,
         )
