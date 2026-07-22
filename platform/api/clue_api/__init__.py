@@ -109,6 +109,19 @@ from clue_api.observability_wiring import (
     build_pre_run_estimator,
     build_verification_health_reader,
 )
+from clue_api.phase_wiring import (
+    build_discovery_handler,
+    build_icp_confirmed_handler,
+    build_reverse_profiling_handler,
+    build_scoring_handler,
+    build_tier_checkpoint_handler,
+    register_discovery_handler,
+    register_icp_confirmed_handler,
+    register_reverse_profiling_handler,
+    register_scoring_handler,
+    register_tier_checkpoint_handler,
+    snapshot_bound,
+)
 from clue_api.review import (
     DbVerificationAnnotationReader,
     NoopReviewDispositionEmitter,
@@ -125,6 +138,13 @@ from clue_api.review_feedback_wiring import (
     build_dsar_with_disposition_cascade,
     build_reviewed_phase_handler,
     register_reviewed_phase_handler,
+)
+from clue_api.run_composition import (
+    ClientInputProvider,
+    ComposedRun,
+    ComposingRunDriver,
+    CompositionUnavailable,
+    SpecLoader,
 )
 from clue_api.storage_wiring import (
     DEFAULT_ORPHAN_SWEEP_GRACE,
@@ -229,4 +249,22 @@ __all__ = [
     "build_fleet_run_driver",
     "build_fleet_worker",
     "enqueue_run_drive",
+    # B4 slice 1: M5/M6 phase registration surfaces (phase_wiring)
+    "build_reverse_profiling_handler",
+    "register_reverse_profiling_handler",
+    "build_icp_confirmed_handler",
+    "register_icp_confirmed_handler",
+    "build_discovery_handler",
+    "register_discovery_handler",
+    "build_scoring_handler",
+    "register_scoring_handler",
+    "build_tier_checkpoint_handler",
+    "register_tier_checkpoint_handler",
+    "snapshot_bound",
+    # B4 slice 1: the fleet run-start composition (ComposingRunDriver)
+    "ComposingRunDriver",
+    "ComposedRun",
+    "CompositionUnavailable",
+    "SpecLoader",
+    "ClientInputProvider",
 ]

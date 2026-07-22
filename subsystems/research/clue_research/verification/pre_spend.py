@@ -459,7 +459,12 @@ async def load_pre_spend_policy(
 ) -> PreSpendPolicy:
     """Load the most-specific :class:`PreSpendPolicy` for a scope: per-ICP → per-client → global
     default row → :data:`DEFAULT_PRE_SPEND_POLICY`. The latest ``version`` within the matched scope
-    wins. Returns the built-in default when no row matches (policy-as-data; fail-soft)."""
+    wins, with a deterministic ``created_at``/``policy_id`` tie-break (so a duplicate same-version
+    row can never resolve non-deterministically — mirrors the M9.3 ``load_judge_policy`` precedent;
+    the
+    ``NULLS NOT DISTINCT`` slot uniqueness the B4-slice-1 migration adds prevents the duplicate for
+    the global default row, and the tie-break covers any pre-existing/racing duplicate). Returns the
+    built-in default when no row matches (policy-as-data; fail-soft)."""
     candidates: list[tuple[str | None, int | None]] = []
     if workspace_id is not None and icp_version is not None:
         candidates.append((workspace_id, icp_version))
@@ -475,7 +480,7 @@ async def load_pre_spend_policy(
                     SELECT rules_json FROM pre_spend_policy
                     WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                       AND icp_version IS NOT DISTINCT FROM :icp_version
-                    ORDER BY version DESC
+                    ORDER BY version DESC, created_at DESC, policy_id DESC
                     LIMIT 1
                     """
                 ),

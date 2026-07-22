@@ -44,7 +44,13 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_db import ConnFactory, connection, transaction
-from clue_research.durable import AccountSpec, register_phase_handler
+from clue_research.durable import (
+    AccountSpec,
+    BudgetEngine,
+    DbIdempotencyStore,
+    DbProjectRunStore,
+    register_phase_handler,
+)
 from clue_research.durable.project import CheckpointNotAwaiting, ProjectRun
 from clue_research.review import ReviewProjector, ReviewSurfaceImpl
 
@@ -145,17 +151,36 @@ class DbVerificationAnnotationReader:
         )
 
 
+def _default_resume_run() -> ProjectRun:
+    """The fleet-parity ``ProjectRun`` the resume hook drives when none is injected — the shared M7
+    store + the M7.4 exactly-once ledger + a budget engine, exactly as
+    :func:`~clue_api.fleet_wiring.build_fleet_run_driver` constructs the worker's driver. Closes the
+    ``[B1×M13.2]`` gap: the prior bare ``ProjectRun()`` resumed with **no** ledger/budget, so a
+    resumed phase finalized off the checkpoint-only path (no exactly-once charge record) and
+    ``pre_run_estimate``/``burn_down`` at resume raised ``BudgetEngineNotConfigured``."""
+    return ProjectRun(
+        store=DbProjectRunStore(), budget_engine=BudgetEngine(), ledger=DbIdempotencyStore()
+    )
+
+
 class ProjectRunResumeHook:
     """The ``finalize → resume`` seam (M13.1): resumes the paused campaign by submitting the REVIEW
     checkpoint and driving the run to completion (through HANDOFF). ``review`` may not import
     ``durable``, so the campaign machine is injected here. Idempotent — a re-fire after the run has
-    already advanced is a no-op (``CheckpointNotAwaiting`` is swallowed)."""
+    already advanced is a no-op (``CheckpointNotAwaiting`` is swallowed).
+
+    The default driver is now the fleet-parity :func:`_default_resume_run` (shared store + ledger +
+    budget engine), so an in-process resume writes the same durable phase-ledger record the detached
+    worker's driver does (``[B1×M13.2]``). The injectable ``project_run`` seam is unchanged — a test
+    (or a fleet deployment resuming by ``enqueue_run_drive`` instead of in-process) still overrides
+    it. Fleet deployments resume by enqueue (:func:`~clue_api.fleet_wiring.enqueue_run_drive`); this
+    in-process ``run_to_completion`` is the opt-out (D4)."""
 
     def __init__(self, *, project_run: ProjectRun | None = None) -> None:
         self._run = project_run
 
     async def resume_review(self, project_run_id: ProjectRunId) -> None:
-        run = self._run if self._run is not None else ProjectRun()
+        run = self._run if self._run is not None else _default_resume_run()
         try:
             await run.submit_checkpoint(project_run_id, decision={"action": "approve"})
         except CheckpointNotAwaiting:

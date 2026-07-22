@@ -7,24 +7,27 @@ and the :class:`~clue_fleet.ProjectRunWorker` from :class:`~clue_config.Settings
 ``CLUE_FLEET_*`` knobs), then hand off to :func:`~clue_fleet.run_worker` (the shell that owns
 SIGTERM/SIGINT → graceful drain). Structured logging via :func:`clue_obs.setup`.
 
-**Phase-handler registration is the load-bearing boot step.** The worker never *composes* phase
-handlers inside a run — it drives the injected :class:`~clue_research.durable.ProjectRun`, whose
-handlers live in the phase-handler registry. So the worker must populate that registry at boot, or
-every claimed ``drive_run`` task raises ``NoPhaseHandlerRegistered`` and parks FAILED (and resume
-flows are poisoned). :func:`~clue_api.fleet_wiring.register_boot_handlers` registers every handler
-composable **process-wide from settings** (today: ``ProjectPhase.REVIEW``) and the worker **refuses
-to start** (a clean error exit) if that set is empty.
+**The B4 composing driver drives whole runs.** The worker never *composes* phase handlers inside a
+run — it drives the injected ``RunDriver``. Since PB-B4 slice 1 that driver is the
+:class:`~clue_api.run_composition.ComposingRunDriver`: it composes a **per-``(workspace_id, icp_key,
+icp_version)``** phase registry (LRU-cached) on each run's first advance — every phase of the
+sequence, including the campaign-scoped DEEP/VERIFICATION (each holds one ``ICPSpec``) that could
+not live in the single process-default registry (two ICPs would collide on the DEEP slot). The
+process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry. So the
+worker cleanly drives the full ``reverse_profiling → … → handoff`` sequence, single-flight and
+rubric priority on (closing CLAUDE.md ``[B4×fleet]`` + the B1-wiring residuals).
 
-Two honest limits of the boot registry, stated plainly:
+:func:`~clue_api.fleet_wiring.register_boot_handlers` still runs at boot as a composition-machinery
+health check, and the worker **refuses to start** (a clean error exit) if that set is empty (a
+degenerate no-composer deployment). Two honest limits remain:
 
 * **A run whose current phase has no registered handler fails its drive task with
   ``outcome=error``** (``ProjectRun.advance`` raises ``NoPhaseHandlerRegistered``; the worker
-  records the task FAILED). That is the *correct* fail-loud behavior, not a bug to paper over — a
-  misconfigured deployment should not silently drop runs.
-* **The per-``(client, icp)`` DEEP (and VERIFICATION) composition inside the worker is a deliberate
-  open design item** — those handlers hold a campaign-scoped ``ICPSpec`` + committee sources, so
-  they are registered per run at run start, not at boot. Wiring that into the detached worker is the
-  B4 delegation contract; until it lands, the worker cleanly drives only the boot-composable phases.
+  records the task FAILED). That is the *correct* fail-loud behavior — a misconfigured deployment
+  should not silently drop runs.
+* **HANDOFF emits no narrative** and **REVERSE_PROFILING needs a client-input provider** — two
+  documented gaps the composer surfaces loudly (no production ``HandoffCommitteeReader``; the
+  ``[M5×M7]`` client-input threading). See :mod:`clue_api.run_composition`.
 
 This entrypoint also runs the B2 **orphan-blob sweep** on ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``
 as a background task alongside the worker (started with it, cancelled on drain) — the orphan leg the
@@ -38,10 +41,11 @@ import contextlib
 from collections.abc import Awaitable, Callable
 
 from clue_api.fleet_wiring import (
-    build_fleet_run_driver,
+    build_account_lock_factory,
     build_fleet_worker,
     register_boot_handlers,
 )
+from clue_api.run_composition import ComposingRunDriver
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_config import Settings, load_settings
 from clue_core import ProjectPhase
@@ -107,10 +111,20 @@ async def _serve() -> None:
     settings = load_settings()
     storage = build_storage_backend(settings)
     async with db_lifespan(), redis_lifespan():
+        # Boot smoke: the process-wide-composable handler set (REVIEW today) must compose — a clean
+        # refuse-to-start if it cannot (a degenerate no-composer deployment). The ComposingRunDriver
+        # (below) *re-folds* these same boot handlers into every per-run registry, so this
+        # process-default registration is a composition-machinery health check, not the drive path.
         phases = register_boot_handlers(settings, storage=storage)
         _require_registered(phases)
         log.info("fleet.boot.phases", phases=sorted(phase.value for phase in phases))
-        driver = build_fleet_run_driver()
+        # The B4 per-``(workspace_id, icp_key, icp_version)`` composing driver: composes a per-run
+        # registry (DEEP/VERIFICATION campaign-scoped, single-flight + rubric priority ON) over the
+        # shared durable store/ledger/budget at each run's first advance. The lock factory is built
+        # **eager** here — the worker runs inside ``redis_lifespan``, so single-flight binds now.
+        driver = ComposingRunDriver(
+            settings=settings, storage=storage, lock_factory=build_account_lock_factory()
+        )
         worker = build_fleet_worker(settings, driver=driver)
         sweep = _start_orphan_sweep(settings, storage)
         try:
