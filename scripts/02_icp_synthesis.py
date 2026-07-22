@@ -59,11 +59,7 @@ async def main(workspace_id: str, client_entity_id: str, kb_version: int) -> Non
     print(f"icp_version      : {confirmation.ref.icp_version}")
     print(f"est. deep accts  : {confirmation.estimate.projected_deep_count}")
     print(f"est. cost_cents  : {confirmation.estimate.estimated_cost_cents}")
-    print(
-        "\nNext: scripts/03_find_accounts.py "
-        f"--workspace-id {workspace_id} --icp-key {confirmation.ref.icp_key} "
-        f"--icp-version {confirmation.ref.icp_version} --max-accounts 5"
-    )
+    print(f"\nNext: scripts/03_find_accounts.py --workspace-id {workspace_id} --max-accounts 5")
 
 
 if __name__ == "__main__":

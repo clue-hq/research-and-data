@@ -14,6 +14,7 @@ is all the next stage needs. Set the provider keys for real field fills.
 
 import argparse
 import asyncio
+from uuid import uuid4
 
 import clue_obs
 from clue_api.composition import load_research_packs
@@ -46,9 +47,13 @@ async def main(name: str, website: str, workspace_id: str) -> None:
 
 if __name__ == "__main__":
     clue_obs.setup()
+    # Demo defaults carry a per-invocation tag (like scripts 04-06) so seeded rows never collide
+    # with the test suite's fixed-name fixtures on a shared DB — the chain still works because
+    # every `Next:` hint passes the ids explicitly.
+    _tag = uuid4().hex[:8]
     p = argparse.ArgumentParser(description="Stage 0 client reverse-profiling")
-    p.add_argument("--name", default="Acme Robotics")
-    p.add_argument("--website", default="https://acme.example")
-    p.add_argument("--workspace-id", default="acme")
+    p.add_argument("--name", default=f"Acme Robotics {_tag}")
+    p.add_argument("--website", default=f"https://acme-{_tag}.example")
+    p.add_argument("--workspace-id", default=f"acme-{_tag}")
     args = p.parse_args()
     asyncio.run(main(args.name, args.website, args.workspace_id))
