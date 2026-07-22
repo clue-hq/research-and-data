@@ -36,6 +36,26 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Make the migration total: dedup any pre-existing duplicate rows in a scope slot BEFORE the
+    # NULLS NOT DISTINCT unique index is created (otherwise CREATE UNIQUE INDEX would fail on a DB
+    # that already carries duplicate global-default rows). Keep exactly the row the loader would
+    # resolve to — its ORDER BY tie-break is version DESC, then created_at DESC, then policy_id DESC
+    # — per (workspace_id-or-null, icp_version-or-null, version) slot; delete the rest. NULLs are
+    # grouped with COALESCE so the global-default slot (both keys NULL) collapses to one group.
+    op.execute(
+        """
+        DELETE FROM pre_spend_policy p
+        USING (
+            SELECT policy_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY COALESCE(workspace_id, ''), COALESCE(icp_version, -1), version
+                       ORDER BY created_at DESC, policy_id DESC
+                   ) AS rn
+            FROM pre_spend_policy
+        ) ranked
+        WHERE p.policy_id = ranked.policy_id AND ranked.rn > 1
+        """
+    )
     # Recreate the scope-uniqueness index with NULLS NOT DISTINCT so the global default slot
     # (workspace_id IS NULL, icp_version IS NULL) is a single row, not an unbounded set of
     # same-scope duplicates (mirror of migration 0009's source_profile slots).

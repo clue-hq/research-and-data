@@ -28,7 +28,7 @@ from clue_core import ICPCreatedFrom, PhaseContext, ProjectPhase
 from clue_db import db_lifespan, transaction
 from clue_fleet import DbLeaseStore, DbTaskQueue, ProjectRunWorker, enqueue_drive
 from clue_gateway import build_gateway
-from clue_research.claimstore import load_core_pack
+from clue_research.claimstore import CORE_PACK, load_core_pack
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
     BudgetEngine,
@@ -87,75 +87,95 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
         icp_key = "seg-b4"
 
         async with db_lifespan():
-            # Seed (committed): the core field pack (the scoring rubric's fields) + the active ICP
-            # spec (rubric + tier bands) the phases read. Source manifests are intentionally NOT
-            # seeded — with no resolvers bound the waterfalls resolve nothing and the phases still
-            # complete on empty data, and seeding the *global* source_manifest registry would leak
-            # into (and collide with) other suites' redefinitions (committed-row hygiene).
-            async with transaction() as conn:
-                await load_core_pack(conn)
-            async with transaction() as conn:
-                await create_icp_spec(
-                    conn,
-                    workspace_id=workspace_id,
-                    icp_key=icp_key,
-                    created_from=ICPCreatedFrom.SYNTHESIS,
-                    field_keys=(_EMP, _FUND),
-                    scoring_rubric=rubric_to_slot(_rubric()),
-                    activate=True,
+            try:
+                # Seed (committed): the core field pack (the scoring rubric's fields) + the active
+                # ICP spec (rubric + tier bands) the phases read. Source manifests are intentionally
+                # NOT seeded — with no resolvers bound the waterfalls resolve nothing and the phases
+                # still complete on empty data, and seeding the *global* source_manifest registry
+                # would leak into (and collide with) other suites' redefinitions (committed-row
+                # hygiene).
+                async with transaction() as conn:
+                    await load_core_pack(conn)
+                async with transaction() as conn:
+                    await create_icp_spec(
+                        conn,
+                        workspace_id=workspace_id,
+                        icp_key=icp_key,
+                        created_from=ICPCreatedFrom.SYNTHESIS,
+                        field_keys=(_EMP, _FUND),
+                        scoring_rubric=rubric_to_slot(_rubric()),
+                        activate=True,
+                    )
+
+                store = DbProjectRunStore()
+                machine = ProjectRun(
+                    store=store, budget_engine=BudgetEngine(), ledger=DbIdempotencyStore()
+                )
+                run_id = await machine.start(
+                    workspace_id=workspace_id, icp_key=icp_key, icp_version=1
                 )
 
-            store = DbProjectRunStore()
-            machine = ProjectRun(
-                store=store, budget_engine=BudgetEngine(), ledger=DbIdempotencyStore()
-            )
-            run_id = await machine.start(workspace_id=workspace_id, icp_key=icp_key, icp_version=1)
+                async def provide_client_input(_ctx: PhaseContext) -> ClientInput:
+                    # The [M5×M7] threading seam: what production will look up per workspace; here a
+                    # minimal client so the real reverse-profiling handler completes on empty data.
+                    return ClientInput(name="Stub Co", website="https://stub.example")
 
-            async def provide_client_input(_ctx: PhaseContext) -> ClientInput:
-                # The [M5×M7] threading seam: what production will look up per workspace; here a
-                # minimal client so the real reverse-profiling handler completes on empty data.
-                return ClientInput(name="Stub Co", website="https://stub.example")
+                driver = ComposingRunDriver(
+                    gateway=build_gateway(GatewayConfig(stub=True)),
+                    storage=FakeStorage(),  # type: ignore[arg-type]
+                    lock_factory=ProcessLocalLockFactory(),  # process-local single-flight, no redis
+                    channels=ChannelRegistry(),  # empty: discovery finds nothing, advances
+                    committee_sources=(),
+                    client_input_provider=provide_client_input,
+                )
+                queue = DbTaskQueue()
+                worker = ProjectRunWorker(
+                    driver=driver,
+                    queue=queue,
+                    leases=DbLeaseStore(),
+                    worker_id=f"w-b4-{uuid4().hex[:8]}",
+                    poll_interval=0.05,
+                    lease_ttl=timedelta(seconds=30),
+                    heartbeat_interval=5.0,
+                    task_stale_after=timedelta(seconds=60),
+                )
 
-            driver = ComposingRunDriver(
-                gateway=build_gateway(GatewayConfig(stub=True)),
-                storage=FakeStorage(),  # type: ignore[arg-type]
-                lock_factory=ProcessLocalLockFactory(),  # process-local single-flight, no redis
-                channels=ChannelRegistry(),  # empty: discovery finds nothing, advances
-                committee_sources=(),
-                client_input_provider=provide_client_input,
-            )
-            queue = DbTaskQueue()
-            worker = ProjectRunWorker(
-                driver=driver,
-                queue=queue,
-                leases=DbLeaseStore(),
-                worker_id=f"w-b4-{uuid4().hex[:8]}",
-                poll_interval=0.05,
-                lease_ttl=timedelta(seconds=30),
-                heartbeat_interval=5.0,
-                task_stale_after=timedelta(seconds=60),
-            )
+                before = await _ledger_phase_count()
 
-            before = await _ledger_phase_count()
+                # Drive #1: reverse_profiling → icp_confirmed → discovery → scoring →
+                # tier_checkpoint, which suspends at the durable human gate (PAUSED).
+                await enqueue_drive(queue, run_id)
+                await worker.drain_once()
+                run = await machine.status(run_id)
+                assert run.phase is ProjectPhase.TIER_CHECKPOINT, run.phase
+                assert run.status is ProjectRunStatus.PAUSED, run.status
 
-            # Drive #1: reverse_profiling → icp_confirmed → discovery → scoring → tier_checkpoint,
-            # which suspends at the durable human gate (PAUSED).
-            await enqueue_drive(queue, run_id)
-            await worker.drain_once()
-            run = await machine.status(run_id)
-            assert run.phase is ProjectPhase.TIER_CHECKPOINT, run.phase
-            assert run.status is ProjectRunStatus.PAUSED, run.status
+                # Approve the checkpoint (resume), then drive #2: deep → verification → handoff →
+                # DONE.
+                await machine.submit_checkpoint(run_id, decision={"action": "approve"})
+                await enqueue_drive(queue, run_id)  # reopen_terminal: re-drive the paused run
+                await worker.drain_once()
+                run = await machine.status(run_id)
+                assert run.phase is ProjectPhase.HANDOFF, run.phase
+                assert run.status is ProjectRunStatus.COMPLETED, run.status
 
-            # Approve the checkpoint (resume), then drive #2: deep → verification → handoff → DONE.
-            await machine.submit_checkpoint(run_id, decision={"action": "approve"})
-            await enqueue_drive(queue, run_id)  # reopen_terminal: re-drive the paused run
-            await worker.drain_once()
-            run = await machine.status(run_id)
-            assert run.phase is ProjectPhase.HANDOFF, run.phase
-            assert run.status is ProjectRunStatus.COMPLETED, run.status
-
-            # The composed run bound the M7.4 ledger (D2/D4 parity with the worker driver): phase
-            # finalizes recorded exactly-once rows (the bare pre-B4 driver would have written none).
-            assert await _ledger_phase_count() > before
+                # The composed run bound the M7.4 ledger (D2/D4 parity with the worker driver): the
+                # phase finalizes recorded exactly-once rows (the bare pre-B4 driver wrote none).
+                assert await _ledger_phase_count() > before
+            finally:
+                # ``field_definition`` is a GLOBAL-by-key registry; leaving the committed core pack
+                # behind would collide with tests/durable's differing ``account.strategic_moves``
+                # definition (FieldRedefinitionError), breaking the rerun-idempotency standing gate.
+                # Delete exactly the rows ``load_core_pack`` seeded — enumerable from CORE_PACK;
+                # every core field is ``pack=None`` so there is no pack row to remove — leaving the
+                # suite rerun-clean. (The run's own project_run/ledger/icp_spec rows are hermetic by
+                # the unique per-run ``workspace_id`` and left committed, the fleet-DB-test
+                # convention.)
+                field_keys = [seed.field_def.field_key for seed in CORE_PACK]
+                async with transaction() as conn:
+                    await conn.execute(
+                        text("DELETE FROM field_definition WHERE field_key = ANY(:keys)"),
+                        {"keys": field_keys},
+                    )
 
     run_async(scenario())

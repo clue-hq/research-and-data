@@ -54,7 +54,11 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
-from clue_api.deep.composition import build_deep_phase_handler, build_high_tier_resolver
+from clue_api.deep.composition import (
+    DeepPhaseComposition,
+    build_deep_phase_handler,
+    build_high_tier_resolver,
+)
 from clue_api.fleet_wiring import (
     build_fleet_deep_scheduler,
     register_boot_handlers,
@@ -85,6 +89,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import TierPriority, default_tier_priority
+from clue_gateway import build_gateway
 from clue_obs import get_logger
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
@@ -109,6 +114,7 @@ __all__ = [
     "ComposingRunDriver",
     "ComposedRun",
     "CompositionUnavailable",
+    "ClientInputProviderMissing",
     "SpecLoader",
     "ClientInputProvider",
 ]
@@ -133,17 +139,28 @@ class CompositionUnavailable(RuntimeError):
     before a run is started); fail loud rather than drive a spec-less run."""
 
 
+class ClientInputProviderMissing(RuntimeError):
+    """REVERSE_PROFILING was driven with **no** ``client_input_provider`` wired — the documented
+    ``[M5×M7]`` gap. The ``ProjectRun`` ``PhaseContext`` threads only ``tier_cutoffs`` into phase
+    ``params``, never a ``ClientInput`` (name+website), so the reverse-profiling handler has nothing
+    to profile the client from. Raised (instead of a bare pydantic ``ValidationError`` from deep
+    inside the handler) so the failure names the seam to wire: construct the ``ComposingRunDriver``
+    with a ``client_input_provider`` that yields the run's ``ClientInput``."""
+
+
 @dataclass(frozen=True, slots=True)
 class ComposedRun:
     """One composed, cached per-``(workspace_id, icp_key, icp_version)`` unit: the per-run
     ``ProjectRun`` the worker advances, its isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it
-    was composed against, and the set of phases it can drive. The ``spec``/``registry`` are exposed
-    so a test can assert two concurrent runs never cross-talk (the D1 race gate) without reaching
-    into private attributes."""
+    was composed against, the DEEP-phase composition bundle (so a test can read the DEEP handler's
+    *own* spec + assert the composed scheduler is the fleet queue), and the set of phases it can
+    drive. The ``spec``/``registry``/``deep`` are exposed so a test can assert two concurrent runs
+    never cross-talk (the D1 race gate) without reaching into private attributes."""
 
     run: ProjectRun
     registry: PhaseHandlerRegistry
     spec: ICPSpec
+    deep: DeepPhaseComposition
     phases: frozenset[ProjectPhase]
 
 
@@ -190,24 +207,56 @@ class _ClientInputThreadingHandler:
         return await self._inner.run(ctx)
 
 
-def _default_gateway() -> LLMGateway:
-    """The production gateway from settings + secrets (stub when no ``OPENROUTER_API_KEY`` — CI).
+class _MissingClientInputHandler:
+    """The REVERSE_PROFILING handler the composer registers when **no** ``client_input_provider``
+    is wired (the ``[M5×M7]`` gap): the state machine threads no ``ClientInput``, so the real
+    handler would raise a bare pydantic ``ValidationError`` from inside ``reverse_profile``. This
+    stand-in fails loud and *actionably* instead — a typed :class:`ClientInputProviderMissing`
+    naming the seam to wire — so a run that reaches this phase without an input provider gives an
+    operator the fix, not a stack trace deep in synthesis. Composer-side only; no durable change."""
 
-    ``build_gateway`` is imported **dynamically**, not as a static ``from clue_gateway import …``:
-    the import-linter contract "the LLM-vendor SDK lives only behind the gateway/ package" forbids a
-    static ``clue_api → clue_gateway`` edge (it would pull the ``openai`` SDK into ``clue_api``'s
-    graph). Building the gateway *from outside* the ``clue_api`` package is the sanctioned pattern
-    (the ``scripts/`` entrypoints do exactly this and inject the gateway), but the worker entrypoint
-    (``python -m clue_api.fleet_main``) lives *inside* ``clue_api``; the dynamic import keeps the
-    static graph SDK-free while still routing every model call through the one sanctioned egress —
-    a model swap stays a config change (``default_gateway_config``) and ``clue_api`` never touches
-    the SDK. Tests inject a stub gateway, so this default runs only in production."""
-    from importlib import import_module
-    from typing import cast
+    phase: ProjectPhase = ProjectPhase.REVERSE_PROFILING
 
-    build_gateway = import_module("clue_gateway").build_gateway
-    gateway = build_gateway(default_gateway_config(), api_key=Secrets().openrouter_api_key)
-    return cast("LLMGateway", gateway)
+    async def run(self, ctx: PhaseContext) -> PhaseResult:
+        raise ClientInputProviderMissing(
+            f"REVERSE_PROFILING for run {ctx.project_run_id} has no client_input_provider wired "
+            "(the [M5×M7] gap): the ProjectRun PhaseContext carries no ClientInput (name+website), "
+            "so the reverse-profiling handler cannot run. Construct "
+            "ComposingRunDriver(client_input_provider=…) to thread a per-run ClientInput."
+        )
+
+
+def _default_gateway(settings: Settings) -> LLMGateway:
+    """The production gateway from settings + secrets.
+
+    When the ``OPENROUTER_API_KEY`` secret is absent, :func:`~clue_gateway.build_gateway` would
+    build the deterministic :class:`StubGateway` — correct for CI, catastrophic in production (a
+    misconfigured worker would drive real runs on canned LLM output, the pre-mortem #2 enemy). So
+    the stub is **opt-in**: with ``settings.gateway_allow_stub`` False (the default) a missing key
+    is a loud ``RuntimeError`` naming the setting **and** the missing secret; with it True we log a
+    WARNING (``composer.gateway.stub_mode``) and build the stub. Tests/CI/scripts opt in explicitly
+    (the scripts pass ``api_key=None`` deliberately).
+
+    ``build_gateway`` is imported statically (``from clue_gateway import build_gateway``). That
+    ``clue_api → clue_gateway`` edge is the sanctioned single LLM egress; it is exempted on the one
+    import-linter contract it would trip (Rule 4b "the LLM-vendor SDK lives only behind the
+    gateway/ package", via ``clue_api.run_composition -> clue_gateway``), so the ``openai`` SDK
+    never enters ``clue_api``'s enforced graph — a model swap stays a ``default_gateway_config``
+    change and ``clue_api`` never touches the SDK directly."""
+    api_key = Secrets().openrouter_api_key
+    if api_key is None:
+        if not settings.gateway_allow_stub:
+            raise RuntimeError(
+                "no OPENROUTER_API_KEY secret and CLUE_GATEWAY_ALLOW_STUB is not set — refusing to "
+                "build a canned-output StubGateway in production (a misconfigured worker would "
+                "drive runs on stub LLM output). Supply the OpenRouter API key, or set "
+                "CLUE_GATEWAY_ALLOW_STUB=true to allow the stub explicitly (CI/tests do this)."
+            )
+        log.warning(
+            "composer.gateway.stub_mode",
+            reason="no OPENROUTER_API_KEY secret; CLUE_GATEWAY_ALLOW_STUB opt-in is set",
+        )
+    return build_gateway(default_gateway_config(), api_key=api_key)
 
 
 class ComposingRunDriver:
@@ -244,7 +293,7 @@ class ComposingRunDriver:
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
         self._ledger: IdempotencyStore = ledger if ledger is not None else DbIdempotencyStore()
         self._budget = budget_engine if budget_engine is not None else BudgetEngine()
-        self._gateway = gateway if gateway is not None else _default_gateway()
+        self._gateway = gateway if gateway is not None else _default_gateway(self._settings)
         self._storage = storage if storage is not None else build_storage_backend(self._settings)
         self._lock_factory: LockFactory = (
             lock_factory if lock_factory is not None else lazy_account_lock_factory()
@@ -304,6 +353,14 @@ class ComposingRunDriver:
         rubric makes the priority correct even when the registry is composed at an early phase,
         before ``tier_checkpoint`` writes the run's cutoffs). Falls back to the stock ladder when
         the spec carries no rubric bands (nothing to rank)."""
+        # Authority split (deliberate, bounded): the run's approved ``tier_cutoffs`` decide *who* is
+        # high-tier (the scheduler reads them off ``ctx.params`` per account); the rubric's band
+        # *order* decides *when* — the drain priority among the already-selected high-tier accounts.
+        # Sourcing priority from the (stable) rubric rather than the run cutoffs keeps it correct
+        # even when the registry is composed at an early phase, before ``tier_checkpoint`` writes
+        # the cutoffs. A checkpoint-supplied band *rename* (a cutoffs edit that introduces a band
+        # label the rubric never had) simply falls through to the stock ladder here — unranked, not
+        # mis-ranked — which is acceptable for ordering (WHO is still governed by the run cutoffs).
         rubric = rubric_from_slot(spec.scoring_rubric)
         cutoffs = rubric.tier_cutoffs if rubric is not None else None
         if cutoffs is not None and cutoffs.bands:
@@ -318,14 +375,27 @@ class ComposingRunDriver:
                 "cannot compose the campaign-scoped DEEP/VERIFICATION handlers"
             )
         registry = PhaseHandlerRegistry()
+        # One per-run high-tier resolver instance, SHARED by DEEP, VERIFICATION, and the HANDOFF
+        # retention sweep (each reads the same human-approved high-tier set from the claim store;
+        # the closure is stateless, so sharing is trivially safe and makes the "shared" contract
+        # true rather than three equivalent-but-separate closures).
+        high_tier_resolver = build_high_tier_resolver(spec=spec)
 
         # Process-wide-composable handlers (REVIEW today) folded into this per-run registry (D1).
         register_boot_handlers(self._settings, storage=self._storage, registry=registry)
 
-        # M5/M6 (snapshot-wrapped, D3). REVERSE_PROFILING optionally threads client input ([M5×M7]).
-        rp: PhaseHandler = build_reverse_profiling_handler(judge=self._rp_judge)
+        # M5/M6 (snapshot-wrapped, D3). REVERSE_PROFILING threads client input when a provider is
+        # wired ([M5×M7]); with no provider the phase cannot build a ClientInput, so we register a
+        # stand-in that fails loud + actionably (a typed ClientInputProviderMissing) rather than the
+        # real handler's bare pydantic ValidationError from inside synthesis.
+        rp: PhaseHandler
         if self._client_input_provider is not None:
-            rp = _ClientInputThreadingHandler(inner=rp, provider=self._client_input_provider)
+            rp = _ClientInputThreadingHandler(
+                inner=build_reverse_profiling_handler(judge=self._rp_judge),
+                provider=self._client_input_provider,
+            )
+        else:
+            rp = _MissingClientInputHandler()
         registry.register(snapshot_bound(rp, storage=self._storage))
         register_icp_confirmed_handler(storage=self._storage, register=registry.register)
         register_discovery_handler(
@@ -350,20 +420,22 @@ class ComposingRunDriver:
             committee_sources=self._committee_sources,
             storage=self._storage,
             scheduler=scheduler,
+            high_tier_resolver=high_tier_resolver,
         )
         registry.register(deep.handler)
 
-        # VERIFICATION — the high-tier resolver shared with DEEP.
+        # VERIFICATION — the same high-tier resolver instance as DEEP.
         verification = build_verification_phase_handler(
-            gateway=self._gateway, account_resolver=build_high_tier_resolver(spec=spec)
+            gateway=self._gateway, account_resolver=high_tier_resolver
         )
         registry.register(verification)
 
         # HANDOFF — the retention/objection sweep (composes from settings) over the documented-gap
-        # inner (no production HandoffCommitteeReader → the M12 emit path is not composable here).
+        # inner (no production HandoffCommitteeReader → the M12 emit path is not composable here);
+        # the same high-tier resolver instance scopes the sweep to the run's accounts.
         handoff = build_retention_sweeping_handoff_handler(
             inner=_NarrativeGapHandoffHandler(),
-            account_resolver=build_high_tier_resolver(spec=spec),
+            account_resolver=high_tier_resolver,
             storage=self._storage,
         )
         registry.register(handoff)
@@ -375,6 +447,7 @@ class ComposingRunDriver:
             ledger=self._ledger,
         )
         phases = registry.phases()
+        committee_sources = len(self._committee_sources)
         # One structured log per composition (cache fill), not per advance.
         log.info(
             "composer.registry_composed",
@@ -382,7 +455,20 @@ class ComposingRunDriver:
             icp_key=row.icp_key,
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
+            committee_sources=committee_sources,
             handoff_narrative_emit=False,
             handoff_narrative_gap=_HANDOFF_GAP_REASON,
         )
-        return ComposedRun(run=run, registry=registry, spec=spec, phases=phases)
+        if committee_sources == 0:
+            # Zero committee sources ⇒ DEEP resolves no buying committee ⇒ required output #3 (the
+            # per-account committee) is silently empty. Loud so a misconfigured run is visible, not
+            # a quiet blank (a valid state only for a run that intends account-only research).
+            log.warning(
+                "composer.committee_sources_empty",
+                workspace_id=row.workspace_id,
+                icp_key=row.icp_key,
+                icp_version=row.icp_version,
+                reason="no CommitteeSource wired — DEEP will resolve an empty buying committee "
+                "(required output #3 empty)",
+            )
+        return ComposedRun(run=run, registry=registry, spec=spec, deep=deep, phases=phases)

@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     # + its handler registry are cached, so a small window suffices. Env:
     # ``CLUE_COMPOSER_REGISTRY_CACHE_SIZE``.
     composer_registry_cache_size: int = 8
+    # Whether the run-composition ``_default_gateway`` may build a canned-output ``StubGateway``
+    # when the ``OPENROUTER_API_KEY`` secret is absent. Default False → a missing key is a
+    # construction-time ``RuntimeError`` (a misconfigured production worker must NOT silently drive
+    # runs on stub LLM output). CI/tests/scripts opt in explicitly.
+    # Env: ``CLUE_GATEWAY_ALLOW_STUB``.
+    gateway_allow_stub: bool = False
 
 
 def load_settings(**kwargs: Any) -> Settings:
