@@ -65,7 +65,9 @@ async def main(workspace_id: str, client_entity_id: str, kb_version: int) -> Non
 if __name__ == "__main__":
     clue_obs.setup()
     p = argparse.ArgumentParser(description="ICP synthesis + confirm")
-    p.add_argument("--workspace-id", default="acme")
+    # Required (not defaulted): 02 can only continue a script-01 chain, and a fixed default here
+    # silently confirms the ICP under a different workspace than the KB it reads (review finding).
+    p.add_argument("--workspace-id", required=True, help="workspace id printed by script 01")
     p.add_argument("--client-entity-id", required=True, help="UUID printed by script 01")
     p.add_argument("--kb-version", type=int, default=1)
     args = p.parse_args()

@@ -11,15 +11,15 @@ from collections import Counter
 from typing import Any
 
 import pytest
+from tests.fleet.conftest import FakeTaskQueue, ProcessLocalLockFactory
+
+from clue_core import EntityId, new_campaign_run_id
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
     QueueBackedScheduler,
     default_tier_priority,
 )
-from tests.fleet.conftest import FakeTaskQueue, ProcessLocalLockFactory
-
-from clue_core import EntityId, new_campaign_run_id
 from clue_research.durable import AccountSpec, LockFactory
 
 

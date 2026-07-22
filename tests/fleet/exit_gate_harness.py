@@ -37,7 +37,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from clue_fleet import ProjectRunWorker, QueueBackedScheduler, run_worker
 from sqlalchemy import text
 
 from clue_core import (
@@ -55,6 +54,7 @@ from clue_core import (
 )
 from clue_core.idempotency import account_step_key
 from clue_db import db_lifespan, transaction
+from clue_fleet import ProjectRunWorker, QueueBackedScheduler, run_worker
 from clue_research.durable import (
     PHASE_SEQUENCE,
     AccountSpec,

@@ -21,11 +21,10 @@ from __future__ import annotations
 
 import asyncio
 
-from clue_fleet import run_worker
-
 from clue_api.fleet_wiring import build_fleet_run_driver, build_fleet_worker
 from clue_config import load_settings
 from clue_db import db_lifespan
+from clue_fleet import run_worker
 from clue_locks import redis_lifespan
 from clue_obs import setup
 

@@ -10,12 +10,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from clue_fleet import (
-    FleetTaskKind,
-    ProjectRunWorker,
-    QueueBackedScheduler,
-    default_tier_priority,
-)
 
 from clue_api.fleet_wiring import (
     build_account_lock_factory,
@@ -27,6 +21,12 @@ from clue_api.fleet_wiring import (
 )
 from clue_config import Settings
 from clue_core import new_campaign_run_id
+from clue_fleet import (
+    FleetTaskKind,
+    ProjectRunWorker,
+    QueueBackedScheduler,
+    default_tier_priority,
+)
 from clue_research.durable import CampaignRun
 from clue_research.icp.rubric import TierBand, TierCutoffs
 from tests.db.conftest import run_async
