@@ -3,7 +3,7 @@
 CRUD round-trips over workspace → brand → {product, project}, plus the invalid-states-impossible
 constraint battery: the constraints ARE the enforcement (founder ruling), so violations are
 asserted as raw ``IntegrityError`` from the DB — never handler logic. Also proves
-``campaign_run.project_id`` (runs execute *for* a project) accepts a valid project and rejects a
+``project_run.project_id`` (runs execute *for* a project) accepts a valid project and rejects a
 dangling one.
 """
 
@@ -181,17 +181,17 @@ def test_duplicate_product_name_under_brand_rejected_by_constraint() -> None:
     run_async(scenario())
 
 
-# --- campaign_run executes FOR a project ------------------------------------
+# --- project_run executes FOR a project ------------------------------------
 _INSERT_RUN = text(
     """
-    INSERT INTO campaign_run (id, workspace_id, icp_key, icp_version, project_id)
+    INSERT INTO project_run (id, workspace_id, icp_key, icp_version, project_id)
     VALUES (:id, :workspace_id, :icp_key, 1, :project_id)
     RETURNING project_id
     """
 )
 
 
-def test_campaign_run_accepts_valid_project_id() -> None:
+def test_project_run_accepts_valid_project_id() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             workspace_id, brand_id = await _seed(conn)
@@ -212,11 +212,11 @@ def test_campaign_run_accepts_valid_project_id() -> None:
     run_async(scenario())
 
 
-def test_campaign_run_rejects_dangling_project_id() -> None:
+def test_project_run_rejects_dangling_project_id() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             workspace_id, _ = await _seed(conn)
-            with pytest.raises(IntegrityError, match="campaign_run_project_fk"):
+            with pytest.raises(IntegrityError, match="project_run_project_fk"):
                 await conn.execute(
                     _INSERT_RUN,
                     {

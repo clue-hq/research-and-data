@@ -14,11 +14,11 @@ from uuid import uuid4
 import pytest
 
 from clue_core import (
-    CampaignPhase,
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
+    new_project_run_id,
 )
 from clue_db import db_lifespan, transaction
 from clue_research.claimstore import load_core_pack
@@ -51,7 +51,7 @@ _ASSERTED: dict[str, object] = {
 def test_handler_conforms_to_protocol() -> None:
     handler = IcpConfirmedHandler()
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.ICP_CONFIRMED
+    assert handler.phase is ProjectPhase.ICP_CONFIRMED
 
 
 async def _seed_committed() -> None:
@@ -66,8 +66,8 @@ async def _seed_committed() -> None:
 
 def _ctx(workspace_id: str, icp_key: str, icp_version: int) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.ICP_CONFIRMED,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.ICP_CONFIRMED,
         workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=icp_version,

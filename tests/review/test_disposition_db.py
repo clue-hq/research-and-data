@@ -21,22 +21,22 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignRunId,
     ClaimId,
     EntityId,
     ExtractionMethod,
+    ProjectRunId,
     ResearchMode,
     ReviewAction,
     account_claim,
-    new_campaign_run_id,
     new_claim_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_core.enums import AccountStatus
 from clue_core.review import ReviewActionOutcome
 from clue_research.claimstore import insert_claim
 from clue_research.discovery_scoring.scoring.engine import FIT_FIELD
-from clue_research.durable.campaign_run import ensure_campaign_run
+from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import DEFAULT_REUSE_POLICY, insert_account_entity, stamp_reuse
 from clue_research.review import (
     DispositionActor,
@@ -78,10 +78,10 @@ async def _account(
     )
 
 
-async def _run(conn: AsyncConnection) -> CampaignRunId:
-    rid = new_campaign_run_id()
-    await ensure_campaign_run(
-        conn, campaign_run_id=rid, workspace_id=_CLIENT, icp_key=_ICP_KEY, icp_version=_ICP_VERSION
+async def _run(conn: AsyncConnection) -> ProjectRunId:
+    rid = new_project_run_id()
+    await ensure_project_run(
+        conn, project_run_id=rid, workspace_id=_CLIENT, icp_key=_ICP_KEY, icp_version=_ICP_VERSION
     )
     return rid
 
@@ -204,7 +204,7 @@ def test_review_action_capture_is_idempotent_with_provenance() -> None:
                 outcome,
                 account_entity_id=account,
                 contact_entity_id=None,
-                campaign_run_id=run,
+                project_run_id=run,
                 actor="alice",
             )
 
@@ -254,7 +254,7 @@ def test_review_action_capture_is_idempotent_with_provenance() -> None:
                 outcome,
                 account_entity_id=account,
                 contact_entity_id=None,
-                campaign_run_id=run,
+                project_run_id=run,
                 actor="alice",
             )
             assert again == did
@@ -413,7 +413,7 @@ def test_labeled_dataset_joins_score_is_reproducible_and_tombstone_aware() -> No
                 account_action,
                 account_entity_id=account,
                 contact_entity_id=None,
-                campaign_run_id=run,
+                project_run_id=run,
                 actor="bob",
             )
             contact = EntityId(uuid4())
@@ -428,7 +428,7 @@ def test_labeled_dataset_joins_score_is_reproducible_and_tombstone_aware() -> No
                 contact_action,
                 account_entity_id=account,
                 contact_entity_id=contact,
-                campaign_run_id=run,
+                project_run_id=run,
                 actor="bob",
             )
 
@@ -483,7 +483,7 @@ def test_store_class_record_and_labeled_dataset() -> None:
                 occurred_at=_now(),
                 icp_key=_ICP_KEY,
                 icp_spec_version=_ICP_VERSION,
-                campaign_run_id=run,
+                project_run_id=run,
             )
             did = await store.record(disposition)
             rows = await store.labeled_dataset(workspace_id=_CLIENT)

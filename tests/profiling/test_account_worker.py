@@ -26,8 +26,8 @@ from clue_core import (
     SourceManifest,
     WorkerStatus,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import PUBLIC_ONLY, claims_for, register_field
@@ -117,7 +117,7 @@ async def _insert_account(conn, *, domain: str | None = "acme-robotics.com", hq_
 def _ctx(entity_id, *, field_keys=(_FIELD,), budget=None, workspace_id=None, aspect="account"):
     return AspectContext(
         entity_id=entity_id,
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         run_id=new_run_id(),
         tier="top",
         aspect=aspect,

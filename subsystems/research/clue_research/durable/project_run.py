@@ -1,14 +1,14 @@
-"""The ``campaign_run`` / ``campaign_phase_checkpoint`` / ``adjustment_journal`` repository (M7.3).
+"""The ``project_run`` / ``project_phase_checkpoint`` / ``adjustment_journal`` repository (M7.3).
 
 The only sanctioned path to the three outer-state-machine tables, mirroring the ``account_run``
 repository shape (``durable/account_run.py``) and the claim store (``claimstore/claims.py``):
 module-level ``text(...)`` statements + ``async def`` helpers that take an
 :class:`~sqlalchemy.ext.asyncio.AsyncConnection`. No caller hand-writes SQL against these tables.
 
-``campaign_run`` is **mutable** execution state (``phase``/``status``/``tier_cutoffs`` advance over
+``project_run`` is **mutable** execution state (``phase``/``status``/``tier_cutoffs`` advance over
 the run's life), like ``account_run`` — the claim store keeps immutable history; this is the
-resumable cursor over it. ``campaign_phase_checkpoint`` is upserted on the natural
-``(campaign_run_id, phase)`` key (the frozen idempotency shape), so a re-entered phase deduplicates
+resumable cursor over it. ``project_phase_checkpoint`` is upserted on the natural
+``(project_run_id, phase)`` key (the frozen idempotency shape), so a re-entered phase deduplicates
 onto one row. ``adjustment_journal`` is **append-only** (DB-enforced by a reject trigger) — its rows
 are never mutated. JSONB columns round-trip through the one ``core`` serialization path.
 """
@@ -23,31 +23,31 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     CostCents,
+    ProjectPhase,
+    ProjectRunId,
     UtcDatetime,
     decode_jsonb,
     serialize_value_json,
 )
-from clue_research.durable.enums import CampaignRunStatus, PhaseCheckpointStatus
+from clue_research.durable.enums import PhaseCheckpointStatus, ProjectRunStatus
 
 # Tier-cutoff config carried on the run (e.g. {"top": 0.8, "high": 0.6}); a plain JSONB object the
 # tiering phase (M6.4) reads and the client adjusts at the checkpoint.
 TierCutoffs = dict[str, JsonValue]
 
 
-class CampaignRunRow(BaseModel):
-    """A ``campaign_run`` row reconstructed from the table (M7.3) — the outer durable job."""
+class ProjectRunRow(BaseModel):
+    """A ``project_run`` row reconstructed from the table (M7.3) — the outer durable job."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: CampaignRunId
+    id: ProjectRunId
     workspace_id: str
     icp_key: str
     icp_version: int
-    phase: CampaignPhase
-    status: CampaignRunStatus
+    phase: ProjectPhase
+    status: ProjectRunStatus
     budget_cap_cents: CostCents | None
     spent_cents: CostCents
     tier_cutoffs: TierCutoffs
@@ -57,8 +57,8 @@ class CampaignRunRow(BaseModel):
     updated_at: UtcDatetime
 
 
-class CampaignPhaseCheckpointRow(BaseModel):
-    """A ``campaign_phase_checkpoint`` row (M7.3). ``payload`` is the phase handler's
+class ProjectPhaseCheckpointRow(BaseModel):
+    """A ``project_phase_checkpoint`` row (M7.3). ``payload`` is the phase handler's
     :class:`~clue_core.PhaseResult` payload by reference — and, for ``tier_checkpoint``,
     the M6.4 review payload the surface reads back (proposed cutoffs / tier distribution / cost
     estimate / decision)."""
@@ -66,8 +66,8 @@ class CampaignPhaseCheckpointRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: UUID
-    campaign_run_id: CampaignRunId
-    phase: CampaignPhase
+    project_run_id: ProjectRunId
+    phase: ProjectPhase
     idempotency_key: str
     status: PhaseCheckpointStatus
     payload: dict[str, JsonValue]
@@ -82,13 +82,13 @@ class AdjustmentRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: UUID
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     kind: str
     detail: dict[str, JsonValue]
     created_at: UtcDatetime
 
 
-# --- campaign_run --------------------------------------------------------------------------------
+# --- project_run --------------------------------------------------------------------------------
 
 _RUN_COLUMNS = (
     "id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, spent_cents, "
@@ -97,42 +97,42 @@ _RUN_COLUMNS = (
 
 _ENSURE_RUN_SQL = text(
     """
-    INSERT INTO campaign_run (
+    INSERT INTO project_run (
         id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, tier_cutoffs_json
     )
     VALUES (
         :id, :workspace_id, :icp_key, :icp_version,
-        CAST(:phase AS campaign_phase), CAST(:status AS campaign_run_status),
+        CAST(:phase AS project_phase), CAST(:status AS project_run_status),
         :budget_cap_cents, CAST(:tier_cutoffs AS jsonb)
     )
     ON CONFLICT (id) DO NOTHING
     """
 )
 
-_GET_RUN_SQL = text(f"SELECT {_RUN_COLUMNS} FROM campaign_run WHERE id = :id")
+_GET_RUN_SQL = text(f"SELECT {_RUN_COLUMNS} FROM project_run WHERE id = :id")
 
 
-async def ensure_campaign_run(
+async def ensure_project_run(
     conn: AsyncConnection,
     *,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     workspace_id: str,
     icp_key: str,
     icp_version: int,
     budget_cap_cents: CostCents | None = None,
     tier_cutoffs: TierCutoffs | None = None,
-    phase: CampaignPhase = CampaignPhase.REVERSE_PROFILING,
-    status: CampaignRunStatus = CampaignRunStatus.ACTIVE,
+    phase: ProjectPhase = ProjectPhase.REVERSE_PROFILING,
+    status: ProjectRunStatus = ProjectRunStatus.ACTIVE,
 ) -> None:
-    """Insert the ``campaign_run`` row if absent (``ON CONFLICT (id) DO NOTHING``).
+    """Insert the ``project_run`` row if absent (``ON CONFLICT (id) DO NOTHING``).
 
-    Idempotent on the supplied id so ``CampaignRun.start`` is safe to call twice (a re-entry never
+    Idempotent on the supplied id so ``ProjectRun.start`` is safe to call twice (a re-entry never
     resets a run that already advanced). The id is supplied by the caller (minted once via
-    :func:`~clue_core.new_campaign_run_id`) so it is stable across a crash-and-resume."""
+    :func:`~clue_core.new_project_run_id`) so it is stable across a crash-and-resume."""
     await conn.execute(
         _ENSURE_RUN_SQL,
         {
-            "id": campaign_run_id,
+            "id": project_run_id,
             "workspace_id": workspace_id,
             "icp_key": icp_key,
             "icp_version": icp_version,
@@ -144,41 +144,41 @@ async def ensure_campaign_run(
     )
 
 
-async def get_campaign_run(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
-) -> CampaignRunRow | None:
-    """Return the ``campaign_run`` row, or ``None`` if it does not exist."""
-    row = (await conn.execute(_GET_RUN_SQL, {"id": campaign_run_id})).mappings().one_or_none()
-    return _row_to_campaign_run(dict(row)) if row is not None else None
+async def get_project_run(
+    conn: AsyncConnection, project_run_id: ProjectRunId
+) -> ProjectRunRow | None:
+    """Return the ``project_run`` row, or ``None`` if it does not exist."""
+    row = (await conn.execute(_GET_RUN_SQL, {"id": project_run_id})).mappings().one_or_none()
+    return _row_to_project_run(dict(row)) if row is not None else None
 
 
 async def set_phase(
     conn: AsyncConnection,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     *,
-    phase: CampaignPhase,
-    status: CampaignRunStatus,
+    phase: ProjectPhase,
+    status: ProjectRunStatus,
 ) -> None:
     """Advance the run to ``phase`` with run-level ``status`` (the phase-transition write)."""
     await conn.execute(
         text(
             """
-            UPDATE campaign_run
-            SET phase = CAST(:phase AS campaign_phase),
-                status = CAST(:status AS campaign_run_status),
+            UPDATE project_run
+            SET phase = CAST(:phase AS project_phase),
+                status = CAST(:status AS project_run_status),
                 updated_at = now()
             WHERE id = :id
             """
         ),
-        {"id": campaign_run_id, "phase": phase.value, "status": status.value},
+        {"id": project_run_id, "phase": phase.value, "status": status.value},
     )
 
 
 async def set_run_status(
     conn: AsyncConnection,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     *,
-    status: CampaignRunStatus,
+    status: ProjectRunStatus,
     stamp_paused: bool = False,
     stamp_resumed: bool = False,
 ) -> None:
@@ -189,72 +189,72 @@ async def set_run_status(
     await conn.execute(
         text(
             f"""
-            UPDATE campaign_run
-            SET status = CAST(:status AS campaign_run_status){paused}{resumed},
+            UPDATE project_run
+            SET status = CAST(:status AS project_run_status){paused}{resumed},
                 updated_at = now()
             WHERE id = :id
             """
         ),
-        {"id": campaign_run_id, "status": status.value},
+        {"id": project_run_id, "status": status.value},
     )
 
 
 async def set_icp_version(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId, icp_version: int
+    conn: AsyncConnection, project_run_id: ProjectRunId, icp_version: int
 ) -> None:
     """Re-point the run at a new ICP-spec version (M3 re-versions the spec; M7.3 records which
     version the next phase compiles against — the ``adjust(icp_version=…)`` write)."""
     await conn.execute(
-        text("UPDATE campaign_run SET icp_version = :v, updated_at = now() WHERE id = :id"),
-        {"id": campaign_run_id, "v": icp_version},
+        text("UPDATE project_run SET icp_version = :v, updated_at = now() WHERE id = :id"),
+        {"id": project_run_id, "v": icp_version},
     )
 
 
 async def set_budget_cap(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId, budget_cap_cents: CostCents
+    conn: AsyncConnection, project_run_id: ProjectRunId, budget_cap_cents: CostCents
 ) -> None:
     """Set the per-campaign hard cap (the ``adjust(budget_cap=…)`` write; M7.5 enforces it)."""
     await conn.execute(
-        text("UPDATE campaign_run SET budget_cap_cents = :c, updated_at = now() WHERE id = :id"),
-        {"id": campaign_run_id, "c": budget_cap_cents},
+        text("UPDATE project_run SET budget_cap_cents = :c, updated_at = now() WHERE id = :id"),
+        {"id": project_run_id, "c": budget_cap_cents},
     )
 
 
 async def set_tier_cutoffs(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId, tier_cutoffs: TierCutoffs
+    conn: AsyncConnection, project_run_id: ProjectRunId, tier_cutoffs: TierCutoffs
 ) -> None:
     """Set the tier cutoffs the tiering phase (M6.4) reads (the ``adjust`` tier-cutoffs write)."""
     await conn.execute(
         text(
-            "UPDATE campaign_run SET tier_cutoffs_json = CAST(:c AS jsonb), updated_at = now() "
+            "UPDATE project_run SET tier_cutoffs_json = CAST(:c AS jsonb), updated_at = now() "
             "WHERE id = :id"
         ),
-        {"id": campaign_run_id, "c": serialize_value_json(tier_cutoffs)},
+        {"id": project_run_id, "c": serialize_value_json(tier_cutoffs)},
     )
 
 
-# --- campaign_phase_checkpoint -------------------------------------------------------------------
+# --- project_phase_checkpoint -------------------------------------------------------------------
 
 _CHECKPOINT_COLUMNS = (
-    "id, campaign_run_id, phase, idempotency_key, status, payload_json, committed_at, "
+    "id, project_run_id, phase, idempotency_key, status, payload_json, committed_at, "
     "created_at, updated_at"
 )
 
-# Upsert on the natural (campaign_run_id, phase) key: stage IN_PROGRESS, then COMMIT/AWAIT/FAIL the
+# Upsert on the natural (project_run_id, phase) key: stage IN_PROGRESS, then COMMIT/AWAIT/FAIL the
 # same row. ``committed_at`` is computed in SQL — stamped to ``now()`` exactly when status becomes
 # COMMITTED and cleared otherwise — so the DB CHECK (committed_at IS NOT NULL iff committed) can
 # never be violated and the caller never has to supply a timestamp.
 _UPSERT_CHECKPOINT_SQL = text(
     """
-    INSERT INTO campaign_phase_checkpoint (
-        id, campaign_run_id, phase, idempotency_key, status, payload_json, committed_at
+    INSERT INTO project_phase_checkpoint (
+        id, project_run_id, phase, idempotency_key, status, payload_json, committed_at
     )
     VALUES (
-        :id, :campaign_run_id, CAST(:phase AS campaign_phase), :idempotency_key,
+        :id, :project_run_id, CAST(:phase AS project_phase), :idempotency_key,
         CAST(:status AS phase_checkpoint_status), CAST(:payload AS jsonb),
         CASE WHEN :status = 'committed' THEN now() ELSE NULL END
     )
-    ON CONFLICT (campaign_run_id, phase) DO UPDATE
+    ON CONFLICT (project_run_id, phase) DO UPDATE
     SET status = EXCLUDED.status,
         payload_json = EXCLUDED.payload_json,
         committed_at = CASE WHEN EXCLUDED.status = 'committed' THEN now() ELSE NULL END,
@@ -263,21 +263,21 @@ _UPSERT_CHECKPOINT_SQL = text(
 )
 
 _GET_CHECKPOINT_SQL = text(
-    f"SELECT {_CHECKPOINT_COLUMNS} FROM campaign_phase_checkpoint "
-    "WHERE campaign_run_id = :run AND phase = CAST(:phase AS campaign_phase)"
+    f"SELECT {_CHECKPOINT_COLUMNS} FROM project_phase_checkpoint "
+    "WHERE project_run_id = :run AND phase = CAST(:phase AS project_phase)"
 )
 
 
 async def upsert_checkpoint(
     conn: AsyncConnection,
     *,
-    campaign_run_id: CampaignRunId,
-    phase: CampaignPhase,
+    project_run_id: ProjectRunId,
+    phase: ProjectPhase,
     idempotency_key: str,
     status: PhaseCheckpointStatus,
     payload: dict[str, JsonValue],
 ) -> None:
-    """Upsert the ``(campaign_run, phase)`` checkpoint to ``status`` with ``payload``.
+    """Upsert the ``(project_run, phase)`` checkpoint to ``status`` with ``payload``.
 
     The first call for a phase inserts (``IN_PROGRESS``); subsequent calls update the same row to
     ``COMMITTED`` / ``AWAITING_INPUT`` / ``FAILED``. ``committed_at`` is stamped automatically (in
@@ -286,7 +286,7 @@ async def upsert_checkpoint(
         _UPSERT_CHECKPOINT_SQL,
         {
             "id": uuid4(),
-            "campaign_run_id": campaign_run_id,
+            "project_run_id": project_run_id,
             "phase": phase.value,
             "idempotency_key": idempotency_key,
             "status": status.value,
@@ -296,12 +296,12 @@ async def upsert_checkpoint(
 
 
 async def get_checkpoint(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId, phase: CampaignPhase
-) -> CampaignPhaseCheckpointRow | None:
-    """Read back the durable checkpoint for ``(campaign_run, phase)`` — the M6↔M7 read-back surface
+    conn: AsyncConnection, project_run_id: ProjectRunId, phase: ProjectPhase
+) -> ProjectPhaseCheckpointRow | None:
+    """Read back the durable checkpoint for ``(project_run, phase)`` — the M6↔M7 read-back surface
     (M6.4's tier-checkpoint payload is read from here), or ``None`` if the phase has not run."""
     row = (
-        (await conn.execute(_GET_CHECKPOINT_SQL, {"run": campaign_run_id, "phase": phase.value}))
+        (await conn.execute(_GET_CHECKPOINT_SQL, {"run": project_run_id, "phase": phase.value}))
         .mappings()
         .one_or_none()
     )
@@ -312,21 +312,21 @@ async def get_checkpoint(
 
 _INSERT_ADJUSTMENT_SQL = text(
     """
-    INSERT INTO adjustment_journal (id, campaign_run_id, kind, detail_json)
-    VALUES (:id, :campaign_run_id, :kind, CAST(:detail AS jsonb))
+    INSERT INTO adjustment_journal (id, project_run_id, kind, detail_json)
+    VALUES (:id, :project_run_id, :kind, CAST(:detail AS jsonb))
     """
 )
 
 _LIST_ADJUSTMENTS_SQL = text(
-    "SELECT id, campaign_run_id, kind, detail_json, created_at FROM adjustment_journal "
-    "WHERE campaign_run_id = :run ORDER BY seq"
+    "SELECT id, project_run_id, kind, detail_json, created_at FROM adjustment_journal "
+    "WHERE project_run_id = :run ORDER BY seq"
 )
 
 
 async def insert_adjustment(
     conn: AsyncConnection,
     *,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     kind: str,
     detail: dict[str, JsonValue],
 ) -> None:
@@ -335,7 +335,7 @@ async def insert_adjustment(
         _INSERT_ADJUSTMENT_SQL,
         {
             "id": uuid4(),
-            "campaign_run_id": campaign_run_id,
+            "project_run_id": project_run_id,
             "kind": kind,
             "detail": serialize_value_json(detail),
         },
@@ -343,18 +343,18 @@ async def insert_adjustment(
 
 
 async def list_adjustments(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> list[AdjustmentRow]:
     """All adjustments for a run, oldest first (the audit trail)."""
-    rows = (await conn.execute(_LIST_ADJUSTMENTS_SQL, {"run": campaign_run_id})).mappings().all()
+    rows = (await conn.execute(_LIST_ADJUSTMENTS_SQL, {"run": project_run_id})).mappings().all()
     return [_row_to_adjustment(dict(r)) for r in rows]
 
 
 # --- row decoders --------------------------------------------------------------------------------
 
 
-def _row_to_campaign_run(row: dict[str, object]) -> CampaignRunRow:
-    return CampaignRunRow.model_validate(
+def _row_to_project_run(row: dict[str, object]) -> ProjectRunRow:
+    return ProjectRunRow.model_validate(
         {
             "id": row["id"],
             "workspace_id": row["workspace_id"],
@@ -373,11 +373,11 @@ def _row_to_campaign_run(row: dict[str, object]) -> CampaignRunRow:
     )
 
 
-def _row_to_checkpoint(row: dict[str, object]) -> CampaignPhaseCheckpointRow:
-    return CampaignPhaseCheckpointRow.model_validate(
+def _row_to_checkpoint(row: dict[str, object]) -> ProjectPhaseCheckpointRow:
+    return ProjectPhaseCheckpointRow.model_validate(
         {
             "id": row["id"],
-            "campaign_run_id": row["campaign_run_id"],
+            "project_run_id": row["project_run_id"],
             "phase": row["phase"],
             "idempotency_key": row["idempotency_key"],
             "status": row["status"],
@@ -393,7 +393,7 @@ def _row_to_adjustment(row: dict[str, object]) -> AdjustmentRow:
     return AdjustmentRow.model_validate(
         {
             "id": row["id"],
-            "campaign_run_id": row["campaign_run_id"],
+            "project_run_id": row["project_run_id"],
             "kind": row["kind"],
             "detail": decode_jsonb(row["detail_json"]),
             "created_at": row["created_at"],

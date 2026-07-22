@@ -1,4 +1,4 @@
-"""The ``CampaignPhase.REVIEW`` phase handler (M13.1) — the Tier-1 human gate.
+"""The ``ProjectPhase.REVIEW`` phase handler (M13.1) — the Tier-1 human gate.
 
 When the campaign-run state machine enters the REVIEW phase (between VERIFICATION and HANDOFF), this
 handler opens a durable ``review_session`` per ready high-tier account and returns ``PAUSED`` — the
@@ -17,11 +17,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 
 from clue_core import (
-    CampaignPhase,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
     PhaseStatus,
+    ProjectPhase,
     ReviewSurface,
 )
 from clue_research.durable import AccountSpec
@@ -33,14 +33,14 @@ ReviewAccountResolver = Callable[[PhaseContext], Awaitable[Sequence[AccountSpec]
 
 
 class ReviewPhaseHandler:
-    """The ``CampaignPhase.REVIEW`` :class:`~clue_core.PhaseHandler` (M13.1).
+    """The ``ProjectPhase.REVIEW`` :class:`~clue_core.PhaseHandler` (M13.1).
 
     Opens a session per ready account (idempotent — a crash-resume re-opens onto the same row) and
     returns ``PAUSED`` so the run suspends for human review. An empty ready set is a clean
     ``COMPLETED`` no-op (nothing to review → do not pause the run). Per-account isolation: one
     account's open-session fault does not sink the batch (coverage-confidence, not all-or-none)."""
 
-    phase: CampaignPhase = CampaignPhase.REVIEW
+    phase: ProjectPhase = ProjectPhase.REVIEW
 
     def __init__(
         self,
@@ -65,7 +65,7 @@ class ReviewPhaseHandler:
             try:
                 await self._surface.open_session(
                     account_entity_id=spec.entity_id,
-                    campaign_run_id=ctx.campaign_run_id,
+                    project_run_id=ctx.project_run_id,
                     workspace_id=ctx.workspace_id,
                     opened_by="review_phase",
                 )

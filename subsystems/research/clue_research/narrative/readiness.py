@@ -3,17 +3,17 @@
 A handoff is only servable once the account has passed verification (M9) and assembly (M12.2), and
 the API must expose the campaign-run ``handoff`` phase so a content-layer consumer can *poll* rather
 than guess (Doc C §4 — the ``handoff`` phase is the readiness gate). That state lives in the M7
-``campaign_run`` / ``account_run`` tables, owned by the ``durable`` package — which ``narrative`` (a
+``project_run`` / ``account_run`` tables, owned by the ``durable`` package — which ``narrative`` (a
 worker under the import-linter independence contract) may NOT import. So readiness reaches the
 service
-through this **injected seam**; the production reader (over ``durable.get_campaign_run`` +
+through this **injected seam**; the production reader (over ``durable.get_project_run`` +
 ``account_run``) is built at the ``api`` composition root and injected, exactly like the M12.1
 positioner's committee reader and the M12.2 assembler's committee reader.
 
-The seam deliberately exposes only the **core** :class:`~clue_core.CampaignPhase`
+The seam deliberately exposes only the **core** :class:`~clue_core.ProjectPhase`
 (importable
 by ``narrative``) plus pre-computed booleans / plain strings for the durable-internal statuses
-(``CampaignRunStatus`` / ``AccountRunStatus`` live in ``durable.enums`` and are out of bounds here)
+(``ProjectRunStatus`` / ``AccountRunStatus`` live in ``durable.enums`` and are out of bounds here)
 —
 the production reader does the durable→bool mapping so ``narrative`` never learns those enum tokens.
 """
@@ -24,12 +24,12 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_core import CampaignPhase, CampaignRunId, EntityId
+from clue_core import EntityId, ProjectPhase, ProjectRunId
 
 
 class RunReadiness(BaseModel):
     """The campaign-run's readiness, as the handoff API exposes it. ``phase`` is the current
-    :class:`CampaignPhase` (``HANDOFF`` ⟹ the run reached the handoff gate); ``is_terminal`` is
+    :class:`ProjectPhase` (``HANDOFF`` ⟹ the run reached the handoff gate); ``is_terminal`` is
     ``True`` once the run is ``COMPLETED``/``FAILED`` (no further handoffs will appear). A consumer
     polls this to decide whether to keep waiting or start pulling.
 
@@ -39,9 +39,9 @@ class RunReadiness(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     workspace_id: str
-    phase: CampaignPhase
+    phase: ProjectPhase
     icp_key: str = ""
     icp_version: int = 1
     is_terminal: bool = False
@@ -75,40 +75,40 @@ class HandoffReadinessReader(Protocol):
     The production impl (over ``durable``) is injected at the ``api`` root."""
 
     async def run_readiness(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> RunReadiness | None: ...
 
     async def ready_accounts(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> tuple[AccountReadiness, ...]: ...
 
 
 class InMemoryHandoffReadinessReader:
     """A fixture :class:`HandoffReadinessReader` for M12.3 tests / local runs before the
     durable-backed
-    reader is wired at ``api``. Backed by plain maps keyed on ``campaign_run_id``."""
+    reader is wired at ``api``. Backed by plain maps keyed on ``project_run_id``."""
 
     def __init__(
         self,
         *,
-        runs: dict[CampaignRunId, RunReadiness] | None = None,
-        ready: dict[CampaignRunId, tuple[AccountReadiness, ...]] | None = None,
+        runs: dict[ProjectRunId, RunReadiness] | None = None,
+        ready: dict[ProjectRunId, tuple[AccountReadiness, ...]] | None = None,
     ) -> None:
         self._runs = runs or {}
         self._ready = ready or {}
 
     async def run_readiness(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> RunReadiness | None:
-        rr = self._runs.get(campaign_run_id)
+        rr = self._runs.get(project_run_id)
         if rr is None or rr.workspace_id != workspace_id:
             return None
         return rr
 
     async def ready_accounts(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> tuple[AccountReadiness, ...]:
-        rr = self._runs.get(campaign_run_id)
+        rr = self._runs.get(project_run_id)
         if rr is None or rr.workspace_id != workspace_id:
             return ()
-        return self._ready.get(campaign_run_id, ())
+        return self._ready.get(project_run_id, ())

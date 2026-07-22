@@ -18,7 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from tests.fleet.conftest import rollback_conn, run_async
 
-from clue_core import new_campaign_run_id
+from clue_core import new_project_run_id
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -78,7 +78,7 @@ def test_fleet_task_status_enum_matches_db() -> None:
 def test_lease_acquire_blocks_second_worker_while_live() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             assert await acquire_run_lease(
                 conn, project_run_id=run_id, worker_id="worker-a", ttl=_TTL
             )
@@ -95,7 +95,7 @@ def test_lease_acquire_blocks_second_worker_while_live() -> None:
 def test_lease_reacquire_by_holder_is_idempotent() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             assert await acquire_run_lease(
                 conn, project_run_id=run_id, worker_id="worker-a", ttl=_TTL
             )
@@ -109,7 +109,7 @@ def test_lease_reacquire_by_holder_is_idempotent() -> None:
 def test_lease_takeover_after_expiry() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             # ttl=0 → born expired (kill -9: the holder stops renewing and the TTL lapses).
             assert await acquire_run_lease(
                 conn, project_run_id=run_id, worker_id="worker-a", ttl=_EXPIRED
@@ -129,7 +129,7 @@ def test_lease_takeover_after_expiry() -> None:
 def test_lease_renew_is_holder_guarded_and_dead_after_expiry() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await acquire_run_lease(conn, project_run_id=run_id, worker_id="worker-a", ttl=_TTL)
             assert await renew_run_lease(
                 conn, project_run_id=run_id, worker_id="worker-a", ttl=_TTL
@@ -140,7 +140,7 @@ def test_lease_renew_is_holder_guarded_and_dead_after_expiry() -> None:
             )
             # Expired → not renewable even by the old holder (a takeover may be racing): the
             # driver must treat this as lease-lost and abort.
-            other = new_campaign_run_id()
+            other = new_project_run_id()
             await acquire_run_lease(conn, project_run_id=other, worker_id="worker-a", ttl=_EXPIRED)
             assert not await renew_run_lease(
                 conn, project_run_id=other, worker_id="worker-a", ttl=_TTL
@@ -152,7 +152,7 @@ def test_lease_renew_is_holder_guarded_and_dead_after_expiry() -> None:
 def test_lease_release_is_holder_guarded() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await acquire_run_lease(conn, project_run_id=run_id, worker_id="worker-a", ttl=_TTL)
             # A fenced-out zombie's release is a no-op.
             await release_run_lease(conn, project_run_id=run_id, worker_id="worker-b")
@@ -171,7 +171,7 @@ def test_lease_release_is_holder_guarded() -> None:
 def test_enqueue_is_idempotent_on_dedup_key() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             assert await enqueue_task(
                 conn,
                 kind=FleetTaskKind.DRIVE_RUN,
@@ -197,7 +197,7 @@ def test_enqueue_reopen_terminal_reopens_finished_drive_tasks_only() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await enqueue_task(
                 conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=run_id, dedup_key=str(run_id)
             )
@@ -246,7 +246,7 @@ def test_enqueue_reopen_terminal_reopens_finished_drive_tasks_only() -> None:
 def test_claim_order_is_priority_then_fifo() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             for key, priority in (("low-first", 3), ("top", 0), ("high", 1), ("low-second", 3)):
                 await enqueue_task(
                     conn,
@@ -281,7 +281,7 @@ def test_same_transaction_enqueues_claim_in_insertion_order() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             order = [f"seq-{i}" for i in range(6)]
             for key in order:  # all same priority, all one frozen-now() transaction
                 await enqueue_task(
@@ -315,7 +315,7 @@ def test_same_transaction_enqueues_claim_in_insertion_order() -> None:
 def test_claimed_task_is_not_reclaimable_until_stale() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await enqueue_task(
                 conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=run_id, dedup_key=str(run_id)
             )
@@ -354,7 +354,7 @@ def test_touch_restamps_a_live_claim_holder_guarded() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await enqueue_task(
                 conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=run_id, dedup_key=str(run_id)
             )
@@ -377,7 +377,7 @@ def test_touch_restamps_a_live_claim_holder_guarded() -> None:
 def test_finish_and_requeue_are_holder_guarded() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await enqueue_task(
                 conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=run_id, dedup_key=str(run_id)
             )
@@ -414,7 +414,7 @@ def test_finish_rejects_non_terminal_status() -> None:
             with pytest.raises(ValueError, match="terminal"):
                 await finish_task(
                     conn,
-                    task_id=new_campaign_run_id(),  # any uuid — validation fires first
+                    task_id=new_project_run_id(),  # any uuid — validation fires first
                     worker_id="w",
                     status=FleetTaskStatus.QUEUED,
                 )
@@ -425,7 +425,7 @@ def test_finish_rejects_non_terminal_status() -> None:
 def test_requeue_failed_is_the_explicit_retry_gate() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             await enqueue_task(
                 conn, kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=run_id, dedup_key="acct"
             )
@@ -484,7 +484,7 @@ def test_deep_drain_never_double_runs_a_job_whose_claim_went_stale_mid_flight() 
         from clue_fleet import DbTaskQueue, QueueBackedScheduler
         from clue_research.durable import AccountSpec
 
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         specs = [
             AccountSpec(
                 entity_id=EntityId(uuid5(NAMESPACE_URL, f"inflight:{run_id}:{i}")), tier="top"
@@ -509,7 +509,7 @@ def test_deep_drain_never_double_runs_a_job_whose_claim_went_stale_mid_flight() 
                 lock_factory=ProcessLocalLockFactory(),
             )
             results = await scheduler.run_accounts(
-                specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+                specs, project_run_id=run_id, checkpointer=None, run_one=run_one
             )
         assert results == ["ok"] * 4
         assert all(count == 1 for count in executions.values()), dict(executions)
@@ -536,7 +536,7 @@ def test_cross_run_same_entity_is_single_flighted_on_the_real_queue() -> None:
         from clue_fleet import DbTaskQueue, QueueBackedScheduler
         from clue_research.durable import AccountSpec
 
-        run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+        run_a, run_b = new_project_run_id(), new_project_run_id()
         shared = EntityId(uuid5(NAMESPACE_URL, f"single-flight:shared:{run_a}:{run_b}"))
         specs_a = [
             AccountSpec(entity_id=shared, tier="top"),
@@ -570,10 +570,10 @@ def test_cross_run_same_entity_is_single_flighted_on_the_real_queue() -> None:
         async with db_lifespan():
             results_a, results_b = await asyncio.gather(
                 _sched().run_accounts(
-                    specs_a, campaign_run_id=run_a, checkpointer=None, run_one=run_one
+                    specs_a, project_run_id=run_a, checkpointer=None, run_one=run_one
                 ),
                 _sched().run_accounts(
-                    specs_b, campaign_run_id=run_b, checkpointer=None, run_one=run_one
+                    specs_b, project_run_id=run_b, checkpointer=None, run_one=run_one
                 ),
             )
         # The shared entity was single-flighted across the two committed runs...
@@ -599,12 +599,12 @@ def test_heartbeat_death_never_yields_two_concurrent_drivers() -> None:
 
         from tests.fleet.conftest import run_row
 
-        from clue_core import CampaignPhase
+        from clue_core import ProjectPhase
         from clue_db import db_lifespan
         from clue_fleet import DbLeaseStore, DbTaskQueue, ProjectRunWorker, enqueue_drive
-        from clue_research.durable import CampaignRunStatus
+        from clue_research.durable import ProjectRunStatus
 
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         advance_s = 4.0  # far longer than the lease TTL — A must be cancelled mid-flight
 
         class _Probe:
@@ -617,20 +617,18 @@ def test_heartbeat_death_never_yields_two_concurrent_drivers() -> None:
         probe = _Probe()
 
         class _ProbeDriver:
-            # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md)
-            # — a fake RunDriver keeps the seam's legacy parameter names.
             def __init__(self, label: str) -> None:
                 self.label = label
 
-            async def status(self, campaign_run_id: object) -> object:
+            async def status(self, project_run_id: object) -> object:
                 done = bool(probe.completions)
                 return run_row(
                     run_id,
-                    phase=CampaignPhase.DEEP,
-                    status=CampaignRunStatus.COMPLETED if done else CampaignRunStatus.ACTIVE,
+                    phase=ProjectPhase.DEEP,
+                    status=ProjectRunStatus.COMPLETED if done else ProjectRunStatus.ACTIVE,
                 )
 
-            async def advance(self, campaign_run_id: object) -> object:
+            async def advance(self, project_run_id: object) -> object:
                 probe.starts.append(self.label)
                 probe.in_flight += 1
                 probe.peak = max(probe.peak, probe.in_flight)
@@ -640,7 +638,7 @@ def test_heartbeat_death_never_yields_two_concurrent_drivers() -> None:
                     probe.in_flight -= 1
                 probe.completions.append(self.label)
                 return run_row(
-                    run_id, phase=CampaignPhase.HANDOFF, status=CampaignRunStatus.COMPLETED
+                    run_id, phase=ProjectPhase.HANDOFF, status=ProjectRunStatus.COMPLETED
                 )
 
         class _RaisingRenewLease:
@@ -716,7 +714,7 @@ def test_heartbeat_death_never_yields_two_concurrent_drivers() -> None:
 def test_claim_scopes_by_run_and_kind() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+            run_a, run_b = new_project_run_id(), new_project_run_id()
             await enqueue_task(
                 conn, kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=run_a, dedup_key="acct-a"
             )

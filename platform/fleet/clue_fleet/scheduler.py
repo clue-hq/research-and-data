@@ -1,6 +1,6 @@
 """The queue-backed deep-phase scheduler (PB-B1) — the REQ-10 tier-priority account queue.
 
-:class:`QueueBackedScheduler` implements the exact ``run_accounts(specs, *, campaign_run_id,
+:class:`QueueBackedScheduler` implements the exact ``run_accounts(specs, *, project_run_id,
 checkpointer, run_one)`` seam the M8A deep handler is typed against
 (``clue_api.deep.handler.DeepAccountScheduler`` — asserted structurally in ``tests/fleet/``), so
 swapping it for :class:`~clue_research.durable.AccountScheduler` at the composition root is a
@@ -51,7 +51,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
-from clue_core import CampaignRunId
+from clue_core import ProjectRunId
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.queue import DEFAULT_TASK_STALE_AFTER, DbTaskQueue, TaskQueue
 from clue_obs import get_logger
@@ -126,11 +126,9 @@ class QueueBackedScheduler:
         self,
         specs: Iterable[AccountSpec],
         *,
-        # §1a rename: flips at stage 2 (docs/specs/PB-rename-campaign-run-to-project-run.md).
         # This keyword is the structural seam conformance-tested against
-        # clue_api.deep.handler.DeepAccountScheduler (see test_scheduler_satisfies_the_deep_
-        # handler_seam); B1 may not edit clue_api, so it flips with the deep handler at stage 2.
-        campaign_run_id: CampaignRunId,
+        # clue_api.deep.handler.DeepAccountScheduler (test_scheduler_satisfies_the_seam test).
+        project_run_id: ProjectRunId,
         checkpointer: Any,
         run_one: RunOne[Any],
     ) -> list[Any]:
@@ -159,18 +157,18 @@ class QueueBackedScheduler:
         for spec in ordered:
             await self._queue.enqueue(
                 kind=FleetTaskKind.ACCOUNT_JOB,
-                project_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 dedup_key=str(spec.entity_id),
                 priority=self._priority_for(spec.tier),
                 payload={"tier": spec.tier},
             )
         requeued = await self._queue.requeue_failed(
-            kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=campaign_run_id
+            kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=project_run_id
         )
         if requeued:
             log.info(
                 "deep_drain.requeued_failed",
-                project_run_id=str(campaign_run_id),
+                project_run_id=str(project_run_id),
                 count=requeued,
             )
 
@@ -191,7 +189,7 @@ class QueueBackedScheduler:
         done_keys = {
             task.dedup_key
             for task in await self._queue.list_tasks(
-                project_run_id=campaign_run_id, kind=FleetTaskKind.ACCOUNT_JOB
+                project_run_id=project_run_id, kind=FleetTaskKind.ACCOUNT_JOB
             )
             if task.status is FleetTaskStatus.DONE and task.dedup_key in by_key
         }
@@ -224,7 +222,7 @@ class QueueBackedScheduler:
                     task = await self._queue.claim_next(
                         kind=FleetTaskKind.ACCOUNT_JOB,
                         worker_id=self._claimant_id,
-                        project_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         stale_after=self._stale_after,
                     )
                     if task is None:

@@ -27,19 +27,19 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     ClaimId,
     EntityId,
     Persona,
+    ProjectPhase,
+    ProjectRunId,
     ProvenanceRef,
     UnitInterval,
     UtcDatetime,
 )
 from clue_db import ConnFactory
 from clue_obs.otel import (
-    ATTR_CAMPAIGN_RUN_ID,
     ATTR_ENTITY_ID,
+    ATTR_PROJECT_RUN_ID,
     ATTR_WORKSPACE_ID,
     MetricSink,
     apply_attributes,
@@ -141,8 +141,8 @@ class HandoffListPage(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: str
-    campaign_run_id: CampaignRunId
-    run_phase: CampaignPhase | None
+    project_run_id: ProjectRunId
+    run_phase: ProjectPhase | None
     run_is_terminal: bool
     total: int
     items: tuple[HandoffSummary, ...]
@@ -154,7 +154,7 @@ class EmitReport(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     accounts_processed: int = 0
     newly_emitted: int = 0
     refs: tuple[str, ...] = ()
@@ -271,7 +271,7 @@ class HandoffService:
         conn: AsyncConnection,
         *,
         workspace_id: str,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         tier: str | None = None,
         persona: Persona | None = None,
         min_verification_pass_rate: UnitInterval | None = None,
@@ -285,19 +285,19 @@ class HandoffService:
         floor)."""
         with traced_step(
             SPAN_HANDOFF_LIST,
-            **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_WORKSPACE_ID: workspace_id},
+            **{ATTR_PROJECT_RUN_ID: str(project_run_id), ATTR_WORKSPACE_ID: workspace_id},
         ):
-            run_phase: CampaignPhase | None = None
+            run_phase: ProjectPhase | None = None
             run_terminal = False
             if self._readiness_reader is not None:
                 readiness = await self._readiness_reader.run_readiness(
-                    campaign_run_id=campaign_run_id, workspace_id=workspace_id
+                    project_run_id=project_run_id, workspace_id=workspace_id
                 )
                 if readiness is not None:
                     run_phase = readiness.phase
                     run_terminal = readiness.is_terminal
             assembled_rows = await list_handoffs_for_run(
-                conn, workspace_id=workspace_id, campaign_run_id=campaign_run_id
+                conn, workspace_id=workspace_id, project_run_id=project_run_id
             )
             summaries = [
                 _summary(icp_key, row_tier, a)
@@ -306,7 +306,7 @@ class HandoffService:
             ]
             return HandoffListPage(
                 schema_version=HANDOFF_SCHEMA_VERSION,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 run_phase=run_phase,
                 run_is_terminal=run_terminal,
                 total=len(summaries),
@@ -358,19 +358,19 @@ async def emit_ready_handoffs(
     assembler: HandoffAssembler,
     readiness_reader: HandoffReadinessReader,
     publisher: HandoffPublisher | None = None,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     workspace_id: str,
     assembled_at: UtcDatetime,
     coverage_confidence: UnitInterval | None = None,
     sink: MetricSink | None = None,
 ) -> EmitReport:
     """Assemble + materialise + emit a durable ``handoff_event`` for every account in
-    ``campaign_run_id``
+    ``project_run_id``
     that has reached handoff-readiness — the emit path the campaign-run state machine fires when it
     enters the ``handoff`` phase (M12.3 emit/notify).
 
     Idempotent: each account's emit is ``ON CONFLICT DO NOTHING`` on
-    ``(campaign_run, account, icp_spec_version, icp_key)``, so a re-entry / crash-resume never
+    ``(project_run, account, icp_spec_version, icp_key)``, so a re-entry / crash-resume never
     double-emits; the optional :class:`HandoffPublisher` push fires exactly once per *newly* emitted
     row, **after** the per-account transaction commits (so a roll-back never leaves a phantom push).
     Materialisation is the M12.2 ``write_handoff`` UPSERT (recompute-on-supersede). The ICP segment
@@ -382,15 +382,15 @@ async def emit_ready_handoffs(
     sink = sink or get_metric_sink()
     with traced_step(
         SPAN_HANDOFF_EMIT,
-        **{ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id), ATTR_WORKSPACE_ID: workspace_id},
+        **{ATTR_PROJECT_RUN_ID: str(project_run_id), ATTR_WORKSPACE_ID: workspace_id},
     ) as span:
         readiness = await readiness_reader.run_readiness(
-            campaign_run_id=campaign_run_id, workspace_id=workspace_id
+            project_run_id=project_run_id, workspace_id=workspace_id
         )
         if readiness is None:
-            return EmitReport(campaign_run_id=campaign_run_id)
+            return EmitReport(project_run_id=project_run_id)
         accounts = await readiness_reader.ready_accounts(
-            campaign_run_id=campaign_run_id, workspace_id=workspace_id
+            project_run_id=project_run_id, workspace_id=workspace_id
         )
         icp_key = readiness.icp_key
         icp_version = readiness.icp_version
@@ -403,7 +403,7 @@ async def emit_ready_handoffs(
             event, was_new = await _assemble_materialise_emit(
                 conn_factory=conn_factory,
                 assembler=assembler,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 workspace_id=workspace_id,
                 account_entity_id=acc.account_entity_id,
                 icp_version=icp_version,
@@ -418,9 +418,9 @@ async def emit_ready_handoffs(
                 newly += 1
                 refs.append(event.handoff_ref)
         apply_attributes(span, {"narrative.handoff.emitted": newly})
-        sink.add(METRIC_HANDOFFS_EMITTED, newly, {ATTR_CAMPAIGN_RUN_ID: str(campaign_run_id)})
+        sink.add(METRIC_HANDOFFS_EMITTED, newly, {ATTR_PROJECT_RUN_ID: str(project_run_id)})
         return EmitReport(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             accounts_processed=processed,
             newly_emitted=newly,
             refs=tuple(refs),
@@ -431,7 +431,7 @@ async def _assemble_materialise_emit(
     *,
     conn_factory: ConnFactory,
     assembler: HandoffAssembler,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     workspace_id: str,
     account_entity_id: EntityId,
     icp_version: int,
@@ -444,7 +444,7 @@ async def _assemble_materialise_emit(
     return the :class:`HandoffEvent` and whether it was newly emitted (the push fires after
     commit)."""
     event = HandoffEvent(
-        campaign_run_id=campaign_run_id,
+        project_run_id=project_run_id,
         account_entity_id=account_entity_id,
         icp_spec_version=icp_version,
         icp_key=icp_key,
@@ -460,7 +460,7 @@ async def _assemble_materialise_emit(
             workspace_id=workspace_id,
             assembled_at=assembled_at,
             icp_key=icp_key,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             coverage_confidence=coverage_confidence,
         )
         await write_handoff(conn, assembled, workspace_id=workspace_id, icp_key=icp_key, tier=tier)

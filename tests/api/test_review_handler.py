@@ -14,19 +14,19 @@ from uuid import uuid4
 from clue_api.review import ReviewPhaseHandler, build_review_phase_handler
 from clue_api.review.handler import ReviewAccountResolver
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     EntityId,
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     ReviewAction,
     ReviewActionOutcome,
     ReviewRejectReason,
     ReviewSession,
     ReviewSessionStatus,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_core.review import ReviewSessionId
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
@@ -46,7 +46,7 @@ class FakeReviewSurface:
         self,
         *,
         account_entity_id: EntityId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
@@ -57,7 +57,7 @@ class FakeReviewSurface:
         return ReviewSession(
             session_id=ReviewSessionId(uuid4()),
             account_entity_id=account_entity_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             review_round=review_round,
             status=ReviewSessionStatus.OPEN,
         )
@@ -92,8 +92,8 @@ def _spec(entity_id: EntityId) -> AccountSpec:
 
 def _ctx() -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.REVIEW,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.REVIEW,
         workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
@@ -103,11 +103,11 @@ def _ctx() -> PhaseContext:
 def test_handler_conforms_to_protocol_and_registers() -> None:
     handler = ReviewPhaseHandler(account_resolver=_resolver(()), surface=FakeReviewSurface())
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.REVIEW
+    assert handler.phase is ProjectPhase.REVIEW
     registry = PhaseHandlerRegistry()
-    assert registry.get(CampaignPhase.REVIEW) is None
+    assert registry.get(ProjectPhase.REVIEW) is None
     registry.register(handler)
-    assert registry.get(CampaignPhase.REVIEW) is handler
+    assert registry.get(ProjectPhase.REVIEW) is handler
 
 
 def test_empty_account_set_is_a_completed_no_op() -> None:
@@ -165,4 +165,4 @@ def test_build_review_phase_handler_wires_the_concrete_seams() -> None:
     # Construction touches no DB (the readers/resolvers are lazy); proves the composition wiring.
     handler = build_review_phase_handler()
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.REVIEW
+    assert handler.phase is ProjectPhase.REVIEW

@@ -1,4 +1,4 @@
-"""The ``CampaignPhase.VERIFICATION`` composition root — wires the concrete M9/M10 seams.
+"""The ``ProjectPhase.VERIFICATION`` composition root — wires the concrete M9/M10 seams.
 
 Constructs :class:`~clue_api.verification.handler.VerificationPhaseHandler` with the real
 M9.2 :class:`~clue_research.verification.Corroborator`, the M9.3
@@ -9,7 +9,7 @@ M9.2 :class:`~clue_research.verification.Corroborator`, the M9.3
 (:func:`clue_research.identity.contact_ids_for_account`) plus
 the per-client use-gate provider (:func:`clue_research.compliance.load_workspace_policy` →
 :class:`~clue_research.compliance.UseGateImpl`). It then registers the handler into the M7
-phase-handler registry so ``CampaignRun.advance()`` dispatches ``VERIFICATION`` instead of raising
+phase-handler registry so ``ProjectRun.advance()`` dispatches ``VERIFICATION`` instead of raising
 ``NoPhaseHandlerRegistered(VERIFICATION)``.
 
 ``api`` is the import-linter-exempt seam, so this module imports the otherwise-independent
@@ -66,7 +66,7 @@ def build_verification_phase_handler(
     govern_contacts: bool = True,
     health_sink: MetricSink | None = None,
 ) -> VerificationPhaseHandler:
-    """Construct the ``CampaignPhase.VERIFICATION`` handler with the concrete M9/M10 seams.
+    """Construct the ``ProjectPhase.VERIFICATION`` handler with the concrete M9/M10 seams.
 
     ``account_resolver`` is the high-tier resolver shared with DEEP. The corroborator and judge each
     manage their own committed transaction per call (``session_factory``); the live-claims loader

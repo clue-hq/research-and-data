@@ -65,7 +65,7 @@ async def _run_worker(tier: str, *, depth: int = 0):  # type: ignore[no-untyped-
         worker = ContactProfileAspectWorker(session_factory=session_factory)
         ctx = AspectContext(
             entity_id=contact.id,
-            campaign_run_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            project_run_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             run_id=_RUN,
             tier=tier,
             aspect="contact.facet",

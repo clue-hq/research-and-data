@@ -60,7 +60,7 @@ def test_conversion_with_non_round_rate() -> None:
 def test_burn_down_view_equals_cents_converted() -> None:
     rate = _rate("100")
     panel = CostBurnDown(
-        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        project_run_id="11111111-1111-1111-1111-111111111111",
         spent_cents=Decimal(250),
         estimated_cents=Decimal(400),
         cap_cents=Decimal(1000),
@@ -84,7 +84,7 @@ def test_remaining_is_derived_never_independently_rounded() -> None:
     cap − spent = 0. Remaining is therefore derived in credit space, never converted alone."""
     rate = _rate("100")
     panel = CostBurnDown(
-        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        project_run_id="11111111-1111-1111-1111-111111111111",
         spent_cents=Decimal("0.05"),
         estimated_cents=Decimal("0.05"),
         cap_cents=Decimal("0.10"),
@@ -102,7 +102,7 @@ def test_remaining_is_derived_never_independently_rounded() -> None:
 def test_remaining_clamps_at_zero_when_over_cap() -> None:
     rate = _rate("100")
     panel = CostBurnDown(
-        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        project_run_id="11111111-1111-1111-1111-111111111111",
         spent_cents=Decimal(1200),
         estimated_cents=Decimal(400),
         cap_cents=Decimal(1000),
@@ -174,7 +174,7 @@ def test_load_millicredit_burn_down_reads_rate_and_panel_together() -> None:
     """The one-call read path (audit finding 8): rate + burn-down in one read; ``None`` when no
     rate is configured (credits not enabled — the caller keeps the cents panel)."""
     panel = CostBurnDown(
-        campaign_run_id="11111111-1111-1111-1111-111111111111",
+        project_run_id="11111111-1111-1111-1111-111111111111",
         spent_cents=Decimal(250),
         estimated_cents=Decimal(400),
         cap_cents=Decimal(1000),

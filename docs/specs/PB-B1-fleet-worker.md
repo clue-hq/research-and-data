@@ -12,44 +12,26 @@ and tier-priority ordering.
 
 ---
 
-## §1a vocabulary — stage-1 rename applied
+## §1a vocabulary — rename complete (both stages)
 
-Per harness doc §1a (*project* = the end-to-end ABM motion, historically "campaign_run"), the
-B1-owned run-machinery identifiers were renamed on this lane: **`CampaignRunWorker` →
-`ProjectRunWorker`**, and every fleet-owned **`campaign_run_id` → `project_run_id`** (the
-`run_lease`/`fleet_task` columns + their PK/UNIQUE/index carriers, the `lease.py`/`queue.py`
-repos and seams, `worker.py`/`scheduler.py` internals, structured-log fields, and the fleet
-tests). Bare "campaign" is **not** renamed — it stays a valid future concept (a channel program
-within a project).
-
-This is **stage 1** — only what the unmerged B1 lane owns. The following **seam exceptions keep
-the legacy spelling** and flip at **stage 2** (the full-repo rename — playbook at
-`docs/specs/PB-rename-campaign-run-to-project-run.md`), each marked in code with
-`# §1a rename: flips at stage 2 (…)`:
-
-1. **`QueueBackedScheduler.run_accounts(…, campaign_run_id=…)`** — the structural seam
-   conformance-tested against `clue_api.deep.handler.DeepAccountScheduler`
-   (`test_scheduler_satisfies_the_deep_handler_seam`); B1 may not edit `clue_api`, so it flips
-   with the deep handler at stage 2. Internally it passes the value on to the queue's renamed
-   `project_run_id=` params.
-2. **The `RunDriver` protocol's `status(campaign_run_id)` / `advance(campaign_run_id)` parameter
-   names** (`worker.py`) — the static `_CAMPAIGN_RUN_IS_A_RUN_DRIVER` assertion checks
-   parameter-name compatibility against the untouchable `durable.CampaignRun`. Scripted fake
-   drivers in the tests keep matching signatures.
-3. **Names imported from `clue_core` / `clue_research.durable` / `clue_api`** — `CampaignRunId`,
-   `CampaignPhase`, `CampaignRun`, `CampaignRunRow`, `CampaignRunStatus`, `new_campaign_run_id`,
-   `DbCampaignRunStore`, and their keyword arguments at their call sites (e.g. `CampaignRun.start(
-   campaign_run_id=…)`) — they flip in stage 2 via a `clue_core` contract-delta.
-4. **Direct SQL against the durable `campaign_run` table** (e.g. the exit-gate test's
-   `SELECT status FROM campaign_run …`) — the durable table itself is not touched here (the
-   migration's `run_lease`/`fleet_task` soft FK notes it renames to `project_run` at stage 2).
+Per harness doc §1a (*project* = the end-to-end ABM motion, historically "project_run"), the
+B1-owned run-machinery identifiers were renamed on this lane (**stage 1**: `ProjectRunWorker`,
+fleet-owned `project_run_id` end-to-end). The four seam exceptions that pinned the legacy
+spelling flipped at **stage 2** (2026-07-22, right after Phase-B integration — playbook at
+`docs/specs/PB-rename-campaign-run-to-project-run.md`, executed): the whole repo now speaks
+`project_run` (`ProjectRun*` types via a `clue_core` contract-delta; the durable table/types
+renamed by migration `814a272f79a5`), the in-code markers are deleted, and the empty-allowlist
+guard `tests/test_project_rename_guard.py` replaced the interim fleet guard. Bare "campaign" is
+**not** renamed — it stays a valid concept (a channel program within a project). The frozen
+`IdempotencyScope` ledger *values* (`"account_step"`/`"campaign_phase"`) are durable data and
+deliberately keep their spellings.
 
 ## 1. Goal
 
 The detached **`ProjectRunWorker`**: a separate OS process that drives existing M7 campaign-run
 state machines (+ the M8A per-account graphs the `deep` phase fans out to) as **jobs**:
 
-- a **per-run driver lease** — at most one worker drives a given `campaign_run` at a time; a
+- a **per-run driver lease** — at most one worker drives a given `project_run` at a time; a
   second worker may not drive a leased run and takes over only after lease expiry (harness §6:
   "a per-run driver lease enforces a single driver"). This *enforces* the single-driver
   precondition M7.3 documents but deliberately left "to the scheduler/ops layer"
@@ -71,7 +53,7 @@ state machines (+ the M8A per-account graphs the `deep` phase fans out to) as **
 | `enums.py` | `FleetTaskKind` (`drive_run` \| `account_job`), `FleetTaskStatus` (`queued` → `claimed` → `done` \| `failed`) — package-local lifecycle enums (the `durable/enums.py` precedent), mirrored by DB enums + parity tests |
 | `lease.py` | the `run_lease` table repo + `DbLeaseStore`: atomic acquire (`INSERT … ON CONFLICT DO UPDATE … WHERE expires_at <= now()`), holder-guarded renew/release. All clock reads are DB `now()` (the M7.4 convention — no cross-worker NTP skew) |
 | `queue.py` | the `fleet_task` table repo + `DbTaskQueue`: idempotent enqueue (`ON CONFLICT DO NOTHING` on `(kind, project_run_id, dedup_key)`), atomic claim-next (`FOR UPDATE SKIP LOCKED`, `ORDER BY priority, enqueued_at`), holder-guarded finish/requeue, stale-reclaim window |
-| `scheduler.py` | `QueueBackedScheduler` — implements the exact `run_accounts(specs, campaign_run_id=…, checkpointer=…, run_one=…)` signature the M8A deep handler is typed against (`clue_api.deep.handler.DeepAccountScheduler`, asserted structurally in tests), so at integration it is a constructor-argument swap for `durable.AccountScheduler` — zero handler changes. Enqueues every spec as an `account_job` (priority = tier rank), drains under the concurrency window, marks tasks done/failed. Carries the same Doc C §4 per-entity single-flight as `AccountScheduler` via a **required** (not optional) `lock_factory` seam — every `run_one` (drain + done-replay) runs inside the injected per-entity lock, so two runs never deep-research one entity at once; the required-arg makes a forgotten factory a construction-time `TypeError` (prod wires `account_entity_lock_factory(get_redis())` at the api root) |
+| `scheduler.py` | `QueueBackedScheduler` — implements the exact `run_accounts(specs, project_run_id=…, checkpointer=…, run_one=…)` signature the M8A deep handler is typed against (`clue_api.deep.handler.DeepAccountScheduler`, asserted structurally in tests), so at integration it is a constructor-argument swap for `durable.AccountScheduler` — zero handler changes. Enqueues every spec as an `account_job` (priority = tier rank), drains under the concurrency window, marks tasks done/failed. Carries the same Doc C §4 per-entity single-flight as `AccountScheduler` via a **required** (not optional) `lock_factory` seam — every `run_one` (drain + done-replay) runs inside the injected per-entity lock, so two runs never deep-research one entity at once; the required-arg makes a forgotten factory a construction-time `TypeError` (prod wires `account_entity_lock_factory(get_redis())` at the api root) |
 | `worker.py` | `ProjectRunWorker` — the drain loop: claim a `drive_run` task → acquire the run lease → step the run via the injected `RunDriver` seam (structurally satisfied by `durable.CampaignRun`) with a concurrent, **supervised** lease-heartbeat → finish the task with the run's terminal/suspended status → release the lease. Graceful `stop()` between phases; lease loss **cancels the in-flight phase immediately** (supervised-heartbeat fencing — §2.3) |
 | `runner.py` | `run_worker(...)` — the asyncio process entrypoint shell (signal handling, drain-on-SIGTERM). The *production* `__main__` (composing real phase handlers) is `clue_api` wiring and lands **at integration**, per the treaty §3.4; tests compose their own harness process |
 
@@ -201,7 +183,7 @@ the scheduler implements the public `run_accounts` seam.
 
 1. **Kill-resume exactly-once (DB effect + ledger; provider boundary at-least-once):** kill -9 the
    worker process at ~40% of a 500-account stub-mode run → start a fresh worker → the run
-   completes; every `(account, field, tier)` account-step key and every `(campaign_run, phase)`
+   completes; every `(account, field, tier)` account-step key and every `(project_run, phase)`
    phase key has **exactly one** `succeeded` ledger row and exactly one `exit_gate_spend_journal`
    row — the effect row and the ledger `succeeded` finish share ONE transaction, so DB effects and
    the ledger are exactly-once despite the kill. The **provider boundary is at-least-once** (audit

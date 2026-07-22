@@ -9,7 +9,7 @@ and stamps discovery-provenance. ``ScoringPhaseHandler`` (M6.3) scores every adm
 via ``PhaseResult(status=PAUSED)`` with a review payload + pre-run cost estimate, and resumes (into
 ``deep``) only on an approved decision threaded back through the phase ``params``. Each persists the
 per-(source) yield / decision by reference (never blobs). The concrete handlers are constructed +
-registered into ``CampaignRun`` at the ``api`` composition root (Beat-0); nothing here imports
+registered into ``ProjectRun`` at the ``api`` composition root (Beat-0); nothing here imports
 ``durable``.
 
 Idempotency (M7 replay): every phase ``run_id`` is **derived deterministically** from the campaign
@@ -28,11 +28,11 @@ from pydantic import JsonValue
 from redis.asyncio import Redis
 
 from clue_core import (
-    CampaignPhase,
     LLMGateway,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
+    ProjectPhase,
     RunId,
 )
 from clue_db import ConnFactory, transaction
@@ -86,12 +86,12 @@ from clue_research.sources.source_yield import record_source_yield
 
 
 def _discovery_run_id(ctx: PhaseContext) -> RunId:
-    """A deterministic discovery run id per ``(campaign_run, icp_key, icp_version)`` — stable across
+    """A deterministic discovery run id per ``(project_run, icp_key, icp_version)`` — stable across
     M7 phase replays (so the gate's idempotency holds) and distinct per ICP (D5 multi-ICP)."""
     return RunId(
         uuid5(
             NAMESPACE_URL,
-            f"clue:discovery-run:{ctx.campaign_run_id}:{ctx.icp_key}:{ctx.icp_version}",
+            f"clue:discovery-run:{ctx.project_run_id}:{ctx.icp_key}:{ctx.icp_version}",
         )
     )
 
@@ -99,7 +99,7 @@ def _discovery_run_id(ctx: PhaseContext) -> RunId:
 class DiscoveryPhaseHandler:
     """The DISCOVERY ``PhaseHandler`` (M6): ``discover`` (M6.1) → ``admit`` (M6.2) per candidate."""
 
-    phase = CampaignPhase.DISCOVERY
+    phase = ProjectPhase.DISCOVERY
 
     def __init__(
         self,
@@ -211,13 +211,13 @@ class DiscoveryPhaseHandler:
 
 
 def _scoring_run_id(ctx: PhaseContext) -> RunId:
-    """A deterministic Pass-A scoring run id per ``(campaign_run, icp_key, icp_version)`` — stable
+    """A deterministic Pass-A scoring run id per ``(project_run, icp_key, icp_version)`` — stable
     across M7 phase replays (so the waterfall + score-write idempotency hold) and distinct per ICP
     *version* (so a new rubric version re-scores). Distinct namespace from the discovery run id."""
     return RunId(
         uuid5(
             NAMESPACE_URL,
-            f"clue:scoring-run:{ctx.campaign_run_id}:{ctx.icp_key}:{ctx.icp_version}",
+            f"clue:scoring-run:{ctx.project_run_id}:{ctx.icp_key}:{ctx.icp_version}",
         )
     )
 
@@ -232,14 +232,14 @@ class ScoringPhaseHandler:
     fit/intent score (M6.3 :func:`score_account`). Per-account work is isolated in a savepoint (one
     account's fault never aborts the phase). The per-source yield is persisted to the shared
     ``source_yield`` telemetry (the substrate M6.5 coverage + M13 reweighting read). Registered into
-    ``CampaignRun`` at the ``api`` composition root (Beat-0); nothing here imports ``durable``.
+    ``ProjectRun`` at the ``api`` composition root (Beat-0); nothing here imports ``durable``.
 
     Idempotency (M7 replay): the scoring ``run_id`` is derived deterministically, so a re-entered
     SCORING phase reuses it — the waterfall and the score write both no-op on replay, and
     ``accounts_processed`` is stable.
     """
 
-    phase = CampaignPhase.SCORING
+    phase = ProjectPhase.SCORING
 
     def __init__(
         self,
@@ -360,7 +360,7 @@ class ScoringPhaseHandler:
 
 
 def _tier_checkpoint_run_id(ctx: PhaseContext, cversion: str) -> RunId:
-    """A deterministic tier-checkpoint run id per ``(campaign_run, icp_key, icp_version,
+    """A deterministic tier-checkpoint run id per ``(project_run, icp_key, icp_version,
     cutoff_version)``. Encoding the cutoff version is what makes the tier write idempotent on
     ``(account, cutoff_version)``: a re-entered checkpoint with the *same* approved cutoffs reuses
     it (the tier write no-ops), while a human cutoff adjustment yields a *new* run id whose tier
@@ -368,8 +368,7 @@ def _tier_checkpoint_run_id(ctx: PhaseContext, cversion: str) -> RunId:
     return RunId(
         uuid5(
             NAMESPACE_URL,
-            f"clue:tier-checkpoint:{ctx.campaign_run_id}:{ctx.icp_key}:{ctx.icp_version}"
-            f":{cversion}",
+            f"clue:tier-checkpoint:{ctx.project_run_id}:{ctx.icp_key}:{ctx.icp_version}:{cversion}",
         )
     )
 
@@ -388,15 +387,15 @@ class TierCheckpointPhaseHandler:
     stays ``PAUSED`` (a cutoff/budget adjustment re-tiers and re-estimates with **no** Pass-A
     re-spend, and an over-cap approve halts gracefully — to raise the cap or tighten cutoffs).
 
-    Idempotency on ``(campaign_run, 'tier_checkpoint')`` (Doc C §4): the review is deterministic in
+    Idempotency on ``(project_run, 'tier_checkpoint')`` (Doc C §4): the review is deterministic in
     (the stored scores × cutoffs × config), so crash re-entry re-presents identical state, and the
     tier write is idempotent on the cutoff-derived ``run_id``, so the resume action applies at most
     once. The durable suspend/resume primitive + the checkpoint record (``payload``) are M7's; this
-    handler only implements the phase behaviour. Registered into ``CampaignRun`` at the ``api``
+    handler only implements the phase behaviour. Registered into ``ProjectRun`` at the ``api``
     composition root (Beat-0); nothing here imports ``durable``.
     """
 
-    phase = CampaignPhase.TIER_CHECKPOINT
+    phase = ProjectPhase.TIER_CHECKPOINT
 
     def __init__(
         self,

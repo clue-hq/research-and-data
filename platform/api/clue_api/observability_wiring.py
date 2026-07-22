@@ -5,13 +5,13 @@ packages it reads (the import-linter independence contract). This module builds 
 :mod:`clue_research.review.observability` reader Protocols over those siblings and injects them into
 the :class:`~clue_research.review.ObservabilitySurface`:
 
-* :class:`DurableCampaignStateReader` — phase progress over the M7.3 ``campaign_run`` /
-  ``campaign_phase_checkpoint`` tables (``durable``).
+* :class:`DurableCampaignStateReader` — phase progress over the M7.3 ``project_run`` /
+  ``project_phase_checkpoint`` tables (``durable``).
 * :class:`BudgetEngineBurnDownReader` — the live burn-down over the **same**
   :class:`~clue_core.BudgetEngine` the deep run uses (one materialization, never
   re-derived).
 * :class:`BudgetCapsPreRunEstimator` — the pure ``project_spend`` projection over the client's
-  ``config.BudgetCaps`` (side-effect-free — it never persists onto ``campaign_run``, unlike the
+  ``config.BudgetCaps`` (side-effect-free — it never persists onto ``project_run``, unlike the
   durable ``BudgetEngine.estimate``, so a "read"/estimate never mutates the domain).
 * :class:`ClaimScanVerificationHealthReader` — the at-rest verification-health scan over the
   campaign's claims (``claimstore.claims_for_runs``) + the ``obs`` at-rest counter (strong identity-
@@ -38,10 +38,10 @@ from clue_config import BudgetCaps, get_config
 from clue_core import (
     BudgetEngine,
     BurnDown,
-    CampaignPhase,
-    CampaignRunId,
     CoverageReport,
     Estimate,
+    ProjectPhase,
+    ProjectRunId,
     UnsearchedChannel,
     VerificationStatus,
 )
@@ -58,9 +58,9 @@ from clue_research.claimstore import WorkspaceScope, claims_for_runs
 from clue_research.discovery_scoring import CoverageReport as _DiscoveryCoverageReport
 from clue_research.durable import (
     BudgetStateNotFound,
-    CampaignRunStatus,
-    get_campaign_run,
+    ProjectRunStatus,
     get_checkpoint,
+    get_project_run,
     list_account_runs,
     project_spend,
 )
@@ -77,13 +77,13 @@ from clue_research.review import (
 )
 
 # A run past these statuses produces no further work (mirrors api/handoff_wiring).
-_TERMINAL_RUN_STATUSES = frozenset({CampaignRunStatus.COMPLETED, CampaignRunStatus.FAILED})
+_TERMINAL_RUN_STATUSES = frozenset({ProjectRunStatus.COMPLETED, ProjectRunStatus.FAILED})
 
 
 class DurableCampaignStateReader:
-    """The production :class:`CampaignStateReader` over the M7.3 ``campaign_run`` /
-    ``campaign_phase_checkpoint`` tables. Reads the run row + a checkpoint per
-    :class:`~clue_core.CampaignPhase` (the per-phase ``campaign_phase_checkpoint_run``
+    """The production :class:`CampaignStateReader` over the M7.3 ``project_run`` /
+    ``project_phase_checkpoint`` tables. Reads the run row + a checkpoint per
+    :class:`~clue_core.ProjectPhase` (the per-phase ``project_phase_checkpoint_run``
     index
     supports the per-phase look-ups). Tenant-scoped; projects the durable enums to plain strings so
     ``review`` never learns the durable enum tokens."""
@@ -92,19 +92,19 @@ class DurableCampaignStateReader:
         self._conn_factory = conn_factory
 
     async def run_phase_state(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> RunPhaseState | None:
         async with self._conn_factory() as conn:
-            run = await get_campaign_run(conn, campaign_run_id)
+            run = await get_project_run(conn, project_run_id)
             if run is None or run.workspace_id != workspace_id:
                 return None
             checkpoints: list[PhaseProgress] = []
-            for phase in CampaignPhase:
-                cp = await get_checkpoint(conn, campaign_run_id, phase)
+            for phase in ProjectPhase:
+                cp = await get_checkpoint(conn, project_run_id, phase)
                 if cp is not None:
                     checkpoints.append(PhaseProgress(phase=phase, status=cp.status.value))
         return RunPhaseState(
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             workspace_id=workspace_id,
             current_phase=run.phase,
             run_status=run.status.value,
@@ -115,30 +115,30 @@ class DurableCampaignStateReader:
 
 class BudgetEngineBurnDownReader:
     """The production :class:`CostBurnDownReader` — the live ``core.BudgetEngine.burn_down`` (the
-    authoritative ``campaign_run.spent_cents`` counter). Reuse the SAME engine instance the deep run
+    authoritative ``project_run.spent_cents`` counter). Reuse the SAME engine instance the deep run
     uses so M13.3/M13.4 and the engine never diverge on the number. Tenant-scoped via a
-    ``get_campaign_run`` check before reading the burn-down."""
+    ``get_project_run`` check before reading the burn-down."""
 
     def __init__(self, *, budget: BudgetEngine, conn_factory: ConnFactory = connection) -> None:
         self._budget = budget
         self._conn_factory = conn_factory
 
     async def burn_down(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> BurnDown | None:
         async with self._conn_factory() as conn:
-            run = await get_campaign_run(conn, campaign_run_id)
+            run = await get_project_run(conn, project_run_id)
         if run is None or run.workspace_id != workspace_id:
             return None
         try:
-            return await self._budget.burn_down(campaign_run_id)
+            return await self._budget.burn_down(project_run_id)
         except BudgetStateNotFound:
             return None
 
 
 class BudgetCapsPreRunEstimator:
     """The production :class:`PreRunEstimator` — the **pure** ``project_spend`` projection over the
-    client's ``config.BudgetCaps``. Side-effect-free (it does not persist onto ``campaign_run`` the
+    client's ``config.BudgetCaps``. Side-effect-free (it does not persist onto ``project_run`` the
     way the durable ``BudgetEngine.estimate`` does), so the observability surface's pre-run estimate
     is a true read. ``caps_for`` is injectable so a test pins fixture caps without the config
     store."""
@@ -188,13 +188,13 @@ class ClaimScanVerificationHealthReader:
         self._conn_factory = conn_factory
 
     async def health_counts(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> VerificationHealthCounts | None:
         async with self._conn_factory() as conn:
-            run = await get_campaign_run(conn, campaign_run_id)
+            run = await get_project_run(conn, project_run_id)
             if run is None or run.workspace_id != workspace_id:
                 return None
-            account_runs = await list_account_runs(conn, campaign_run_id)
+            account_runs = await list_account_runs(conn, project_run_id)
             run_ids = [ar.id for ar in account_runs]
             claims = (
                 await claims_for_runs(
@@ -237,13 +237,13 @@ class CheckpointCoverageReportReader:
         self._conn_factory = conn_factory
 
     async def coverage_for_run(
-        self, *, campaign_run_id: CampaignRunId, workspace_id: str
+        self, *, project_run_id: ProjectRunId, workspace_id: str
     ) -> CoverageReport | None:
         async with self._conn_factory() as conn:
-            run = await get_campaign_run(conn, campaign_run_id)
+            run = await get_project_run(conn, project_run_id)
             if run is None or run.workspace_id != workspace_id:
                 return None
-            checkpoint = await get_checkpoint(conn, campaign_run_id, CampaignPhase.TIER_CHECKPOINT)
+            checkpoint = await get_checkpoint(conn, project_run_id, ProjectPhase.TIER_CHECKPOINT)
         if checkpoint is None:
             return None
         coverage_json = checkpoint.payload.get("coverage")

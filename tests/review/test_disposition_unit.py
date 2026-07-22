@@ -11,9 +11,9 @@ import pytest
 from clue_core import (
     EntityType,
     ReviewAction,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_core.review import ReviewDispositionEmitter
 from clue_research.review import (
@@ -66,7 +66,7 @@ def test_for_review_action_builds_a_valid_record() -> None:
         entity_type=EntityType.ACCOUNT,
         account_entity_id=account,
         claim_id=claim,
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         workspace_id="acme",
         icp_key="seg",
         icp_spec_version=3,
@@ -109,7 +109,7 @@ def test_record_validators_reject_malformed_shapes() -> None:
             entity_type=EntityType.ACCOUNT,
             account_entity_id=account,
             claim_id=None,  # type: ignore[arg-type]
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             workspace_id="acme",
             icp_key="",
             icp_spec_version=1,
@@ -124,7 +124,7 @@ def test_record_validators_reject_malformed_shapes() -> None:
             entity_type=EntityType.ACCOUNT,
             account_entity_id=account,
             claim_id=new_claim_id(),
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             workspace_id="acme",
             icp_key="",
             icp_spec_version=1,

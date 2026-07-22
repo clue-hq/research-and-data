@@ -26,11 +26,11 @@ from clue_api.storage_wiring import (
 )
 from clue_config import Secrets, Settings
 from clue_core import (
-    CampaignPhase,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
+    new_project_run_id,
 )
 from clue_research.compliance import DataSubjectRightsImpl, RetentionSweep
 from clue_research.durable import AccountSpec
@@ -70,8 +70,8 @@ class FakeStorage:
 
 def _ctx(*, workspace_id: str = _CLIENT) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.DEEP,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.DEEP,
         workspace_id=workspace_id,
         icp_key="icp-1",
         icp_version=1,
@@ -114,7 +114,7 @@ def test_retention_sweep_construction_injects_storage() -> None:
 
 
 class _FakeHandoff:
-    phase = CampaignPhase.HANDOFF
+    phase = ProjectPhase.HANDOFF
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         return PhaseResult(status=PhaseStatus.COMPLETED, cost_cents=Decimal(0), payload={})
@@ -126,7 +126,7 @@ class _FakeHandoff:
 class _SinkObservingHandler:
     """Inner handler that records the ambient snapshot binding it runs under."""
 
-    phase = CampaignPhase.DEEP
+    phase = ProjectPhase.DEEP
 
     def __init__(self) -> None:
         self.seen_sink: SnapshotSink | None = None
@@ -143,7 +143,7 @@ def test_wrapper_binds_per_run_sink_scoped_to_workspace() -> None:
     inner = _SinkObservingHandler()
     wrapper = SnapshotBindingPhaseHandler(inner=inner, storage=storage)
     # It is a drop-in DEEP handler (delegates ``phase``), so registration is last-write-wins.
-    assert wrapper.phase is CampaignPhase.DEEP
+    assert wrapper.phase is ProjectPhase.DEEP
 
     assert current_snapshot_sink() is None  # nothing bound outside a run
     run_async(wrapper.run(_ctx(workspace_id="ws-42")))

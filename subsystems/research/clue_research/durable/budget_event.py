@@ -1,18 +1,18 @@
 """The ``budget_event`` repository + the cost-accounting read/write helpers (M7.5).
 
 The only sanctioned SQL path to the cost-governance state, mirroring the ``account_run`` /
-``campaign_run`` repository shape (``durable/account_run.py``, ``durable/campaign_run.py``):
+``project_run`` repository shape (``durable/account_run.py``, ``durable/project_run.py``):
 module-level ``text(...)`` statements + ``async def`` helpers that take an
 :class:`~sqlalchemy.ext.asyncio.AsyncConnection`. No caller hand-writes SQL against these tables.
 
 Two kinds of state live here, both read/written by the M7.5
 :class:`~clue_research.durable.budget.BudgetEngine`:
 
-* the **live spend counters** — ``campaign_run.spent_cents`` (run scope) and
+* the **live spend counters** — ``project_run.spent_cents`` (run scope) and
   ``account_run.cost_cents`` (account scope) — incremented by :func:`add_run_spend` /
   :func:`add_account_spend` on each charge,
-  plus the caps (``campaign_run.budget_cap_cents`` already exists from M7.3;
-  ``account_run.budget_cap_cents`` and ``campaign_run.estimated_cents`` are added by the M7.5
+  plus the caps (``project_run.budget_cap_cents`` already exists from M7.3;
+  ``account_run.budget_cap_cents`` and ``project_run.estimated_cents`` are added by the M7.5
   migration). These back :meth:`BudgetEngine.check` / :meth:`record` / :meth:`burn_down`.
 * the **append-only governance audit** — ``budget_event`` — one immutable row per governed decision
   (:func:`insert_budget_event`), ordered by the monotonic ``seq`` (rows in one transaction tie on
@@ -29,8 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     BudgetScope,
-    CampaignRunId,
     CostCents,
+    ProjectRunId,
     RunId,
     UtcDatetime,
     decode_jsonb,
@@ -46,7 +46,7 @@ class BudgetEventRow(BaseModel):
 
     id: UUID
     seq: int
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     scope: BudgetScope
     kind: BudgetEventKind
     projected_cents: CostCents
@@ -86,30 +86,30 @@ class AccountBudgetState(BaseModel):
 # --- budget_event (append-only governance audit) ------------------------------------------------
 
 _EVENT_COLUMNS = (
-    "id, seq, campaign_run_id, scope, kind, projected_cents, cap_cents, detail_json, created_at"
+    "id, seq, project_run_id, scope, kind, projected_cents, cap_cents, detail_json, created_at"
 )
 
 _INSERT_EVENT_SQL = text(
     """
     INSERT INTO budget_event (
-        id, campaign_run_id, scope, kind, projected_cents, cap_cents, detail_json
+        id, project_run_id, scope, kind, projected_cents, cap_cents, detail_json
     )
     VALUES (
-        :id, :campaign_run_id, CAST(:scope AS budget_scope), CAST(:kind AS budget_event_kind),
+        :id, :project_run_id, CAST(:scope AS budget_scope), CAST(:kind AS budget_event_kind),
         :projected_cents, :cap_cents, CAST(:detail AS jsonb)
     )
     """
 )
 
 _LIST_EVENTS_SQL = text(
-    f"SELECT {_EVENT_COLUMNS} FROM budget_event WHERE campaign_run_id = :run ORDER BY seq"
+    f"SELECT {_EVENT_COLUMNS} FROM budget_event WHERE project_run_id = :run ORDER BY seq"
 )
 
 
 async def insert_budget_event(
     conn: AsyncConnection,
     *,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     scope: BudgetScope,
     kind: BudgetEventKind,
     projected_cents: CostCents,
@@ -124,7 +124,7 @@ async def insert_budget_event(
         _INSERT_EVENT_SQL,
         {
             "id": uuid4(),
-            "campaign_run_id": campaign_run_id,
+            "project_run_id": project_run_id,
             "scope": scope.value,
             "kind": kind.value,
             "projected_cents": projected_cents,
@@ -135,35 +135,33 @@ async def insert_budget_event(
 
 
 async def list_budget_events(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> list[BudgetEventRow]:
     """All budget events for a run, oldest first by the monotonic ``seq`` (the audit trail)."""
-    rows = (await conn.execute(_LIST_EVENTS_SQL, {"run": campaign_run_id})).mappings().all()
+    rows = (await conn.execute(_LIST_EVENTS_SQL, {"run": project_run_id})).mappings().all()
     return [_row_to_event(dict(r)) for r in rows]
 
 
-# --- run-scope counters / caps / estimate (campaign_run) ----------------------------------------
+# --- run-scope counters / caps / estimate (project_run) ----------------------------------------
 
 _GET_RUN_BUDGET_SQL = text(
-    "SELECT spent_cents, budget_cap_cents, estimated_cents FROM campaign_run WHERE id = :id"
+    "SELECT spent_cents, budget_cap_cents, estimated_cents FROM project_run WHERE id = :id"
 )
 
 _ADD_RUN_SPEND_SQL = text(
-    "UPDATE campaign_run SET spent_cents = spent_cents + :delta, updated_at = now() WHERE id = :id"
+    "UPDATE project_run SET spent_cents = spent_cents + :delta, updated_at = now() WHERE id = :id"
 )
 
 _SET_ESTIMATED_SQL = text(
-    "UPDATE campaign_run SET estimated_cents = :estimated, updated_at = now() WHERE id = :id"
+    "UPDATE project_run SET estimated_cents = :estimated, updated_at = now() WHERE id = :id"
 )
 
 
 async def get_run_budget_state(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> RunBudgetState | None:
     """The per-run spend / cap / estimate, or ``None`` if the campaign run does not exist."""
-    row = (
-        (await conn.execute(_GET_RUN_BUDGET_SQL, {"id": campaign_run_id})).mappings().one_or_none()
-    )
+    row = (await conn.execute(_GET_RUN_BUDGET_SQL, {"id": project_run_id})).mappings().one_or_none()
     if row is None:
         return None
     return RunBudgetState(
@@ -174,22 +172,22 @@ async def get_run_budget_state(
 
 
 async def add_run_spend(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId, delta_cents: CostCents
+    conn: AsyncConnection, project_run_id: ProjectRunId, delta_cents: CostCents
 ) -> int:
     """Increment the run's live ``spent_cents`` by ``delta_cents`` (the per-charge accounting) and
     return the number of rows updated (0 if the run does not exist). The caller (the budget engine)
     raises on a 0-row update so a charge against a missing run can never silently vanish — the
     write-path analogue of ``check``'s fail-loud-on-missing-row guarantee."""
-    result = await conn.execute(_ADD_RUN_SPEND_SQL, {"id": campaign_run_id, "delta": delta_cents})
+    result = await conn.execute(_ADD_RUN_SPEND_SQL, {"id": project_run_id, "delta": delta_cents})
     return result.rowcount
 
 
 async def set_estimated_cents(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId, estimated_cents: CostCents
+    conn: AsyncConnection, project_run_id: ProjectRunId, estimated_cents: CostCents
 ) -> None:
     """Persist the latest pre-run projection on the run (so ``burn_down`` shows spent-vs-estimate).
     Best-effort: a no-op if the run does not exist (a true pre-start estimate has no row yet)."""
-    await conn.execute(_SET_ESTIMATED_SQL, {"id": campaign_run_id, "estimated": estimated_cents})
+    await conn.execute(_SET_ESTIMATED_SQL, {"id": project_run_id, "estimated": estimated_cents})
 
 
 # --- account-scope counters / caps (account_run) ------------------------------------------------
@@ -255,7 +253,7 @@ def _row_to_event(row: dict[str, object]) -> BudgetEventRow:
         {
             "id": row["id"],
             "seq": row["seq"],
-            "campaign_run_id": row["campaign_run_id"],
+            "project_run_id": row["project_run_id"],
             "scope": row["scope"],
             "kind": row["kind"],
             "projected_cents": row["projected_cents"],

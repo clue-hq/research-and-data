@@ -323,7 +323,7 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
             )
             ctx = AspectContext(
                 entity_id=account.id,
-                campaign_run_id="33333333-3333-3333-3333-333333333333",
+                project_run_id="33333333-3333-3333-3333-333333333333",
                 run_id=_RUN,
                 tier="top",
                 aspect="committee",

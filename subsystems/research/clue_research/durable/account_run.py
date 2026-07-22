@@ -22,9 +22,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignRunId,
     CostCents,
     EntityId,
+    ProjectRunId,
     RunId,
     UtcDatetime,
     decode_jsonb,
@@ -48,7 +48,7 @@ class AccountRunRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: RunId
-    campaign_run_id: CampaignRunId
+    project_run_id: ProjectRunId
     entity_id: EntityId
     tier: str
     status: AccountRunStatus
@@ -62,22 +62,22 @@ class AccountRunRow(BaseModel):
 
 _INSERT_SQL = text(
     """
-    INSERT INTO account_run (id, campaign_run_id, entity_id, tier, status)
-    VALUES (:id, :campaign_run_id, :entity_id, :tier, CAST(:status AS account_run_status))
+    INSERT INTO account_run (id, project_run_id, entity_id, tier, status)
+    VALUES (:id, :project_run_id, :entity_id, :tier, CAST(:status AS account_run_status))
     RETURNING id
     """
 )
 
 _ENSURE_SQL = text(
     """
-    INSERT INTO account_run (id, campaign_run_id, entity_id, tier, status)
-    VALUES (:id, :campaign_run_id, :entity_id, :tier, CAST(:status AS account_run_status))
+    INSERT INTO account_run (id, project_run_id, entity_id, tier, status)
+    VALUES (:id, :project_run_id, :entity_id, :tier, CAST(:status AS account_run_status))
     ON CONFLICT (id) DO NOTHING
     """
 )
 
 _SELECT_COLUMNS = (
-    "id, campaign_run_id, entity_id, tier, status, sub_phase, plan_json, references_index, "
+    "id, project_run_id, entity_id, tier, status, sub_phase, plan_json, references_index, "
     "cost_cents, started_at, updated_at"
 )
 
@@ -88,7 +88,7 @@ async def insert_account_run(
     conn: AsyncConnection,
     *,
     account_run_id: RunId,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     entity_id: EntityId,
     tier: str,
     status: AccountRunStatus = AccountRunStatus.PENDING,
@@ -102,7 +102,7 @@ async def insert_account_run(
         _INSERT_SQL,
         {
             "id": account_run_id,
-            "campaign_run_id": campaign_run_id,
+            "project_run_id": project_run_id,
             "entity_id": entity_id,
             "tier": tier,
             "status": status.value,
@@ -115,7 +115,7 @@ async def ensure_account_run(
     conn: AsyncConnection,
     *,
     account_run_id: RunId,
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     entity_id: EntityId,
     tier: str,
     status: AccountRunStatus = AccountRunStatus.PENDING,
@@ -130,7 +130,7 @@ async def ensure_account_run(
         _ENSURE_SQL,
         {
             "id": account_run_id,
-            "campaign_run_id": campaign_run_id,
+            "project_run_id": project_run_id,
             "entity_id": entity_id,
             "tier": tier,
             "status": status.value,
@@ -145,13 +145,13 @@ async def get_account_run(conn: AsyncConnection, account_run_id: RunId) -> Accou
 
 
 _LIST_BY_CAMPAIGN_SQL = text(
-    f"SELECT {_SELECT_COLUMNS} FROM account_run WHERE campaign_run_id = :campaign_run_id "
+    f"SELECT {_SELECT_COLUMNS} FROM account_run WHERE project_run_id = :project_run_id "
     "ORDER BY entity_id"
 )
 
 
 async def list_account_runs(
-    conn: AsyncConnection, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, project_run_id: ProjectRunId
 ) -> list[AccountRunRow]:
     """All ``account_run`` rows for a campaign run, ordered by ``entity_id`` (a stable page).
 
@@ -160,7 +160,7 @@ async def list_account_runs(
     :class:`AccountRunSubPhase`) to assemble + emit a handoff per account. A read-only repository
     helper (no caller hand-writes SQL against ``account_run`` — the repository is the only path)."""
     rows = (
-        (await conn.execute(_LIST_BY_CAMPAIGN_SQL, {"campaign_run_id": campaign_run_id}))
+        (await conn.execute(_LIST_BY_CAMPAIGN_SQL, {"project_run_id": project_run_id}))
         .mappings()
         .all()
     )
@@ -309,7 +309,7 @@ def _row_to_account_run(row: dict[str, object]) -> AccountRunRow:
     return AccountRunRow.model_validate(
         {
             "id": row["id"],
-            "campaign_run_id": row["campaign_run_id"],
+            "project_run_id": row["project_run_id"],
             "entity_id": row["entity_id"],
             "tier": row["tier"],
             "status": row["status"],

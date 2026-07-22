@@ -16,11 +16,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignPhase,
     ICPCreatedFrom,
     PhaseContext,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
+    new_project_run_id,
 )
 from clue_research.discovery_scoring import ChannelRegistry, DiscoveryPhaseHandler
 from clue_research.icp import create_icp_spec
@@ -55,8 +55,8 @@ async def _seed_active_icp(conn: AsyncConnection) -> None:
 
 def _ctx(*, icp_version: int = 1) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.DISCOVERY,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.DISCOVERY,
         workspace_id="acme",
         icp_key="default",
         icp_version=icp_version,

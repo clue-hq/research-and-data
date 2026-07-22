@@ -202,7 +202,7 @@ def test_aspect_worker_research_bridges_context(require_profiling_db: None) -> N
                 worker = ContactProfileAspectWorker(session_factory=session_factory)
                 ctx = AspectContext(
                     entity_id=contact.id,
-                    campaign_run_id="77777777-7777-7777-7777-777777777777",
+                    project_run_id="77777777-7777-7777-7777-777777777777",
                     run_id=_RUN,
                     tier="top",
                     aspect="contact.facet",

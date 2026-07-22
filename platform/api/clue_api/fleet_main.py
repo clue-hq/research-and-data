@@ -8,17 +8,17 @@ and the :class:`~clue_fleet.ProjectRunWorker` from :class:`~clue_config.Settings
 SIGTERM/SIGINT → graceful drain). Structured logging via :func:`clue_obs.setup`.
 
 **Phase-handler registration is the load-bearing boot step.** The worker never *composes* phase
-handlers inside a run — it drives the injected :class:`~clue_research.durable.CampaignRun`, whose
+handlers inside a run — it drives the injected :class:`~clue_research.durable.ProjectRun`, whose
 handlers live in the phase-handler registry. So the worker must populate that registry at boot, or
 every claimed ``drive_run`` task raises ``NoPhaseHandlerRegistered`` and parks FAILED (and resume
 flows are poisoned). :func:`~clue_api.fleet_wiring.register_boot_handlers` registers every handler
-composable **process-wide from settings** (today: ``CampaignPhase.REVIEW``) and the worker **refuses
+composable **process-wide from settings** (today: ``ProjectPhase.REVIEW``) and the worker **refuses
 to start** (a clean error exit) if that set is empty.
 
 Two honest limits of the boot registry, stated plainly:
 
 * **A run whose current phase has no registered handler fails its drive task with
-  ``outcome=error``** (``CampaignRun.advance`` raises ``NoPhaseHandlerRegistered``; the worker
+  ``outcome=error``** (``ProjectRun.advance`` raises ``NoPhaseHandlerRegistered``; the worker
   records the task FAILED). That is the *correct* fail-loud behavior, not a bug to paper over — a
   misconfigured deployment should not silently drop runs.
 * **The per-``(client, icp)`` DEEP (and VERIFICATION) composition inside the worker is a deliberate
@@ -44,7 +44,7 @@ from clue_api.fleet_wiring import (
 )
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_config import Settings, load_settings
-from clue_core import CampaignPhase
+from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_fleet import run_worker
 from clue_locks import redis_lifespan
@@ -60,7 +60,7 @@ class NoBootHandlersRegistered(RuntimeError):
     ``NoPhaseHandlerRegistered`` and park FAILED. Fail fast at boot instead."""
 
 
-def _require_registered(phases: frozenset[CampaignPhase]) -> None:
+def _require_registered(phases: frozenset[ProjectPhase]) -> None:
     """Refuse to start (raise) when no phase handlers were composed at boot — a clean error exit
     beats a worker that FAILs every task it claims."""
     if not phases:

@@ -19,29 +19,29 @@ from clue_api.deep import (
     register_deep_phase_handler,
 )
 from clue_core import (
-    CampaignPhase,
     ExtractionMethod,
     ICPCreatedFrom,
     ICPSpec,
     PhaseContext,
     PhaseStatus,
+    ProjectPhase,
     ResearchMode,
     account_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import insert_claim
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.durable import (
     AccountSpec,
-    CampaignRun,
-    CampaignRunStatus,
     PhaseHandlerRegistry,
+    ProjectRun,
+    ProjectRunStatus,
 )
 from clue_research.icp.rubric import TierBand, TierCutoffs
 from clue_research.identity import stamp_reuse
 from clue_research.profiling import discover_committee, profile_account, profile_contact
-from tests.durable.conftest import FakeCampaignRunStore
+from tests.durable.conftest import FakeProjectRunStore
 from tests.profiling.conftest import (
     FakeCommitteeSource,
     FakeGateway,
@@ -77,10 +77,10 @@ def _composition(**kwargs: object) -> DeepPhaseComposition:
 
 
 def test_handler_is_a_deep_phase_handler() -> None:
-    """The built article is a ``PhaseHandler`` for ``CampaignPhase.DEEP`` (construction is DB-free —
+    """The built article is a ``PhaseHandler`` for ``ProjectPhase.DEEP`` (construction is DB-free —
     every concrete is built without touching a connection)."""
     comp = _composition()
-    assert comp.handler.phase is CampaignPhase.DEEP
+    assert comp.handler.phase is ProjectPhase.DEEP
     assert hasattr(comp.handler, "run")
 
 
@@ -152,7 +152,7 @@ def test_scheduler_param_swaps_in_an_alternative_deep_drain() -> None:
 
 def test_register_makes_the_phase_dispatchable() -> None:
     """Registering the handler makes the phase resolvable through a registry — the seam that lets
-    ``CampaignRun.advance()`` dispatch ``DEEP`` instead of raising ``NoPhaseHandlerRegistered``."""
+    ``ProjectRun.advance()`` dispatch ``DEEP`` instead of raising ``NoPhaseHandlerRegistered``."""
     registry = PhaseHandlerRegistry()
     comp = register_deep_phase_handler(
         spec=_spec(),
@@ -161,8 +161,8 @@ def test_register_makes_the_phase_dispatchable() -> None:
         storage=None,  # storage is a REQUIRED kw on the register surface; None = the opt-out
         register=registry.register,
     )
-    assert registry.get(CampaignPhase.DEEP) is comp.handler
-    assert CampaignPhase.DEEP in registry.phases()
+    assert registry.get(ProjectPhase.DEEP) is comp.handler
+    assert ProjectPhase.DEEP in registry.phases()
 
 
 def test_empty_high_tier_set_is_a_clean_completed_no_op() -> None:
@@ -171,8 +171,8 @@ def test_empty_high_tier_set_is_a_clean_completed_no_op() -> None:
 
     comp = _composition(high_tier_resolver=_empty_resolver)
     ctx = PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.DEEP,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.DEEP,
         workspace_id=_CLIENT,
         icp_key=_ICP,
         icp_version=1,
@@ -203,7 +203,7 @@ def test_storage_wraps_the_deep_handler_with_the_snapshot_binder() -> None:
 
     comp = _composition(storage=FakeStorage())
     assert isinstance(comp.handler, SnapshotBindingPhaseHandler)
-    assert comp.handler.phase is CampaignPhase.DEEP
+    assert comp.handler.phase is ProjectPhase.DEEP
 
 
 # --- the high-tier resolver (D-B) reads tier claims by the committed cutoff_version --------------
@@ -272,8 +272,8 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
 
             resolver = build_high_tier_resolver(spec=_spec(), session_factory=factory)
             ctx = PhaseContext(
-                campaign_run_id=new_campaign_run_id(),
-                phase=CampaignPhase.DEEP,
+                project_run_id=new_project_run_id(),
+                phase=ProjectPhase.DEEP,
                 workspace_id=_CLIENT,
                 icp_key=_ICP,
                 icp_version=1,
@@ -292,15 +292,15 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
 
 
 def test_advance_dispatches_deep_and_transitions_to_verification() -> None:
-    """The milestone's reason to exist: registering the deep handler makes ``CampaignRun.advance()``
-    dispatch ``CampaignPhase.DEEP`` (no ``NoPhaseHandlerRegistered``) and, on a clean COMPLETED,
+    """The milestone's reason to exist: registering the deep handler makes ``ProjectRun.advance()``
+    dispatch ``ProjectPhase.DEEP`` (no ``NoPhaseHandlerRegistered``) and, on a clean COMPLETED,
     advance the run ``DEEP → VERIFICATION`` — the state-machine integration through the real wired
     handler. (Per-account claim production through the orchestrator is covered on a real DB by the
     M8A.4 orchestrator suite + the AC-6/AC-4 deep-callable tests; here the high-tier set is empty so
     the wiring is exercised without Postgres.)"""
 
     async def scenario() -> None:
-        store = FakeCampaignRunStore()
+        store = FakeProjectRunStore()
         registry = PhaseHandlerRegistry()
         register_deep_phase_handler(
             spec=_spec(),
@@ -310,13 +310,13 @@ def test_advance_dispatches_deep_and_transitions_to_verification() -> None:
             high_tier_resolver=_empty_resolver,
             register=registry.register,
         )
-        machine = CampaignRun(store=store, registry=registry)
+        machine = ProjectRun(store=store, registry=registry)
         run_id = await machine.start(workspace_id=_CLIENT, icp_key=_ICP, icp_version=1)
         # Park the run at DEEP (the prior phases have their own handlers/milestones); advancing must
         # now dispatch our handler rather than raise NoPhaseHandlerRegistered(DEEP).
-        await store.transition(run_id, phase=CampaignPhase.DEEP, status=CampaignRunStatus.ACTIVE)
+        await store.transition(run_id, phase=ProjectPhase.DEEP, status=ProjectRunStatus.ACTIVE)
         run = await machine.advance(run_id)
-        assert run.phase is CampaignPhase.VERIFICATION
-        assert run.status is CampaignRunStatus.ACTIVE
+        assert run.phase is ProjectPhase.VERIFICATION
+        assert run.status is ProjectRunStatus.ACTIVE
 
     run_async(scenario())

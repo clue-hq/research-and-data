@@ -29,7 +29,7 @@ from typing import Any, TypeVar, overload
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict
 
-from clue_core import CampaignRunId, EntityId, EntityType
+from clue_core import EntityId, EntityType, ProjectRunId
 from clue_locks import DEFAULT_TTL_MS, entity_lock
 from clue_research.durable.graph import AccountResearchGraph, AccountRunResult
 
@@ -55,7 +55,7 @@ class AccountSpec(BaseModel):
 # A per-account callback the deep handler (M8A.2) supplies to drive a *custom* pipeline — the M8A.1
 # account→committee→contact sequence — inside the scheduler's bounded-parallelism + per-entity
 # single-flight slot, in place of the default ``AccountResearchGraph.run``. It receives the resolved
-# spec and returns the per-account result (the ``campaign_run_id`` / ``checkpointer`` it needs are
+# spec and returns the per-account result (the ``project_run_id`` / ``checkpointer`` it needs are
 # bound by the caller's closure, so the scheduler stays agnostic to the pipeline's shape). Omitting
 # it preserves today's ``graph.run`` path exactly.
 RunOne = Callable[[AccountSpec], Awaitable[_RunResultT]]
@@ -99,7 +99,7 @@ class AccountScheduler:
         self,
         specs: Iterable[AccountSpec],
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         run_one: None = None,
     ) -> list[AccountRunResult]: ...
@@ -109,7 +109,7 @@ class AccountScheduler:
         self,
         specs: Iterable[AccountSpec],
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         run_one: RunOne[_RunResultT],
     ) -> list[_RunResultT]: ...
@@ -118,7 +118,7 @@ class AccountScheduler:
         self,
         specs: Iterable[AccountSpec],
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         run_one: RunOne[Any] | None = None,
     ) -> list[Any]:
@@ -137,7 +137,7 @@ class AccountScheduler:
                 *(
                     self._run_one(
                         spec,
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         checkpointer=checkpointer,
                         run_one=run_one,
                     )
@@ -150,14 +150,14 @@ class AccountScheduler:
         self,
         spec: AccountSpec,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         run_one: RunOne[Any] | None,
     ) -> Any:
         async def _go() -> Any:
             if run_one is not None:
                 return await run_one(spec)
-            return await self._invoke(spec, campaign_run_id, checkpointer)
+            return await self._invoke(spec, project_run_id, checkpointer)
 
         async with self._semaphore:
             if self._lock_factory is None:
@@ -168,13 +168,13 @@ class AccountScheduler:
     async def _invoke(
         self,
         spec: AccountSpec,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
     ) -> AccountRunResult:
         return await self._graph.run(
             spec.entity_id,
             tier=spec.tier,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             checkpointer=checkpointer,
             workspace_id=spec.workspace_id,
             field_keys=spec.field_keys,

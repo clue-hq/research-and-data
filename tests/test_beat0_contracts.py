@@ -26,7 +26,6 @@ from clue_core import (
     BudgetScope,
     BudgetVerdict,
     BurnDown,
-    CampaignPhase,
     EntityType,
     Estimate,
     FaithfulnessJudge,
@@ -45,6 +44,7 @@ from clue_core import (
     PreSpendGate,
     PreSpendRequest,
     PreSpendVerdict,
+    ProjectPhase,
     ReResearchCandidate,
     Staleness,
     TargetLock,
@@ -52,13 +52,13 @@ from clue_core import (
     WorkerStatus,
     account_step_key,
     idempotency_key,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
     phase_key,
 )
-from clue_obs.otel.spans import CAMPAIGN_PHASES
+from clue_obs.otel.spans import PROJECT_PHASES
 
 _NOW = datetime(2026, 6, 20, tzinfo=UTC)
 
@@ -66,11 +66,11 @@ _NOW = datetime(2026, 6, 20, tzinfo=UTC)
 # --- the phase vocabulary has one source of truth ---------------------------
 
 
-def test_campaign_phase_is_the_canonical_source_for_obs_phase_tokens() -> None:
-    # obs.CAMPAIGN_PHASES is derived from the enum: same tokens, same order, both directions.
-    assert tuple(phase.value for phase in CampaignPhase) == CAMPAIGN_PHASES
-    assert CampaignPhase.TIER_CHECKPOINT.value == "tier_checkpoint"
-    assert CampaignPhase.HANDOFF.value == "handoff"
+def test_project_phase_is_the_canonical_source_for_obs_phase_tokens() -> None:
+    # obs.PROJECT_PHASES is derived from the enum: same tokens, same order, both directions.
+    assert tuple(phase.value for phase in ProjectPhase) == PROJECT_PHASES
+    assert ProjectPhase.TIER_CHECKPOINT.value == "tier_checkpoint"
+    assert ProjectPhase.HANDOFF.value == "handoff"
 
 
 def test_new_enums_carry_their_expected_members() -> None:
@@ -93,7 +93,7 @@ def test_new_enums_carry_their_expected_members() -> None:
 
 def test_phase_handler_is_runtime_checkable() -> None:
     class _Handler:
-        phase = CampaignPhase.DISCOVERY
+        phase = ProjectPhase.DISCOVERY
 
         async def run(self, ctx: PhaseContext) -> PhaseResult:
             return PhaseResult(status=PhaseStatus.COMPLETED)
@@ -124,18 +124,18 @@ def test_verification_gate_protocols_are_runtime_checkable() -> None:
 
 def test_execution_value_types_construct() -> None:
     ctx = PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.SCORING,
+        project_run_id=new_project_run_id(),
+        phase=ProjectPhase.SCORING,
         workspace_id="acme",
         icp_key="default",
         icp_version=1,
     )
-    assert ctx.phase is CampaignPhase.SCORING
+    assert ctx.phase is ProjectPhase.SCORING
     assert PhaseResult(status=PhaseStatus.PAUSED).cost_cents == Decimal(0)
     assert WorkerResult(aspect="hiring", status=WorkerStatus.BUDGET_EXCEEDED).claim_refs == ()
     AspectContext(
         entity_id=new_entity_id(),
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         run_id=new_run_id(),
         tier="tier_2",
         aspect="hiring",
@@ -198,11 +198,13 @@ def test_value_types_are_frozen() -> None:
 
 
 def test_idempotency_key_is_deterministic_and_scope_prefixed() -> None:
-    a = idempotency_key(IdempotencyScope.CAMPAIGN_PHASE, "run-1", "discovery")
-    b = idempotency_key(IdempotencyScope.CAMPAIGN_PHASE, "run-1", "discovery")
+    a = idempotency_key(IdempotencyScope.PROJECT_PHASE, "run-1", "discovery")
+    b = idempotency_key(IdempotencyScope.PROJECT_PHASE, "run-1", "discovery")
     assert a == b
+    # The prefix is the scope VALUE — frozen durable ledger data ("campaign_phase"), deliberately
+    # NOT renamed at §1a stage 2 (PB-rename playbook §4.5); only the member NAME is PROJECT_PHASE.
     assert a.startswith("campaign_phase:")
-    assert a != idempotency_key(IdempotencyScope.CAMPAIGN_PHASE, "run-1", "scoring")
+    assert a != idempotency_key(IdempotencyScope.PROJECT_PHASE, "run-1", "scoring")
     # No concatenation collisions: ("ab","c") and ("a","bc") must differ.
     assert idempotency_key(IdempotencyScope.ACCOUNT_STEP, "ab", "c") != idempotency_key(
         IdempotencyScope.ACCOUNT_STEP, "a", "bc"
@@ -218,7 +220,7 @@ def test_account_step_and_phase_keys_are_stable() -> None:
     assert k1.startswith("account_step:")
     assert k1 != account_step_key(run_id, entity_id, "core.employee_count", 2)
 
-    campaign_run_id = new_campaign_run_id()
-    p1 = phase_key(campaign_run_id, CampaignPhase.DEEP)
-    assert p1 == phase_key(campaign_run_id, CampaignPhase.DEEP)
-    assert p1 != phase_key(campaign_run_id, CampaignPhase.VERIFICATION)
+    project_run_id = new_project_run_id()
+    p1 = phase_key(project_run_id, ProjectPhase.DEEP)
+    assert p1 == phase_key(project_run_id, ProjectPhase.DEEP)
+    assert p1 != phase_key(project_run_id, ProjectPhase.VERIFICATION)

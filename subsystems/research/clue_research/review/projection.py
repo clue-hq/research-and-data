@@ -14,7 +14,6 @@ from collections.abc import Sequence
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignRunId,
     Claim,
     ClaimId,
     CurrentValue,
@@ -22,6 +21,7 @@ from clue_core import (
     EntityType,
     JudgeVerdict,
     Persona,
+    ProjectRunId,
     ProvenanceRef,
     ReviewClaimRow,
     ReviewCommitteeMember,
@@ -110,7 +110,7 @@ class ReviewProjector:
         *,
         session_id: ReviewSessionId,
         account_entity_id: EntityId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         workspace_id: str,
         review_round: int,
         status: ReviewSessionStatus,
@@ -164,7 +164,7 @@ class ReviewProjector:
         return ReviewSession(
             session_id=session_id,
             account_entity_id=account_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             review_round=review_round,
             status=status,
             fit_score=fit,

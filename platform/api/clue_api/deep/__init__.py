@@ -8,7 +8,7 @@ for work that co-composes ``durable`` + ``profiling`` (+ ``verification`` at M8A
 
 M8A.1 ships the trunk — :class:`AccountDeepOrchestrator` (the per-account sequence, resumable on the
 M8A.0 ``account_run.sub_phase`` marker) + its injectable :class:`AccountRunIO` cursor seam. M8A.2
-adds :class:`DeepPhaseHandler` — the ``CampaignPhase.DEEP`` handler that resolves the high-tier set
+adds :class:`DeepPhaseHandler` — the ``ProjectPhase.DEEP`` handler that resolves the high-tier set
 and drives the scheduler with the orchestrator bound as the per-account callback. M8A.3 adds the
 fan-out budget admission in the contact loop. M8A.4 adds exactly-once spend
 (:class:`ExactlyOnceSpend` / :class:`DbExactlyOnceSpend`): each stage's claim writes + charge +
@@ -82,7 +82,7 @@ __all__ = [
     "StepInfo",
     "already_done",
     "deep_step_key",
-    # the CampaignPhase.DEEP handler (M8A.2)
+    # the ProjectPhase.DEEP handler (M8A.2)
     "DeepPhaseHandler",
     "HighTierResolver",
     "CheckpointerFactory",

@@ -129,7 +129,7 @@ def _row(account: EntityId, dtype: DispositionType, *, fit_factor: float) -> Lab
         entity_type="account",  # type: ignore[arg-type]
         account_entity_id=account,
         claim_id=None,
-        campaign_run_id=None,
+        project_run_id=None,
         workspace_id="c",
         icp_key="k",
         icp_spec_version=1,

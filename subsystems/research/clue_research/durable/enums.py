@@ -1,7 +1,7 @@
 """Durable-execution lifecycle enums — table-column taxonomies internal to ``durable`` (M7).
 
 These are deliberately **not** in ``core.enums`` (Beat-0 freeze): unlike the cross-milestone
-``CampaignPhase`` / ``PhaseStatus`` / ``WorkerStatus`` (which every phase package exchanges and so
+``ProjectPhase`` / ``PhaseStatus`` / ``WorkerStatus`` (which every phase package exchanges and so
 must live in ``core``), these are *internal lifecycle states* of the M7 tables that no other
 milestone references. Keeping them here keeps ``core`` minimal and the durable layer self-contained.
 
@@ -69,8 +69,8 @@ class AccountRunSubPhase(StrEnum):
     CONTACTS_COMPLETE = "contacts_complete"
 
 
-class CampaignRunStatus(StrEnum):
-    """Lifecycle of one campaign run (``campaign_run.status``; M7.3).
+class ProjectRunStatus(StrEnum):
+    """Lifecycle of one campaign run (``project_run.status``; M7.3).
 
     The *outer* state machine's run-level status, distinct from the per-phase
     :class:`PhaseCheckpointStatus` and the inner :class:`AccountRunStatus`:
@@ -91,7 +91,7 @@ class CampaignRunStatus(StrEnum):
 
 
 class PhaseCheckpointStatus(StrEnum):
-    """Lifecycle of one ``campaign_phase_checkpoint`` row (M7.3) — the durable record of a single
+    """Lifecycle of one ``project_phase_checkpoint`` row (M7.3) — the durable record of a single
     phase of a single run.
 
     * ``IN_PROGRESS`` — the phase handler is running (the row is staged before the handler is

@@ -1,7 +1,7 @@
-"""The ``CampaignPhase.DEEP`` phase handler (M8A.2) — drives the deep phase end-to-end.
+"""The ``ProjectPhase.DEEP`` phase handler (M8A.2) — drives the deep phase end-to-end.
 
-The :class:`~clue_core.PhaseHandler` for ``CampaignPhase.DEEP``. Registering it at the api
-composition root makes ``CampaignRun.advance()`` dispatch ``DEEP`` with zero new dispatch code — the
+The :class:`~clue_core.PhaseHandler` for ``ProjectPhase.DEEP``. Registering it at the api
+composition root makes ``ProjectRun.advance()`` dispatch ``DEEP`` with zero new dispatch code — the
 run no longer raises ``NoPhaseHandlerRegistered(DEEP)`` the moment it enters Pass B.
 
 The handler is thin: it (1) resolves the human-approved high-tier account set via the injected
@@ -54,13 +54,13 @@ from clue_api.deep.orchestrator import (
 )
 from clue_core import (
     BudgetVerdict,
-    CampaignPhase,
-    CampaignRunId,
     CostCents,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     RunId,
 )
 from clue_db import ConnFactory, transaction
@@ -112,7 +112,7 @@ class DeepAccountScheduler(Protocol):
         self,
         specs: Iterable[AccountSpec],
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         run_one: RunOne[Any],
     ) -> list[Any]: ...
@@ -126,7 +126,7 @@ class DeepAccountOrchestrator(Protocol):
     :class:`~clue_api.deep.AccountDeepOrchestrator` satisfies it (asserted below)."""
 
     async def run_one(
-        self, spec: AccountSpec, *, campaign_run_id: CampaignRunId
+        self, spec: AccountSpec, *, project_run_id: ProjectRunId
     ) -> AccountDeepResult: ...
 
 
@@ -219,14 +219,14 @@ def _succeeded_outcome(result: AccountDeepResult) -> _AccountOutcome:
 
 
 class DeepPhaseHandler:
-    """The ``CampaignPhase.DEEP`` :class:`~clue_core.PhaseHandler` (M8A.2).
+    """The ``ProjectPhase.DEEP`` :class:`~clue_core.PhaseHandler` (M8A.2).
 
     Resolves the approved high-tier accounts and drives the scheduler with the M8A.1 orchestrator as
     the per-account callback, owning per-account FAILED isolation and the budget-verdict → phase-
     status mapping. Construct once per campaign with the injected collaborators and register it at
     the api composition root (M8A.6)."""
 
-    phase = CampaignPhase.DEEP
+    phase = ProjectPhase.DEEP
 
     def __init__(
         self,
@@ -258,14 +258,14 @@ class DeepPhaseHandler:
                 payload={"deep_count": 0, "accounts_failed": 0, "accounts": []},
             )
 
-        campaign_run_id = ctx.campaign_run_id
+        project_run_id = ctx.project_run_id
 
         async def _isolated(spec: AccountSpec) -> _AccountOutcome:
             # The per-account isolation boundary the scheduler delegates: one account's fault must
             # not sink the batch. Runs inside the scheduler's semaphore + per-entity lock slot.
-            run_id = deep_account_run_id(campaign_run_id, spec.entity_id)
+            run_id = deep_account_run_id(project_run_id, spec.entity_id)
             try:
-                result = await self._orchestrator.run_one(spec, campaign_run_id=campaign_run_id)
+                result = await self._orchestrator.run_one(spec, project_run_id=project_run_id)
             except Exception:  # noqa: BLE001 — isolate one account; record FAILED and continue
                 # The call raised, so there is no result to read the cost from — recover whatever
                 # the orchestrator committed stage-by-stage before the crash so the burn-down stays
@@ -294,7 +294,7 @@ class DeepPhaseHandler:
         async with self._checkpointer_factory() as checkpointer:
             outcomes: list[_AccountOutcome] = await self._scheduler.run_accounts(
                 specs,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 checkpointer=checkpointer,
                 run_one=_isolated,
             )

@@ -4,7 +4,7 @@ This is the one co-import point for the deep phase: the ``api`` composition root
 independent milestone packages meet (import-linter Rule 5 — ``api`` is exempt; nothing imports
 ``api``). It constructs the concretes the M8A.1 orchestrator + M8A.2 handler are *typed against* and
 injects them, then registers the :class:`~clue_api.deep.DeepPhaseHandler` so
-``CampaignRun.advance()`` dispatches ``CampaignPhase.DEEP`` with zero new dispatch code (the run no
+``ProjectRun.advance()`` dispatches ``ProjectPhase.DEEP`` with zero new dispatch code (the run no
 longer raises ``NoPhaseHandlerRegistered(DEEP)``).
 
 What it wires, and where each piece comes from:
@@ -131,7 +131,7 @@ class DeepPhaseComposition:
     ``storage`` backend is supplied) that handler wrapped in a
     :class:`~clue_api.storage_wiring.SnapshotBindingPhaseHandler` so each deep run captures/flushes
     under one ambient per-run snapshot sink; either way it is a ``core.PhaseHandler`` serving
-    ``CampaignPhase.DEEP``. The rest are exposed so a test can assert the governance seams are the
+    ``ProjectPhase.DEEP``. The rest are exposed so a test can assert the governance seams are the
     concretes (the gate + classifier the orchestrator threads into the committee/contact callables)
     without reaching into private attributes."""
 
@@ -432,8 +432,8 @@ def register_deep_phase_handler(
     **kwargs: Any,
 ) -> DeepPhaseComposition:
     """Build the DEEP phase (:func:`build_deep_phase_handler`) and register its handler into the
-    process phase-handler registry — the api-root binder that makes ``CampaignRun.advance()``
-    dispatch ``CampaignPhase.DEEP``. ``register`` is injectable so a test can register into a fresh
+    process phase-handler registry — the api-root binder that makes ``ProjectRun.advance()``
+    dispatch ``ProjectPhase.DEEP``. ``register`` is injectable so a test can register into a fresh
     :class:`~clue_research.durable.PhaseHandlerRegistry` instead of the process default.
 
     ``storage`` is a **required** keyword (unlike :func:`build_deep_phase_handler`, where it

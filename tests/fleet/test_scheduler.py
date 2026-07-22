@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from tests.fleet.conftest import FakeTaskQueue, ProcessLocalLockFactory
 
-from clue_core import EntityId, new_campaign_run_id
+from clue_core import EntityId, new_project_run_id
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -55,7 +55,7 @@ def test_default_tier_priority_orders_names_and_numbers() -> None:
 
 def test_accounts_execute_best_tier_first_and_results_in_input_order() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         # Input deliberately in worst-first order; execution must be best-first.
         specs = [_spec("c", "low"), _spec("a", "top"), _spec("b", "high")]
@@ -66,7 +66,7 @@ def test_accounts_execute_best_tier_first_and_results_in_input_order() -> None:
             return f"result:{spec.tier}"
 
         results = await _scheduler(queue, window=1).run_accounts(
-            specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+            specs, project_run_id=run_id, checkpointer=None, run_one=run_one
         )
         assert executed == ["top", "high", "low"]
         # Results come back in INPUT order (the AccountScheduler contract), not execution order.
@@ -79,7 +79,7 @@ def test_accounts_execute_best_tier_first_and_results_in_input_order() -> None:
 
 def test_concurrency_window_bounds_in_flight_jobs() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         specs = [_spec(f"acct-{i}", "top") for i in range(8)]
         in_flight = 0
@@ -93,7 +93,7 @@ def test_concurrency_window_bounds_in_flight_jobs() -> None:
             in_flight -= 1
 
         await _scheduler(queue, window=3).run_accounts(
-            specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+            specs, project_run_id=run_id, checkpointer=None, run_one=run_one
         )
         assert peak <= 3
 
@@ -102,7 +102,7 @@ def test_concurrency_window_bounds_in_flight_jobs() -> None:
 
 def test_done_jobs_from_a_previous_drive_are_replayed_not_reclaimed() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         specs = [_spec("done-before", "top"), _spec("fresh", "high")]
         # Simulate a previous (killed) drive having completed the first account.
@@ -121,7 +121,7 @@ def test_done_jobs_from_a_previous_drive_are_replayed_not_reclaimed() -> None:
             return str(spec.entity_id)
 
         results = await _scheduler(queue).run_accounts(
-            specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+            specs, project_run_id=run_id, checkpointer=None, run_one=run_one
         )
         # Both specs get a result (replay still invokes run_one — idempotent + spend-free by
         # the account-step ledger), and the done task was not re-claimed.
@@ -135,7 +135,7 @@ def test_done_jobs_from_a_previous_drive_are_replayed_not_reclaimed() -> None:
 
 def test_failed_jobs_are_requeued_on_reentry() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         spec = _spec("flaky", "top")
 
@@ -151,14 +151,14 @@ def test_failed_jobs_are_requeued_on_reentry() -> None:
         scheduler = _scheduler(queue, window=1)
         with pytest.raises(RuntimeError):
             await scheduler.run_accounts(
-                [spec], campaign_run_id=run_id, checkpointer=None, run_one=run_one
+                [spec], project_run_id=run_id, checkpointer=None, run_one=run_one
             )
         row = queue.row(FleetTaskKind.ACCOUNT_JOB, run_id, str(spec.entity_id))
         assert row.status is FleetTaskStatus.FAILED
 
         # A fresh drive (phase re-entry) explicitly re-opens FAILED jobs and succeeds.
         results = await scheduler.run_accounts(
-            [spec], campaign_run_id=run_id, checkpointer=None, run_one=run_one
+            [spec], project_run_id=run_id, checkpointer=None, run_one=run_one
         )
         assert results == ["ok"]
         row = queue.row(FleetTaskKind.ACCOUNT_JOB, run_id, str(spec.entity_id))
@@ -169,7 +169,7 @@ def test_failed_jobs_are_requeued_on_reentry() -> None:
 
 def test_failure_propagates_without_hanging_sibling_drainers() -> None:
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         specs = [_spec(f"n{i}", "top") for i in range(6)]
         bad = str(specs[3].entity_id)
@@ -183,7 +183,7 @@ def test_failure_propagates_without_hanging_sibling_drainers() -> None:
         with pytest.raises(RuntimeError):
             await asyncio.wait_for(
                 _scheduler(queue, window=3).run_accounts(
-                    specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+                    specs, project_run_id=run_id, checkpointer=None, run_one=run_one
                 ),
                 timeout=5,  # the point: no deadlocked poll loop waiting on the failed key
             )
@@ -202,7 +202,7 @@ def test_duplicate_entity_ids_are_rejected() -> None:
         with pytest.raises(ValueError, match="duplicate entity_id"):
             await _scheduler(queue).run_accounts(
                 [spec, spec],
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 checkpointer=None,
                 run_one=run_one,
             )
@@ -217,7 +217,7 @@ def test_empty_specs_is_a_clean_noop() -> None:
 
         assert (
             await _scheduler(FakeTaskQueue()).run_accounts(
-                [], campaign_run_id=new_campaign_run_id(), checkpointer=None, run_one=run_one
+                [], project_run_id=new_project_run_id(), checkpointer=None, run_one=run_one
             )
             == []
         )
@@ -249,7 +249,7 @@ def test_cross_run_same_entity_is_single_flighted() -> None:
     async def _run() -> None:
         queue = FakeTaskQueue()  # ONE shared durable queue for both runs
         lock_factory = ProcessLocalLockFactory()  # ONE shared lock across both schedulers
-        run_a, run_b = new_campaign_run_id(), new_campaign_run_id()
+        run_a, run_b = new_project_run_id(), new_project_run_id()
         shared = _spec("shared", "top")
         # Each run also carries a distinct entity so neither run is degenerate (real parallelism).
         specs_a = [shared, _spec("only-a", "high")]
@@ -268,10 +268,10 @@ def test_cross_run_same_entity_is_single_flighted() -> None:
 
         results_a, results_b = await asyncio.gather(
             _scheduler(queue, lock_factory=lock_factory).run_accounts(
-                specs_a, campaign_run_id=run_a, checkpointer=None, run_one=run_one
+                specs_a, project_run_id=run_a, checkpointer=None, run_one=run_one
             ),
             _scheduler(queue, lock_factory=lock_factory).run_accounts(
-                specs_b, campaign_run_id=run_b, checkpointer=None, run_one=run_one
+                specs_b, project_run_id=run_b, checkpointer=None, run_one=run_one
             ),
         )
 
@@ -290,7 +290,7 @@ def test_replayed_done_job_acquires_the_entity_lock() -> None:
     entity lock (mirrors ``test_done_jobs_...replayed_not_reclaimed``'s enqueue + mark_done)."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         lock_factory = ProcessLocalLockFactory()
         specs = [_spec("done-before", "top"), _spec("fresh", "high")]
@@ -307,7 +307,7 @@ def test_replayed_done_job_acquires_the_entity_lock() -> None:
             return str(spec.entity_id)
 
         results = await _scheduler(queue, lock_factory=lock_factory).run_accounts(
-            specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+            specs, project_run_id=run_id, checkpointer=None, run_one=run_one
         )
         assert results == [str(s.entity_id) for s in specs]
         # The replayed (done) job acquired the entity lock like any other executed job (the shared
@@ -333,7 +333,7 @@ def test_replay_does_not_start_after_a_sibling_failure() -> None:
     old code (no guard) a replay starts anyway after the abort (RED)."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         queue = FakeTaskQueue()
         fail = _spec("fail", "top")
         replays = [_spec(f"r{i}", "low") for i in range(6)]
@@ -364,7 +364,7 @@ def test_replay_does_not_start_after_a_sibling_failure() -> None:
         )
         with pytest.raises(RuntimeError, match="boom"):
             await scheduler.run_accounts(
-                specs, campaign_run_id=run_id, checkpointer=None, run_one=run_one
+                specs, project_run_id=run_id, checkpointer=None, run_one=run_one
             )
         assert abort_index["n"] == 0  # the failure fired before any replay had started
         # No replay may START after the abort was observed.
@@ -383,7 +383,7 @@ def test_fake_queue_claim_order_and_reopen_preserves_enqueue_seq() -> None:
     place). One FIFO truth: the sort reads ``row.enqueue_seq``, no separate wrapper sequence."""
 
     async def _run() -> None:
-        run_id = new_campaign_run_id()
+        run_id = new_project_run_id()
         q = FakeTaskQueue()
         # Three same-priority jobs, then a later higher-priority (smaller) one.
         for name in ("a", "b", "c"):

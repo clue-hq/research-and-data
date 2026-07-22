@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from clue_obs.otel import (
-    CAMPAIGN_PHASES,
+    PROJECT_PHASES,
     SPAN_COMPLIANCE_USE_GATE,
     SPAN_VERIFICATION_CORROBORATION,
     SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
@@ -44,8 +44,8 @@ def test_five_verification_spans_distinct_and_namespaced() -> None:
     assert SPAN_COMPLIANCE_USE_GATE not in names
 
 
-def test_campaign_phases_match_doc_c_section_4_exactly() -> None:
-    assert CAMPAIGN_PHASES == (
+def test_project_phases_match_doc_c_section_4_exactly() -> None:
+    assert PROJECT_PHASES == (
         "reverse_profiling",
         "icp_confirmed",
         "discovery",

@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from clue_core import Claim, EntityType, IdentityBinding, VerificationStatus
-from clue_obs.otel.spans import CAMPAIGN_PHASES
+from clue_obs.otel.spans import PROJECT_PHASES
 
 # --- metric names -----------------------------------------------------------
 METRIC_CLAIMS_TOTAL = "research.claims.total"  # by source
@@ -152,8 +152,8 @@ def record_phase_progress(
     phase: str, *, completed: int, total: int, sink: MetricSink | None = None
 ) -> None:
     """Phase progress 0..1 for a campaign-run phase (Doc C §6). M7 supplies the counts."""
-    if phase not in CAMPAIGN_PHASES:
-        raise ValueError(f"unknown campaign phase {phase!r}; expected one of {CAMPAIGN_PHASES}")
+    if phase not in PROJECT_PHASES:
+        raise ValueError(f"unknown campaign phase {phase!r}; expected one of {PROJECT_PHASES}")
     sink = sink or get_metric_sink()
     fraction = completed / total if total else 0.0
     sink.gauge(METRIC_PHASE_PROGRESS, fraction, {"phase": phase})

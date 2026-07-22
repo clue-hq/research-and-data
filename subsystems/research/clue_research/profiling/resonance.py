@@ -33,17 +33,17 @@ import re
 from clue_config import OverlayStore
 from clue_core import (
     AspectContext,
-    CampaignRunId,
     Claim,
     CostCents,
     EntityId,
     FieldClass,
     LLMGateway,
     PreSpendGate,
+    ProjectRunId,
     ResearchMode,
     RunId,
     WorkerResult,
-    new_campaign_run_id,
+    new_project_run_id,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.profiling.aspect_worker import (
@@ -207,7 +207,7 @@ async def collect_resonance(
     field_keys: tuple[str, ...] = RESONANCE_FIELD_KEYS,
     budget_envelope_cents: CostCents | None = None,
     worker: ResonanceAspectWorker | None = None,
-    campaign_run_id: CampaignRunId | None = None,
+    project_run_id: ProjectRunId | None = None,
 ) -> WorkerResult:
     """Run the resonance collector for one account and return its :class:`WorkerResult` (M8.2 seam).
 
@@ -220,7 +220,7 @@ async def collect_resonance(
     resonance_worker = worker if worker is not None else ResonanceAspectWorker()
     ctx = AspectContext(
         entity_id=account_entity_id,
-        campaign_run_id=campaign_run_id if campaign_run_id is not None else new_campaign_run_id(),
+        project_run_id=project_run_id if project_run_id is not None else new_project_run_id(),
         run_id=run_id,
         tier=tier,
         aspect=resonance_worker.aspect,

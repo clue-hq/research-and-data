@@ -1,10 +1,13 @@
 # PB — the stage-2 `campaign_run` → `project_run` rename (the full-repo playbook)
 
-**Status:** playbook (not yet executed). The *stage-1* half already landed on the
-`platform/b1-fleet-worker` lane (`ProjectRunWorker` + `project_run_id` across the fleet-owned
-surfaces — see `docs/specs/PB-B1-fleet-worker.md` §"§1a vocabulary" and
-`_memory/2026-07-22-b1-rename-stage1.md`). **This document is the reference for the integrator to
-execute stage 2 immediately after Phase B integration and *before* B4 opens.**
+**Status: EXECUTED (2026-07-22).** Stage 1 landed on the `platform/b1-fleet-worker` lane;
+stage 2 landed on `platform/workspace-restructure` immediately after Phase-B integration:
+migration `814a272f79a5` (fully reversible, up→down→up verified), the repo-wide code flip
+(zero old tokens; frozen `IdempotencyScope` values untouched and comment-pinned), the stage-1
+fleet exceptions flipped + markers deleted (the interim `tests/fleet/test_rename_guard.py`
+retired), and the empty-allowlist guard `tests/test_project_rename_guard.py`. Execution record:
+`_memory/2026-07-22-stage2-project-run-rename.md`. The document below is the playbook as
+executed.
 
 **When to run.** After **B2 → B3 → B1** are merged and all gates are green, and **before B4
 opens** — B4's projection API / toolbelt must be *born* speaking project vocabulary, not retrofit

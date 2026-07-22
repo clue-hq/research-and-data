@@ -20,18 +20,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api import HANDOFF_SCHEMA_HEADER, create_handoff_app
 from clue_core import (
     AccountHandoff,
-    CampaignPhase,
-    CampaignRunId,
     EntityId,
     NarrativeSupport,
     Persona,
+    ProjectPhase,
+    ProjectRunId,
     ProvenanceRef,
     Score,
     ScoreComponent,
     ValueNarrativeItem,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_research.narrative import (
     HANDOFF_SCHEMA_VERSION,
@@ -58,7 +58,7 @@ def _conn_dependency(conn: AsyncConnection):
     return dep
 
 
-def _assembled(*, account: EntityId, run: CampaignRunId, claim_id=None) -> AssembledHandoff:
+def _assembled(*, account: EntityId, run: ProjectRunId, claim_id=None) -> AssembledHandoff:
     cid = claim_id or new_claim_id()
     handoff = AccountHandoff(
         account_entity_id=account,
@@ -80,17 +80,15 @@ def _assembled(*, account: EntityId, run: CampaignRunId, claim_id=None) -> Assem
         ),
         provenance_index={str(cid): ProvenanceRef(source_url="https://src/x", source_tier=1)},
         icp_spec_version=1,
-        campaign_run_id=run,
+        project_run_id=run,
         assembled_at=_AT,
     )
     return AssembledHandoff(handoff=handoff)
 
 
-def _app(
-    conn: AsyncConnection, *, run: CampaignRunId, phase: CampaignPhase = CampaignPhase.HANDOFF
-):
+def _app(conn: AsyncConnection, *, run: ProjectRunId, phase: ProjectPhase = ProjectPhase.HANDOFF):
     reader = InMemoryHandoffReadinessReader(
-        runs={run: RunReadiness(campaign_run_id=run, workspace_id=_CLIENT, phase=phase)}
+        runs={run: RunReadiness(project_run_id=run, workspace_id=_CLIENT, phase=phase)}
     )
     service = HandoffService(readiness_reader=reader)
     return create_handoff_app(
@@ -105,7 +103,7 @@ def _client(app) -> httpx.AsyncClient:
 def test_get_handoff_200_with_schema_header() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            acc, run, cid = new_entity_id(), new_campaign_run_id(), new_claim_id()
+            acc, run, cid = new_entity_id(), new_project_run_id(), new_claim_id()
             await write_handoff(
                 conn, _assembled(account=acc, run=run, claim_id=cid), workspace_id=_CLIENT
             )
@@ -135,8 +133,8 @@ def test_missing_handoff_is_404() -> None:
 
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            run = new_campaign_run_id()
-            async with _client(_app(conn, run=run, phase=CampaignPhase.DEEP)) as client:
+            run = new_project_run_id()
+            async with _client(_app(conn, run=run, phase=ProjectPhase.DEEP)) as client:
                 r = await client.get(
                     f"/accounts/{new_entity_id()}/handoff",
                     params={"icp_spec_version": 1},
@@ -152,7 +150,7 @@ def test_cross_tenant_is_404() -> None:
 
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            acc, run = new_entity_id(), new_campaign_run_id()
+            acc, run = new_entity_id(), new_project_run_id()
             await write_handoff(conn, _assembled(account=acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
@@ -168,7 +166,7 @@ def test_cross_tenant_is_404() -> None:
 def test_missing_tenant_header_is_401() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            acc, run = new_entity_id(), new_campaign_run_id()
+            acc, run = new_entity_id(), new_project_run_id()
             await write_handoff(conn, _assembled(account=acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(f"/accounts/{acc}/handoff", params={"icp_spec_version": 1})
@@ -180,16 +178,16 @@ def test_missing_tenant_header_is_401() -> None:
 def test_list_endpoint_returns_ready_with_phase() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            run, acc = new_campaign_run_id(), new_entity_id()
+            run, acc = new_project_run_id(), new_entity_id()
             await write_handoff(conn, _assembled(account=acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
-                    f"/campaign_runs/{run}/handoffs", headers={"X-Workspace-Id": _CLIENT}
+                    f"/project_runs/{run}/handoffs", headers={"X-Workspace-Id": _CLIENT}
                 )
             assert r.status_code == 200
             body = r.json()
             assert body["total"] == 1
-            assert body["run_phase"] == CampaignPhase.HANDOFF.value
+            assert body["run_phase"] == ProjectPhase.HANDOFF.value
             assert body["items"][0]["account_entity_id"] == str(acc)
 
     run_async(_run())
@@ -202,7 +200,7 @@ def test_list_excludes_unmaterialised_mid_run_account() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             run, ready_acc, mid_run_acc = (
-                new_campaign_run_id(),
+                new_project_run_id(),
                 new_entity_id(),
                 new_entity_id(),
             )
@@ -210,7 +208,7 @@ def test_list_excludes_unmaterialised_mid_run_account() -> None:
             await write_handoff(conn, _assembled(account=ready_acc, run=run), workspace_id=_CLIENT)
             async with _client(_app(conn, run=run)) as client:
                 r = await client.get(
-                    f"/campaign_runs/{run}/handoffs", headers={"X-Workspace-Id": _CLIENT}
+                    f"/project_runs/{run}/handoffs", headers={"X-Workspace-Id": _CLIENT}
                 )
             assert r.status_code == 200
             body = r.json()
@@ -224,7 +222,7 @@ def test_list_excludes_unmaterialised_mid_run_account() -> None:
 def test_provenance_endpoint_resolves_and_404s() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            acc, run, cid = new_entity_id(), new_campaign_run_id(), new_claim_id()
+            acc, run, cid = new_entity_id(), new_project_run_id(), new_claim_id()
             await write_handoff(
                 conn, _assembled(account=acc, run=run, claim_id=cid), workspace_id=_CLIENT
             )
@@ -251,7 +249,7 @@ def test_surface_is_read_only_no_write_routes() -> None:
 
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            app = _app(conn, run=new_campaign_run_id())
+            app = _app(conn, run=new_project_run_id())
             write_methods = {"POST", "PUT", "PATCH", "DELETE"}
             for route in app.routes:
                 if isinstance(route, APIRoute):

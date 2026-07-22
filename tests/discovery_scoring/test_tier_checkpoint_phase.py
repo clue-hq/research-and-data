@@ -19,18 +19,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
-    CampaignPhase,
-    CampaignRunId,
     EntityId,
     EntityType,
     ExtractionMethod,
     ICPCreatedFrom,
     PhaseContext,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     ResearchMode,
     account_claim,
     discovery_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
@@ -106,14 +106,14 @@ def _rubric() -> ScoringRubric:
 
 
 def _ctx(
-    campaign_run_id: CampaignRunId,
+    project_run_id: ProjectRunId,
     *,
     params: dict[str, JsonValue] | None = None,
     budget_cap_cents: int | None = None,
-    phase: CampaignPhase = CampaignPhase.TIER_CHECKPOINT,
+    phase: ProjectPhase = ProjectPhase.TIER_CHECKPOINT,
 ) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=campaign_run_id,
+        project_run_id=project_run_id,
         phase=phase,
         workspace_id=CLIENT,
         icp_key=ICP,
@@ -204,17 +204,17 @@ async def _seed_admitted(
     return eid
 
 
-async def _seed_and_score(conn: AsyncConnection) -> CampaignRunId:
-    """Seed + run the M6.3 SCORING phase; return the shared campaign_run_id.
+async def _seed_and_score(conn: AsyncConnection) -> ProjectRunId:
+    """Seed + run the M6.3 SCORING phase; return the shared project_run_id.
 
     Three accounts spanning the cutoffs: high (emp 500/funded → fit 0.5, intent 1.0), medium
     (emp 250/unfunded → fit 0.25, intent 0.0), low (emp 50/unfunded → fit 0.05) — a non-trivial
     distribution {high:1, medium:1, low:1}.
     """
-    campaign_run_id = new_campaign_run_id()
+    project_run_id = new_project_run_id()
     await load_core_pack(conn)
     await _seed_active_icp(conn)
-    scoring_ctx = _ctx(campaign_run_id, phase=CampaignPhase.SCORING)
+    scoring_ctx = _ctx(project_run_id, phase=ProjectPhase.SCORING)
     await _seed_admitted(
         conn, scoring_ctx, name="High", domain="high.example", employee_count=500, funding=True
     )
@@ -229,7 +229,7 @@ async def _seed_and_score(conn: AsyncConnection) -> CampaignRunId:
     )
     assert scoring_result.status is PhaseStatus.COMPLETED
     assert scoring_result.accounts_processed == 3
-    return campaign_run_id
+    return project_run_id
 
 
 async def _live_count(conn: AsyncConnection, field_key: str) -> int:
@@ -260,9 +260,9 @@ async def _account_id(conn: AsyncConnection, domain: str) -> EntityId:
 def test_checkpoint_suspends_with_review_payload() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
-            result = await handler.run(_ctx(campaign_run_id))
+            result = await handler.run(_ctx(project_run_id))
 
             assert result.status is PhaseStatus.PAUSED
             assert result.payload["checkpoint_status"] == "awaiting"
@@ -294,16 +294,16 @@ def test_checkpoint_suspends_with_review_payload() -> None:
 def test_cutoff_adjustment_retiers_and_reestimates_without_respend() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
 
-            base = await handler.run(_ctx(campaign_run_id))
+            base = await handler.run(_ctx(project_run_id))
             base_dist = base.payload["tier_distribution"]
             base_estimate = base.payload["estimate"]
             fit_before = await _live_count(conn, FIT_FIELD)
 
             adjusted = await handler.run(
-                _ctx(campaign_run_id, params=_decision(cutoffs=_TIGHTER.model_dump(mode="json")))
+                _ctx(project_run_id, params=_decision(cutoffs=_TIGHTER.model_dump(mode="json")))
             )
             assert adjusted.status is PhaseStatus.PAUSED  # still awaiting (cutoff-only adjustment)
             assert adjusted.payload["tier_distribution"] == {"high": 0, "medium": 2, "low": 1}
@@ -330,9 +330,9 @@ def test_cutoff_adjustment_retiers_and_reestimates_without_respend() -> None:
 def test_resume_approve_completes_and_persists_tiers() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
-            result = await handler.run(_ctx(campaign_run_id, params=_decision(action="approve")))
+            result = await handler.run(_ctx(project_run_id, params=_decision(action="approve")))
             assert result.status is PhaseStatus.COMPLETED  # advances to `deep`
             assert result.payload["checkpoint_status"] == "resumed"
             assert result.payload["tiered"] == 3
@@ -360,9 +360,9 @@ def test_resume_approve_completes_and_persists_tiers() -> None:
 def test_resume_pause_stays_suspended() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
-            result = await handler.run(_ctx(campaign_run_id, params=_decision(action="pause")))
+            result = await handler.run(_ctx(project_run_id, params=_decision(action="pause")))
             assert result.status is PhaseStatus.PAUSED
             assert result.payload["checkpoint_status"] == "awaiting"
             assert await _live_count(conn, TIER_FIELD) == 0  # pause persists nothing
@@ -374,11 +374,11 @@ def test_resume_pause_stays_suspended() -> None:
 def test_projected_over_cap_halts_then_raise_cap_resumes() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
             # default bands: high=500 + medium=200 = 700 cents projected; cap 100 → over cap
             over = await handler.run(
-                _ctx(campaign_run_id, params=_decision(action="approve"), budget_cap_cents=100)
+                _ctx(project_run_id, params=_decision(action="approve"), budget_cap_cents=100)
             )
             assert over.status is PhaseStatus.PAUSED  # graceful stop, not completed
             assert over.payload["projected_over_cap"] is True
@@ -387,7 +387,7 @@ def test_projected_over_cap_halts_then_raise_cap_resumes() -> None:
             # raise the cap in the decision → approve now proceeds
             resumed = await handler.run(
                 _ctx(
-                    campaign_run_id,
+                    project_run_id,
                     params=_decision(action="approve", budget_cap_cents=10_000),
                     budget_cap_cents=100,
                 )
@@ -403,9 +403,9 @@ def test_projected_over_cap_halts_then_raise_cap_resumes() -> None:
 def test_reentry_is_idempotent() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
-            approve = _ctx(campaign_run_id, params=_decision(action="approve"))
+            approve = _ctx(project_run_id, params=_decision(action="approve"))
             first = await handler.run(approve)
             second = await handler.run(approve)  # crash re-entry → same cutoff-derived run
 
@@ -423,10 +423,10 @@ def test_reentry_is_idempotent() -> None:
 def test_approve_with_adjusted_cutoffs_supersedes_prior() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
 
-            first = await handler.run(_ctx(campaign_run_id, params=_decision(action="approve")))
+            first = await handler.run(_ctx(project_run_id, params=_decision(action="approve")))
             assert first.status is PhaseStatus.COMPLETED
             assert await _live_count(conn, TIER_FIELD) == 3
             cversion_a = first.payload["cutoff_version"]
@@ -434,7 +434,7 @@ def test_approve_with_adjusted_cutoffs_supersedes_prior() -> None:
             # re-approve with tightened cutoffs → a NEW cutoff version supersedes the prior tiers
             second = await handler.run(
                 _ctx(
-                    campaign_run_id,
+                    project_run_id,
                     params=_decision(action="approve", cutoffs=_TIGHTER.model_dump(mode="json")),
                 )
             )
@@ -459,19 +459,19 @@ def test_approve_with_adjusted_cutoffs_supersedes_prior() -> None:
 def test_over_cap_boundary_equal_is_within_cap() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
             # distribution {high:1, medium:1, low:1} × default bands → 700 cents projected.
             # cap exactly 1 below → over cap → graceful stop, nothing persisted.
             just_over = await handler.run(
-                _ctx(campaign_run_id, params=_decision(action="approve"), budget_cap_cents=699)
+                _ctx(project_run_id, params=_decision(action="approve"), budget_cap_cents=699)
             )
             assert just_over.status is PhaseStatus.PAUSED
             assert just_over.payload["projected_over_cap"] is True
             assert await _live_count(conn, TIER_FIELD) == 0
             # cap exactly equal to projected → within cap (strict >) → approve completes
             at_cap = await handler.run(
-                _ctx(campaign_run_id, params=_decision(action="approve"), budget_cap_cents=700)
+                _ctx(project_run_id, params=_decision(action="approve"), budget_cap_cents=700)
             )
             assert at_cap.status is PhaseStatus.COMPLETED
             assert at_cap.payload["projected_over_cap"] is False
@@ -484,12 +484,12 @@ def test_over_cap_boundary_equal_is_within_cap() -> None:
 def test_non_finite_cap_degrades_and_does_not_crash() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
             # an inf cap degrades to None (no cap) → approve proceeds rather than crashing the phase
             result = await handler.run(
                 _ctx(
-                    campaign_run_id,
+                    project_run_id,
                     params=_decision(action="approve", budget_cap_cents=float("inf")),
                 )
             )
@@ -502,9 +502,9 @@ def test_non_finite_cap_degrades_and_does_not_crash() -> None:
 def test_review_is_deterministic_across_reentry() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
-            ctx = _ctx(campaign_run_id)
+            ctx = _ctx(project_run_id)
             first = await handler.run(ctx)
             second = await handler.run(ctx)
             # re-presents byte-identical review state on crash re-entry
@@ -520,7 +520,7 @@ def test_checkpoint_fails_without_a_rubric() -> None:
             await load_core_pack(conn)
             await _seed_active_icp(conn, with_rubric=False)
             handler = TierCheckpointPhaseHandler(session_factory=_session_factory(conn))
-            result = await handler.run(_ctx(new_campaign_run_id()))
+            result = await handler.run(_ctx(new_project_run_id()))
             assert result.status is PhaseStatus.FAILED
             assert "no scoring rubric" in str(result.payload["error"])
 

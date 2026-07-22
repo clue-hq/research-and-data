@@ -10,7 +10,7 @@ state machine advances on — the compiled field-plan reference (``plan_hash``, 
 counts) plus the pre-run cost estimate (Doc C §5).
 
 It *implements* the frozen :class:`~clue_core.execution.PhaseHandler` (Beat-0) — imports
-``core``, never M7's ``durable``; the concrete instance is registered into the ``CampaignRun`` at
+``core``, never M7's ``durable``; the concrete instance is registered into the ``ProjectRun`` at
 the ``api`` composition root, which dispatches by the declared ``phase`` attribute. The phase is
 **pure reads** (read the pinned spec → compile → estimate), so it is naturally idempotent: a
 resumed phase recomputes the identical artifact with no double-write. A missing spec (the client
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pydantic import JsonValue
 
-from clue_core import CampaignPhase, PhaseContext, PhaseResult, PhaseStatus
+from clue_core import PhaseContext, PhaseResult, PhaseStatus, ProjectPhase
 from clue_db import transaction
 from clue_obs.otel import ATTR_WORKSPACE_ID, apply_attributes, traced_step
 from clue_research.icp import compile_field_plan, get_icp_version
@@ -31,7 +31,7 @@ from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 class IcpConfirmedHandler:
     """Implements :class:`~clue_core.execution.PhaseHandler` for ``ICP_CONFIRMED``."""
 
-    phase = CampaignPhase.ICP_CONFIRMED
+    phase = ProjectPhase.ICP_CONFIRMED
 
     def __init__(self, *, estimate_inputs: EstimateInputs | None = None) -> None:
         # The cost-dial priors for the pre-run estimate (versioned config; D7). M7's BudgetEngine

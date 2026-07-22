@@ -24,7 +24,6 @@ from __future__ import annotations
 from pydantic import JsonValue
 
 from clue_core import (
-    CampaignRunId,
     Claim,
     ClaimId,
     EntityId,
@@ -32,6 +31,7 @@ from clue_core import (
     ExtractionMethod,
     FieldClass,
     IdentityBinding,
+    ProjectRunId,
     ResearchMode,
     ReviewAction,
     ReviewActionOutcome,
@@ -165,7 +165,7 @@ class ReviewSurfaceImpl:
         self,
         *,
         account_entity_id: EntityId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
@@ -174,7 +174,7 @@ class ReviewSurfaceImpl:
             row = await ensure_review_session(
                 conn,
                 account_entity_id=account_entity_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 workspace_id=workspace_id,
                 review_round=review_round,
                 opened_by=opened_by,
@@ -183,7 +183,7 @@ class ReviewSurfaceImpl:
                 conn,
                 session_id=row.id,
                 account_entity_id=row.account_entity_id,
-                campaign_run_id=row.campaign_run_id,
+                project_run_id=row.project_run_id,
                 workspace_id=row.workspace_id,
                 review_round=row.review_round,
                 status=row.status,
@@ -259,7 +259,7 @@ class ReviewSurfaceImpl:
                 outcome,
                 account_entity_id=row.account_entity_id,
                 contact_entity_id=contact_id,
-                campaign_run_id=row.campaign_run_id,
+                project_run_id=row.project_run_id,
                 actor=actor,
             )
         return outcome
@@ -270,13 +270,13 @@ class ReviewSurfaceImpl:
             if row is None:
                 raise ReviewSessionNotFound(str(session_id))
             remaining = (
-                await count_open_sessions(conn, row.campaign_run_id) if transitioned else None
+                await count_open_sessions(conn, row.project_run_id) if transitioned else None
             )
             session = await self._projector.build(
                 conn,
                 session_id=row.id,
                 account_entity_id=row.account_entity_id,
-                campaign_run_id=row.campaign_run_id,
+                project_run_id=row.project_run_id,
                 workspace_id=row.workspace_id,
                 review_round=row.review_round,
                 status=row.status,
@@ -285,7 +285,7 @@ class ReviewSurfaceImpl:
         # machine, which manages its own transactions) — only when *this* call closed the run's
         # last open session (``transitioned`` guards an idempotent re-finalize re-firing resume).
         if transitioned and remaining == 0 and self._resume is not None:
-            await self._resume.resume_review(row.campaign_run_id)
+            await self._resume.resume_review(row.project_run_id)
         return session
 
 

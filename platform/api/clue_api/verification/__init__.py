@@ -1,4 +1,4 @@
-"""``clue_api.verification`` — the ``CampaignPhase.VERIFICATION`` composition root.
+"""``clue_api.verification`` — the ``ProjectPhase.VERIFICATION`` composition root.
 
 The live call site that drives the frozen ``VERIFICATION_GATE_ORDER`` (corroboration →
 faithfulness → use-gate last) over the deep-produced claims, then records per-field

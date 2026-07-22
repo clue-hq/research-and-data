@@ -20,7 +20,7 @@ import json
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import CampaignRunId, EntityId, decode_jsonb
+from clue_core import EntityId, ProjectRunId, decode_jsonb
 from clue_research.narrative.handoff import AssembledHandoff
 
 
@@ -54,13 +54,13 @@ async def write_handoff(
         text(
             """
             INSERT INTO account_handoff
-                (workspace_id, account_entity_id, icp_spec_version, icp_key, campaign_run_id,
+                (workspace_id, account_entity_id, icp_spec_version, icp_key, project_run_id,
                  assembled_at, tier, payload)
             VALUES
-                (:workspace_id, :account_entity_id, :icp_spec_version, :icp_key, :campaign_run_id,
+                (:workspace_id, :account_entity_id, :icp_spec_version, :icp_key, :project_run_id,
                  :assembled_at, :tier, CAST(:payload AS jsonb))
             ON CONFLICT (workspace_id, account_entity_id, icp_spec_version, icp_key) DO UPDATE SET
-                campaign_run_id = EXCLUDED.campaign_run_id,
+                project_run_id = EXCLUDED.project_run_id,
                 assembled_at    = EXCLUDED.assembled_at,
                 tier            = EXCLUDED.tier,
                 payload         = EXCLUDED.payload
@@ -71,7 +71,7 @@ async def write_handoff(
             "account_entity_id": str(h.account_entity_id),
             "icp_spec_version": h.icp_spec_version,
             "icp_key": icp_key,
-            "campaign_run_id": str(h.campaign_run_id) if h.campaign_run_id is not None else None,
+            "project_run_id": str(h.project_run_id) if h.project_run_id is not None else None,
             "assembled_at": h.assembled_at,
             "tier": tier,
             "payload": json.dumps(payload),
@@ -112,10 +112,10 @@ async def read_handoff(
 
 
 async def list_handoffs_for_run(
-    conn: AsyncConnection, *, workspace_id: str, campaign_run_id: CampaignRunId
+    conn: AsyncConnection, *, workspace_id: str, project_run_id: ProjectRunId
 ) -> list[tuple[str, str | None, AssembledHandoff]]:
-    """All materialised handoffs for ``(workspace_id, campaign_run_id)`` as ``(icp_key, tier,
-    assembled)`` triples — the M12.3 list-serve surface (``GET /campaign_runs/{id}/handoffs``). A
+    """All materialised handoffs for ``(workspace_id, project_run_id)`` as ``(icp_key, tier,
+    assembled)`` triples — the M12.3 list-serve surface (``GET /project_runs/{id}/handoffs``). A
     materialised row exists only *after* assembly (which reads verified claims), so the list returns
     exactly the run's **ready** handoffs (M12.3 AC: an account still in deep/verification has no row
     and is absent). ``icp_key`` / ``tier`` are table columns (the frozen ``AccountHandoff`` payload
@@ -127,10 +127,10 @@ async def list_handoffs_for_run(
         await conn.execute(
             text(
                 "SELECT icp_key, tier, payload FROM account_handoff "
-                "WHERE workspace_id = :workspace_id AND campaign_run_id = :campaign_run_id "
+                "WHERE workspace_id = :workspace_id AND project_run_id = :project_run_id "
                 "ORDER BY account_entity_id, icp_spec_version, icp_key"
             ),
-            {"workspace_id": workspace_id, "campaign_run_id": campaign_run_id},
+            {"workspace_id": workspace_id, "project_run_id": project_run_id},
         )
     ).all()
     return [(str(row[0]), row[1], _decode_payload(row[2])) for row in rows]

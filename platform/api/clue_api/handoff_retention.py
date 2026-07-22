@@ -20,7 +20,7 @@ emits inside its ``run`` (the merge read), so :class:`RetentionSweepHandoffHandl
    of ``outreach_objected``), tombstoning objected contacts' live ``contact.facet.*`` hooks (D-OBJ);
 3. delegate to the inner HANDOFF handler, which now assembles over the post-tombstone merge.
 
-Registered last-write-wins for ``CampaignPhase.HANDOFF`` (replacing M12's direct registration), so a
+Registered last-write-wins for ``ProjectPhase.HANDOFF`` (replacing M12's direct registration), so a
 campaign-run reaching handoff sweeps before it serves. The sweeps are idempotent (an already-
 tombstoned claim is no longer live), so a crash-resume re-entry is safe. ``api`` is the
 import-linter-exempt seam, so this composes the otherwise-independent ``compliance`` (M10) and
@@ -34,11 +34,11 @@ from typing import Protocol, runtime_checkable
 
 from clue_api.verification.handler import ContactResolver, VerificationAccountResolver
 from clue_core import (
-    CampaignPhase,
     EntityId,
     PhaseContext,
     PhaseHandler,
     PhaseResult,
+    ProjectPhase,
 )
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import MetricSink
@@ -70,10 +70,10 @@ class RetentionSweeping(Protocol):
 
 
 class RetentionSweepHandoffHandler:
-    """The ``CampaignPhase.HANDOFF`` handler that runs the retention/objection sweep **before** the
+    """The ``ProjectPhase.HANDOFF`` handler that runs the retention/objection sweep **before** the
     inner M12 handoff (so the assembler's merge read sees the post-tombstone state)."""
 
-    phase: CampaignPhase = CampaignPhase.HANDOFF
+    phase: ProjectPhase = ProjectPhase.HANDOFF
 
     def __init__(
         self,

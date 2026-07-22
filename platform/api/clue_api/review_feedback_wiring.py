@@ -8,7 +8,7 @@ pattern as M9.1 AC-6 / M9.4's pre-insert stamp / M12.3's readiness reader). This
 two joins that need new code:
 
 * **M13.1 ↔ M13.2 (the disposition emitter).** :func:`register_reviewed_phase_handler` registers the
-  ``CampaignPhase.REVIEW`` handler whose surface mirrors every approve/correct/reject into a
+  ``ProjectPhase.REVIEW`` handler whose surface mirrors every approve/correct/reject into a
   ``disposition`` — replacing the M13.1 no-op with M13.2's concrete
   ``ReviewDispositionEmitterImpl`` (``build_review_disposition_emitter``). Until then,
   review actions are still durably recorded as ``review_action`` rows, so no disposition is lost.
@@ -64,7 +64,7 @@ from clue_research.compliance import (
     ErasureScope,
     ObjectionResult,
 )
-from clue_research.durable.campaign import CampaignRun
+from clue_research.durable.project import ProjectRun
 from clue_research.review import DispositionStore
 
 # --- M13.1 ↔ M13.2: register the REVIEW handler with the concrete disposition emitter ------------
@@ -89,19 +89,19 @@ def build_reviewed_phase_handler(
     *,
     conn_factory: ConnFactory = connection,
     session_factory: ConnFactory = transaction,
-    campaign_run: CampaignRun | None = None,
+    project_run: ProjectRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
     emitter_conn_factory: ConnFactory = transaction,
     emitter_sink: MetricSink | None = None,
 ) -> ReviewPhaseHandler:
-    """Build the ``CampaignPhase.REVIEW`` handler whose surface emits **real** dispositions (no
+    """Build the ``ProjectPhase.REVIEW`` handler whose surface emits **real** dispositions (no
     registration) — the M13.1 ↔ M13.2 join. Defaults the surface's disposition emitter to M13.2's
     concrete ``ReviewDispositionEmitterImpl`` so every approve/correct/reject is mirrored into a
     ``disposition`` at the moment it occurs. Mirrors ``build_review_phase_handler``."""
     return build_review_phase_handler(
         conn_factory=conn_factory,
         session_factory=session_factory,
-        campaign_run=campaign_run,
+        project_run=project_run,
         disposition_emitter=_production_review_emitter(
             disposition_emitter=disposition_emitter,
             emitter_conn_factory=emitter_conn_factory,
@@ -114,18 +114,18 @@ def register_reviewed_phase_handler(
     *,
     conn_factory: ConnFactory = connection,
     session_factory: ConnFactory = transaction,
-    campaign_run: CampaignRun | None = None,
+    project_run: ProjectRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
     emitter_conn_factory: ConnFactory = transaction,
     emitter_sink: MetricSink | None = None,
 ) -> ReviewPhaseHandler:
-    """Build + register the production ``CampaignPhase.REVIEW`` handler (emitting real dispositions)
+    """Build + register the production ``ProjectPhase.REVIEW`` handler (emitting real dispositions)
     into the M7.3 process-default ``PhaseHandlerRegistry`` (the M13.1 ↔ M13.2 join). Mirrors
     ``register_review_phase_handler``; use this in the full M13 flow."""
     return register_review_phase_handler(
         conn_factory=conn_factory,
         session_factory=session_factory,
-        campaign_run=campaign_run,
+        project_run=project_run,
         disposition_emitter=_production_review_emitter(
             disposition_emitter=disposition_emitter,
             emitter_conn_factory=emitter_conn_factory,

@@ -35,7 +35,6 @@ from clue_core import (
     AccountEntity,
     AspectContext,
     AspectWorker,
-    CampaignRunId,
     ClaimId,
     CostCents,
     EntityId,
@@ -47,10 +46,11 @@ from clue_core import (
     LLMGateway,
     PassKind,
     PreSpendGate,
+    ProjectRunId,
     RunId,
     WorkerResult,
     WorkerStatus,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_core.field import field_namespace
@@ -248,7 +248,7 @@ async def profile_account(
     spec: ICPSpec,
     tier: str,
     run_id: RunId | None = None,
-    campaign_run_id: CampaignRunId | None = None,
+    project_run_id: ProjectRunId | None = None,
     workspace_id: str | None = None,
     budget_cap_cents: CostCents | None = None,
     session_factory: ConnFactory = transaction,
@@ -273,7 +273,7 @@ async def profile_account(
     a true cross-aspect shared budget is the M7.5 ``BudgetEngine`` (injected at the graph layer) —
     here the cap bounds each parallel aspect and the total is reported."""
     run = run_id if run_id is not None else new_run_id()
-    campaign_run = campaign_run_id if campaign_run_id is not None else new_campaign_run_id()
+    project_run = project_run_id if project_run_id is not None else new_project_run_id()
     effective_workspace = workspace_id if workspace_id is not None else spec.workspace_id
     policy = recursion_policy if recursion_policy is not None else RecursionPolicy()
     build_worker = (
@@ -336,7 +336,7 @@ async def profile_account(
             )
         ctx = AspectContext(
             entity_id=account.id,
-            campaign_run_id=campaign_run,
+            project_run_id=project_run,
             run_id=run,
             tier=tier,
             aspect=aspect,

@@ -71,13 +71,13 @@ from clue_core import (
     BudgetEngine,
     BudgetScope,
     BudgetVerdict,
-    CampaignRunId,
     ClaimId,
     CostCents,
     EntityId,
     ICPSpec,
     LLMGateway,
     PreSpendGate,
+    ProjectRunId,
     RunId,
     WorkerStatus,
 )
@@ -108,7 +108,7 @@ DiscoverCommitteeFn = Callable[..., Awaitable[CommitteeResult]]
 ProfileContactFn = Callable[..., Awaitable[ContactProfileResult]]
 
 # A fixed namespace so ``account_run_id = uuid5(namespace, "campaign:entity")`` is STABLE across a
-# crash-and-resume: the same ``(campaign_run, account)`` always maps to one run id, so the M8A.0
+# crash-and-resume: the same ``(project_run, account)`` always maps to one run id, so the M8A.0
 # ``sub_phase`` marker and every stage's claim provenance line up on re-entry (the per-account
 # analogue of the M7 graph reusing its ``thread_id``). Derived from a name — not a magic literal.
 _DEEP_RUN_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "deep-orchestration.clue-research")
@@ -118,14 +118,14 @@ _DEEP_RUN_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "deep-orchestration.clue-re
 _COMMITTEE_CONTACTS_KEY = "committee_contacts"
 
 
-def deep_account_run_id(campaign_run_id: CampaignRunId, entity_id: EntityId) -> RunId:
+def deep_account_run_id(project_run_id: ProjectRunId, entity_id: EntityId) -> RunId:
     """The deterministic ``account_run`` id for one account in one campaign run (M8A.1).
 
     Deterministic (``uuid5``) so a resumed phase re-derives the SAME id and resumes the existing
     row rather than minting a fresh one — the per-account analogue of the M7 graph reusing its
     ``thread_id``. This id is the ``claim.run_id`` every stage stamps, so all three stages share one
     provenance line."""
-    return RunId(uuid.uuid5(_DEEP_RUN_NAMESPACE, f"{campaign_run_id}:{entity_id}"))
+    return RunId(uuid.uuid5(_DEEP_RUN_NAMESPACE, f"{project_run_id}:{entity_id}"))
 
 
 class AccountDeepResult(BaseModel):
@@ -269,18 +269,18 @@ class AccountDeepOrchestrator:
         self._budget_cap_cents = budget_cap_cents
 
     async def run_one(
-        self, spec: AccountSpec, *, campaign_run_id: CampaignRunId
+        self, spec: AccountSpec, *, project_run_id: ProjectRunId
     ) -> AccountDeepResult:
         """Deep-orchestrate one account: the three stages in order, resuming at ``sub_phase``.
 
         Idempotent on re-entry — completed stages are skipped (a contact never profiled before the
         committee admits it; the committee is a hard gate before the fan-out)."""
-        run_id = deep_account_run_id(campaign_run_id, spec.entity_id)
+        run_id = deep_account_run_id(project_run_id, spec.entity_id)
         workspace_id = spec.workspace_id or self._spec.workspace_id
 
         await self._io.ensure(
             account_run_id=run_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             entity_id=spec.entity_id,
             tier=spec.tier,
         )
@@ -304,7 +304,7 @@ class AccountDeepOrchestrator:
                 spec=self._spec,
                 tier=spec.tier,
                 run_id=run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 workspace_id=workspace_id,
                 budget_cap_cents=self._budget_cap_cents,
                 recursion_policy=self._recursion_policy,
@@ -335,7 +335,7 @@ class AccountDeepOrchestrator:
                 _, info = await self._spend.run_step(
                     conn,
                     key=deep_step_key(run_id, "account"),
-                    campaign_run_id=campaign_run_id,
+                    project_run_id=project_run_id,
                     account_run_id=run_id,
                     entity_id=spec.entity_id,
                     work=already_done(account_result),
@@ -362,7 +362,7 @@ class AccountDeepOrchestrator:
                 committee_result, info = await self._spend.run_step(
                     conn,
                     key=deep_step_key(run_id, "committee"),
-                    campaign_run_id=campaign_run_id,
+                    project_run_id=project_run_id,
                     account_run_id=run_id,
                     entity_id=spec.entity_id,
                     work=lambda c: self._discover_committee(
@@ -404,7 +404,7 @@ class AccountDeepOrchestrator:
             contact_ids = self._committee_contact_ids(committee_result, refs)
             outcomes, budget_stop = await self._profile_contacts(
                 contact_ids[: self._config.committee_size_cap],
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 account_entity_id=spec.entity_id,
                 run_id=run_id,
                 workspace_id=workspace_id,
@@ -459,7 +459,7 @@ class AccountDeepOrchestrator:
         self,
         contact_ids: Sequence[EntityId],
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         account_entity_id: EntityId,
         run_id: RunId,
         workspace_id: str,
@@ -538,7 +538,7 @@ class AccountDeepOrchestrator:
                 result, info = await self._spend.run_step(
                     conn,
                     key=deep_step_key(run_id, f"contact:{contact_id}"),
-                    campaign_run_id=campaign_run_id,
+                    project_run_id=project_run_id,
                     account_run_id=run_id,
                     entity_id=account_entity_id,
                     work=lambda c: self._profile_contact(
@@ -568,7 +568,7 @@ class AccountDeepOrchestrator:
                 decision = await self._budget.check(
                     scope=BudgetScope.ACCOUNT,
                     projected_cents=estimate,
-                    campaign_run_id=campaign_run_id,
+                    project_run_id=project_run_id,
                     entity_id=account_entity_id,
                     account_run_id=run_id,
                 )
