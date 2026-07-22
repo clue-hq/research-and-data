@@ -95,7 +95,7 @@ class ToolEstimate:
     invocation — Doc C §5). ``cost_cents`` is a :class:`~decimal.Decimal` (money is never a float);
     ``detail`` is an optional JSON-able breakdown. A pure-read/control tool returns
     :meth:`free` (zero, documented). This is distinct from the *result* of a cost-estimating tool
-    such as ``estimate_project`` (which returns a whole-campaign estimate in its references)."""
+    such as ``estimate_project`` (which returns a whole-project estimate in its references)."""
 
     cost_cents: Decimal = Decimal(0)
     detail: Mapping[str, Any] = field(default_factory=dict)
@@ -113,7 +113,10 @@ class ToolResult(BaseModel):
     e.g. the HANDOFF ``narrative_emit_skipped`` marker) the caller resolves later. The whole result
     round-trips through JSON so the D6 idempotency store can replay a stored response byte-for-byte;
     ``replayed`` is set ``True`` by the runner when a result is served from that store (so a caller
-    can tell a fresh execution from an idempotent replay)."""
+    can tell a fresh execution from an idempotent replay). ``meta`` is a small JSON-able mapping the
+    runner stamps with invocation-level metadata (today the pre-spend ``estimated_cost_cents`` from
+    :meth:`Tool.estimate`) — distinct from ``references`` (the durable handles the tool itself
+    returns)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -121,14 +124,15 @@ class ToolResult(BaseModel):
     version: str
     references: dict[str, Any] = {}
     replayed: bool = False
+    meta: dict[str, Any] = {}
 
 
 class Tool(abc.ABC):
     """The typed tool envelope. A concrete tool subclasses this at the ``clue_api`` root, sets
     ``name``/``version``/``input_model``, and implements :meth:`preconditions`, :meth:`estimate`,
-    :meth:`invoke`. All three are the tool's *only* contract with the runner — there is no other way
-    to reach the backend capability, so an invocation cannot skip the log_span/idempotency wrapper
-    (D5: an unlogged write is structurally impossible)."""
+    :meth:`invoke`. All three are the tool's *only* contract with the runner: :func:`invoke_tool` is
+    the sanctioned path to a tool's capability, and every runner-mediated invocation runs inside the
+    log_span/idempotency wrapper — a tool body never has to log or check idempotency itself (D5)."""
 
     #: The stable registry name (``reverse_profile``, ``run_deep_account``, …).
     name: ClassVar[str]

@@ -1,10 +1,17 @@
-"""The concrete toolbelt — the out-of-order matrix (the step-2 de-risk).
+"""The concrete toolbelt — the out-of-order matrix (the step-2 de-risk) + the B1 workspace guard.
 
 On a fresh workspace with **no** prerequisites, every registered tool either raises
-``PreconditionFailed`` with its documented ``reason_code`` or — for the genuinely prerequisite-free
-tools (``reverse_profile`` / ``estimate_project`` / ``start_project_run``) — succeeds with a real
-result. Never a silent-empty success (pre-mortem #2). The matrix asserts the **full** registered
-tool list is covered, so a new tool without a matrix entry fails the test.
+``PreconditionFailed`` with its documented ``reason_code`` — asserted as the **exact** reason tuple
+(N3) — or, for the genuinely prerequisite-free tools (``reverse_profile`` / ``estimate_project`` /
+``start_project_run``), succeeds with a real result. Never a silent-empty success (pre-mortem #2).
+The matrix asserts the **full** registered tool list is covered, so a new tool without a matrix
+entry fails the test.
+
+The matrix binds a **real** :class:`~clue_research.durable.ProjectRun` machine over the savepoint
+conn factory (S6/S7 — the Db stores thread the injected factory; the registry is an explicit empty
+one), so ``start_project_run``'s success is the real ``ProjectRun.start`` path, and the B1
+cross-workspace cases prove a run from another workspace refuses ``run_not_found`` (fail-closed, no
+existence leak).
 """
 
 from __future__ import annotations
@@ -14,7 +21,6 @@ from uuid import uuid4
 import pytest
 
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import ProjectRunId, new_project_run_id
 from clue_research.stage0 import ICPProposal
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolResult, invoke_tool
 from tests.api.conftest import require_profiling_db as require_profiling_db  # noqa: F401
@@ -25,34 +31,25 @@ TTL = 86400.0
 _UUID = lambda: str(uuid4())  # noqa: E731
 
 
-class _FakeRunMachine:
-    """A stand-in ``ProjectRun`` for the matrix: only ``start`` is reached (it has no precondition);
-    every other run-control tool is blocked by ``run_not_found`` before its invoke runs. Keeps the
-    matrix isolated (no committed run rows outside the test's rolled-back transaction)."""
-
-    async def start(self, **kwargs: object) -> ProjectRunId:
-        return new_project_run_id()
-
-
-# tool -> ("precondition", reason_code) | ("success", a required reference key)
-_MATRIX: dict[str, tuple[str, str]] = {
+# tool -> ("precondition", exact reason tuple) | ("success", a required reference key)
+_MATRIX: dict[str, tuple[str, object]] = {
     "reverse_profile": ("success", "client_entity_id"),
-    "synthesize_icps": ("precondition", "no_client_kb"),
-    "confirm_icp": ("precondition", "no_client_kb"),
-    "import_accounts": ("precondition", "no_active_icp"),
-    "discover_accounts": ("precondition", "run_not_found"),
-    "score_accounts": ("precondition", "run_not_found"),
-    "submit_tier_checkpoint": ("precondition", "run_not_found"),
-    "run_deep_account": ("precondition", "no_active_icp"),
-    "resolve_committee": ("precondition", "account_not_found"),
-    "profile_contact": ("precondition", "account_not_found"),
-    "run_verification": ("precondition", "run_not_found"),
-    "compose_handoff": ("precondition", "run_not_found"),
+    "synthesize_icps": ("precondition", ("no_client_kb",)),
+    "confirm_icp": ("precondition", ("no_client_kb",)),
+    "import_accounts": ("precondition", ("no_active_icp",)),
+    "discover_accounts": ("precondition", ("run_not_found",)),
+    "score_accounts": ("precondition", ("run_not_found",)),
+    "submit_tier_checkpoint": ("precondition", ("run_not_found",)),
+    "run_deep_account": ("precondition", ("no_active_icp",)),
+    "resolve_committee": ("precondition", ("account_not_found",)),
+    "profile_contact": ("precondition", ("account_not_found",)),
+    "run_verification": ("precondition", ("run_not_found",)),
+    "compose_handoff": ("precondition", ("run_not_found",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
-    "pause_run": ("precondition", "run_not_found"),
-    "resume_run": ("precondition", "run_not_found"),
-    "adjust_budget": ("precondition", "run_not_found"),
+    "pause_run": ("precondition", ("run_not_found",)),
+    "resume_run": ("precondition", ("run_not_found",)),
+    "adjust_budget": ("precondition", ("run_not_found",)),
 }
 
 
@@ -93,9 +90,12 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
 
             await load_research_packs(conn)  # client-KB / ICP / import packs (idempotent)
             cf = conn_session_factory(conn)
+            # S6/S7: NO injected run_machine — the default is a REAL ProjectRun over Db stores
+            # threaded with the savepoint factory + an explicit empty PhaseHandlerRegistry, so
+            # start_project_run below is the real ProjectRun.start path (rolled back with the test).
             registry = build_toolbelt(
+                storage=None,
                 gateway=None,  # spend tools are blocked by preconditions; invoke never reached
-                run_machine=_FakeRunMachine(),  # type: ignore[arg-type]
                 conn_factory=cf,
             )
             ctx = ToolContext(workspace_id=f"ws_{uuid4().hex[:8]}", actor="human", conn_factory=cf)
@@ -113,13 +113,81 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
                         registry, name, bodies[name], ctx, idempotency_ttl_s=TTL
                     )
                     assert isinstance(result, ToolResult)
+                    assert isinstance(expected, str)
                     assert expected in result.references, f"{name}: missing ref {expected!r}"
                 else:
                     with pytest.raises(PreconditionFailed) as ei:
                         await invoke_tool(registry, name, bodies[name], ctx, idempotency_ttl_s=TTL)
-                    assert expected in ei.value.reason_codes, (
+                    # N3: the EXACT reason tuple, not membership.
+                    assert ei.value.reason_codes == expected, (
                         f"{name}: expected {expected!r}, got {ei.value.reason_codes}"
                     )
+
+    run_async(scenario())
+
+
+def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
+    require_profiling_db: None,
+) -> None:
+    """B1 (the proven cross-tenant mutation): a run started in ws_A refuses every run-scoped tool
+    invoked from ws_B with ``run_not_found`` — fail-closed, indistinguishable from a non-existent
+    run (no existence leak) — while the same tools from ws_A see the run."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            await seed_packs(conn)
+            from clue_api.composition import load_research_packs
+
+            await load_research_packs(conn)
+            cf = conn_session_factory(conn)
+            registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
+            ctx_a = ToolContext(workspace_id="ws_A", actor="human", conn_factory=cf)
+            ctx_b = ToolContext(workspace_id="ws_B", actor="human", conn_factory=cf)
+
+            started = await invoke_tool(
+                registry,
+                "start_project_run",
+                {"icp_key": "matrix", "icp_version": 1},
+                ctx_a,
+                idempotency_ttl_s=TTL,
+            )
+            run_id = started.references["project_run_id"]
+
+            # From ws_B every run-scoped mutation refuses run_not_found (the exact tuple).
+            cases: dict[str, dict[str, object]] = {
+                "pause_run": {"project_run_id": run_id},
+                "adjust_budget": {"project_run_id": run_id, "budget_cap_cents": 500},
+                "submit_tier_checkpoint": {"project_run_id": run_id},
+                "score_accounts": {"project_run_id": run_id},
+                "discover_accounts": {"project_run_id": run_id},
+                "run_verification": {"project_run_id": run_id},
+                "compose_handoff": {"project_run_id": run_id},
+                "resume_run": {"project_run_id": run_id},
+            }
+            for name, body in cases.items():
+                with pytest.raises(PreconditionFailed) as ei:
+                    await invoke_tool(registry, name, body, ctx_b, idempotency_ttl_s=TTL)
+                assert ei.value.reason_codes == ("run_not_found",), (
+                    f"{name}: expected run_not_found from another workspace, "
+                    f"got {ei.value.reason_codes}"
+                )
+
+            # Control: the OWNING workspace is not refused run_not_found — pause_run succeeds, and
+            # score_accounts refuses on its real next precondition (discovery_not_run), proving the
+            # ws_B refusals above were scope-driven, not absence-driven.
+            paused = await invoke_tool(
+                registry, "pause_run", {"project_run_id": run_id}, ctx_a, idempotency_ttl_s=TTL
+            )
+            assert paused.references["status"] == "paused"
+            with pytest.raises(PreconditionFailed) as ei:
+                await invoke_tool(
+                    registry,
+                    "score_accounts",
+                    {"project_run_id": run_id},
+                    ctx_a,
+                    idempotency_ttl_s=TTL,
+                )
+            assert ei.value.reason_codes == ("discovery_not_run",)
 
     run_async(scenario())
 
@@ -127,7 +195,7 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
 def test_build_toolbelt_registers_the_full_set() -> None:
     """Registry construction is DB-free (preconditions/invoke touch the DB, construction does not),
     so the full set is assertable without a database."""
-    registry = build_toolbelt(gateway=None, run_machine=_FakeRunMachine())  # type: ignore[arg-type]
+    registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
     assert len(registry) == 17
 
@@ -135,7 +203,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:
     # build_toolbelt registers each tool type exactly once; a second build is an independent
     # registry (no shared mutable state), so two builds never collide.
-    a = build_toolbelt(gateway=None, run_machine=_FakeRunMachine())  # type: ignore[arg-type]
-    b = build_toolbelt(gateway=None, run_machine=_FakeRunMachine())  # type: ignore[arg-type]
+    a = build_toolbelt(storage=None, gateway=None)
+    b = build_toolbelt(storage=None, gateway=None)
     assert a is not b
     assert a.names() == b.names()
