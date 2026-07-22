@@ -86,6 +86,15 @@ class Settings(BaseSettings):
     # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
     storage_orphan_sweep_interval_s: float = 21600.0  # 6h
 
+    # --- fleet run-start composition (PB-B4 slice 1; append-only per treaty §3.2) ---
+    # LRU capacity of the ``ComposingRunDriver``'s per-``(workspace_id, icp_key, icp_version)``
+    # ``PhaseHandlerRegistry`` + ``ProjectRun`` cache (D1: two concurrent runs with different ICPs
+    # never fight over the DEEP/VERIFICATION slot — each drives its own composed registry). The
+    # durable state (project_run / ledger / budget) is shared; only the cheap state-machine object
+    # + its handler registry are cached, so a small window suffices. Env:
+    # ``CLUE_COMPOSER_REGISTRY_CACHE_SIZE``.
+    composer_registry_cache_size: int = 8
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).

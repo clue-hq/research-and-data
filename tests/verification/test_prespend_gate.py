@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -389,6 +390,57 @@ def test_load_pre_spend_policy_reads_the_most_specific_row() -> None:
             assert glob.requires_strong_key is False
             acme = await load_pre_spend_policy(conn, workspace_id="acme")
             assert acme.enforce_tier_in_plan is False
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_duplicate_global_default_row_is_rejected() -> None:
+    """B4 slice 1 (``[M9.1×M0.4]``): ``pre_spend_policy_scope_version`` is now ``NULLS NOT
+    DISTINCT``, so the global-default slot (``workspace_id`` NULL, ``icp_version`` NULL) admits only
+    ONE row per version — a second same-version global row is a write-time IntegrityError, not a
+    silent duplicate the loader could resolve non-deterministically."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO pre_spend_policy (policy_id, rules_json, version) "
+                    "VALUES ('g1', CAST(:r AS jsonb), 1)"
+                ),
+                {"r": "{}"},
+            )
+            sp = await conn.begin_nested()
+            with pytest.raises(IntegrityError):
+                await conn.execute(
+                    text(
+                        "INSERT INTO pre_spend_policy (policy_id, rules_json, version) "
+                        "VALUES ('g2', CAST(:r AS jsonb), 1)"  # same (NULL, NULL, 1) slot
+                    ),
+                    {"r": "{}"},
+                )
+            await sp.rollback()
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_load_pre_spend_policy_picks_the_latest_version_deterministically() -> None:
+    """The loader is deterministic: the highest ``version`` within a scope wins, with the
+    ``created_at``/``policy_id`` tie-break (B4 slice 1) as the belt for a pre-existing duplicate."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            # Two global rows at different versions — v2 must win (ORDER BY version DESC).
+            await conn.execute(
+                text(
+                    "INSERT INTO pre_spend_policy (policy_id, rules_json, version) VALUES "
+                    "('gv1', CAST(:a AS jsonb), 1), ('gv2', CAST(:b AS jsonb), 2)"
+                ),
+                {"a": '{"requires_strong_key": true}', "b": '{"requires_strong_key": false}'},
+            )
+            policy = await load_pre_spend_policy(conn)
+            assert policy.requires_strong_key is False  # v2 (the latest version) won
 
     run_async(_run())
 
