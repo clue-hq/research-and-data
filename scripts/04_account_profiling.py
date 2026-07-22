@@ -71,6 +71,10 @@ async def main(
         print(f"dropped aspects   : {', '.join(result.dropped_aspects)}")
     for cov in result.aspects:
         print(f"  aspect {cov.aspect}: filled={cov.fields_filled}")
+    print(
+        "\nNext: scripts/05_committee_discovery.py "
+        f"--workspace-id {workspace_id} --account-id {result.account_entity_id}"
+    )
 
 
 if __name__ == "__main__":
