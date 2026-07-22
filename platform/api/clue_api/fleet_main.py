@@ -46,6 +46,7 @@ from clue_api.fleet_wiring import (
     register_boot_handlers,
 )
 from clue_api.run_composition import ComposingRunDriver
+from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_config import Settings, load_settings
 from clue_core import ProjectPhase
@@ -122,8 +123,13 @@ async def _serve() -> None:
         # registry (DEEP/VERIFICATION campaign-scoped, single-flight + rubric priority ON) over the
         # shared durable store/ledger/budget at each run's first advance. The lock factory is built
         # **eager** here — the worker runs inside ``redis_lifespan``, so single-flight binds now.
+        # The B4 slice-3 SSE emitter: every advance boundary appends run_event rows so the detached
+        # worker's drives are visible on the treaty SSE stream (best-effort, never sinks a drive).
         driver = ComposingRunDriver(
-            settings=settings, storage=storage, lock_factory=build_account_lock_factory()
+            settings=settings,
+            storage=storage,
+            lock_factory=build_account_lock_factory(),
+            event_emitter=build_run_event_emitter(),
         )
         worker = build_fleet_worker(settings, driver=driver)
         sweep = _start_orphan_sweep(settings, storage)

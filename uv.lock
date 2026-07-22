@@ -774,6 +774,22 @@ requires-dist = [
 name = "clue-projections"
 version = "0.0.0"
 source = { editable = "platform/projections" }
+dependencies = [
+    { name = "clue-core" },
+    { name = "clue-db" },
+    { name = "clue-research" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-db", editable = "libs/clue-db" },
+    { name = "clue-research", editable = "subsystems/research" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+]
 
 [[package]]
 name = "clue-research"

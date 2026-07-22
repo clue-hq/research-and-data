@@ -382,6 +382,26 @@ type = "forbidden"
 source_modules = ["clue_toolbelt"]
 forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api"]
 
+# Rule P1 — projections purity (D7, PB-B4 slice 3): the read side may import the clue_research READ
+# surfaces (review's ObservabilitySurface panels + the durable/discovery_scoring read helpers) and
+# the shared base (clue_core / clue_db), but NEVER the write/execution planes — toolbelt, agents,
+# fleet, api, another subsystem (memory/content), the gateway, or the lock lib. The concrete
+# durable-backed readers are built at the clue_api composition root and injected in, so the
+# projection logic stays a pure read; the run_event EMITTER + the manifest PATCH ops (writes) live
+# at that root, never here (a write in clue_projections would break the MVCC-only read discipline).
+# Machine-enforced.
+[[tool.importlinter.contracts]]
+name = "projections import only research read surfaces + shared base"
+type = "forbidden"
+source_modules = ["clue_projections"]
+# Direct imports only (mirrors the fleet F2 contract): projections directly import only the
+# clue_research READ surfaces (review / durable / discovery_scoring) + the base; those research
+# packages *themselves* legitimately reach clue_locks (durable's Beat-0 entity lock;
+# discovery_scoring -> identity -> review), and those transitive edges are their business, not a
+# projections leak. A *direct* projections -> forbidden import is still caught.
+allow_indirect_imports = "True"
+forbidden_modules = ["clue_toolbelt", "clue_agents", "clue_fleet", "clue_api", "clue_memory", "clue_content", "clue_gateway", "clue_locks"]
+
 # Rule F1 — the fleet is the platform's execution shell AROUND the research subsystem: research
 # never imports it (the drive seam is one-way — the worker drives durable's public surface, and
 # no research code may learn the queue/lease exist). PB-B1.

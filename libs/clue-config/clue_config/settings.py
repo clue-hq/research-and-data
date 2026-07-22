@@ -108,6 +108,18 @@ class Settings(BaseSettings):
     # request body is an ``IdempotencyConflict``. Env: ``CLUE_TOOLBELT_IDEMPOTENCY_TTL_S``.
     toolbelt_idempotency_ttl_s: float = 86400.0  # 24h
 
+    # --- treaty SSE (PB-B4 slice 3; append-only per treaty §3.2 / D10) ---
+    # How far back the SSE surface will replay ``run_event`` rows for a reconnecting consumer
+    # (``Last-Event-ID``). A cursor whose event is older than this window can no longer be replayed
+    # gaplessly, so the surface emits ``stream.reset`` (the client re-fetches the projection) rather
+    # than promise continuity. A read-time horizon (``created_at`` arithmetic), not a DB sweep. Env:
+    # ``CLUE_SSE_REPLAY_HORIZON_S``.
+    sse_replay_horizon_s: float = 86400.0  # 24h
+    # TTL of a single-use SSE ``stream_token``: a minted token opens the ``…/events`` stream once
+    # within this window, then is consumed (``used_at`` stamped). A reconnect re-mints. Env:
+    # ``CLUE_SSE_STREAM_TOKEN_TTL_S``.
+    sse_stream_token_ttl_s: float = 300.0  # 5m
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).
