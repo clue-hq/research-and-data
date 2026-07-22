@@ -370,6 +370,18 @@ type = "forbidden"
 source_modules = ["clue_agents"]
 forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_api"]
 
+# Rule T1 — toolbelt purity (D5, PB-B4 slice 2): the typed tool envelope is dependency-inverted like
+# the resolver seam — it imports ONLY the shared base (clue_core / clue_config / clue_db / clue_obs).
+# The concrete tools that actually touch a capability are constructed at the clue_api composition
+# root (the only package that may import everything), NOT in clue_toolbelt. So the toolbelt shape
+# stays stable while the capabilities behind it evolve, and a tool can never smuggle a research
+# import into the pure envelope. Machine-enforced.
+[[tool.importlinter.contracts]]
+name = "toolbelt imports only the shared base"
+type = "forbidden"
+source_modules = ["clue_toolbelt"]
+forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api"]
+
 # Rule F1 — the fleet is the platform's execution shell AROUND the research subsystem: research
 # never imports it (the drive seam is one-way — the worker drives durable's public surface, and
 # no research code may learn the queue/lease exist). PB-B1.

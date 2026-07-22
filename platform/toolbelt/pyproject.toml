@@ -1,10 +1,20 @@
 [project]
 name = "clue-toolbelt"
 version = "0.0.0"
-description = "Plane 2 — typed tool envelope + registrations (build step 2) (scaffold — Doc R R2)."
+description = "Plane 2 — the typed tool envelope + registry + invocation runner (build step 2 / REQ-02)."
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
-dependencies = []
+dependencies = [
+    # shared base ONLY (D5 purity — dependency-inverted like the resolver seam; the concrete tools
+    # that touch research/fleet/… are constructed at the clue_api composition root, never here).
+    "clue-core",
+    "clue-config",
+    "clue-db",
+    "clue-obs",
+    # runtime
+    "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -12,3 +22,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["clue_toolbelt"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }
+clue-config = { workspace = true }
+clue-db = { workspace = true }
+clue-obs = { workspace = true }

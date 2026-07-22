@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     # Env: ``CLUE_GATEWAY_ALLOW_STUB``.
     gateway_allow_stub: bool = False
 
+    # --- toolbelt A9 idempotency (PB-B4 slice 2; append-only per treaty §3.2 / D10) ---
+    # Read-time freshness window of the ``tool_invocation`` idempotency record (D6): a keyed tool
+    # invocation replays its stored response for this long; a reused key past the window is a fresh
+    # invocation (its stale row is overwritten), and a reused key *within* the window with a changed
+    # request body is an ``IdempotencyConflict``. Env: ``CLUE_TOOLBELT_IDEMPOTENCY_TTL_S``.
+    toolbelt_idempotency_ttl_s: float = 86400.0  # 24h
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).

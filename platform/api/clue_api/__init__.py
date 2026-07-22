@@ -155,6 +155,10 @@ from clue_api.storage_wiring import (
     run_orphan_blob_sweep,
 )
 from clue_api.synthesis_wiring import register_synthesis_wiring
+from clue_api.toolbelt_wiring import (
+    GatewayRequired,
+    build_toolbelt,
+)
 from clue_api.verification import (
     VerificationPhaseHandler,
     build_verification_phase_handler,
@@ -267,4 +271,7 @@ __all__ = [
     "CompositionUnavailable",
     "SpecLoader",
     "ClientInputProvider",
+    # B4 slice 2: the concrete toolbelt over the existing capabilities (toolbelt_wiring)
+    "build_toolbelt",
+    "GatewayRequired",
 ]
