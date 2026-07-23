@@ -64,6 +64,7 @@ from clue_research.verification.faithfulness import (
     METRIC_FAITHFULNESS_RE_RETRIEVAL,
     METRIC_FAITHFULNESS_SUPPORTED,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -265,8 +266,13 @@ def _judge(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(  # type: ignore[return-value]
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 

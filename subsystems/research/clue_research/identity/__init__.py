@@ -90,6 +90,7 @@ from clue_research.identity.review import (
     ReviewResolution,
     ReviewStatus,
     ReviewTask,
+    ReviewTaskUnscopedError,
     auto_merge,
     current_value_resolved,
     disposition,
@@ -163,6 +164,7 @@ __all__ = [
     "ReviewTask",
     "ReviewStatus",
     "ReviewResolution",
+    "ReviewTaskUnscopedError",
     "MergeConflictError",
     # cross-tenant reuse + isolation (M2.5)
     "classify_reuse_scope",

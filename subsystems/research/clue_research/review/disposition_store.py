@@ -357,7 +357,7 @@ async def capture_downstream(
             registry_ids=row.registry_ids,
             entity_type=EntityType.ACCOUNT,
         )
-        result = (await resolve_many(conn, [observation]))[0]
+        result = (await resolve_many(conn, [observation], workspace_id=row.workspace_id))[0]
         top = result.top
         confident = top is not None and (
             result.method is ResolutionMethod.DETERMINISTIC

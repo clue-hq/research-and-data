@@ -26,6 +26,7 @@ from clue_research.identity import (
     MergeConflictError,
     Observation,
     ReviewStatus,
+    ReviewTaskUnscopedError,
     auto_merge,
     current_value_resolved,
     disposition,
@@ -48,6 +49,7 @@ from clue_research.identity.review import (
     DispositionKind,
     ReviewResolution,
 )
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -93,8 +95,9 @@ def test_auto_merge_executor_unions_and_is_idempotent() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             survivor = await insert_account_entity(
-                conn, canonical_name="Acme", registry_ids={"DUNS": "111"}
+                conn, canonical_name="Acme", registry_ids={"DUNS": "111"}, workspace_id=ws
             )
             loser = await insert_account_entity(
                 conn,
@@ -102,6 +105,7 @@ def test_auto_merge_executor_unions_and_is_idempotent() -> None:
                 primary_domain="acme.com",
                 aliases=["acme labs"],
                 registry_ids={"LEI": "222"},
+                workspace_id=ws,
             )
             result = await auto_merge(conn, loser, survivor, top_score=1.0, config_version=1)
             assert result == survivor
@@ -134,9 +138,14 @@ def test_auto_merge_refuses_to_repoint_an_already_merged_loser() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor1 = await insert_account_entity(conn, canonical_name="Acme One")
-            survivor2 = await insert_account_entity(conn, canonical_name="Acme Two")
-            loser = await insert_account_entity(conn, canonical_name="Acme Loser")
+            ws = await seed_workspace(conn)
+            survivor1 = await insert_account_entity(
+                conn, canonical_name="Acme One", workspace_id=ws
+            )
+            survivor2 = await insert_account_entity(
+                conn, canonical_name="Acme Two", workspace_id=ws
+            )
+            loser = await insert_account_entity(conn, canonical_name="Acme Loser", workspace_id=ws)
             await auto_merge(conn, loser, survivor1)
             with pytest.raises(MergeConflictError):
                 await auto_merge(conn, loser, survivor2)
@@ -151,9 +160,12 @@ def test_split_restores_relinquished_strong_keys() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await insert_account_entity(conn, canonical_name="Acme")  # no domain
+            ws = await seed_workspace(conn)
+            survivor = await insert_account_entity(
+                conn, canonical_name="Acme", workspace_id=ws
+            )  # no domain
             loser = await insert_account_entity(
-                conn, canonical_name="Acme Two", primary_domain="acme.com"
+                conn, canonical_name="Acme Two", primary_domain="acme.com", workspace_id=ws
             )
             await auto_merge(conn, loser, survivor)
             # After merge: survivor absorbed the domain; loser relinquished it.
@@ -177,9 +189,16 @@ def test_disposition_auto_merges_on_deterministic_hit() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            acme = await _seed(conn, canonical_name="Acme", primary_domain="acme.com")
-            result = await resolve(conn, Observation(name="Acme Inc", domain="acme.com"))
-            disp = await disposition(conn, Observation(name="Acme Inc", domain="acme.com"), result)
+            ws = await seed_workspace(conn)
+            acme = await _seed(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
+            )
+            result = await resolve(
+                conn, Observation(name="Acme Inc", domain="acme.com"), workspace_id=ws
+            )
+            disp = await disposition(
+                conn, Observation(name="Acme Inc", domain="acme.com"), result, workspace_id=ws
+            )
             assert disp.outcome is DispositionOutcome.AUTO_MERGED
             assert disp.entity_id == acme
             audit = await get_dispositions(conn, acme)
@@ -194,22 +213,25 @@ def test_disposition_mid_band_enqueues_review_and_mutates_nothing() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             us = await _seed(
                 conn,
                 canonical_name="Apex Logistics",
                 primary_domain="apex.com",
                 hq_geo={"country": "US"},
+                workspace_id=ws,
             )
             de = await _seed(
                 conn,
                 canonical_name="Apex Logistics",
                 primary_domain="apex.de",
                 hq_geo={"country": "DE"},
+                workspace_id=ws,
             )
             obs = Observation(name="Apex Logistics", geo={"country": "US"})
-            result = await resolve(conn, obs)
+            result = await resolve(conn, obs, workspace_id=ws)
             assert 0.70 <= result.top_score < 0.95  # mid-band by construction
-            disp = await disposition(conn, obs, result)
+            disp = await disposition(conn, obs, result, workspace_id=ws)
             assert disp.outcome is DispositionOutcome.ENQUEUED
             tasks = await list_open_tasks(conn)
             assert len(tasks) == 1 and tasks[0].id == disp.task_id
@@ -225,9 +247,10 @@ def test_disposition_below_low_admits_new_candidate() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             obs = Observation(name="Totally New Co", domain="totallynew.example")
-            result = await resolve(conn, obs)  # empty store → no candidates
-            disp = await disposition(conn, obs, result)
+            result = await resolve(conn, obs, workspace_id=ws)  # empty store → no candidates
+            disp = await disposition(conn, obs, result, workspace_id=ws)
             assert disp.outcome is DispositionOutcome.NEW_ENTITY
             assert disp.entity_id is not None
             new = await get_account(conn, disp.entity_id)
@@ -242,12 +265,20 @@ def test_review_resolve_merge_into_applies_merge() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await _seed(conn, canonical_name="Acme", primary_domain="acme.com")
-            subject = await insert_account_entity(conn, canonical_name="Acme Co")
+            ws = await seed_workspace(conn)
+            survivor = await _seed(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
+            )
+            subject = await insert_account_entity(conn, canonical_name="Acme Co", workspace_id=ws)
             obs = Observation(name="Acme Co")
-            result = await resolve(conn, obs)
+            result = await resolve(conn, obs, workspace_id=ws)
             task_id = await enqueue_review_task(
-                conn, obs, result, config_version=1, subject_entity_id=subject
+                conn,
+                obs,
+                result,
+                config_version=1,
+                workspace_id=ws,
+                subject_entity_id=subject,
             )
             returned = await resolve_merge_into(conn, task_id, survivor, resolved_by="reviewer-1")
             assert returned == survivor
@@ -265,14 +296,22 @@ def test_review_resolve_not_a_match_keeps_both() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            existing = await _seed(conn, canonical_name="Apex Logistics", hq_geo={"country": "US"})
+            ws = await seed_workspace(conn)
+            existing = await _seed(
+                conn, canonical_name="Apex Logistics", hq_geo={"country": "US"}, workspace_id=ws
+            )
             subject = await insert_account_entity(
-                conn, canonical_name="Apex Logistics", hq_geo={"country": "DE"}
+                conn, canonical_name="Apex Logistics", hq_geo={"country": "DE"}, workspace_id=ws
             )
             obs = Observation(name="Apex Logistics", geo={"country": "DE"})
-            result = await resolve(conn, obs)
+            result = await resolve(conn, obs, workspace_id=ws)
             task_id = await enqueue_review_task(
-                conn, obs, result, config_version=1, subject_entity_id=subject
+                conn,
+                obs,
+                result,
+                config_version=1,
+                workspace_id=ws,
+                subject_entity_id=subject,
             )
             await resolve_not_a_match(conn, task_id, resolved_by="reviewer-2")
             # Both remain distinct, unmerged.
@@ -289,9 +328,12 @@ def test_review_resolve_create_new_entity() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             obs = Observation(name="Brand New Corp", domain="brandnew.example")
-            result = await resolve(conn, obs)
-            task_id = await enqueue_review_task(conn, obs, result, config_version=1)
+            result = await resolve(conn, obs, workspace_id=ws)
+            task_id = await enqueue_review_task(
+                conn, obs, result, config_version=1, workspace_id=ws
+            )
             new_id = await resolve_create_new_entity(conn, task_id, resolved_by="reviewer-3")
             new = await get_account(conn, new_id)
             assert new is not None and new.canonical_name == "Brand New Corp"
@@ -306,8 +348,9 @@ def test_split_reverses_a_merge() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await insert_account_entity(conn, canonical_name="Acme")
-            loser = await insert_account_entity(conn, canonical_name="Acme Two")
+            ws = await seed_workspace(conn)
+            survivor = await insert_account_entity(conn, canonical_name="Acme", workspace_id=ws)
+            loser = await insert_account_entity(conn, canonical_name="Acme Two", workspace_id=ws)
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
             assert await surviving_id(conn, loser, EntityType.ACCOUNT) == survivor
             await split_merge(conn, loser, resolved_by="reviewer-4")
@@ -326,8 +369,9 @@ def test_claims_readable_under_survivor_with_no_claim_update() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await insert_account_entity(conn, canonical_name="Acme")
-            loser = await insert_account_entity(conn, canonical_name="Acme Two")
+            ws = await seed_workspace(conn)
+            survivor = await insert_account_entity(conn, canonical_name="Acme", workspace_id=ws)
+            loser = await insert_account_entity(conn, canonical_name="Acme Two", workspace_id=ws)
             claim = account_claim(
                 entity_id=loser,
                 field_key="account.recent_funding",
@@ -368,8 +412,9 @@ def test_merge_resolved_read_does_not_leak_across_tenants() -> None:
         from clue_core import ReuseScope
 
         async with rollback_conn() as conn:
-            survivor = await insert_account_entity(conn, canonical_name="Acme")
-            loser = await insert_account_entity(conn, canonical_name="Acme Two")
+            ws = await seed_workspace(conn)
+            survivor = await insert_account_entity(conn, canonical_name="Acme", workspace_id=ws)
+            loser = await insert_account_entity(conn, canonical_name="Acme Two", workspace_id=ws)
             private = account_claim(
                 entity_id=loser,
                 field_key="account.scoring_fit",
@@ -413,18 +458,21 @@ def test_threshold_config_moves_borderline_pair() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            await _seed(conn, canonical_name="Apex Logistics", hq_geo={"country": "US"})
+            ws = await seed_workspace(conn)
+            await _seed(
+                conn, canonical_name="Apex Logistics", hq_geo={"country": "US"}, workspace_id=ws
+            )
             obs = Observation(name="Apex Logistics", geo={"country": "US"})
-            result = await resolve(conn, obs)
+            result = await resolve(conn, obs, workspace_id=ws)
             assert 0.70 <= result.top_score < 0.95
 
             # Default policy (auto=0.95): the borderline pair routes to review.
-            default = await disposition(conn, obs, result)
+            default = await disposition(conn, obs, result, workspace_id=ws)
             assert default.outcome is DispositionOutcome.ENQUEUED
 
             # A more aggressive policy version (auto=0.70): the same pair now auto-merges.
             aggressive = DispositionPolicy(version=2, auto_merge_threshold=0.70)
-            moved = await disposition(conn, obs, result, policy=aggressive)
+            moved = await disposition(conn, obs, result, policy=aggressive, workspace_id=ws)
             assert moved.outcome is DispositionOutcome.AUTO_MERGED
 
     run_async(_run())
@@ -444,8 +492,11 @@ def test_auto_merge_acquires_redis_locks_and_completes() -> None:
             pytest.skip("CLUE_REDIS_URL unset or Redis unreachable; run `make redis-up`")
         try:
             async with rollback_conn() as conn:
-                survivor = await insert_account_entity(conn, canonical_name="Acme")
-                loser = await insert_account_entity(conn, canonical_name="Acme Two")
+                ws = await seed_workspace(conn)
+                survivor = await insert_account_entity(conn, canonical_name="Acme", workspace_id=ws)
+                loser = await insert_account_entity(
+                    conn, canonical_name="Acme Two", workspace_id=ws
+                )
                 result = await auto_merge(conn, loser, survivor, redis=client)
                 assert result == survivor
                 assert await surviving_id(conn, loser, EntityType.ACCOUNT) == survivor
@@ -460,8 +511,9 @@ def test_every_disposition_is_audited() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await insert_account_entity(conn, canonical_name="Acme")
-            loser = await insert_account_entity(conn, canonical_name="Acme Two")
+            ws = await seed_workspace(conn)
+            survivor = await insert_account_entity(conn, canonical_name="Acme", workspace_id=ws)
+            loser = await insert_account_entity(conn, canonical_name="Acme Two", workspace_id=ws)
             await auto_merge(
                 conn, loser, survivor, top_score=1.0, decided_by="auto", config_version=7
             )
@@ -471,5 +523,57 @@ def test_every_disposition_is_audited() -> None:
             assert top["decided_by"] == "auto"
             assert top["config_version"] == 7
             assert top["top_score"] is not None
+
+    run_async(_run())
+
+
+def test_disposition_new_entity_stamps_workspace() -> None:
+    """A below-low disposition admits a fresh candidate stamped with the call's workspace_id."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            obs = Observation(name="Totally New Co", domain="totallynew.example")
+            result = await resolve(conn, obs, workspace_id=ws)  # empty store → no candidates
+            outcome = await disposition(conn, obs, result, workspace_id=ws, decided_by="test")
+            assert outcome.outcome is DispositionOutcome.NEW_ENTITY
+            assert outcome.entity_id is not None
+            account = await get_account(conn, outcome.entity_id)
+            assert account is not None and account.workspace_id == ws
+
+    run_async(_run())
+
+
+def test_resolve_create_new_entity_stamps_task_workspace() -> None:
+    """create_new_entity stamps the new account with the review task's workspace_id."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            obs = Observation(name="Brand New Corp", domain="brandnew.example")
+            result = await resolve(conn, obs, workspace_id=ws)
+            task_id = await enqueue_review_task(
+                conn, obs, result, config_version=1, workspace_id=ws
+            )
+            new_id = await resolve_create_new_entity(conn, task_id, resolved_by="test")
+            account = await get_account(conn, new_id)
+            assert account is not None and account.workspace_id == ws
+
+    run_async(_run())
+
+
+def test_resolve_create_new_entity_on_unscoped_task_raises() -> None:
+    """A review task with workspace_id=None cannot admit a new account (fail-closed): resolving it
+    via create_new_entity raises ReviewTaskUnscopedError (no unscoped account creation)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            obs = Observation(name="Unscoped Corp", domain="unscoped.example")
+            result = await resolve(conn, obs, workspace_id=ws)
+            # Enqueue with no workspace_id → the task is unscoped.
+            task_id = await enqueue_review_task(conn, obs, result, config_version=1)
+            with pytest.raises(ReviewTaskUnscopedError):
+                await resolve_create_new_entity(conn, task_id, resolved_by="test")
 
     run_async(_run())

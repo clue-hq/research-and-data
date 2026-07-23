@@ -64,6 +64,7 @@ from clue_research.profiling.contact.fill import fill_contact_field
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
 from clue_research.verification import classify_binding
+from tests._workspace import seed_workspace
 from tests.profiling.conftest import (
     FakeCommitteeSource,
     FakeFacetResolver,
@@ -306,11 +307,13 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
                 enabled_packs=("probepack",),
             )
             bind_resolver(_GATE_SOURCE, _Fake([_probe_claim()]))
+            await seed_workspace(conn, _TENANT)
             account_id = await insert_account_entity(
                 conn,
                 canonical_name="Acme Robotics",
                 primary_domain="acme.com",
                 status=AccountStatus.ACTIVE,
+                workspace_id=_TENANT,
             )
 
             # The gate writes its audit into THIS rolled-back transaction (tests inject the conn).
@@ -438,11 +441,13 @@ def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db:
                 enabled_packs=("synthpack",),
             )
             bind_resolver(_T4_SOURCE, _FakeT4([_t4_probe_claim()]))
+            await seed_workspace(conn, _TENANT)
             account_id = await insert_account_entity(
                 conn,
                 canonical_name="Acme Robotics",
                 primary_domain="acme.com",
                 status=AccountStatus.ACTIVE,
+                workspace_id=_TENANT,
             )
 
             @asynccontextmanager

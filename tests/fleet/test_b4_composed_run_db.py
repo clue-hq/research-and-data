@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from tests._workspace import seed_workspace
 from tests.api.test_storage_wiring import FakeStorage
 from tests.fleet.conftest import ProcessLocalLockFactory, run_async
 
@@ -95,6 +96,10 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
                 # would leak into (and collide with) other suites' redefinitions (committed-row
                 # hygiene).
                 async with transaction() as conn:
+                    # Committed workspace row so the reverse-profiling handler's account insert
+                    # satisfies the account_entity workspace FK (accounts are workspace-local —
+                    # [B3×research]).
+                    await seed_workspace(conn, workspace_id)
                     await load_core_pack(conn)
                 async with transaction() as conn:
                     await create_icp_spec(

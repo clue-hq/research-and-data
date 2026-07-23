@@ -181,6 +181,7 @@ async def _admit_resolved(
     observation: Observation,
     run_id: RunId,
     *,
+    workspace_id: str,
     redis: Redis | None,
     resolution_policy: ResolutionPolicy,
     disposition_policy: DispositionPolicy,
@@ -188,9 +189,17 @@ async def _admit_resolved(
 ) -> AdmissionResult:
     """Resolve the observation, route it through the M2 disposition band, and (if admitted) stamp
     the discovery-provenance claim. Run under the in-flight lock when one is held."""
-    result = await resolve(conn, observation, policy=resolution_policy, embedder=embedder)
+    result = await resolve(
+        conn, observation, policy=resolution_policy, embedder=embedder, workspace_id=workspace_id
+    )
     decision = await disposition(
-        conn, observation, result, policy=disposition_policy, redis=redis, decided_by="discovery"
+        conn,
+        observation,
+        result,
+        policy=disposition_policy,
+        redis=redis,
+        workspace_id=workspace_id,
+        decided_by="discovery",
     )
     if decision.outcome is DispositionOutcome.ENQUEUED:
         return AdmissionResult(status=AdmissionStatus.NEEDS_REVIEW, review_task_id=decision.task_id)
@@ -210,6 +219,7 @@ async def admit(
     candidate: CandidateHypothesis,
     run_id: RunId,
     *,
+    workspace_id: str,
     redis: Redis | None = None,
     existence: ExistenceCheck = DEFAULT_EXISTENCE_CHECK,
     resolution_policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
@@ -243,6 +253,7 @@ async def admit(
                 candidate,
                 observation,
                 run_id,
+                workspace_id=workspace_id,
                 redis=redis,
                 resolution_policy=resolution_policy,
                 disposition_policy=disposition_policy,
@@ -253,6 +264,7 @@ async def admit(
         candidate,
         observation,
         run_id,
+        workspace_id=workspace_id,
         redis=redis,
         resolution_policy=resolution_policy,
         disposition_policy=disposition_policy,

@@ -36,6 +36,7 @@ from clue_research.stage0.fields import (
     CLIENT_PRODUCT,
     CLIENT_VALUE_PROP,
 )
+from tests._workspace import seed_workspace
 from tests.stage0._fakes import build_client_kb
 from tests.stage0.conftest import run_async
 
@@ -82,6 +83,8 @@ def test_handler_emits_artifact_for_confirmed_spec() -> None:
             client = f"tenant-icp-{suffix}"
             # build + confirm a spec in a committed transaction, then run the handler over it
             async with transaction() as conn:
+                # accounts are workspace-local — seed the workspace before the KB build inserts one
+                await seed_workspace(conn, client)
                 ref = await build_client_kb(
                     conn, workspace_id=client, suffix=suffix, asserted=_ASSERTED
                 )

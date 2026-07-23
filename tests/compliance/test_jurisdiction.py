@@ -51,6 +51,7 @@ from clue_research.compliance.jurisdiction import (
     _confidence,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -199,12 +200,14 @@ def _resolver(
 
 
 async def _account(conn: AsyncConnection, *, hq_geo: dict[str, object] | None = None) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
         conn,
         canonical_name="Acme GmbH",
         primary_domain="acme.de",
         hq_geo=hq_geo,
         status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

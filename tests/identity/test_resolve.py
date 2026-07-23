@@ -28,6 +28,7 @@ from clue_research.identity import (
     resolve_many,
 )
 from clue_research.identity.embedding import Embedder
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -65,10 +66,16 @@ def test_deterministic_domain_hit_makes_zero_model_calls() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            acme = await _seed(conn, canonical_name="Acme", primary_domain="acme.com")
+            ws = await seed_workspace(conn)
+            acme = await _seed(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
+            )
             spy = _SpyEmbedder()
             result = await resolve(
-                conn, Observation(name="Acme Inc", domain="https://www.acme.com/"), embedder=spy
+                conn,
+                Observation(name="Acme Inc", domain="https://www.acme.com/"),
+                embedder=spy,
+                workspace_id=ws,
             )
             assert result.method is ResolutionMethod.DETERMINISTIC
             assert result.top_score == 1.0
@@ -83,12 +90,16 @@ def test_deterministic_registry_hit() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            acme = await _seed(conn, canonical_name="Acme", registry_ids={"DUNS": "123456789"})
+            ws = await seed_workspace(conn)
+            acme = await _seed(
+                conn, canonical_name="Acme", registry_ids={"DUNS": "123456789"}, workspace_id=ws
+            )
             spy = _SpyEmbedder()
             result = await resolve(
                 conn,
                 Observation(name="Acme", registry_ids={"duns": "12-345-6789"}),
                 embedder=spy,
+                workspace_id=ws,
             )
             assert result.method is ResolutionMethod.DETERMINISTIC
             assert result.top is not None and result.top.entity_id == acme
@@ -103,28 +114,39 @@ def test_ibm_variants_resolve_to_the_same_entity() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             ibm = await _seed(
                 conn,
                 canonical_name="International Business Machines",
                 primary_domain="ibm.com",
                 aliases=["IBM", "I.B.M.", "International Business Machines Corp."],
+                workspace_id=ws,
             )
-            await _seed(conn, canonical_name="Globex Pharmaceuticals", primary_domain="globex.com")
+            await _seed(
+                conn,
+                canonical_name="Globex Pharmaceuticals",
+                primary_domain="globex.com",
+                workspace_id=ws,
+            )
 
             for name in ("IBM", "I.B.M.", "International Business Machines Corp."):
-                result = await resolve(conn, Observation(name=name))
+                result = await resolve(conn, Observation(name=name), workspace_id=ws)
                 assert result.top is not None, f"no candidate for {name!r}"
                 assert result.top.entity_id == ibm, f"{name!r} did not resolve to IBM"
 
             # The real domain resolves deterministically.
-            by_domain = await resolve(conn, Observation(name="IBM", domain="ibm.com"))
+            by_domain = await resolve(
+                conn, Observation(name="IBM", domain="ibm.com"), workspace_id=ws
+            )
             assert by_domain.method is ResolutionMethod.DETERMINISTIC
             assert by_domain.top is not None and by_domain.top.entity_id == ibm
 
             # An unknown/parked domain is NOT trusted: it misses deterministically and the name
             # (Globex) drives a probabilistic resolution — no wrong collapse onto IBM.
             parked = await resolve(
-                conn, Observation(name="Globex", domain="ibm-parked-stale.example")
+                conn,
+                Observation(name="Globex", domain="ibm-parked-stale.example"),
+                workspace_id=ws,
             )
             assert parked.method is ResolutionMethod.PROBABILISTIC
             assert parked.top is not None and parked.top.entity_id != ibm
@@ -138,19 +160,24 @@ def test_same_name_different_geo_do_not_collapse() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             us = await _seed(
                 conn,
                 canonical_name="Apex Logistics",
                 primary_domain="apexlogistics.com",
                 hq_geo={"country": "US"},
+                workspace_id=ws,
             )
             de = await _seed(
                 conn,
                 canonical_name="Apex Logistics",
                 primary_domain="apex-logistics.de",
                 hq_geo={"country": "DE"},
+                workspace_id=ws,
             )
-            result = await resolve(conn, Observation(name="Apex Logistics", geo={"country": "US"}))
+            result = await resolve(
+                conn, Observation(name="Apex Logistics", geo={"country": "US"}), workspace_id=ws
+            )
             ids = {c.entity_id for c in result.candidates}
             assert {us, de} <= ids  # both surfaced, neither collapsed away
             # No strong key → the top score is structurally capped below the auto-merge band, at the
@@ -167,14 +194,17 @@ def test_bulk_resolve_many_partitions_without_throwing() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            acme = await _seed(conn, canonical_name="Acme", primary_domain="acme.com")
+            ws = await seed_workspace(conn)
+            acme = await _seed(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
+            )
             rows = [
                 Observation(name="Acme", domain="acme.com"),  # deterministic
                 Observation(name="Totally Unknown Co"),  # probabilistic, no match
                 Observation(name=""),  # garbage: empty name
                 Observation(name="🙂🙂🙂 \x00 weird"),  # garbage: junk
             ]
-            results = await resolve_many(conn, rows)
+            results = await resolve_many(conn, rows, workspace_id=ws)
             assert len(results) == len(rows)
             assert results[0].method is ResolutionMethod.DETERMINISTIC
             assert results[0].top is not None and results[0].top.entity_id == acme
@@ -190,10 +220,13 @@ def test_candidate_set_is_bounded_top_k() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             for i in range(15):
-                await _seed(conn, canonical_name=f"Apex Logistics {i}")
+                await _seed(conn, canonical_name=f"Apex Logistics {i}", workspace_id=ws)
             policy = ResolutionPolicy(top_k=10)
-            result = await resolve(conn, Observation(name="Apex Logistics"), policy=policy)
+            result = await resolve(
+                conn, Observation(name="Apex Logistics"), policy=policy, workspace_id=ws
+            )
             assert len(result.candidates) <= 10
 
     run_async(_run())
@@ -204,12 +237,16 @@ def test_swapping_policy_changes_scores_without_code_change() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            await _seed(conn, canonical_name="Apex Logistics", hq_geo={"country": "US"})
+            ws = await seed_workspace(conn)
+            await _seed(
+                conn, canonical_name="Apex Logistics", hq_geo={"country": "US"}, workspace_id=ws
+            )
             obs = Observation(name="Apex Logistics", geo={"country": "US"})
-            default = await resolve(conn, obs)
+            default = await resolve(conn, obs, workspace_id=ws)
             tuned = await resolve(
                 conn,
                 obs,
+                workspace_id=ws,
                 policy=ResolutionPolicy(
                     version=2,
                     weights=ScorerWeights(
@@ -232,8 +269,9 @@ def test_swapping_embedder_model_version_re_embeds() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             ibm = await insert_account_entity(
-                conn, canonical_name="International Business Machines"
+                conn, canonical_name="International Business Machines", workspace_id=ws
             )
             v2 = HashingEmbedder(model_version="hash-trigram-v2")
             await embed_account(conn, ibm, embedder=v2)
@@ -245,7 +283,10 @@ def test_swapping_embedder_model_version_re_embeds() -> None:
             ).scalar()
             assert stored == "hash-trigram-v2"
             result = await resolve(
-                conn, Observation(name="International Business Machines"), embedder=v2
+                conn,
+                Observation(name="International Business Machines"),
+                embedder=v2,
+                workspace_id=ws,
             )
             assert result.top is not None and result.top.entity_id == ibm
 
@@ -257,10 +298,17 @@ def test_resolve_follows_merge_to_survivor() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await _seed(conn, canonical_name="Acme", primary_domain="acme.com")
-            loser = await _seed(conn, canonical_name="Old Acme", primary_domain="old-acme.com")
+            ws = await seed_workspace(conn)
+            survivor = await _seed(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
+            )
+            loser = await _seed(
+                conn, canonical_name="Old Acme", primary_domain="old-acme.com", workspace_id=ws
+            )
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
-            result = await resolve(conn, Observation(name="x", domain="old-acme.com"))
+            result = await resolve(
+                conn, Observation(name="x", domain="old-acme.com"), workspace_id=ws
+            )
             assert result.method is ResolutionMethod.DETERMINISTIC
             assert result.top is not None and result.top.entity_id == survivor
 
