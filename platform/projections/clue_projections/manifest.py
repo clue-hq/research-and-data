@@ -100,6 +100,8 @@ async def run_manifest(
                 status=row.status.value,
                 account_scope=str(row.entity_id),
                 gate=False,
+                # DEFAULT_TIERING_CONFIG is the process default; per-workspace policy-as-data
+                # est-cost bands are the follow-up (review F9c).
                 est_cost_cents=str(DEFAULT_TIERING_CONFIG.band_cents(row.tier)),
             )
         )
@@ -108,5 +110,6 @@ async def run_manifest(
         project_run_id=project_run_id,
         workspace_id=workspace_id,
         current_phase=run.phase,
+        run_status=run.status.value,
         nodes=tuple(nodes),
     )

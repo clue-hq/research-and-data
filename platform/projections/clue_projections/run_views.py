@@ -30,6 +30,7 @@ from clue_projections.dtos import (
     RunOverview,
 )
 from clue_research.durable import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountRunRow,
     get_checkpoint,
     get_project_run,
@@ -105,7 +106,7 @@ async def run_overview(
         verification_health=health,
         coverage=coverage,
         handoff_reached=handoff_cp is not None,
-        narrative_emit_skipped=bool(handoff_payload.get("narrative_emit_skipped", False)),
+        narrative_emit_skipped=bool(handoff_payload.get(NARRATIVE_EMIT_SKIPPED_KEY, False)),
     )
 
 

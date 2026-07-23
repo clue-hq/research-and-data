@@ -29,12 +29,18 @@ from clue_research.durable import RunEventRow, event_created_at, list_run_events
 @dataclass(frozen=True, slots=True)
 class ReplayPlan:
     """The outcome of a reconnect-replay decision: whether the consumer must be **reset** (its
-    cursor is older than the replay horizon → it re-fetches the projection) and the ordered backlog
-    of events with ``seq > cursor`` to deliver. ``duplicates tolerated by seq`` — a consumer dedups
-    on the envelope id, so re-sending an event the consumer already saw is harmless."""
+    cursor is unknown or older than the replay horizon → it re-fetches the projection), the ordered
+    backlog to deliver, and the ``effective_cursor`` the live tail must resume from. ``duplicates
+    tolerated by seq`` — a consumer dedups on the envelope id, so re-sending an event the consumer
+    already saw is harmless.
+
+    ``effective_cursor`` is the load-bearing field for the tail: on reset it is **0** (never the
+    consumer's bogus cursor — a corrupted/future/cross-environment ``Last-Event-ID`` used as the
+    tail floor would silently match nothing forever, a permanently dead "live" stream)."""
 
     reset: bool
     backlog: tuple[RunEventRow, ...]
+    effective_cursor: int
 
 
 async def plan_replay(
@@ -51,11 +57,18 @@ async def plan_replay(
 
     * No cursor (a fresh connect) → no reset; backlog is every event so far (``seq > 0``).
     * A cursor whose event is **within** the horizon → no reset; backlog is ``seq > cursor``
-      (gapless — duplicates tolerated by seq).
-    * A cursor whose event is **older than** the horizon, or is unknown/aged-out → **reset**: the
-      surface emits ``stream.reset`` (the client re-fetches the projection) then resumes live. The
-      backlog (``seq > cursor``) is still returned so a live consumer misses nothing after the
-      re-sync (seq-idempotent), and no sweep runs in this slice so it is in fact complete.
+      (gapless — duplicates tolerated by seq); the tail resumes from the cursor.
+    * A cursor whose event is **older than** the horizon, or is unknown/aged-out (corrupted,
+      cross-environment, cross-workspace, future) → **reset**: the surface emits ``stream.reset``
+      (the client re-fetches the projection — the projection, not the backlog, is the authority
+      after a reset), the ``effective_cursor`` drops to **0**, and both the backlog and the live
+      tail restart from the beginning. The bogus cursor is never reused as the tail floor (it
+      would silently match nothing forever — a permanently dead stream).
+
+    Forward-note (slice-1 review F5): no ``run_event`` sweep/pruner exists in this slice, so the
+    post-reset backlog is genuinely complete. The day a sweep lands, reset-then-backlog becomes a
+    partial view and these semantics must be revisited (close-after-reset, or a documented
+    projection-first re-sync contract).
 
     Read-only — issues no writes (the D7 MVCC-only discipline)."""
     cursor = last_event_id if last_event_id is not None and last_event_id > 0 else 0
@@ -65,7 +78,8 @@ async def plan_replay(
         cutoff = moment - timedelta(seconds=horizon_s)
         cursor_ts = await event_created_at(conn, workspace_id=workspace_id, seq=cursor)
         reset = cursor_ts is None or cursor_ts < cutoff
+    effective_cursor = 0 if reset else cursor
     backlog = await list_run_events(
-        conn, workspace_id=workspace_id, run_id=run_id, after_seq=cursor, limit=limit
+        conn, workspace_id=workspace_id, run_id=run_id, after_seq=effective_cursor, limit=limit
     )
-    return ReplayPlan(reset=reset, backlog=tuple(backlog))
+    return ReplayPlan(reset=reset, backlog=tuple(backlog), effective_cursor=effective_cursor)

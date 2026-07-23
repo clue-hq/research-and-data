@@ -94,6 +94,7 @@ from clue_gateway import build_gateway
 from clue_obs import get_logger
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     BudgetEngine,
     DbIdempotencyStore,
     DbProjectRunStore,
@@ -183,7 +184,7 @@ class _NarrativeGapHandoffHandler:
         return PhaseResult(
             status=PhaseStatus.COMPLETED,
             accounts_processed=0,
-            payload={"narrative_emit_skipped": True, "reason": _HANDOFF_GAP_REASON},
+            payload={NARRATIVE_EMIT_SKIPPED_KEY: True, "reason": _HANDOFF_GAP_REASON},
         )
 
 
@@ -335,7 +336,12 @@ class ComposingRunDriver:
         before = await self._probe.status(project_run_id)
         composed = await self.composed(before)
         after = await composed.run.advance(project_run_id)
-        await self._event_emitter.phase_transition(before, after)
+        # Structural no-sink guarantee (review F6): a raising emitter — ANY emitter, not just the
+        # self-swallowing Db one — must never fail a drive whose advance already committed.
+        try:
+            await self._event_emitter.phase_transition(before, after)
+        except Exception:  # noqa: BLE001 — emission is best-effort by contract
+            log.warning("composer.event_emit_failed", exc_info=True)
         return after
 
     # -- composition --

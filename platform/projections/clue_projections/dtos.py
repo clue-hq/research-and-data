@@ -122,4 +122,7 @@ class RunManifest(BaseModel):
     project_run_id: ProjectRunId
     workspace_id: str
     current_phase: ProjectPhase
+    # The run row's lifecycle status (review F9a): a manifest-only UI must see a paused run —
+    # node statuses alone cannot carry it (the current node still reads in_progress).
+    run_status: str
     nodes: tuple[ManifestNode, ...] = ()

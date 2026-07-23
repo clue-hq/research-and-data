@@ -229,6 +229,10 @@ def test_plan_replay_fresh_midstream_and_horizon_reset() -> None:
                 horizon_s=horizon,
             )
             assert stale.reset
+            # Review F1: on reset the effective cursor drops to 0 and the backlog restarts from
+            # the beginning — the stale cursor is never reused as a delivery floor.
+            assert stale.effective_cursor == 0
+            assert [e.seq for e in stale.backlog] == [e.seq for e in events]
 
             # An unknown cursor (never existed for this tenant) is conservatively a reset.
             unknown = await plan_replay(
@@ -239,5 +243,13 @@ def test_plan_replay_fresh_midstream_and_horizon_reset() -> None:
                 horizon_s=horizon,
             )
             assert unknown.reset
+            assert (
+                unknown.effective_cursor == 0
+            )  # F1: a future/bogus cursor cannot dead-end the tail
+            assert [e.seq for e in unknown.backlog] == [e.seq for e in events]
+
+            # The non-reset plans carry their cursor through as the tail floor.
+            assert mid.effective_cursor == events[1].seq
+            assert fresh.effective_cursor == 0
 
     run_async(_run())

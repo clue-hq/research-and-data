@@ -18,6 +18,7 @@ shape); the actor (``X-Actor``: human|agent, REQ-20) is stamped on every tool in
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -44,6 +45,7 @@ from clue_projections import (
     validate_manifest_op,
 )
 from clue_research.durable import list_run_events
+from clue_research.durable.project_run import get_project_run
 from clue_research.review import ObservabilitySurface
 from clue_toolbelt import (
     Actor,
@@ -300,11 +302,14 @@ def create_projections_router(
         tool_body: dict[str, Any] = {"project_run_id": str(project_run_id)}
         if op_request.op == "adjust":
             if op_request.budget_cap_cents is None:
+                # The op IS supported — the request is missing its parameter (review F9b: a
+                # missing-param case must not wear the unsupported-op taxonomy).
                 raise HTTPException(
                     status_code=422,
                     detail={
-                        "error": "unsupported_manifest_op",
+                        "error": "invalid_params",
                         "reason": "missing_budget_cap_cents",
+                        "accepted_params": ["budget_cap_cents"],
                     },
                 )
             tool_body["budget_cap_cents"] = op_request.budget_cap_cents
@@ -324,11 +329,18 @@ def create_projections_router(
     async def post_stream_token(
         project_run_id: UUID, workspace_id: WorkspaceDep
     ) -> MintTokenResponse:
+        run_id = ProjectRunId(project_run_id)
         async with conn_factory() as conn:
+            # Review F7: refuse an absent or cross-tenant run at mint time (404, indistinguishable
+            # from absent — the same posture as every projection route), so an authenticated header
+            # can't hold open unbounded live-tails against arbitrary ids.
+            run = await get_project_run(conn, run_id)
+            if run is None or run.workspace_id != workspace_id:
+                raise HTTPException(status_code=404, detail="no such project run")
             token = await mint_stream_token(
                 conn,
                 workspace_id=workspace_id,
-                run_id=ProjectRunId(project_run_id),
+                run_id=run_id,
                 ttl_s=settings.sse_stream_token_ttl_s,
             )
         return MintTokenResponse(schema_version=PROJECTIONS_SCHEMA_VERSION, stream_token=str(token))
@@ -341,24 +353,27 @@ def create_projections_router(
         last_event_id_header: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
         last_event_id_query: Annotated[int | None, Query(alias="last_event_id")] = None,
     ) -> StreamingResponse:
-        # Consume the single-use token up-front (a used/expired/cross-tenant token → 401, no leak).
+        run_id = ProjectRunId(project_run_id)
+        # Consume the single-use token up-front (a used/expired/cross-tenant/wrong-run token → 401,
+        # no leak). Run-bound (review F2): a token opens only the stream it was minted for.
         try:
             token_uuid = UUID(stream_token)
         except (ValueError, AttributeError, TypeError) as exc:
             raise HTTPException(status_code=401, detail="invalid stream token") from exc
         async with conn_factory() as conn:
-            ok = await consume_stream_token(conn, token=token_uuid, workspace_id=workspace_id)
+            ok = await consume_stream_token(
+                conn, token=token_uuid, workspace_id=workspace_id, run_id=run_id
+            )
         if not ok:
             raise HTTPException(status_code=401, detail="invalid or already-used stream token")
 
-        run_id = ProjectRunId(project_run_id)
-        # Last-Event-ID: the header (EventSource reconnect) wins; a query fallback for a first open.
+        # Last-Event-ID: a parseable header (EventSource reconnect) wins; the query cursor is the
+        # fallback — including when the header is garbage (review F8: an unparseable header must
+        # not discard an already-parsed query cursor).
         cursor: int | None = last_event_id_query
         if last_event_id_header is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 cursor = int(last_event_id_header)
-            except ValueError:
-                cursor = None
 
         async def _stream() -> AsyncIterator[str]:
             yield _sse_frame(event="stream.hello", data={"run_id": str(run_id)})
@@ -369,10 +384,13 @@ def create_projections_router(
                     run_id=run_id,
                     last_event_id=cursor,
                     horizon_s=settings.sse_replay_horizon_s,
+                    limit=settings.sse_replay_page_limit,
                 )
             if plan.reset:
                 yield _sse_frame(event="stream.reset", data={"reason": "cursor_older_than_horizon"})
-            last_seq = cursor or 0
+            # The tail floor is the plan's EFFECTIVE cursor (review F1): on reset it is 0, never
+            # the consumer's bogus cursor — which would silently match nothing forever.
+            last_seq = plan.effective_cursor
             for ev in plan.backlog:
                 yield _sse_frame(event=ev.topic, data=ev.payload, seq=ev.seq)
                 last_seq = ev.seq
@@ -430,6 +448,16 @@ def create_projections_app(
         version=PROJECTIONS_SCHEMA_VERSION,
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
+
+    # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
+    # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
+    # shape it negotiated without parsing a body.
+    @app.middleware("http")
+    async def _schema_version_header(request: Any, call_next: Any) -> Any:
+        response = await call_next(request)
+        response.headers[PROJECTIONS_SCHEMA_HEADER] = PROJECTIONS_SCHEMA_VERSION
+        return response
+
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:

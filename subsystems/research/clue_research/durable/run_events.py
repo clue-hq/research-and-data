@@ -55,6 +55,12 @@ class RunEventTopic(StrEnum):
 # diverge from the SSE contract vocabulary).
 RUN_EVENT_TOPICS: tuple[str, ...] = tuple(t.value for t in RunEventTopic)
 
+# The HANDOFF checkpoint-payload key marking a gap-completed handoff (the slice-1 composer's
+# documented narrative-emit gap). ONE constant coupling the writer (clue_api.run_composition's
+# gap handler), both readers (the run-overview projection; the compose_handoff tool), and their
+# tests — a rename here fails them all together instead of silently reading False (review F4).
+NARRATIVE_EMIT_SKIPPED_KEY = "narrative_emit_skipped"
+
 
 class RunEventRow(BaseModel):
     """One persisted ``run_event`` row — the durable SSE envelope. ``seq`` is the monotone id the

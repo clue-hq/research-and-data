@@ -94,6 +94,7 @@ from clue_research.discovery_scoring.phases import (
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     BudgetEngine,
     DbBudgetStore,
     DbIdempotencyStore,
@@ -1022,14 +1023,14 @@ class ComposeHandoffTool(_CapabilityTool):
         # ``narrative_emit_skipped`` in its checkpoint payload — so a gap-completed run is
         # distinguishable from a truly-handed-off one by any reader of this tool result.
         payload = checkpoint.payload if checkpoint is not None else {}
-        narrative_emit_skipped = bool(payload.get("narrative_emit_skipped", False))
+        narrative_emit_skipped = bool(payload.get(NARRATIVE_EMIT_SKIPPED_KEY, False))
         return ToolResult(
             tool=self.name,
             version=self.version,
             references={
                 "project_run_id": str(run.id),
                 "handoffs": len(handoffs),
-                "narrative_emit_skipped": narrative_emit_skipped,
+                NARRATIVE_EMIT_SKIPPED_KEY: narrative_emit_skipped,
             },
         )
 

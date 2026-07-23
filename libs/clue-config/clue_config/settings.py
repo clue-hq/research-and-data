@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     # within this window, then is consumed (``used_at`` stamped). A reconnect re-mints. Env:
     # ``CLUE_SSE_STREAM_TOKEN_TTL_S``.
     sse_stream_token_ttl_s: float = 300.0  # 5m
+    # Page size of one replay/backlog read (review F12 — honesty about the D8 "10k events" figure:
+    # the live tail drains the remainder, and in replay-then-close mode this bounds one connect's
+    # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
+    sse_replay_page_limit: int = 10_000
 
 
 def load_settings(**kwargs: Any) -> Settings:

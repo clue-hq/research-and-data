@@ -29,7 +29,11 @@ from sqlalchemy import text
 from clue_api import create_projections_app
 from clue_config import load_settings
 from clue_core import ProjectPhase, new_project_run_id
-from clue_research.durable import PhaseCheckpointStatus, emit_run_event
+from clue_research.durable import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
+    PhaseCheckpointStatus,
+    emit_run_event,
+)
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -105,7 +109,7 @@ def test_overview_route_serves_live_run_with_gap_marker() -> None:
                 project_run_id=run_id,
                 phase=ProjectPhase.HANDOFF,
                 status=PhaseCheckpointStatus.COMMITTED,
-                payload={"narrative_emit_skipped": True, "reason": "no reader"},
+                payload={NARRATIVE_EMIT_SKIPPED_KEY: True, "reason": "no reader"},
             )
             async with _client(_app(conn)) as client:
                 ok = await client.get(
@@ -150,6 +154,7 @@ def test_manifest_and_readiness_and_progress_routes() -> None:
                     headers={"X-Workspace-Id": _WS},
                 )
             assert manifest.status_code == 200
+            assert manifest.json()["manifest"]["run_status"] == "active"  # review F9a
             nodes = manifest.json()["manifest"]["nodes"]
             keys = {n["node_key"] for n in nodes}
             assert f"account:{entity}" in keys
@@ -254,8 +259,9 @@ def test_sse_cursor_older_than_horizon_gets_stream_reset() -> None:
             events = [f["event"] for f in frames]
             assert events[0] == "stream.hello"
             assert "stream.reset" in events  # the horizon contract
-            # The still-available backlog is served after the reset (seq-idempotent).
-            assert [f["id"] for f in frames if "id" in f] == [new.seq]
+            # After a reset the backlog restarts from seq 0 (review F1) — the COMPLETE
+            # still-available history, not just what was newer than the aged cursor.
+            assert [f["id"] for f in frames if "id" in f] == [old.seq, new.seq]
 
     run_async(_run())
 
@@ -401,6 +407,8 @@ def test_manifest_ops_pause_resume_and_unsupported_422() -> None:
                     headers=headers,
                 )
                 assert no_cap.status_code == 422
+                # The op IS supported; the request is missing its parameter (review F9b).
+                assert no_cap.json()["detail"]["error"] == "invalid_params"
                 adjusted = await client.request(
                     "PATCH",
                     f"/project_runs/{run_id}/manifest",
@@ -421,5 +429,145 @@ def test_manifest_ops_pause_resume_and_unsupported_422() -> None:
                 assert detail["error"] == "unsupported_manifest_op"
                 assert detail["reason"] == "unsupported_op"
                 assert detail["accepted_ops"] == ["adjust", "pause", "resume"]
+
+    run_async(_run())
+
+
+# --- slice-3 review fixes (F1/F2/F3/F7/F8) ---------------------------------------------------
+
+
+def test_sse_unknown_cursor_resets_and_serves_full_backlog() -> None:
+    """Review F1: a corrupted/future/cross-environment ``Last-Event-ID`` must not become the tail
+    floor — the plan resets, the effective cursor drops to 0, and the COMPLETE backlog is served
+    (pre-fix: reset frame + permanently dead stream that matched nothing forever)."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = await seed_run(conn, workspace_id=_WS)
+            seqs = []
+            for i in range(3):
+                ev = await emit_run_event(
+                    conn,
+                    workspace_id=_WS,
+                    run_id=run_id,
+                    topic="run.step.progress",
+                    payload={"i": i},
+                )
+                seqs.append(ev.seq)
+            async with _client(_app(conn)) as client:
+                token = await _mint(client, run_id)
+                r = await client.get(
+                    f"/project_runs/{run_id}/events",
+                    params={"stream_token": token},
+                    headers={"X-Workspace-Id": _WS, "Last-Event-ID": "10000000"},
+                )
+            frames = _frames(r.text)
+            events = [f["event"] for f in frames]
+            assert events[0] == "stream.hello"
+            assert "stream.reset" in events
+            # The full backlog is served — the bogus cursor never filters delivery.
+            assert [f["id"] for f in frames if "id" in f] == seqs
+
+    run_async(_run())
+
+
+def test_stream_token_is_run_bound() -> None:
+    """Review F2: a token minted for run A must not open run B's stream (same workspace)."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_a = await seed_run(conn, workspace_id=_WS)
+            run_b = await seed_run(conn, workspace_id=_WS)
+            async with _client(_app(conn)) as client:
+                token = await _mint(client, run_a)
+                other = await client.get(
+                    f"/project_runs/{run_b}/events",
+                    params={"stream_token": token},
+                    headers={"X-Workspace-Id": _WS},
+                )
+                assert other.status_code == 401
+                # The token is NOT consumed by the refused attempt's UPDATE (no matching row), so
+                # it still opens the stream it was minted for.
+                own = await client.get(
+                    f"/project_runs/{run_a}/events",
+                    params={"stream_token": token},
+                    headers={"X-Workspace-Id": _WS},
+                )
+                assert own.status_code == 200
+
+    run_async(_run())
+
+
+def test_schema_version_header_served_on_json_and_sse() -> None:
+    """Review F3: the declared ``X-Projections-Schema-Version`` header is actually set — on JSON
+    routes and on the SSE response (headers precede the streamed body)."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = await seed_run(conn, workspace_id=_WS)
+            async with _client(_app(conn)) as client:
+                overview = await client.get(
+                    f"/project_runs/{run_id}/overview", headers={"X-Workspace-Id": _WS}
+                )
+                token = await _mint(client, run_id)
+                sse = await client.get(
+                    f"/project_runs/{run_id}/events",
+                    params={"stream_token": token},
+                    headers={"X-Workspace-Id": _WS},
+                )
+            assert overview.headers["X-Projections-Schema-Version"] == "1"
+            assert sse.headers["X-Projections-Schema-Version"] == "1"
+
+    run_async(_run())
+
+
+def test_stream_token_mint_refuses_absent_or_cross_tenant_run() -> None:
+    """Review F7: minting on a nonexistent or cross-tenant run is a 404 (indistinguishable from
+    absent — the same posture as the projection routes), not an open-ended token."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = await seed_run(conn, workspace_id=_WS)
+            async with _client(_app(conn)) as client:
+                cross = await client.post(
+                    f"/project_runs/{run_id}/stream_token", headers={"X-Workspace-Id": _OTHER}
+                )
+                absent = await client.post(
+                    f"/project_runs/{new_project_run_id()}/stream_token",
+                    headers={"X-Workspace-Id": _WS},
+                )
+            assert cross.status_code == 404
+            assert absent.status_code == 404
+
+    run_async(_run())
+
+
+def test_garbage_last_event_id_header_falls_back_to_query_cursor() -> None:
+    """Review F8: an unparseable ``Last-Event-ID`` header falls back to the query cursor instead
+    of discarding it (pre-fix: garbage header silently restarted the stream from zero)."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = await seed_run(conn, workspace_id=_WS)
+            seqs = []
+            for i in range(3):
+                ev = await emit_run_event(
+                    conn,
+                    workspace_id=_WS,
+                    run_id=run_id,
+                    topic="run.step.progress",
+                    payload={"i": i},
+                )
+                seqs.append(ev.seq)
+            async with _client(_app(conn)) as client:
+                token = await _mint(client, run_id)
+                r = await client.get(
+                    f"/project_runs/{run_id}/events",
+                    params={"stream_token": token, "last_event_id": seqs[0]},
+                    headers={"X-Workspace-Id": _WS, "Last-Event-ID": "not-a-number"},
+                )
+            frames = _frames(r.text)
+            assert [f["event"] for f in frames].count("stream.reset") == 0
+            assert [f["id"] for f in frames if "id" in f] == seqs[1:]
 
     run_async(_run())
