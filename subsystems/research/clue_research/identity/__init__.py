@@ -33,6 +33,7 @@ from clue_research.identity.embedding import (
     vector_literal,
 )
 from clue_research.identity.entities import (
+    CrossWorkspaceMergeError,
     MergeCycleError,
     UnknownEntityTypeError,
     contact_ids_for_account,
@@ -119,6 +120,7 @@ __all__ = [
     "surviving_id",
     "MergeCycleError",
     "UnknownEntityTypeError",
+    "CrossWorkspaceMergeError",
     # normalizers (M2.1, shared with M2.2)
     "registrable_domain",
     "normalize_name",
