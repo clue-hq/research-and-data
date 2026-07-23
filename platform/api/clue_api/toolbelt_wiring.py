@@ -35,16 +35,17 @@ Run-scoped tools also resolve the run's **pinned** ICP version (``get_icp_versio
 the machine advanced on), not the *active* ICP, so a tool and the later machine drive agree
 byte-for-byte; ``import_accounts`` (not run-scoped) legitimately keeps active-ICP semantics.
 
-**Account/contact workspace scoping is UNENFORCEABLE today — a documented residual, not an
-oversight.** ``run_deep_account`` / ``resolve_committee`` / ``profile_contact`` are keyed on a bare
-``account_entity_id`` / ``contact_entity_id``, and ``account_entity`` carries **no stamped
-``workspace_id`` column yet** (the ``[B3×research]`` backlog item: accounts are workspace-local per
-the 2026-07-22 founder ruling, but no research writer stamps the column). Until that lands there is
-**no** way to fail-closed an out-of-workspace account access, so these three tools cannot enforce
-the B1 guard the run-scoped tools do. As the least-worst mitigation each emits a structured WARNING
-(``toolbelt.unscoped_account_access`` with actor + workspace + account id) on every invocation, so
-misuse is at least *visible*. When ``[B3×research]`` stamps ``account_entity.workspace_id`` the
-guard becomes one line (load the account, refuse when ``account.workspace_id != ctx.workspace_id``).
+**Account workspace scoping is fail-closed** ([B3×research], resolved 2026-07-23). The
+account-scoped spend tools — ``run_deep_account`` / ``resolve_committee`` / ``profile_contact`` —
+load their account through ``_load_account``, the analogue of ``_load_run``: an account whose
+``workspace_id`` differs from ``ctx.workspace_id`` (including a legacy NULL-workspace account —
+decision D5: a legacy ``None`` never equals a real ctx workspace) resolves to the same
+``account_not_found`` refusal a truly-absent id gets, so a cross-tenant id is indistinguishable from
+a non-existent one (no existence leak). Now that ``account_entity`` stamps ``workspace_id`` on every
+real account (the ``[B3×research]`` slices), this is the same B1 guard the run-scoped tools enforce.
+Refusals emit a structured WARNING (``toolbelt.account_scope_refused`` with actor + workspace +
+account id) so a scope violation stays auditable; the pre-B3 ``toolbelt.unscoped_account_access``
+warn-and-proceed placeholder is retired.
 
 Preconditions read through ``ctx.conn_factory``; a malformed id resolves to the same not-found
 refusal (never a raw traceback). The ``compose_handoff`` result surfaces the slice-1
@@ -60,6 +61,7 @@ from typing import cast
 from uuid import UUID
 
 from pydantic import JsonValue
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.composition import build_pre_spend_gate
 from clue_api.deep.composition import build_high_tier_resolver
@@ -69,6 +71,7 @@ from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_api.verification import build_verification_phase_handler
 from clue_config import Settings, load_settings
 from clue_core import (
+    AccountEntity,
     CostCents,
     EntityId,
     ICPSpec,
@@ -147,22 +150,6 @@ from clue_toolbelt import (
 __all__ = ["build_toolbelt", "GatewayRequired"]
 
 log = get_logger("clue_api.toolbelt_wiring")
-
-
-def _warn_unscoped_account(tool: str, ctx: ToolContext, account_entity_id: str) -> None:
-    """Emit the ``toolbelt.unscoped_account_access`` WARNING (B4 slice-2 review B1).
-
-    ``account_entity`` has no stamped ``workspace_id`` yet (the ``[B3×research]`` residual), so the
-    per-account spend tools cannot fail-closed an out-of-workspace account access the way the
-    run-scoped tools do. Until that column lands, every invocation of one of these tools is at least
-    *visible*: this logs the actor + workspace + account id so misuse can be audited."""
-    log.warning(
-        "toolbelt.unscoped_account_access",
-        tool=tool,
-        actor=ctx.actor,
-        workspace_id=ctx.workspace_id,
-        account_entity_id=account_entity_id,
-    )
 
 
 class GatewayRequired(RuntimeError):
@@ -339,6 +326,29 @@ class _CapabilityTool(Tool):
         if run is None or run.workspace_id != ctx.workspace_id:
             return None
         return run
+
+    async def _load_account(
+        self, tool: str, raw_id: str, ctx: ToolContext, conn: AsyncConnection
+    ) -> AccountEntity | None:
+        """Fail-closed account→workspace guard ([B3×research], resolved 2026-07-23): a missing,
+        malformed, legacy NULL-workspace, or other-workspace account resolves to ``None`` — the
+        caller then surfaces the same ``account_not_found`` refusal a truly-absent id gets, so a
+        cross-tenant id is indistinguishable from a non-existent one (no existence leak), mirroring
+        :meth:`_load_run`. ``account.workspace_id != ctx.workspace_id`` refuses a legacy
+        NULL-workspace row too (decision D5 — a legacy ``None`` never equals a real ctx workspace).
+        Refusals are WARNING-logged (``toolbelt.account_scope_refused``) so misuse stays visible."""
+        entity_id = _parse_entity_id(raw_id)
+        account = await get_account(conn, entity_id) if entity_id is not None else None
+        if account is None or account.workspace_id != ctx.workspace_id:
+            log.warning(
+                "toolbelt.account_scope_refused",
+                tool=tool,
+                actor=ctx.actor,
+                workspace_id=ctx.workspace_id,
+                account_entity_id=raw_id,
+            )
+            return None
+        return account
 
     async def _load_active_spec(self, workspace_id: str, icp_key: str) -> ICPSpec | None:
         async with self._conn_factory() as conn:
@@ -691,10 +701,10 @@ class SubmitTierCheckpointTool(_CapabilityTool):
 
 
 class RunDeepAccountTool(_CapabilityTool):
-    """Deep-profile one account. **Account workspace-scoping is unenforceable until [B3×research]
-    stamps ``account_entity.workspace_id``** — the guard becomes one line then (load the account,
-    refuse on a workspace mismatch); until then every invocation emits the
-    ``toolbelt.unscoped_account_access`` WARNING (see the module docstring)."""
+    """Deep-profile one account. **Account workspace-scoping is fail-closed** ([B3×research],
+    resolved 2026-07-23): the account is loaded through :meth:`_load_account`, so a cross-workspace
+    or legacy NULL-workspace account refuses ``account_not_found`` — the same shape a truly-absent
+    id gets (no existence leak) — before any deep spend runs."""
 
     name = "run_deep_account"
     input_model = RunDeepAccountInput
@@ -752,11 +762,8 @@ class RunDeepAccountTool(_CapabilityTool):
                 "invalid_tier",
                 f"tier {inputs.tier!r} is not a known band (known: {sorted(known) or 'none'})",
             )
-        entity = _parse_entity_id(inputs.account_entity_id)
-        if entity is None:
-            return _fail("account_not_found", "account_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
-            account = await get_account(conn, entity)
+            account = await self._load_account(self.name, inputs.account_entity_id, ctx, conn)
         if account is None:
             return _fail("account_not_found", "no such account entity")
         return ()
@@ -778,8 +785,9 @@ class RunDeepAccountTool(_CapabilityTool):
         assert entity is not None
         spec, run, failures = await self._resolve_spec(inputs, ctx)
         assert spec is not None and not failures  # narrowed by preconditions
-        # B1 residual: account entities carry no stamped workspace column yet — visibility only.
-        _warn_unscoped_account(self.name, ctx, inputs.account_entity_id)
+        # [B3×research]: preconditions loaded the account fail-closed to ctx.workspace_id via
+        # _load_account (cross-workspace / legacy NULL-workspace → account_not_found), so invoke is
+        # only reached for an in-workspace account.
         # S1: budget-visible spend — with a run supplied, thread its id + remaining headroom into
         # the deep profile so the spend lands against the run's cap.
         remaining: CostCents | None = None
@@ -812,10 +820,10 @@ class RunDeepAccountTool(_CapabilityTool):
 
 
 class ResolveCommitteeTool(_CapabilityTool):
-    """Resolve one account's buying committee. **Account workspace-scoping is unenforceable until
-    [B3×research] stamps ``account_entity.workspace_id``** — the guard becomes one line then; until
-    then every invocation emits the ``toolbelt.unscoped_account_access`` WARNING (see the module
-    docstring)."""
+    """Resolve one account's buying committee. **Account workspace-scoping is fail-closed**
+    ([B3×research], resolved 2026-07-23): the account is loaded through :meth:`_load_account`, so a
+    cross-workspace or legacy NULL-workspace account refuses ``account_not_found`` (the same shape a
+    truly-absent id gets — no existence leak) before any committee walk runs."""
 
     name = "resolve_committee"
     input_model = ResolveCommitteeInput
@@ -824,11 +832,8 @@ class ResolveCommitteeTool(_CapabilityTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ResolveCommitteeInput)
-        entity = _parse_entity_id(inputs.account_entity_id)
-        if entity is None:
-            return _fail("account_not_found", "account_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
-            account = await get_account(conn, entity)
+            account = await self._load_account(self.name, inputs.account_entity_id, ctx, conn)
         if account is None:
             return _fail("account_not_found", "no such account entity")
         return ()
@@ -843,8 +848,8 @@ class ResolveCommitteeTool(_CapabilityTool):
         assert isinstance(inputs, ResolveCommitteeInput)
         entity = _parse_entity_id(inputs.account_entity_id)
         assert entity is not None
-        # B1 residual: account entities carry no stamped workspace column yet — visibility only.
-        _warn_unscoped_account(self.name, ctx, inputs.account_entity_id)
+        # [B3×research]: preconditions loaded the account fail-closed to ctx.workspace_id via
+        # _load_account, so invoke is only reached for an in-workspace account.
         spec = (
             await self._load_active_spec(ctx.workspace_id, inputs.icp_key)
             if inputs.icp_key is not None
@@ -874,10 +879,11 @@ class ResolveCommitteeTool(_CapabilityTool):
 
 
 class ProfileContactTool(_CapabilityTool):
-    """Profile one committee member. **Account workspace-scoping is unenforceable until
-    [B3×research] stamps ``account_entity.workspace_id``** — the guard becomes one line then; until
-    then every invocation emits the ``toolbelt.unscoped_account_access`` WARNING (see the module
-    docstring)."""
+    """Profile one committee member. **Account workspace-scoping is fail-closed** ([B3×research],
+    resolved 2026-07-23): the parent account is loaded through :meth:`_load_account` (before the
+    contact check), so a cross-workspace or legacy NULL-workspace account refuses
+    ``account_not_found`` (the same shape a truly-absent id gets — no existence leak) before any
+    contact spend runs."""
 
     name = "profile_contact"
     input_model = ProfileContactInput
@@ -895,14 +901,11 @@ class ProfileContactTool(_CapabilityTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ProfileContactInput)
-        account = _parse_entity_id(inputs.account_entity_id)
-        if account is None:
-            return _fail("account_not_found", "account_entity_id is not a valid entity id")
         contact = _parse_entity_id(inputs.contact_entity_id)
         if contact is None:
             return _fail("contact_not_found", "contact_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
-            if await get_account(conn, account) is None:
+            if await self._load_account(self.name, inputs.account_entity_id, ctx, conn) is None:
                 return _fail("account_not_found", "no such account entity")
             if await get_contact(conn, contact) is None:
                 return _fail("contact_not_found", "no such contact entity")
@@ -913,8 +916,8 @@ class ProfileContactTool(_CapabilityTool):
         account = _parse_entity_id(inputs.account_entity_id)
         contact = _parse_entity_id(inputs.contact_entity_id)
         assert account is not None and contact is not None
-        # B1 residual: account entities carry no stamped workspace column yet — visibility only.
-        _warn_unscoped_account(self.name, ctx, inputs.account_entity_id)
+        # [B3×research]: preconditions loaded the parent account fail-closed to ctx.workspace_id via
+        # _load_account, so invoke is only reached for an in-workspace account.
         spec = (
             await self._load_active_spec(ctx.workspace_id, inputs.icp_key)
             if inputs.icp_key is not None
