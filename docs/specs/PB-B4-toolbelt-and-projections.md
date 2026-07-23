@@ -1,6 +1,10 @@
 # PB-B4 — toolbelt façade, projections + SSE, and the fleet run-start composition
 
-**Status:** open (designed 2026-07-22 on `platform/b4-toolbelt-v0`; slices land sequentially).
+**Status: EXECUTED (2026-07-23, branch `platform/b4-toolbelt-v0`).** All three slices landed
+(slice 1 `4d9d110`+`6155efc`; slice 2 `d6ca26e`+`0621ceb`; slice 3 `4586892`+`95b8f01`), each
+Fable-reviewed and hardened. Final gates: 23 import contracts, 1303 offline / 2221 DB tests
+(fresh + rerun + post-scripts-chain), db-smoke reversible, Recipe-#1 chain green. Residuals in
+the CLAUDE.md `[B4]` backlog entry + `_memory/2026-07-23-b4-close-out.md`.
 **Authority:** harness doc §9 step 2 (+ its slotted additions A4/A5/A6/A8/A9 and the
 readiness/coverage projection), REQ-02 (toolbelt), REQ-11 (visibility), REQ-16 (treaty Group A),
 Doc A (no fake agency; toolbelt = the single write path), the Phase-B treaty §2 (B4 lane), and
