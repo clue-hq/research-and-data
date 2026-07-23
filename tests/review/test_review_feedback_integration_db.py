@@ -33,6 +33,7 @@ from clue_research.claimstore import insert_claim
 from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_research.review.disposition_store import ReviewDispositionEmitterImpl
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -71,8 +72,13 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             factory = _factory(conn)
+            await seed_workspace(conn, _CLIENT)
             acct = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+                conn,
+                canonical_name="Acme",
+                primary_domain="acme.com",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
             )
             orig = _orig(acct)
             await insert_claim(conn, orig)

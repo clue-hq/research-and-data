@@ -49,6 +49,7 @@ from clue_research.narrative import (
     list_handoff_events,
 )
 from clue_research.review import ensure_review_session, finalize_review_session
+from tests._workspace import seed_workspace
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -70,8 +71,13 @@ def _factory(conn: AsyncConnection) -> Callable[[], AbstractAsyncContextManager[
 
 
 async def _account(conn: AsyncConnection, name: str) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name=name, primary_domain=f"{name}.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name=name,
+        primary_domain=f"{name}.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

@@ -147,6 +147,7 @@ class DiscoveryPhaseHandler:
                         conn,
                         candidate,
                         run_id,
+                        workspace_id=ctx.workspace_id,
                         redis=self._redis,
                         existence=self._existence,
                     )

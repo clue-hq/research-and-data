@@ -55,6 +55,7 @@ from clue_research.resolvers import (
 )
 from clue_research.resolvers.base import DeterministicResolver  # the public tier-1 enrichment seam
 from clue_research.sources import StopReason, bind_resolver, resolve_field
+from tests._workspace import seed_workspace
 
 from .conftest import CountingBackend, rollback_conn, run_async
 
@@ -461,8 +462,12 @@ def test_crm_seeds_feed_m2_without_minting_duplicate_entities() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # One real account already exists; the CRM holds two messy rows for it (same domain).
+            await seed_workspace(conn, _TENANT)
             resolved_id = await insert_account_entity(
-                conn, canonical_name="Acme Corporation", primary_domain="acme.com"
+                conn,
+                canonical_name="Acme Corporation",
+                primary_domain="acme.com",
+                workspace_id=_TENANT,
             )
             before = await _account_count(conn)
             connector = _Connector(
@@ -481,7 +486,7 @@ def test_crm_seeds_feed_m2_without_minting_duplicate_entities() -> None:
                     ),
                 ]
             )
-            seeds = await resolve_crm_seeds(conn, connector)
+            seeds = await resolve_crm_seeds(conn, connector, workspace_id=_TENANT)
             assert len(seeds) == 2
             # Both messy names deterministically resolve (by domain) to the SAME existing entity.
             assert seeds[0].entity_id == resolved_id
@@ -495,10 +500,16 @@ def test_crm_seeds_feed_m2_without_minting_duplicate_entities() -> None:
 def test_lookalike_seeds_exposes_only_resolved_customers() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            await seed_workspace(conn, _TENANT)
             customer_id = await insert_account_entity(
-                conn, canonical_name="Acme Corporation", primary_domain="acme.com"
+                conn,
+                canonical_name="Acme Corporation",
+                primary_domain="acme.com",
+                workspace_id=_TENANT,
             )
-            await insert_account_entity(conn, canonical_name="Globex", primary_domain="globex.com")
+            await insert_account_entity(
+                conn, canonical_name="Globex", primary_domain="globex.com", workspace_id=_TENANT
+            )
             connector = _Connector(
                 accounts=[
                     CrmAccountRecord(
@@ -515,7 +526,7 @@ def test_lookalike_seeds_exposes_only_resolved_customers() -> None:
                     ),
                 ]
             )
-            seeds = await resolve_crm_seeds(conn, connector)
+            seeds = await resolve_crm_seeds(conn, connector, workspace_id=_TENANT)
             assert lookalike_seeds(seeds) == [customer_id]  # only the existing customer is a seed
 
     run_async(_run())
@@ -527,8 +538,12 @@ def test_crm_seed_for_an_unresolved_record_is_none_and_mints_nothing() -> None:
     # and no entity is created. (A resolved customer alongside it: only the resolved row seeds.)
     async def _run() -> None:
         async with rollback_conn() as conn:
+            await seed_workspace(conn, _TENANT)
             customer_id = await insert_account_entity(
-                conn, canonical_name="Acme Corporation", primary_domain="acme.com"
+                conn,
+                canonical_name="Acme Corporation",
+                primary_domain="acme.com",
+                workspace_id=_TENANT,
             )
             before = await _account_count(conn)
             connector = _Connector(
@@ -547,7 +562,7 @@ def test_crm_seed_for_an_unresolved_record_is_none_and_mints_nothing() -> None:
                     ),
                 ]
             )
-            seeds = await resolve_crm_seeds(conn, connector)
+            seeds = await resolve_crm_seeds(conn, connector, workspace_id=_TENANT)
             assert seeds[0].entity_id == customer_id  # the strong-key hit resolved
             assert (
                 seeds[1].entity_id is None

@@ -402,6 +402,7 @@ async def _resolve_customer(
     result = await resolve(
         conn,
         Observation(name=name_str, entity_type=EntityType.ACCOUNT, domain=domain_str),
+        workspace_id=workspace_id,
     )
     if result.top is not None and result.top_score >= policy.min_resolution_confidence:
         entity_id = await surviving_id(conn, result.top.entity_id, EntityType.ACCOUNT)
@@ -416,6 +417,7 @@ async def _resolve_customer(
             primary_domain=domain_str,
             aliases=(name_str,) if name_str else (),
             status=AccountStatus.CANDIDATE,
+            workspace_id=workspace_id,
         )
         await embed_account(conn, entity_id)  # so the next pass resolves to it (no duplicate)
         return (

@@ -60,6 +60,7 @@ from clue_research.verification.identity_binding import (
     METRIC_IDENTITY_BINDING_STRONG,
     METRIC_IDENTITY_BINDING_WEAK,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -541,8 +542,13 @@ def _gate(
 async def _account(
     conn: AsyncConnection, *, name: str = "Acme Robotics", domain: str = "acme.com"
 ) -> EntityId:
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(  # type: ignore[return-value]
-        conn, canonical_name=name, primary_domain=domain, status=AccountStatus.ACTIVE
+        conn,
+        canonical_name=name,
+        primary_domain=domain,
+        status=AccountStatus.ACTIVE,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 

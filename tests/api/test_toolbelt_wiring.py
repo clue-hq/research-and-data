@@ -23,6 +23,7 @@ import pytest
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_research.stage0 import ICPProposal
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolResult, invoke_tool
+from tests._workspace import seed_workspace
 from tests.api.conftest import require_profiling_db as require_profiling_db  # noqa: F401
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn, seed_packs
@@ -98,7 +99,8 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
                 gateway=None,  # spend tools are blocked by preconditions; invoke never reached
                 conn_factory=cf,
             )
-            ctx = ToolContext(workspace_id=f"ws_{uuid4().hex[:8]}", actor="human", conn_factory=cf)
+            ws = await seed_workspace(conn, f"ws_{uuid4().hex[:8]}")
+            ctx = ToolContext(workspace_id=ws, actor="human", conn_factory=cf)
             bodies = _bodies()
 
             # Coverage: every registered tool has a matrix entry (a new tool without one fails).

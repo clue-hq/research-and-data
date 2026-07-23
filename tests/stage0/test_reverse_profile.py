@@ -82,7 +82,7 @@ def _input(materials: tuple[VolunteeredMaterial, ...] = ()) -> ClientInput:
 
 def test_minimum_input_produces_versioned_kb() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values())
             result = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
 
@@ -125,7 +125,7 @@ def test_minimum_input_produces_versioned_kb() -> None:
 
 def test_materials_shortcut_derivation() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             # the scraper would say one thing; the client's deck asserts another (tier-1 human wins)
             _bind_firecrawl(_owned_values())
             deck = VolunteeredMaterial(
@@ -157,7 +157,7 @@ def test_materials_shortcut_derivation() -> None:
 
 def test_no_materials_path_completes() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values())
             result = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
             assert result.ref.client_kb_version == 1
@@ -168,7 +168,7 @@ def test_no_materials_path_completes() -> None:
 
 def test_tier4_spanless_claim_never_surfaces() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl({CLIENT_VALUE_PROP: "tier-2 truth"})
             result = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
             entity_id = result.ref.client_entity_id
@@ -191,7 +191,7 @@ def test_tier4_spanless_claim_never_surfaces() -> None:
 
 def test_rerun_bumps_version_and_supersedes() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values(" v1"))
             r1 = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
             assert r1.ref.client_kb_version == 1
@@ -228,7 +228,7 @@ def test_rerun_bumps_version_and_supersedes() -> None:
 
 def test_idempotent_reentry_same_run_id() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values())
             deck = VolunteeredMaterial(asserted_fields={CLIENT_PROOF_POINT: "deck proof"})
             r1 = await reverse_profile(conn, _input((deck,)), workspace_id=_CLIENT, run_id=None)
@@ -248,7 +248,7 @@ def test_idempotent_reentry_same_run_id() -> None:
 
 def test_budget_cap_halts_gracefully() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             # each scrape step costs 1.0c; a 1.5c cap admits ~one field then stops
             bind_resolver(
                 "firecrawl_site",
@@ -269,7 +269,7 @@ def test_budget_cap_halts_gracefully() -> None:
 
 def test_coverage_reports_unattempted_surfaces_empty() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             # only firecrawl bound → third-party (g2/capterra) + reviews (g2/trustradius) stay empty
             _bind_firecrawl(_owned_values())
             result = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
@@ -287,7 +287,7 @@ def test_coverage_reports_unattempted_surfaces_empty() -> None:
 
 def test_judge_called_on_tier4_client_claims() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values())
             result = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
             entity_id = result.ref.client_entity_id
@@ -313,7 +313,7 @@ def test_judge_called_on_tier4_client_claims() -> None:
 
 def test_rerun_dropping_a_field_clears_it_from_current_kb() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             # v1 fills the full owned set (incl. product)
             _bind_firecrawl(_owned_values(" v1"))
             r1 = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
@@ -337,7 +337,7 @@ def test_rerun_dropping_a_field_clears_it_from_current_kb() -> None:
 
 def test_no_registrable_domain_client_reuses_entity_on_rerun() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl({CLIENT_VALUE_PROP: "x"})
             # a website with no registrable domain → resolve goes fuzzy; the name-key fallback must
             # still re-find the client's own entity, never spawning a duplicate on re-run.
@@ -352,7 +352,7 @@ def test_no_registrable_domain_client_reuses_entity_on_rerun() -> None:
 
 def test_outer_budget_precheck_halts_before_next_field() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             # cost 1.0/field, cap 1.0: field 1 runs (inner check 1 > 1 is false), spends 1.0, then
             # the OUTER `spent >= cap` check halts before field 2 is even reached.
             _bind_firecrawl(_owned_values())
@@ -368,7 +368,7 @@ def test_outer_budget_precheck_halts_before_next_field() -> None:
 
 def test_trust_order_higher_tier_never_overwritten_by_lower() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             r = await reverse_profile(
                 conn, _input(), workspace_id=_CLIENT
             )  # no resolver → entity only
@@ -402,7 +402,7 @@ def test_trust_order_higher_tier_never_overwritten_by_lower() -> None:
 
 def test_client_claim_stamped_public_is_refused() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             r = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
             # a client claim left at the default public_footprint scope is fail-closed at the write
             # boundary (ENG-165) — the field is declared tenant_private.
@@ -426,7 +426,7 @@ def test_client_claim_stamped_public_is_refused() -> None:
 
 def test_wrong_typed_volunteered_field_is_skipped_not_fatal() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values())
             # value_prop is a string field; the deck asserts an int (wrong type) plus a valid fact
             deck = VolunteeredMaterial(
@@ -452,7 +452,7 @@ def test_wrong_typed_volunteered_field_is_skipped_not_fatal() -> None:
 
 def test_client_customer_is_multi_valued_list() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             _bind_firecrawl(_owned_values())
             result = await reverse_profile(conn, _input(), workspace_id=_CLIENT)
             cv = await current_value(

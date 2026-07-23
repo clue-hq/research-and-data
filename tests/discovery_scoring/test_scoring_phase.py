@@ -106,7 +106,9 @@ async def _seed_active_icp(conn: AsyncConnection, *, with_rubric: bool = True) -
 
 async def _seed_admitted(conn: AsyncConnection, ctx: PhaseContext, *, name: str, domain: str):
     """An admitted account: an entity + its discovery-provenance for the run + the input proxies."""
-    eid = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    eid = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=CLIENT
+    )
     await insert_claim(
         conn,
         discovery_claim(

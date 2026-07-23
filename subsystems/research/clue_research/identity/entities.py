@@ -154,7 +154,7 @@ async def insert_account_entity(
     hq_geo: Mapping[str, object] | None = None,
     registry_ids: Mapping[str, str] | None = None,
     status: AccountStatus = AccountStatus.CANDIDATE,
-    workspace_id: str | None = None,
+    workspace_id: str,
     brand_id: str | None = None,
 ) -> EntityId:
     """Insert a canonical account entity, normalizing its strong keys + match index; return its id.
@@ -163,13 +163,14 @@ async def insert_account_entity(
     canonicalized; ``aliases`` is stored as the normalized match index (see :func:`_match_keys`).
     Strong-key collisions raise (the partial-unique constraints) — that is the deterministic dedup
     guard, surfaced to the caller (M2.3 turns it into a merge). Strong-key uniqueness is
-    *workspace-scoped* once ``workspace_id`` is set (accounts are workspace-local; founder ruling
-    2026-07-22): the same domain/registry id under two workspaces coexists, a NULL-workspace legacy
-    row keeps global uniqueness.
+    *workspace-scoped* (accounts are workspace-local; founder ruling 2026-07-22): the same
+    domain/registry id under two workspaces coexists, a NULL-workspace legacy row keeps global
+    uniqueness.
 
-    ``workspace_id`` / ``brand_id`` are **transitional-optional** — defaulted ``None`` so pre-B3
-    callers keep working; Task 3 of the [B3×research] plan flips ``workspace_id`` to a required
-    ``str`` once every creation chain threads it.
+    ``workspace_id`` is **required** (accounts are workspace-local — [B3×research] Task 3): every
+    creation chain threads the caller's workspace, and the row's composite workspace anchor backs
+    the contact→account and merge fences. A legacy NULL-workspace account is only insertable via raw
+    SQL (the migration keeps it representable for fail-closed memory semantics), never through here.
     """
     result = await conn.execute(
         _INSERT_ACCOUNT,
@@ -404,7 +405,7 @@ async def get_entity(
 
 
 async def resolve_alias(
-    conn: AsyncConnection, key: str, entity_type: EntityType
+    conn: AsyncConnection, key: str, entity_type: EntityType, *, workspace_id: str
 ) -> EntityId | None:
     """Exact strong-key / normalized-alias lookup → the **surviving** ``entity_id``, or ``None``.
 
@@ -413,14 +414,21 @@ async def resolve_alias(
     the normalized ``aliases`` index); a domain hit wins. For a contact, ``key`` is tried against
     ``linkedin_url`` / ``verified_email`` and the alias index. A hit on a *merged* entity resolves
     through :func:`surviving_id` to the live survivor.
-    """
+
+    ``workspace_id`` is **required** (accounts/contacts are workspace-local; founder ruling
+    2026-07-22): every branch is scoped to it, so client A's exact-name lookup can never hit client
+    B's account (a NULL-workspace legacy row is invisible — ``workspace_id = :ws`` never matches
+    NULL, fail-closed)."""
     if entity_type is EntityType.ACCOUNT:
         domain = registrable_domain(key)
         if domain is not None:
             hit = (
                 await conn.execute(
-                    text("SELECT id FROM account_entity WHERE primary_domain = :d LIMIT 1"),
-                    {"d": domain},
+                    text(
+                        "SELECT id FROM account_entity "
+                        "WHERE primary_domain = :d AND workspace_id = :ws LIMIT 1"
+                    ),
+                    {"d": domain, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:
@@ -429,8 +437,11 @@ async def resolve_alias(
         if nk:
             hit = (
                 await conn.execute(
-                    text("SELECT id FROM account_entity WHERE :k = ANY(aliases) LIMIT 1"),
-                    {"k": nk},
+                    text(
+                        "SELECT id FROM account_entity "
+                        "WHERE :k = ANY(aliases) AND workspace_id = :ws LIMIT 1"
+                    ),
+                    {"k": nk, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:
@@ -444,9 +455,10 @@ async def resolve_alias(
                 await conn.execute(
                     text(
                         "SELECT id FROM contact_entity "
-                        "WHERE linkedin_url = :s OR verified_email = :s LIMIT 1"
+                        "WHERE (linkedin_url = :s OR verified_email = :s) "
+                        "AND workspace_id = :ws LIMIT 1"
                     ),
-                    {"s": strong},
+                    {"s": strong, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:
@@ -455,8 +467,11 @@ async def resolve_alias(
         if nk:
             hit = (
                 await conn.execute(
-                    text("SELECT id FROM contact_entity WHERE :k = ANY(aliases) LIMIT 1"),
-                    {"k": nk},
+                    text(
+                        "SELECT id FROM contact_entity "
+                        "WHERE :k = ANY(aliases) AND workspace_id = :ws LIMIT 1"
+                    ),
+                    {"k": nk, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:

@@ -284,6 +284,7 @@ async def resolve_crm_seeds(
     conn: AsyncConnection,
     connector: CRMConnector,
     *,
+    workspace_id: str,
     policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
     disposition: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
     embedder: Embedder = DEFAULT_EMBEDDER,
@@ -293,7 +294,10 @@ async def resolve_crm_seeds(
     a new entity is M2.3/M6). A row resolves to an existing entity only when its top candidate
     clears the auto-merge band (``disposition.auto_merge_threshold``) — a deterministic strong-key
     hit; anything softer is left ``entity_id=None`` for M6's import flow to dispose. Two CRM rows
-    with the same strong key (domain/registry id) resolve to the *same* entity, so no dup."""
+    with the same strong key (domain/registry id) resolve to the *same* entity, so no dup.
+
+    ``workspace_id`` scopes resolution to the caller's workspace (accounts are workspace-local;
+    founder ruling 2026-07-22) — a CRM row never resolves to another workspace's account."""
     records = list(connector.iter_accounts())
     observations = [
         Observation(
@@ -304,7 +308,9 @@ async def resolve_crm_seeds(
         )
         for r in records
     ]
-    results = await resolve_many(conn, observations, policy=policy, embedder=embedder)
+    results = await resolve_many(
+        conn, observations, policy=policy, embedder=embedder, workspace_id=workspace_id
+    )
     seeds: list[CrmSeed] = []
     for record, result in zip(records, results, strict=True):
         top = result.top

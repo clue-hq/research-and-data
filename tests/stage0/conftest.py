@@ -27,6 +27,7 @@ from clue_research.stage0 import (
     load_icp_feedback_pack,
     load_import_pack,
 )
+from tests._workspace import seed_workspace
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 
@@ -67,14 +68,20 @@ def resolver_bindings() -> Iterator[None]:
 
 
 @asynccontextmanager
-async def rollback_conn(*, seed: bool = True) -> AsyncIterator[AsyncConnection]:
+async def rollback_conn(
+    *, seed: bool = True, workspace_id: str | None = None
+) -> AsyncIterator[AsyncConnection]:
     """Yield a pooled connection inside a transaction that is always rolled back.
 
     Seeds the core pack, the client-knowledge pack, the M3.3 starter packs (catalog + ``<pack>.*``
     fields + source profiles, for M5.2 ICP synthesis/confirm), the ICP feedback field (M5.2 confirm
     diff), and the source manifests (in that order — source ``yields`` validate against the field
     registry) so the reverse-profiling waterfall and ICP synthesis have real fields/packs/manifests
-    to read."""
+    to read.
+
+    Pass ``workspace_id`` to also seed that ``workspace`` row (accounts are workspace-local — the
+    ``account_entity.workspace_id`` FK — so any test that creates an account, directly or via a
+    stage0 flow, must seed its workspace first; all rows roll back with the transaction)."""
     async with db_lifespan() as engine:
         conn = await engine.connect()
         trans = await conn.begin()
@@ -86,6 +93,8 @@ async def rollback_conn(*, seed: bool = True) -> AsyncIterator[AsyncConnection]:
                 await load_icp_feedback_pack(conn)
                 await load_import_pack(conn)
                 await seed_source_manifests(conn)
+            if workspace_id is not None:
+                await seed_workspace(conn, workspace_id)
             yield conn
         finally:
             await trans.rollback()

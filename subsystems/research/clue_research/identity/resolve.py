@@ -199,30 +199,26 @@ def _score(obs: Observation, record: _CandidateRecord, policy: ResolutionPolicy)
     return Candidate(entity_id=record.entity_id, score=round(score, 6), features=features)
 
 
-# --- workspace scoping (transitional) --------------------------------------
+# --- workspace scoping ------------------------------------------------------
 # Accounts/contacts are workspace-local (founder ruling 2026-07-22). Every candidate query is
-# scoped to the caller's ``workspace_id`` when one is supplied; a legacy NULL-workspace row is then
-# invisible to a scoped resolve (``workspace_id = :ws`` never matches NULL — fail-closed). The
-# ``workspace_id is None`` arm preserves today's unscoped behaviour so pre-B3 callers keep working;
-# **Task 3 flips ``workspace_id`` to required ``str`` and deletes the ``None`` arm** — so the two
-# arms are kept trivially separable (one ``_ws_clause`` helper + a conditional bind).
-def _ws_clause(workspace_id: str | None, *, column: str = "workspace_id") -> str:
-    """The ``AND <column> = :ws`` fragment when scoped, else the empty string (unscoped arm)."""
-    return f"AND {column} = :ws " if workspace_id is not None else ""
+# unconditionally scoped to the caller's ``workspace_id`` (required — [B3×research] Task 3): a
+# legacy NULL-workspace row is invisible to a scoped resolve (``workspace_id = :ws`` never matches
+# NULL — fail-closed), and one client's resolve can never surface another's entity.
+def _ws_clause(*, column: str = "workspace_id") -> str:
+    """The ``AND <column> = :ws`` scoping fragment applied to every candidate query."""
+    return f"AND {column} = :ws "
 
 
-def _ws_bind(workspace_id: str | None, params: dict[str, object]) -> dict[str, object]:
-    """Add the ``:ws`` bind only when scoped (a stray bind for an absent ``:ws`` would raise)."""
-    if workspace_id is not None:
-        params = {**params, "ws": workspace_id}
-    return params
+def _ws_bind(workspace_id: str, params: dict[str, object]) -> dict[str, object]:
+    """Add the ``:ws`` bind for the scoping clause."""
+    return {**params, "ws": workspace_id}
 
 
 # --- deterministic stage (no model call) -----------------------------------
 async def _deterministic_account(
-    conn: AsyncConnection, obs: Observation, workspace_id: str | None
+    conn: AsyncConnection, obs: Observation, workspace_id: str
 ) -> EntityId | None:
-    ws = _ws_clause(workspace_id)
+    ws = _ws_clause()
     domain = registrable_domain(obs.domain) if obs.domain else None
     if domain is not None:
         hit = (
@@ -249,9 +245,9 @@ async def _deterministic_account(
 
 
 async def _deterministic_contact(
-    conn: AsyncConnection, obs: Observation, workspace_id: str | None
+    conn: AsyncConnection, obs: Observation, workspace_id: str
 ) -> EntityId | None:
-    ws = _ws_clause(workspace_id)
+    ws = _ws_clause()
     for raw in (obs.linkedin_url, obs.verified_email):
         if not raw:
             continue
@@ -282,11 +278,11 @@ async def _candidate_ids_account(
     obs: Observation,
     query_vec: str,
     policy: ResolutionPolicy,
-    workspace_id: str | None,
+    workspace_id: str,
 ) -> list[EntityId]:
     """Bounded candidate set: pgvector ANN ∪ alias-array overlap ∪ trigram, deduped (live only).
 
-    Every arm is workspace-scoped when ``workspace_id`` is supplied (see :func:`_ws_clause`)."""
+    Every arm is workspace-scoped (see :func:`_ws_clause`)."""
     ids: list[EntityId] = []
     seen: set[EntityId] = set()
 
@@ -305,7 +301,7 @@ async def _candidate_ids_account(
                     "SELECT e.entity_id FROM account_entity_embedding e "
                     "JOIN account_entity a ON a.id = e.entity_id "
                     "WHERE a.status <> 'merged' "
-                    + _ws_clause(workspace_id, column="a.workspace_id")
+                    + _ws_clause(column="a.workspace_id")
                     + "ORDER BY e.embedding <=> CAST(:q AS vector) LIMIT :k"
                 ),
                 _ws_bind(workspace_id, {"q": query_vec, "k": policy.top_k}),
@@ -323,9 +319,7 @@ async def _candidate_ids_account(
                 await conn.execute(
                     text(
                         "SELECT id FROM account_entity "
-                        "WHERE status <> 'merged' "
-                        + _ws_clause(workspace_id)
-                        + "AND aliases && :keys LIMIT :k"
+                        "WHERE status <> 'merged' " + _ws_clause() + "AND aliases && :keys LIMIT :k"
                     ).bindparams(bindparam("keys", type_=ARRAY(Text()))),
                     _ws_bind(workspace_id, {"keys": keys, "k": policy.top_k}),
                 )
@@ -342,7 +336,7 @@ async def _candidate_ids_account(
                     text(
                         "SELECT id FROM account_entity "
                         "WHERE status <> 'merged' "
-                        + _ws_clause(workspace_id)
+                        + _ws_clause()
                         + "AND similarity(canonical_name, :n) >= :thr "
                         "ORDER BY similarity(canonical_name, :n) DESC LIMIT :k"
                     ),
@@ -408,7 +402,7 @@ async def _probabilistic_account(
     obs: Observation,
     policy: ResolutionPolicy,
     embedder: Embedder,
-    workspace_id: str | None,
+    workspace_id: str,
 ) -> ResolutionResult:
     query_vec = vector_literal(embedder.embed(obs.name))
     ids = await _candidate_ids_account(conn, obs, query_vec, policy, workspace_id)
@@ -430,7 +424,7 @@ async def resolve(
     *,
     policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
     embedder: Embedder = DEFAULT_EMBEDDER,
-    workspace_id: str | None = None,
+    workspace_id: str,
 ) -> ResolutionResult:
     """Resolve one observation to ranked candidate ids (deterministic first, probabilistic second).
 
@@ -438,10 +432,10 @@ async def resolve(
     miss is the name embedded and the fuzzy candidate set scored. The result is *candidates*, not a
     decision — M2.3 disposes (auto-merge / review / new entity).
 
-    ``workspace_id`` is **transitional-optional** (accounts/contacts are workspace-local; founder
-    ruling 2026-07-22): when supplied, every candidate query is scoped to that workspace and a
-    legacy NULL-workspace row is invisible (fail-closed); ``None`` preserves today's unscoped
-    behaviour so pre-B3 callers keep working. Task 3 flips it to a required ``str``.
+    ``workspace_id`` is **required** (accounts/contacts are workspace-local; founder ruling
+    2026-07-22 — [B3×research] Task 3): every candidate query is scoped to it and a legacy
+    NULL-workspace row is invisible (fail-closed), so one client's resolve can never surface
+    another's entity.
     """
     if observation.entity_type is EntityType.ACCOUNT:
         hit = await _deterministic_account(conn, observation, workspace_id)
@@ -474,13 +468,13 @@ async def resolve_many(
     *,
     policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
     embedder: Embedder = DEFAULT_EMBEDDER,
-    workspace_id: str | None = None,
+    workspace_id: str,
 ) -> list[ResolutionResult]:
     """Bulk resolution (Scenario B): one :class:`ResolutionResult` per input row, never throwing on
     a garbage row (it surfaces as a ``NONE`` result). The caller (import) partitions by
     ``top_score`` into resolved / mid-band / unresolvable and handles each explicitly (Doc B §4).
 
-    ``workspace_id`` is transitional-optional and applied to every row (see :func:`resolve`)."""
+    ``workspace_id`` is **required** and applied to every row (see :func:`resolve`)."""
     results: list[ResolutionResult] = []
     for obs in observations:
         # A per-row savepoint so a row that errors at the DB rolls back *itself* and the batch

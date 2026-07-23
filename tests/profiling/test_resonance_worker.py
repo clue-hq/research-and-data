@@ -39,6 +39,7 @@ from clue_research.profiling import (
     params_for_run,
 )
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
+from tests._workspace import seed_workspace
 
 from .conftest import conn_session_factory, rollback_conn, run_async
 
@@ -110,11 +111,13 @@ async def _register_custom_resonance_field(
 
 
 async def _insert_account(conn):
+    await seed_workspace(conn, _TENANT)
     return await insert_account_entity(
         conn,
         canonical_name="Acme Robotics",
         primary_domain=_DOMAIN,
         hq_geo={"city": "Boston", "region": "Massachusetts"},
+        workspace_id=_TENANT,
     )
 
 

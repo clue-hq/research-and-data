@@ -50,6 +50,7 @@ from clue_research.review import (
     read_labeled_dataset,
     tombstone_contact_dispositions,
 )
+from tests._workspace import seed_workspace
 from tests.db.conftest import run_async
 from tests.review.conftest import enum_labels, rollback_conn
 
@@ -70,11 +71,13 @@ def _now() -> datetime:
 async def _account(
     conn: AsyncConnection, *, name: str = "Acme", domain: str | None = None
 ) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
         conn,
         canonical_name=name,
         primary_domain=domain or f"{name.lower()}.com",
         status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

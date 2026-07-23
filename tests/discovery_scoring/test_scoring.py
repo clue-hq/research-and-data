@@ -96,7 +96,9 @@ async def _seed_account(
     funding: bool = True,
 ):
     """An admitted account + its two scoring-proxy input claims (public footprint)."""
-    eid = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    eid = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=CLIENT
+    )
     if employee_count is not None:
         await insert_claim(
             conn,

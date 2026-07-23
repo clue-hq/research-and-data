@@ -13,7 +13,6 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import EntityId, EntityType, new_entity_id
 from clue_research.identity import (
@@ -28,7 +27,9 @@ from clue_research.identity import (
     insert_contact_entity,
     mark_merged,
     resolve,
+    resolve_alias,
 )
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -39,18 +40,6 @@ def _candidate_ids(result: ResolutionResult) -> set[EntityId]:
 
 
 pytestmark = pytest.mark.usefixtures("require_identity_db")
-
-
-async def seed_workspace(conn: AsyncConnection, workspace_id: str) -> str:
-    """Insert a workspace row (idempotent) so the workspace FK is satisfiable."""
-    await conn.execute(
-        text(
-            "INSERT INTO workspace (workspace_id, name) VALUES (:w, :w) "
-            "ON CONFLICT (workspace_id) DO NOTHING"
-        ),
-        {"w": workspace_id},
-    )
-    return workspace_id
 
 
 def test_insert_account_stamps_workspace() -> None:
@@ -338,11 +327,12 @@ def test_ann_candidates_are_workspace_scoped() -> None:
 
 
 def test_legacy_null_workspace_rows_invisible_to_scoped_resolution() -> None:
-    """A legacy NULL-workspace row is unreachable by a scoped resolve (fail-closed), though a
-    caller who passes no workspace still finds it (the transitional unscoped arm)."""
+    """A legacy NULL-workspace row is unreachable by a (now-required) scoped resolve (fail-closed):
+    ``workspace_id = :ws`` never matches NULL, so no scoped caller can surface it."""
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn, "ws_x")
             eid = new_entity_id()
             await conn.execute(
                 text(
@@ -353,13 +343,8 @@ def test_legacy_null_workspace_rows_invisible_to_scoped_resolution() -> None:
             )
             obs = Observation(name="Legacy", entity_type=EntityType.ACCOUNT, domain="legacy.com")
 
-            # Unscoped (workspace_id=None) still sees the legacy row — behaviour preserved.
-            unscoped = await resolve(conn, obs)
-            assert unscoped.method is ResolutionMethod.DETERMINISTIC
-            assert unscoped.top is not None and unscoped.top.entity_id == EntityId(eid)
-
-            # Scoped resolve cannot see it (NULL workspace != 'ws_x').
-            scoped = await resolve(conn, obs, workspace_id="ws_x")
+            # Every resolve is now scoped; the legacy NULL-workspace row is invisible to it.
+            scoped = await resolve(conn, obs, workspace_id=ws)
             assert scoped.method is not ResolutionMethod.DETERMINISTIC
             assert EntityId(eid) not in _candidate_ids(scoped)
 
@@ -395,5 +380,26 @@ def test_legacy_null_workspace_account_still_insertable_via_raw_sql() -> None:
                     )
                 )
             await trans.rollback()
+
+    run_async(_run())
+
+
+def test_resolve_alias_is_workspace_scoped() -> None:
+    """``resolve_alias`` (the exact name-key lookup) only hits within its own workspace: an alias
+    present in ws_a resolves in ws_a and returns nothing in ws_b (no cross-tenant name leak)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ala")
+            ws_b = await seed_workspace(conn, "ws_alb")
+            id_a = await insert_account_entity(
+                conn, canonical_name="Acme Robotics", workspace_id=ws_a
+            )
+
+            hit = await resolve_alias(conn, "Acme Robotics", EntityType.ACCOUNT, workspace_id=ws_a)
+            assert hit == id_a
+
+            miss = await resolve_alias(conn, "Acme Robotics", EntityType.ACCOUNT, workspace_id=ws_b)
+            assert miss is None
 
     run_async(_run())

@@ -70,6 +70,13 @@ class MergeConflictError(ValueError):
     (identity corruption) — the prior merge must be ``split`` first."""
 
 
+class ReviewTaskUnscopedError(ValueError):
+    """Raised when a review task carries no ``workspace_id`` but a new account entity must be
+    admitted from it (accounts are workspace-local; founder ruling 2026-07-22). A legacy
+    NULL-workspace task cannot mint a workspace-anchored account — fail loud, never guess a
+    scope."""
+
+
 # --- enums (mirrored by migration 0007; parity-tested) ----------------------
 class ReviewStatus(StrEnum):
     OPEN = "open"
@@ -340,7 +347,7 @@ async def disposition(
     *,
     policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
     redis: Redis | None = None,
-    workspace_id: str | None = None,
+    workspace_id: str,
     decided_by: str = "auto",
     subject_entity_id: EntityId | None = None,
 ) -> Disposition:
@@ -409,6 +416,7 @@ async def disposition(
             primary_domain=observation.domain,
             aliases=observation.aliases,
             registry_ids=observation.registry_ids,
+            workspace_id=workspace_id,
         )
     if new_id is None:
         # A contact resolves *under* an account (M2.1), so it cannot be admitted standalone here;
@@ -621,6 +629,11 @@ async def resolve_create_new_entity(
         raise ValueError(f"review task {task_id} not found")
     new_id = task.subject_entity_id
     if new_id is None and task.entity_type is EntityType.ACCOUNT:
+        if task.workspace_id is None:
+            raise ReviewTaskUnscopedError(
+                f"review task {task_id} has no workspace_id; cannot admit a new account entity "
+                "([B3×research] accounts are workspace-local)"
+            )
         obs = Observation.model_validate(task.observation)
         new_id = await insert_account_entity(
             conn,
@@ -628,6 +641,7 @@ async def resolve_create_new_entity(
             primary_domain=obs.domain,
             aliases=obs.aliases,
             registry_ids=obs.registry_ids,
+            workspace_id=task.workspace_id,
         )
     if new_id is None:
         raise NotImplementedError(
