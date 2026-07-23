@@ -112,6 +112,16 @@ Five issues, in build order:
 - **Open decisions:** None of D1–D8 bind directly. Cross-tenant lock scoping is coordinated with **M2.5** (public-entity single-flight vs. tenant-scoped private work).
 
 ### M2.5 — Cross-tenant reuse with tenant isolation
+
+> **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
+> 2026-07-22; provider licensing + GDPR controller separation). Public-footprint claims are no
+> longer shareable across workspaces — the cross-tenant reuse, entity sharing, and cost-amortization
+> hook described throughout this section (and its acceptance criteria) are retired; entity ids are
+> workspace-bound, so a cross-workspace claim read is structurally unrepresentable. `reuse_scope`
+> survives only as the privacy classification (the write-leak guard `check_claim_writable` and the
+> DSAR selector `dsar_private_claims`) — it no longer grants sharing. The `reusable_public_value`
+> amortization hook was deleted.
+
 - **Purpose:** Realize the architecture's stated moat while keeping it safe. Substrate §2: *Public-footprint claims about a company (employee count, tech stack, funding) are partially reusable across clients and amortize cost; client-specific scoring and any client-private data stay strictly tenant-isolated. This is a real moat — your claim store gets better and cheaper per account as more clients touch the same public entities.* This issue defines the **reuse boundary** as a property of the data model: which claims are public-footprint (shared, keyed on the canonical entity) versus tenant-private (scoring, CRM-imported, client-knowledge-derived, any contact `facet` / personal data), and enforces the isolation so reuse never leaks one client's private signal to another.
 - **Architecture sources:** substrate §2 (cross-tenant reuse, carefully; public-footprint reusable, client-specific scoring + private data tenant-isolated; the moat); substrate §4 (CRM resolver pulls client data as tier-1 claims — inherently tenant-private); substrate §9 (scoring is per-client/per-ICP — tenant-private by construction); Doc D §4 (personal claims, retention, erasure resolve per `contact_entity_id` — DSAR tractability); staged-flow §9 (one substrate, richer typing); conventions §2 (policy-as-data; tenant isolation as a seam), §4 (`claim`, `current_value`, `account_handoff`).
 - **Scope / deliverables:**

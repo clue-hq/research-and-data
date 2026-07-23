@@ -10,7 +10,6 @@ import pytest
 
 from clue_core import (
     ExtractionMethod,
-    FreshnessState,
     ReuseScope,
     account_claim,
     new_entity_id,
@@ -21,7 +20,6 @@ from clue_research.identity import (
     ReusePolicy,
     classify_reuse_scope,
     dsar_private_claims,
-    reusable_public_value,
     stamp_reuse,
 )
 
@@ -141,27 +139,10 @@ def test_stamp_reuse_fails_loud_for_a_private_claim_with_no_tenant() -> None:
     assert public.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and public.workspace_id is None
 
 
-# --- amortization / degradation / DSAR (DB) ---------------------------------
+# --- degradation / DSAR (DB) ------------------------------------------------
+# (cross-tenant amortization retired [B3×research] 2026-07-23 — accounts are workspace-local, so
+# the old ``reusable_public_value`` amortization test is gone with the hook.)
 pytestmark = pytest.mark.usefixtures("require_identity_db")
-
-
-def test_amortization_reuses_a_fresh_public_claim() -> None:
-    """A fresh public-footprint claim is reusable (the resolver skips the re-spend)."""
-
-    async def _run() -> None:
-        async with rollback_conn() as conn:
-            entity = new_entity_id()
-            claim = stamp_reuse(
-                _claim(entity, "core.employee_count", 250, ExtractionMethod.API),  # type: ignore[arg-type]
-                workspace_id="tenant-a",
-            )
-            await insert_claim(conn, claim, validate_field=False)
-            reused = await reusable_public_value(conn, entity, "core.employee_count")
-            assert reused is not None
-            assert reused.value_json == 250
-            assert reused.freshness_state is FreshnessState.FRESH  # → resolver reuses, no new spend
-
-    run_async(_run())
 
 
 def test_safe_degradation_isolates_a_normally_public_claim() -> None:

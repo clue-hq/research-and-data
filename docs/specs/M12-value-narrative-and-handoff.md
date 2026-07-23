@@ -131,6 +131,12 @@ It delivers three things, in dependency order:
   - **An emit/notify path** for push consumers: when the project-run reaches the `handoff` phase for an account (or batch), emit an event/webhook (or a durable outbox row) carrying `(project_run_id, account_entity_id, icp_spec_version, handoff_ref)` so the content layer can pull. **No content/design write ever flows back through this API into the research write path** (conventions §6, substrate §5c — "never write-through it").
   - **Versioned media type / schema negotiation:** responses carry the `AccountHandoff` schema version (M12.2) so the content layer pins a contract version; additive evolution does not break pinned consumers.
   - **AuthN/Z & tenancy:** tenant-scoped access (cross-tenant public claims are reusable in the store but a client's *assembled handoff* is tenant-private — substrate §2 cross-tenant rule); content-layer service auth (M0.4).
+
+    > **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
+    > 2026-07-22; provider licensing + GDPR controller separation). The "cross-tenant public claims
+    > are reusable in the store" premise above is retired — public claims no longer amortize across
+    > workspaces; every claim (and thus every handoff) is workspace-bound. Handoff access stays
+    > tenant-scoped as stated; `reuse_scope` survives only as the privacy classification.
   - **Observability:** the handoff API surfaces, per served object, **verification health** (share of tier-4 claims passing the judge, share of personal claims at strong binding — Doc C §6) so the consumer can see trust posture; these spans feed M13.4's surface (M0.5 tracing).
   - **Adapter seam for D2:** an internal `HandoffPublisher` interface so the *transport/shape* the content layer consumes can be swapped (REST pull vs. event push vs. a content-layer-specific adapter) **without changing the `account_handoff` contract** — the place D2 gets resolved later.
 - **Interface / seam:**
