@@ -19,8 +19,18 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_core import ICPCreatedFrom, new_entity_id
+from clue_research.icp import (
+    ScoringRubric,
+    TierBand,
+    TierCutoffs,
+    create_icp_spec,
+    rubric_to_slot,
+)
+from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.stage0 import ICPProposal
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolResult, invoke_tool
 from tests._workspace import seed_workspace
@@ -190,6 +200,95 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
                     idempotency_ttl_s=TTL,
                 )
             assert ei.value.reason_codes == ("discovery_not_run",)
+
+    run_async(scenario())
+
+
+def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
+    require_profiling_db: None,
+) -> None:
+    """[B3×research] slice 4 — the account guard is fail-closed, not a warning. The three
+    account-scoped spend tools (``run_deep_account`` / ``resolve_committee`` / ``profile_contact``)
+    load the account through ``_load_account``, so an account in another workspace — or a legacy
+    NULL-workspace account (decision D5: a legacy ``None`` never equals a real ctx workspace) —
+    refuses ``account_not_found``, indistinguishable from a truly-absent id (no existence leak),
+    while an in-workspace account passes the guard."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            await seed_packs(conn)
+            from clue_api.composition import load_research_packs
+
+            await load_research_packs(conn)
+            cf = conn_session_factory(conn)
+            registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
+            ws_a = await seed_workspace(conn, "ws_scope_a")
+            ws_b = await seed_workspace(conn, "ws_scope_b")
+            ctx = ToolContext(workspace_id=ws_a, actor="human", conn_factory=cf)
+
+            # An active ICP under ws_a with a rubric carrying the "high" tier band, so
+            # run_deep_account's earlier preconditions (resolvable spec + known tier) pass and it
+            # actually reaches the account guard.
+            rubric = ScoringRubric(
+                tier_cutoffs=TierCutoffs(
+                    bands=(TierBand(tier="high", min_fit=0.4, min_intent=0.5),)
+                )
+            )
+            await create_icp_spec(
+                conn,
+                workspace_id=ws_a,
+                icp_key="seg",
+                created_from=ICPCreatedFrom.SYNTHESIS,
+                scoring_rubric=rubric_to_slot(rubric),
+                activate=True,
+            )
+
+            acc_a = await insert_account_entity(
+                conn, canonical_name="In-WS", primary_domain="a.example", workspace_id=ws_a
+            )
+            acc_b = await insert_account_entity(
+                conn, canonical_name="Other-WS", primary_domain="b.example", workspace_id=ws_b
+            )
+            # A legacy NULL-workspace account (only insertable via raw SQL — the migration keeps it
+            # representable for fail-closed memory semantics).
+            legacy = new_entity_id()
+            await conn.execute(
+                text("INSERT INTO account_entity (id, canonical_name) VALUES (:id, 'Legacy')"),
+                {"id": legacy},
+            )
+            # A contact under the in-workspace account so profile_contact's accepted case fully
+            # passes (its account guard runs before the contact check).
+            contact_a = await insert_contact_entity(
+                conn, account_entity_id=acc_a, full_name="Jo Doe"
+            )
+
+            def body(name: str, account_id: str) -> dict[str, object]:
+                return {
+                    "run_deep_account": {
+                        "account_entity_id": account_id,
+                        "icp_key": "seg",
+                        "tier": "high",
+                    },
+                    "resolve_committee": {"account_entity_id": account_id},
+                    "profile_contact": {
+                        "contact_entity_id": str(contact_a),
+                        "account_entity_id": account_id,
+                        "tier": "high",
+                    },
+                }[name]
+
+            async def codes(name: str, account_id: str) -> tuple[str, ...]:
+                tool = registry.get(name)
+                failures = await tool.preconditions(tool.input_model(**body(name, account_id)), ctx)
+                return tuple(f.reason_code for f in failures)
+
+            for name in ("run_deep_account", "resolve_committee", "profile_contact"):
+                # In-workspace → the account guard passes (no account_not_found refusal).
+                assert "account_not_found" not in await codes(name, str(acc_a)), name
+                # Cross-workspace → refused exactly as an unknown id (no existence leak).
+                assert await codes(name, str(acc_b)) == ("account_not_found",), name
+                # Legacy NULL-workspace → refused (decision D5).
+                assert await codes(name, str(legacy)) == ("account_not_found",), name
 
     run_async(scenario())
 
