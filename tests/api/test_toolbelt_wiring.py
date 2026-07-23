@@ -293,6 +293,64 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
     run_async(scenario())
 
 
+def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
+    require_profiling_db: None,
+) -> None:
+    """[B3×research] slice 4 — ``profile_contact`` profiles a committee member *of* the loaded
+    in-workspace account, so the contact must belong to that account. A contact under a *different*
+    account (and/or a different workspace) is refused ``contact_not_found`` — the same shape a
+    truly-absent id gets (no existence leak), even though the caller holds a valid in-workspace
+    account id. The happy path (contact under the in-workspace account) still passes cleanly."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            await seed_packs(conn)
+            from clue_api.composition import load_research_packs
+
+            await load_research_packs(conn)
+            cf = conn_session_factory(conn)
+            registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
+            ws_a = await seed_workspace(conn, "ws_pc_a")
+            ws_b = await seed_workspace(conn, "ws_pc_b")
+            ctx = ToolContext(workspace_id=ws_a, actor="human", conn_factory=cf)
+
+            acc_a = await insert_account_entity(
+                conn, canonical_name="In-WS", primary_domain="pca.example", workspace_id=ws_a
+            )
+            acc_b = await insert_account_entity(
+                conn, canonical_name="Other-WS", primary_domain="pcb.example", workspace_id=ws_b
+            )
+            # A contact under the in-workspace account (accepted) and one under the
+            # foreign-workspace account (must be refused when profiled against acc_a).
+            contact_a = await insert_contact_entity(
+                conn, account_entity_id=acc_a, full_name="Jo Doe"
+            )
+            contact_b = await insert_contact_entity(
+                conn, account_entity_id=acc_b, full_name="Kai Roe"
+            )
+
+            tool = registry.get("profile_contact")
+
+            async def codes(contact_id: str, account_id: str) -> tuple[str, ...]:
+                failures = await tool.preconditions(
+                    tool.input_model(
+                        contact_entity_id=contact_id,
+                        account_entity_id=account_id,
+                        tier="high",
+                    ),
+                    ctx,
+                )
+                return tuple(f.reason_code for f in failures)
+
+            # Happy path: contact under the in-workspace account → the contact guard passes.
+            assert "contact_not_found" not in await codes(str(contact_a), str(acc_a))
+            # A contact belonging to a *different* account/workspace, profiled against the
+            # in-workspace account → refused exactly as an unknown contact (no existence leak).
+            assert await codes(str(contact_b), str(acc_a)) == ("contact_not_found",)
+
+    run_async(scenario())
+
+
 def test_build_toolbelt_registers_the_full_set() -> None:
     """Registry construction is DB-free (preconditions/invoke touch the DB, construction does not),
     so the full set is assertable without a database."""
