@@ -905,9 +905,15 @@ class ProfileContactTool(_CapabilityTool):
         if contact is None:
             return _fail("contact_not_found", "contact_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
-            if await self._load_account(self.name, inputs.account_entity_id, ctx, conn) is None:
+            account = await self._load_account(self.name, inputs.account_entity_id, ctx, conn)
+            if account is None:
                 return _fail("account_not_found", "no such account entity")
-            if await get_contact(conn, contact) is None:
+            # The tool profiles a committee member *of* this in-workspace account, so the contact
+            # must resolve under it. A missing contact, a foreign-workspace contact, or a contact of
+            # a different account all collapse to the same not-found shape (no existence leak — a
+            # cross-account/cross-workspace contact is indistinguishable from an absent one).
+            loaded = await get_contact(conn, contact)
+            if loaded is None or loaded.account_entity_id != account.id:
                 return _fail("contact_not_found", "no such contact entity")
         return ()
 
