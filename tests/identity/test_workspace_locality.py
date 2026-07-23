@@ -15,17 +15,28 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import EntityType, new_entity_id
+from clue_core import EntityId, EntityType, new_entity_id
 from clue_research.identity import (
     CrossWorkspaceMergeError,
+    Observation,
+    ResolutionMethod,
+    ResolutionResult,
+    embed_account,
     get_account,
     get_contact,
     insert_account_entity,
     insert_contact_entity,
     mark_merged,
+    resolve,
 )
 
 from .conftest import rollback_conn, run_async
+
+
+def _candidate_ids(result: ResolutionResult) -> set[EntityId]:
+    """The set of resolved candidate entity ids (empty when nothing matched)."""
+    return {c.entity_id for c in result.candidates}
+
 
 pytestmark = pytest.mark.usefixtures("require_identity_db")
 
@@ -167,6 +178,190 @@ def test_same_workspace_merge_allowed() -> None:
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
             merged = await get_account(conn, loser)
             assert merged is not None and merged.merged_into == survivor
+
+    run_async(_run())
+
+
+# --- [B3×research] slice 2 — workspace-scoped resolution ---------------------
+# Each test proves one candidate stage is workspace-scoped: the same resolve finds the entity in
+# its own workspace and finds *nothing* of it in a foreign workspace. Constructed so the named
+# stage is the *only* path that could surface the entity (so a broken filter on that stage would
+# leak it into ws_b), the others being starved (no embedding → no ANN, distinct name-key → no
+# alias-block, low trigram similarity → no trigram, no strong key → no deterministic hit).
+
+
+def test_deterministic_domain_match_is_workspace_scoped() -> None:
+    """An exact-domain deterministic hit only fires within the observation's workspace."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ra")
+            ws_b = await seed_workspace(conn, "ws_rb")
+            id_a = await insert_account_entity(
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws_a
+            )
+            obs = Observation(name="Acme", entity_type=EntityType.ACCOUNT, domain="acme.com")
+
+            hit_a = await resolve(conn, obs, workspace_id=ws_a)
+            assert hit_a.method is ResolutionMethod.DETERMINISTIC
+            assert hit_a.top is not None and hit_a.top.entity_id == id_a
+
+            miss_b = await resolve(conn, obs, workspace_id=ws_b)
+            assert miss_b.method is not ResolutionMethod.DETERMINISTIC
+            assert id_a not in _candidate_ids(miss_b)
+
+    run_async(_run())
+
+
+def test_deterministic_registry_match_is_workspace_scoped() -> None:
+    """An exact registry-id deterministic hit only fires within the observation's workspace."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ra")
+            ws_b = await seed_workspace(conn, "ws_rb")
+            id_a = await insert_account_entity(
+                conn,
+                canonical_name="Acme",
+                registry_ids={"DUNS": "123456789"},
+                workspace_id=ws_a,
+            )
+            obs = Observation(
+                name="Acme", entity_type=EntityType.ACCOUNT, registry_ids={"duns": "12-345-6789"}
+            )
+
+            hit_a = await resolve(conn, obs, workspace_id=ws_a)
+            assert hit_a.method is ResolutionMethod.DETERMINISTIC
+            assert hit_a.top is not None and hit_a.top.entity_id == id_a
+
+            miss_b = await resolve(conn, obs, workspace_id=ws_b)
+            assert miss_b.method is not ResolutionMethod.DETERMINISTIC
+            assert id_a not in _candidate_ids(miss_b)
+
+    run_async(_run())
+
+
+def test_contact_strong_key_match_is_workspace_scoped() -> None:
+    """A contact strong-key (linkedin/email) deterministic hit is scoped to its own workspace."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ra")
+            ws_b = await seed_workspace(conn, "ws_rb")
+            acc_a = await insert_account_entity(conn, canonical_name="A", workspace_id=ws_a)
+            await insert_account_entity(conn, canonical_name="B", workspace_id=ws_b)
+            url = "https://www.linkedin.com/in/jo/"
+            cid = await insert_contact_entity(
+                conn, account_entity_id=acc_a, full_name="Jo", linkedin_url=url
+            )
+            obs = Observation(name="Jo", entity_type=EntityType.CONTACT, linkedin_url=url)
+
+            hit_a = await resolve(conn, obs, workspace_id=ws_a)
+            assert hit_a.method is ResolutionMethod.DETERMINISTIC
+            assert hit_a.top is not None and hit_a.top.entity_id == cid
+
+            miss_b = await resolve(conn, obs, workspace_id=ws_b)
+            assert miss_b.method is not ResolutionMethod.DETERMINISTIC
+            assert cid not in _candidate_ids(miss_b)
+
+    run_async(_run())
+
+
+def test_alias_block_candidates_are_workspace_scoped() -> None:
+    """The alias-array-overlap candidate query filters by workspace (only stage that can match)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ra")
+            ws_b = await seed_workspace(conn, "ws_rb")
+            # Canonical name is far from the probe (kills trigram); an alias equals the probe's
+            # name-key (only alias-block can match); not embedded (kills ANN); no domain.
+            id_a = await insert_account_entity(
+                conn, canonical_name="Zeta Industries", aliases=["Acme"], workspace_id=ws_a
+            )
+            obs = Observation(name="Acme", entity_type=EntityType.ACCOUNT)
+
+            hit_a = await resolve(conn, obs, workspace_id=ws_a)
+            assert id_a in _candidate_ids(hit_a)
+
+            miss_b = await resolve(conn, obs, workspace_id=ws_b)
+            assert id_a not in _candidate_ids(miss_b)
+
+    run_async(_run())
+
+
+def test_trigram_candidates_are_workspace_scoped() -> None:
+    """The trigram-similarity candidate query filters by workspace (only stage that can match)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ra")
+            ws_b = await seed_workspace(conn, "ws_rb")
+            # A near-duplicate probe (typo) → high trigram similarity but a *different* name-key
+            # (kills alias-block); not embedded (kills ANN); no domain (kills deterministic).
+            id_a = await insert_account_entity(
+                conn, canonical_name="Acme Corporation", workspace_id=ws_a
+            )
+            obs = Observation(name="Acme Corporatn", entity_type=EntityType.ACCOUNT)
+
+            hit_a = await resolve(conn, obs, workspace_id=ws_a)
+            assert id_a in _candidate_ids(hit_a)
+
+            miss_b = await resolve(conn, obs, workspace_id=ws_b)
+            assert id_a not in _candidate_ids(miss_b)
+
+    run_async(_run())
+
+
+def test_ann_candidates_are_workspace_scoped() -> None:
+    """The pgvector ANN join filters by workspace (only stage that can surface the entity)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws_a = await seed_workspace(conn, "ws_ra")
+            ws_b = await seed_workspace(conn, "ws_rb")
+            # Embedded → reachable by ANN (nearest of the embedded set); canonical name shares no
+            # trigrams/name-key with the probe (kills trigram + alias-block); no domain.
+            id_a = await insert_account_entity(
+                conn, canonical_name="Zeta Industries", workspace_id=ws_a
+            )
+            await embed_account(conn, id_a)
+            obs = Observation(name="Acme", entity_type=EntityType.ACCOUNT)
+
+            hit_a = await resolve(conn, obs, workspace_id=ws_a)
+            assert id_a in _candidate_ids(hit_a)
+
+            miss_b = await resolve(conn, obs, workspace_id=ws_b)
+            assert id_a not in _candidate_ids(miss_b)
+
+    run_async(_run())
+
+
+def test_legacy_null_workspace_rows_invisible_to_scoped_resolution() -> None:
+    """A legacy NULL-workspace row is unreachable by a scoped resolve (fail-closed), though a
+    caller who passes no workspace still finds it (the transitional unscoped arm)."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            eid = new_entity_id()
+            await conn.execute(
+                text(
+                    "INSERT INTO account_entity (id, canonical_name, primary_domain) "
+                    "VALUES (:id, 'Legacy', 'legacy.com')"
+                ),
+                {"id": eid},
+            )
+            obs = Observation(name="Legacy", entity_type=EntityType.ACCOUNT, domain="legacy.com")
+
+            # Unscoped (workspace_id=None) still sees the legacy row — behaviour preserved.
+            unscoped = await resolve(conn, obs)
+            assert unscoped.method is ResolutionMethod.DETERMINISTIC
+            assert unscoped.top is not None and unscoped.top.entity_id == EntityId(eid)
+
+            # Scoped resolve cannot see it (NULL workspace != 'ws_x').
+            scoped = await resolve(conn, obs, workspace_id="ws_x")
+            assert scoped.method is not ResolutionMethod.DETERMINISTIC
+            assert EntityId(eid) not in _candidate_ids(scoped)
 
     run_async(_run())
 
