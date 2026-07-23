@@ -452,6 +452,13 @@ misunderstanding — Lock 6 is honored as "one *scrape* pass" (recon dedupe/cost
    `public_footprint`-scoped, so a second tenant hitting the same domain reuses them — recon cost
    amortizes across the tenant base. Output = a **recon brief** (mini `compose_dossier`) + a gap
    list that *is* the interview agenda.
+
+   > **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
+   > 2026-07-22; provider licensing + GDPR controller separation). Public-footprint claims are no
+   > longer shareable across workspaces — the cross-tenant recon amortization described above (and
+   > the duplicate-domain reuse acceptance criterion below) is retired; each tenant re-runs recon in
+   > its own workspace. `reuse_scope` survives only as the privacy classification (write-leak guard
+   > + DSAR selector).
 2. **The interview is a source.** A registered `client_interview` source (modality: conversation;
    tier 1 for `client.*` fields — the client is the most authoritative source about themselves)
    whose resolver *is the chat agent*: when the gap planner finds unfilled client/ICP fields whose

@@ -220,6 +220,7 @@ async def run_pipeline(
         clock=clock,
         params=params,
         snapshots=snapshots,
+        workspace_id=workspace_id,
     )
     if persist:
         # Flush captured evidence snapshots BEFORE the claims that reference them (the
@@ -258,6 +259,7 @@ def run_chain(
     clock: Callable[[], datetime] = utc_now,
     params: dict[str, JsonValue] | None = None,
     snapshots: SnapshotSink | None = None,
+    workspace_id: str | None = None,
 ) -> list[Claim]:
     """The **synchronous** ``fetch → adapt → extract → materialize`` core of :func:`run_pipeline`,
     over an already-loaded ``manifest`` and **without** persistence — the seam a *resolver* uses.
@@ -271,6 +273,9 @@ def run_chain(
     relationship is exactly ``run_pipeline = get_source + run_chain + (persist)`` — one chain, one
     materialize, no duplication (conventions §2 DRY). ``run_id``/``research_mode`` may be the
     resolver's placeholders; the waterfall overwrites them (adaptation never owns run provenance).
+
+    ``workspace_id`` keys the artifact cache so a fetch is never served cross-tenant ([B3×research],
+    founder ruling 2026-07-22); ``None`` = the public/unscoped fetch lane (its own cache partition).
     """
     source_key = manifest.source_key
     estimate = _estimate(manifest, ref)
@@ -311,6 +316,7 @@ def run_chain(
             clock=clock,
             estimate=estimate,
             snapshots=snapshots,
+            workspace_id=workspace_id,
         )
         drafts = _extract(extractor, normalized, entity, field, source_key)
         claims = _materialize(
@@ -364,6 +370,7 @@ def _fetch_and_adapt(
     clock: Callable[[], datetime],
     estimate: CostCents,
     snapshots: SnapshotSink | None = None,
+    workspace_id: str | None = None,
 ) -> tuple[NormalizedText, CostCents, bool, str | None]:
     """Run transport + normalization (with per-stage cost+latency spans + the content-addressed
     cache). Returns ``(normalized, realized_cost, cache_hit, artifact_key)``; a cache hit costs
@@ -375,7 +382,7 @@ def _fetch_and_adapt(
     ttl = freshness_ttl(manifest.freshness_profile)
 
     if cache is not None:
-        cached = cache.get(content_key(source_key, ref))
+        cached = cache.get(content_key(source_key, ref, workspace_id))
         if cached is not None and is_fresh(cached, ttl, now=clock()):
             return cached.normalized, Decimal(0), True, cached.artifact_key
 
@@ -409,7 +416,7 @@ def _fetch_and_adapt(
 
     if cache is not None and ttl > timedelta(0):
         cache.put(
-            content_key(source_key, ref),
+            content_key(source_key, ref, workspace_id),
             CachedArtifact(
                 normalized=normalized,
                 stored_at=clock(),

@@ -2,11 +2,12 @@
 
 Re-fetching or re-transcribing the same ``ref`` is the most expensive avoidable spend (D7;
 transcription/OCR are the costliest non-LLM ops). The cache stores the **normalized text** (the
-costly output) keyed by a content hash of ``(source_key, ref)``, so a second ``run_pipeline`` on
-the same ref reuses it at **zero** additional cost — the manifest ``freshness_profile`` is the TTL
-(a ``realtime`` / ``livecrawl`` source is never cached). The store is a Protocol so production
-swaps the in-memory default for Postgres / object storage strictly behind the ``run_pipeline`` seam
-(no caller learns where artifacts live).
+costly output) keyed by a content hash of ``(source_key, ref, workspace_id)`` — workspace-scoped so
+no fetch is served cross-tenant ([B3×research]) — so a second ``run_pipeline`` on the same ref *in
+the same workspace* reuses it at **zero** additional cost — the manifest ``freshness_profile`` is
+the TTL (a ``realtime`` / ``livecrawl`` source is never cached). The store is a Protocol so
+production swaps the in-memory default for Postgres / object storage strictly behind the
+``run_pipeline`` seam (no caller learns where artifacts live).
 
 The cache is **caller-owned** (``run_pipeline`` takes it as a parameter, default off): a per-run
 cache instance dedupes within a run and is discarded with it, so there is no hidden process-global
@@ -24,12 +25,16 @@ from pydantic import BaseModel, ConfigDict
 from clue_core import CostCents, NormalizedText, UtcDatetime
 
 
-def content_key(source_key: str, ref: str) -> str:
-    """A stable content-address for ``(source_key, ref)`` — the cache key (hash of the request)."""
+def content_key(source_key: str, ref: str, workspace_id: str | None) -> str:
+    """Content-address of ``(source_key, ref)`` **within one workspace** — the cache key. No
+    cross-tenant cache sharing ([B3×research]): accounts are workspace-local (founder ruling
+    2026-07-22 — provider licensing + GDPR controller separation), so a fetch cached under one
+    workspace is never served to another. ``None`` = the public/unscoped fetch lane, its own
+    partition. The NUL separator keeps ``(a,bc)`` distinct from ``(ab,c)``."""
     digest = hashlib.sha256()
-    digest.update(source_key.encode("utf-8"))
-    digest.update(b"\x00")  # unambiguous separator so (a,bc) != (ab,c)
-    digest.update(ref.encode("utf-8"))
+    for part in (source_key, ref, workspace_id or ""):
+        digest.update(part.encode("utf-8"))
+        digest.update(b"\x00")  # unambiguous separator so (a,bc) != (ab,c)
     return digest.hexdigest()
 
 

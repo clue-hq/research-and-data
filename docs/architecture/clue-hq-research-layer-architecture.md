@@ -30,6 +30,11 @@ This is the one thing to get right before writing the first research agent. The 
 > reuse is the *opposite* default — public-footprint claims amortize across clients (§2); memory is
 > tenant-private, always, fail-closed. Everything below concerns facts/claims.
 
+> **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
+> 2026-07-22; provider licensing + GDPR controller separation). Public-footprint claims are no
+> longer shareable across workspaces — the amortization described above is retired. `reuse_scope`
+> survives only as the privacy classification (write-leak guard + DSAR selector).
+
 Every fact about an account or contact is a row, not a field on a document.
 
 ```
@@ -95,6 +100,11 @@ account_entity
 - **Resolution = deterministic first, probabilistic second.** Exact domain / registry-ID match auto-resolves. Otherwise fuzzy match on name+geo+aliases (embeddings in pgvector for the candidate set, then a scorer). High-confidence (≈≥0.95) auto-merges; the mid-band routes to the human review queue rather than guessing. Never let a near-match silently collapse two real companies.
 - **Distributed in-flight locks** (Redis) replace the prototype's `run_pause.flag` and ad-hoc in-flight checks: `lock(account_id)` before any expensive work so two workers never research the same account.
 - **Cross-tenant reuse, carefully.** Public-footprint claims about a company (employee count, tech stack, funding) are partially reusable across clients and amortize cost; client-specific scoring and any client-private data stay strictly tenant-isolated. This is a real moat — your claim store gets better and cheaper per account as more clients touch the same public entities.
+
+  > **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
+  > 2026-07-22; provider licensing + GDPR controller separation). Public-footprint claims are no
+  > longer shareable across workspaces — the amortization described above is retired. `reuse_scope`
+  > survives only as the privacy classification (write-leak guard + DSAR selector).
 - **Contacts resolve under accounts**, keyed on LinkedIn URL / verified email, with the same alias+confidence machinery.
 
 ---

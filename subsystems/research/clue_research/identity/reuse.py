@@ -12,6 +12,13 @@ The classifier is the *write*-side seam; the read-side isolation is the tenant-s
 (M1's ``current_value`` + ``WorkspaceScope``). Together they make "a private claim is never returned
 to
 another tenant" a property of the data model, not a caller's discipline.
+
+Superseded posture (2026-07-23, [B3×research]): accounts are workspace-local (founder ruling
+2026-07-22 — provider licensing + GDPR controller separation), so cross-tenant amortization is
+retired; entity ids are workspace-bound, making a cross-workspace claim read structurally
+unrepresentable. ``reuse_scope`` remains as the *privacy classification* (write-leak guard
+``check_claim_writable``; the DSAR selector ``dsar_private_claims``) — it no longer grants
+cross-workspace sharing. The old amortization hook ``reusable_public_value`` was deleted here.
 """
 
 from __future__ import annotations
@@ -20,14 +27,8 @@ from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import Claim, CurrentValue, EntityId, ExtractionMethod, ReuseScope
-from clue_research.claimstore import (
-    DEFAULT_MERGE_POLICY,
-    MergePolicy,
-    WorkspaceScope,
-    claims_for,
-    current_value,
-)
+from clue_core import Claim, EntityId, ExtractionMethod, ReuseScope
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.identity.policy import DEFAULT_REUSE_POLICY, ReusePolicy
 
 
@@ -94,25 +95,6 @@ def stamp_reuse(
             )
         return claim.model_copy(update={"reuse_scope": scope, "workspace_id": workspace_id})
     return claim.model_copy(update={"reuse_scope": scope, "workspace_id": None})
-
-
-async def reusable_public_value(
-    conn: AsyncConnection,
-    entity_id: EntityId,
-    field_key: str,
-    *,
-    policy: MergePolicy = DEFAULT_MERGE_POLICY,
-) -> CurrentValue | None:
-    """The current **public-footprint** truth for a field, if any — the amortization hook (M2.5).
-
-    A resolver (M4) checks this before spending: if a fresh public-footprint claim already satisfies
-    the field (``freshness_state == FRESH``), it reuses it instead of re-fetching — the "cheaper per
-    account as more clients touch the same entity" payoff. Returns ``None`` when no public claim
-    exists (the resolver must then fetch).
-    """
-    return await current_value(
-        conn, entity_id, field_key, scope=WorkspaceScope.public_only(), policy=policy
-    )
 
 
 async def dsar_private_claims(
