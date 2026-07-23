@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import ProjectPhase, new_entity_id, new_project_run_id
 from clue_projections import account_progress, run_overview, run_readiness
 from clue_research.durable import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     AccountRunStatus,
     PhaseCheckpointStatus,
     save_plan,
@@ -72,7 +73,7 @@ def test_run_overview_surfaces_narrative_emit_skipped_for_gap_completed_run() ->
                 conn,
                 gap_run,
                 handoff_payload={
-                    "narrative_emit_skipped": True,
+                    NARRATIVE_EMIT_SKIPPED_KEY: True,
                     "reason": "no production HandoffCommitteeReader",
                 },
             )

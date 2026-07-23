@@ -123,6 +123,7 @@ from clue_research.durable.recursion import (
     SpawnGuard,
 )
 from clue_research.durable.run_events import (
+    NARRATIVE_EMIT_SKIPPED_KEY,
     RUN_EVENT_TOPICS,
     RunEventRow,
     RunEventTopic,
@@ -224,6 +225,7 @@ __all__ = [
     "RunEventRow",
     "emit_run_event",
     "list_run_events",
+    "NARRATIVE_EMIT_SKIPPED_KEY",
     "event_created_at",
     # phase-handler registry (M7.3)
     "PhaseHandlerRegistry",

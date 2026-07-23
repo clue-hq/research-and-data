@@ -30,8 +30,10 @@ _MINT_SQL = text(
     """
 )
 
-# Single-use consume: stamp used_at atomically only for a live, unused, unexpired, same-tenant row.
-# A second use (used_at already set), an expired token, or a cross-tenant token returns no row.
+# Single-use consume: stamp used_at atomically only for a live, unused, unexpired, same-tenant,
+# same-run row. A second use (used_at already set), an expired token, a cross-tenant token, or a
+# token minted for a DIFFERENT run returns no row (run-bound: a run-scoped token opens only the
+# stream it was minted for; a NULL-run token is workspace-wide by design).
 _CONSUME_SQL = text(
     """
     UPDATE stream_token
@@ -40,6 +42,7 @@ _CONSUME_SQL = text(
       AND workspace_id = :workspace_id
       AND used_at IS NULL
       AND expires_at > now()
+      AND (run_id IS NULL OR run_id = :run_id)
     RETURNING token
     """
 )
@@ -63,11 +66,16 @@ async def mint_stream_token(
     return UUID(str(token))
 
 
-async def consume_stream_token(conn: AsyncConnection, *, token: UUID, workspace_id: str) -> bool:
-    """Atomically consume ``token`` for ``workspace_id``: ``True`` iff live (unused, unexpired,
-    this tenant's) — stamping ``used_at`` so a second use is refused. ``False`` for a used / expired
-    / cross-tenant / unknown token (indistinguishable — no existence leak)."""
+async def consume_stream_token(
+    conn: AsyncConnection, *, token: UUID, workspace_id: str, run_id: ProjectRunId | None = None
+) -> bool:
+    """Atomically consume ``token`` for ``workspace_id`` on ``run_id``'s stream: ``True`` iff live
+    (unused, unexpired, this tenant's, and minted for this run — or minted run-unscoped) —
+    stamping ``used_at`` so a second use is refused. ``False`` for a used / expired / cross-tenant
+    / wrong-run / unknown token (indistinguishable — no existence leak)."""
     row = (
-        await conn.execute(_CONSUME_SQL, {"token": token, "workspace_id": workspace_id})
+        await conn.execute(
+            _CONSUME_SQL, {"token": token, "workspace_id": workspace_id, "run_id": run_id}
+        )
     ).one_or_none()
     return row is not None
