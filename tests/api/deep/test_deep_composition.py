@@ -172,6 +172,8 @@ def test_empty_high_tier_set_is_a_clean_completed_no_op() -> None:
     comp = _composition(high_tier_resolver=_empty_resolver)
     ctx = PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.DEEP,
         workspace_id=_CLIENT,
         icp_key=_ICP,
@@ -273,6 +275,8 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
             resolver = build_high_tier_resolver(spec=_spec(), session_factory=factory)
             ctx = PhaseContext(
                 project_run_id=new_project_run_id(),
+                project_id="prj-test",
+                brand_id="brd-test",
                 phase=ProjectPhase.DEEP,
                 workspace_id=_CLIENT,
                 icp_key=_ICP,
@@ -311,7 +315,9 @@ def test_advance_dispatches_deep_and_transitions_to_verification() -> None:
             register=registry.register,
         )
         machine = ProjectRun(store=store, registry=registry)
-        run_id = await machine.start(workspace_id=_CLIENT, icp_key=_ICP, icp_version=1)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id=_CLIENT, icp_key=_ICP, icp_version=1
+        )
         # Park the run at DEEP (the prior phases have their own handlers/milestones); advancing must
         # now dispatch our handler rather than raise NoPhaseHandlerRegistered(DEEP).
         await store.transition(run_id, phase=ProjectPhase.DEEP, status=ProjectRunStatus.ACTIVE)

@@ -113,7 +113,12 @@ def _extractor() -> CallableClaimExtractor:
 
 
 def _account(domain: str = "acme.com") -> AccountEntity:
-    return AccountEntity(id=new_entity_id(), canonical_name="Acme Corp", primary_domain=domain)
+    return AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Acme Corp",
+        primary_domain=domain,
+        workspace_id="ws-test",
+    )
 
 
 def _field() -> FieldDef:
@@ -259,6 +264,7 @@ def test_excluded_jurisdiction_is_skipped() -> None:
                 canonical_name="Acme GmbH",
                 primary_domain="acme.de",
                 hq_geo={"country": "DE"},
+                workspace_id="ws-test",
             )
             scraper = _RecordingScraper()
             register_scrape_resolver(

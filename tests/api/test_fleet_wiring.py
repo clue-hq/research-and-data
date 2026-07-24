@@ -218,7 +218,9 @@ def test_boot_registry_drives_a_run_through_the_fleet_worker() -> None:
         registry.register(_StubPhaseHandler(ProjectPhase.REVERSE_PROFILING))
 
         machine = ProjectRun(store=FakeProjectRunStore(), registry=registry)
-        run_id = await machine.start(workspace_id="ws", icp_key="icp", icp_version=1)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="ws", icp_key="icp", icp_version=1
+        )
 
         queue = FakeTaskQueue()
         leases = FakeLeaseStore()

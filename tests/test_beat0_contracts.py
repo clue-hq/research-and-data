@@ -125,6 +125,8 @@ def test_verification_gate_protocols_are_runtime_checkable() -> None:
 def test_execution_value_types_construct() -> None:
     ctx = PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.SCORING,
         workspace_id="acme",
         icp_key="default",

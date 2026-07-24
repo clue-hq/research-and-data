@@ -178,7 +178,7 @@ def test_persist_tier_idempotent_and_icp_supersede(require_discovery_db: None) -
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             eid = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
             )
             view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0, rubric_version=1)
             scope = WorkspaceScope.for_workspace(CLIENT)
@@ -242,7 +242,7 @@ def test_persist_tier_other_icp_not_superseded(require_discovery_db: None) -> No
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             eid = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
             )
             view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0)
             scope = WorkspaceScope.for_workspace(CLIENT)
@@ -318,8 +318,12 @@ def test_load_score_views_collapses_merged_survivor(require_discovery_db: None) 
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             run_id = new_run_id()
-            a = await insert_account_entity(conn, canonical_name="A", primary_domain="a.example")
-            b = await insert_account_entity(conn, canonical_name="B", primary_domain="b.example")
+            a = await insert_account_entity(
+                conn, canonical_name="A", primary_domain="a.example", workspace_id=CLIENT
+            )
+            b = await insert_account_entity(
+                conn, canonical_name="B", primary_domain="b.example", workspace_id=CLIENT
+            )
             for eid in (a, b):
                 await _insert_score(conn, eid, FIT_FIELD, 0.5, run_id)
                 await _insert_score(conn, eid, INTENT_FIELD, 0.8, run_id)
@@ -338,8 +342,12 @@ def test_load_score_views_skips_claim_on_merged_loser(require_discovery_db: None
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             run_id = new_run_id()
-            a = await insert_account_entity(conn, canonical_name="A", primary_domain="a.example")
-            b = await insert_account_entity(conn, canonical_name="B", primary_domain="b.example")
+            a = await insert_account_entity(
+                conn, canonical_name="A", primary_domain="a.example", workspace_id=CLIENT
+            )
+            b = await insert_account_entity(
+                conn, canonical_name="B", primary_domain="b.example", workspace_id=CLIENT
+            )
             # only A is scored, then A merges INTO B (claims are never re-pointed on merge)
             await _insert_score(conn, a, FIT_FIELD, 0.5, run_id)
             await _insert_score(conn, a, INTENT_FIELD, 0.8, run_id)

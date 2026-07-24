@@ -57,7 +57,7 @@ from clue_core import (
     ProjectRunId,
     RunId,
 )
-from clue_db import transaction
+from clue_db import ConnFactory, transaction
 from clue_obs.otel import (
     ATTR_PROJECT_RUN_ID,
     METRIC_COST_CAP_CENTS,
@@ -235,12 +235,18 @@ class DbBudgetStore:
     ``account_run_id`` is given, the per-account total in the **same** transaction, so the two
     counters never drift across a crash between them."""
 
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+        # B4 slice-2 (S6): an injectable ``ConnFactory`` so a test/toolbelt composition can
+        # bind a savepoint-scoped factory; defaults to the process ``transaction`` (the
+        # production path, byte-identical behaviour).
+        self._conn_factory = conn_factory
+
     async def run_state(self, project_run_id: ProjectRunId) -> RunBudgetState | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_run_budget_state(conn, project_run_id)
 
     async def account_state(self, account_run_id: RunId) -> AccountBudgetState | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_account_budget_state(conn, account_run_id)
 
     async def add_spend(
@@ -263,7 +269,7 @@ class DbBudgetStore:
         if conn is not None:
             await self._add_spend(conn, project_run_id, cost_cents, account_run_id)
             return
-        async with transaction() as own_conn:
+        async with self._conn_factory() as own_conn:
             await self._add_spend(own_conn, project_run_id, cost_cents, account_run_id)
 
     @staticmethod
@@ -282,15 +288,15 @@ class DbBudgetStore:
             raise BudgetStateNotFound(f"account_run {account_run_id}")
 
     async def set_campaign_cap(self, project_run_id: ProjectRunId, cap_cents: CostCents) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_budget_cap(conn, project_run_id, cap_cents)
 
     async def set_account_cap(self, account_run_id: RunId, cap_cents: CostCents | None) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_account_budget_cap(conn, account_run_id, cap_cents)
 
     async def set_estimated(self, project_run_id: ProjectRunId, estimated_cents: CostCents) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_estimated_cents(conn, project_run_id, estimated_cents)
 
     async def record_event(
@@ -303,7 +309,7 @@ class DbBudgetStore:
         cap_cents: CostCents | None,
         detail: dict[str, JsonValue] | None = None,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await insert_budget_event(
                 conn,
                 project_run_id=project_run_id,

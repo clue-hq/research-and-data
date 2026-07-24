@@ -36,6 +36,7 @@ from clue_research.stage0.fields import (
     CLIENT_PRODUCT,
     CLIENT_VALUE_PROP,
 )
+from tests._workspace import seed_workspace
 from tests.stage0._fakes import build_client_kb
 from tests.stage0.conftest import run_async
 
@@ -67,6 +68,8 @@ async def _seed_committed() -> None:
 def _ctx(workspace_id: str, icp_key: str, icp_version: int) -> PhaseContext:
     return PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.ICP_CONFIRMED,
         workspace_id=workspace_id,
         icp_key=icp_key,
@@ -82,6 +85,8 @@ def test_handler_emits_artifact_for_confirmed_spec() -> None:
             client = f"tenant-icp-{suffix}"
             # build + confirm a spec in a committed transaction, then run the handler over it
             async with transaction() as conn:
+                # accounts are workspace-local — seed the workspace before the KB build inserts one
+                await seed_workspace(conn, client)
                 ref = await build_client_kb(
                     conn, workspace_id=client, suffix=suffix, asserted=_ASSERTED
                 )

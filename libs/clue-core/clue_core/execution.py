@@ -72,14 +72,17 @@ SourceGate = Callable[[SourceManifest], Awaitable[bool]]
 class PhaseContext(BaseModel):
     """The context a phase handler receives for one phase of one project run (M7.3).
 
-    Identifies the run and the active ICP version; ``params`` is the escape hatch for phase-specific
-    inputs (e.g. tier cutoffs at ``SCORING``) so adding one does not force a ``core`` change. The
-    handler reads claims/config it needs through the claim store and config loader — it is handed
-    keys, not blobs (substrate §5)."""
+    Identifies the run, its owning workspace/project, the sender brand pinned by that project, and
+    the active ICP version. ``params`` is the escape hatch for phase-specific inputs (e.g. tier
+    cutoffs at ``SCORING``) so adding one does not force a ``core`` change. The handler reads
+    claims/config it needs through the claim store and config loader — it is handed keys, not blobs
+    (substrate §5)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     project_run_id: ProjectRunId
+    project_id: str
+    brand_id: str
     phase: ProjectPhase
     workspace_id: str
     icp_key: str

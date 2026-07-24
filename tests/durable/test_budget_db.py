@@ -37,6 +37,7 @@ from clue_research.durable import (
     set_account_budget_cap,
     set_estimated_cents,
 )
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 
@@ -203,9 +204,11 @@ def test_run_budget_state_spend_and_estimate() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "c")
             await ensure_project_run(
                 conn,
                 project_run_id=run_id,
+                project_id=project.project_id,
                 workspace_id="c",
                 icp_key="k",
                 icp_version=1,
@@ -242,8 +245,14 @@ def test_project_run_estimated_nonneg_check() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "c")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="c", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="c",
+                icp_key="k",
+                icp_version=1,
             )
             with pytest.raises(Exception, match="estimated_nonneg"):
                 await conn.execute(

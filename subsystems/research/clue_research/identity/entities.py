@@ -60,6 +60,11 @@ class UnknownEntityTypeError(ValueError):
     """Raised when an ``entity_type`` has no entity table (only account/contact exist)."""
 
 
+class CrossWorkspaceMergeError(ValueError):
+    """Merge loser and survivor live in different workspaces — forbidden (accounts are
+    workspace-local; founder ruling 2026-07-22). The composite merge FK backstops this."""
+
+
 def _table(entity_type: EntityType) -> str:
     if entity_type is EntityType.ACCOUNT:
         return "account_entity"
@@ -103,11 +108,12 @@ def _normalize_strong_text(value: str | None) -> str | None:
 
 
 _ACCOUNT_COLUMNS = (
-    "id, canonical_name, primary_domain, aliases, hq_geo, registry_ids, status, merged_into"
+    "id, canonical_name, primary_domain, aliases, hq_geo, registry_ids, status, merged_into, "
+    "workspace_id"
 )
 _CONTACT_COLUMNS = (
     "id, account_entity_id, full_name, linkedin_url, verified_email, aliases, geo, "
-    "jurisdiction, status, merged_into"
+    "jurisdiction, status, merged_into, workspace_id"
 )
 
 
@@ -131,9 +137,9 @@ def _row_to_contact(row: Mapping[str, object]) -> ContactEntity:
 _INSERT_ACCOUNT = text(
     """
     INSERT INTO account_entity (canonical_name, primary_domain, aliases, hq_geo, registry_ids,
-                                status)
+                                status, workspace_id)
     VALUES (:canonical_name, :primary_domain, :aliases, CAST(:hq_geo AS jsonb),
-            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status))
+            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status), :workspace_id)
     RETURNING id
     """
 ).bindparams(bindparam("aliases", type_=ARRAY(String())))
@@ -148,13 +154,20 @@ async def insert_account_entity(
     hq_geo: Mapping[str, object] | None = None,
     registry_ids: Mapping[str, str] | None = None,
     status: AccountStatus = AccountStatus.CANDIDATE,
+    workspace_id: str,
 ) -> EntityId:
     """Insert a canonical account entity, normalizing its strong keys + match index; return its id.
 
     ``primary_domain`` is folded to its registrable form; ``registry_ids`` keys/values are
     canonicalized; ``aliases`` is stored as the normalized match index (see :func:`_match_keys`).
     Strong-key collisions raise (the partial-unique constraints) — that is the deterministic dedup
-    guard, surfaced to the caller (M2.3 turns it into a merge).
+    guard, surfaced to the caller (M2.3 turns it into a merge). Strong-key uniqueness is
+    *workspace-scoped* (accounts are workspace-local; founder ruling 2026-07-22): the same
+    domain/registry id under two workspaces coexists.
+
+    ``workspace_id`` is **required** (accounts are workspace-local — [B3×research] Task 3): every
+    creation chain threads the caller's workspace, and the row's composite workspace anchor backs
+    the contact→account and merge fences. Migration ``82a80fb80c9e`` makes the column ``NOT NULL``.
     """
     result = await conn.execute(
         _INSERT_ACCOUNT,
@@ -165,17 +178,23 @@ async def insert_account_entity(
             "hq_geo": serialize_value_json(dict(hq_geo)) if hq_geo is not None else None,
             "registry_ids": serialize_value_json(_registry_map(registry_ids)),
             "status": status.value,
+            "workspace_id": workspace_id,
         },
     )
     return EntityId(result.scalar_one())
 
 
+# The contact's workspace is stamped from its parent account *inside* the INSERT (a subquery), so a
+# contact can never disagree with its account's workspace — the composite FK
+# (account_entity_id, workspace_id) → account_entity (id, workspace_id) would reject a mismatch, and
+# stamping it atomically removes the window where it could be wrong.
 _INSERT_CONTACT = text(
     """
     INSERT INTO contact_entity (account_entity_id, full_name, linkedin_url, verified_email,
-                                aliases, geo, jurisdiction, status)
+                                aliases, geo, jurisdiction, status, workspace_id)
     VALUES (:account_entity_id, :full_name, :linkedin_url, :verified_email, :aliases,
-            CAST(:geo AS jsonb), :jurisdiction, CAST(:status AS entity_status))
+            CAST(:geo AS jsonb), :jurisdiction, CAST(:status AS entity_status),
+            (SELECT workspace_id FROM account_entity WHERE id = :account_entity_id))
     RETURNING id
     """
 ).bindparams(bindparam("aliases", type_=ARRAY(String())))
@@ -277,10 +296,29 @@ async def mark_merged(
     conn: AsyncConnection, entity_type: EntityType, loser_id: EntityId, survivor_id: EntityId
 ) -> None:
     """Point ``loser`` at ``survivor``: set ``status='merged'`` and ``merged_into`` in one UPDATE
-    (the ``merged ⟺ merged_into`` CHECK is satisfied atomically). Idempotent on the pair."""
+    (the ``merged ⟺ merged_into`` CHECK is satisfied atomically). Idempotent on the pair.
+
+    Refuses a cross-workspace pair (accounts are workspace-local; founder ruling 2026-07-22) with a
+    clear :class:`CrossWorkspaceMergeError` *before* the composite merge FK would fire."""
     if loser_id == survivor_id:
         raise MergeCycleError("an entity cannot be merged into itself")
     table = _table(entity_type)
+    scopes = {
+        row["id"]: row["workspace_id"]
+        for row in (
+            await conn.execute(
+                text(f"SELECT id, workspace_id FROM {table} WHERE id IN (:a, :b)"),
+                {"a": loser_id, "b": survivor_id},
+            )
+        )
+        .mappings()
+        .all()
+    }
+    if scopes.get(loser_id) != scopes.get(survivor_id):
+        raise CrossWorkspaceMergeError(
+            f"cannot merge across workspaces: "
+            f"{scopes.get(loser_id)!r} -> {scopes.get(survivor_id)!r}"
+        )
     await conn.execute(
         text(
             f"UPDATE {table} SET status = 'merged', merged_into = :survivor, updated_at = now() "
@@ -361,7 +399,7 @@ async def get_entity(
 
 
 async def resolve_alias(
-    conn: AsyncConnection, key: str, entity_type: EntityType
+    conn: AsyncConnection, key: str, entity_type: EntityType, *, workspace_id: str
 ) -> EntityId | None:
     """Exact strong-key / normalized-alias lookup → the **surviving** ``entity_id``, or ``None``.
 
@@ -370,14 +408,20 @@ async def resolve_alias(
     the normalized ``aliases`` index); a domain hit wins. For a contact, ``key`` is tried against
     ``linkedin_url`` / ``verified_email`` and the alias index. A hit on a *merged* entity resolves
     through :func:`surviving_id` to the live survivor.
-    """
+
+    ``workspace_id`` is **required** (accounts/contacts are workspace-local; founder ruling
+    2026-07-22): every branch is scoped to it, so client A's exact-name lookup can never hit client
+    B's account."""
     if entity_type is EntityType.ACCOUNT:
         domain = registrable_domain(key)
         if domain is not None:
             hit = (
                 await conn.execute(
-                    text("SELECT id FROM account_entity WHERE primary_domain = :d LIMIT 1"),
-                    {"d": domain},
+                    text(
+                        "SELECT id FROM account_entity "
+                        "WHERE primary_domain = :d AND workspace_id = :ws LIMIT 1"
+                    ),
+                    {"d": domain, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:
@@ -386,8 +430,11 @@ async def resolve_alias(
         if nk:
             hit = (
                 await conn.execute(
-                    text("SELECT id FROM account_entity WHERE :k = ANY(aliases) LIMIT 1"),
-                    {"k": nk},
+                    text(
+                        "SELECT id FROM account_entity "
+                        "WHERE :k = ANY(aliases) AND workspace_id = :ws LIMIT 1"
+                    ),
+                    {"k": nk, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:
@@ -401,9 +448,10 @@ async def resolve_alias(
                 await conn.execute(
                     text(
                         "SELECT id FROM contact_entity "
-                        "WHERE linkedin_url = :s OR verified_email = :s LIMIT 1"
+                        "WHERE (linkedin_url = :s OR verified_email = :s) "
+                        "AND workspace_id = :ws LIMIT 1"
                     ),
-                    {"s": strong},
+                    {"s": strong, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:
@@ -412,8 +460,11 @@ async def resolve_alias(
         if nk:
             hit = (
                 await conn.execute(
-                    text("SELECT id FROM contact_entity WHERE :k = ANY(aliases) LIMIT 1"),
-                    {"k": nk},
+                    text(
+                        "SELECT id FROM contact_entity "
+                        "WHERE :k = ANY(aliases) AND workspace_id = :ws LIMIT 1"
+                    ),
+                    {"k": nk, "ws": workspace_id},
                 )
             ).scalar()
             if hit is not None:

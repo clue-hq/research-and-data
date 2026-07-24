@@ -29,6 +29,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import text
+from tests._workspace import seed_project
 from tests.fleet.conftest import run_async
 from tests.fleet.exit_gate_harness import STUB_COST, step_key_for
 
@@ -97,9 +98,11 @@ async def _setup(run_id: ProjectRunId) -> None:
         async with engine.begin() as conn:
             await conn.execute(_CREATE_JOURNAL)
             await conn.execute(_CREATE_PROVIDER_CALLS)
+            project = await seed_project(conn, "ws-exit-gate", name="Exit gate project")
         # The real start path (idempotent on the minted id) + the drive offer.
         machine = ProjectRun(store=DbProjectRunStore())
         await machine.start(
+            project_id=project.project_id,
             workspace_id="ws-exit-gate",
             icp_key="icp-exit-gate",
             icp_version=1,

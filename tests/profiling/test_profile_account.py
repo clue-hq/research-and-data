@@ -34,6 +34,7 @@ from clue_core import (
 from clue_research.claimstore import insert_claim, register_field
 from clue_research.identity import insert_account_entity, mark_merged
 from clue_research.profiling import profile_account
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import conn_session_factory, rollback_conn, run_async
 
@@ -92,8 +93,12 @@ async def _register_fields(conn) -> None:
 
 
 async def _insert_account(conn):
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(
-        conn, canonical_name="Acme Robotics", primary_domain="acme-robotics.com"
+        conn,
+        canonical_name="Acme Robotics",
+        primary_domain="acme-robotics.com",
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 
@@ -342,8 +347,12 @@ def test_profile_account_follows_account_merge_to_survivor() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             await _register_fields(conn)
+            await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
             loser = await insert_account_entity(
-                conn, canonical_name="Acme Old", primary_domain="old.example.com"
+                conn,
+                canonical_name="Acme Old",
+                primary_domain="old.example.com",
+                workspace_id=DEFAULT_TEST_WORKSPACE,
             )
             survivor = await _insert_account(conn)  # "Acme Robotics" / acme-robotics.com
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)

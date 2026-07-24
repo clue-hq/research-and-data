@@ -88,24 +88,28 @@ def verification_gold_pack() -> GoldPack:
         canonical_name="NovaCore",
         primary_domain="novacore.io",
         status=AccountStatus.CANDIDATE,  # discovered (mode M1), not yet promoted to active
+        workspace_id="gold-workspace",
     )
     acme = AccountEntity(
         id=new_entity_id(),
         canonical_name="Acme Robotics",
         primary_domain="acme.com",
         status=AccountStatus.ACTIVE,
+        workspace_id="gold-workspace",
     )
     globex = AccountEntity(
         id=new_entity_id(),
         canonical_name="Globex Industrial",
         primary_domain="globex.com",
         status=AccountStatus.ACTIVE,
+        workspace_id="gold-workspace",
     )
     jane_acme = ContactEntity(
         id=new_entity_id(),
         account_entity_id=acme.id,
         full_name="Jane Doe",
         linkedin_url="https://www.linkedin.com/in/jane-acme",
+        workspace_id="gold-workspace",
     )
     # the same-name OTHER person — a real, distinct contact under a different account (the trap).
     jane_globex = ContactEntity(
@@ -113,12 +117,14 @@ def verification_gold_pack() -> GoldPack:
         account_entity_id=globex.id,
         full_name="Jane Doe",
         linkedin_url="https://www.linkedin.com/in/jane-globex",
+        workspace_id="gold-workspace",
     )
     sam = ContactEntity(
         id=new_entity_id(),
         account_entity_id=acme.id,
         full_name="Sam Rivera",
         linkedin_url="https://www.linkedin.com/in/sam-rivera",
+        workspace_id="gold-workspace",
     )
 
     accounts = {a.id: a for a in (novacore, acme, globex)}

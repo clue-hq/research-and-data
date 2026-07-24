@@ -34,6 +34,7 @@ from clue_research.claimstore import PUBLIC_ONLY, claims_for, register_field
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import AspectProfilingWorker, ProfilingFieldDisposition, params_for_run
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import conn_session_factory, rollback_conn, run_async
 
@@ -109,8 +110,13 @@ async def _register_test_field(conn, *, field_key: str = _FIELD, tier_plan=("fak
 
 
 async def _insert_account(conn, *, domain: str | None = "acme-robotics.com", hq_geo=None):
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(
-        conn, canonical_name="Acme Robotics", primary_domain=domain, hq_geo=hq_geo
+        conn,
+        canonical_name="Acme Robotics",
+        primary_domain=domain,
+        hq_geo=hq_geo,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 

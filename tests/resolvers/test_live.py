@@ -61,7 +61,12 @@ def _field(field_key: str = "core.employee_count") -> FieldDef:
 
 
 def _account(domain: str | None = "acme.com") -> AccountEntity:
-    return AccountEntity(id=new_entity_id(), canonical_name="Acme", primary_domain=domain)
+    return AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Acme",
+        primary_domain=domain,
+        workspace_id="ws-test",
+    )
 
 
 def _build(account: AccountEntity, field: FieldDef, token: object) -> HttpRequest:

@@ -36,6 +36,11 @@ from clue_research.discovery_scoring.discovery import (
     DiscoveryQuery,
 )
 
+# Accounts/contacts are workspace-local ([B3×research]): every account-creating call needs a
+# ``workspace`` row for its FK. Seed the conventional test workspace once, inside the rollback
+# harness, so every suite's inserts/resolve/admit/phase-runs on this conn satisfy the FK (DRY).
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
+
 # Reuse the M0.3 helpers (DRY): the single-loop coroutine runner + the reachable-DB gate.
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
@@ -104,6 +109,9 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
         conn = await engine.connect()
         trans = await conn.begin()
         try:
+            # Seed the conventional test workspace so account-entity FKs resolve; rolled back with
+            # the rest of the transaction (custom-workspace tests seed their own id on top).
+            await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
             yield conn
         finally:
             await trans.rollback()

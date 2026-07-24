@@ -16,6 +16,7 @@ from clue_research.identity import (
     insert_contact_entity,
     mark_merged,
 )
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -25,11 +26,12 @@ pytestmark = pytest.mark.usefixtures("require_identity_db")
 def test_returns_live_contacts_under_the_account_only() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             acct = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
             )
             other = await insert_account_entity(
-                conn, canonical_name="Globex", primary_domain="globex.com"
+                conn, canonical_name="Globex", primary_domain="globex.com", workspace_id=ws
             )
             c1 = await insert_contact_entity(conn, account_entity_id=acct, full_name="Ada")
             c2 = await insert_contact_entity(conn, account_entity_id=acct, full_name="Grace")
@@ -46,8 +48,9 @@ def test_returns_live_contacts_under_the_account_only() -> None:
 def test_excludes_merged_loser_contacts() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             acct = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
             )
             survivor = await insert_contact_entity(conn, account_entity_id=acct, full_name="Ada L.")
             loser = await insert_contact_entity(
@@ -65,8 +68,9 @@ def test_excludes_merged_loser_contacts() -> None:
 def test_empty_when_no_contacts() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             acct = await insert_account_entity(
-                conn, canonical_name="Solo", primary_domain="solo.com"
+                conn, canonical_name="Solo", primary_domain="solo.com", workspace_id=ws
             )
             assert await contact_ids_for_account(conn, acct) == ()
 

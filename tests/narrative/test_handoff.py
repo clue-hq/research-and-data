@@ -74,6 +74,7 @@ from clue_research.narrative.handoff import (
     _score_from_value_json,
 )
 from clue_research.verification import FaithfulnessJudgeImpl
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -223,8 +224,13 @@ def _assembler() -> HandoffAssembler:
 
 
 async def _account(conn: AsyncConnection, *, name: str = "Acme") -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name=name, primary_domain=f"{name.lower()}.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name=name,
+        primary_domain=f"{name.lower()}.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

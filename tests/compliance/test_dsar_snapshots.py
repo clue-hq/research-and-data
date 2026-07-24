@@ -37,6 +37,7 @@ from clue_storage import (
     flush_snapshots,
     get_artifact,
 )
+from tests._workspace import seed_workspace
 from tests.compliance.test_dsar import (
     _CLIENT,
     _FACET,
@@ -83,8 +84,13 @@ async def _insert_cited_facet(conn: AsyncConnection, contact: EntityId, key: str
 
 
 async def _second_contact(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     account = await insert_account_entity(
-        conn, canonical_name="Globex GmbH", primary_domain="globex.de", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Globex GmbH",
+        primary_domain="globex.de",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
     return await insert_contact_entity(
         conn, account_entity_id=account, full_name="Raj Patel", status=AccountStatus.ACTIVE

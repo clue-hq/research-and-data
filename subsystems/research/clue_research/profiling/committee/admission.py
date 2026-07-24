@@ -141,12 +141,22 @@ async def admit_candidate(
     write discovery-provenance — or drop a strong-key-less candidate.
 
     The account is assumed already resolved to its survivor by the caller. Run inside the caller's
-    transaction so a failure rolls back the candidate's partial writes cleanly."""
+    transaction so a failure rolls back the candidate's partial writes cleanly.
+
+    The candidate's workspace is derived from the ``account`` it resolves under (accounts/contacts
+    are workspace-local; founder ruling 2026-07-22); an unstamped (NULL-workspace) account cannot
+    admit a committee contact and fails loud."""
     if not candidate.has_strong_key:
         return AdmissionOutcome(
             status=AdmissionStatus.DROPPED,
             reason="no strong key (LinkedIn URL / verified email) — nothing to resolve to",
             cost_cents=candidate.cost_cents,
+        )
+
+    if account.workspace_id is None:
+        raise ValueError(
+            "committee admission needs a workspace-stamped account ([B3×research]); "
+            f"account {account.id} has no workspace_id"
         )
 
     observation = Observation(
@@ -155,7 +165,7 @@ async def admit_candidate(
         linkedin_url=candidate.linkedin_url,
         verified_email=candidate.verified_email,
     )
-    result = await resolve(conn, observation)
+    result = await resolve(conn, observation, workspace_id=account.workspace_id)
 
     reused = result.top is not None
     if result.top is not None:  # deterministic strong-key hit → reuse the existing contact

@@ -259,6 +259,7 @@ class FakeProjectRunStore:
         self,
         *,
         project_run_id: ProjectRunId,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
@@ -269,6 +270,8 @@ class FakeProjectRunStore:
             project_run_id,
             {
                 "id": project_run_id,
+                "project_id": project_id,
+                "brand_id": f"brand-for-{project_id}",
                 "workspace_id": workspace_id,
                 "icp_key": icp_key,
                 "icp_version": icp_version,

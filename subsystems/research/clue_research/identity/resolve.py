@@ -199,14 +199,31 @@ def _score(obs: Observation, record: _CandidateRecord, policy: ResolutionPolicy)
     return Candidate(entity_id=record.entity_id, score=round(score, 6), features=features)
 
 
+# --- workspace scoping ------------------------------------------------------
+# Accounts/contacts are workspace-local (founder ruling 2026-07-22). Every candidate query is
+# unconditionally scoped to the caller's ``workspace_id`` (required — [B3×research] Task 3), so
+# one client's resolve can never surface another's entity.
+def _ws_clause(*, column: str = "workspace_id") -> str:
+    """The ``AND <column> = :ws`` scoping fragment applied to every candidate query."""
+    return f"AND {column} = :ws "
+
+
+def _ws_bind(workspace_id: str, params: dict[str, object]) -> dict[str, object]:
+    """Add the ``:ws`` bind for the scoping clause."""
+    return {**params, "ws": workspace_id}
+
+
 # --- deterministic stage (no model call) -----------------------------------
-async def _deterministic_account(conn: AsyncConnection, obs: Observation) -> EntityId | None:
+async def _deterministic_account(
+    conn: AsyncConnection, obs: Observation, workspace_id: str
+) -> EntityId | None:
+    ws = _ws_clause()
     domain = registrable_domain(obs.domain) if obs.domain else None
     if domain is not None:
         hit = (
             await conn.execute(
-                text("SELECT id FROM account_entity WHERE primary_domain = :d LIMIT 1"),
-                {"d": domain},
+                text(f"SELECT id FROM account_entity WHERE primary_domain = :d {ws}LIMIT 1"),
+                _ws_bind(workspace_id, {"d": domain}),
             )
         ).scalar()
         if hit is not None:
@@ -217,8 +234,8 @@ async def _deterministic_account(conn: AsyncConnection, obs: Observation) -> Ent
             continue
         hit = (
             await conn.execute(
-                text("SELECT id FROM account_entity WHERE registry_ids->>:ns = :v LIMIT 1"),
-                {"ns": norm_ns, "v": norm_value},
+                text(f"SELECT id FROM account_entity WHERE registry_ids->>:ns = :v {ws}LIMIT 1"),
+                _ws_bind(workspace_id, {"ns": norm_ns, "v": norm_value}),
             )
         ).scalar()
         if hit is not None:
@@ -226,7 +243,10 @@ async def _deterministic_account(conn: AsyncConnection, obs: Observation) -> Ent
     return None
 
 
-async def _deterministic_contact(conn: AsyncConnection, obs: Observation) -> EntityId | None:
+async def _deterministic_contact(
+    conn: AsyncConnection, obs: Observation, workspace_id: str
+) -> EntityId | None:
+    ws = _ws_clause()
     for raw in (obs.linkedin_url, obs.verified_email):
         if not raw:
             continue
@@ -235,9 +255,9 @@ async def _deterministic_contact(conn: AsyncConnection, obs: Observation) -> Ent
             await conn.execute(
                 text(
                     "SELECT id FROM contact_entity "
-                    "WHERE linkedin_url = :s OR verified_email = :s LIMIT 1"
+                    f"WHERE (linkedin_url = :s OR verified_email = :s) {ws}LIMIT 1"
                 ),
-                {"s": strong},
+                _ws_bind(workspace_id, {"s": strong}),
             )
         ).scalar()
         if hit is not None:
@@ -253,9 +273,15 @@ def _block_keys(obs: Observation) -> list[str]:
 
 
 async def _candidate_ids_account(
-    conn: AsyncConnection, obs: Observation, query_vec: str, policy: ResolutionPolicy
+    conn: AsyncConnection,
+    obs: Observation,
+    query_vec: str,
+    policy: ResolutionPolicy,
+    workspace_id: str,
 ) -> list[EntityId]:
-    """Bounded candidate set: pgvector ANN ∪ alias-array overlap ∪ trigram, deduped (live only)."""
+    """Bounded candidate set: pgvector ANN ∪ alias-array overlap ∪ trigram, deduped (live only).
+
+    Every arm is workspace-scoped (see :func:`_ws_clause`)."""
     ids: list[EntityId] = []
     seen: set[EntityId] = set()
 
@@ -266,6 +292,7 @@ async def _candidate_ids_account(
                 seen.add(eid)
                 ids.append(eid)
 
+    # The ANN join scopes on the joined ``account_entity a`` (alias-qualified column).
     ann = (
         (
             await conn.execute(
@@ -273,9 +300,10 @@ async def _candidate_ids_account(
                     "SELECT e.entity_id FROM account_entity_embedding e "
                     "JOIN account_entity a ON a.id = e.entity_id "
                     "WHERE a.status <> 'merged' "
-                    "ORDER BY e.embedding <=> CAST(:q AS vector) LIMIT :k"
+                    + _ws_clause(column="a.workspace_id")
+                    + "ORDER BY e.embedding <=> CAST(:q AS vector) LIMIT :k"
                 ),
-                {"q": query_vec, "k": policy.top_k},
+                _ws_bind(workspace_id, {"q": query_vec, "k": policy.top_k}),
             )
         )
         .scalars()
@@ -290,9 +318,9 @@ async def _candidate_ids_account(
                 await conn.execute(
                     text(
                         "SELECT id FROM account_entity "
-                        "WHERE status <> 'merged' AND aliases && :keys LIMIT :k"
+                        "WHERE status <> 'merged' " + _ws_clause() + "AND aliases && :keys LIMIT :k"
                     ).bindparams(bindparam("keys", type_=ARRAY(Text()))),
-                    {"keys": keys, "k": policy.top_k},
+                    _ws_bind(workspace_id, {"keys": keys, "k": policy.top_k}),
                 )
             )
             .scalars()
@@ -306,10 +334,15 @@ async def _candidate_ids_account(
                 await conn.execute(
                     text(
                         "SELECT id FROM account_entity "
-                        "WHERE status <> 'merged' AND similarity(canonical_name, :n) >= :thr "
+                        "WHERE status <> 'merged' "
+                        + _ws_clause()
+                        + "AND similarity(canonical_name, :n) >= :thr "
                         "ORDER BY similarity(canonical_name, :n) DESC LIMIT :k"
                     ),
-                    {"n": obs.name, "thr": policy.trigram_threshold, "k": policy.top_k},
+                    _ws_bind(
+                        workspace_id,
+                        {"n": obs.name, "thr": policy.trigram_threshold, "k": policy.top_k},
+                    ),
                 )
             )
             .scalars()
@@ -364,10 +397,14 @@ async def _fetch_account_records(
 
 
 async def _probabilistic_account(
-    conn: AsyncConnection, obs: Observation, policy: ResolutionPolicy, embedder: Embedder
+    conn: AsyncConnection,
+    obs: Observation,
+    policy: ResolutionPolicy,
+    embedder: Embedder,
+    workspace_id: str,
 ) -> ResolutionResult:
     query_vec = vector_literal(embedder.embed(obs.name))
-    ids = await _candidate_ids_account(conn, obs, query_vec, policy)
+    ids = await _candidate_ids_account(conn, obs, query_vec, policy, workspace_id)
     records = await _fetch_account_records(conn, ids, query_vec)
     scored = sorted((_score(obs, r, policy) for r in records), key=lambda c: c.score, reverse=True)[
         : policy.top_k
@@ -386,25 +423,31 @@ async def resolve(
     *,
     policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
     embedder: Embedder = DEFAULT_EMBEDDER,
+    workspace_id: str,
 ) -> ResolutionResult:
     """Resolve one observation to ranked candidate ids (deterministic first, probabilistic second).
 
     A strong-key hit short-circuits at score ``1.0`` with **zero** embedding/scorer work. Only on a
     miss is the name embedded and the fuzzy candidate set scored. The result is *candidates*, not a
     decision — M2.3 disposes (auto-merge / review / new entity).
+
+    ``workspace_id`` is **required** (accounts/contacts are workspace-local; founder ruling
+    2026-07-22 — [B3×research] Task 3): every candidate query is scoped to it and a legacy
+    NULL-workspace row is invisible (fail-closed), so one client's resolve can never surface
+    another's entity.
     """
     if observation.entity_type is EntityType.ACCOUNT:
-        hit = await _deterministic_account(conn, observation)
+        hit = await _deterministic_account(conn, observation, workspace_id)
         if hit is not None:
             return ResolutionResult(
                 method=ResolutionMethod.DETERMINISTIC,
                 candidates=(Candidate(entity_id=hit, score=1.0, features={"strong_key": 1.0}),),
                 top_score=1.0,
             )
-        return await _probabilistic_account(conn, observation, policy, embedder)
+        return await _probabilistic_account(conn, observation, policy, embedder, workspace_id)
 
     if observation.entity_type is EntityType.CONTACT:
-        hit = await _deterministic_contact(conn, observation)
+        hit = await _deterministic_contact(conn, observation, workspace_id)
         if hit is not None:
             return ResolutionResult(
                 method=ResolutionMethod.DETERMINISTIC,
@@ -424,17 +467,22 @@ async def resolve_many(
     *,
     policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
     embedder: Embedder = DEFAULT_EMBEDDER,
+    workspace_id: str,
 ) -> list[ResolutionResult]:
     """Bulk resolution (Scenario B): one :class:`ResolutionResult` per input row, never throwing on
     a garbage row (it surfaces as a ``NONE`` result). The caller (import) partitions by
-    ``top_score`` into resolved / mid-band / unresolvable and handles each explicitly (Doc B §4)."""
+    ``top_score`` into resolved / mid-band / unresolvable and handles each explicitly (Doc B §4).
+
+    ``workspace_id`` is **required** and applied to every row (see :func:`resolve`)."""
     results: list[ResolutionResult] = []
     for obs in observations:
         # A per-row savepoint so a row that errors at the DB rolls back *itself* and the batch
         # continues — "never throws on garbage rows" holds even for a row that poisons its query.
         savepoint = await conn.begin_nested()
         try:
-            result = await resolve(conn, obs, policy=policy, embedder=embedder)
+            result = await resolve(
+                conn, obs, policy=policy, embedder=embedder, workspace_id=workspace_id
+            )
             await savepoint.commit()
             results.append(result)
         except Exception:  # noqa: BLE001 — a bad row must not abort the batch (Doc B §4)

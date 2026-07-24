@@ -81,24 +81,20 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
 async def seed_account(
     conn: AsyncConnection,
     *,
-    workspace_id: str | None,
-    brand_id: str | None = None,
+    workspace_id: str,
     canonical_name: str = "Company X",
 ) -> UUID:
-    """A workspace-local ``account_entity`` (founder ruling 2026-07-22). ``workspace_id=None``
-    seeds a legacy/global account that cannot own workspace-scoped memory (the fail-closed case).
-    Raw SQL: the research-side writer that stamps workspace/brand is future work."""
+    """A workspace-local ``account_entity`` (founder ruling 2026-07-22)."""
     account_id = uuid4()
     await conn.execute(
         text(
-            "INSERT INTO account_entity (id, canonical_name, workspace_id, brand_id) "
-            "VALUES (:id, :name, :workspace_id, :brand_id)"
+            "INSERT INTO account_entity (id, canonical_name, workspace_id) "
+            "VALUES (:id, :name, :workspace_id)"
         ),
         {
             "id": account_id,
             "name": canonical_name,
             "workspace_id": workspace_id,
-            "brand_id": brand_id,
         },
     )
     return account_id
@@ -118,7 +114,6 @@ async def seed_spine(conn: AsyncConnection, tag: str = "") -> SimpleNamespace:
     account_id = await seed_account(
         conn,
         workspace_id=ws.workspace_id,
-        brand_id=brand.brand_id,
         canonical_name=f"Company X{tag}",
     )
     return SimpleNamespace(
@@ -132,28 +127,49 @@ async def seed_spine(conn: AsyncConnection, tag: str = "") -> SimpleNamespace:
 
 async def seed_contact(conn: AsyncConnection) -> UUID:
     """A resolved contact entity (the subject-binding key)."""
+    workspace = await create_workspace(conn, name=f"Contact WS {uuid4().hex[:8]}")
     account_id = uuid4()
     await conn.execute(
-        text("INSERT INTO account_entity (id, canonical_name) VALUES (:id, :name)"),
-        {"id": account_id, "name": f"Account {account_id.hex[:8]}"},
+        text(
+            "INSERT INTO account_entity (id, canonical_name, workspace_id) "
+            "VALUES (:id, :name, :workspace_id)"
+        ),
+        {
+            "id": account_id,
+            "name": f"Account {account_id.hex[:8]}",
+            "workspace_id": workspace.workspace_id,
+        },
     )
     contact_id = uuid4()
     await conn.execute(
         text(
-            "INSERT INTO contact_entity (id, account_entity_id, full_name) "
-            "VALUES (:id, :account_id, :name)"
+            "INSERT INTO contact_entity (id, account_entity_id, full_name, workspace_id) "
+            "VALUES (:id, :account_id, :name, :workspace_id)"
         ),
-        {"id": contact_id, "account_id": account_id, "name": "Jordan Rivers"},
+        {
+            "id": contact_id,
+            "account_id": account_id,
+            "name": "Jordan Rivers",
+            "workspace_id": workspace.workspace_id,
+        },
     )
     return contact_id
 
 
 async def seed_claim(conn: AsyncConnection) -> UUID:
     """A minimal claim row for memory_claim_ref FKs."""
+    workspace = await create_workspace(conn, name=f"Claim WS {uuid4().hex[:8]}")
     account_id = uuid4()
     await conn.execute(
-        text("INSERT INTO account_entity (id, canonical_name) VALUES (:id, :name)"),
-        {"id": account_id, "name": f"Account {account_id.hex[:8]}"},
+        text(
+            "INSERT INTO account_entity (id, canonical_name, workspace_id) "
+            "VALUES (:id, :name, :workspace_id)"
+        ),
+        {
+            "id": account_id,
+            "name": f"Account {account_id.hex[:8]}",
+            "workspace_id": workspace.workspace_id,
+        },
     )
     claim_id = uuid4()
     await conn.execute(

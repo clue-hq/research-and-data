@@ -144,7 +144,7 @@ async def reverse_profile(
         # Field registry must carry the client.* fields before any client claim is written.
         await load_client_knowledge_pack(conn)
 
-        client_entity_id = await _resolve_client(conn, client_input)
+        client_entity_id = await _resolve_client(conn, client_input, workspace_id=workspace_id)
         apply_attributes(span, {ATTR_ENTITY_ID: client_entity_id})
 
         # Fields already filled by a volunteered (HUMAN) claim under THIS run — for idempotent
@@ -238,7 +238,9 @@ def _entity_ref(entity_id: EntityId) -> Entity:
     return Entity(entity_id=entity_id, entity_type=EntityType.ACCOUNT)
 
 
-async def _resolve_client(conn: AsyncConnection, client_input: ClientInput) -> EntityId:
+async def _resolve_client(
+    conn: AsyncConnection, client_input: ClientInput, *, workspace_id: str
+) -> EntityId:
     """Resolve the client to a single, active ``account_entity``, idempotently across re-runs.
 
     The client is authoritative about themselves, so we resolve directly rather than through the
@@ -254,14 +256,16 @@ async def _resolve_client(conn: AsyncConnection, client_input: ClientInput) -> E
     3. **admit** — only a genuinely unmatched client admits a fresh ``active`` entity (name aliased
        + embedded so subsequent runs and imported rows resolve to it)."""
     observation = Observation(name=client_input.name, domain=client_input.website)
-    result = await resolve(conn, observation)
+    result = await resolve(conn, observation, workspace_id=workspace_id)
     top = result.top
     if top is not None and result.top_score >= _CLIENT_REUSE_MIN_SCORE:
         return await _ensure_active(
             conn, await surviving_id(conn, top.entity_id, observation.entity_type), observation
         )
 
-    existing = await resolve_alias(conn, client_input.name, observation.entity_type)
+    existing = await resolve_alias(
+        conn, client_input.name, observation.entity_type, workspace_id=workspace_id
+    )
     if existing is not None:
         return await _ensure_active(conn, existing, observation)
 
@@ -271,6 +275,7 @@ async def _resolve_client(conn: AsyncConnection, client_input: ClientInput) -> E
         primary_domain=client_input.website,
         aliases=(client_input.name,),  # so a no-domain re-run resolves here via name-key (step 2)
         status=AccountStatus.ACTIVE,
+        workspace_id=workspace_id,
     )
     # Embed so the next run's resolve (and any imported row naming the client) finds this entity.
     await embed_account(conn, entity_id)

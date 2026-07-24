@@ -30,6 +30,8 @@ from clue_research.identity import (
     insert_account_entity,
     list_open_tasks,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE as WS
+from tests._workspace import seed_workspace
 
 from .conftest import candidate, rollback_conn, run_async
 
@@ -38,7 +40,7 @@ pytestmark = pytest.mark.usefixtures("require_discovery_db")
 
 async def _seed(conn: AsyncConnection, **kwargs: object) -> EntityId:
     """Insert + embed an account so the probabilistic resolver can find it (mirrors M2.3 tests)."""
-    eid = await insert_account_entity(conn, **kwargs)  # type: ignore[arg-type]
+    eid = await insert_account_entity(conn, workspace_id=WS, **kwargs)  # type: ignore[arg-type]
     await embed_account(conn, eid)
     return eid
 
@@ -60,6 +62,7 @@ def test_admit_real_candidate_creates_entity_and_one_provenance_claim() -> None:
                     matched_channel="exa", domain="totallynew.example", name="Totally New Co"
                 ),
                 new_run_id(),
+                workspace_id=WS,
             )
             assert result.status is AdmissionStatus.ADMITTED
             assert result.account_entity_id is not None
@@ -86,7 +89,9 @@ def test_admit_dedups_to_existing_entity_via_strong_key() -> None:
         async with rollback_conn() as conn:
             acme = await _seed(conn, canonical_name="Acme", primary_domain="acme.com")
             before = await _count_accounts(conn)
-            result = await admit(conn, candidate(domain="acme.com", name="Acme Inc"), new_run_id())
+            result = await admit(
+                conn, candidate(domain="acme.com", name="Acme Inc"), new_run_id(), workspace_id=WS
+            )
             assert result.status is AdmissionStatus.ADMITTED
             assert result.account_entity_id == acme  # auto-merged onto the existing entity
             assert await _count_accounts(conn) == before  # no new account created
@@ -104,6 +109,7 @@ def test_admit_rejects_fabricated_candidate_with_no_entity_and_no_claim() -> Non
                 conn,
                 candidate(matched_channel="exa", record_ref="ghost:1", domain=None, name=None),
                 new_run_id(),
+                workspace_id=WS,
             )
             assert result.status is AdmissionStatus.REJECTED
             assert result.account_entity_id is None
@@ -128,6 +134,7 @@ def test_admit_mid_band_routes_to_review_and_admits_nothing() -> None:
                 conn,
                 candidate(matched_channel="exa", name="Acme Corporation"),
                 new_run_id(),
+                workspace_id=WS,
                 disposition_policy=policy,
             )
             assert result.status is AdmissionStatus.NEEDS_REVIEW
@@ -145,8 +152,8 @@ def test_admit_is_idempotent_on_reattempt() -> None:
         async with rollback_conn() as conn:
             run_id = new_run_id()
             hypothesis = candidate(matched_channel="exa", domain="acme.com", name="Acme")
-            first = await admit(conn, hypothesis, run_id)
-            second = await admit(conn, hypothesis, run_id)  # M7 replay
+            first = await admit(conn, hypothesis, run_id, workspace_id=WS)
+            second = await admit(conn, hypothesis, run_id, workspace_id=WS)  # M7 replay
             assert first.status is second.status is AdmissionStatus.ADMITTED
             assert first.account_entity_id == second.account_entity_id
             # the same provenance claim is reused — no duplicate written
@@ -162,12 +169,16 @@ def test_two_admissions_of_the_same_domain_produce_one_entity() -> None:
         async with rollback_conn() as conn:
             before = await _count_accounts(conn)
             first = await admit(
-                conn, candidate(matched_channel="exa", domain="acme.com", name="Acme"), new_run_id()
+                conn,
+                candidate(matched_channel="exa", domain="acme.com", name="Acme"),
+                new_run_id(),
+                workspace_id=WS,
             )
             second = await admit(
                 conn,
                 candidate(matched_channel="apollo", domain="acme.com", name="Acme Inc"),
                 new_run_id(),
+                workspace_id=WS,
             )
             assert (
                 first.account_entity_id == second.account_entity_id
@@ -184,6 +195,7 @@ def test_admit_import_is_symmetric_with_discovery() -> None:
                 conn,
                 candidate(matched_channel="import", domain="imported.example", name="Imported Co"),
                 new_run_id(),
+                workspace_id=WS,
             )
             assert result.status is AdmissionStatus.ADMITTED
             assert result.account_entity_id is not None
@@ -218,12 +230,14 @@ def test_admit_under_redis_lock_dedups_to_single_entity() -> None:
                     conn,
                     candidate(domain="locked.example", name="Locked Co"),
                     new_run_id(),
+                    workspace_id=WS,
                     redis=client,
                 )
                 second = await admit(
                     conn,
                     candidate(matched_channel="apollo", domain="locked.example", name="Locked Inc"),
                     new_run_id(),
+                    workspace_id=WS,
                     redis=client,
                 )
                 assert first.status is AdmissionStatus.ADMITTED
@@ -233,6 +247,40 @@ def test_admit_under_redis_lock_dedups_to_single_entity() -> None:
             await client.aclose()
 
     run_async(_run())
+
+
+def test_admit_stamps_candidate_workspace() -> None:
+    """A freshly-admitted account is stamped with the caller's workspace (accounts are
+    workspace-local — [B3×research]): the new entity's ``workspace_id`` equals the admitting ws."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
+            result = await admit(
+                conn,
+                candidate(matched_channel="exa", domain="stamped.example", name="Stamped Co"),
+                new_run_id(),
+                workspace_id=ws,
+            )
+            assert result.status is AdmissionStatus.ADMITTED
+            assert result.account_entity_id is not None
+            account = await get_account(conn, result.account_entity_id)
+            assert account is not None
+            assert account.workspace_id == ws
+
+    run_async(_run())
+
+
+def test_domain_lock_id_is_workspace_partitioned() -> None:
+    """The admit-lock id folds in the workspace, so two workspaces admitting the *same* domain get
+    different lock ids (no needless cross-tenant serialization — accounts are workspace-local,
+    [B3×research]), while the same ``(workspace, domain)`` is deterministic/stable."""
+    from clue_research.discovery_scoring.gate.admission import _domain_lock_id
+
+    a = _domain_lock_id("ws-a", "acme.com")
+    assert _domain_lock_id("ws-b", "acme.com") != a  # different ws, same domain → distinct lock
+    assert _domain_lock_id("ws-a", "acme.com") == a  # same (ws, domain) → stable
+    assert _domain_lock_id("ws-a", "beta.com") != a  # same ws, different domain → distinct lock
 
 
 def test_existence_check_is_a_pluggable_gate() -> None:
@@ -249,6 +297,7 @@ def test_existence_check_is_a_pluggable_gate() -> None:
                 conn,
                 candidate(domain="acme.com", name="Acme"),
                 new_run_id(),
+                workspace_id=WS,
                 existence=_RejectAll(),
             )
             assert result.status is AdmissionStatus.REJECTED
