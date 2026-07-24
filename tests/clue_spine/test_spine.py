@@ -1,6 +1,7 @@
 """DB-backed tests for the object spine (Phase A3.2).
 
-CRUD round-trips over workspace → brand → {product, project}, plus the invalid-states-impossible
+CRUD round-trips over workspace-owned brands/projects and brand-owned products, plus the
+invalid-states-impossible
 constraint battery: the constraints ARE the enforcement (founder ruling), so violations are
 asserted as raw ``IntegrityError`` from the DB — never handler logic. Also proves
 ``project_run.project_id`` (runs execute *for* a project) accepts a valid project and rejects a
@@ -21,10 +22,11 @@ from clue_spine import (
     create_product,
     create_project,
     create_workspace,
-    get_brand_for_workspace,
+    get_brand,
     get_product,
     get_project,
     get_workspace,
+    list_brands_for_workspace,
     list_products,
     list_projects,
 )
@@ -42,7 +44,7 @@ async def _seed(conn: AsyncConnection) -> tuple[str, str]:
 
 
 # --- CRUD round-trips -------------------------------------------------------
-def test_workspace_and_brand_round_trip() -> None:
+def test_workspace_and_multiple_brands_round_trip() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             ws = await create_workspace(conn, name="Acme")
@@ -51,10 +53,28 @@ def test_workspace_and_brand_round_trip() -> None:
             assert await get_workspace(conn, ws.workspace_id) == ws
             assert await get_workspace(conn, "ws_missing") is None
 
-            brand = await create_brand(conn, workspace_id=ws.workspace_id, name="Acme Brand")
-            assert brand.brand_id.startswith("brd_")
-            assert await get_brand_for_workspace(conn, ws.workspace_id) == brand
-            assert await get_brand_for_workspace(conn, "ws_missing") is None
+            primary = await create_brand(conn, workspace_id=ws.workspace_id, name="Primary")
+            secondary = await create_brand(conn, workspace_id=ws.workspace_id, name="Secondary")
+            assert primary.brand_id.startswith("brd_")
+            assert secondary.brand_id.startswith("brd_")
+            assert (
+                await get_brand(conn, workspace_id=ws.workspace_id, brand_id=primary.brand_id)
+                == primary
+            )
+            assert await list_brands_for_workspace(conn, ws.workspace_id) == [
+                primary,
+                secondary,
+            ]
+            assert await list_brands_for_workspace(conn, "ws_missing") == []
+
+            other = await create_workspace(conn, name="Other")
+            assert (
+                await get_brand(conn, workspace_id=other.workspace_id, brand_id=primary.brand_id)
+                is None
+            )
+            assert (
+                await get_brand(conn, workspace_id=ws.workspace_id, brand_id="brd_missing") is None
+            )
 
             # Legacy ids slot in unchanged (text PK).
             legacy = await create_workspace(conn, name="Legacy", workspace_id="client-42")
@@ -122,12 +142,25 @@ def test_project_round_trip_and_status_filter() -> None:
 
 
 # --- constraints ARE the enforcement ----------------------------------------
-def test_second_brand_in_workspace_rejected_by_constraint() -> None:
+def test_projects_can_select_different_brands_in_one_workspace() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            workspace_id, _ = await _seed(conn)
-            with pytest.raises(IntegrityError, match="brand_one_per_workspace"):
-                await create_brand(conn, workspace_id=workspace_id, name="Second Brand")
+            workspace_id, first_brand_id = await _seed(conn)
+            second = await create_brand(conn, workspace_id=workspace_id, name="Second Brand")
+            first_project = await create_project(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=first_brand_id,
+                name="First brand project",
+            )
+            second_project = await create_project(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=second.brand_id,
+                name="Second brand project",
+            )
+            assert first_project.brand_id == first_brand_id
+            assert second_project.brand_id == second.brand_id
 
     run_async(scenario())
 
@@ -140,6 +173,22 @@ def test_product_cannot_point_at_brand_in_another_workspace() -> None:
             with pytest.raises(IntegrityError, match="product_brand_fk"):
                 await create_product(
                     conn, brand_id=brand_id, workspace_id=other.workspace_id, name="Smuggled"
+                )
+
+    run_async(scenario())
+
+
+def test_project_cannot_point_at_brand_in_another_workspace() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _, brand_id = await _seed(conn)
+            other = await create_workspace(conn, name="Other")
+            with pytest.raises(IntegrityError, match="project_brand_fk"):
+                await create_project(
+                    conn,
+                    workspace_id=other.workspace_id,
+                    brand_id=brand_id,
+                    name="Smuggled",
                 )
 
     run_async(scenario())

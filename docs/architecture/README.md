@@ -1,6 +1,6 @@
 # docs/architecture — the Clue-HQ backend doc map
 
-> **Read this first when you are unsure which document governs.** Last revised 2026-07-17.
+> **Read this first when you are unsure which document governs.** Last revised 2026-07-24.
 > This folder is the architecture record of the platform backend (repo: dar-es-salaam).
 > The design engine has its **own** authoritative doc set in its own repo (`havana`,
 > `docs/` — start with `deepagent-architecture.md`); nothing here overrides it.
@@ -34,8 +34,9 @@ docs (Doc A, Doc S) use the new vocabulary.
 ## Repo layout (Doc R — executed Phase A, 2026-07-17)
 
 uv workspace, three zones: **`libs/`** (shared, subsystem-agnostic: `clue-core`, `clue-config`,
-`clue-db`, `clue-gateway`, `clue-locks`, `clue-obs` (structlog + OTel), `clue-spine` (workspace →
-brand → {product, project})); **`subsystems/`** (`research/` — the M0–M13 build; `memory/`,
+`clue-db`, `clue-gateway`, `clue-locks`, `clue-obs` (structlog + OTel), `clue-spine` (workspace
+owns brands/projects; brands own products; projects select one same-workspace brand));
+**`subsystems/`** (`research/` — the M0–M13 build; `memory/`,
 `content/` — contracted scaffolds); **`platform/`** (`toolbelt/`, `agents/`, `fleet/`,
 `projections/` — contracted scaffolds; `api/` arrives at R3 with build step 2). Tenancy is keyed
 `workspace_id` everywhere (the 2026-07-17 rename; the `tenant_private` reuse-scope enum value is
