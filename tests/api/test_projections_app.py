@@ -19,6 +19,8 @@ connection (the ``handoff_app`` test idiom). Covers the slice exit gates at the 
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from datetime import datetime
 from uuid import uuid4
 
 import httpx
@@ -26,15 +28,22 @@ import pytest
 from httpx import ASGITransport
 from sqlalchemy import text
 
-from clue_api import create_projections_app
+from clue_api import build_tool_invoker, create_projections_app
 from clue_config import load_settings
-from clue_core import ProjectPhase, new_project_run_id
+from clue_core import (
+    ProjectPhase,
+    new_execution_id,
+    new_operation_id,
+    new_project_run_id,
+)
+from clue_execution import DbExecutionRunViewReader
 from clue_research.durable import (
     NARRATIVE_EMIT_SKIPPED_KEY,
     PhaseCheckpointStatus,
     emit_run_event,
 )
-from clue_toolbelt import DbIdempotencyStore, ToolRegistry
+from clue_toolbelt import DbIdempotencyStore, ToolContext, ToolRegistry
+from tests._workspace import seed_workspace
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
 from tests.projections._helpers import (
@@ -43,6 +52,7 @@ from tests.projections._helpers import (
     seed_checkpoint,
     seed_run,
 )
+from tests.toolbelt.conftest import EchoTool
 
 _WS = "ws-acme"
 _OTHER = "ws-other"
@@ -54,13 +64,44 @@ def _settings():
     return load_settings(_env_file=None)
 
 
+class _MemoryStorage:
+    def __init__(self) -> None:
+        self.blobs: dict[str, bytes] = {}
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self.blobs[key] = data
+
+    async def get(self, key: str) -> bytes:
+        return self.blobs[key]
+
+    async def delete(self, key: str) -> None:
+        self.blobs.pop(key, None)
+
+    async def exists(self, key: str) -> bool:
+        return key in self.blobs
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        return f"memory://{key}"
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        return
+        yield
+
+
 def _app(conn, *, registry: ToolRegistry | None = None, sse_live_tail: bool = False):
     cf = conn_session_factory(conn)
+    resolved_registry = registry if registry is not None else ToolRegistry()
+    settings = _settings()
     return create_projections_app(
         surface=build_surface(conn),
-        registry=registry if registry is not None else ToolRegistry(),
-        idempotency_store=DbIdempotencyStore(conn_factory=cf),
-        settings=_settings(),
+        tool_invoker=build_tool_invoker(
+            registry=resolved_registry,
+            idempotency_store=DbIdempotencyStore(conn_factory=cf),
+            storage=_MemoryStorage(),
+            settings=settings,
+            conn_factory=cf,
+        ),
+        settings=settings,
         conn_factory=cf,
         sse_live_tail=sse_live_tail,
         manage_db_lifespan=False,
@@ -230,6 +271,114 @@ def test_sse_replay_from_last_event_id_has_zero_gap() -> None:
     run_async(_run())
 
 
+def test_sse_reconnect_replays_journaled_node_events_without_a_gap() -> None:
+    """A recipe-owned execution projects node events into the existing project-run SSE outbox."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            run_id = await seed_run(conn, workspace_id=_WS)
+            project_id = (
+                await conn.execute(
+                    text("SELECT project_id FROM project_run WHERE id = :id"),
+                    {"id": run_id},
+                )
+            ).scalar_one()
+            execution_id = new_execution_id()
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO execution
+                        (id, workspace_id, project_id, project_run_id, started_by,
+                         parameter_manifest_hash, pin_manifest_hash)
+                    VALUES (:id, :workspace_id, :project_id, :run_id, 'agent', :hash, :hash)
+                    """
+                ),
+                {
+                    "id": execution_id,
+                    "workspace_id": _WS,
+                    "project_id": project_id,
+                    "run_id": run_id,
+                    "hash": "a" * 64,
+                },
+            )
+            registry = ToolRegistry()
+            tool = EchoTool()
+            registry.register(tool, make_default=True)
+            cf = conn_session_factory(conn)
+            settings = _settings()
+            invoker = build_tool_invoker(
+                registry=registry,
+                idempotency_store=DbIdempotencyStore(conn_factory=cf),
+                storage=_MemoryStorage(),
+                settings=settings,
+                conn_factory=cf,
+            )
+            await invoker.invoke(
+                tool.name,
+                {"value": 8},
+                ToolContext(
+                    workspace_id=_WS,
+                    actor="agent",
+                    conn_factory=cf,
+                    operation_id=new_operation_id(),
+                    execution_id=execution_id,
+                    execution_node_key="echo-node",
+                ),
+            )
+            execution_view = await DbExecutionRunViewReader(conn_factory=cf).read_execution(
+                workspace_id=_WS,
+                execution_id=execution_id,
+            )
+            assert execution_view is not None
+            assert execution_view.summary.project_run_id == run_id
+            stored = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT seq, topic FROM run_event "
+                            "WHERE run_id = :run_id AND execution_id = :execution_id ORDER BY seq"
+                        ),
+                        {"run_id": run_id, "execution_id": execution_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert [row["topic"] for row in stored] == [
+                "node.scheduled",
+                "node.started",
+                "node.completed",
+            ]
+
+            app = create_projections_app(
+                surface=build_surface(conn),
+                tool_invoker=invoker,
+                settings=settings,
+                conn_factory=cf,
+                sse_live_tail=False,
+                manage_db_lifespan=False,
+            )
+            async with _client(app) as client:
+                token = await _mint(client, run_id)
+                response = await client.get(
+                    f"/project_runs/{run_id}/events",
+                    params={"stream_token": token},
+                    headers={
+                        "X-Workspace-Id": _WS,
+                        "Last-Event-ID": str(stored[0]["seq"]),
+                    },
+                )
+            frames = _frames(response.text)
+            journal_frames = [frame for frame in frames if frame["event"].startswith("node.")]
+            assert [frame["id"] for frame in journal_frames] == [row["seq"] for row in stored[1:]]
+            assert [frame["event"] for frame in journal_frames] == [
+                "node.started",
+                "node.completed",
+            ]
+
+    run_async(_run())
+
+
 def test_sse_cursor_older_than_horizon_gets_stream_reset() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -316,6 +465,7 @@ def _toolbelt(conn) -> ToolRegistry:
 def test_tool_route_precondition_422_replay_and_conflict() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
+            await seed_workspace(conn, _WS)
             app = _app(conn, registry=_toolbelt(conn))
             async with _client(app) as client:
                 headers = {"X-Workspace-Id": _WS}

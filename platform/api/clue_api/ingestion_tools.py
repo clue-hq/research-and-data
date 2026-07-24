@@ -15,11 +15,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import ValidationError
 
 from clue_api.tool_outputs import IngestionRetryOutput, IngestionSubmitOutput
-from clue_config import Settings, load_settings
 from clue_config.ingestion import DEFAULT_INGESTION_POLICY, IngestionPolicy
 from clue_core import RawArtifact, new_operation_id, operation_id_from_key
 from clue_core.ingestion import IngestionJobId
 from clue_db import ConnFactory, transaction
+from clue_execution import OperationConflict
 from clue_research.ingestion import (
     DeclaredMaterialContext,
     IngestionEngine,
@@ -30,15 +30,13 @@ from clue_storage import SnapshotSink, StorageBackend, flush_snapshots, get_arti
 from clue_toolbelt import (
     Actor,
     IdempotencyConflict,
-    IdempotencyStore,
     PreconditionFailed,
     PreconditionFailure,
     Tool,
     ToolContext,
     ToolInput,
-    ToolRegistry,
+    ToolInvoker,
     ToolResult,
-    invoke_tool,
 )
 
 WorkspaceHeader = Annotated[str | None, Header(alias="X-Workspace-Id")]
@@ -249,15 +247,12 @@ async def _read_upload_body(request: Request, *, max_bytes: int) -> bytes:
 
 def build_ingestion_router(
     *,
-    registry: ToolRegistry,
-    idempotency_store: IdempotencyStore,
+    tool_invoker: ToolInvoker,
     storage: StorageBackend,
     conn_factory: ConnFactory = transaction,
     policy: IngestionPolicy = DEFAULT_INGESTION_POLICY,
-    settings: Settings | None = None,
 ) -> APIRouter:
     """Build the raw-byte upload route; callers include it at the API composition root."""
-    resolved_settings = settings or load_settings()
     router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
     @router.post("/uploads")
@@ -297,8 +292,7 @@ def build_ingestion_router(
                 conn_factory=conn_factory,
                 policy=policy,
             )
-            return await invoke_tool(
-                registry,
+            return await tool_invoker.invoke(
                 "submit_ingestion",
                 {
                     "artifact_key": artifact_key,
@@ -318,8 +312,6 @@ def build_ingestion_router(
                     ),
                 ),
                 idempotency_key=idempotency_key,
-                store=idempotency_store,
-                idempotency_ttl_s=resolved_settings.toolbelt_idempotency_ttl_s,
             )
         except ValueError as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from exc
@@ -343,6 +335,11 @@ def build_ingestion_router(
             raise HTTPException(
                 status_code=409,
                 detail={"error": "idempotency_conflict", "reason": exc.reason, "key": exc.key},
+            ) from exc
+        except OperationConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "idempotency_conflict", "reason": "operation"},
             ) from exc
 
     return router

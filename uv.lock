@@ -678,13 +678,19 @@ version = "0.0.0"
 source = { editable = "platform/execution" }
 dependencies = [
     { name = "clue-core" },
+    { name = "clue-db" },
+    { name = "clue-toolbelt" },
     { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-db", editable = "libs/clue-db" },
+    { name = "clue-toolbelt", editable = "platform/toolbelt" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
 
 [[package]]

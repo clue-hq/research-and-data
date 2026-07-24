@@ -6,11 +6,11 @@ event the drive path observes — a phase started, a phase completed, a per-step
 run finishing — is appended here as one durable row, and the SSE surface (``clue_api``) fans those
 rows out to a client's ``EventSource`` with gapless ``Last-Event-ID`` replay.
 
-**Why it lives in ``durable`` (run-machinery), not in projections.** ``run_event`` is *written* at
-the run drive boundary (``ComposingRunDriver.advance``) — a write, so it cannot live in the
-read-only ``clue_projections`` package (that would make projections a write surface). It is genuine
-run-machinery — the same species as ``project_run`` / ``project_phase_checkpoint`` this module's
-sibling owns — so the write helper (:func:`emit_run_event`) and the read helpers
+**Why it lives in ``durable`` (run-machinery), not in projections.** ``run_event`` is written at
+the run-drive boundary and by C5's execution-journal transport adapter — writes, so it cannot live
+in the read-only ``clue_projections`` package. It is genuine run machinery — the same species as
+``project_run`` / ``project_phase_checkpoint`` this module's sibling owns — so the write helper
+(:func:`emit_run_event`) and the read helpers
 (:func:`list_run_events` / :func:`event_created_at`) live here, exactly mirroring where the
 ``handoff_event`` outbox lives (in ``narrative``, a research package). ``clue_api`` (the composition
 root) calls :func:`emit_run_event` from the drive path; ``clue_projections`` imports the *read*
@@ -24,9 +24,12 @@ within one ``(workspace_id[, run_id])``. Emission is **at-least-once** and **seq
 consumer dedups by ``seq``); a crash between the drive commit and the emit simply drops that event
 (the durable ``project_run`` / projection stays the authoritative truth a consumer can re-read).
 
-**One-directional (drive-path → transport).** Nothing a consumer does writes back through here
-(conventions §6 — never a claim-store write-back path). The only writer is the run drive path
-recording that something happened.
+**Durability boundary.** Legacy phase-event emission remains a post-drive best-effort append. C5
+execution events use the same caller connection for authoritative ``execution_event``, cursor CAS,
+and this transport row, so those three writes commit or roll back together.
+
+**One-directional (run machinery → transport).** Nothing a consumer does writes back through here
+(conventions §6 — never a claim-store write-back path).
 """
 
 from __future__ import annotations
@@ -37,13 +40,16 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ProjectRunId, UtcDatetime, decode_jsonb, serialize_value_json
+from clue_core import ExecutionId, ProjectRunId, UtcDatetime, decode_jsonb, serialize_value_json
 
 
 class RunEventTopic(StrEnum):
-    """The v1 stored run-event topics (PB-B4 D8). These are the ``event:`` field of the SSE
-    envelope. ``stream.*`` (``stream.hello`` / ``stream.reset``) are **transport-level** and are
-    generated at connect by the SSE surface — they are never stored in this outbox."""
+    """The v1 PB-B4 phase topics.
+
+    C5 execution rows use the closed ``ExecutionEventType`` string vocabulary at their owner and
+    deliberately cross this dependency boundary as strings. ``stream.*`` topics remain generated
+    at connect and are never stored.
+    """
 
     PHASE_STARTED = "run.phase.started"
     PHASE_COMPLETED = "run.phase.completed"
@@ -73,18 +79,19 @@ class RunEventRow(BaseModel):
     seq: int
     workspace_id: str
     run_id: ProjectRunId
+    execution_id: ExecutionId | None = None
     topic: str
     payload: dict[str, JsonValue]
     created_at: UtcDatetime
 
 
-_EVENT_COLUMNS = "seq, workspace_id, run_id, topic, payload, created_at"
+_EVENT_COLUMNS = "seq, workspace_id, run_id, execution_id, topic, payload, created_at"
 
 _EMIT_SQL = text(
     """
-    INSERT INTO run_event (workspace_id, run_id, topic, payload)
-    VALUES (:workspace_id, :run_id, :topic, CAST(:payload AS jsonb))
-    RETURNING seq, workspace_id, run_id, topic, payload, created_at
+    INSERT INTO run_event (workspace_id, run_id, execution_id, topic, payload)
+    VALUES (:workspace_id, :run_id, :execution_id, :topic, CAST(:payload AS jsonb))
+    RETURNING seq, workspace_id, run_id, execution_id, topic, payload, created_at
     """
 )
 
@@ -96,12 +103,13 @@ async def emit_run_event(
     run_id: ProjectRunId,
     topic: str,
     payload: dict[str, JsonValue] | None = None,
+    execution_id: ExecutionId | None = None,
 ) -> RunEventRow:
     """Append one run event to the durable outbox and return the persisted row (with its ``seq``).
 
-    The single writer of ``run_event``: the ``clue_api`` drive path calls this at the
-    ``advance`` boundary. Transactional in the caller's connection; ``seq`` is assigned by the DB
-    (globally monotone → per-workspace ordering). Emission is at-least-once / seq-idempotent."""
+    Called by composition-root run/execution writers. Transactional in the caller's connection;
+    ``seq`` is assigned by the DB (globally monotone → per-workspace ordering). Emission is
+    at-least-once / seq-idempotent."""
     row = (
         (
             await conn.execute(
@@ -109,6 +117,7 @@ async def emit_run_event(
                 {
                     "workspace_id": workspace_id,
                     "run_id": run_id,
+                    "execution_id": execution_id,
                     "topic": topic,
                     "payload": serialize_value_json(payload if payload is not None else {}),
                 },
@@ -125,6 +134,7 @@ async def list_run_events(
     *,
     workspace_id: str,
     run_id: ProjectRunId | None = None,
+    execution_id: ExecutionId | None = None,
     after_seq: int = 0,
     limit: int = 1000,
 ) -> list[RunEventRow]:
@@ -134,6 +144,7 @@ async def list_run_events(
     ``workspace_id`` (and ``run_id`` when a per-run stream is requested). ``limit`` bounds one page.
     Read-only — issues no writes (the D7 MVCC-only discipline the SSE surface depends on)."""
     run_clause = "AND run_id = :run_id " if run_id is not None else ""
+    execution_clause = "AND execution_id = :execution_id " if execution_id is not None else ""
     rows = (
         (
             await conn.execute(
@@ -141,6 +152,7 @@ async def list_run_events(
                     f"SELECT {_EVENT_COLUMNS} FROM run_event "
                     "WHERE workspace_id = :ws AND seq > :after_seq "
                     f"{run_clause}"
+                    f"{execution_clause}"
                     "ORDER BY seq LIMIT :limit"
                 ),
                 {
@@ -148,6 +160,7 @@ async def list_run_events(
                     "after_seq": after_seq,
                     "limit": limit,
                     **({"run_id": run_id} if run_id is not None else {}),
+                    **({"execution_id": execution_id} if execution_id is not None else {}),
                 },
             )
         )
@@ -179,6 +192,7 @@ def _row_to_event(row: dict[str, object]) -> RunEventRow:
             "seq": row["seq"],
             "workspace_id": row["workspace_id"],
             "run_id": row["run_id"],
+            "execution_id": row["execution_id"],
             "topic": row["topic"],
             "payload": decode_jsonb(row["payload"]),
             "created_at": row["created_at"],

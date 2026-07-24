@@ -104,6 +104,10 @@ the next slice.
 
 ## 3. C5.1 — Append-only journal at the toolbelt boundary
 
+**Status:** implemented and verified on 2026-07-24. Migration `128c83d5e151` is the single head;
+the implementation intentionally stops before C5.2 recipe lifecycle/compatibility behavior and
+before all executor/fleet work.
+
 ### 3.1 Migration
 
 Create one random-hash Alembic revision from the current head for:
