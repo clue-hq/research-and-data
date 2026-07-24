@@ -1,6 +1,7 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0 frozen; C1–C3 implemented and integrated; C4 next (2026-07-24)
+**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5 planned
+(2026-07-24)
 
 **Integration branch:** `platform/workspace-restructure`
 
@@ -40,7 +41,7 @@ spend, trust, promotion, compliance, fan-out, and durable truth.**
 
 ## 2. Current baseline (what Phase C may assume)
 
-As of the C1–C3 merge checkpoint on `platform/workspace-restructure`:
+As of the C4 completion checkpoint on `platform/workspace-restructure`:
 
 - Phase A is complete: uv workspace structure, `workspace_id` vocabulary, object spine, shared
   libraries, platform/subsystem boundaries, and API composition root.
@@ -57,6 +58,12 @@ As of the C1–C3 merge checkpoint on `platform/workspace-restructure`:
 - Every project run requires a same-workspace project and durably pins its selected brand.
 - The claim store, waterfall, verification, compliance, ICP compiler, discovery/scoring,
   deep-research workers, value narrative, review surfaces, and observability substrate exist.
+- Governed Stage 0 is implemented: artifact-backed onboarding/interview input, independent
+  fast/background recon, product-aware Client-KB/ICP lineage, product-context manifests,
+  deterministic readiness plus human override, Stage-0 tools/projections/SSE, and the narrow
+  Recipe-#0 runner C5 will generalize.
+- A confirmed Stage-0 run starts at `DISCOVERY` with immutable Client-KB/ICP/product-context/
+  readiness pins; the legacy full state-machine entry remains unchanged.
 - The legacy scripts 01–06 pipeline remains the Recipe-#1 regression reference.
 - Verification at the C1–C3 integration checkpoint: DB-enabled `make check` green; 23 import
   contracts kept; 2328 tests passed / 20 external-service-gated skips; one Alembic head
@@ -79,15 +86,10 @@ The platform now has:
 
 ### 2.2 What is still absent
 
-- no real Recipe-#0 orchestration;
-- no fast-plus-background recon controller;
-- no durable onboarding-input record;
-- no live composition-root registration of the Stage-0 scrape resolver;
-- no recon-brief/fork-card projection;
-- no readiness-spec versions or recorded override;
-- no `client_interview` source/resolver;
-- no `volunteered_statement` preservation path;
 - no generic run-graph journal or recipe executor;
+- no durable Recipe-#0 execution beyond C4's narrow in-memory topological seam;
+- no version-aware tool registry, typed graph-output schemas, or execution-lifetime idempotency;
+- no run supervisor, account-quarantine enforcement, or run-local source circuit breaker;
 - no platform deepagent, research subagent, or governed per-account worker agent;
 - no production `HandoffCommitteeReader`;
 - no `compose_dossier` / derivation projection.
