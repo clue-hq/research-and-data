@@ -109,7 +109,7 @@ def _normalize_strong_text(value: str | None) -> str | None:
 
 _ACCOUNT_COLUMNS = (
     "id, canonical_name, primary_domain, aliases, hq_geo, registry_ids, status, merged_into, "
-    "workspace_id, brand_id"
+    "workspace_id"
 )
 _CONTACT_COLUMNS = (
     "id, account_entity_id, full_name, linkedin_url, verified_email, aliases, geo, "
@@ -137,9 +137,9 @@ def _row_to_contact(row: Mapping[str, object]) -> ContactEntity:
 _INSERT_ACCOUNT = text(
     """
     INSERT INTO account_entity (canonical_name, primary_domain, aliases, hq_geo, registry_ids,
-                                status, workspace_id, brand_id)
+                                status, workspace_id)
     VALUES (:canonical_name, :primary_domain, :aliases, CAST(:hq_geo AS jsonb),
-            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status), :workspace_id, :brand_id)
+            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status), :workspace_id)
     RETURNING id
     """
 ).bindparams(bindparam("aliases", type_=ARRAY(String())))
@@ -155,7 +155,6 @@ async def insert_account_entity(
     registry_ids: Mapping[str, str] | None = None,
     status: AccountStatus = AccountStatus.CANDIDATE,
     workspace_id: str,
-    brand_id: str | None = None,
 ) -> EntityId:
     """Insert a canonical account entity, normalizing its strong keys + match index; return its id.
 
@@ -180,7 +179,6 @@ async def insert_account_entity(
             "registry_ids": serialize_value_json(_registry_map(registry_ids)),
             "status": status.value,
             "workspace_id": workspace_id,
-            "brand_id": brand_id,
         },
     )
     return EntityId(result.scalar_one())

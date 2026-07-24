@@ -130,8 +130,8 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
 
 > **Amended 2026-07-24:** the transitional one-brand-per-workspace limit is retired. A workspace
 > owns multiple brand kits, and every project selects exactly one brand from that same workspace.
-> Target accounts are workspace-local and brand-neutral; their obsolete `brand_id` plumbing is
-> removed in the next focused slice.
+> Target accounts are workspace-local and brand-neutral; migration `068426c5ea34` removes their
+> obsolete `brand_id` column and research plumbing.
 
 - `clue_spine` imports clue-core + clue-db only. Contents: row dataclasses + plain async CRUD
   functions in the repo's existing raw-SQL style (`icp/spec.py` pattern). **No protocol, no
