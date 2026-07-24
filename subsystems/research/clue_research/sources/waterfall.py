@@ -23,7 +23,7 @@ Guarantees:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal
 from enum import StrEnum
 
@@ -127,6 +127,9 @@ class WaterfallResult(BaseModel):
         return self.stop_reason is StopReason.CONFIDENT_HIT
 
 
+AttemptRecorder = Callable[[WaterfallResult], Awaitable[None]]
+
+
 def _max_confidence(claims: Sequence[Claim]) -> float | None:
     return max((c.confidence for c in claims), default=None)
 
@@ -201,6 +204,7 @@ async def resolve_field(
     idempotent: bool = True,
     claim_tagger: ClaimTagger | None = None,
     source_gate: SourceGate | None = None,
+    attempt_recorder: AttemptRecorder | None = None,
     snapshots: SnapshotSink | None = None,
     storage: StorageBackend | None = None,
 ) -> WaterfallResult:
@@ -418,7 +422,7 @@ async def resolve_field(
         # only unbound tier-4 placeholders), it is no_resolver — a correct flagged-empty output.
         stop_reason = StopReason.TIER_EXHAUSTED if ran_any else StopReason.NO_RESOLVER
 
-    return WaterfallResult(
+    result = WaterfallResult(
         entity_id=entity.entity_id,
         field_key=field_def.field_key,
         claim_refs=tuple(refs),
@@ -426,6 +430,9 @@ async def resolve_field(
         per_tier=tuple(steps),
         total_cost_cents=budget.spent_cents - cost_so_far,  # this call's spend only
     )
+    if attempt_recorder is not None:
+        await attempt_recorder(result)
+    return result
 
 
 async def resolve_fields(
@@ -442,6 +449,7 @@ async def resolve_fields(
     idempotent: bool = True,
     snapshots: SnapshotSink | None = None,
     storage: StorageBackend | None = None,
+    attempt_recorder: AttemptRecorder | None = None,
 ) -> list[WaterfallResult]:
     """Resolve several fields for one entity, threading the running spend so a single
     ``budget_envelope`` bounds the whole batch. ``workspace_id`` / ``reuse_policy`` are threaded to
@@ -465,6 +473,7 @@ async def resolve_fields(
             idempotent=idempotent,
             snapshots=snapshots,
             storage=storage,
+            attempt_recorder=attempt_recorder,
         )
         results.append(result)
         spent += result.total_cost_cents
