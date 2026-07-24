@@ -19,6 +19,7 @@ from clue_api.proposal_tools import (
     ProposeSourceInput,
     ProposeSourceTool,
 )
+from clue_core import new_operation_id
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory
 from clue_projections.proposals import field_proposals, source_proposals
@@ -47,8 +48,18 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
             brand = await create_brand(conn, workspace_id=workspace_id, name="Tools brand")
             scope = ProposalScopeInput(brand_id=brand.brand_id)
             factory = _factory(conn)
-            agent = ToolContext(workspace_id=workspace_id, actor="agent", conn_factory=factory)
-            human = ToolContext(workspace_id=workspace_id, actor="human", conn_factory=factory)
+            agent = ToolContext(
+                workspace_id=workspace_id,
+                actor="agent",
+                conn_factory=factory,
+                operation_id=new_operation_id(),
+            )
+            human = ToolContext(
+                workspace_id=workspace_id,
+                actor="human",
+                conn_factory=factory,
+                operation_id=new_operation_id(),
+            )
 
             propose_field_tool = ProposeFieldTool()
             propose_field_input = ProposeFieldInput(

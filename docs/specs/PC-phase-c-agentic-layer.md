@@ -1,6 +1,6 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5 planned
+**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5.0 implemented, C5.1 next
 (2026-07-24)
 
 **Integration branch:** `platform/workspace-restructure`
@@ -88,7 +88,9 @@ The platform now has:
 
 - no generic run-graph journal or recipe executor;
 - no durable Recipe-#0 execution beyond C4's narrow in-memory topological seam;
-- no version-aware tool registry, typed graph-output schemas, or execution-lifetime idempotency;
+- C5.0 now supplies an exact-version tool registry, typed graph-output descriptors, stable
+  operation ids, and a standing Recipe-#0/#1 replay audit; the append-only execution journal and
+  execution-lifetime invocation replay are still absent until C5.1;
 - no run supervisor, account-quarantine enforcement, or run-local source circuit breaker;
 - no platform deepagent, research subagent, or governed per-account worker agent;
 - no production `HandoffCommitteeReader`;

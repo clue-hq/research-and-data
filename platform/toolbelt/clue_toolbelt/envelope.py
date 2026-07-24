@@ -28,22 +28,34 @@ Design points bound by the PB-B4 spec:
 from __future__ import annotations
 
 import abc
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from clue_core import OperationId
 from clue_db import ConnFactory
 
 __all__ = [
     "Actor",
+    "ExternalReplayBoundary",
+    "JournalParameterPolicy",
     "ToolContext",
+    "ToolDescriptor",
+    "ToolEffectClass",
     "PreconditionFailure",
+    "ReplayPolicy",
+    "ReplaySafety",
     "ToolEstimate",
     "ToolResult",
     "ToolInput",
+    "ToolOutput",
+    "UntypedToolOutput",
     "Tool",
 ]
 
@@ -59,6 +71,149 @@ class ToolInput(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class ToolOutput(BaseModel):
+    """Base for a tool's typed, reference-only output model."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+
+class UntypedToolOutput(ToolOutput):
+    """Legacy/ad-hoc output shape.
+
+    It preserves compatibility for tools that have not yet declared a reference schema, but a
+    descriptor carrying this model is deliberately not recipe-safe.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+
+class ReplayPolicy(StrEnum):
+    """The strongest replay statement a tool can truthfully make."""
+
+    UNCERTIFIED = "uncertified"
+    EFFECT_FREE = "effect_free"
+    DOMAIN_IDEMPOTENT = "domain_idempotent"
+    OPERATION_IDEMPOTENT = "operation_idempotent"
+    AT_LEAST_ONCE = "at_least_once"
+
+
+class ExternalReplayBoundary(StrEnum):
+    """Residual behavior at an external provider boundary."""
+
+    NONE = "none"
+    AT_LEAST_ONCE = "at_least_once"
+    IDEMPOTENCY_KEY = "idempotency_key"
+
+
+class ToolEffectClass(StrEnum):
+    """How an invocation affects durable or external state."""
+
+    READ = "read"
+    WRITE = "write"
+    SPEND = "spend"
+    STEERING = "steering"
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaySafety:
+    """The replay audit attached to a versioned tool descriptor."""
+
+    policy: ReplayPolicy
+    durable_identity: str
+    operation_id_required: bool = False
+    external_boundary: ExternalReplayBoundary = ExternalReplayBoundary.NONE
+    notes: str = ""
+
+    def __post_init__(self) -> None:
+        if self.policy is not ReplayPolicy.UNCERTIFIED and not self.durable_identity.strip():
+            raise ValueError("a certified replay policy requires a durable identity")
+        if self.policy is ReplayPolicy.OPERATION_IDEMPOTENT and not self.operation_id_required:
+            raise ValueError("operation-idempotent tools must require operation_id")
+        if (
+            self.policy is ReplayPolicy.AT_LEAST_ONCE
+            and self.external_boundary is not ExternalReplayBoundary.AT_LEAST_ONCE
+        ):
+            raise ValueError("at-least-once tools must declare an at-least-once external boundary")
+        if (
+            self.policy is ReplayPolicy.EFFECT_FREE
+            and self.external_boundary is not ExternalReplayBoundary.NONE
+        ):
+            raise ValueError("effect-free tools cannot declare an external replay boundary")
+
+    @classmethod
+    def uncertified(cls) -> ReplaySafety:
+        return cls(policy=ReplayPolicy.UNCERTIFIED, durable_identity="")
+
+
+@dataclass(frozen=True, slots=True)
+class JournalParameterPolicy:
+    """What may be copied into a display-safe journal projection.
+
+    The validated body itself is always artifact-backed in C5.1. This allowlist controls only
+    small top-level scalars/references that may also appear in graph/event JSON.
+    """
+
+    safe_display_fields: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(set(self.safe_display_fields)) != len(self.safe_display_fields):
+            raise ValueError("journal safe-display fields must be unique")
+        if any(not item or "." in item for item in self.safe_display_fields):
+            raise ValueError("journal safe-display fields must be non-empty top-level names")
+
+
+def _schema_sha256(model: type[BaseModel]) -> str:
+    payload = json.dumps(model.model_json_schema(), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDescriptor:
+    """Immutable addressable contract for one exact ``name@version`` implementation."""
+
+    name: str
+    version: str
+    input_model: type[ToolInput]
+    output_model: type[ToolOutput]
+    input_schema_sha256: str
+    output_schema_sha256: str
+    replay: ReplaySafety
+    effect_class: ToolEffectClass
+    parameter_policy: JournalParameterPolicy
+    pin_requirements: tuple[str, ...]
+    has_steering_snapshot: bool
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or "@" in self.name:
+            raise ValueError("tool name must be non-empty and must not contain '@'")
+        if not self.version.strip() or "@" in self.version:
+            raise ValueError("tool version must be non-empty and must not contain '@'")
+        missing = set(self.parameter_policy.safe_display_fields) - set(
+            self.input_model.model_fields
+        )
+        if missing:
+            raise ValueError(
+                f"journal fields are absent from {self.name}@{self.version} input: "
+                f"{sorted(missing)}"
+            )
+        if self.effect_class is ToolEffectClass.STEERING and not self.has_steering_snapshot:
+            raise ValueError(
+                f"steering tool {self.name}@{self.version} must implement audit_snapshot"
+            )
+
+    @property
+    def address(self) -> str:
+        return f"{self.name}@{self.version}"
+
+    @property
+    def has_typed_output(self) -> bool:
+        return self.output_model is not UntypedToolOutput
+
+    @property
+    def recipe_safe(self) -> bool:
+        return self.has_typed_output and self.replay.policy is not ReplayPolicy.UNCERTIFIED
+
+
 @dataclass(frozen=True, slots=True)
 class ToolContext:
     """The ambient invocation context — *not* tool inputs, but who/where/how the call runs.
@@ -70,11 +225,14 @@ class ToolContext:
       through (defaults to :func:`clue_db.transaction`); the toolbelt opens a connection no other
       way.
     * ``quality_mode`` — the A8 slot (D9): recorded/journaled, not resolved. ``None`` ⇒ unset.
+    * ``operation_id`` — the stable logical-operation identity reused by every retry. Tool bodies
+      derive durable row/run ids from it instead of minting fresh identities on each attempt.
     """
 
     workspace_id: str
     actor: Actor
     conn_factory: ConnFactory
+    operation_id: OperationId
     quality_mode: str | None = None
 
 
@@ -122,9 +280,9 @@ class ToolResult(BaseModel):
 
     tool: str
     version: str
-    references: dict[str, Any] = {}
+    references: dict[str, Any] = Field(default_factory=dict)
     replayed: bool = False
-    meta: dict[str, Any] = {}
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class Tool(abc.ABC):
@@ -140,6 +298,33 @@ class Tool(abc.ABC):
     version: ClassVar[str] = "1"
     #: The pydantic input model the runner validates the request body against.
     input_model: ClassVar[type[ToolInput]]
+    #: The exact reference-only result schema. The legacy default is not recipe-safe.
+    output_model: ClassVar[type[ToolOutput]] = UntypedToolOutput
+    #: Replay proof for this exact version. Uncertified tools cannot enter a standing recipe.
+    replay: ClassVar[ReplaySafety] = ReplaySafety.uncertified()
+    #: Read/write/spend/steering classification used by the journal and authority gates.
+    effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.WRITE
+    #: Safe display/reference allowlist. The full validated body remains artifact-backed.
+    parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy()
+    #: Pin kinds this tool expects the compatibility loader to resolve in C5.2.
+    pin_requirements: ClassVar[tuple[str, ...]] = ()
+
+    @property
+    def descriptor(self) -> ToolDescriptor:
+        """Return the immutable contract for this exact implementation."""
+        return ToolDescriptor(
+            name=self.name,
+            version=self.version,
+            input_model=self.input_model,
+            output_model=self.output_model,
+            input_schema_sha256=_schema_sha256(self.input_model),
+            output_schema_sha256=_schema_sha256(self.output_model),
+            replay=self.replay,
+            effect_class=self.effect_class,
+            parameter_policy=self.parameter_policy,
+            pin_requirements=self.pin_requirements,
+            has_steering_snapshot=type(self).audit_snapshot is not Tool.audit_snapshot,
+        )
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -155,6 +340,15 @@ class Tool(abc.ABC):
         / control tools). A spend tool overrides with the existing estimate machinery or a static
         prior."""
         return ToolEstimate.free()
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> Mapping[str, Any]:
+        """Return display-safe effective state for a steering before/after event.
+
+        C5.1 invokes this hook around steering effects. Non-steering tools keep the empty default;
+        a steering descriptor is invalid unless its class overrides this method.
+        """
+        del inputs, ctx
+        return {}
 
     @abc.abstractmethod
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:

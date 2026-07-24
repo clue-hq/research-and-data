@@ -39,7 +39,6 @@ from clue_core import (
     new_readiness_decision_id,
     new_readiness_override_id,
     new_recon_run_id,
-    new_run_id,
     serialize_value_json,
 )
 
@@ -266,8 +265,9 @@ async def start_recon(
     client_entity_id: EntityId | None = None,
     recipe_version: str = "recipe0@1",
     skill_version: str = "stage0-interview@1",
+    recon_run_id: ReconRunId | None = None,
 ) -> ReconRunRow:
-    """Return the live workspace-local duplicate, or create one two-lane cursor."""
+    """Return an exact replay/live duplicate, or create one two-lane cursor."""
     # Serialize equivalent starts before the read/create decision. A time-bounded partial UNIQUE
     # index cannot express ``expires_at > now()`` safely in Postgres; the transaction advisory
     # lock gives us one logical recon without making expired history mutable.
@@ -275,6 +275,30 @@ async def start_recon(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
         {"lock_key": f"stage0-recon:{workspace_id}:{dedupe_hash}"},
     )
+    if recon_run_id is not None:
+        exact = await get_recon(conn, recon_run_id, workspace_id=workspace_id)
+        if exact is not None:
+            expected = (
+                brand_id,
+                product_id,
+                project_id,
+                dedupe_hash,
+                tuple(onboarding_input_ids),
+                recipe_version,
+                skill_version,
+            )
+            actual = (
+                exact.brand_id,
+                exact.product_id,
+                exact.project_id,
+                exact.dedupe_hash,
+                exact.onboarding_input_ids,
+                exact.recipe_version,
+                exact.skill_version,
+            )
+            if actual != expected:
+                raise ValueError("recon run id replayed with different immutable context")
+            return exact
     existing = (
         (
             await conn.execute(
@@ -292,7 +316,7 @@ async def start_recon(
     if existing is not None:
         return _recon_row(dict(existing))
 
-    run_id = new_recon_run_id()
+    run_id = recon_run_id if recon_run_id is not None else new_recon_run_id()
     await conn.execute(
         text(
             """
@@ -320,8 +344,8 @@ async def start_recon(
             "dedupe_hash": dedupe_hash,
             "ttl_seconds": dedupe_ttl_seconds,
             "input_ids": serialize_value_json([str(item) for item in onboarding_input_ids]),
-            "fast_run_id": new_run_id(),
-            "background_run_id": new_run_id(),
+            "fast_run_id": RunId(uuid5(NAMESPACE_URL, f"stage0-recon-fast:{run_id}")),
+            "background_run_id": RunId(uuid5(NAMESPACE_URL, f"stage0-recon-background:{run_id}")),
             "fast_budget": fast_budget_cents,
             "background_budget": background_budget_cents,
             "recipe_version": recipe_version,
@@ -710,6 +734,7 @@ async def evaluate_readiness(
     ingestion_refs: Sequence[str] = (),
     agent_sufficiency_status: str = "not_evaluated",
     agent_sufficiency_ref: str | None = None,
+    readiness_decision_id: ReadinessDecisionId | None = None,
 ) -> ReadinessSnapshotRef:
     floor = spec.floors[gate]
     coverage = _number(metrics.get("coverage_ratio"), default=0.0)
@@ -737,7 +762,9 @@ async def evaluate_readiness(
     if missing := sorted(set(floor.required_field_keys) - available_fields):
         reasons.extend(f"missing_field:{key}" for key in missing)
     spec_version = await ensure_readiness_spec(conn, workspace_id=workspace_id, spec=spec)
-    decision_id = new_readiness_decision_id()
+    decision_id = (
+        readiness_decision_id if readiness_decision_id is not None else new_readiness_decision_id()
+    )
     verdict = ReadinessVerdict.NOT_READY if reasons else ReadinessVerdict.READY
     await conn.execute(
         text(
@@ -757,6 +784,7 @@ async def evaluate_readiness(
                 CAST(:ingestion_refs AS jsonb), CAST(:metrics AS jsonb),
                 CAST(:reasons AS jsonb), :agent_status, :agent_ref, :actor
             )
+            ON CONFLICT (id) DO NOTHING
             """
         ),
         {
@@ -784,6 +812,37 @@ async def evaluate_readiness(
             "actor": created_by_actor,
         },
     )
+    stored = await get_readiness_decision(conn, decision_id, workspace_id=workspace_id)
+    if stored is None:
+        raise ValueError("readiness decision id is already owned by another workspace")
+    expected = (
+        brand_id,
+        product_id,
+        project_id,
+        client_entity_id,
+        client_kb_version,
+        icp_key,
+        icp_version,
+        product_context_version_id,
+        gate,
+        verdict,
+        spec_version,
+    )
+    actual = (
+        stored.brand_id,
+        stored.product_id,
+        stored.project_id,
+        stored.client_entity_id,
+        stored.client_kb_version,
+        stored.icp_key,
+        stored.icp_version,
+        stored.product_context_version_id,
+        stored.gate,
+        stored.verdict,
+        stored.spec_version,
+    )
+    if actual != expected:
+        raise ValueError("readiness decision id replayed with different immutable context")
     return ReadinessSnapshotRef(
         readiness_decision_id=decision_id,
         gate=gate,

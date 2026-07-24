@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from clue_core import new_operation_id
 from clue_toolbelt import (
     IdempotencyStore,
     PreconditionFailure,
@@ -18,6 +19,7 @@ from clue_toolbelt import (
     Tool,
     ToolContext,
     ToolInput,
+    ToolOutput,
     ToolResult,
 )
 from tests.db.conftest import run_async as run_async
@@ -31,6 +33,10 @@ class EchoInput(ToolInput):
     note: str | None = None
 
 
+class EchoOutput(ToolOutput):
+    echoed: int
+
+
 class EchoTool(Tool):
     """A trivial tool: echoes its input, records each invoke, and can be told to fail preconditions
     or raise mid-invoke so the runner's precondition/log/release paths can be exercised without a
@@ -39,6 +45,7 @@ class EchoTool(Tool):
     name = "echo"
     version = "1"
     input_model = EchoInput
+    output_model = EchoOutput
 
     def __init__(
         self, *, fail: Sequence[PreconditionFailure] = (), raise_on_invoke: bool = False
@@ -142,4 +149,9 @@ _STORE_IS_A_STORE: type[IdempotencyStore] = InMemoryStore
 def human_ctx(workspace_id: str = "ws_test") -> ToolContext:
     from clue_db import transaction
 
-    return ToolContext(workspace_id=workspace_id, actor="human", conn_factory=transaction)
+    return ToolContext(
+        workspace_id=workspace_id,
+        actor="human",
+        conn_factory=transaction,
+        operation_id=new_operation_id(),
+    )

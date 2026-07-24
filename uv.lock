@@ -14,6 +14,7 @@ members = [
     "clue-content",
     "clue-core",
     "clue-db",
+    "clue-execution",
     "clue-fleet",
     "clue-gateway",
     "clue-locks",
@@ -602,6 +603,7 @@ dependencies = [
     { name = "clue-config" },
     { name = "clue-core" },
     { name = "clue-db" },
+    { name = "clue-execution" },
     { name = "clue-obs" },
     { name = "clue-research" },
     { name = "clue-storage" },
@@ -613,6 +615,7 @@ requires-dist = [
     { name = "clue-config", editable = "libs/clue-config" },
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-db", editable = "libs/clue-db" },
+    { name = "clue-execution", editable = "platform/execution" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-research", editable = "subsystems/research" },
     { name = "clue-storage", editable = "libs/clue-storage" },
@@ -667,6 +670,21 @@ requires-dist = [
     { name = "asyncpg" },
     { name = "pgvector" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+]
+
+[[package]]
+name = "clue-execution"
+version = "0.0.0"
+source = { editable = "platform/execution" }
+dependencies = [
+    { name = "clue-core" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "pydantic", specifier = ">=2.7" },
 ]
 
 [[package]]

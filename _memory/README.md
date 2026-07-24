@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-24-phase-c5-0-contract-freeze.md` — C5.0 implemented: exact-version descriptors and
+  recipe steps, strict typed outputs, stable operation identities, executable Recipe-#0/#1 replay
+  audit, honest provider/recon residuals, verification, and the C5.1 handoff.
 - `2026-07-24-phase-c1-c3-integration.md` — C1–C3 integration checkpoint: central 24-tool and
   projection aggregation, cross-lane proposal/ingestion wiring, authoritative contact governance,
   exact-source erasure, Alembic merge head, spend-path inventory, verification, and C4 handoff.

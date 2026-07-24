@@ -22,7 +22,7 @@ from uuid import uuid4
 import pytest
 
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import ICPCreatedFrom
+from clue_core import ICPCreatedFrom, new_operation_id
 from clue_research.icp import (
     ScoringRubric,
     TierBand,
@@ -223,7 +223,12 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
             )
             ws = await seed_workspace(conn, f"ws_{uuid4().hex[:8]}")
             project = await seed_project(conn, ws)
-            ctx = ToolContext(workspace_id=ws, actor="human", conn_factory=cf)
+            ctx = ToolContext(
+                workspace_id=ws,
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
             bodies = _bodies()
             bodies["start_project_run"]["project_id"] = project.project_id
 
@@ -269,8 +274,18 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
             registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
             project_a = await seed_project(conn, "ws_A")
             await seed_project(conn, "ws_B")
-            ctx_a = ToolContext(workspace_id="ws_A", actor="human", conn_factory=cf)
-            ctx_b = ToolContext(workspace_id="ws_B", actor="human", conn_factory=cf)
+            ctx_a = ToolContext(
+                workspace_id="ws_A",
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
+            ctx_b = ToolContext(
+                workspace_id="ws_B",
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
 
             start_body = {
                 "project_id": project_a.project_id,
@@ -291,6 +306,15 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
                 idempotency_ttl_s=TTL,
             )
             run_id = started.references["project_run_id"]
+            assert run_id == str(ctx_a.operation_id)
+            replayed_start = await invoke_tool(
+                registry,
+                "start_project_run",
+                start_body,
+                ctx_a,
+                idempotency_ttl_s=TTL,
+            )
+            assert replayed_start.references["project_run_id"] == run_id
 
             # From ws_B every run-scoped mutation refuses run_not_found (the exact tuple).
             cases: dict[str, dict[str, object]] = {
@@ -350,7 +374,12 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
             registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
             ws_a = await seed_workspace(conn, "ws_scope_a")
             ws_b = await seed_workspace(conn, "ws_scope_b")
-            ctx = ToolContext(workspace_id=ws_a, actor="human", conn_factory=cf)
+            ctx = ToolContext(
+                workspace_id=ws_a,
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
 
             # An active ICP under ws_a with a rubric carrying the "high" tier band, so
             # run_deep_account's earlier preconditions (resolvable spec + known tier) pass and it
@@ -429,7 +458,12 @@ def test_profile_contact_refuses_cross_account_contact(  # noqa: F811
             registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
             ws_a = await seed_workspace(conn, "ws_pc_a")
             ws_b = await seed_workspace(conn, "ws_pc_b")
-            ctx = ToolContext(workspace_id=ws_a, actor="human", conn_factory=cf)
+            ctx = ToolContext(
+                workspace_id=ws_a,
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
 
             acc_a = await insert_account_entity(
                 conn, canonical_name="In-WS", primary_domain="pca.example", workspace_id=ws_a

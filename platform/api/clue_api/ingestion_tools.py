@@ -14,9 +14,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import ValidationError
 
+from clue_api.tool_outputs import IngestionRetryOutput, IngestionSubmitOutput
 from clue_config import Settings, load_settings
 from clue_config.ingestion import DEFAULT_INGESTION_POLICY, IngestionPolicy
-from clue_core import RawArtifact
+from clue_core import RawArtifact, new_operation_id, operation_id_from_key
 from clue_core.ingestion import IngestionJobId
 from clue_db import ConnFactory, transaction
 from clue_research.ingestion import (
@@ -85,6 +86,7 @@ class SubmitIngestionTool(Tool):
     name = "submit_ingestion"
     version = "1"
     input_model = SubmitIngestionInput
+    output_model = IngestionSubmitOutput
 
     def __init__(self, engine: IngestionEngine | None) -> None:
         self._engine = engine
@@ -143,6 +145,7 @@ class RetryIngestionTool(Tool):
     name = "retry_ingestion"
     version = "1"
     input_model = RetryIngestionInput
+    output_model = IngestionRetryOutput
 
     def __init__(self, engine: IngestionEngine | None) -> None:
         self._engine = engine
@@ -305,6 +308,14 @@ def build_ingestion_router(
                     workspace_id=workspace_id,
                     actor=actor,
                     conn_factory=conn_factory,
+                    operation_id=(
+                        operation_id_from_key(
+                            workspace_id,
+                            f"tool:submit_ingestion:{idempotency_key}",
+                        )
+                        if idempotency_key is not None
+                        else new_operation_id()
+                    ),
                 ),
                 idempotency_key=idempotency_key,
                 store=idempotency_store,

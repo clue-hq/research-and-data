@@ -20,6 +20,7 @@ from clue_toolbelt.envelope import PreconditionFailure
 
 __all__ = [
     "ToolbeltError",
+    "ToolContractViolation",
     "UnknownTool",
     "PreconditionFailed",
     "IdempotencyConflict",
@@ -30,12 +31,23 @@ class ToolbeltError(RuntimeError):
     """Base for every toolbelt-raised error (so a caller can ``except ToolbeltError`` broadly)."""
 
 
-class UnknownTool(ToolbeltError):
-    """The requested tool name is not registered in the :class:`~clue_toolbelt.ToolRegistry`."""
+class ToolContractViolation(ToolbeltError):
+    """A concrete tool returned a result that violates its exact descriptor."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, address: str, detail: str) -> None:
+        self.address = address
+        self.detail = detail
+        super().__init__(f"tool {address!r} violated its output contract: {detail}")
+
+
+class UnknownTool(ToolbeltError):
+    """The requested name/default alias or exact version is not registered."""
+
+    def __init__(self, name: str, *, version: str | None = None) -> None:
         self.name = name
-        super().__init__(f"no tool registered under {name!r}")
+        self.version = version
+        address = name if version is None else f"{name}@{version}"
+        super().__init__(f"no tool registered under {address!r}")
 
 
 class PreconditionFailed(ToolbeltError):

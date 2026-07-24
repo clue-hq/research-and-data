@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from clue_core import operation_id_from_key
 from clue_toolbelt import (
     IdempotencyStore,
     ToolContext,
@@ -19,8 +21,9 @@ from clue_toolbelt import (
 class RecipeStep(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    step_id: str
-    tool_name: str
+    step_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_version: str = Field(min_length=1)
     input_refs: dict[str, JsonValue]
     depends_on: tuple[str, ...] = ()
 
@@ -46,11 +49,19 @@ class ToolbeltRecipeRunner:
         self._recipe_id = recipe_id
 
     async def run_step(self, step: RecipeStep, *, ctx: ToolContext) -> ToolResult:
+        step_ctx = replace(
+            ctx,
+            operation_id=operation_id_from_key(
+                ctx.workspace_id,
+                f"{self._recipe_id}:{step.step_id}",
+            ),
+        )
         return await invoke_tool(
             self._registry,
             step.tool_name,
             dict(step.input_refs),
-            ctx,
+            step_ctx,
+            version=step.tool_version,
             idempotency_key=f"{self._recipe_id}:{step.step_id}",
             store=self._store,
             idempotency_ttl_s=self._ttl,
