@@ -94,12 +94,18 @@ pattern). Nothing authoritative lives in memory; the paradox never forms.
 Scope keys are the platform's canonical object spine:
 
 ```
-workspace (= client org, tenancy root)
-  └── brand (V1: exactly one per workspace)
-        ├── product
-        ├── campaign
-        └── account
+workspace (= current tenancy root)
+  ├── brand (zero or many brand kits)
+  │     └── product
+  ├── project (selects exactly one same-workspace brand; product optional)
+  └── account (workspace-local target; brand-neutral)
 ```
+
+> **Ownership ruling (2026-07-24).** A workspace owns multiple brand kits. A project selects
+> exactly one of its workspace's brands. Target accounts do not belong to a brand; the selected
+> project's brand supplies the sender context when work is performed for an account. A future
+> customer-account/subscription layer may own one or more workspaces, but it is not part of this
+> object-spine change.
 
 > **Naming note (2026-07-17, founder-confirmed).** Under the harness doc's §1a terminology
 > ruling (project ⊃ campaigns), the scope this document calls `campaign` is the **project**
@@ -107,21 +113,23 @@ workspace (= client org, tenancy root)
 > is named **`project` from birth**: `{workspace, brand, product, project, account}`. This
 > document retains "campaign" in prose until its own revision; read campaign-scope → project.
 
-Precision that the "five scopes" shorthand hides: this is a **three-level tree whose third level
-is a three-way branch of siblings**, not a linear chain. Product does not contain campaign;
-campaign does not contain account (accounts are brand-scoped reusable assets that campaigns
-reference). Consequences:
+Precision that the "five scopes" shorthand hides: database ownership and an assembled context
+stack are not the same relationship. A product belongs to a brand; a project and target account
+belong to the workspace; the project selects the brand and references target accounts. Context
+assembly therefore combines the selected objects for one task rather than pretending they form
+one containment chain. Consequences:
 
-- **"Most-specific-wins" is only defined along the parent-child chain.** Between siblings
-  (product vs campaign vs account) there is no "more specific" — they are orthogonal axes
+- **"Most-specific-wins" is only defined along a real parent-child chain.** Between the selected
+  product, project, and account there is no "more specific" — they are orthogonal axes
   (offering / intent / audience). Cross-branch tension is therefore **surfaced, not resolved**
   (§10).
-- **Workspace is a V1 passthrough** for memory content (1:1 with brand) but remains the tenancy
-  anchor and the kill-switch scope. Modeled now so multi-brand later is additive.
-- A typical recipe execution carries a scope **stack**: `(brand, product?, campaign, account)`.
+- **Workspace memory is its own shared layer**, above any selected brand, and remains the tenancy
+  anchor and kill-switch scope.
+- A typical recipe execution carries a scope **stack**:
+  `(workspace, selected brand, product?, project, account?)`.
 - **Persistence differs by branch.** Account- and product-scoped memories persist across
-  campaigns. Campaign-scoped memories live and die with their campaign; on a reactivation-style
-  campaign (e.g. annual), the prior campaign's memories surface only as **kickoff seeds** (§13),
+  projects. Project-scoped memories live and die with their project; on a reactivation-style
+  project (e.g. annual), the prior project's memories surface only as **kickoff seeds** (§13),
   and "how it was run" is a **recipe** (plane 4), not memory.
 
 ### 5. The record shape
@@ -466,7 +474,7 @@ and the v1 design already collects the evidence.
 | **Memory→config graduation bridge** (Q4, parked) | None | A memory-recorded pattern accumulating strong evidence may be *proposed* into an M13.3 config revision through its normal human-reviewed pipeline — connects the two learning systems without merging them |
 | **Vector/pgvector, graph storage** | Plain Postgres | Vector: only if trigger-matching at scale demands it (see search row). Graph: only if scope traversal or cross-memory relational queries become hot paths |
 | **Per-campaign kill-switch override** | Workspace toggle only | User request |
-| **Multi-brand** | Brand 1:1 workspace | Additive by construction (Q3) |
+| **Multi-brand** | **Shipped 2026-07-24:** workspace-owned brands; projects select one same-workspace brand | No longer deferred |
 
 ---
 

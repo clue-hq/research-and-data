@@ -1,4 +1,4 @@
-"""clue-spine — the Phase-A object spine: workspace → brand → {product, project} (A3.2)."""
+"""clue-spine — workspace-owned brands/projects and brand-owned products (A3.2)."""
 
 from clue_spine.spine import (
     Brand,
@@ -12,10 +12,11 @@ from clue_spine.spine import (
     create_product,
     create_project,
     create_workspace,
-    get_brand_for_workspace,
+    get_brand,
     get_product,
     get_project,
     get_workspace,
+    list_brands_for_workspace,
     list_products,
     list_projects,
     new_brand_id,
@@ -39,7 +40,8 @@ __all__ = [
     "create_workspace",
     "get_workspace",
     "create_brand",
-    "get_brand_for_workspace",
+    "get_brand",
+    "list_brands_for_workspace",
     "create_product",
     "get_product",
     "list_products",
