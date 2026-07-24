@@ -354,7 +354,7 @@ async def capture_downstream(
         # (``resolve_many(..., workspace_id=row.workspace_id)`` below): an account that does not
         # exist, or that belongs to another workspace, is rejected to the error queue — never
         # recorded against a cross-tenant account (accounts are workspace-local — [B3×research]).
-        # A NULL-workspace legacy account is invisible here too (its ``workspace_id`` can't match).
+        # The workspace comparison is defense in depth over required DB ownership.
         account = await get_account(conn, row.account_entity_id)
         if account is None or account.workspace_id != row.workspace_id:
             return IngestRejection(

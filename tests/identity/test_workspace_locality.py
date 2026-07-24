@@ -2,10 +2,10 @@
 
 Accounts are workspace-local (founder ruling 2026-07-22): Company X in two workspaces is two
 ``account_entity`` rows, never shared. These tests exercise the real Postgres constraints the
-migration installs — workspace-scoped strong-key uniqueness (legacy NULL rows keep global
-semantics), the contact→account workspace anchor (a contact inherits its parent's workspace), and
-the app-level + FK cross-workspace merge fence. They skip without a reachable DB, like the rest of
-the identity suite.
+migration installs — required ownership, workspace-scoped strong-key uniqueness, the
+contact→account workspace anchor (a contact inherits its parent's workspace), and the app-level +
+FK cross-workspace merge fence. They skip without a reachable DB, like the rest of the identity
+suite.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from clue_core import EntityId, EntityType, new_entity_id
+from clue_core import EntityId, EntityType
 from clue_research.identity import (
     CrossWorkspaceMergeError,
     Observation,
@@ -326,58 +326,28 @@ def test_ann_candidates_are_workspace_scoped() -> None:
     run_async(_run())
 
 
-def test_legacy_null_workspace_rows_invisible_to_scoped_resolution() -> None:
-    """A legacy NULL-workspace row is unreachable by a (now-required) scoped resolve (fail-closed):
-    ``workspace_id = :ws`` never matches NULL, so no scoped caller can surface it."""
+def test_account_and_contact_require_workspace_ownership() -> None:
+    """Residual 1 closure: raw SQL cannot create an unowned account or contact."""
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            ws = await seed_workspace(conn, "ws_x")
-            eid = new_entity_id()
-            await conn.execute(
-                text(
-                    "INSERT INTO account_entity (id, canonical_name, primary_domain) "
-                    "VALUES (:id, 'Legacy', 'legacy.com')"
-                ),
-                {"id": eid},
-            )
-            obs = Observation(name="Legacy", entity_type=EntityType.ACCOUNT, domain="legacy.com")
+            trans = await conn.begin_nested()
+            with pytest.raises(IntegrityError):
+                await conn.execute(
+                    text("INSERT INTO account_entity (canonical_name) VALUES ('Unowned')")
+                )
+            await trans.rollback()
 
-            # Every resolve is now scoped; the legacy NULL-workspace row is invisible to it.
-            scoped = await resolve(conn, obs, workspace_id=ws)
-            assert scoped.method is not ResolutionMethod.DETERMINISTIC
-            assert EntityId(eid) not in _candidate_ids(scoped)
-
-    run_async(_run())
-
-
-def test_legacy_null_workspace_account_still_insertable_via_raw_sql() -> None:
-    """The memory-lane fail-closed semantics depend on NULL-workspace rows staying representable.
-
-    A legacy account with a NULL workspace_id inserts and keeps global strong-key uniqueness (a
-    second NULL-workspace row with the same domain collides on the legacy partial index).
-    """
-
-    async def _run() -> None:
-        async with rollback_conn() as conn:
-            eid = new_entity_id()
-            await conn.execute(
-                text(
-                    "INSERT INTO account_entity (id, canonical_name, primary_domain) "
-                    "VALUES (:id, 'Legacy', 'legacy.com')"
-                ),
-                {"id": eid},
-            )
-            account = await get_account(conn, eid)
-            assert account is not None and account.workspace_id is None
-            # Global uniqueness still holds for legacy NULL-workspace rows.
+            ws = await seed_workspace(conn, "ws_owned")
+            account_id = await insert_account_entity(conn, canonical_name="Owned", workspace_id=ws)
             trans = await conn.begin_nested()
             with pytest.raises(IntegrityError):
                 await conn.execute(
                     text(
-                        "INSERT INTO account_entity (canonical_name, primary_domain) "
-                        "VALUES ('Legacy 2', 'legacy.com')"
-                    )
+                        "INSERT INTO contact_entity (account_entity_id, full_name) "
+                        "VALUES (:account_id, 'Unowned contact')"
+                    ),
+                    {"account_id": account_id},
                 )
             await trans.rollback()
 

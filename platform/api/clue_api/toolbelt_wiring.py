@@ -38,11 +38,10 @@ byte-for-byte; ``import_accounts`` (not run-scoped) legitimately keeps active-IC
 **Account workspace scoping is fail-closed** ([B3×research], resolved 2026-07-23). The
 account-scoped spend tools — ``run_deep_account`` / ``resolve_committee`` / ``profile_contact`` —
 load their account through ``_load_account``, the analogue of ``_load_run``: an account whose
-``workspace_id`` differs from ``ctx.workspace_id`` (including a legacy NULL-workspace account —
-decision D5: a legacy ``None`` never equals a real ctx workspace) resolves to the same
-``account_not_found`` refusal a truly-absent id gets, so a cross-tenant id is indistinguishable from
-a non-existent one (no existence leak). Now that ``account_entity`` stamps ``workspace_id`` on every
-real account (the ``[B3×research]`` slices), this is the same B1 guard the run-scoped tools enforce.
+``workspace_id`` differs from ``ctx.workspace_id`` resolves to the same ``account_not_found``
+refusal a truly-absent id gets, so a cross-tenant id is indistinguishable from a non-existent one
+(no existence leak). Now that ``account_entity`` requires ``workspace_id`` on every account, this
+is the same B1 guard the run-scoped tools enforce.
 Refusals emit a structured WARNING (``toolbelt.account_scope_refused`` with actor + workspace +
 account id) so a scope violation stays auditable; the pre-B3 ``toolbelt.unscoped_account_access``
 warn-and-proceed placeholder is retired.
@@ -331,12 +330,11 @@ class _CapabilityTool(Tool):
         self, tool: str, raw_id: str, ctx: ToolContext, conn: AsyncConnection
     ) -> AccountEntity | None:
         """Fail-closed account→workspace guard ([B3×research], resolved 2026-07-23): a missing,
-        malformed, legacy NULL-workspace, or other-workspace account resolves to ``None`` — the
-        caller then surfaces the same ``account_not_found`` refusal a truly-absent id gets, so a
-        cross-tenant id is indistinguishable from a non-existent one (no existence leak), mirroring
-        :meth:`_load_run`. ``account.workspace_id != ctx.workspace_id`` refuses a legacy
-        NULL-workspace row too (decision D5 — a legacy ``None`` never equals a real ctx workspace).
-        Refusals are WARNING-logged (``toolbelt.account_scope_refused``) so misuse stays visible."""
+        malformed, or other-workspace account resolves to ``None`` — the caller then surfaces the
+        same ``account_not_found`` refusal a truly-absent id gets, so a cross-tenant id is
+        indistinguishable from a non-existent one (no existence leak), mirroring
+        :meth:`_load_run`. Refusals are WARNING-logged (``toolbelt.account_scope_refused``) so
+        misuse stays visible."""
         entity_id = _parse_entity_id(raw_id)
         account = await get_account(conn, entity_id) if entity_id is not None else None
         if account is None or account.workspace_id != ctx.workspace_id:
@@ -703,8 +701,8 @@ class SubmitTierCheckpointTool(_CapabilityTool):
 class RunDeepAccountTool(_CapabilityTool):
     """Deep-profile one account. **Account workspace-scoping is fail-closed** ([B3×research],
     resolved 2026-07-23): the account is loaded through :meth:`_load_account`, so a cross-workspace
-    or legacy NULL-workspace account refuses ``account_not_found`` — the same shape a truly-absent
-    id gets (no existence leak) — before any deep spend runs."""
+    account refuses ``account_not_found`` — the same shape a truly-absent id gets (no existence
+    leak) — before any deep spend runs."""
 
     name = "run_deep_account"
     input_model = RunDeepAccountInput
@@ -786,8 +784,8 @@ class RunDeepAccountTool(_CapabilityTool):
         spec, run, failures = await self._resolve_spec(inputs, ctx)
         assert spec is not None and not failures  # narrowed by preconditions
         # [B3×research]: preconditions loaded the account fail-closed to ctx.workspace_id via
-        # _load_account (cross-workspace / legacy NULL-workspace → account_not_found), so invoke is
-        # only reached for an in-workspace account.
+        # _load_account (cross-workspace → account_not_found), so invoke is only reached for an
+        # in-workspace account.
         # S1: budget-visible spend — with a run supplied, thread its id + remaining headroom into
         # the deep profile so the spend lands against the run's cap.
         remaining: CostCents | None = None
@@ -822,8 +820,8 @@ class RunDeepAccountTool(_CapabilityTool):
 class ResolveCommitteeTool(_CapabilityTool):
     """Resolve one account's buying committee. **Account workspace-scoping is fail-closed**
     ([B3×research], resolved 2026-07-23): the account is loaded through :meth:`_load_account`, so a
-    cross-workspace or legacy NULL-workspace account refuses ``account_not_found`` (the same shape a
-    truly-absent id gets — no existence leak) before any committee walk runs."""
+    cross-workspace account refuses ``account_not_found`` (the same shape a truly-absent id gets —
+    no existence leak) before any committee walk runs."""
 
     name = "resolve_committee"
     input_model = ResolveCommitteeInput
@@ -881,9 +879,8 @@ class ResolveCommitteeTool(_CapabilityTool):
 class ProfileContactTool(_CapabilityTool):
     """Profile one committee member. **Account workspace-scoping is fail-closed** ([B3×research],
     resolved 2026-07-23): the parent account is loaded through :meth:`_load_account` (before the
-    contact check), so a cross-workspace or legacy NULL-workspace account refuses
-    ``account_not_found`` (the same shape a truly-absent id gets — no existence leak) before any
-    contact spend runs."""
+    contact check), so a cross-workspace account refuses ``account_not_found`` (the same shape a
+    truly-absent id gets — no existence leak) before any contact spend runs."""
 
     name = "profile_contact"
     input_model = ProfileContactInput

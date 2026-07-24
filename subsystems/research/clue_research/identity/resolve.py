@@ -201,9 +201,8 @@ def _score(obs: Observation, record: _CandidateRecord, policy: ResolutionPolicy)
 
 # --- workspace scoping ------------------------------------------------------
 # Accounts/contacts are workspace-local (founder ruling 2026-07-22). Every candidate query is
-# unconditionally scoped to the caller's ``workspace_id`` (required — [B3×research] Task 3): a
-# legacy NULL-workspace row is invisible to a scoped resolve (``workspace_id = :ws`` never matches
-# NULL — fail-closed), and one client's resolve can never surface another's entity.
+# unconditionally scoped to the caller's ``workspace_id`` (required — [B3×research] Task 3), so
+# one client's resolve can never surface another's entity.
 def _ws_clause(*, column: str = "workspace_id") -> str:
     """The ``AND <column> = :ws`` scoping fragment applied to every candidate query."""
     return f"AND {column} = :ws "

@@ -84,6 +84,7 @@ def _contact_entity(
         linkedin_url=linkedin_url,
         verified_email=verified_email,
         geo=geo,
+        workspace_id="ws-test",
     )
 
 

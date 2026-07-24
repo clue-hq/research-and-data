@@ -87,6 +87,7 @@ def _account(domain: str = "acme.com") -> AccountEntity:
         primary_domain=domain,
         aliases=("Acme",),
         hq_geo={"country": "US"},
+        workspace_id="ws-test",
     )
 
 

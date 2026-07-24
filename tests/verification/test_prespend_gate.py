@@ -83,8 +83,18 @@ def test_run_lock_token_is_the_run_id() -> None:
 
 def test_assemble_target_lock_same_name_accounts_resolve_to_distinct_contexts() -> None:
     # the same-name trap: two real companies sharing a name resolve to distinct target locks.
-    acme_com = AccountEntity(id=new_entity_id(), canonical_name="Acme", primary_domain="acme.com")
-    acme_io = AccountEntity(id=new_entity_id(), canonical_name="Acme", primary_domain="acme.io")
+    acme_com = AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        workspace_id="ws-test",
+    )
+    acme_io = AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Acme",
+        primary_domain="acme.io",
+        workspace_id="ws-test",
+    )
     lock_com = assemble_target_lock(acme_com, _FIELD)
     lock_io = assemble_target_lock(acme_io, _FIELD)
 
@@ -98,7 +108,12 @@ def test_assemble_target_lock_same_name_accounts_resolve_to_distinct_contexts() 
 
 
 def test_assemble_target_lock_account_without_domain_still_locks_by_name() -> None:
-    nameless = AccountEntity(id=new_entity_id(), canonical_name="Stealth Co", primary_domain=None)
+    nameless = AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Stealth Co",
+        primary_domain=None,
+        workspace_id="ws-test",
+    )
     lock = assemble_target_lock(nameless, _FIELD)
     assert lock.canonical_domain is None
     assert "Stealth Co" in lock.no_drift_instruction
@@ -111,6 +126,7 @@ def test_assemble_target_lock_contact_excludes_raw_email_and_flags_same_name_tra
         full_name="Jane Doe",
         linkedin_url="https://linkedin.com/in/jane",
         verified_email="jane@acme.com",
+        workspace_id="ws-test",
     )
     lock = assemble_target_lock(contact, _FIELD)
     assert lock.canonical_domain is None

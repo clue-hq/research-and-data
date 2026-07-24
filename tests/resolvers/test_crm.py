@@ -104,7 +104,12 @@ class _Connector:
 
 
 def _account_entity(domain: str = "acme.com") -> AccountEntity:
-    return AccountEntity(id=new_entity_id(), canonical_name="Acme Corp", primary_domain=domain)
+    return AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Acme Corp",
+        primary_domain=domain,
+        workspace_id="ws-test",
+    )
 
 
 def _field(field_key: str, *, value_type: str = "str") -> FieldDef:
