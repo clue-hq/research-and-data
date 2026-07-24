@@ -40,6 +40,7 @@ from clue_core import (
     ReuseScope,
     TargetLock,
     new_entity_id,
+    new_operation_id,
     new_project_run_id,
     new_run_id,
 )
@@ -227,6 +228,7 @@ def test_url_only_recon_is_two_speed_gated_snapshotted_and_evented() -> None:
                 workspace_id=_WORKSPACE,
                 actor="agent",
                 conn_factory=factory,
+                operation_id=new_operation_id(),
             )
             try:
                 fast = await tool.invoke(inputs, ctx)

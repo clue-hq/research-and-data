@@ -15,6 +15,7 @@ from clue_api.ingestion_tools import (
     capture_upload,
 )
 from clue_config.ingestion import IngestionPolicy
+from clue_core import new_operation_id
 from clue_core.ingestion import IngestionJobId, IngestionJobRef, IngestionStatus
 from clue_research.ingestion import DeclaredMaterialContext
 from clue_research.ingestion.models import IngestionJob
@@ -63,7 +64,12 @@ class _Engine:
 
 
 def _ctx() -> ToolContext:
-    return ToolContext(workspace_id="ws", actor="human", conn_factory=_unused_conn)
+    return ToolContext(
+        workspace_id="ws",
+        actor="human",
+        conn_factory=_unused_conn,
+        operation_id=new_operation_id(),
+    )
 
 
 def test_submit_tool_returns_only_frozen_references() -> None:
@@ -101,7 +107,12 @@ def test_submit_tool_preconditions_hide_foreign_artifacts(monkeypatch) -> None:
                 artifact_key="other/hash",
                 declared_context=DeclaredMaterialContext(brand_id="brand"),
             ),
-            ToolContext(workspace_id="ws", actor="human", conn_factory=stub_conn),
+            ToolContext(
+                workspace_id="ws",
+                actor="human",
+                conn_factory=stub_conn,
+                operation_id=new_operation_id(),
+            ),
         )
     )
     assert tuple(failure.reason_code for failure in failures) == ("ingestion_artifact_not_found",)

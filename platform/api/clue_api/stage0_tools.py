@@ -11,6 +11,15 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.tool_outputs import (
+    ConfirmedProjectRunOutput,
+    InterviewAnswerOutput,
+    OnboardingInputOutput,
+    ProjectProductOutput,
+    ReconOutput,
+    Stage0OverrideOutput,
+    Stage0ReadinessOutput,
+)
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
     AccountEntity,
@@ -25,7 +34,8 @@ from clue_core import (
     ReadinessDecisionId,
     ReadinessGate,
     ReadinessVerdict,
-    new_project_run_id,
+    ReconRunId,
+    RunId,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
@@ -55,9 +65,14 @@ from clue_research.stage0 import (
 from clue_spine import confirm_project_product, get_brand, get_product, get_project
 from clue_storage import SnapshotSink, StorageBackend, bind_snapshots, get_artifact
 from clue_toolbelt import (
+    ExternalReplayBoundary,
+    JournalParameterPolicy,
     PreconditionFailure,
+    ReplayPolicy,
+    ReplaySafety,
     Tool,
     ToolContext,
+    ToolEffectClass,
     ToolEstimate,
     ToolInput,
     ToolResult,
@@ -289,10 +304,76 @@ class _Stage0Tool(Tool):
         self._scrape_binder = scrape_binder
         self._storage = storage
 
+    async def _project_audit_snapshot(self, project_id: str, ctx: ToolContext) -> dict[str, object]:
+        async with self._conn_factory() as conn:
+            project = await get_project(conn, project_id)
+        if project is None or project.workspace_id != ctx.workspace_id:
+            return {"project_id": project_id, "exists": False}
+        return {
+            "project_id": project.project_id,
+            "exists": True,
+            "brand_id": project.brand_id,
+            "product_id": project.product_id,
+        }
+
+    async def _readiness_override_audit_snapshot(
+        self, readiness_decision_id: str, ctx: ToolContext
+    ) -> dict[str, object]:
+        decision_uuid = _uuid(readiness_decision_id)
+        if decision_uuid is None:
+            return {"readiness_decision_id": readiness_decision_id, "exists": False}
+        async with self._conn_factory() as conn:
+            decision = await get_readiness_decision(
+                conn,
+                ReadinessDecisionId(decision_uuid),
+                workspace_id=ctx.workspace_id,
+            )
+            override = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT id, actor FROM readiness_override "
+                            "WHERE readiness_decision_id = :id AND workspace_id = :workspace_id"
+                        ),
+                        {"id": decision_uuid, "workspace_id": ctx.workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return {
+            "readiness_decision_id": readiness_decision_id,
+            "exists": decision is not None,
+            "gate": decision.gate.value if decision is not None else None,
+            "verdict": decision.verdict.value if decision is not None else None,
+            "overridden": override is not None,
+            "override_id": str(override["id"]) if override is not None else None,
+            "override_actor": str(override["actor"]) if override is not None else None,
+        }
+
 
 class SubmitOnboardingInputTool(_Stage0Tool):
     name = "submit_onboarding_input"
     input_model = SubmitOnboardingInput
+    output_model = OnboardingInputOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="OnboardingInputId(operation_id)",
+        operation_id_required=True,
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "brand_id",
+            "kind",
+            "artifact_key",
+            "product_id",
+            "project_id",
+            "client_entity_id",
+            "source_ref",
+        )
+    )
+    pin_requirements = ("artifact_input", "brand", "product", "project")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -323,6 +404,7 @@ class SubmitOnboardingInputTool(_Stage0Tool):
                 content_sha256=inputs.content_sha256,
                 source_ref=inputs.source_ref,
                 actor=ctx.actor,
+                onboarding_input_id=OnboardingInputId(ctx.operation_id),
             )
         return ToolResult(
             tool=self.name,
@@ -338,6 +420,26 @@ class SubmitOnboardingInputTool(_Stage0Tool):
 class StartReconTool(_Stage0Tool):
     name = "start_recon"
     input_model = StartReconInput
+    output_model = ReconOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.AT_LEAST_ONCE,
+        durable_identity=(
+            "ReconRunId(operation_id) when newly created; a live equivalent recon may be shared"
+        ),
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("brand_id", "name", "website", "product_id", "project_id")
+    )
+    pin_requirements = (
+        "artifact_input",
+        "field_registry",
+        "source_registry",
+        "stage0_policy",
+        "stage0_skill",
+    )
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -391,6 +493,7 @@ class StartReconTool(_Stage0Tool):
                 fast_budget_cents=self._policy.fast_budget_cents,
                 background_budget_cents=self._policy.background_budget_cents,
                 dedupe_ttl_seconds=self._policy.recon_dedupe_ttl_seconds,
+                recon_run_id=ReconRunId(ctx.operation_id),
             )
             started_fast = recon.fast_status is ReconLaneStatus.QUEUED
             if started_fast:
@@ -534,6 +637,25 @@ class StartReconTool(_Stage0Tool):
 class RecordInterviewAnswerTool(_Stage0Tool):
     name = "record_interview_answer"
     input_model = RecordInterviewAnswerInput
+    output_model = InterviewAnswerOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="onboarding input + deterministic statement ids + RunId(operation_id)",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "brand_id",
+            "onboarding_input_id",
+            "artifact_key",
+            "client_entity_id",
+            "product_id",
+            "project_id",
+        )
+    )
+    pin_requirements = ("artifact_input", "stage0_skill", "memory_switch")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -591,6 +713,7 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 statements=tuple(inputs.statements),
                 actor=ctx.actor,
                 memory_write=self._memory_write,
+                run_id=RunId(ctx.operation_id),
             )
         return ToolResult(
             tool=self.name,
@@ -609,6 +732,18 @@ class RecordInterviewAnswerTool(_Stage0Tool):
 class ConfirmProjectProductTool(_Stage0Tool):
     name = "confirm_project_product"
     input_model = ConfirmProjectProductInput
+    output_model = ProjectProductOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project immutable product selection",
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_id", "product_id"))
+    pin_requirements = ("project", "product")
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, ConfirmProjectProductInput)
+        return await self._project_audit_snapshot(inputs.project_id, ctx)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -653,6 +788,27 @@ class ConfirmProjectProductTool(_Stage0Tool):
 class EvaluateStage0ReadinessTool(_Stage0Tool):
     name = "evaluate_stage0_readiness"
     input_model = EvaluateStage0ReadinessInput
+    output_model = Stage0ReadinessOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="ReadinessDecisionId(operation_id)",
+        operation_id_required=True,
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "brand_id",
+            "gate",
+            "product_id",
+            "project_id",
+            "client_entity_id",
+            "client_kb_version",
+            "icp_key",
+            "icp_version",
+            "product_context_version_id",
+        )
+    )
+    pin_requirements = ("readiness_policy", "product_context", "client_kb", "icp")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -711,6 +867,7 @@ class EvaluateStage0ReadinessTool(_Stage0Tool):
                 agent_sufficiency_status=inputs.agent_sufficiency_status,
                 agent_sufficiency_ref=inputs.agent_sufficiency_ref,
                 created_by_actor=ctx.actor,
+                readiness_decision_id=ReadinessDecisionId(ctx.operation_id),
             )
         return ToolResult(
             tool=self.name,
@@ -728,6 +885,18 @@ class EvaluateStage0ReadinessTool(_Stage0Tool):
 class OverrideStage0ReadinessTool(_Stage0Tool):
     name = "override_stage0_readiness"
     input_model = OverrideStage0ReadinessInput
+    output_model = Stage0OverrideOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="unique readiness_decision override",
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("readiness_decision_id", "gate"))
+    pin_requirements = ("readiness_decision",)
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, OverrideStage0ReadinessInput)
+        return await self._readiness_override_audit_snapshot(inputs.readiness_decision_id, ctx)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -772,6 +941,27 @@ class OverrideStage0ReadinessTool(_Stage0Tool):
 class StartConfirmedProjectRunTool(_Stage0Tool):
     name = "start_confirmed_project_run"
     input_model = StartConfirmedProjectRunInput
+    output_model = ConfirmedProjectRunOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="ProjectRunId(operation_id)",
+        operation_id_required=True,
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_id",
+            "client_entity_id",
+            "client_kb_version",
+            "product_id",
+            "product_context_version_id",
+            "readiness_decision_id",
+            "icp_key",
+            "icp_version",
+            "budget_cap_cents",
+        )
+    )
+    pin_requirements = ("project", "client_kb", "product_context", "readiness_decision", "icp")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -798,7 +988,7 @@ class StartConfirmedProjectRunTool(_Stage0Tool):
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, StartConfirmedProjectRunInput)
-        run_id = new_project_run_id()
+        run_id = ProjectRunId(ctx.operation_id)
         async with self._conn_factory() as conn:
             await start_confirmed_project_run(
                 conn,

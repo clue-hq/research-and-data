@@ -1,6 +1,6 @@
 # Phase C5 — Run-Graph Journal, Recipes, Durable Executor, and Supervisor
 
-**Status:** planned on `platform/c5-recipe-execution` (2026-07-24)
+**Status:** C5.0 implemented; C5.1 next on `platform/c5-recipe-execution` (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 
@@ -796,6 +796,10 @@ live journal returns labels/ids; erased memories render tombstones.
 
 **Gate:** architecture tests prove every standing recipe node has typed outputs, pin requirements,
 and a replay strategy; unsafe tools are rejected.
+
+**Implemented:** see the
+[versioned tool contract and replay-safety audit](./PC-C5-0-replay-safety-audit.md). This slice
+intentionally contains no migration, journal repository, scheduler, or executor.
 
 ### C5.1 — Journal and toolbelt choke point
 

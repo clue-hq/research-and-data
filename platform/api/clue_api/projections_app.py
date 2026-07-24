@@ -47,6 +47,8 @@ from clue_core import (
     ReadinessDecisionId,
     ReconRunId,
     RunId,
+    new_operation_id,
+    operation_id_from_key,
 )
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
@@ -387,6 +389,11 @@ def create_projections_router(
             workspace_id=workspace_id,
             actor=actor,
             conn_factory=conn_factory,
+            operation_id=(
+                operation_id_from_key(workspace_id, f"tool:{name}:{idempotency_key}")
+                if idempotency_key is not None
+                else new_operation_id()
+            ),
             quality_mode=quality_mode,
         )
         try:

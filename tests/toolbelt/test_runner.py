@@ -13,7 +13,9 @@ from clue_toolbelt import (
     PreconditionFailed,
     PreconditionFailure,
     StoredInvocation,
+    ToolContractViolation,
     ToolRegistry,
+    ToolResult,
     UnknownTool,
     invoke_tool,
 )
@@ -25,7 +27,7 @@ TTL = 86400.0
 def _registry(*tools: EchoTool) -> ToolRegistry:
     reg = ToolRegistry()
     for tool in tools:
-        reg.register(tool)
+        reg.register(tool, make_default=True)
     return reg
 
 
@@ -66,6 +68,95 @@ def test_preconditions_block_and_emit_a_failed_span() -> None:
 def test_unknown_tool_is_typed() -> None:
     with pytest.raises(UnknownTool):
         asyncio.run(invoke_tool(ToolRegistry(), "ghost", {}, human_ctx(), idempotency_ttl_s=TTL))
+
+
+def test_exact_version_resolution_does_not_float() -> None:
+    class _EchoV2(EchoTool):
+        version = "2"
+
+    v1 = EchoTool()
+    v2 = _EchoV2()
+    reg = ToolRegistry()
+    reg.register(v1, make_default=False)
+    reg.register(v2, make_default=True)
+
+    result = asyncio.run(
+        invoke_tool(
+            reg,
+            "echo",
+            {"value": 6},
+            human_ctx(),
+            version="1",
+            idempotency_ttl_s=TTL,
+        )
+    )
+    assert result.version == "1"
+    assert v1.invocations == [6]
+    assert v2.invocations == []
+
+
+def test_idempotency_key_cannot_replay_across_versions() -> None:
+    class _EchoV2(EchoTool):
+        version = "2"
+
+    reg = ToolRegistry()
+    reg.register(EchoTool(), make_default=False)
+    reg.register(_EchoV2(), make_default=True)
+    store = InMemoryStore()
+
+    async def scenario() -> None:
+        await invoke_tool(
+            reg,
+            "echo",
+            {"value": 6},
+            human_ctx(),
+            version="1",
+            idempotency_key="versioned",
+            store=store,
+            idempotency_ttl_s=TTL,
+        )
+        with pytest.raises(IdempotencyConflict) as exc:
+            await invoke_tool(
+                reg,
+                "echo",
+                {"value": 6},
+                human_ctx(),
+                version="2",
+                idempotency_key="versioned",
+                store=store,
+                idempotency_ttl_s=TTL,
+            )
+        assert exc.value.reason == "tool"
+
+    asyncio.run(scenario())
+
+
+def test_output_contract_violation_fails_before_cache_completion() -> None:
+    class _BadEcho(EchoTool):
+        async def invoke(self, inputs, ctx):  # type: ignore[no-untyped-def]
+            return ToolResult(
+                tool=self.name,
+                version=self.version,
+                references={"echoed": "not-an-int"},
+            )
+
+    store = InMemoryStore()
+    reg = _registry(_BadEcho())
+
+    async def scenario() -> None:
+        with pytest.raises(ToolContractViolation):
+            await invoke_tool(
+                reg,
+                "echo",
+                {"value": 6},
+                human_ctx(),
+                idempotency_key="bad-output",
+                store=store,
+                idempotency_ttl_s=TTL,
+            )
+        assert await store.lookup("ws_test", "bad-output", ttl_s=TTL) is None
+
+    asyncio.run(scenario())
 
 
 def test_idempotent_replay_does_not_re_execute() -> None:
@@ -213,7 +304,7 @@ def test_pending_reservation_conflicts() -> None:
 
         sha = body_sha256({"value": 3, "note": None})
         won = await store.reserve(
-            "ws_test", "k-pending", tool_name="echo", body_sha256=sha, ttl_s=TTL
+            "ws_test", "k-pending", tool_name="echo@1", body_sha256=sha, ttl_s=TTL
         )
         assert won
         with pytest.raises(IdempotencyConflict) as ei:
@@ -348,7 +439,7 @@ def test_expired_record_re_executes() -> None:
         workspace_id="ws_test",
         idempotency_key="k3",
         body_sha256="stale",
-        tool_name="echo",
+        tool_name="echo@1",
         status="completed",
         response_json={"tool": "echo", "version": "1", "references": {"echoed": 0}},
         created_at=datetime.now(UTC) - timedelta(seconds=TTL + 60),

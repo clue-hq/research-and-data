@@ -23,6 +23,10 @@ focused tests, `make check`, migration status where applicable, and an `_memory/
 
 ## 2. C5.0 — Freeze contracts and replay identities
 
+**Status:** implemented and verified on 2026-07-24. The checked-in evidence is
+[`PC-C5-0-replay-safety-audit.md`](../../specs/PC-C5-0-replay-safety-audit.md). No database
+migration or executor code is part of this checkpoint.
+
 ### 2.1 Add execution-domain contracts
 
 Create:

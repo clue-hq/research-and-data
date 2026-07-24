@@ -76,6 +76,24 @@ from clue_api.proposal_tools import (
 )
 from clue_api.stage0_tools import stage0_tools
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
+from clue_api.tool_outputs import (
+    CommitteeOutput,
+    ConfirmIcpOutput,
+    ContactProfileOutput,
+    DeepAccountOutput,
+    DiscoverAccountsOutput,
+    HandoffOutput,
+    ImportAccountsOutput,
+    PhaseAccountsOutput,
+    ProjectEstimateOutput,
+    ProjectRunBudgetOutput,
+    ProjectRunResumeOutput,
+    ProjectRunStartOutput,
+    ProjectRunStatusOutput,
+    ReverseProfileOutput,
+    SynthesizeIcpsOutput,
+    TierCheckpointOutput,
+)
 from clue_api.verification import build_verification_phase_handler
 from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
@@ -90,8 +108,7 @@ from clue_core import (
     PreSpendGate,
     ProjectPhase,
     ProjectRunId,
-    new_project_run_id,
-    new_run_id,
+    RunId,
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import TaskQueue
@@ -150,9 +167,14 @@ from clue_research.stage0 import (
 from clue_spine import get_project
 from clue_storage import StorageBackend
 from clue_toolbelt import (
+    ExternalReplayBoundary,
+    JournalParameterPolicy,
     PreconditionFailure,
+    ReplayPolicy,
+    ReplaySafety,
     Tool,
     ToolContext,
+    ToolEffectClass,
     ToolEstimate,
     ToolInput,
     ToolRegistry,
@@ -343,6 +365,21 @@ class _CapabilityTool(Tool):
             return None
         return run
 
+    async def _run_audit_snapshot(self, raw_id: str, ctx: ToolContext) -> dict[str, object]:
+        run = await self._load_run(raw_id, ctx)
+        if run is None:
+            return {"project_run_id": raw_id, "exists": False}
+        return {
+            "project_run_id": str(run.id),
+            "exists": True,
+            "phase": run.phase.value,
+            "status": run.status.value,
+            "budget_cap_cents": (
+                str(run.budget_cap_cents) if run.budget_cap_cents is not None else None
+            ),
+            "tier_cutoffs": dict(run.tier_cutoffs),
+        }
+
     async def _load_account(
         self, tool: str, raw_id: str, ctx: ToolContext, conn: AsyncConnection
     ) -> AccountEntity | None:
@@ -410,6 +447,16 @@ class _CapabilityTool(Tool):
 class ReverseProfileTool(_CapabilityTool):
     name = "reverse_profile"
     input_model = ReverseProfileInput
+    output_model = ReverseProfileOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="workspace client identity + RunId(operation_id)",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("name", "website"))
+    pin_requirements = ("field_registry", "source_registry", "stage0_policy")
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, ReverseProfileInput)
@@ -418,6 +465,7 @@ class ReverseProfileTool(_CapabilityTool):
                 conn,
                 ClientInput(name=inputs.name, website=inputs.website),
                 workspace_id=ctx.workspace_id,
+                run_id=RunId(ctx.operation_id),
                 pre_spend_gate=self._pre_spend_gate,
             )
         return ToolResult(
@@ -434,6 +482,17 @@ class ReverseProfileTool(_CapabilityTool):
 class SynthesizeIcpsTool(_CapabilityTool):
     name = "synthesize_icps"
     input_model = SynthesizeIcpsInput
+    output_model = SynthesizeIcpsOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.AT_LEAST_ONCE,
+        durable_identity="reference-only completion; synthesis writes no confirmed ICP",
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("client_entity_id", "kb_version", "product_id")
+    )
+    pin_requirements = ("client_kb", "field_registry", "model_prompt")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -497,6 +556,16 @@ class SynthesizeIcpsTool(_CapabilityTool):
 class ConfirmIcpTool(_CapabilityTool):
     name = "confirm_icp"
     input_model = ConfirmIcpInput
+    output_model = ConfirmIcpOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="workspace + icp_key + compiled selection equality",
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("client_entity_id", "client_kb_version", "product_id")
+    )
+    pin_requirements = ("client_kb", "field_registry", "source_profile")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -559,6 +628,16 @@ class ConfirmIcpTool(_CapabilityTool):
 class ImportAccountsTool(_CapabilityTool):
     name = "import_accounts"
     input_model = ImportAccountsInput
+    output_model = ImportAccountsOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="import_batch_id derived from operation_id",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("client_entity_id", "icp_key"))
+    pin_requirements = ("client_kb", "icp", "source_registry")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -600,6 +679,7 @@ class ImportAccountsTool(_CapabilityTool):
                 spec_ref,
                 workspace_id=ctx.workspace_id,
                 client_entity_id=entity,
+                import_batch_id=f"operation-{ctx.operation_id}",
                 pre_spend_gate=self._pre_spend_gate,
             )
         return ToolResult(
@@ -622,6 +702,15 @@ class ImportAccountsTool(_CapabilityTool):
 class DiscoverAccountsTool(_CapabilityTool):
     name = "discover_accounts"
     input_model = DiscoverAccountsInput
+    output_model = DiscoverAccountsOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + discovery phase ledger + deterministic discovery run",
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run", "icp", "source_profile", "source_registry")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -673,6 +762,14 @@ class DiscoverAccountsTool(_CapabilityTool):
 class ScoreAccountsTool(_CapabilityTool):
     name = "score_accounts"
     input_model = ScoreAccountsInput
+    output_model = PhaseAccountsOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + scoring phase ledger",
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run", "icp", "scoring_policy")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -713,6 +810,18 @@ class ScoreAccountsTool(_CapabilityTool):
 class SubmitTierCheckpointTool(_CapabilityTool):
     name = "submit_tier_checkpoint"
     input_model = SubmitTierCheckpointInput
+    output_model = TierCheckpointOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + tier-checkpoint phase ledger",
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run", "tier_policy")
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, SubmitTierCheckpointInput)
+        return await self._run_audit_snapshot(inputs.project_run_id, ctx)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -769,6 +878,23 @@ class RunDeepAccountTool(_CapabilityTool):
 
     name = "run_deep_account"
     input_model = RunDeepAccountInput
+    output_model = DeepAccountOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="account + RunId(operation_id) + project/account ledgers",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "account_entity_id",
+            "icp_key",
+            "tier",
+            "project_run_id",
+        )
+    )
+    pin_requirements = ("account", "icp", "field_registry", "source_registry", "deep_policy")
 
     async def _resolve_spec(
         self, inputs: RunDeepAccountInput, ctx: ToolContext
@@ -861,6 +987,7 @@ class RunDeepAccountTool(_CapabilityTool):
                 account_entity_id=entity,
                 spec=spec,
                 tier=inputs.tier,
+                run_id=RunId(ctx.operation_id),
                 project_run_id=run.id if run is not None else None,
                 budget_cap_cents=remaining,
                 workspace_id=ctx.workspace_id,
@@ -888,6 +1015,16 @@ class ResolveCommitteeTool(_CapabilityTool):
 
     name = "resolve_committee"
     input_model = ResolveCommitteeInput
+    output_model = CommitteeOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="account + RunId(operation_id)",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("account_entity_id", "icp_key"))
+    pin_requirements = ("account", "icp", "source_registry", "committee_policy")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -921,7 +1058,7 @@ class ResolveCommitteeTool(_CapabilityTool):
             result = await discover_committee(
                 conn,
                 account_entity_id=entity,
-                run_id=new_run_id(),
+                run_id=RunId(ctx.operation_id),
                 workspace_id=ctx.workspace_id,
                 sources=self._committee_sources,
                 gateway=self._require_gateway(),
@@ -947,6 +1084,18 @@ class ProfileContactTool(_CapabilityTool):
 
     name = "profile_contact"
     input_model = ProfileContactInput
+    output_model = ContactProfileOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="contact + account + RunId(operation_id)",
+        operation_id_required=True,
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("contact_entity_id", "account_entity_id", "tier", "icp_key")
+    )
+    pin_requirements = ("account", "contact", "icp", "field_registry", "source_registry")
 
     def estimate(self, inputs: ToolInput) -> ToolEstimate:
         # N2: the per-account Pass-B band for the requested tier as an upper-bound static prior
@@ -995,7 +1144,7 @@ class ProfileContactTool(_CapabilityTool):
                 conn,
                 contact_entity_id=contact,
                 account_entity_id=account,
-                run_id=new_run_id(),
+                run_id=RunId(ctx.operation_id),
                 workspace_id=ctx.workspace_id,
                 tier=inputs.tier,
                 spec=spec,
@@ -1020,6 +1169,15 @@ class ProfileContactTool(_CapabilityTool):
 class RunVerificationTool(_CapabilityTool):
     name = "run_verification"
     input_model = RunVerificationInput
+    output_model = PhaseAccountsOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + verification phase/account ledgers",
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run", "icp", "verification_policy", "model_prompt")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -1064,6 +1222,14 @@ class RunVerificationTool(_CapabilityTool):
 class ComposeHandoffTool(_CapabilityTool):
     name = "compose_handoff"
     input_model = ComposeHandoffInput
+    output_model = HandoffOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="project_run handoff projection",
+    )
+    effect_class = ToolEffectClass.READ
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run",)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -1112,6 +1278,16 @@ class ComposeHandoffTool(_CapabilityTool):
 class EstimateProjectTool(_CapabilityTool):
     name = "estimate_project"
     input_model = EstimateProjectInput
+    output_model = ProjectEstimateOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="validated estimate inputs + pinned estimate policy",
+    )
+    effect_class = ToolEffectClass.READ
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("projected_account_count", "deep_fraction")
+    )
+    pin_requirements = ("cost_policy",)
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, EstimateProjectInput)
@@ -1147,6 +1323,17 @@ class EstimateProjectTool(_CapabilityTool):
 class StartProjectRunTool(_CapabilityTool):
     name = "start_project_run"
     input_model = StartProjectRunInput
+    output_model = ProjectRunStartOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.OPERATION_IDEMPOTENT,
+        durable_identity="ProjectRunId(operation_id)",
+        operation_id_required=True,
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "icp_key", "icp_version", "budget_cap_cents")
+    )
+    pin_requirements = ("project", "icp")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -1167,7 +1354,7 @@ class StartProjectRunTool(_CapabilityTool):
             icp_key=inputs.icp_key,
             icp_version=inputs.icp_version,
             budget_cap_cents=cap,
-            project_run_id=new_project_run_id(),
+            project_run_id=ProjectRunId(ctx.operation_id),
         )
         return ToolResult(
             tool=self.name, version=self.version, references={"project_run_id": str(run_id)}
@@ -1177,6 +1364,18 @@ class StartProjectRunTool(_CapabilityTool):
 class PauseRunTool(_CapabilityTool):
     name = "pause_run"
     input_model = PauseRunInput
+    output_model = ProjectRunStatusOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run desired status PAUSED",
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run",)
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, PauseRunInput)
+        return await self._run_audit_snapshot(inputs.project_run_id, ctx)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -1201,6 +1400,18 @@ class PauseRunTool(_CapabilityTool):
 class ResumeRunTool(_CapabilityTool):
     name = "resume_run"
     input_model = ResumeRunInput
+    output_model = ProjectRunResumeOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run desired status ACTIVE + queue single-flight",
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
+    pin_requirements = ("project_run",)
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, ResumeRunInput)
+        return await self._run_audit_snapshot(inputs.project_run_id, ctx)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -1209,7 +1420,7 @@ class ResumeRunTool(_CapabilityTool):
         run = await self._load_run(inputs.project_run_id, ctx)
         if run is None:
             return _fail("run_not_found", "no such project run")
-        if run.status != ProjectRunStatus.PAUSED:
+        if run.status not in (ProjectRunStatus.PAUSED, ProjectRunStatus.ACTIVE):
             return _fail("run_not_paused", "only a PAUSED run can be resumed")
         return ()
 
@@ -1237,6 +1448,20 @@ class ResumeRunTool(_CapabilityTool):
 class AdjustBudgetTool(_CapabilityTool):
     name = "adjust_budget"
     input_model = AdjustBudgetInput
+    output_model = ProjectRunBudgetOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project_run + desired budget cap diff guard",
+    )
+    effect_class = ToolEffectClass.STEERING
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_run_id", "budget_cap_cents")
+    )
+    pin_requirements = ("project_run", "budget_policy")
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
+        assert isinstance(inputs, AdjustBudgetInput)
+        return await self._run_audit_snapshot(inputs.project_run_id, ctx)
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -1250,7 +1475,13 @@ class AdjustBudgetTool(_CapabilityTool):
         assert isinstance(inputs, AdjustBudgetInput)
         run_id = _parse_run_id(inputs.project_run_id)
         assert run_id is not None
-        row = await self._run.adjust(run_id, budget_cap_cents=Decimal(inputs.budget_cap_cents))
+        current = await self._run.status(run_id)
+        requested = Decimal(inputs.budget_cap_cents)
+        row = (
+            current
+            if current.budget_cap_cents == requested
+            else await self._run.adjust(run_id, budget_cap_cents=requested)
+        )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1377,7 +1608,8 @@ def build_toolbelt(
                 pre_spend_gate=gate,
                 lock_factory=locks,
                 storage=storage,
-            )
+            ),
+            make_default=True,
         )
     registry.register(
         build_research_account_gaps_tool(
@@ -1385,24 +1617,27 @@ def build_toolbelt(
             conn_factory=conn_factory,
             pre_spend_gate=gate,
             lock_factory=locks,
-        )
+        ),
+        make_default=True,
     )
-    registry.register(ProposeFieldTool())
+    registry.register(ProposeFieldTool(), make_default=True)
     registry.register(
         DecideFieldProposalTool(
             credential_ready=proposal_credential_ready,
             personal_source_allowed=proposal_personal_source_allowed,
-        )
+        ),
+        make_default=True,
     )
-    registry.register(ProposeSourceTool())
+    registry.register(ProposeSourceTool(), make_default=True)
     registry.register(
         DecideSourceProposalTool(
             credential_ready=proposal_credential_ready,
             personal_source_allowed=proposal_personal_source_allowed,
-        )
+        ),
+        make_default=True,
     )
-    registry.register(SubmitIngestionTool(ingestion_engine))
-    registry.register(RetryIngestionTool(ingestion_engine))
+    registry.register(SubmitIngestionTool(ingestion_engine), make_default=True)
+    registry.register(RetryIngestionTool(ingestion_engine), make_default=True)
     for tool in stage0_tools(
         conn_factory=conn_factory,
         policy=DEFAULT_STAGE0_POLICY,
@@ -1411,5 +1646,5 @@ def build_toolbelt(
         scrape_binder=stage0_scrape_binder,
         storage=storage,
     ):
-        registry.register(tool)
+        registry.register(tool, make_default=True)
     return registry

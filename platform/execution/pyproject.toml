@@ -1,0 +1,20 @@
+[project]
+name = "clue-execution"
+version = "0.0.0"
+description = "Durable run-graph and recipe contracts for the platform execution plane."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "clue-core",
+    "pydantic>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clue_execution"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }

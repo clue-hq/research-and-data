@@ -29,9 +29,11 @@ invocation is as observable as a successful one."""
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from clue_obs import get_logger, log_span
 from clue_toolbelt.envelope import Tool, ToolContext, ToolResult
-from clue_toolbelt.errors import IdempotencyConflict, PreconditionFailed
+from clue_toolbelt.errors import IdempotencyConflict, PreconditionFailed, ToolContractViolation
 from clue_toolbelt.idempotency import IdempotencyStore, StoredInvocation, body_sha256
 from clue_toolbelt.registry import ToolRegistry
 
@@ -41,12 +43,13 @@ log = get_logger("clue_toolbelt.runner")
 
 
 def _replay_or_conflict(
-    existing: StoredInvocation, *, name: str, request_sha: str, key: str
+    existing: StoredInvocation, *, tool: Tool, request_sha: str, key: str
 ) -> ToolResult:
     """Interpret a live record against the current request: replay a matching ``completed`` row,
     else raise the appropriate :class:`IdempotencyConflict`. A different tool or body is a client
     bug; a still-``pending`` row is a concurrent in-flight double-submit."""
-    if existing.tool_name != name:
+    descriptor = tool.descriptor
+    if existing.tool_name != descriptor.address:
         raise IdempotencyConflict(key, reason="tool")
     if existing.body_sha256 != request_sha:
         raise IdempotencyConflict(key, reason="body")
@@ -54,7 +57,22 @@ def _replay_or_conflict(
         raise IdempotencyConflict(key, reason="pending")
     # A completed row with the matching tool + body → replay (no re-execution).
     replayed = ToolResult.model_validate(existing.response_json or {})
-    return replayed.model_copy(update={"replayed": True})
+    return _validate_result(tool, replayed).model_copy(update={"replayed": True})
+
+
+def _validate_result(tool: Tool, result: ToolResult) -> ToolResult:
+    """Validate identity and typed references against the exact registered descriptor."""
+    descriptor = tool.descriptor
+    if result.tool != descriptor.name or result.version != descriptor.version:
+        raise ToolContractViolation(
+            descriptor.address,
+            f"returned identity {result.tool}@{result.version}",
+        )
+    try:
+        output = descriptor.output_model.model_validate(result.references)
+    except ValidationError as exc:
+        raise ToolContractViolation(descriptor.address, str(exc)) from exc
+    return result.model_copy(update={"references": output.model_dump(mode="json")})
 
 
 async def invoke_tool(
@@ -63,6 +81,7 @@ async def invoke_tool(
     body: dict[str, object],
     ctx: ToolContext,
     *,
+    version: str | None = None,
     idempotency_key: str | None = None,
     store: IdempotencyStore | None = None,
     idempotency_ttl_s: float,
@@ -78,14 +97,16 @@ async def invoke_tool(
     :class:`~clue_toolbelt.errors.IdempotencyConflict`, and
     :class:`~clue_toolbelt.errors.PreconditionFailed` — each *before* any write; the tool body only
     runs when all gates pass."""
-    tool: Tool = registry.get(name)
+    tool: Tool = registry.get(name, version)
+    descriptor = tool.descriptor
     with log_span(
         f"toolbelt.{name}",
         logger=log,
         actor=ctx.actor,
         workspace_id=ctx.workspace_id,
         quality_mode=ctx.quality_mode,
-        tool_version=tool.version,
+        tool_version=descriptor.version,
+        operation_id=str(ctx.operation_id),
         idempotency_key=idempotency_key,
     ) as span_log:
         inputs = tool.input_model.model_validate(body)
@@ -110,7 +131,7 @@ async def invoke_tool(
             existing = await store.lookup(ws, idempotency_key, ttl_s=idempotency_ttl_s)
             if existing is not None:
                 return _replay_or_conflict(
-                    existing, name=name, request_sha=request_sha, key=idempotency_key
+                    existing, tool=tool, request_sha=request_sha, key=idempotency_key
                 )
 
         failures = await tool.preconditions(inputs, ctx)
@@ -122,7 +143,7 @@ async def invoke_tool(
             won = await store.reserve(
                 ws,
                 idempotency_key,
-                tool_name=name,
+                tool_name=descriptor.address,
                 body_sha256=request_sha,
                 ttl_s=idempotency_ttl_s,
             )
@@ -133,12 +154,12 @@ async def invoke_tool(
                 existing = await store.lookup(ws, idempotency_key, ttl_s=idempotency_ttl_s)
                 if existing is not None:
                     return _replay_or_conflict(
-                        existing, name=name, request_sha=request_sha, key=idempotency_key
+                        existing, tool=tool, request_sha=request_sha, key=idempotency_key
                     )
                 raise IdempotencyConflict(idempotency_key, reason="pending")
 
         try:
-            result = await tool.invoke(inputs, ctx)
+            result = _validate_result(tool, await tool.invoke(inputs, ctx))
         except BaseException:
             # A failed invoke must never be cached — release the reservation so a retry re-executes.
             if engage_idempotency:

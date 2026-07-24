@@ -11,6 +11,7 @@ from uuid import UUID
 
 from clue_api.composition import build_pre_spend_gate
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.tool_outputs import ResearchAccountGapsOutput
 from clue_config import DEFAULT_GATEWAY_CONFIG
 from clue_config.coverage import DEFAULT_RESEARCH_LOOP_POLICY, ResearchLoopPolicy
 from clue_core import (
@@ -81,6 +82,7 @@ class ResearchAccountGapsTool(Tool):
     name = "research_account_gaps"
     version = "1"
     input_model = ResearchAccountGapsInput
+    output_model = ResearchAccountGapsOutput
 
     def __init__(
         self,

@@ -11,6 +11,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_api.tool_outputs import (
+    FieldProposalDecisionOutput,
+    FieldProposalOutput,
+    SourceProposalDecisionOutput,
+    SourceProposalOutput,
+)
 from clue_config.proposals import DEFAULT_PROPOSAL_POLICY, ProposalPolicy
 from clue_core.proposals import FieldProposalId, ProposalAuthority, SourceProposalId
 from clue_research.proposals import (
@@ -102,6 +108,7 @@ class _ProposalTool(Tool):
 class ProposeFieldTool(_ProposalTool):
     name = "propose_field"
     input_model = ProposeFieldInput
+    output_model = FieldProposalOutput
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -138,6 +145,7 @@ class ProposeFieldTool(_ProposalTool):
 class DecideFieldProposalTool(_ProposalTool):
     name = "decide_field_proposal"
     input_model = DecideFieldProposalInput
+    output_model = FieldProposalDecisionOutput
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -186,6 +194,7 @@ class DecideFieldProposalTool(_ProposalTool):
 class ProposeSourceTool(_ProposalTool):
     name = "propose_source"
     input_model = ProposeSourceInput
+    output_model = SourceProposalOutput
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -222,6 +231,7 @@ class ProposeSourceTool(_ProposalTool):
 class DecideSourceProposalTool(_ProposalTool):
     name = "decide_source_proposal"
     input_model = DecideSourceProposalInput
+    output_model = SourceProposalDecisionOutput
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext

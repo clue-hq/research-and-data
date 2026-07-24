@@ -26,17 +26,26 @@ from __future__ import annotations
 
 from clue_toolbelt.envelope import (
     Actor,
+    ExternalReplayBoundary,
+    JournalParameterPolicy,
     PreconditionFailure,
+    ReplayPolicy,
+    ReplaySafety,
     Tool,
     ToolContext,
+    ToolDescriptor,
+    ToolEffectClass,
     ToolEstimate,
     ToolInput,
+    ToolOutput,
     ToolResult,
+    UntypedToolOutput,
 )
 from clue_toolbelt.errors import (
     IdempotencyConflict,
     PreconditionFailed,
     ToolbeltError,
+    ToolContractViolation,
     UnknownTool,
 )
 from clue_toolbelt.idempotency import (
@@ -51,9 +60,17 @@ from clue_toolbelt.runner import invoke_tool
 __all__ = [
     # envelope
     "Actor",
+    "ExternalReplayBoundary",
+    "JournalParameterPolicy",
+    "ReplayPolicy",
+    "ReplaySafety",
     "Tool",
     "ToolInput",
+    "ToolOutput",
+    "UntypedToolOutput",
     "ToolContext",
+    "ToolDescriptor",
+    "ToolEffectClass",
     "ToolEstimate",
     "ToolResult",
     "PreconditionFailure",
@@ -68,6 +85,7 @@ __all__ = [
     "body_sha256",
     # errors
     "ToolbeltError",
+    "ToolContractViolation",
     "UnknownTool",
     "PreconditionFailed",
     "IdempotencyConflict",
