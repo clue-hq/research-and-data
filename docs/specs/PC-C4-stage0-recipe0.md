@@ -1,6 +1,6 @@
 # Phase C4 — Governed Stage 0 and Recipe #0
 
-**Status:** ready for parallel substrate implementation; integrates after C1–C3
+**Status:** implemented on `platform/workspace-restructure` after C1–C3 integration (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 

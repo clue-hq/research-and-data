@@ -41,7 +41,13 @@ from clue_api.ingestion_tools import (
 )
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_config import Settings, load_settings
-from clue_core import EntityId, ProjectRunId, RunId
+from clue_core import (
+    EntityId,
+    ProjectRunId,
+    ReadinessDecisionId,
+    ReconRunId,
+    RunId,
+)
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
@@ -52,12 +58,15 @@ from clue_projections import (
     field_proposals,
     ingestion_status,
     plan_replay,
+    recon_brief,
     research_attempt_history,
     research_coverage,
     run_manifest,
     run_overview,
     run_readiness,
     source_proposals,
+    stage0_progress,
+    stage0_readiness,
     validate_manifest_op,
 )
 from clue_research.durable import list_run_events
@@ -246,6 +255,50 @@ def create_projections_router(
         return {
             "schema_version": PROJECTIONS_SCHEMA_VERSION,
             "research_coverage": view.model_dump(mode="json"),
+        }
+
+    @router.get("/stage0/recon/{recon_run_id}/brief")
+    async def get_recon_brief(recon_run_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await recon_brief(
+            recon_run_id=ReconRunId(recon_run_id),
+            workspace_id=workspace_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such recon run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "recon_brief": view.model_dump(mode="json"),
+        }
+
+    @router.get("/stage0/recon/{recon_run_id}/progress")
+    async def get_stage0_progress(recon_run_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await stage0_progress(
+            recon_run_id=ReconRunId(recon_run_id),
+            workspace_id=workspace_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such recon run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "stage0_progress": view.model_dump(mode="json"),
+        }
+
+    @router.get("/stage0/readiness/{readiness_decision_id}")
+    async def get_stage0_readiness(
+        readiness_decision_id: UUID, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        view = await stage0_readiness(
+            readiness_decision_id=ReadinessDecisionId(readiness_decision_id),
+            workspace_id=workspace_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such readiness decision")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "stage0_readiness": view.model_dump(mode="json"),
         }
 
     @router.get("/research_attempt_history/{run_id}/{entity_id}/{field_key}")

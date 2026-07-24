@@ -8,14 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.composition import production_binding_classifier
 from clue_config.ingestion import DEFAULT_INGESTION_POLICY, IngestionPolicy
 from clue_core import (
+    AccountEntity,
     Claim,
+    ClaimDraft,
     ClaimId,
     ContactEntity,
+    EntityId,
     FieldClass,
     FieldDef,
     IdentityBinding,
     PassKind,
     ReuseScope,
+    RunId,
     SourceGate,
     UseClass,
     classify_field_key,
@@ -34,6 +38,8 @@ from clue_research.ingestion import (
     IngestionEngine,
     IngestionJob,
     IngestionTarget,
+    MaterialContext,
+    build_ingestion_claim,
 )
 from clue_research.ingestion.seams import (
     ClaimConstructionRoute,
@@ -53,6 +59,7 @@ from clue_research.proposals import (
     ProposalScope,
     propose_field,
 )
+from clue_research.resolvers import ScrapePolicy, register_scrape_resolver
 from clue_research.resolvers.generic_web import (
     GenericWebPolicy,
     GenericWebTargetLookup,
@@ -66,6 +73,51 @@ _USE_CLASS_RANK = {
     UseClass.PERSONAL_PUBLIC_NON_SENSITIVE: 1,
     UseClass.SENSITIVE: 2,
 }
+
+
+class Stage0ScrapeBinder:
+    """Bind C4 recon to the real official-site resolver after identity resolution.
+
+    The resolver seam is synchronous and therefore cannot load an account itself. Stage 0,
+    however, only knows the account id *after* reverse-profile identity resolution. This small
+    composition-root bridge accumulates those already workspace-scoped records and rebinds the
+    process registry to a lookup over them. The resolver still owns target-lock, policy,
+    adaptation, evidence spans, and snapshot capture.
+    """
+
+    def __init__(
+        self,
+        *,
+        extractor: ClaimExtractor,
+        scraper: ScrapeBackend | None = None,
+        policy: ScrapePolicy | None = None,
+    ) -> None:
+        self._accounts: dict[EntityId, AccountEntity] = {}
+        self._extractor = extractor
+        self._scraper = scraper
+        self._policy = policy
+
+    def key_for(self, entity_id: EntityId) -> AccountEntity | None:
+        return self._accounts.get(entity_id)
+
+    def __call__(self, account: AccountEntity) -> None:
+        self._accounts[account.id] = account
+        register_scrape_resolver(
+            extractor=self._extractor,
+            accounts=self,
+            scraper=self._scraper,
+            policy=self._policy,
+        )
+
+
+def build_stage0_scrape_binder(
+    *,
+    extractor: ClaimExtractor,
+    scraper: ScrapeBackend | None = None,
+    policy: ScrapePolicy | None = None,
+) -> Stage0ScrapeBinder:
+    """Build the required C4 live-recon resolver composition."""
+    return Stage0ScrapeBinder(extractor=extractor, scraper=scraper, policy=policy)
 
 
 class ProductionIngestionContactClaimRoute:
@@ -119,6 +171,36 @@ class ProductionIngestionContactClaimRoute:
             identity_binding=binding,
             use_class=use_class,
         )
+
+
+class ProductionIngestionClaimConstructionRoute:
+    """Add C4 product scope while preserving C3's single claim-construction authority."""
+
+    def build(
+        self,
+        *,
+        job: IngestionJob,
+        target: IngestionTarget,
+        field: FieldDef,
+        draft: ClaimDraft,
+        segment_id: str,
+        canonical_key: str,
+        run_id: RunId,
+    ) -> Claim:
+        claim = build_ingestion_claim(
+            job=job,
+            target=target,
+            field=field,
+            draft=draft,
+            segment_id=segment_id,
+            canonical_key=canonical_key,
+            run_id=run_id,
+        )
+        if target.material_context is not MaterialContext.CLIENT_ABOUT_PRODUCT:
+            return claim
+        if job.product_id is None:
+            raise ValueError("client-about-product ingestion requires product_id")
+        return revalidate_with(claim, product_id=job.product_id)
 
 
 class IngestionProposalSink:
@@ -244,7 +326,9 @@ def build_ingestion_engine(
         proposal_sink=proposal_sink or IngestionProposalSink(conn_factory=conn_factory),
         memory_route=memory_route,
         project_state_route=project_state_route,
-        claim_construction_route=claim_construction_route,
+        claim_construction_route=(
+            claim_construction_route or ProductionIngestionClaimConstructionRoute()
+        ),
         claim_erasure_route=claim_erasure_route
         or ProductionIngestionClaimErasureRoute(conn_factory=conn_factory),
         contact_claim_route=contact_claim_route or ProductionIngestionContactClaimRoute(),
@@ -276,6 +360,9 @@ __all__ = [
     "IngestionProposalSink",
     "ProductionIngestionClaimErasureRoute",
     "ProductionIngestionContactClaimRoute",
+    "ProductionIngestionClaimConstructionRoute",
+    "Stage0ScrapeBinder",
     "build_ingestion_engine",
+    "build_stage0_scrape_binder",
     "register_generic_web_wiring",
 ]

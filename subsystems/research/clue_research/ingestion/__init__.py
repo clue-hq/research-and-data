@@ -6,7 +6,7 @@ from clue_research.ingestion.adapters import (
     default_document_adapters,
     paid_ocr_manifest,
 )
-from clue_research.ingestion.engine import IngestionEngine
+from clue_research.ingestion.engine import IngestionEngine, build_ingestion_claim
 from clue_research.ingestion.errors import IngestionError
 from clue_research.ingestion.models import (
     DeclaredMaterialContext,
@@ -30,6 +30,7 @@ __all__ = [
     "IngestionError",
     "IngestionFailureCode",
     "IngestionEngine",
+    "build_ingestion_claim",
     "IngestionJob",
     "IngestionResultRefs",
     "IngestionSegment",

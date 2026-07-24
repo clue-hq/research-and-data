@@ -1,0 +1,874 @@
+"""C4's seven governed Stage-0 tools; all business logic delegates to Stage-0 services."""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Callable, Sequence
+from decimal import Decimal
+from uuid import UUID
+
+from pydantic import JsonValue
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
+from clue_core import (
+    AccountEntity,
+    EntityId,
+    MemoryWriteSeam,
+    OnboardingInputId,
+    OnboardingInputKind,
+    PreSpendGate,
+    ProductContextVersionId,
+    ProjectPhase,
+    ProjectRunId,
+    ReadinessDecisionId,
+    ReadinessGate,
+    ReadinessVerdict,
+    new_project_run_id,
+)
+from clue_db import ConnFactory, transaction
+from clue_research.durable import (
+    ProjectRunStatus,
+    RunEventTopic,
+    emit_run_event,
+    ensure_project_run,
+    get_project_run,
+)
+from clue_research.icp import get_icp_version
+from clue_research.stage0 import (
+    ClientInput,
+    InterviewStatement,
+    ReconLaneStatus,
+    compile_product_context,
+    evaluate_readiness,
+    get_onboarding_input,
+    get_readiness_decision,
+    override_readiness,
+    recon_dedupe_hash,
+    reverse_profile,
+    route_interview_answer,
+    start_recon,
+    submit_onboarding_input,
+    transition_recon_lane,
+)
+from clue_spine import confirm_project_product, get_brand, get_product, get_project
+from clue_storage import SnapshotSink, StorageBackend, bind_snapshots, get_artifact
+from clue_toolbelt import (
+    PreconditionFailure,
+    Tool,
+    ToolContext,
+    ToolEstimate,
+    ToolInput,
+    ToolResult,
+)
+
+
+def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
+    return (PreconditionFailure(reason_code=code, message=message),)
+
+
+def _uuid(raw: str) -> UUID | None:
+    try:
+        return UUID(raw)
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+async def _emit_recon_transition(
+    conn: AsyncConnection,
+    *,
+    recon_run_id: UUID,
+    workspace_id: str,
+    lane: str,
+    status: ReconLaneStatus,
+) -> None:
+    """Append exactly one event in the same transaction as one actual lane transition."""
+    await emit_run_event(
+        conn,
+        workspace_id=workspace_id,
+        run_id=ProjectRunId(recon_run_id),
+        topic=RunEventTopic.STEP_PROGRESS.value,
+        payload={
+            "kind": "stage0.recon.transition",
+            "recon_run_id": str(recon_run_id),
+            "lane": lane,
+            "status": status.value,
+        },
+    )
+
+
+async def start_confirmed_project_run(
+    conn: AsyncConnection,
+    *,
+    project_run_id: ProjectRunId,
+    workspace_id: str,
+    project_id: str,
+    client_entity_id: EntityId,
+    client_kb_version: int,
+    product_id: str,
+    product_context_version_id: ProductContextVersionId,
+    readiness_decision_id: ReadinessDecisionId,
+    icp_key: str,
+    icp_version: int,
+    budget_cap_cents: Decimal | None = None,
+) -> ProjectRunId:
+    """API-root proof joining Stage 0, ICP, spine, and durable run machinery."""
+    project = await get_project(conn, project_id)
+    if project is None or project.workspace_id != workspace_id or project.product_id != product_id:
+        raise ValueError("project does not carry the requested confirmed product")
+    spec = await get_icp_version(conn, workspace_id, icp_key, icp_version)
+    if spec is None or (
+        spec.client_entity_id != client_entity_id
+        or spec.client_kb_version != client_kb_version
+        or spec.product_id != product_id
+    ):
+        raise ValueError("ICP does not carry the requested Client-KB/product lineage")
+    context_exists = (
+        await conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM product_context_version
+                WHERE id = :id
+                  AND workspace_id = :workspace_id
+                  AND brand_id = :brand_id
+                  AND product_id = :product_id
+                  AND client_entity_id = :client_entity_id
+                  AND client_kb_version = :client_kb_version
+                """
+            ),
+            {
+                "id": product_context_version_id,
+                "workspace_id": workspace_id,
+                "brand_id": project.brand_id,
+                "product_id": product_id,
+                "client_entity_id": client_entity_id,
+                "client_kb_version": client_kb_version,
+            },
+        )
+    ).scalar_one_or_none()
+    if context_exists is None:
+        raise ValueError("product context does not carry the requested Client-KB/product lineage")
+    decision = await get_readiness_decision(conn, readiness_decision_id, workspace_id=workspace_id)
+    if decision is None or (
+        decision.project_id != project_id
+        or decision.product_id != product_id
+        or decision.client_entity_id != client_entity_id
+        or decision.client_kb_version != client_kb_version
+        or decision.icp_key != icp_key
+        or decision.icp_version != icp_version
+        or decision.product_context_version_id != product_context_version_id
+        or decision.gate is not ReadinessGate.DISCOVERY_SPEND
+    ):
+        raise ValueError("readiness decision does not pin the requested confirmed context")
+    overridden = (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM readiness_override "
+                "WHERE readiness_decision_id = :id AND workspace_id = :workspace_id"
+            ),
+            {"id": readiness_decision_id, "workspace_id": workspace_id},
+        )
+    ).scalar_one_or_none()
+    if decision.verdict is not ReadinessVerdict.READY and overridden is None:
+        raise ValueError("discovery readiness is not ready and has no human override")
+    await ensure_project_run(
+        conn,
+        project_run_id=project_run_id,
+        project_id=project_id,
+        workspace_id=workspace_id,
+        icp_key=icp_key,
+        icp_version=icp_version,
+        budget_cap_cents=budget_cap_cents,
+        phase=ProjectPhase.DISCOVERY,
+        status=ProjectRunStatus.ACTIVE,
+        client_entity_id=client_entity_id,
+        client_kb_version=client_kb_version,
+        product_id=product_id,
+        product_context_version_id=product_context_version_id,
+        readiness_decision_id=readiness_decision_id,
+    )
+    run = await get_project_run(conn, project_run_id)
+    if run is None or run.phase is not ProjectPhase.DISCOVERY:
+        raise ValueError("confirmed project run id already belongs to an incompatible run")
+    return project_run_id
+
+
+class SubmitOnboardingInput(ToolInput):
+    brand_id: str
+    kind: OnboardingInputKind
+    artifact_key: str
+    content_sha256: str
+    product_id: str | None = None
+    project_id: str | None = None
+    client_entity_id: str | None = None
+    source_ref: str | None = None
+
+
+class StartReconInput(ToolInput):
+    brand_id: str
+    name: str
+    website: str
+    onboarding_input_ids: list[str]
+    product_id: str | None = None
+    project_id: str | None = None
+
+
+class RecordInterviewAnswerInput(ToolInput):
+    brand_id: str
+    onboarding_input_id: str
+    artifact_key: str
+    answer: str
+    client_entity_id: str
+    statements: list[InterviewStatement]
+    product_id: str | None = None
+    project_id: str | None = None
+
+
+class ConfirmProjectProductInput(ToolInput):
+    project_id: str
+    product_id: str
+
+
+class EvaluateStage0ReadinessInput(ToolInput):
+    brand_id: str
+    gate: ReadinessGate
+    metrics: dict[str, JsonValue]
+    product_id: str | None = None
+    project_id: str | None = None
+    client_entity_id: str | None = None
+    client_kb_version: int | None = None
+    icp_key: str | None = None
+    icp_version: int | None = None
+    product_context_version_id: str | None = None
+    claim_refs: list[str] = []
+    memory_refs: list[str] = []
+    artifact_refs: list[str] = []
+    gap_refs: list[dict[str, JsonValue]] = []
+    field_proposal_refs: list[str] = []
+    source_proposal_refs: list[str] = []
+    ingestion_refs: list[str] = []
+    agent_sufficiency_status: str = "not_evaluated"
+    agent_sufficiency_ref: str | None = None
+
+
+class OverrideStage0ReadinessInput(ToolInput):
+    readiness_decision_id: str
+    gate: ReadinessGate
+    reason: str
+
+
+class StartConfirmedProjectRunInput(ToolInput):
+    project_id: str
+    client_entity_id: str
+    client_kb_version: int
+    product_id: str
+    product_context_version_id: str
+    readiness_decision_id: str
+    icp_key: str
+    icp_version: int
+    budget_cap_cents: int | None = None
+
+
+class _Stage0Tool(Tool):
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory = transaction,
+        policy: Stage0Policy = DEFAULT_STAGE0_POLICY,
+        pre_spend_gate: PreSpendGate,
+        memory_write: MemoryWriteSeam | None = None,
+        scrape_binder: Callable[[AccountEntity], None] | None = None,
+        storage: StorageBackend | None = None,
+    ) -> None:
+        self._conn_factory = conn_factory
+        self._policy = policy
+        self._pre_spend_gate = pre_spend_gate
+        self._memory_write = memory_write
+        self._scrape_binder = scrape_binder
+        self._storage = storage
+
+
+class SubmitOnboardingInputTool(_Stage0Tool):
+    name = "submit_onboarding_input"
+    input_model = SubmitOnboardingInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, SubmitOnboardingInput)
+        async with self._conn_factory() as conn:
+            artifact = await get_artifact(conn, inputs.artifact_key)
+        if artifact is None or artifact.workspace_id != ctx.workspace_id:
+            return _failure(
+                "artifact_not_found",
+                "captured artifact does not exist in this workspace",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, SubmitOnboardingInput)
+        entity_uuid = _uuid(inputs.client_entity_id) if inputs.client_entity_id else None
+        async with self._conn_factory() as conn:
+            ref = await submit_onboarding_input(
+                conn,
+                workspace_id=ctx.workspace_id,
+                brand_id=inputs.brand_id,
+                product_id=inputs.product_id,
+                project_id=inputs.project_id,
+                client_entity_id=EntityId(entity_uuid) if entity_uuid else None,
+                kind=inputs.kind,
+                artifact_key=inputs.artifact_key,
+                content_sha256=inputs.content_sha256,
+                source_ref=inputs.source_ref,
+                actor=ctx.actor,
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "onboarding_input_id": str(ref.onboarding_input_id),
+                "artifact_key": ref.artifact_key,
+                "kind": ref.kind.value,
+            },
+        )
+
+
+class StartReconTool(_Stage0Tool):
+    name = "start_recon"
+    input_model = StartReconInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, StartReconInput)
+        parsed = [_uuid(item) for item in inputs.onboarding_input_ids]
+        if not parsed or any(item is None for item in parsed):
+            return _failure("onboarding_input_not_found", "recon requires valid onboarding refs")
+        async with self._conn_factory() as conn:
+            rows = [
+                await get_onboarding_input(
+                    conn, OnboardingInputId(item), workspace_id=ctx.workspace_id
+                )
+                for item in parsed
+                if item is not None
+            ]
+        if any(row is None for row in rows):
+            return _failure("onboarding_input_not_found", "an onboarding ref is absent or foreign")
+        if self._scrape_binder is None or self._storage is None:
+            return _failure(
+                "stage0_recon_not_configured",
+                "live official-surface scrape composition is not configured",
+            )
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        del inputs
+        return ToolEstimate(
+            cost_cents=self._policy.fast_budget_cents,
+            detail={"background_budget_cents": str(self._policy.background_budget_cents)},
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, StartReconInput)
+        input_ids = tuple(OnboardingInputId(UUID(item)) for item in inputs.onboarding_input_ids)
+        dedupe = recon_dedupe_hash(
+            workspace_id=ctx.workspace_id,
+            brand_id=inputs.brand_id,
+            product_id=inputs.product_id,
+            identity=inputs.website,
+        )
+        async with self._conn_factory() as conn:
+            recon = await start_recon(
+                conn,
+                workspace_id=ctx.workspace_id,
+                brand_id=inputs.brand_id,
+                product_id=inputs.product_id,
+                project_id=inputs.project_id,
+                dedupe_hash=dedupe,
+                onboarding_input_ids=input_ids,
+                fast_budget_cents=self._policy.fast_budget_cents,
+                background_budget_cents=self._policy.background_budget_cents,
+                dedupe_ttl_seconds=self._policy.recon_dedupe_ttl_seconds,
+            )
+            started_fast = recon.fast_status is ReconLaneStatus.QUEUED
+            if started_fast:
+                recon = await transition_recon_lane(
+                    conn,
+                    recon_run_id=recon.id,
+                    workspace_id=ctx.workspace_id,
+                    lane="fast",
+                    status=ReconLaneStatus.RUNNING,
+                )
+                await _emit_recon_transition(
+                    conn,
+                    recon_run_id=recon.id,
+                    workspace_id=ctx.workspace_id,
+                    lane="fast",
+                    status=ReconLaneStatus.RUNNING,
+                )
+                with bind_snapshots(
+                    SnapshotSink(workspace_id=ctx.workspace_id),
+                    self._storage,
+                ):
+                    try:
+                        async with conn.begin_nested():
+                            result = await reverse_profile(
+                                conn,
+                                ClientInput(name=inputs.name, website=inputs.website),
+                                workspace_id=ctx.workspace_id,
+                                run_id=recon.fast_run_id,
+                                budget_cap_cents=self._policy.fast_budget_cents,
+                                pre_spend_gate=self._pre_spend_gate,
+                                product_id=inputs.product_id,
+                                max_source_tier=2,
+                                on_client_resolved=self._scrape_binder,
+                            )
+                    except Exception as exc:  # noqa: BLE001 - persist a durable failed lane
+                        recon = await transition_recon_lane(
+                            conn,
+                            recon_run_id=recon.id,
+                            workspace_id=ctx.workspace_id,
+                            lane="fast",
+                            status=ReconLaneStatus.FAILED,
+                            failure_code=type(exc).__name__,
+                        )
+                    else:
+                        recon = await transition_recon_lane(
+                            conn,
+                            recon_run_id=recon.id,
+                            workspace_id=ctx.workspace_id,
+                            lane="fast",
+                            status=ReconLaneStatus.COMPLETED,
+                            cost_cents=result.cost_cents,
+                            client_kb_version=result.ref.client_kb_version,
+                            client_entity_id=result.ref.client_entity_id,
+                        )
+                await _emit_recon_transition(
+                    conn,
+                    recon_run_id=recon.id,
+                    workspace_id=ctx.workspace_id,
+                    lane="fast",
+                    status=recon.fast_status,
+                )
+            elif recon.background_status in {
+                ReconLaneStatus.QUEUED,
+                ReconLaneStatus.RUNNING,
+            }:
+                if recon.background_status is ReconLaneStatus.QUEUED:
+                    recon = await transition_recon_lane(
+                        conn,
+                        recon_run_id=recon.id,
+                        workspace_id=ctx.workspace_id,
+                        lane="background",
+                        status=ReconLaneStatus.RUNNING,
+                    )
+                    await _emit_recon_transition(
+                        conn,
+                        recon_run_id=recon.id,
+                        workspace_id=ctx.workspace_id,
+                        lane="background",
+                        status=ReconLaneStatus.RUNNING,
+                    )
+                with bind_snapshots(
+                    SnapshotSink(workspace_id=ctx.workspace_id),
+                    self._storage,
+                ):
+                    try:
+                        async with conn.begin_nested():
+                            result = await reverse_profile(
+                                conn,
+                                ClientInput(name=inputs.name, website=inputs.website),
+                                workspace_id=ctx.workspace_id,
+                                run_id=recon.background_run_id,
+                                budget_cap_cents=self._policy.background_budget_cents,
+                                pre_spend_gate=self._pre_spend_gate,
+                                product_id=inputs.product_id,
+                                max_source_tier=3,
+                                on_client_resolved=self._scrape_binder,
+                            )
+                    except Exception as exc:  # noqa: BLE001 - persist a durable failed lane
+                        recon = await transition_recon_lane(
+                            conn,
+                            recon_run_id=recon.id,
+                            workspace_id=ctx.workspace_id,
+                            lane="background",
+                            status=ReconLaneStatus.FAILED,
+                            failure_code=type(exc).__name__,
+                        )
+                    else:
+                        recon = await transition_recon_lane(
+                            conn,
+                            recon_run_id=recon.id,
+                            workspace_id=ctx.workspace_id,
+                            lane="background",
+                            status=ReconLaneStatus.COMPLETED,
+                            cost_cents=result.cost_cents,
+                            client_kb_version=result.ref.client_kb_version,
+                            client_entity_id=result.ref.client_entity_id,
+                        )
+                await _emit_recon_transition(
+                    conn,
+                    recon_run_id=recon.id,
+                    workspace_id=ctx.workspace_id,
+                    lane="background",
+                    status=recon.background_status,
+                )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "recon_run_id": str(recon.id),
+                "client_entity_id": (
+                    str(recon.client_entity_id) if recon.client_entity_id is not None else None
+                ),
+                "fast_client_kb_version": recon.fast_client_kb_version,
+                "fast_status": recon.fast_status.value,
+                "background_status": recon.background_status.value,
+                "background_run_id": str(recon.background_run_id),
+            },
+        )
+
+
+class RecordInterviewAnswerTool(_Stage0Tool):
+    name = "record_interview_answer"
+    input_model = RecordInterviewAnswerInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, RecordInterviewAnswerInput)
+        input_uuid = _uuid(inputs.onboarding_input_id)
+        client_uuid = _uuid(inputs.client_entity_id)
+        if input_uuid is None or client_uuid is None:
+            return _failure(
+                "onboarding_input_not_found",
+                "interview input or client entity is malformed",
+            )
+        async with self._conn_factory() as conn:
+            captured = await get_onboarding_input(
+                conn, OnboardingInputId(input_uuid), workspace_id=ctx.workspace_id
+            )
+            artifact = await get_artifact(conn, inputs.artifact_key)
+        if (
+            captured is None
+            or captured.artifact_key != inputs.artifact_key
+            or artifact is None
+            or artifact.workspace_id != ctx.workspace_id
+            or (
+                captured is not None
+                and hashlib.sha256(inputs.answer.encode()).hexdigest() != captured.content_sha256
+            )
+        ):
+            return _failure(
+                "onboarding_input_not_found",
+                "captured interview input does not exist in this workspace",
+            )
+        if (
+            any(statement.route.value == "memory" for statement in inputs.statements)
+            and self._memory_write is None
+        ):
+            return _failure(
+                "memory_not_configured",
+                "memory-routed interview statements require the MemoryWriteSeam",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, RecordInterviewAnswerInput)
+        async with self._conn_factory() as conn:
+            result = await route_interview_answer(
+                conn,
+                workspace_id=ctx.workspace_id,
+                brand_id=inputs.brand_id,
+                product_id=inputs.product_id,
+                project_id=inputs.project_id,
+                client_entity_id=EntityId(UUID(inputs.client_entity_id)),
+                onboarding_input_id=OnboardingInputId(UUID(inputs.onboarding_input_id)),
+                artifact_key=inputs.artifact_key,
+                answer=inputs.answer,
+                statements=tuple(inputs.statements),
+                actor=ctx.actor,
+                memory_write=self._memory_write,
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "statement_ids": [str(item) for item in result.statement_ids],
+                "claim_refs": [str(item) for item in result.claim_refs],
+                "memory_refs": list(result.memory_refs),
+                "project_state_refs": list(result.project_state_refs),
+                "proposal_refs": list(result.proposal_refs),
+                "unmapped_statement_ids": [str(item) for item in result.unmapped_statement_ids],
+            },
+        )
+
+
+class ConfirmProjectProductTool(_Stage0Tool):
+    name = "confirm_project_product"
+    input_model = ConfirmProjectProductInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ConfirmProjectProductInput)
+        if ctx.actor != "human":
+            return _failure("human_required", "only a human can confirm the project product")
+        async with self._conn_factory() as conn:
+            project = await get_project(conn, inputs.project_id)
+            product = await get_product(conn, inputs.product_id)
+        if (
+            project is None
+            or product is None
+            or project.workspace_id != ctx.workspace_id
+            or product.workspace_id != ctx.workspace_id
+            or project.brand_id != product.brand_id
+        ):
+            return _failure(
+                "project_product_not_found",
+                "project and product do not form a same-workspace brand pair",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ConfirmProjectProductInput)
+        async with self._conn_factory() as conn:
+            project = await confirm_project_product(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_id=inputs.project_id,
+                product_id=inputs.product_id,
+            )
+        if project is None:
+            raise ValueError("project/product pair is absent, foreign, or already conflicts")
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={"project_id": project.project_id, "product_id": project.product_id},
+        )
+
+
+class EvaluateStage0ReadinessTool(_Stage0Tool):
+    name = "evaluate_stage0_readiness"
+    input_model = EvaluateStage0ReadinessInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, EvaluateStage0ReadinessInput)
+        async with self._conn_factory() as conn:
+            brand = await get_brand(conn, workspace_id=ctx.workspace_id, brand_id=inputs.brand_id)
+        if brand is None:
+            return _failure("stage0_scope_not_found", "brand does not exist in this workspace")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, EvaluateStage0ReadinessInput)
+        client_uuid = _uuid(inputs.client_entity_id) if inputs.client_entity_id else None
+        context_uuid = (
+            _uuid(inputs.product_context_version_id) if inputs.product_context_version_id else None
+        )
+        async with self._conn_factory() as conn:
+            context_id = ProductContextVersionId(context_uuid) if context_uuid is not None else None
+            if (
+                context_id is None
+                and inputs.product_id is not None
+                and client_uuid is not None
+                and inputs.client_kb_version is not None
+            ):
+                context = await compile_product_context(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    brand_id=inputs.brand_id,
+                    product_id=inputs.product_id,
+                    client_entity_id=EntityId(client_uuid),
+                    client_kb_version=inputs.client_kb_version,
+                    claim_refs=inputs.claim_refs,
+                    memory_refs=inputs.memory_refs,
+                    artifact_refs=inputs.artifact_refs,
+                )
+                context_id = context.version_id
+            snapshot = await evaluate_readiness(
+                conn,
+                workspace_id=ctx.workspace_id,
+                brand_id=inputs.brand_id,
+                product_id=inputs.product_id,
+                project_id=inputs.project_id,
+                client_entity_id=EntityId(client_uuid) if client_uuid else None,
+                client_kb_version=inputs.client_kb_version,
+                icp_key=inputs.icp_key,
+                icp_version=inputs.icp_version,
+                product_context_version_id=context_id,
+                gate=inputs.gate,
+                spec=self._policy.readiness,
+                metrics=inputs.metrics,
+                gap_refs=inputs.gap_refs,
+                field_proposal_refs=inputs.field_proposal_refs,
+                source_proposal_refs=inputs.source_proposal_refs,
+                ingestion_refs=inputs.ingestion_refs,
+                agent_sufficiency_status=inputs.agent_sufficiency_status,
+                agent_sufficiency_ref=inputs.agent_sufficiency_ref,
+                created_by_actor=ctx.actor,
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "readiness_decision_id": str(snapshot.readiness_decision_id),
+                "gate": snapshot.gate.value,
+                "verdict": snapshot.verdict.value,
+                "spec_version": snapshot.spec_version,
+                "product_context_version_id": str(context_id) if context_id else None,
+            },
+        )
+
+
+class OverrideStage0ReadinessTool(_Stage0Tool):
+    name = "override_stage0_readiness"
+    input_model = OverrideStage0ReadinessInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, OverrideStage0ReadinessInput)
+        if ctx.actor != "human":
+            return _failure("human_required", "only a human can record just-go")
+        decision_uuid = _uuid(inputs.readiness_decision_id)
+        if decision_uuid is None:
+            return _failure("readiness_not_found", "readiness decision does not exist")
+        async with self._conn_factory() as conn:
+            decision = await get_readiness_decision(
+                conn,
+                ReadinessDecisionId(decision_uuid),
+                workspace_id=ctx.workspace_id,
+            )
+        if decision is None or decision.gate is not inputs.gate:
+            return _failure("readiness_not_found", "readiness decision does not exist")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, OverrideStage0ReadinessInput)
+        async with self._conn_factory() as conn:
+            override_id = await override_readiness(
+                conn,
+                decision_id=ReadinessDecisionId(UUID(inputs.readiness_decision_id)),
+                workspace_id=ctx.workspace_id,
+                gate=inputs.gate,
+                actor=ctx.actor,
+                reason=inputs.reason,
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "readiness_override_id": str(override_id),
+                "readiness_decision_id": inputs.readiness_decision_id,
+            },
+        )
+
+
+class StartConfirmedProjectRunTool(_Stage0Tool):
+    name = "start_confirmed_project_run"
+    input_model = StartConfirmedProjectRunInput
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, StartConfirmedProjectRunInput)
+        ids = (
+            _uuid(inputs.client_entity_id),
+            _uuid(inputs.product_context_version_id),
+            _uuid(inputs.readiness_decision_id),
+        )
+        if any(item is None for item in ids):
+            return _failure(
+                "confirmed_stage0_context_not_found",
+                "confirmed Stage-0 context is malformed or absent",
+            )
+        async with self._conn_factory() as conn:
+            project = await get_project(conn, inputs.project_id)
+        if project is None or project.workspace_id != ctx.workspace_id:
+            return _failure(
+                "confirmed_stage0_context_not_found",
+                "confirmed Stage-0 context is malformed or absent",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, StartConfirmedProjectRunInput)
+        run_id = new_project_run_id()
+        async with self._conn_factory() as conn:
+            await start_confirmed_project_run(
+                conn,
+                project_run_id=run_id,
+                workspace_id=ctx.workspace_id,
+                project_id=inputs.project_id,
+                client_entity_id=EntityId(UUID(inputs.client_entity_id)),
+                client_kb_version=inputs.client_kb_version,
+                product_id=inputs.product_id,
+                product_context_version_id=ProductContextVersionId(
+                    UUID(inputs.product_context_version_id)
+                ),
+                readiness_decision_id=ReadinessDecisionId(UUID(inputs.readiness_decision_id)),
+                icp_key=inputs.icp_key,
+                icp_version=inputs.icp_version,
+                budget_cap_cents=(
+                    Decimal(inputs.budget_cap_cents)
+                    if inputs.budget_cap_cents is not None
+                    else None
+                ),
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "project_run_id": str(run_id),
+                "phase": "discovery",
+                "product_context_version_id": inputs.product_context_version_id,
+                "readiness_decision_id": inputs.readiness_decision_id,
+            },
+        )
+
+
+def stage0_tools(
+    *,
+    conn_factory: ConnFactory,
+    policy: Stage0Policy,
+    pre_spend_gate: PreSpendGate,
+    memory_write: MemoryWriteSeam | None,
+    scrape_binder: Callable[[AccountEntity], None] | None,
+    storage: StorageBackend | None,
+) -> tuple[Tool, ...]:
+    def make(tool_type: type[_Stage0Tool]) -> _Stage0Tool:
+        return tool_type(
+            conn_factory=conn_factory,
+            policy=policy,
+            pre_spend_gate=pre_spend_gate,
+            memory_write=memory_write,
+            scrape_binder=scrape_binder,
+            storage=storage,
+        )
+
+    return (
+        make(SubmitOnboardingInputTool),
+        make(StartReconTool),
+        make(RecordInterviewAnswerTool),
+        make(ConfirmProjectProductTool),
+        make(EvaluateStage0ReadinessTool),
+        make(OverrideStage0ReadinessTool),
+        make(StartConfirmedProjectRunTool),
+    )
+
+
+__all__ = [
+    "ConfirmProjectProductTool",
+    "EvaluateStage0ReadinessTool",
+    "OverrideStage0ReadinessTool",
+    "RecordInterviewAnswerTool",
+    "StartConfirmedProjectRunTool",
+    "StartReconTool",
+    "SubmitOnboardingInputTool",
+    "stage0_tools",
+]

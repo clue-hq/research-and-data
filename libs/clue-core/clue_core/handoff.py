@@ -17,7 +17,7 @@ Open decisions: **D1** the handoff stops at the value narrative (recommended def
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
 from clue_core.enums import (
     FreshnessState,
@@ -99,6 +99,12 @@ class ICPSpec(BaseModel):
     created_by: str | None = None
     created_at: UtcDatetime | None = None  # set by the store on write
 
+    # C4 harness lineage. Legacy/manual specs may leave these null; every C4 confirmation stamps
+    # all three so post-confirmation run entry can prove the exact KB -> ICP -> product chain.
+    client_entity_id: EntityId | None = None
+    client_kb_version: int | None = None
+    product_id: str | None = None
+
     # the four sub-contract slots (conventions §4), referenced by name
     field_keys: tuple[FieldKey, ...] = ()  # active field set (core + packs)
     enabled_packs: tuple[str, ...] = ()  # M3.3 packs enabled for this ICP
@@ -107,6 +113,20 @@ class ICPSpec(BaseModel):
         str, JsonValue
     ] = {}  # per-ICP source-profile config ref (M4 interprets)
     scoring_rubric: dict[str, JsonValue] = {}  # fit + intent weights (M3.4 interprets)
+
+    @model_validator(mode="after")
+    def _lineage_is_complete(self) -> ICPSpec:
+        lineage = (self.client_entity_id, self.client_kb_version, self.product_id)
+        if any(item is not None for item in lineage) and not all(
+            item is not None for item in lineage
+        ):
+            raise ValueError(
+                "ICP lineage is all-or-none: client_entity_id, client_kb_version, and "
+                "product_id must be set together"
+            )
+        if self.client_kb_version is not None and self.client_kb_version < 1:
+            raise ValueError("client_kb_version must be at least 1")
+        return self
 
 
 class ScoreComponent(BaseModel):

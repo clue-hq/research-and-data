@@ -173,6 +173,7 @@ async def _existing_step_claims(
     run_id: RunId,
     *,
     scope: WorkspaceScope,
+    product_id: str | None,
 ) -> list[Claim]:
     """Live claims already written for this ``(entity, field, source_key, run)`` — the idempotency
     key. Keyed on ``source_key``, NOT tier: a ``tier_plan`` may list >1 source at one tier
@@ -186,7 +187,11 @@ async def _existing_step_claims(
     claims; a public-only run reuses only public ones — so a private claim is never reused across
     the tenant boundary (substrate §2 — isolation is a data-model property, not caller-enforced)."""
     live = await claims_for(conn, entity_id, field_key, scope=scope)
-    return [c for c in live if c.source_key == source_key and c.run_id == run_id]
+    return [
+        c
+        for c in live
+        if c.source_key == source_key and c.run_id == run_id and c.product_id == product_id
+    ]
 
 
 async def resolve_field(
@@ -197,6 +202,7 @@ async def resolve_field(
     mode: ResearchMode,
     run_id: RunId,
     workspace_id: str | None = None,
+    product_id: str | None = None,
     budget_envelope: Decimal | None = None,
     cost_so_far: CostCents = Decimal(0),
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
@@ -283,7 +289,13 @@ async def resolve_field(
         # run) is reused — that spends nothing, so it must never be blocked by the budget envelope.
         if idempotent:
             existing = await _existing_step_claims(
-                conn, entity.entity_id, field_def.field_key, source_key, run_id, scope=idem_scope
+                conn,
+                entity.entity_id,
+                field_def.field_key,
+                source_key,
+                run_id,
+                scope=idem_scope,
+                product_id=product_id,
             )
             if existing:
                 best = first_confident_claim(existing, threshold)
@@ -384,6 +396,8 @@ async def resolve_field(
                 # crm_import / scoring / resonance / personal claim is bound tenant-private. A
                 # private-classifying claim with no workspace_id fails loud here (no silent leak).
                 final = stamp_reuse(final, workspace_id=workspace_id, policy=reuse_policy)
+                if product_id is not None:
+                    final = revalidate_with(final, product_id=product_id)
                 refs.append(await insert_claim(conn, final))
                 kept.append(final)
                 step_cost += final.cost_cents
@@ -443,6 +457,7 @@ async def resolve_fields(
     mode: ResearchMode,
     run_id: RunId,
     workspace_id: str | None = None,
+    product_id: str | None = None,
     budget_envelope: Decimal | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
     reuse_policy: ReusePolicy = DEFAULT_REUSE_POLICY,
@@ -467,6 +482,7 @@ async def resolve_fields(
             mode=mode,
             run_id=run_id,
             workspace_id=workspace_id,
+            product_id=product_id,
             budget_envelope=budget_envelope,
             cost_so_far=spent,
             thresholds=thresholds,

@@ -54,6 +54,14 @@ from clue_projections.research_coverage import (
     research_coverage,
 )
 from clue_projections.run_views import account_progress, run_overview, run_readiness
+from clue_projections.stage0 import (
+    ReconBriefView,
+    Stage0ProgressView,
+    Stage0ReadinessView,
+    recon_brief,
+    stage0_progress,
+    stage0_readiness,
+)
 
 __all__ = [
     # schema version
@@ -93,4 +101,11 @@ __all__ = [
     # Phase C3 ingestion
     "IngestionStatusView",
     "ingestion_status",
+    # Phase C4 governed Stage 0
+    "ReconBriefView",
+    "Stage0ProgressView",
+    "Stage0ReadinessView",
+    "recon_brief",
+    "stage0_progress",
+    "stage0_readiness",
 ]

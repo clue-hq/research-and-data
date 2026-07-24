@@ -83,6 +83,8 @@ async def confirm_icp(
     client_entity_id: EntityId,
     created_by: str | None = None,
     estimate_inputs: EstimateInputs | None = None,
+    client_kb_version: int | None = None,
+    product_id: str | None = None,
 ) -> ICPConfirmation:
     """Confirm ``proposal`` (with optional client ``edits``) into a versioned, active ``ICPSpec``.
 
@@ -100,6 +102,8 @@ async def confirm_icp(
     so it appends a new version (and a new diff) — the intended append-only confirm history. Run
     inside a transaction (the spec write + diff claim commit together; a retry then re-reads the
     committed active spec and the idempotency check short-circuits)."""
+    if (client_kb_version is None) != (product_id is None):
+        raise ValueError("C4 ICP confirmation requires both client_kb_version and product_id")
     edits = edits if edits is not None else _EMPTY_EDITS
 
     with traced_step("stage0.icp_confirm", **{ATTR_WORKSPACE_ID: workspace_id}) as span:
@@ -122,6 +126,9 @@ async def confirm_icp(
             discovery_strategy=_discovery_strategy(confirmed),
             source_profile_ref={"packs": list(confirmed.packs)},
             scoring_rubric=rubric_to_slot(rubric),
+            client_entity_id=client_entity_id if client_kb_version is not None else None,
+            client_kb_version=client_kb_version,
+            product_id=product_id,
         )
         # Pre-validate against the compiled plan BEFORE persisting (append-only → no rollback of a
         # bad spec): the compiler checks every field_key/pack exists; validate_rubric checks the
@@ -147,6 +154,9 @@ async def confirm_icp(
                 label=proposal.label,
                 description=proposal.rationale,
                 activate=True,
+                client_entity_id=draft.client_entity_id,
+                client_kb_version=draft.client_kb_version,
+                product_id=draft.product_id,
             )
             await _persist_diff(
                 conn,
@@ -177,6 +187,9 @@ def _same_selection(active: ICPSpec, draft: ICPSpec) -> bool:
         and active.discovery_strategy == draft.discovery_strategy
         and active.source_profile_ref == draft.source_profile_ref
         and active.scoring_rubric == draft.scoring_rubric
+        and active.client_entity_id == draft.client_entity_id
+        and active.client_kb_version == draft.client_kb_version
+        and active.product_id == draft.product_id
     )
 
 

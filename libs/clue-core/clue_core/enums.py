@@ -61,6 +61,7 @@ class Modality(StrEnum):
     AUDIO = "audio"
     PDF = "pdf"
     STRUCTURED = "structured"
+    CONVERSATION = "conversation"
 
 
 class EntityScope(StrEnum):

@@ -272,6 +272,45 @@ async def get_project(conn: AsyncConnection, project_id: str) -> Project | None:
     return Project(**dict(row)) if row is not None else None
 
 
+async def confirm_project_product(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    product_id: str,
+) -> Project | None:
+    """Human-authorized project/product confirmation.
+
+    Returns ``None`` without revealing which coordinate was foreign when the project and product
+    are not in the same workspace and brand. Repeating the same confirmation is idempotent. A
+    project already pinned to a different product is not silently repointed.
+    """
+    result = await conn.execute(
+        text(
+            """
+            UPDATE project
+            SET product_id = product.product_id
+            FROM product
+            WHERE project.project_id = :project_id
+              AND project.workspace_id = :workspace_id
+              AND project.brand_id = product.brand_id
+              AND project.workspace_id = product.workspace_id
+              AND product.product_id = :product_id
+              AND (project.product_id IS NULL OR project.product_id = product.product_id)
+            RETURNING project.project_id, project.workspace_id, project.brand_id,
+                      project.product_id, project.name, project.status, project.created_at
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "product_id": product_id,
+        },
+    )
+    row = result.mappings().one_or_none()
+    return Project(**dict(row)) if row is not None else None
+
+
 async def list_projects(
     conn: AsyncConnection, workspace_id: str, *, status: ProjectStatus | None = None
 ) -> list[Project]:

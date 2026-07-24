@@ -24,12 +24,14 @@ here).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    AccountEntity,
     AccountStatus,
     BudgetTracker,
     Claim,
@@ -39,8 +41,13 @@ from clue_core import (
     ExtractionMethod,
     FaithfulnessJudge,
     JudgeResult,
+    PreSpendGate,
+    PreSpendRequest,
+    PreSpendVerdict,
     ResearchMode,
     RunId,
+    SourceGate,
+    SourceManifest,
     account_claim,
     new_run_id,
 )
@@ -110,6 +117,10 @@ async def reverse_profile(
     run_id: RunId | None = None,
     budget_cap_cents: Decimal | None = None,
     judge: FaithfulnessJudge | None = None,
+    pre_spend_gate: PreSpendGate | None = None,
+    product_id: str | None = None,
+    max_source_tier: int | None = None,
+    on_client_resolved: Callable[[AccountEntity], None] | None = None,
 ) -> ReverseProfileResult:
     """Reverse-profile a client into a versioned Client Knowledge Base.
 
@@ -146,6 +157,11 @@ async def reverse_profile(
 
         client_entity_id = await _resolve_client(conn, client_input, workspace_id=workspace_id)
         apply_attributes(span, {ATTR_ENTITY_ID: client_entity_id})
+        if on_client_resolved is not None:
+            client_account = await get_account(conn, client_entity_id)
+            if client_account is None:  # pragma: no cover - identity resolver just returned it
+                raise RuntimeError("resolved client account disappeared before resolver wiring")
+            on_client_resolved(client_account)
 
         # Fields already filled by a volunteered (HUMAN) claim under THIS run — for idempotent
         # re-entry, so resuming neither re-ingests a material nor re-spends on a field it filled.
@@ -169,6 +185,7 @@ async def reverse_profile(
                 workspace_id=workspace_id,
                 run_id=run,
                 already_written=material_fields,
+                product_id=product_id,
             )
             claims_written += len(wrote)
         filled_fields |= material_fields  # incl. fields carried in from a re-entered run
@@ -196,6 +213,14 @@ async def reverse_profile(
                 budget_envelope=budget_cap_cents,
                 cost_so_far=budget.spent_cents,
                 reuse_policy=CLIENT_KNOWLEDGE_REUSE_POLICY,
+                product_id=product_id,
+                source_gate=_source_gate(
+                    pre_spend_gate,
+                    entity_id=client_entity_id,
+                    field_key=field_key,
+                    run_id=run,
+                    max_source_tier=max_source_tier,
+                ),
             )
             budget.spend(result.total_cost_cents)
             claims_written += len(result.claim_refs)
@@ -217,12 +242,17 @@ async def reverse_profile(
             workspace_id=workspace_id,
             run_id=run,
             coverage=coverage,
+            product_id=product_id,
         )
 
         apply_attributes(span, {ATTR_COST_CENTS: budget.spent_cents, ATTR_N_CLAIMS: claims_written})
 
     return ReverseProfileResult(
-        ref=ClientKnowledgeBaseRef(client_entity_id=client_entity_id, client_kb_version=version),
+        ref=ClientKnowledgeBaseRef(
+            client_entity_id=client_entity_id,
+            client_kb_version=version,
+            product_id=product_id,
+        ),
         run_id=run,
         coverage=coverage,
         cost_cents=budget.spent_cents,
@@ -236,6 +266,34 @@ async def reverse_profile(
 
 def _entity_ref(entity_id: EntityId) -> Entity:
     return Entity(entity_id=entity_id, entity_type=EntityType.ACCOUNT)
+
+
+def _source_gate(
+    gate: PreSpendGate | None,
+    *,
+    entity_id: EntityId,
+    field_key: str,
+    run_id: RunId,
+    max_source_tier: int | None,
+) -> SourceGate:
+    async def allow(manifest: SourceManifest) -> bool:
+        source_tier = manifest.tier
+        if max_source_tier is not None and source_tier > max_source_tier:
+            return False
+        if gate is None:
+            return True
+        decision = await gate.check(
+            PreSpendRequest(
+                entity_id=entity_id,
+                entity_type=EntityType.ACCOUNT,
+                field_key=field_key,
+                source_tier=source_tier,
+                run_id=run_id,
+            )
+        )
+        return decision.verdict is PreSpendVerdict.PASS
+
+    return allow
 
 
 async def _resolve_client(
@@ -300,6 +358,7 @@ async def _ingest_material(
     workspace_id: str,
     run_id: RunId,
     already_written: set[str],
+    product_id: str | None,
 ) -> list[str]:
     """Write each fact a volunteered material asserts as a tier-1 ``human`` claim (idempotent on the
     run). Returns the field keys written. The raw excerpt becomes the ``evidence_span`` so even a
@@ -330,6 +389,8 @@ async def _ingest_material(
             evidence_span=span,
         )
         claim = stamp_reuse(claim, workspace_id=workspace_id, policy=CLIENT_KNOWLEDGE_REUSE_POLICY)
+        if product_id is not None:
+            claim = claim.model_copy(update={"product_id": product_id})
         try:
             await insert_claim(conn, claim)
         except ValueSchemaError:
@@ -393,6 +454,7 @@ async def _write_version_marker(
     workspace_id: str,
     run_id: RunId,
     coverage: CoverageReport,
+    product_id: str | None,
 ) -> int:
     """Write (or, on re-entry, reuse) the ``client.kb_version`` marker — the claim-store version
     ledger. A new run bumps the version and supersedes the prior marker; a re-entered run (same
@@ -404,6 +466,8 @@ async def _write_version_marker(
         include_superseded=True,
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
+    if product_id is not None:
+        markers = [marker for marker in markers if marker.product_id == product_id]
 
     existing_for_run = next((m for m in markers if m.run_id == run_id), None)
     if existing_for_run is not None:
@@ -429,6 +493,8 @@ async def _write_version_marker(
         research_mode=_MODE,
     )
     marker = stamp_reuse(marker, workspace_id=workspace_id, policy=CLIENT_KNOWLEDGE_REUSE_POLICY)
+    if product_id is not None:
+        marker = marker.model_copy(update={"product_id": product_id})
 
     current_marker = next((m for m in markers if m.superseded_by is None), None)
     if current_marker is not None:
@@ -451,7 +517,11 @@ def _marker_version(claim: Claim) -> int:
 
 
 async def current_kb_version(
-    conn: AsyncConnection, client_entity_id: EntityId, *, workspace_id: str
+    conn: AsyncConnection,
+    client_entity_id: EntityId,
+    *,
+    workspace_id: str,
+    product_id: str | None = None,
 ) -> int | None:
     """The current Client Knowledge Base version (the non-superseded marker), or ``None`` if the
     client has never been reverse-profiled."""
@@ -462,6 +532,8 @@ async def current_kb_version(
         include_superseded=False,
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
+    if product_id is not None:
+        markers = [marker for marker in markers if marker.product_id == product_id]
     versions = [_marker_version(m) for m in markers]
     return max(versions) if versions else None
 
@@ -472,6 +544,7 @@ async def _pinned_marker(
     *,
     scope: WorkspaceScope,
     version: int | None,
+    product_id: str | None,
 ) -> Claim | None:
     """The ``client.kb_version`` marker pinning a KB version (latest when ``version is None``), or
     ``None`` if the client has never been profiled / the asked-for version does not exist. The one
@@ -479,6 +552,8 @@ async def _pinned_marker(
     markers = await claims_for(
         conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope
     )
+    if product_id is not None:
+        markers = [marker for marker in markers if marker.product_id == product_id]
     if not markers:
         return None
     if version is None:
@@ -492,11 +567,18 @@ async def _pinned_field_claims(
     *,
     scope: WorkspaceScope,
     version: int | None,
+    product_id: str | None,
 ) -> dict[str, Claim]:
     """The Client Knowledge Base as ``{field_key: winning Claim}`` for a version (the latest claim
     per field written by the pinned version's run). Version-scoped exactly like
     :func:`read_client_kb` (a field the run did not (re-)derive is absent)."""
-    marker = await _pinned_marker(conn, client_entity_id, scope=scope, version=version)
+    marker = await _pinned_marker(
+        conn,
+        client_entity_id,
+        scope=scope,
+        version=version,
+        product_id=product_id,
+    )
     if marker is None:
         return {}
     run_id = marker.run_id
@@ -506,6 +588,7 @@ async def _pinned_field_claims(
             claim.run_id == run_id
             and claim.field_key in CLIENT_KNOWLEDGE_FIELDS
             and claim.field_key not in pinned
+            and (product_id is None or claim.product_id == product_id)
         ):
             pinned[claim.field_key] = claim
     return pinned
@@ -517,6 +600,7 @@ async def read_client_kb(
     *,
     workspace_id: str,
     version: int | None = None,
+    product_id: str | None = None,
 ) -> dict[str, JsonValue]:
     """Read the Client Knowledge Base as a ``{field_key: value}`` map, **scoped to a KB version**.
 
@@ -529,7 +613,13 @@ async def read_client_kb(
     value forward under trust+freshness until its TTL ages it out; this read is version-correct.
     Both paths read with ``include_superseded`` so a prior version stays queryable (append-only)."""
     scope = WorkspaceScope.for_workspace(workspace_id)
-    pinned = await _pinned_field_claims(conn, client_entity_id, scope=scope, version=version)
+    pinned = await _pinned_field_claims(
+        conn,
+        client_entity_id,
+        scope=scope,
+        version=version,
+        product_id=product_id,
+    )
     return {field_key: claim.value_json for field_key, claim in pinned.items()}
 
 
@@ -539,6 +629,7 @@ async def read_client_kb_claims(
     *,
     workspace_id: str,
     version: int | None = None,
+    product_id: str | None = None,
 ) -> dict[str, Claim]:
     """Like :func:`read_client_kb`, but returns the underlying ``{field_key: Claim}`` for a version.
 
@@ -546,4 +637,10 @@ async def read_client_kb_claims(
     the client fact that justifies it (``justifying_claim_ids`` — no proposal element justified by
     "synthesis thought it was a good idea"). Same version-scoping as :func:`read_client_kb`."""
     scope = WorkspaceScope.for_workspace(workspace_id)
-    return await _pinned_field_claims(conn, client_entity_id, scope=scope, version=version)
+    return await _pinned_field_claims(
+        conn,
+        client_entity_id,
+        scope=scope,
+        version=version,
+        product_id=product_id,
+    )
