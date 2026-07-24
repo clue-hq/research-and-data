@@ -159,6 +159,10 @@ class ToolInvoker:
         self._idempotency_ttl_s = idempotency_ttl_s
         self._crash_hook = crash_hook
 
+    def descriptor(self, name: str, version: str | None = None) -> ToolDescriptor:
+        """Resolve the exact descriptor used by durable graph materialization."""
+        return self._registry.descriptor(name, version)
+
     async def invoke(
         self,
         name: str,

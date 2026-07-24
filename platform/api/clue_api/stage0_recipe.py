@@ -1,94 +1,350 @@
-"""Recipe #0's narrow deterministic runner; C5 may replace it behind this shape."""
+"""C5.4 durable compatibility adapter for governed Recipe #0 interactions."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import Protocol
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from sqlalchemy import text
 
-from clue_core import operation_id_from_key
-from clue_toolbelt import (
-    ToolContext,
-    ToolInvoker,
-    ToolResult,
+from clue_core import EntityId
+from clue_db import ConnFactory
+from clue_execution import (
+    CompatibilityContext,
+    CompatibilityLoader,
+    ExecutionConflict,
+    PinRequest,
+    RecipeExecutor,
 )
+from clue_research.stage0 import current_kb_version
+from clue_toolbelt import ToolContext, ToolResult
+
+_STAGE0_SLOT = "stage0_interactions"
 
 
 class RecipeStep(BaseModel):
+    """One explicit C4 step; bodies are snapshotted, while extra pins remain references."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    step_id: str = Field(min_length=1)
+    step_id: str = Field(min_length=1, pattern=r"^[A-Za-z_][A-Za-z0-9_.-]*$")
     tool_name: str = Field(min_length=1)
     tool_version: str = Field(min_length=1)
     input_refs: dict[str, JsonValue]
     depends_on: tuple[str, ...] = ()
+    pin_requests: tuple[PinRequest, ...] = ()
 
 
 class RecipeRunner(Protocol):
     async def run_step(self, step: RecipeStep, *, ctx: ToolContext) -> ToolResult: ...
 
 
-class ToolbeltRecipeRunner:
-    """Run explicit tool steps without planning, judging sufficiency, or impersonating an agent."""
+class StepPinProvider(Protocol):
+    async def pins_for(
+        self,
+        step: RecipeStep,
+        *,
+        ctx: ToolContext,
+    ) -> tuple[PinRequest, ...]: ...
+
+
+class Stage0StepPinProvider:
+    """Freeze exact workspace-local Stage-0 refs immediately before child materialization."""
 
     def __init__(
         self,
         *,
-        tool_invoker: ToolInvoker,
-        recipe_id: str = "recipe0@1",
+        compatibility: CompatibilityLoader,
+        conn_factory: ConnFactory,
     ) -> None:
-        self._tool_invoker = tool_invoker
-        self._recipe_id = recipe_id
+        self._compatibility = compatibility
+        self._conn_factory = conn_factory
 
-    async def run_step(self, step: RecipeStep, *, ctx: ToolContext) -> ToolResult:
-        step_ctx = replace(
-            ctx,
-            operation_id=operation_id_from_key(
-                ctx.workspace_id,
-                f"{self._recipe_id}:{step.step_id}",
-            ),
-        )
-        return await self._tool_invoker.invoke(
-            step.tool_name,
-            dict(step.input_refs),
-            step_ctx,
-            version=step.tool_version,
-            idempotency_key=f"{self._recipe_id}:{step.step_id}",
-        )
-
-    async def run(
+    async def _current(
         self,
-        steps: Sequence[RecipeStep],
+        *,
+        kind: str,
+        key: str,
+        ctx: ToolContext,
+        required: bool = True,
+    ) -> PinRequest:
+        observation = await self._compatibility.observe_current(
+            kind=kind,
+            key=key,
+            context=CompatibilityContext(workspace_id=ctx.workspace_id),
+        )
+        if observation is None:
+            if required:
+                raise ExecutionConflict(f"cannot pin missing Stage-0 resource {kind}:{key}")
+            return PinRequest(kind=kind, key=key, version="missing", required=False)
+        return PinRequest(
+            kind=kind,
+            key=key,
+            version=observation.version,
+            digest=observation.digest,
+            required=required,
+        )
+
+    async def _exact(
+        self,
+        *,
+        kind: str,
+        key: str,
+        version: str,
+        ctx: ToolContext,
+    ) -> PinRequest:
+        request = PinRequest(kind=kind, key=key, version=version)
+        report = await self._compatibility.resolve_requirements(
+            (request,),
+            context=CompatibilityContext(workspace_id=ctx.workspace_id),
+        )
+        if not report.compatible or len(report.pins) != 1:
+            reason = (
+                report.incompatibilities[0].reason if report.incompatibilities else "unresolved"
+            )
+            raise ExecutionConflict(f"cannot pin Stage-0 resource {kind}:{key}@{version}: {reason}")
+        pin = report.pins[0]
+        return PinRequest(
+            kind=kind,
+            key=key,
+            version=pin.version,
+            digest=pin.digest,
+        )
+
+    async def pins_for(
+        self,
+        step: RecipeStep,
         *,
         ctx: ToolContext,
-    ) -> Mapping[str, ToolResult]:
-        """Topologically execute explicit steps and refuse cycles/missing dependencies."""
-        by_id = {step.step_id: step for step in steps}
-        if len(by_id) != len(steps):
-            raise ValueError("Recipe #0 step ids must be unique")
-        missing = {
-            dependency
-            for step in steps
-            for dependency in step.depends_on
-            if dependency not in by_id
-        }
-        if missing:
-            raise ValueError(f"Recipe #0 has missing dependencies: {sorted(missing)}")
-        results: dict[str, ToolResult] = {}
-        while len(results) < len(steps):
-            ready = [
-                step
-                for step in steps
-                if step.step_id not in results
-                and all(dependency in results for dependency in step.depends_on)
-            ]
-            if not ready:
-                raise ValueError("Recipe #0 dependency graph contains a cycle")
-            for step in ready:
-                results[step.step_id] = await self.run_step(step, ctx=ctx)
-        return results
+    ) -> tuple[PinRequest, ...]:
+        body = step.input_refs
+        requested: list[PinRequest] = list(step.pin_requests)
+
+        artifact_pairs: set[tuple[str, str]] = set()
+        artifact_key = body.get("artifact_key")
+        content_sha256 = body.get("content_sha256")
+        if isinstance(artifact_key, str) and isinstance(content_sha256, str):
+            artifact_pairs.add((artifact_key, content_sha256))
+        elif isinstance(artifact_key, str):
+            requested.append(
+                await self._current(
+                    kind="artifact_input",
+                    key=artifact_key,
+                    ctx=ctx,
+                )
+            )
+        onboarding_ids = body.get("onboarding_input_ids")
+        if isinstance(onboarding_ids, list) and onboarding_ids:
+            async with self._conn_factory() as conn:
+                rows = (
+                    await conn.execute(
+                        text(
+                            """
+                                SELECT artifact_key, content_sha256
+                                FROM onboarding_input
+                                WHERE workspace_id = :workspace_id
+                                  AND id = ANY(CAST(:ids AS uuid[]))
+                                """
+                        ),
+                        {"workspace_id": ctx.workspace_id, "ids": onboarding_ids},
+                    )
+                ).all()
+            if len(rows) != len(set(onboarding_ids)):
+                raise ExecutionConflict(
+                    "one or more onboarding inputs are absent from this workspace"
+                )
+            artifact_pairs.update((str(row[0]), str(row[1])) for row in rows)
+        for key, digest in sorted(artifact_pairs):
+            requested.append(PinRequest(kind="artifact_input", key=key, digest=digest))
+
+        for field, kind in (
+            ("brand_id", "brand"),
+            ("product_id", "product"),
+            ("project_id", "project"),
+        ):
+            value = body.get(field)
+            if isinstance(value, str):
+                requested.append(await self._current(kind=kind, key=value, ctx=ctx))
+
+        if step.tool_name == "start_recon":
+            requested.extend(
+                (
+                    await self._current(
+                        kind="field_registry",
+                        key="__all_active__",
+                        ctx=ctx,
+                    ),
+                    await self._current(
+                        kind="source_registry",
+                        key="__all_active__",
+                        ctx=ctx,
+                    ),
+                )
+            )
+
+        if step.tool_name in {"synthesize_icps", "confirm_icp"}:
+            requested.append(
+                await self._current(
+                    kind="field_registry",
+                    key="__all_active__",
+                    ctx=ctx,
+                )
+            )
+        if step.tool_name == "synthesize_icps":
+            requested.append(
+                await self._current(
+                    kind="model_prompt",
+                    key="stage0-icp-synthesis",
+                    ctx=ctx,
+                )
+            )
+        if step.tool_name == "confirm_icp":
+            proposal = body.get("proposal")
+            pack_key = proposal.get("pack_key") if isinstance(proposal, dict) else None
+            if not isinstance(pack_key, str):
+                raise ExecutionConflict("confirm_icp requires a proposal pack_key pin")
+            requested.append(await self._current(kind="source_profile", key=pack_key, ctx=ctx))
+
+        client_entity_id = body.get("client_entity_id")
+        client_kb_version = body.get("client_kb_version", body.get("kb_version"))
+        product_id = body.get("product_id")
+        if (
+            step.tool_name in {"synthesize_icps", "confirm_icp"}
+            and isinstance(client_entity_id, str)
+            and not isinstance(client_kb_version, int)
+        ):
+            try:
+                entity_id = EntityId(UUID(client_entity_id))
+            except ValueError as exc:
+                raise ExecutionConflict("client_entity_id is malformed") from exc
+            async with self._conn_factory() as conn:
+                client_kb_version = await current_kb_version(
+                    conn,
+                    entity_id,
+                    workspace_id=ctx.workspace_id,
+                    product_id=product_id if isinstance(product_id, str) else None,
+                )
+            if client_kb_version is None:
+                raise ExecutionConflict("cannot pin a missing Client Knowledge Base")
+        if isinstance(client_entity_id, str) and isinstance(client_kb_version, int):
+            requested.append(
+                await self._exact(
+                    kind="client_kb",
+                    key=f"{client_entity_id}|{product_id if isinstance(product_id, str) else '-'}",
+                    version=str(client_kb_version),
+                    ctx=ctx,
+                )
+            )
+
+        product_context_id = body.get("product_context_version_id")
+        if isinstance(product_context_id, str):
+            requested.append(
+                await self._current(
+                    kind="product_context",
+                    key=product_context_id,
+                    ctx=ctx,
+                )
+            )
+
+        readiness_decision_id = body.get("readiness_decision_id")
+        if isinstance(readiness_decision_id, str):
+            requested.append(
+                await self._current(
+                    kind="readiness_decision",
+                    key=readiness_decision_id,
+                    ctx=ctx,
+                )
+            )
+
+        icp_key = body.get("icp_key")
+        icp_version = body.get("icp_version")
+        if isinstance(icp_key, str) and isinstance(icp_version, int):
+            requested.append(
+                await self._exact(
+                    kind="icp",
+                    key=icp_key,
+                    version=str(icp_version),
+                    ctx=ctx,
+                )
+            )
+
+        optional_missing_kinds = {
+            "submit_onboarding_input": {
+                "product": body.get("product_id"),
+                "project": body.get("project_id"),
+            },
+            "evaluate_stage0_readiness": {
+                "product_context": body.get("product_context_version_id"),
+                "client_kb": body.get("client_kb_version"),
+                "icp": body.get("icp_key"),
+            },
+        }.get(step.tool_name, {})
+        present_kinds = {item.kind for item in requested}
+        for kind, value in optional_missing_kinds.items():
+            if value is None and kind not in present_kinds:
+                requested.append(
+                    PinRequest(
+                        kind=kind,
+                        key="__not_supplied__",
+                        version="missing",
+                        required=False,
+                    )
+                )
+
+        deduped: dict[tuple[str, str], PinRequest] = {}
+        for item in requested:
+            identity = (item.kind, item.key)
+            existing = deduped.get(identity)
+            if existing is not None and existing != item:
+                raise ExecutionConflict(
+                    f"conflicting Stage-0 pin requests for {item.kind}:{item.key}"
+                )
+            deduped[identity] = item
+        return tuple(deduped[identity] for identity in sorted(deduped))
 
 
-__all__ = ["RecipeRunner", "RecipeStep", "ToolbeltRecipeRunner"]
+class ToolbeltRecipeRunner:
+    """Submit one C4 step as a bounded Recipe-#0 child and execute it through C5's journal."""
+
+    def __init__(
+        self,
+        *,
+        executor: RecipeExecutor,
+        pin_provider: StepPinProvider,
+        slot_key: str = _STAGE0_SLOT,
+    ) -> None:
+        self._executor = executor
+        self._pin_provider = pin_provider
+        self._slot_key = slot_key
+
+    async def run_step(self, step: RecipeStep, *, ctx: ToolContext) -> ToolResult:
+        if ctx.execution_id is None:
+            raise ValueError("durable Recipe #0 steps require ctx.execution_id")
+        pins = await self._pin_provider.pins_for(step, ctx=ctx)
+        appended = await self._executor.append_interaction_tool(
+            execution_id=ctx.execution_id,
+            workspace_id=ctx.workspace_id,
+            slot_key=self._slot_key,
+            node_key=step.step_id,
+            tool_name=step.tool_name,
+            tool_version=step.tool_version,
+            inputs=step.input_refs,
+            actor=ctx.actor,
+            dependencies=step.depends_on,
+            pin_requests=pins,
+        )
+        return await self._executor.invoke_interaction_tool(
+            appended,
+            inputs=step.input_refs,
+            actor=ctx.actor,
+        )
+
+
+__all__ = [
+    "RecipeRunner",
+    "RecipeStep",
+    "Stage0StepPinProvider",
+    "StepPinProvider",
+    "ToolbeltRecipeRunner",
+]
