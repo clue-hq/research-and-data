@@ -70,7 +70,7 @@ As of `platform/workspace-restructure` at merge commit `8864573`:
 - no live composition-root registration of the Stage-0 scrape resolver;
 - no recon-brief/fork-card projection;
 - no coverage-attempt ledger or terminal-gap record;
-- no goal-judge retry loop;
+- no durable coverage-round evaluator;
 - no readiness-spec versions or recorded override;
 - no `client_interview` source/resolver;
 - no `volunteered_statement` preservation path;
@@ -309,7 +309,7 @@ binding on all four child specs:
 **Exit gate:** the four child specs can be implemented without any lane editing another lane's
 owned package or independently defining the same domain shape. **Closed 2026-07-24.**
 
-### C1 — coverage ledger + goal-judge loop (REQ-04)
+### C1 — coverage ledger + goal evaluation (REQ-04)
 
 **Goal.** Make every research attempt, retry, stop reason, and terminal gap durable and visible.
 
@@ -324,8 +324,11 @@ owned package or independently defining the same domain shape. **Closed 2026-07-
 - idempotency on the full round key;
 - evaluation/golden set for retry usefulness, stop correctness, and gap honesty.
 
-**Authority boundary:** the judge proposes a typed next-gap set. Engine code decides whether a
-round is allowed and enforces budget/backstops.
+**Authority boundary:** the governed research agent chooses the next gap set and strategy. The
+bounded goal evaluator independently challenges whether meaningful gaps remain and returns typed
+advice only. Engine code validates the request, decides whether a round is permitted, verifies
+promotable evidence, and enforces budget/backstops. C1 ships the substrate before C6 connects the
+agent; that sequencing does not transfer planning authority to the evaluator.
 
 **Exit gates:**
 
@@ -539,7 +542,7 @@ All branch from the same reviewed C0 head and integrate back into
 
 | Lane | Owns | Must not independently define |
 |---|---|---|
-| C1 | coverage attempts, terminal gaps, goal-judge/controller, coverage projections | proposal, ingestion, onboarding/readiness schemas |
+| C1 | coverage attempts, terminal gaps, goal-evaluator/enforcement controller, coverage projections | proposal, ingestion, onboarding/readiness schemas |
 | C2 | field/source proposals, promotion policy, generic web resolver | coverage, ingestion, interview/readiness schemas |
 | C3 | ingestion jobs, file adapters, artifact-to-segment/claim flow | coverage, proposal, interview/readiness schemas |
 | C4 | onboarding input, interview source, readiness, recon, Recipe #0, Stage-0 projections | alternate coverage/proposal/ingestion stores |
@@ -630,7 +633,7 @@ These are deliberately not guessed in the parent plan:
 4. exact fast/background recon envelopes and abuse limits;
 5. which tier-3 source promotions may auto-approve by policy;
 6. first supported OCR engine and file-size/page limits;
-7. goal-judge model/rubric and promotion thresholds;
+7. goal-evaluator model/rubric and advisory calibration thresholds;
 8. Recipe-#0 minimal runner representation before C5 generalization;
 9. product-context pinning migration shape;
 10. which C6 subagent profiles ship in the first vertical slice.

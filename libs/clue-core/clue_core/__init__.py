@@ -14,6 +14,15 @@ from __future__ import annotations
 
 from clue_core.claim import Claim, DiscoveryProvenance, can_be_promoted, reference_time
 from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
+from clue_core.coverage import (
+    CoverageAttemptId,
+    CoverageDecisionId,
+    ResearchAttemptOutcome,
+    ResearchGapRef,
+    ResearchTerminalStatus,
+    new_coverage_attempt_id,
+    new_coverage_decision_id,
+)
 from clue_core.entity import AccountEntity, ContactEntity, Entity
 from clue_core.enums import (
     AccountStatus,
@@ -247,6 +256,13 @@ __all__ = [
     "CostCents",
     "UnitInterval",
     "UtcDatetime",
+    "CoverageAttemptId",
+    "CoverageDecisionId",
+    "new_coverage_attempt_id",
+    "new_coverage_decision_id",
+    "ResearchAttemptOutcome",
+    "ResearchTerminalStatus",
+    "ResearchGapRef",
     # enums
     "EntityType",
     "ExtractionMethod",
