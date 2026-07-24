@@ -47,7 +47,7 @@ from clue_core import (
     parse_cost_cents,
 )
 from clue_core.idempotency import phase_key
-from clue_db import transaction
+from clue_db import ConnFactory, transaction
 from clue_obs.otel import (
     ATTR_PROJECT_RUN_ID,
     apply_attributes,
@@ -156,6 +156,7 @@ class ProjectRunStore(Protocol):
         self,
         *,
         project_run_id: ProjectRunId,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
@@ -211,20 +212,28 @@ class DbProjectRunStore:
     recovered idempotently. ``adjust`` updates the run field(s) **and** journals each change in one
     transaction (atomic + audited)."""
 
+    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+        # B4 slice-2 (S6): an injectable ``ConnFactory`` so a test/toolbelt composition can
+        # bind a savepoint-scoped factory; defaults to the process ``transaction`` (the
+        # production path, byte-identical behaviour).
+        self._conn_factory = conn_factory
+
     async def create(
         self,
         *,
         project_run_id: ProjectRunId,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
         budget_cap_cents: CostCents | None,
         tier_cutoffs: TierCutoffs,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await ensure_project_run(
                 conn,
                 project_run_id=project_run_id,
+                project_id=project_id,
                 workspace_id=workspace_id,
                 icp_key=icp_key,
                 icp_version=icp_version,
@@ -233,13 +242,13 @@ class DbProjectRunStore:
             )
 
     async def get(self, project_run_id: ProjectRunId) -> ProjectRunRow | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_project_run(conn, project_run_id)
 
     async def transition(
         self, project_run_id: ProjectRunId, *, phase: ProjectPhase, status: ProjectRunStatus
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_phase(conn, project_run_id, phase=phase, status=status)
 
     async def mark_status(
@@ -250,7 +259,7 @@ class DbProjectRunStore:
         stamp_paused: bool = False,
         stamp_resumed: bool = False,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await set_run_status(
                 conn,
                 project_run_id,
@@ -268,7 +277,7 @@ class DbProjectRunStore:
         status: PhaseCheckpointStatus,
         payload: dict[str, JsonValue],
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await upsert_checkpoint(
                 conn,
                 project_run_id=project_run_id,
@@ -281,7 +290,7 @@ class DbProjectRunStore:
     async def get_checkpoint(
         self, project_run_id: ProjectRunId, phase: ProjectPhase
     ) -> ProjectPhaseCheckpointRow | None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             return await get_checkpoint(conn, project_run_id, phase)
 
     async def adjust(
@@ -292,7 +301,7 @@ class DbProjectRunStore:
         budget_cap_cents: CostCents | None = None,
         tier_cutoffs: TierCutoffs | None = None,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             if icp_version is not None:
                 await set_icp_version(conn, project_run_id, icp_version)
                 await insert_adjustment(
@@ -371,6 +380,7 @@ class ProjectRun:
     async def start(
         self,
         *,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
@@ -378,12 +388,15 @@ class ProjectRun:
         tier_cutoffs: TierCutoffs | None = None,
         project_run_id: ProjectRunId | None = None,
     ) -> ProjectRunId:
-        """Create a project run at the first phase (``reverse_profiling``, ``ACTIVE``) and return
-        its id. Idempotent on a supplied ``project_run_id`` (a re-``start`` never resets a run that
-        already advanced), so the caller can mint the id and retry safely."""
+        """Create a run for ``project_id`` at ``reverse_profiling`` and return its id.
+
+        The store validates that the project belongs to ``workspace_id`` and derives the pinned
+        sender brand from it. Idempotent on a supplied ``project_run_id`` (a re-``start`` never
+        resets a run that already advanced), so the caller can mint the id and retry safely."""
         run_id = project_run_id if project_run_id is not None else new_project_run_id()
         await self._store.create(
             project_run_id=run_id,
+            project_id=project_id,
             workspace_id=workspace_id,
             icp_key=icp_key,
             icp_version=icp_version,
@@ -707,11 +720,14 @@ class ProjectRun:
         return decision.verdict is BudgetVerdict.GRACEFUL_STOP
 
     def _phase_context(self, run: ProjectRunRow) -> PhaseContext:
-        """Build the frozen :class:`~clue_core.PhaseContext` for the run's current phase —
-        identifies the run + active ICP version; tier cutoffs ride ``params`` (the phase-specific
-        escape hatch) so adding one never forces a ``core`` change."""
+        """Build the frozen context with the run's pinned project, brand, and active ICP version.
+
+        Tier cutoffs ride ``params`` (the phase-specific escape hatch) so adding one never forces a
+        ``core`` change."""
         return PhaseContext(
             project_run_id=run.id,
+            project_id=run.project_id,
+            brand_id=run.brand_id,
             phase=run.phase,
             workspace_id=run.workspace_id,
             icp_key=run.icp_key,

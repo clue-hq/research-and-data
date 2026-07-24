@@ -88,6 +88,7 @@ from clue_research.narrative.positioner import (
     COVERAGE_NO_CLIENT_KNOWLEDGE,
 )
 from clue_research.verification import FaithfulnessJudgeImpl
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -245,8 +246,13 @@ def _judge(conn: AsyncConnection, verdict_text: str = _SUPPORTED) -> Faithfulnes
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, "tenant-a")
     return await insert_account_entity(
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id="tenant-a",
     )
 
 

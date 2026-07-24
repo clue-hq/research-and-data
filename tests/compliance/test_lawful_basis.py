@@ -43,6 +43,7 @@ from clue_research.compliance import (
     third_party_notice_report,
 )
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -334,8 +335,13 @@ def _make_facet(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme GmbH", primary_domain="acme.de", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme GmbH",
+        primary_domain="acme.de",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

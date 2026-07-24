@@ -58,7 +58,7 @@ def _all_justifying(proposal: ICPProposal) -> set[object]:
 
 def test_floor_proposal_has_all_six_elements() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref = await build_client_kb(
                 conn, workspace_id=_CLIENT, suffix="floor", asserted=_ASSERTED
             )
@@ -81,7 +81,7 @@ def test_floor_proposal_has_all_six_elements() -> None:
 
 def test_floor_justifying_ids_are_real_client_claims() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref = await build_client_kb(
                 conn, workspace_id=_CLIENT, suffix="just", asserted=_ASSERTED
             )
@@ -153,7 +153,7 @@ def _two_icp_json() -> str:
 
 def test_llm_multi_icp_split_and_config_bounding() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref = await build_client_kb(
                 conn, workspace_id=_CLIENT, suffix="multi", asserted=_ASSERTED
             )
@@ -184,7 +184,7 @@ def test_llm_multi_icp_split_and_config_bounding() -> None:
 
 def test_llm_failure_degrades_to_floor() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref = await build_client_kb(
                 conn, workspace_id=_CLIENT, suffix="fail", asserted=_ASSERTED
             )

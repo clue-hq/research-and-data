@@ -33,6 +33,7 @@ from clue_research.identity.embedding import (
     vector_literal,
 )
 from clue_research.identity.entities import (
+    CrossWorkspaceMergeError,
     MergeCycleError,
     UnknownEntityTypeError,
     contact_ids_for_account,
@@ -78,7 +79,6 @@ from clue_research.identity.resolve import (
 from clue_research.identity.reuse import (
     classify_reuse_scope,
     dsar_private_claims,
-    reusable_public_value,
     stamp_reuse,
 )
 from clue_research.identity.review import (
@@ -89,6 +89,7 @@ from clue_research.identity.review import (
     ReviewResolution,
     ReviewStatus,
     ReviewTask,
+    ReviewTaskUnscopedError,
     auto_merge,
     current_value_resolved,
     disposition,
@@ -119,6 +120,7 @@ __all__ = [
     "surviving_id",
     "MergeCycleError",
     "UnknownEntityTypeError",
+    "CrossWorkspaceMergeError",
     # normalizers (M2.1, shared with M2.2)
     "registrable_domain",
     "normalize_name",
@@ -161,11 +163,12 @@ __all__ = [
     "ReviewTask",
     "ReviewStatus",
     "ReviewResolution",
+    "ReviewTaskUnscopedError",
     "MergeConflictError",
-    # cross-tenant reuse + isolation (M2.5)
+    # reuse-scope privacy classification + isolation (M2.5; cross-tenant amortization retired
+    # [B3×research] 2026-07-23 — accounts are workspace-local)
     "classify_reuse_scope",
     "stamp_reuse",
-    "reusable_public_value",
     "dsar_private_claims",
     "ReusePolicy",
     "DEFAULT_REUSE_POLICY",

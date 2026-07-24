@@ -400,6 +400,8 @@ def run_row(
     now = _now()
     return ProjectRunRow(
         id=project_run_id,
+        project_id="prj-fleet-test",
+        brand_id="brd-fleet-test",
         workspace_id="ws-fleet-test",
         icp_key="icp",
         icp_version=1,

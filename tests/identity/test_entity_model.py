@@ -32,6 +32,7 @@ from clue_research.identity import (
     resolve_alias,
     surviving_id,
 )
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -55,6 +56,7 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                         "registry_ids",
                         "status",
                         "merged_into",
+                        "workspace_id",
                         "created_at",
                         "updated_at",
                     },
@@ -72,6 +74,7 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                         "jurisdiction",
                         "status",
                         "merged_into",
+                        "workspace_id",
                         "created_at",
                         "updated_at",
                     },
@@ -90,6 +93,22 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                     ).all()
                 }
                 assert expected <= cols, f"{table} missing columns: {expected - cols}"
+                if table == "account_entity":
+                    assert "brand_id" not in cols
+
+            account_constraints = {
+                row[0]
+                for row in (
+                    await conn.execute(
+                        text(
+                            "SELECT conname FROM pg_constraint "
+                            "WHERE conrelid = 'account_entity'::regclass"
+                        )
+                    )
+                ).all()
+            }
+            assert "account_entity_brand_fk" not in account_constraints
+            assert "account_entity_brand_needs_workspace" not in account_constraints
 
     run_async(_run())
 
@@ -120,14 +139,15 @@ def test_duplicate_normalized_primary_domain_violates_unique() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="https://www.acme.com/"
+                conn, canonical_name="Acme", primary_domain="https://www.acme.com/", workspace_id=ws
             )
             trans = await conn.begin_nested()
             with pytest.raises(IntegrityError):
                 # Different surface form, same registrable domain → same normalized key.
                 await insert_account_entity(
-                    conn, canonical_name="Acme Corp", primary_domain="ACME.COM"
+                    conn, canonical_name="Acme Corp", primary_domain="ACME.COM", workspace_id=ws
                 )
             await trans.rollback()
 
@@ -139,13 +159,17 @@ def test_duplicate_registry_duns_violates_unique() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             await insert_account_entity(
-                conn, canonical_name="Acme", registry_ids={"DUNS": "12-345-6789"}
+                conn, canonical_name="Acme", registry_ids={"DUNS": "12-345-6789"}, workspace_id=ws
             )
             trans = await conn.begin_nested()
             with pytest.raises(IntegrityError):
                 await insert_account_entity(
-                    conn, canonical_name="Other", registry_ids={"duns": "123456789"}
+                    conn,
+                    canonical_name="Other",
+                    registry_ids={"duns": "123456789"},
+                    workspace_id=ws,
                 )
             await trans.rollback()
 
@@ -157,8 +181,9 @@ def test_null_strong_keys_allowed_for_candidates() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            a = await insert_account_entity(conn, canonical_name="Candidate One")
-            b = await insert_account_entity(conn, canonical_name="Candidate Two")
+            ws = await seed_workspace(conn)
+            a = await insert_account_entity(conn, canonical_name="Candidate One", workspace_id=ws)
+            b = await insert_account_entity(conn, canonical_name="Candidate Two", workspace_id=ws)
             assert a != b
             assert (await get_account(conn, a)) is not None
             assert (await get_account(conn, b)) is not None
@@ -171,9 +196,10 @@ def test_surviving_id_follows_three_hop_chain() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            a = await insert_account_entity(conn, canonical_name="A")
-            b = await insert_account_entity(conn, canonical_name="B")
-            c = await insert_account_entity(conn, canonical_name="C")
+            ws = await seed_workspace(conn)
+            a = await insert_account_entity(conn, canonical_name="A", workspace_id=ws)
+            b = await insert_account_entity(conn, canonical_name="B", workspace_id=ws)
+            c = await insert_account_entity(conn, canonical_name="C", workspace_id=ws)
             await mark_merged(conn, EntityType.ACCOUNT, a, b)
             await mark_merged(conn, EntityType.ACCOUNT, b, c)
             assert await surviving_id(conn, a, EntityType.ACCOUNT) == c
@@ -188,8 +214,9 @@ def test_surviving_id_rejects_a_cycle() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            a = await insert_account_entity(conn, canonical_name="A")
-            b = await insert_account_entity(conn, canonical_name="B")
+            ws = await seed_workspace(conn)
+            a = await insert_account_entity(conn, canonical_name="A", workspace_id=ws)
+            b = await insert_account_entity(conn, canonical_name="B", workspace_id=ws)
             await mark_merged(conn, EntityType.ACCOUNT, a, b)
             await mark_merged(conn, EntityType.ACCOUNT, b, a)  # closes the cycle
             with pytest.raises(MergeCycleError):
@@ -203,7 +230,8 @@ def test_self_merge_rejected_at_write_time() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            a = await insert_account_entity(conn, canonical_name="A")
+            ws = await seed_workspace(conn)
+            a = await insert_account_entity(conn, canonical_name="A", workspace_id=ws)
             trans = await conn.begin_nested()
             with pytest.raises(IntegrityError):
                 await conn.execute(
@@ -238,7 +266,8 @@ def test_contact_strong_keys_unique_when_present() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            account = await insert_account_entity(conn, canonical_name="Acme")
+            ws = await seed_workspace(conn)
+            account = await insert_account_entity(conn, canonical_name="Acme", workspace_id=ws)
             await insert_contact_entity(
                 conn,
                 account_entity_id=account,
@@ -269,22 +298,27 @@ def test_resolve_alias_by_domain_name_and_unknown() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             account = await insert_account_entity(
                 conn,
                 canonical_name="Acme Incorporated",
                 primary_domain="acme.com",
                 aliases=["Acme Labs"],
+                workspace_id=ws,
             )
             acct = EntityType.ACCOUNT
             # Domain hit (different surface form).
-            assert await resolve_alias(conn, "https://acme.com/contact", acct) == account
+            assert (
+                await resolve_alias(conn, "https://acme.com/contact", acct, workspace_id=ws)
+                == account
+            )
             # Name-key hit on the canonical name (legal suffix stripped).
-            assert await resolve_alias(conn, "ACME inc", acct) == account
+            assert await resolve_alias(conn, "ACME inc", acct, workspace_id=ws) == account
             # Alias hit.
-            assert await resolve_alias(conn, "Acme Labs", acct) == account
+            assert await resolve_alias(conn, "Acme Labs", acct, workspace_id=ws) == account
             # Unknown → None (no fuzzy fallback at this issue).
-            assert await resolve_alias(conn, "Globex", acct) is None
-            assert await resolve_alias(conn, "unknown.example", acct) is None
+            assert await resolve_alias(conn, "Globex", acct, workspace_id=ws) is None
+            assert await resolve_alias(conn, "unknown.example", acct, workspace_id=ws) is None
 
     run_async(_run())
 
@@ -294,14 +328,18 @@ def test_resolve_alias_follows_merge_to_survivor() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            ws = await seed_workspace(conn)
             loser = await insert_account_entity(
-                conn, canonical_name="Old Acme", aliases=["oldacme"]
+                conn, canonical_name="Old Acme", aliases=["oldacme"], workspace_id=ws
             )
             survivor = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=ws
             )
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
-            assert await resolve_alias(conn, "oldacme", EntityType.ACCOUNT) == survivor
+            assert (
+                await resolve_alias(conn, "oldacme", EntityType.ACCOUNT, workspace_id=ws)
+                == survivor
+            )
 
     run_async(_run())
 
@@ -311,15 +349,18 @@ def test_get_entity_returns_typed_record_and_surfaces_merged_into() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
-            survivor = await insert_account_entity(conn, canonical_name="Survivor")
-            loser = await insert_account_entity(conn, canonical_name="Loser")
+            ws = await seed_workspace(conn)
+            survivor = await insert_account_entity(conn, canonical_name="Survivor", workspace_id=ws)
+            loser = await insert_account_entity(conn, canonical_name="Loser", workspace_id=ws)
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
 
             acct = await get_entity(conn, loser, EntityType.ACCOUNT)
             assert acct is not None and acct.status is AccountStatus.MERGED
             assert acct.merged_into == survivor  # the read surfaces it, does not follow it
 
-            contact_account = await insert_account_entity(conn, canonical_name="Acme")
+            contact_account = await insert_account_entity(
+                conn, canonical_name="Acme", workspace_id=ws
+            )
             contact = await insert_contact_entity(
                 conn,
                 account_entity_id=contact_account,

@@ -183,7 +183,11 @@ async def import_accounts(
                     )
                 )
 
-        results = await resolve_many(conn, observations) if observations else []
+        results = (
+            await resolve_many(conn, observations, workspace_id=workspace_id)
+            if observations
+            else []
+        )
 
         # In-memory strong-key index for intra-batch dedup: ``resolve_many`` resolves every row
         # *before* any disposition admits an entity, so two new rows sharing a domain/registry id
@@ -634,7 +638,7 @@ async def _resolve_and_tag_contact(
     binding = (
         IdentityBinding.STRONG if (contact.email or contact.linkedin_url) else IdentityBinding.WEAK
     )
-    contact_id = await _resolve_contact_entity(conn, contact, account_id)
+    contact_id = await _resolve_contact_entity(conn, contact, account_id, workspace_id=workspace_id)
     lawful_basis = _LAWFUL_BASIS_BY_USE_CLASS[contact.use_class]
 
     value_json: dict[str, JsonValue] = {
@@ -681,7 +685,7 @@ async def _resolve_and_tag_contact(
 
 
 async def _resolve_contact_entity(
-    conn: AsyncConnection, contact: ImportContactRow, account_id: EntityId
+    conn: AsyncConnection, contact: ImportContactRow, account_id: EntityId, *, workspace_id: str
 ) -> EntityId:
     if contact.email or contact.linkedin_url:
         result = await resolve(
@@ -692,6 +696,7 @@ async def _resolve_contact_entity(
                 verified_email=contact.email,
                 linkedin_url=contact.linkedin_url,
             ),
+            workspace_id=workspace_id,
         )
         if result.top is not None and result.top_score >= 1.0:
             return await surviving_id(conn, result.top.entity_id, EntityType.CONTACT)

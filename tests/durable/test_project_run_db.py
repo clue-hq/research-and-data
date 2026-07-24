@@ -30,12 +30,15 @@ from clue_research.durable import (
     upsert_checkpoint,
 )
 from clue_research.durable.project_run import (
+    ProjectRunIdentityConflict,
+    ProjectRunProjectNotFound,
     set_budget_cap,
     set_icp_version,
     set_phase,
     set_run_status,
     set_tier_cutoffs,
 )
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 
@@ -84,9 +87,11 @@ def test_project_run_round_trip() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "client-1")
             await ensure_project_run(
                 conn,
                 project_run_id=run_id,
+                project_id=project.project_id,
                 workspace_id="client-1",
                 icp_key="default",
                 icp_version=3,
@@ -96,6 +101,8 @@ def test_project_run_round_trip() -> None:
             row = await get_project_run(conn, run_id)
         assert row is not None
         assert row.id == run_id
+        assert row.project_id == project.project_id
+        assert row.brand_id == project.brand_id
         assert row.workspace_id == "client-1"
         assert row.icp_key == "default"
         assert row.icp_version == 3
@@ -113,12 +120,23 @@ def test_ensure_project_run_is_idempotent() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             # a second ensure with different data is a no-op (ON CONFLICT DO NOTHING)
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="b", icp_key="other", icp_version=9
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="other",
+                icp_version=9,
             )
             row = await get_project_run(conn, run_id)
         assert row is not None
@@ -128,12 +146,71 @@ def test_ensure_project_run_is_idempotent() -> None:
     run_async(_run())
 
 
+def test_ensure_project_run_rejects_missing_or_foreign_project() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "owner")
+            with pytest.raises(ProjectRunProjectNotFound, match="not found in workspace"):
+                await ensure_project_run(
+                    conn,
+                    project_run_id=new_project_run_id(),
+                    project_id="prj_missing",
+                    workspace_id="owner",
+                    icp_key="k",
+                    icp_version=1,
+                )
+            with pytest.raises(ProjectRunProjectNotFound, match="not found in workspace"):
+                await ensure_project_run(
+                    conn,
+                    project_run_id=new_project_run_id(),
+                    project_id=project.project_id,
+                    workspace_id="other",
+                    icp_key="k",
+                    icp_version=1,
+                )
+
+    run_async(_run())
+
+
+def test_ensure_project_run_rejects_idempotency_key_context_drift() -> None:
+    async def _run() -> None:
+        run_id = new_project_run_id()
+        async with rollback_conn(seed_pack=False) as conn:
+            first = await seed_project(conn, "a", name="First")
+            second = await seed_project(conn, "a", name="Second")
+            await ensure_project_run(
+                conn,
+                project_run_id=run_id,
+                project_id=first.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
+            )
+            with pytest.raises(ProjectRunIdentityConflict, match="already belongs"):
+                await ensure_project_run(
+                    conn,
+                    project_run_id=run_id,
+                    project_id=second.project_id,
+                    workspace_id="a",
+                    icp_key="k",
+                    icp_version=1,
+                )
+
+    run_async(_run())
+
+
 def test_setters_update_run_fields() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             await set_phase(conn, run_id, phase=ProjectPhase.DEEP, status=ProjectRunStatus.ACTIVE)
             await set_run_status(conn, run_id, status=ProjectRunStatus.PAUSED, stamp_paused=True)
@@ -158,8 +235,14 @@ def test_checkpoint_upsert_read_back_and_committed_at_invariant() -> None:
         phase = ProjectPhase.TIER_CHECKPOINT
         key = phase_key(run_id, phase)
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             # stage in_progress → committed_at is NULL
             await upsert_checkpoint(
@@ -226,8 +309,14 @@ def test_checkpoints_for_distinct_phases_coexist() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             for phase in (ProjectPhase.DISCOVERY, ProjectPhase.SCORING):
                 await upsert_checkpoint(
@@ -250,8 +339,14 @@ def test_adjustment_journal_append_and_list_order() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             await insert_adjustment(
                 conn, project_run_id=run_id, kind="icp_version", detail={"icp_version": 2}
@@ -274,8 +369,14 @@ def test_adjustment_journal_is_immutable() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             await insert_adjustment(
                 conn, project_run_id=run_id, kind="icp_version", detail={"icp_version": 2}
@@ -294,8 +395,14 @@ def test_adjustment_journal_rejects_delete() -> None:
     async def _run() -> None:
         run_id = new_project_run_id()
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "a")
             await ensure_project_run(
-                conn, project_run_id=run_id, workspace_id="a", icp_key="k", icp_version=1
+                conn,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id="a",
+                icp_key="k",
+                icp_version=1,
             )
             await insert_adjustment(
                 conn, project_run_id=run_id, kind="icp_version", detail={"icp_version": 2}

@@ -81,7 +81,11 @@ async def _account(
 ) -> EntityId:
     """A resolved + embedded account entity (so the customer-evidence resolver finds it)."""
     entity_id = await insert_account_entity(
-        conn, canonical_name=f"Acct {suffix}", primary_domain=domain, status=status
+        conn,
+        canonical_name=f"Acct {suffix}",
+        primary_domain=domain,
+        status=status,
+        workspace_id=_CLIENT,
     )
     await embed_account(conn, entity_id)
     return entity_id
@@ -153,7 +157,7 @@ def test_assembles_seeds_from_imports_and_customers() -> None:
     each with a seed_reason + seed_confidence (AC1)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -186,7 +190,7 @@ def test_seeds_partitioned_per_icp() -> None:
     """A customer that fits segment A but not segment B seeds only the segment-A ICP (D5)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             seg_a = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="seg_a", fit_field=_EMP
             )
@@ -220,7 +224,7 @@ def test_non_fit_import_excluded_but_kept_in_list() -> None:
     remains in the researched import list; a high-fit import is seeded."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -250,7 +254,7 @@ def test_low_resolution_confidence_customer_filtered() -> None:
     skipped[] (not guessed into a seed) — clean anchors only (AC3)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -271,7 +275,7 @@ def test_low_resolution_confidence_import_filtered() -> None:
     cleanly-resolved FIT import is kept (AC3 — clean anchors only)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -296,7 +300,7 @@ def test_import_resolving_to_client_is_not_self_seeded() -> None:
     (the M2 survivor invariant — conventions §2)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -316,7 +320,7 @@ def test_admit_unmatched_customers_mints_candidate_when_enabled() -> None:
     a name-only entry is still surfaced in skipped[] (the docstring promise) and mints nothing."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             # no fit floor → the freshly-admitted (claim-less) candidate is not gated out on fit
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP, fit_threshold=0.0
@@ -344,6 +348,31 @@ def test_admit_unmatched_customers_mints_candidate_when_enabled() -> None:
     run_async(_run())
 
 
+def test_admitted_customer_seed_is_stamped_workspace_local() -> None:
+    """[B3×research] an admitted (freshly-minted) customer seed carries the run's workspace: the
+    seed path threads ``workspace_id`` into ``_resolve_customer``'s ``insert_account_entity``, so a
+    client-asserted customer with a usable domain is admitted as a workspace-local account."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            icp = await build_confirmed_icp_on_field(
+                conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP, fit_threshold=0.0
+            )
+            kb = await _kb_with_customers(
+                conn, "wslocal", [{"name": "Fresh Co", "domain": "fresh-wslocal.example"}]
+            )
+            policy = SeedPolicy(admit_unmatched_customers=True)
+            seeds = await assemble_lookalike_seeds(conn, icp, kb, policy=policy)
+
+            assert seeds.seed_count == 1
+            (seed,) = seeds.seeds
+            account = await get_account(conn, seed.account_entity_id)
+            assert account is not None
+            assert account.workspace_id == _CLIENT
+
+    run_async(_run())
+
+
 # --- AC4: hybrid opt-out ---------------------------------------------------
 
 
@@ -352,7 +381,7 @@ def test_opt_out_yields_suppressed_seedset() -> None:
     is left intact (always-has-the-wheel, AC4)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             cust = await _account(conn, "optout", domain="optout.example")
             await _write_field(conn, cust, _EMP, 100)
@@ -378,7 +407,7 @@ def test_seed_is_resolved_entity_with_provenance_and_mock_consumer() -> None:
     marker a downstream candidate can cite; a mock M6 consumer reads the SeedSet (AC5/AC6)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -433,7 +462,7 @@ def test_entity_in_both_sources_dedups_to_stronger_anchor() -> None:
     customer (the stronger anchor), with both justifications unioned."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -463,7 +492,7 @@ def test_seeds_flow_into_proposal_confirm_and_spec() -> None:
     """
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )
@@ -511,7 +540,7 @@ def test_reassembly_is_stable() -> None:
     seed markers re-write idempotently under one stable run)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             icp = await build_confirmed_icp_on_field(
                 conn, workspace_id=_CLIENT, icp_key="primary", fit_field=_EMP
             )

@@ -109,6 +109,24 @@ from clue_api.observability_wiring import (
     build_pre_run_estimator,
     build_verification_health_reader,
 )
+from clue_api.phase_wiring import (
+    build_discovery_handler,
+    build_icp_confirmed_handler,
+    build_reverse_profiling_handler,
+    build_scoring_handler,
+    build_tier_checkpoint_handler,
+    register_discovery_handler,
+    register_icp_confirmed_handler,
+    register_reverse_profiling_handler,
+    register_scoring_handler,
+    register_tier_checkpoint_handler,
+    snapshot_bound,
+)
+from clue_api.projections_app import (
+    PROJECTIONS_SCHEMA_HEADER,
+    create_projections_app,
+    create_projections_router,
+)
 from clue_api.review import (
     DbVerificationAnnotationReader,
     NoopReviewDispositionEmitter,
@@ -126,6 +144,19 @@ from clue_api.review_feedback_wiring import (
     build_reviewed_phase_handler,
     register_reviewed_phase_handler,
 )
+from clue_api.run_composition import (
+    ClientInputProvider,
+    ComposedRun,
+    ComposingRunDriver,
+    CompositionUnavailable,
+    SpecLoader,
+)
+from clue_api.run_events_wiring import (
+    DbRunEventEmitter,
+    NullRunEventEmitter,
+    RunEventEmitter,
+    build_run_event_emitter,
+)
 from clue_api.storage_wiring import (
     DEFAULT_ORPHAN_SWEEP_GRACE,
     SnapshotBindingPhaseHandler,
@@ -134,7 +165,12 @@ from clue_api.storage_wiring import (
     build_storage_backend,
     run_orphan_blob_sweep,
 )
+from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_api.synthesis_wiring import register_synthesis_wiring
+from clue_api.toolbelt_wiring import (
+    GatewayRequired,
+    build_toolbelt,
+)
 from clue_api.verification import (
     VerificationPhaseHandler,
     build_verification_phase_handler,
@@ -229,4 +265,36 @@ __all__ = [
     "build_fleet_run_driver",
     "build_fleet_worker",
     "enqueue_run_drive",
+    # B4 slice 1: M5/M6 phase registration surfaces (phase_wiring)
+    "build_reverse_profiling_handler",
+    "register_reverse_profiling_handler",
+    "build_icp_confirmed_handler",
+    "register_icp_confirmed_handler",
+    "build_discovery_handler",
+    "register_discovery_handler",
+    "build_scoring_handler",
+    "register_scoring_handler",
+    "build_tier_checkpoint_handler",
+    "register_tier_checkpoint_handler",
+    "snapshot_bound",
+    # B4 slice 1: the fleet run-start composition (ComposingRunDriver)
+    "ComposingRunDriver",
+    "ComposedRun",
+    "CompositionUnavailable",
+    "SpecLoader",
+    "ClientInputProvider",
+    # B4 slice 2: the concrete toolbelt over the existing capabilities (toolbelt_wiring)
+    "build_toolbelt",
+    "GatewayRequired",
+    # B4 slice 3: the read-side HTTP surface (projections + tool route + manifest ops + SSE)
+    "create_projections_app",
+    "create_projections_router",
+    "PROJECTIONS_SCHEMA_HEADER",
+    # B4 slice 3: the run_event SSE emitter (drive-path write) + stream-token store
+    "RunEventEmitter",
+    "DbRunEventEmitter",
+    "NullRunEventEmitter",
+    "build_run_event_emitter",
+    "mint_stream_token",
+    "consume_stream_token",
 ]

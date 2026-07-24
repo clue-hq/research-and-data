@@ -41,6 +41,7 @@ from clue_research.claimstore import WorkspaceScope, current_value, insert_claim
 from clue_research.compliance import DataSubjectRightsImpl, RetentionSweep, UseGateImpl
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 from clue_research.verification import FaithfulnessJudgeImpl, FreshnessImpl
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -100,8 +101,13 @@ def _rights(conn: AsyncConnection) -> DataSubjectRightsImpl:
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

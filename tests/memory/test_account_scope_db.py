@@ -1,9 +1,10 @@
 """Account-scope battery (Doc M §4; founder ruling 2026-07-22 — accounts are workspace-local).
 
 Exercises the live ``account`` scope end-to-end: round-trip, its place last in stability order,
-the workspace-locality *structural* guarantees (cross-workspace / unstamped-legacy accounts die at
-the schema), per-instance reconciliation, the account store cap, the three-way cross-branch pairs,
-and cycle aging. Two-workspace isolation proves Company X in A and B is two independent stores.
+the workspace-locality *structural* guarantees (cross-workspace references and unowned accounts die
+at the schema), per-instance reconciliation, the account store cap, the three-way cross-branch
+pairs, and cycle aging. Two-workspace isolation proves Company X in A and B is two independent
+stores.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -149,15 +151,14 @@ def test_cross_workspace_account_reference_is_unrepresentable() -> None:
     run_async(scenario())
 
 
-def test_unstamped_legacy_account_cannot_own_memory() -> None:
+def test_unowned_account_is_unrepresentable() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            spine = await seed_spine(conn)
-            # A legacy/global account row (workspace_id NULL) — no global memory (fail-closed).
-            legacy = await seed_account(conn, workspace_id=None)
+            # Residual 1 is closed at the entity boundary: there is no unowned account to which
+            # global memory could ever attach.
             with pytest.raises(IntegrityError):
-                await _write_account(
-                    conn, spine.workspace_id, legacy, body="Global memory attempt."
+                await conn.execute(
+                    text("INSERT INTO account_entity (canonical_name) VALUES ('Unowned')")
                 )
 
     run_async(scenario())
@@ -211,9 +212,7 @@ def test_reconciliation_is_scoped_per_account_instance() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             spine = await seed_spine(conn)
-            account_2 = await seed_account(
-                conn, workspace_id=spine.workspace_id, brand_id=spine.brand_id
-            )
+            account_2 = await seed_account(conn, workspace_id=spine.workspace_id)
             body = "Never use fear-based hooks."
             first = await _write_account(
                 conn, spine.workspace_id, spine.account_entity_id, body=body

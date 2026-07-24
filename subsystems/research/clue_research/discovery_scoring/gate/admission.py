@@ -76,10 +76,13 @@ IMPORT_CHANNEL = "import"
 _LOCK_PREFIX = "clue:discovery-admit:"
 
 
-def _domain_lock_id(domain: str) -> EntityId:
-    """A deterministic lock id derived from a candidate's registrable domain, so two workers
-    admitting the same company contend on one Redis lock even before either entity exists."""
-    return EntityId(uuid5(NAMESPACE_URL, f"{_LOCK_PREFIX}{domain}"))
+def _domain_lock_id(workspace_id: str, domain: str) -> EntityId:
+    """A deterministic lock id derived from a candidate's ``(workspace, registrable domain)``, so
+    two workers admitting the same company *in the same workspace* contend on one Redis lock even
+    before either entity exists — while two workspaces admitting the same domain never serialize on
+    each other. Accounts are workspace-local ([B3×research]) and the DB strong-key uniqueness is
+    likewise ``(workspace_id, domain)``; a domain-only lock would serialize tenants needlessly."""
+    return EntityId(uuid5(NAMESPACE_URL, f"{_LOCK_PREFIX}{workspace_id}:{domain}"))
 
 
 def _to_observation(candidate: CandidateHypothesis) -> Observation:
@@ -181,6 +184,7 @@ async def _admit_resolved(
     observation: Observation,
     run_id: RunId,
     *,
+    workspace_id: str,
     redis: Redis | None,
     resolution_policy: ResolutionPolicy,
     disposition_policy: DispositionPolicy,
@@ -188,9 +192,17 @@ async def _admit_resolved(
 ) -> AdmissionResult:
     """Resolve the observation, route it through the M2 disposition band, and (if admitted) stamp
     the discovery-provenance claim. Run under the in-flight lock when one is held."""
-    result = await resolve(conn, observation, policy=resolution_policy, embedder=embedder)
+    result = await resolve(
+        conn, observation, policy=resolution_policy, embedder=embedder, workspace_id=workspace_id
+    )
     decision = await disposition(
-        conn, observation, result, policy=disposition_policy, redis=redis, decided_by="discovery"
+        conn,
+        observation,
+        result,
+        policy=disposition_policy,
+        redis=redis,
+        workspace_id=workspace_id,
+        decided_by="discovery",
     )
     if decision.outcome is DispositionOutcome.ENQUEUED:
         return AdmissionResult(status=AdmissionStatus.NEEDS_REVIEW, review_task_id=decision.task_id)
@@ -210,6 +222,7 @@ async def admit(
     candidate: CandidateHypothesis,
     run_id: RunId,
     *,
+    workspace_id: str,
     redis: Redis | None = None,
     existence: ExistenceCheck = DEFAULT_EXISTENCE_CHECK,
     resolution_policy: ResolutionPolicy = DEFAULT_RESOLUTION_POLICY,
@@ -237,12 +250,15 @@ async def admit(
     # (name-only) candidate takes no lock: there is no unique constraint to race on, and fuzzy
     # name dedup / the review queue is the backstop for concurrent name-only admits.
     if redis is not None and observation.domain is not None:
-        async with entity_lock(redis, EntityType.ACCOUNT, _domain_lock_id(observation.domain)):
+        async with entity_lock(
+            redis, EntityType.ACCOUNT, _domain_lock_id(workspace_id, observation.domain)
+        ):
             return await _admit_resolved(
                 conn,
                 candidate,
                 observation,
                 run_id,
+                workspace_id=workspace_id,
                 redis=redis,
                 resolution_policy=resolution_policy,
                 disposition_policy=disposition_policy,
@@ -253,6 +269,7 @@ async def admit(
         candidate,
         observation,
         run_id,
+        workspace_id=workspace_id,
         redis=redis,
         resolution_policy=resolution_policy,
         disposition_policy=disposition_policy,

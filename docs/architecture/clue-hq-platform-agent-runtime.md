@@ -119,8 +119,8 @@ An agent is precisely this assembly (the havana-proven shape, on the same stack 
    reports, previews, trace). Files are canonical; chat is a view. Live domain state (claims,
    scenes, scores) is deliberately NOT files — projections/`inspect` are the live truth.
 5. **Typed constitution state** — a small set of typed fields riding LangGraph state into every
-   mind (project_id, product_id, stage snapshot ref, budget envelope ref, profile versions,
-   focus refs). Tiny by design.
+   mind (`workspace_id`, `project_id`, the project's pinned sender `brand_id`, `product_id`, stage
+   snapshot ref, budget envelope ref, profile versions, focus refs). Tiny by design.
 6. **Skills** loaded per §1.2; **model gateway** per role (per-role model/effort overrides, output
    bounds, timeouts, retries — havana D10/L3); **append-only history** for prefix-cache stability
    (havana L1: ~95% cached prefill when history is never mutated; any in-place edit forfeits it).

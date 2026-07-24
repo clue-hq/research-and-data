@@ -62,6 +62,9 @@ from clue_research.profiling.committee.sources import CommitteePersonCandidate
 from clue_research.profiling.fields import load_deep_profiling_pack
 from clue_research.sources import RegistrySourceManifest, register_source
 
+# Accounts are workspace-local ([B3×research]): every account needs a seeded ``workspace`` row.
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
+
 # Reuse the M0.3 helpers (DRY): the single-loop coroutine runner + the reachable-DB gate.
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
@@ -200,10 +203,22 @@ async def register_facet_source(
 
 
 async def insert_test_account(
-    conn: AsyncConnection, *, name: str = "Acme Robotics", domain: str | None = "acme.example"
+    conn: AsyncConnection,
+    *,
+    name: str = "Acme Robotics",
+    domain: str | None = "acme.example",
+    workspace_id: str = DEFAULT_TEST_WORKSPACE,
 ) -> AccountEntity:
-    """Insert a resolved account entity and return its full record (the committee's parent)."""
-    account_id = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    """Insert a resolved, workspace-stamped account entity and return its full record.
+
+    Accounts are workspace-local ([B3×research]); this seeds the ``workspace`` row (idempotent) so
+    the account-entity workspace FK is satisfiable, then stamps ``workspace_id`` on the account —
+    so every committee/profiling suite that creates its account through this helper is fixed
+    centrally (and the admitted contact inherits this workspace)."""
+    await seed_workspace(conn, workspace_id)
+    account_id = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=workspace_id
+    )
     account = await get_account(conn, account_id)
     assert account is not None
     return account

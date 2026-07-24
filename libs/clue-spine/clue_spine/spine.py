@@ -1,12 +1,12 @@
-"""The object spine: workspace → brand → {product, project} (Phase A3.2).
+"""The object spine: workspace-owned brands/projects and brand-owned products (Phase A3.2).
 
 Frozen row models + plain async CRUD in the repo's raw-SQL style (the ``icp/spec.py`` pattern).
 Deliberately ceremony-free (founder ruling, 2026-07-17): one implementation will ever exist, so
 there is no protocol / repository / service layer — just functions over ``AsyncConnection``.
 
 Invalid states are impossible **by schema**, not by handler code, so constraint violations
-(second brand in a workspace; a product or project pointing at a brand/product in another
-workspace; a duplicate product name under a brand) surface as raw
+(a product or project pointing at a brand/product in another workspace; a duplicate product name
+under a brand) surface as raw
 :class:`sqlalchemy.exc.IntegrityError` — deliberately NOT caught or wrapped here: the DB
 constraint IS the enforcement.
 
@@ -60,7 +60,7 @@ class Workspace(BaseModel):
 
 
 class Brand(BaseModel):
-    """A ``brand`` row. V1: exactly one per workspace (``brand_one_per_workspace``)."""
+    """A workspace-owned brand-kit identity. A workspace may own multiple brands."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -130,8 +130,7 @@ async def get_workspace(conn: AsyncConnection, workspace_id: str) -> Workspace |
 async def create_brand(
     conn: AsyncConnection, *, workspace_id: str, name: str, brand_id: str | None = None
 ) -> Brand:
-    """Insert the workspace's brand and return it. A second brand in the same workspace violates
-    ``brand_one_per_workspace`` (IntegrityError — the V1 one-brand rule is the constraint)."""
+    """Insert a workspace-owned brand and return it."""
     result = await conn.execute(
         text(
             "INSERT INTO brand (brand_id, workspace_id, name) "
@@ -143,17 +142,29 @@ async def create_brand(
     return Brand(**dict(result.mappings().one()))
 
 
-async def get_brand_for_workspace(conn: AsyncConnection, workspace_id: str) -> Brand | None:
-    """The workspace's single brand (V1: at most one exists, by constraint)."""
+async def get_brand(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> Brand | None:
+    """Return a brand only when it belongs to ``workspace_id``."""
     result = await conn.execute(
         text(
             "SELECT brand_id, workspace_id, name, created_at FROM brand "
-            "WHERE workspace_id = :workspace_id"
+            "WHERE brand_id = :brand_id AND workspace_id = :workspace_id"
         ),
-        {"workspace_id": workspace_id},
+        {"brand_id": brand_id, "workspace_id": workspace_id},
     )
     row = result.mappings().first()
     return Brand(**dict(row)) if row is not None else None
+
+
+async def list_brands_for_workspace(conn: AsyncConnection, workspace_id: str) -> list[Brand]:
+    """Return all brands owned by a workspace, deterministically ordered."""
+    result = await conn.execute(
+        text(
+            "SELECT brand_id, workspace_id, name, created_at FROM brand "
+            "WHERE workspace_id = :workspace_id ORDER BY name, brand_id"
+        ),
+        {"workspace_id": workspace_id},
+    )
+    return [Brand(**dict(row)) for row in result.mappings().all()]
 
 
 # --- product ----------------------------------------------------------------

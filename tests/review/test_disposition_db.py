@@ -50,6 +50,7 @@ from clue_research.review import (
     read_labeled_dataset,
     tombstone_contact_dispositions,
 )
+from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.review.conftest import enum_labels, rollback_conn
 
@@ -70,18 +71,26 @@ def _now() -> datetime:
 async def _account(
     conn: AsyncConnection, *, name: str = "Acme", domain: str | None = None
 ) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
         conn,
         canonical_name=name,
         primary_domain=domain or f"{name.lower()}.com",
         status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
 async def _run(conn: AsyncConnection) -> ProjectRunId:
     rid = new_project_run_id()
+    project = await seed_project(conn, _CLIENT)
     await ensure_project_run(
-        conn, project_run_id=rid, workspace_id=_CLIENT, icp_key=_ICP_KEY, icp_version=_ICP_VERSION
+        conn,
+        project_run_id=rid,
+        project_id=project.project_id,
+        workspace_id=_CLIENT,
+        icp_key=_ICP_KEY,
+        icp_version=_ICP_VERSION,
     )
     return rid
 
@@ -322,6 +331,60 @@ def test_ingest_downstream_resolves_or_rejects_and_dedupes() -> None:
             replay = await ingest_downstream(conn, [pre_resolved])
             assert len(replay.recorded) == 1
             assert await _count(conn, "crm_ingest:client-acme:op-1:account_accepted") == 1
+
+    run_async(go())
+
+
+def test_ingest_downstream_rejects_cross_workspace_account_id() -> None:
+    """An explicit ``account_entity_id`` that belongs to *another* workspace is rejected to the
+    error queue (fail-closed), never recorded against the cross-tenant account — accounts are
+    workspace-local ([B3×research]). An in-workspace id on the same batch still records."""
+
+    async def go() -> None:
+        async with rollback_conn() as conn:
+            mine = await _account(conn, name="Acme", domain="acme.com")  # workspace = _CLIENT
+            other_ws = "client-other"
+            await seed_workspace(conn, other_ws)
+            theirs = await insert_account_entity(
+                conn,
+                canonical_name="Rival",
+                primary_domain="rival.com",
+                status=AccountStatus.ACTIVE,
+                workspace_id=other_ws,
+            )
+
+            cross = DownstreamOutcome(
+                external_id="op-cross",
+                disposition_type=DispositionType.ACCOUNT_ACCEPTED,
+                workspace_id=_CLIENT,
+                occurred_at=_now(),
+                account_entity_id=theirs,  # another workspace's account, submitted under _CLIENT
+            )
+            in_ws = DownstreamOutcome(
+                external_id="op-in",
+                disposition_type=DispositionType.ACCOUNT_ACCEPTED,
+                workspace_id=_CLIENT,
+                occurred_at=_now(),
+                account_entity_id=mine,
+            )
+
+            report = await ingest_downstream(conn, [cross, in_ws])
+
+            # the cross-workspace id is rejected (same shape as the resolve-by-name miss)…
+            assert len(report.rejected) == 1
+            assert report.rejected[0].external_id == "op-cross"
+            assert report.rejected[0].reason == "unresolved"
+            assert "workspace" in (report.rejected[0].detail or "")
+            # …while the in-workspace id on the same batch still records (behavior preserved).
+            assert len(report.recorded) == 1
+            # nothing was written against the cross-tenant account.
+            cross_rows = (
+                await conn.execute(
+                    text("SELECT count(*) FROM disposition WHERE account_entity_id = :a"),
+                    {"a": theirs},
+                )
+            ).scalar_one()
+            assert int(cross_rows) == 0
 
     run_async(go())
 

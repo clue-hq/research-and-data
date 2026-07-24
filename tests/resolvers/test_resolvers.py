@@ -396,7 +396,10 @@ def test_apollo_funding_object_writes_through_value_schema_end_to_end() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             account = AccountEntity(
-                id=new_entity_id(), canonical_name="Acme", primary_domain="acme.com"
+                id=new_entity_id(),
+                canonical_name="Acme",
+                primary_domain="acme.com",
+                workspace_id="ws-test",
             )
 
             class _Accounts:

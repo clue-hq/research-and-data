@@ -114,6 +114,8 @@ def _ctx(
 ) -> PhaseContext:
     return PhaseContext(
         project_run_id=project_run_id,
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=phase,
         workspace_id=CLIENT,
         icp_key=ICP,
@@ -149,7 +151,9 @@ async def _seed_admitted(
     funding: bool,
 ) -> EntityId:
     """An admitted account: an entity + its discovery-provenance for the run + scoring inputs."""
-    eid = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    eid = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=CLIENT
+    )
     await insert_claim(
         conn,
         discovery_claim(

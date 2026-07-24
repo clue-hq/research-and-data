@@ -240,6 +240,8 @@ def _resolver(specs: Sequence[AccountSpec]) -> HighTierResolver:
 def _ctx(campaign: ProjectRunId) -> PhaseContext:
     return PhaseContext(
         project_run_id=campaign,
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.DEEP,
         workspace_id="client-1",
         icp_key="icp-a",

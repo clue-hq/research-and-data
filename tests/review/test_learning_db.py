@@ -52,6 +52,7 @@ from clue_research.review.disposition import (
 )
 from clue_research.review.disposition_store import record_disposition
 from clue_research.sources import record_source_yield
+from tests._workspace import seed_workspace
 
 from .conftest import enum_labels, rollback_conn, run_async
 
@@ -82,8 +83,13 @@ def _rubric(field_key: str) -> ScoringRubric:
 
 
 async def _account(conn: AsyncConnection, name: str) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name=name, primary_domain=f"{name}.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name=name,
+        primary_domain=f"{name}.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 

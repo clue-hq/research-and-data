@@ -42,6 +42,7 @@ from clue_research.durable import (
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import AspectProfilingWorker
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 from tests.durable.conftest import FakeAccountRunStore
 
 from .conftest import conn_session_factory, rollback_conn, run_async
@@ -100,8 +101,12 @@ def test_real_worker_runs_inside_account_research_graph() -> None:
                 evidence_span="evidence",
             )
             bind_resolver("fake1", _Fake([claim]))
+            await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
             acct = await insert_account_entity(
-                conn, canonical_name="Acme Robotics", primary_domain="acme-robotics.com"
+                conn,
+                canonical_name="Acme Robotics",
+                primary_domain="acme-robotics.com",
+                workspace_id=DEFAULT_TEST_WORKSPACE,
             )
 
             # The graph dispatches by the field-class aspect key "account" — the same key the real

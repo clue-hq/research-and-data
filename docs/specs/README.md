@@ -62,6 +62,7 @@ issue spec states the exact interface it exposes/consumes.
 |---|---|---|---|
 | A | Restructure + spine: R0–R2, `workspace_id` rename, `libs/clue-spine`, R3 (api → `platform/api`) | **closed** | [PA](./PA-phase-a-restructure-and-spine.md) |
 | B | Platform infra core: fleet worker (step 0) · storage (step 1) · memory slice 1 (Doc M) · then toolbelt/projections (step 2) | open | [PB](./PB-phase-b-platform-infra-core.md) |
+| B4 | Toolbelt + projections/SSE + fleet run-start composition (step 2; `platform/b4-toolbelt-v0`) | **executed** | [PB-B4](./PB-B4-toolbelt-and-projections.md) |
 | B2 | Storage lane (built on `platform/b2-storage`, awaiting integration): `libs/clue-storage` · `artifact` table + `claim.artifact_key` · evidence snapshots · scrapling scrape backend · DSAR snapshot reach · millicredit groundwork | **built** | [PB-B2](./PB-B2-storage.md) |
 
 ## Full issue list

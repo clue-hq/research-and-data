@@ -48,6 +48,7 @@ async def _client_entity(conn: AsyncConnection, suffix: str) -> EntityId:
         canonical_name=f"Import Client {suffix}",
         primary_domain=f"client-{suffix}.example",
         status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
@@ -59,7 +60,7 @@ def test_duplicate_variants_collapse_to_one_entity() -> None:
     """Exact-duplicate variants sharing a strong key (domain) collapse to one account_entity."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "dup")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
@@ -87,7 +88,7 @@ def test_registry_only_variants_collapse_to_one_entity() -> None:
     with domain) collapse to a single account_entity via the canonicalized intra-batch index."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "reg")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
@@ -112,7 +113,7 @@ def test_same_name_different_company_routes_to_review() -> None:
     """A fuzzy name match (no shared strong key) never auto-merges — it goes to the review queue."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "review")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             existing = await insert_account_entity(
@@ -120,6 +121,7 @@ def test_same_name_different_company_routes_to_review() -> None:
                 canonical_name="Globex Industries",
                 primary_domain="globex-existing.example",
                 status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
             )
             await embed_account(conn, existing)
             # a name-only row (no domain → no strong key) that fuzzy-matches the existing entity
@@ -145,7 +147,7 @@ def test_unresolvable_row_surfaced_with_reason() -> None:
     """A row with no usable identity lands in unresolved[] with a reason — not silently dropped."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "unres")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
@@ -170,7 +172,7 @@ def test_resolved_account_has_provenance_and_decomposed_backscore() -> None:
     fit/intent score (each linking its evidence claims — no score without evidence)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "prov")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             bind_resolver("crm", FakeCrmResolver(relationship="customer"))
@@ -200,7 +202,7 @@ def test_non_fit_flagged_but_not_excluded() -> None:
     """An account below the ICP fit floor is flagged NON_FIT yet stays in resolved[] (D6)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "nonfit")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT, fit_threshold=0.5)
             # no CRM enrichment → the rubric's only fit field is absent → fit 0.0 < 0.5
@@ -219,7 +221,7 @@ def test_crm_enrich_detects_already_customer() -> None:
     """A CRM-pulled relationship enters as a tier-1 claim and "already a customer" is detectable."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "crm")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             bind_resolver("crm", FakeCrmResolver(relationship="customer"))
@@ -247,7 +249,7 @@ def test_imported_contact_carries_governance_tags() -> None:
     use_class, and a recorded lawful basis at write time (Doc D §2/§4)."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "contact")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
@@ -314,7 +316,7 @@ def test_resolved_set_converges_with_discovery_path() -> None:
     checkpoint that cannot tell import from discovery except by matched_channel."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "converge")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             bind_resolver("crm", FakeCrmResolver(relationship="customer"))
@@ -349,7 +351,7 @@ def test_import_batch_marker_written() -> None:
     """The import run is grouped by a claim-native import.batch marker on the client entity."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "batch")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [
@@ -379,7 +381,7 @@ def test_reimport_same_batch_does_not_duplicate_entities() -> None:
     """A retried import (same rows) re-resolves to the existing entities — no duplicate accounts."""
 
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             client = await _client_entity(conn, "reimport")
             icp = await build_confirmed_icp(conn, workspace_id=_CLIENT)
             rows = [ImportRow(row_index=1, name="Repeat Inc", domain="repeat.example")]

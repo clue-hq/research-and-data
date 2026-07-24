@@ -133,7 +133,9 @@ class DeepPhaseComposition:
     under one ambient per-run snapshot sink; either way it is a ``core.PhaseHandler`` serving
     ``ProjectPhase.DEEP``. The rest are exposed so a test can assert the governance seams are the
     concretes (the gate + classifier the orchestrator threads into the committee/contact callables)
-    without reaching into private attributes."""
+    without reaching into private attributes. :attr:`spec` is the campaign ``ICPSpec`` the phase was
+    composed against — exposed so a per-run composer (the B4 ``ComposingRunDriver``) can prove each
+    composed DEEP handler is bound to its run's *own* spec, not a shared/overwritten one."""
 
     handler: PhaseHandler
     orchestrator: AccountDeepOrchestrator
@@ -141,6 +143,7 @@ class DeepPhaseComposition:
     budget: BudgetEngine
     pre_spend_gate: PreSpendGate
     binding_classifier: BindingClassifier
+    spec: ICPSpec
 
 
 # --- high-tier resolution (D-B) ----------------------------------------------
@@ -419,6 +422,7 @@ def build_deep_phase_handler(
         budget=budget,
         pre_spend_gate=gate,
         binding_classifier=binder,
+        spec=spec,
     )
 
 

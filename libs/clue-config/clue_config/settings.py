@@ -86,6 +86,44 @@ class Settings(BaseSettings):
     # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
     storage_orphan_sweep_interval_s: float = 21600.0  # 6h
 
+    # --- fleet run-start composition (PB-B4 slice 1; append-only per treaty §3.2) ---
+    # LRU capacity of the ``ComposingRunDriver``'s per-``(workspace_id, icp_key, icp_version)``
+    # ``PhaseHandlerRegistry`` + ``ProjectRun`` cache (D1: two concurrent runs with different ICPs
+    # never fight over the DEEP/VERIFICATION slot — each drives its own composed registry). The
+    # durable state (project_run / ledger / budget) is shared; only the cheap state-machine object
+    # + its handler registry are cached, so a small window suffices. Env:
+    # ``CLUE_COMPOSER_REGISTRY_CACHE_SIZE``.
+    composer_registry_cache_size: int = 8
+    # Whether the run-composition ``_default_gateway`` may build a canned-output ``StubGateway``
+    # when the ``OPENROUTER_API_KEY`` secret is absent. Default False → a missing key is a
+    # construction-time ``RuntimeError`` (a misconfigured production worker must NOT silently drive
+    # runs on stub LLM output). CI/tests/scripts opt in explicitly.
+    # Env: ``CLUE_GATEWAY_ALLOW_STUB``.
+    gateway_allow_stub: bool = False
+
+    # --- toolbelt A9 idempotency (PB-B4 slice 2; append-only per treaty §3.2 / D10) ---
+    # Read-time freshness window of the ``tool_invocation`` idempotency record (D6): a keyed tool
+    # invocation replays its stored response for this long; a reused key past the window is a fresh
+    # invocation (its stale row is overwritten), and a reused key *within* the window with a changed
+    # request body is an ``IdempotencyConflict``. Env: ``CLUE_TOOLBELT_IDEMPOTENCY_TTL_S``.
+    toolbelt_idempotency_ttl_s: float = 86400.0  # 24h
+
+    # --- treaty SSE (PB-B4 slice 3; append-only per treaty §3.2 / D10) ---
+    # How far back the SSE surface will replay ``run_event`` rows for a reconnecting consumer
+    # (``Last-Event-ID``). A cursor whose event is older than this window can no longer be replayed
+    # gaplessly, so the surface emits ``stream.reset`` (the client re-fetches the projection) rather
+    # than promise continuity. A read-time horizon (``created_at`` arithmetic), not a DB sweep. Env:
+    # ``CLUE_SSE_REPLAY_HORIZON_S``.
+    sse_replay_horizon_s: float = 86400.0  # 24h
+    # TTL of a single-use SSE ``stream_token``: a minted token opens the ``…/events`` stream once
+    # within this window, then is consumed (``used_at`` stamped). A reconnect re-mints. Env:
+    # ``CLUE_SSE_STREAM_TOKEN_TTL_S``.
+    sse_stream_token_ttl_s: float = 300.0  # 5m
+    # Page size of one replay/backlog read (review F12 — honesty about the D8 "10k events" figure:
+    # the live tail drains the remainder, and in replay-then-close mode this bounds one connect's
+    # backlog). Env: ``CLUE_SSE_REPLAY_PAGE_LIMIT``.
+    sse_replay_page_limit: int = 10_000
+
 
 def load_settings(**kwargs: Any) -> Settings:
     """Load settings from the environment (and optional ``.env``).

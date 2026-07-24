@@ -70,7 +70,7 @@ async def _floor_proposal(
 
 def test_confirm_creates_compiled_active_spec() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "create")
             confirmation = await confirm_icp(
                 conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
@@ -97,7 +97,7 @@ def test_confirm_creates_compiled_active_spec() -> None:
 
 def test_confirm_is_reproducible_from_pinned_version() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "repro")
             confirmation = await confirm_icp(
                 conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
@@ -115,7 +115,7 @@ def test_confirm_is_reproducible_from_pinned_version() -> None:
 
 def test_confirm_round_trips_edits_and_persists_diff() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "edits")
             # drop the growth signal (removes its unique narrative field), drop a firmographic
             # field, and add an unrelated registered scoring field.
@@ -170,7 +170,7 @@ def test_confirm_round_trips_edits_and_persists_diff() -> None:
 
 def test_confirm_multiple_icps_are_independent_specs() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "multi")
             first = await confirm_icp(
                 conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
@@ -196,7 +196,7 @@ def test_confirm_multiple_icps_are_independent_specs() -> None:
 
 def test_confirm_is_idempotent_on_identical_reconfirm() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "idem")
             first = await confirm_icp(
                 conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
@@ -230,7 +230,7 @@ def test_confirm_is_idempotent_on_identical_reconfirm() -> None:
 
 def test_confirm_returns_pre_run_estimate() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "estimate")
             confirmation = await confirm_icp(
                 conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
@@ -247,7 +247,7 @@ def test_confirm_returns_pre_run_estimate() -> None:
 
 def test_downstream_consumes_only_the_compiled_spec() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "seam")
             confirmation = await confirm_icp(
                 conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id

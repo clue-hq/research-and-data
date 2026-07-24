@@ -128,6 +128,15 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
 
 ### A3.2 The spine (`libs/clue-spine`, one small lib — the founder-delegated settlement)
 
+> **Amended 2026-07-24:** the transitional one-brand-per-workspace limit is retired. A workspace
+> owns multiple brand kits, and every project selects exactly one brand from that same workspace.
+> Target accounts are workspace-local and brand-neutral; migration `068426c5ea34` removes their
+> obsolete `brand_id` column and research plumbing.
+>
+> **Amended 2026-07-24 (brand slice 3):** project runs now require a project and pin that
+> project's same-workspace brand. Migration `b366c985ca12` makes `project_run.project_id` and
+> `brand_id` required and enforces `(project_id, workspace_id, brand_id)` as one composite FK.
+
 - `clue_spine` imports clue-core + clue-db only. Contents: row dataclasses + plain async CRUD
   functions in the repo's existing raw-SQL style (`icp/spec.py` pattern). **No protocol, no
   repository layer** — one implementation exists.
@@ -135,8 +144,8 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
   - `workspace(workspace_id text PK, name, status CHECK IN ('active','archived'), created_at)`
     — text PK so legacy ids slot in unchanged.
   - `brand(brand_id PK, workspace_id NOT NULL REFERENCES workspace, name, created_at,
-    UNIQUE(workspace_id))` — V1 one-brand-per-workspace as a constraint, not code; plus
-    `UNIQUE(brand_id, workspace_id)` to anchor composite FKs.
+    UNIQUE(brand_id, workspace_id))` — multiple brands may belong to a workspace; the composite
+    anchor pins dependent objects to the same workspace.
   - `product(product_id PK, brand_id + workspace_id with composite FK →
     brand(brand_id, workspace_id), name NOT NULL, aliases jsonb, status, created_at,
     UNIQUE(brand_id, name))` — a product can never point at a brand in a different workspace,
@@ -144,15 +153,16 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
   - `project(project_id PK, workspace_id REFERENCES workspace, brand_id + workspace_id
     composite FK, product_id NULL REFERENCES product, name, status CHECK
     ('draft','active','archived'), created_at)`.
-  - `project_run.project_id` — nullable `REFERENCES project` column (runs execute *for* a
-    project; nullable because pre-spine runs have none).
+  - `project_run(project_id, workspace_id, brand_id)` — required composite FK to the exact
+    project context. Runtime callers supply `project_id`; SQL derives `brand_id` from the project,
+    so another same-workspace brand cannot drift onto the run.
 - **Deliberately deferred**: FKs from legacy tables' `workspace_id` text columns to
   `workspace` — existing dev data has no workspace rows; the backfill + constraint lands when a
   real workspace-creation flow exists (build step 2 API). Fail-closed tenancy checks continue
   unchanged meanwhile.
-- Tests: CRUD round-trips; constraint tests (second brand in a workspace fails; cross-workspace
-  product fails — asserted as DB errors, not handler logic); db-smoke exercises the rename
-  downgrade path.
+- Tests: CRUD round-trips (including multiple brands in one workspace); constraint tests
+  (cross-workspace product/project brand references fail as DB errors, not handler logic);
+  db-smoke exercises the downgrade path.
 
 ## A4 — Doc R R2: research moves home + scaffolds (~½ day)
 

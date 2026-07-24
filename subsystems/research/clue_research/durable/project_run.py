@@ -38,11 +38,13 @@ TierCutoffs = dict[str, JsonValue]
 
 
 class ProjectRunRow(BaseModel):
-    """A ``project_run`` row reconstructed from the table (M7.3) — the outer durable job."""
+    """A ``project_run`` row — one outer durable job pinned to a project and its sender brand."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: ProjectRunId
+    project_id: str
+    brand_id: str
     workspace_id: str
     icp_key: str
     icp_version: int
@@ -91,20 +93,24 @@ class AdjustmentRow(BaseModel):
 # --- project_run --------------------------------------------------------------------------------
 
 _RUN_COLUMNS = (
-    "id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, spent_cents, "
+    "id, project_id, brand_id, workspace_id, icp_key, icp_version, phase, status, "
+    "budget_cap_cents, spent_cents, "
     "tier_cutoffs_json, paused_at, resumed_at, created_at, updated_at"
 )
 
 _ENSURE_RUN_SQL = text(
     """
     INSERT INTO project_run (
-        id, workspace_id, icp_key, icp_version, phase, status, budget_cap_cents, tier_cutoffs_json
+        id, project_id, brand_id, workspace_id, icp_key, icp_version,
+        phase, status, budget_cap_cents, tier_cutoffs_json
     )
-    VALUES (
-        :id, :workspace_id, :icp_key, :icp_version,
+    SELECT
+        :id, project.project_id, project.brand_id, project.workspace_id, :icp_key, :icp_version,
         CAST(:phase AS project_phase), CAST(:status AS project_run_status),
         :budget_cap_cents, CAST(:tier_cutoffs AS jsonb)
-    )
+    FROM project
+    WHERE project.project_id = :project_id
+      AND project.workspace_id = :workspace_id
     ON CONFLICT (id) DO NOTHING
     """
 )
@@ -112,10 +118,19 @@ _ENSURE_RUN_SQL = text(
 _GET_RUN_SQL = text(f"SELECT {_RUN_COLUMNS} FROM project_run WHERE id = :id")
 
 
+class ProjectRunProjectNotFound(ValueError):
+    """The requested project does not exist inside the caller's workspace."""
+
+
+class ProjectRunIdentityConflict(ValueError):
+    """A supplied run id already belongs to a different project/workspace."""
+
+
 async def ensure_project_run(
     conn: AsyncConnection,
     *,
     project_run_id: ProjectRunId,
+    project_id: str,
     workspace_id: str,
     icp_key: str,
     icp_version: int,
@@ -124,15 +139,20 @@ async def ensure_project_run(
     phase: ProjectPhase = ProjectPhase.REVERSE_PROFILING,
     status: ProjectRunStatus = ProjectRunStatus.ACTIVE,
 ) -> None:
-    """Insert the ``project_run`` row if absent (``ON CONFLICT (id) DO NOTHING``).
+    """Insert a project-derived ``project_run`` row if absent.
 
     Idempotent on the supplied id so ``ProjectRun.start`` is safe to call twice (a re-entry never
     resets a run that already advanced). The id is supplied by the caller (minted once via
-    :func:`~clue_core.new_project_run_id`) so it is stable across a crash-and-resume."""
+    :func:`~clue_core.new_project_run_id`) so it is stable across a crash-and-resume.
+
+    ``brand_id`` is intentionally not an argument: the INSERT selects it from ``project`` while
+    requiring that project to belong to ``workspace_id``. The schema's composite context FK pins
+    the resulting tuple for the life of the run."""
     await conn.execute(
         _ENSURE_RUN_SQL,
         {
             "id": project_run_id,
+            "project_id": project_id,
             "workspace_id": workspace_id,
             "icp_key": icp_key,
             "icp_version": icp_version,
@@ -142,6 +162,16 @@ async def ensure_project_run(
             "status": status.value,
         },
     )
+    row = await get_project_run(conn, project_run_id)
+    if row is None:
+        raise ProjectRunProjectNotFound(
+            f"project {project_id!r} not found in workspace {workspace_id!r}"
+        )
+    if row.project_id != project_id or row.workspace_id != workspace_id:
+        raise ProjectRunIdentityConflict(
+            f"project run {project_run_id} already belongs to "
+            f"({row.project_id!r}, {row.workspace_id!r})"
+        )
 
 
 async def get_project_run(
@@ -357,6 +387,8 @@ def _row_to_project_run(row: dict[str, object]) -> ProjectRunRow:
     return ProjectRunRow.model_validate(
         {
             "id": row["id"],
+            "project_id": row["project_id"],
+            "brand_id": row["brand_id"],
             "workspace_id": row["workspace_id"],
             "icp_key": row["icp_key"],
             "icp_version": row["icp_version"],

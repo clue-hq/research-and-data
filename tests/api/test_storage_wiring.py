@@ -71,6 +71,8 @@ class FakeStorage:
 def _ctx(*, workspace_id: str = _CLIENT) -> PhaseContext:
     return PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.DEEP,
         workspace_id=workspace_id,
         icp_key="icp-1",

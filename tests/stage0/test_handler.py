@@ -29,6 +29,7 @@ from clue_research.claimstore import load_core_pack
 from clue_research.sources import bind_resolver, seed_source_manifests
 from clue_research.stage0 import ReverseProfilingHandler
 from clue_research.stage0.fields import CLIENT_VALUE_PROP
+from tests._workspace import seed_workspace
 from tests.stage0._fakes import FakeResolver
 from tests.stage0.conftest import run_async
 
@@ -41,11 +42,14 @@ def test_handler_conforms_to_protocol() -> None:
     assert handler.phase is ProjectPhase.REVERSE_PROFILING
 
 
-async def _seed_committed() -> None:
-    """Commit the registry state the waterfall reads (idempotent — load is a no-op if present)."""
+async def _seed_committed(workspace_id: str) -> None:
+    """Commit the registry state the waterfall reads + the run's workspace (accounts are
+    workspace-local — the handler's ``reverse_profile`` inserts an account under ``workspace_id``,
+    so its ``workspace`` row must exist first). Idempotent — load/seed is a no-op if present."""
     async with transaction() as conn:
         await load_core_pack(conn)
         await seed_source_manifests(conn)
+        await seed_workspace(conn, workspace_id)
 
 
 def _ctx(
@@ -56,6 +60,8 @@ def _ctx(
 ) -> PhaseContext:
     return PhaseContext(
         project_run_id=project_run_id if project_run_id is not None else new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.REVERSE_PROFILING,
         workspace_id=f"tenant-handler-{suffix}",
         icp_key="__reverse_profiling__",
@@ -73,10 +79,11 @@ def _ctx(
 def test_handler_runs_reverse_profiling_phase() -> None:
     async def _run() -> None:
         async with db_lifespan():
-            await _seed_committed()
             # fresh tenant + domain → a brand-new client entity at version 1 (no cleanup needed)
+            suffix = uuid4().hex[:12]
+            await _seed_committed(f"tenant-handler-{suffix}")
             bind_resolver("firecrawl_site", FakeResolver(tier=2, values={CLIENT_VALUE_PROP: "ci"}))
-            result = await ReverseProfilingHandler().run(_ctx(uuid4().hex[:12]))
+            result = await ReverseProfilingHandler().run(_ctx(suffix))
             assert result.status is PhaseStatus.COMPLETED
             assert result.accounts_processed == 1
             assert result.payload["client_kb_version"] == 1
@@ -89,11 +96,12 @@ def test_handler_runs_reverse_profiling_phase() -> None:
 def test_handler_pauses_on_budget_exhaustion() -> None:
     async def _run() -> None:
         async with db_lifespan():
-            await _seed_committed()
+            suffix = uuid4().hex[:12]
+            await _seed_committed(f"tenant-handler-{suffix}")
             # cost 1.0/field, cap 1.0 → budget halts → the phase PAUSES (a durable boundary), not
             # FAILED — the state machine can hold, raise the cap, and resume the same run.
             bind_resolver("firecrawl_site", FakeResolver(tier=2, values={CLIENT_VALUE_PROP: "ci"}))
-            ctx = _ctx(uuid4().hex[:12], budget_cap_cents=Decimal("1.0"))
+            ctx = _ctx(suffix, budget_cap_cents=Decimal("1.0"))
             result = await ReverseProfilingHandler().run(ctx)
             assert result.status is PhaseStatus.PAUSED
             assert result.payload["budget_exhausted"] is True
@@ -104,13 +112,13 @@ def test_handler_pauses_on_budget_exhaustion() -> None:
 def test_handler_idempotent_resume_across_commits() -> None:
     async def _run() -> None:
         async with db_lifespan():
-            await _seed_committed()
+            suffix = uuid4().hex[:12]
+            await _seed_committed(f"tenant-handler-{suffix}")
             bind_resolver("firecrawl_site", FakeResolver(tier=2, values={CLIENT_VALUE_PROP: "ci"}))
             # Same project run id → same derived run id. Two separate committing handler runs
             # (a crash-and-resume) must NOT double-write: the version stays 1 (no bump) and the
             # client resolves to the same entity — the "no double-charge" half of the AC, proven
             # across a real commit boundary (not just within one rolled-back transaction).
-            suffix = uuid4().hex[:12]
             crid = new_project_run_id()
             first = await ReverseProfilingHandler().run(_ctx(suffix, project_run_id=crid))
             second = await ReverseProfilingHandler().run(_ctx(suffix, project_run_id=crid))
