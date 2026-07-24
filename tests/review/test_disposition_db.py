@@ -50,7 +50,7 @@ from clue_research.review import (
     read_labeled_dataset,
     tombstone_contact_dispositions,
 )
-from tests._workspace import seed_workspace
+from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.review.conftest import enum_labels, rollback_conn
 
@@ -83,8 +83,14 @@ async def _account(
 
 async def _run(conn: AsyncConnection) -> ProjectRunId:
     rid = new_project_run_id()
+    project = await seed_project(conn, _CLIENT)
     await ensure_project_run(
-        conn, project_run_id=rid, workspace_id=_CLIENT, icp_key=_ICP_KEY, icp_version=_ICP_VERSION
+        conn,
+        project_run_id=rid,
+        project_id=project.project_id,
+        workspace_id=_CLIENT,
+        icp_key=_ICP_KEY,
+        icp_version=_ICP_VERSION,
     )
     return rid
 

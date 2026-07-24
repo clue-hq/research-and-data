@@ -58,6 +58,7 @@ from clue_research.durable import (
     insert_account_run,
     upsert_checkpoint,
 )
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -95,9 +96,11 @@ async def _seed_run(
     status: ProjectRunStatus = ProjectRunStatus.PAUSED,
 ) -> ProjectRunId:
     run = new_project_run_id()
+    project = await seed_project(conn, client)
     await ensure_project_run(
         conn,
         project_run_id=run,
+        project_id=project.project_id,
         workspace_id=client,
         icp_key="enterprise",
         icp_version=1,

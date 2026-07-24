@@ -50,6 +50,7 @@ from clue_research.durable import (
 )
 from clue_research.durable.enums import ProjectRunStatus
 from clue_research.durable.project_run import ProjectRunRow
+from tests._workspace import seed_project
 from tests.api.test_storage_wiring import FakeStorage
 from tests.db.conftest import run_async
 from tests.fleet.conftest import ProcessLocalLockFactory
@@ -75,6 +76,8 @@ def _row(icp_key: str, *, workspace_id: str = "ws", version: int = 1) -> Project
     now = datetime.now(UTC)
     return ProjectRunRow(
         id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=version,
@@ -204,6 +207,8 @@ def test_default_resume_run_carries_ledger_and_budget() -> None:
 def _rp_ctx() -> PhaseContext:
     return PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.REVERSE_PROFILING,
         workspace_id="ws",
         icp_key="a",
@@ -328,6 +333,8 @@ def test_default_resume_run_writes_a_phase_ledger_row() -> None:
         workspace_id = f"ws-b4-resume-{uuid4().hex[:12]}"
         async with db_lifespan():
             try:
+                async with transaction() as conn:
+                    project = await seed_project(conn, workspace_id)
                 # Minimal completing handlers for every phase into the PROCESS-DEFAULT registry
                 # (the one the default resume driver resolves through), then override
                 # REVERSE_PROFILING to PAUSE so we get an AWAITING_INPUT checkpoint to approve.
@@ -341,7 +348,10 @@ def test_default_resume_run_writes_a_phase_ledger_row() -> None:
                     ledger=DbIdempotencyStore(),
                 )
                 run_id = await machine.start(
-                    workspace_id=workspace_id, icp_key="seg", icp_version=1
+                    project_id=project.project_id,
+                    workspace_id=workspace_id,
+                    icp_key="seg",
+                    icp_version=1,
                 )
                 paused = await machine.run_to_completion(run_id)
                 # suspended at the reverse_profiling gate

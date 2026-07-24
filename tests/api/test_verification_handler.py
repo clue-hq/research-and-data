@@ -163,6 +163,8 @@ def _spec(entity_id: EntityId) -> AccountSpec:
 def _ctx(campaign: object | None = None) -> PhaseContext:
     return PhaseContext(
         project_run_id=campaign or new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.VERIFICATION,
         workspace_id=_CLIENT,
         icp_key="icp-1",

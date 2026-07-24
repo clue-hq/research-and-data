@@ -68,6 +68,8 @@ async def _seed_committed() -> None:
 def _ctx(workspace_id: str, icp_key: str, icp_version: int) -> PhaseContext:
     return PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.ICP_CONFIRMED,
         workspace_id=workspace_id,
         icp_key=icp_key,

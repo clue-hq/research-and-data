@@ -23,7 +23,7 @@ The registered set (spec §2 slice 2) with each tool's precondition reason codes
 * verification / handoff — ``run_verification`` (``run_not_found``, ``icp_version_missing``),
   ``compose_handoff`` (``run_not_found``, ``handoff_not_reached``);
 * estimate — ``estimate_project`` (none — pure);
-* run controls — ``start_project_run`` (none), ``pause_run`` (``run_not_found``),
+* run controls — ``start_project_run`` (``project_not_found``), ``pause_run`` (``run_not_found``),
   ``resume_run`` (``run_not_found``, ``run_not_paused``), ``adjust_budget`` (``run_not_found``).
 
 **Workspace scoping (B4 slice-2 review B1).** Every *run*-scoped tool loads its run through
@@ -135,6 +135,7 @@ from clue_research.stage0 import (
     reverse_profile,
     synthesize_icps,
 )
+from clue_spine import get_project
 from clue_storage import StorageBackend
 from clue_toolbelt import (
     PreconditionFailure,
@@ -255,6 +256,7 @@ class EstimateProjectInput(ToolInput):
 
 
 class StartProjectRunInput(ToolInput):
+    project_id: str
     icp_key: str
     icp_version: int
     budget_cap_cents: int | None = None
@@ -365,6 +367,8 @@ class _CapabilityTool(Tool):
         # handler's high-tier resolver reads the same content-addressed cutoff set either driver.
         return PhaseContext(
             project_run_id=run.id,
+            project_id=run.project_id,
+            brand_id=run.brand_id,
             phase=phase,
             workspace_id=run.workspace_id,
             icp_key=run.icp_key,
@@ -1085,10 +1089,21 @@ class StartProjectRunTool(_CapabilityTool):
     name = "start_project_run"
     input_model = StartProjectRunInput
 
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, StartProjectRunInput)
+        async with self._conn_factory() as conn:
+            project = await get_project(conn, inputs.project_id)
+        if project is None or project.workspace_id != ctx.workspace_id:
+            return _fail("project_not_found", "no such project")
+        return ()
+
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, StartProjectRunInput)
         cap = Decimal(inputs.budget_cap_cents) if inputs.budget_cap_cents is not None else None
         run_id = await self._run.start(
+            project_id=inputs.project_id,
             workspace_id=ctx.workspace_id,
             icp_key=inputs.icp_key,
             icp_version=inputs.icp_version,

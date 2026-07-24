@@ -38,6 +38,7 @@ from clue_research.durable import (
     get_run_budget_state,
     insert_account_run,
 )
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 
@@ -62,9 +63,11 @@ async def _seed(
     """Seed a fresh project_run (capped) + account_run (RUNNING) so the charge has rows to move."""
     campaign = new_project_run_id()
     account = new_run_id()
+    project = await seed_project(conn, "client-1")
     await ensure_project_run(
         conn,
         project_run_id=campaign,
+        project_id=project.project_id,
         workspace_id="client-1",
         icp_key="icp-a",
         icp_version=1,

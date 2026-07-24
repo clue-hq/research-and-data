@@ -49,7 +49,7 @@ from clue_research.narrative import (
     list_handoff_events,
 )
 from clue_research.review import ensure_review_session, finalize_review_session
-from tests._workspace import seed_workspace
+from tests._workspace import seed_project, seed_workspace
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -83,9 +83,11 @@ async def _account(conn: AsyncConnection, name: str) -> EntityId:
 
 async def _seed_run(conn: AsyncConnection, *, client: str = _CLIENT) -> ProjectRunId:
     run = new_project_run_id()
+    project = await seed_project(conn, client)
     await ensure_project_run(
         conn,
         project_run_id=run,
+        project_id=project.project_id,
         workspace_id=client,
         icp_key=_ICP_KEY,
         icp_version=_ICP_VERSION,
@@ -225,6 +227,8 @@ def test_phase_handler_emits_idempotently() -> None:
             )
             ctx = PhaseContext(
                 project_run_id=run,
+                project_id="prj-test",
+                brand_id="brd-test",
                 phase=ProjectPhase.HANDOFF,
                 workspace_id=_CLIENT,
                 icp_key=_ICP_KEY,

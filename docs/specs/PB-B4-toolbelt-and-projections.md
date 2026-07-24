@@ -5,6 +5,10 @@
 Fable-reviewed and hardened. Final gates: 23 import contracts, 1303 offline / 2221 DB tests
 (fresh + rerun + post-scripts-chain), db-smoke reversible, Recipe-#1 chain green. Residuals in
 the CLAUDE.md `[B4]` backlog entry + `_memory/2026-07-23-b4-close-out.md`.
+
+> **Run-start amendment (2026-07-24):** `start_project_run` now requires `project_id`, refuses
+> `project_not_found` when that project is absent or outside the caller's workspace, and never
+> accepts `brand_id`. The durable insert derives and pins the project's selected brand.
 **Authority:** harness doc §9 step 2 (+ its slotted additions A4/A5/A6/A8/A9 and the
 readiness/coverage projection), REQ-02 (toolbelt), REQ-11 (visibility), REQ-16 (treaty Group A),
 Doc A (no fake agency; toolbelt = the single write path), the Phase-B treaty §2 (B4 lane), and
@@ -43,7 +47,8 @@ state machine object is cheap; the durable state is shared. The boot-composable 
 composing one; the empty-boot refusal remains for the degenerate no-composer case.
 
 **D2 — the composer passes everything production was missing.** At composition it reads the run
-row (`workspace_id`, `icp_key`, `icp_version`, `tier_cutoffs`) and binds: `storage =
+row (`workspace_id`, `project_id`, `brand_id`, `icp_key`, `icp_version`, `tier_cutoffs`) and binds:
+`storage =
 build_storage_backend()`; `lock_factory = build_account_lock_factory()` (eager — the worker runs
 inside `redis_lifespan`); `priority_for = tier_priority_from_rubric(run.tier_cutoffs)`;
 fleet mode `scheduler = build_fleet_deep_scheduler(...)`; the VERIFICATION handler gets the
@@ -134,7 +139,9 @@ cutoffs decide *who* gets deep-researched (ctx.params), the ICP rubric's band or
    `synthesize_icps`, `confirm_icp`, `import_accounts`, `discover_accounts`, `score_accounts`,
    `submit_tier_checkpoint`, `run_deep_account`, `resolve_committee`, `profile_contact`,
    `run_verification`, `compose_handoff`, `estimate_project` + run controls (`start_project_run`,
-   `pause_run`, `resume_run` (D4 enqueue), `adjust_budget`). Each declares real preconditions
+   `pause_run`, `resume_run` (D4 enqueue), `adjust_budget`). `start_project_run` takes
+   `project_id` and rejects missing/foreign-workspace projects with `project_not_found`; each tool
+   declares real preconditions
    (active ICP exists; scores exist before tiering; tier cutoffs before deep; …) with
    machine-readable codes.
 4. Import contract: the toolbelt purity rule (D5).

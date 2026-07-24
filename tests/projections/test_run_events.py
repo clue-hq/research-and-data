@@ -51,6 +51,8 @@ def _seeded_row():
     now = datetime.now(UTC)
     return ProjectRunRow(
         id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         workspace_id=_WS,
         icp_key="default",
         icp_version=1,

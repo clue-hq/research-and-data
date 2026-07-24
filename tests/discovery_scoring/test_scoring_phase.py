@@ -85,6 +85,8 @@ def _rubric() -> ScoringRubric:
 def _ctx(*, icp_version: int = 1) -> PhaseContext:
     return PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.SCORING,
         workspace_id=CLIENT,
         icp_key=ICP,

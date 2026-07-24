@@ -27,6 +27,8 @@ def _row(phase: ProjectPhase, status: ProjectRunStatus, run_id) -> ProjectRunRow
     now = datetime.now(UTC)
     return ProjectRunRow(
         id=run_id,
+        project_id="prj-test",
+        brand_id="brd-test",
         workspace_id="ws",
         icp_key="k",
         icp_version=1,

@@ -56,6 +56,8 @@ async def _seed_active_icp(conn: AsyncConnection) -> None:
 def _ctx(*, icp_version: int = 1) -> PhaseContext:
     return PhaseContext(
         project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.DISCOVERY,
         workspace_id="acme",
         icp_key="default",

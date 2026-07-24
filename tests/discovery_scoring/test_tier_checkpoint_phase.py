@@ -114,6 +114,8 @@ def _ctx(
 ) -> PhaseContext:
     return PhaseContext(
         project_run_id=project_run_id,
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=phase,
         workspace_id=CLIENT,
         icp_key=ICP,

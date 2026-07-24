@@ -26,6 +26,7 @@ from clue_research.durable import (
     upsert_checkpoint,
 )
 from clue_research.review import ObservabilitySurface
+from tests._workspace import seed_project
 from tests.profiling.conftest import conn_session_factory
 
 
@@ -51,9 +52,11 @@ async def seed_run(
 ) -> ProjectRunId:
     """Seed a ``project_run`` row and return its id."""
     run_id = project_run_id if project_run_id is not None else new_project_run_id()
+    project = await seed_project(conn, workspace_id)
     await ensure_project_run(
         conn,
         project_run_id=run_id,
+        project_id=project.project_id,
         workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=icp_version,

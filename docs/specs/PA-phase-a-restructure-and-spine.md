@@ -132,6 +132,10 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
 > owns multiple brand kits, and every project selects exactly one brand from that same workspace.
 > Target accounts are workspace-local and brand-neutral; migration `068426c5ea34` removes their
 > obsolete `brand_id` column and research plumbing.
+>
+> **Amended 2026-07-24 (brand slice 3):** project runs now require a project and pin that
+> project's same-workspace brand. Migration `b366c985ca12` makes `project_run.project_id` and
+> `brand_id` required and enforces `(project_id, workspace_id, brand_id)` as one composite FK.
 
 - `clue_spine` imports clue-core + clue-db only. Contents: row dataclasses + plain async CRUD
   functions in the repo's existing raw-SQL style (`icp/spec.py` pattern). **No protocol, no
@@ -149,8 +153,9 @@ Gate: full suite + contracts green; DRY greps clean; `db-smoke` green (alembic e
   - `project(project_id PK, workspace_id REFERENCES workspace, brand_id + workspace_id
     composite FK, product_id NULL REFERENCES product, name, status CHECK
     ('draft','active','archived'), created_at)`.
-  - `project_run.project_id` — nullable `REFERENCES project` column (runs execute *for* a
-    project; nullable because pre-spine runs have none).
+  - `project_run(project_id, workspace_id, brand_id)` — required composite FK to the exact
+    project context. Runtime callers supply `project_id`; SQL derives `brand_id` from the project,
+    so another same-workspace brand cannot drift onto the run.
 - **Deliberately deferred**: FKs from legacy tables' `workspace_id` text columns to
   `workspace` — existing dev data has no workspace rows; the backfill + constraint lands when a
   real workspace-creation flow exists (build step 2 API). Fail-closed tenancy checks continue

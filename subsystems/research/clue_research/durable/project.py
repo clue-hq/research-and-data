@@ -156,6 +156,7 @@ class ProjectRunStore(Protocol):
         self,
         *,
         project_run_id: ProjectRunId,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
@@ -221,6 +222,7 @@ class DbProjectRunStore:
         self,
         *,
         project_run_id: ProjectRunId,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
@@ -231,6 +233,7 @@ class DbProjectRunStore:
             await ensure_project_run(
                 conn,
                 project_run_id=project_run_id,
+                project_id=project_id,
                 workspace_id=workspace_id,
                 icp_key=icp_key,
                 icp_version=icp_version,
@@ -377,6 +380,7 @@ class ProjectRun:
     async def start(
         self,
         *,
+        project_id: str,
         workspace_id: str,
         icp_key: str,
         icp_version: int,
@@ -384,12 +388,15 @@ class ProjectRun:
         tier_cutoffs: TierCutoffs | None = None,
         project_run_id: ProjectRunId | None = None,
     ) -> ProjectRunId:
-        """Create a project run at the first phase (``reverse_profiling``, ``ACTIVE``) and return
-        its id. Idempotent on a supplied ``project_run_id`` (a re-``start`` never resets a run that
-        already advanced), so the caller can mint the id and retry safely."""
+        """Create a run for ``project_id`` at ``reverse_profiling`` and return its id.
+
+        The store validates that the project belongs to ``workspace_id`` and derives the pinned
+        sender brand from it. Idempotent on a supplied ``project_run_id`` (a re-``start`` never
+        resets a run that already advanced), so the caller can mint the id and retry safely."""
         run_id = project_run_id if project_run_id is not None else new_project_run_id()
         await self._store.create(
             project_run_id=run_id,
+            project_id=project_id,
             workspace_id=workspace_id,
             icp_key=icp_key,
             icp_version=icp_version,
@@ -713,11 +720,14 @@ class ProjectRun:
         return decision.verdict is BudgetVerdict.GRACEFUL_STOP
 
     def _phase_context(self, run: ProjectRunRow) -> PhaseContext:
-        """Build the frozen :class:`~clue_core.PhaseContext` for the run's current phase —
-        identifies the run + active ICP version; tier cutoffs ride ``params`` (the phase-specific
-        escape hatch) so adding one never forces a ``core`` change."""
+        """Build the frozen context with the run's pinned project, brand, and active ICP version.
+
+        Tier cutoffs ride ``params`` (the phase-specific escape hatch) so adding one never forces a
+        ``core`` change."""
         return PhaseContext(
             project_run_id=run.id,
+            project_id=run.project_id,
+            brand_id=run.brand_id,
             phase=run.phase,
             workspace_id=run.workspace_id,
             icp_key=run.icp_key,
