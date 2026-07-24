@@ -1,6 +1,7 @@
 # Phase B — platform infra core: worktree briefs & shared-surface treaty
 
-**Status:** open (briefs ratified 2026-07-21; worktrees not yet started)
+**Status:** EXECUTED — historical scope treaty (B1/B2/B3 integrated 2026-07-22; B4 executed
+2026-07-23; workspace-local account/brand/run-context closure merged 2026-07-24)
 **Integration branch:** `platform/workspace-restructure` — all three worktrees branch from the
 R3 commit on this branch and **integrate back onto this same branch** (founder ruling,
 2026-07-21). Local commits only; no push.
