@@ -289,6 +289,9 @@ are stable. Tests compare the checked-in digest with the promoted seed.
 
 ## 5. C5.3 — Durable executor and fleet work-handler extraction
 
+**Implementation status (2026-07-24): complete.** The checkpoint shipped at migration head
+`d9b39fb407ed`; Recipe #0/#1 migration and supervisor/canary behavior remain C5.4+.
+
 ### 5.1 Preserve fleet behavior before generalizing
 
 First add characterization tests around:

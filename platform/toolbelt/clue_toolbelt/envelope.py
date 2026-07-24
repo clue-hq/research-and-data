@@ -238,6 +238,14 @@ class ToolContext:
     execution_node_id: ExecutionNodeId | None = None
     execution_node_key: str | None = None
     parent_execution_id: ExecutionId | None = None
+    execution_worker_id: str | None = None
+    lease_generation: int | None = None
+
+    def __post_init__(self) -> None:
+        if (self.execution_worker_id is None) != (self.lease_generation is None):
+            raise ValueError("execution worker id and lease generation must be supplied together")
+        if self.lease_generation is not None and self.lease_generation < 1:
+            raise ValueError("lease generation must be positive")
 
 
 @dataclass(frozen=True, slots=True)

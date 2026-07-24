@@ -65,6 +65,7 @@ from clue_fleet.queue import (
     FleetTaskRow,
     TaskQueue,
 )
+from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
 from clue_research.durable import ProjectRun, ProjectRunRow, ProjectRunStatus
 
@@ -99,6 +100,37 @@ class RunDriver(Protocol):
     async def status(self, project_run_id: ProjectRunId) -> ProjectRunRow: ...
 
     async def advance(self, project_run_id: ProjectRunId) -> ProjectRunRow: ...
+
+
+class ProjectRunWorkHandler:
+    """Compatibility handler that drives the unchanged M7 phase machine in the generic shell."""
+
+    kind = FleetTaskKind.DRIVE_RUN
+
+    def __init__(self, driver: RunDriver) -> None:
+        self._driver = driver
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        run_id = ProjectRunId(context.work_id)
+        run = await self._driver.status(run_id)
+        while True:
+            terminal = _TERMINAL_OUTCOMES.get(run.status)
+            if terminal is not None:
+                return WorkResult(
+                    outcome=terminal,
+                    references={"phase": run.phase.value, "status": run.status.value},
+                )
+            if context.stop_requested.is_set():
+                return WorkResult(outcome="stopped", references={}, requeue=True)
+            if context.lease_lost.is_set():
+                return WorkResult(outcome="lease_lost", references={}, requeue=True)
+            before = (run.phase, run.status)
+            run = await self._driver.advance(run_id)
+            if (run.phase, run.status) == before:
+                return WorkResult(
+                    outcome="stalled",
+                    references={"phase": run.phase.value, "status": run.status.value},
+                )
 
 
 class ProjectRunWorker:

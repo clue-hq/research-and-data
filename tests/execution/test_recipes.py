@@ -93,9 +93,11 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                         """
                         SELECT event_type, count(*) AS count
                         FROM recipe_revision_event
+                        WHERE recipe_revision_id = ANY(CAST(:revision_ids AS uuid[]))
                         GROUP BY event_type ORDER BY event_type
                         """
-                    )
+                    ),
+                    {"revision_ids": [item.recipe_revision_id for item in first]},
                 )
             ).mappings()
             assert {row["event_type"]: row["count"] for row in events} == {

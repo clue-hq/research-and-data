@@ -6,10 +6,11 @@ this composed invoker so parameter snapshotting and execution journaling are man
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, cast
 
 from clue_core import ExecutionAttemptId, ExecutionId, ExecutionNodeId
 from clue_toolbelt.envelope import (
@@ -111,6 +112,28 @@ class InvocationJournal(Protocol):
     ) -> ToolResult: ...
 
 
+class InvocationCrashHook(Protocol):
+    async def __call__(
+        self,
+        point: str,
+        *,
+        context: ToolContext,
+        start: JournalStart,
+    ) -> None: ...
+
+
+async def _no_crash(
+    _point: str,
+    *,
+    context: ToolContext,
+    start: JournalStart,
+) -> None:
+    del context, start
+
+
+_DEFAULT_CRASH_HOOK = cast(InvocationCrashHook, _no_crash)
+
+
 def _error_code(exc: BaseException) -> str:
     name = re.sub(r"(?<!^)(?=[A-Z])", "_", type(exc).__name__).lower()
     return name or "tool_invocation_failed"
@@ -127,12 +150,14 @@ class ToolInvoker:
         journal: InvocationJournal,
         idempotency_store: IdempotencyStore,
         idempotency_ttl_s: float,
+        crash_hook: InvocationCrashHook = _DEFAULT_CRASH_HOOK,
     ) -> None:
         self._registry = registry
         self._snapshotter = snapshotter
         self._journal = journal
         self._idempotency_store = idempotency_store
         self._idempotency_ttl_s = idempotency_ttl_s
+        self._crash_hook = crash_hook
 
     async def invoke(
         self,
@@ -172,6 +197,7 @@ class ToolInvoker:
             )
 
         assert start.attempt_id is not None
+        await self._crash_hook("after_attempt_start", context=context, start=start)
         effective_context = replace(
             context,
             execution_id=start.execution_id,
@@ -190,6 +216,7 @@ class ToolInvoker:
                     phase="before",
                     state=dict(before),
                 )
+            await self._crash_hook("before_tool", context=effective_context, start=start)
             result = await invoke_tool(
                 self._registry,
                 name,
@@ -200,6 +227,7 @@ class ToolInvoker:
                 store=self._idempotency_store,
                 idempotency_ttl_s=self._idempotency_ttl_s,
             )
+            await self._crash_hook("after_domain_commit", context=effective_context, start=start)
             if descriptor.effect_class is ToolEffectClass.STEERING:
                 after = await tool.audit_snapshot(inputs, effective_context)
                 await self._journal.steering_snapshot(
@@ -208,6 +236,10 @@ class ToolInvoker:
                     phase="after",
                     state=dict(after),
                 )
+        except asyncio.CancelledError:
+            # Worker fencing and SIGTERM cancellation are not tool failures. The started attempt
+            # remains visibly abandoned and the next lease owner recovers it.
+            raise
         except PreconditionFailed as exc:
             await self._journal.blocked(
                 start=start,
@@ -222,15 +254,18 @@ class ToolInvoker:
                 error_code=_error_code(exc),
             )
             raise
-        return await self._journal.completed(
+        completed = await self._journal.completed(
             start=start,
             context=effective_context,
             result=result,
         )
+        await self._crash_hook("after_completion_event", context=effective_context, start=start)
+        return completed
 
 
 __all__ = [
     "InvocationJournal",
+    "InvocationCrashHook",
     "JournalDisposition",
     "JournalStart",
     "ParameterSnapshot",

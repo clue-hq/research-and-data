@@ -25,6 +25,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import bindparam, text
 
+from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.handoff_wiring import DurableHandoffReadinessReader
 from clue_api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
 from clue_core import (
@@ -165,16 +166,16 @@ def _default_resume_run() -> ProjectRun:
 
 class ProjectRunResumeHook:
     """The ``finalize → resume`` seam (M13.1): resumes the paused campaign by submitting the REVIEW
-    checkpoint and driving the run to completion (through HANDOFF). ``review`` may not import
-    ``durable``, so the campaign machine is injected here. Idempotent — a re-fire after the run has
-    already advanced is a no-op (``CheckpointNotAwaiting`` is swallowed).
+    checkpoint and offering the owning driver fresh work. ``review`` may not import ``durable``,
+    so the project machine is injected here. Idempotent — a re-fire after the run has already
+    advanced is a no-op (``CheckpointNotAwaiting`` is swallowed).
 
     The default driver is now the fleet-parity :func:`_default_resume_run` (shared store + ledger +
-    budget engine), so an in-process resume writes the same durable phase-ledger record the detached
-    worker's driver does (``[B1×M13.2]``). The injectable ``project_run`` seam is unchanged — a test
-    (or a fleet deployment resuming by ``enqueue_run_drive`` instead of in-process) still overrides
-    it. Fleet deployments resume by enqueue (:func:`~clue_api.fleet_wiring.enqueue_run_drive`); this
-    in-process ``run_to_completion`` is the opt-out (D4)."""
+    budget engine), so checkpoint finalization writes the same durable phase-ledger record the
+    detached worker's driver does (``[B1×M13.2]``). C5.3 then routes the fresh offer through
+    :func:`~clue_api.fleet_wiring.enqueue_run_drive`: a Recipe-#1-owned run resumes its graph;
+    an unowned run resumes the legacy drive task. The injectable ``project_run`` seam remains for
+    tests and alternate composition, but no caller races the detached driver in-process."""
 
     def __init__(self, *, project_run: ProjectRun | None = None) -> None:
         self._run = project_run
@@ -185,7 +186,7 @@ class ProjectRunResumeHook:
             await run.submit_checkpoint(project_run_id, decision={"action": "approve"})
         except CheckpointNotAwaiting:
             return  # already resumed/advanced (idempotent re-fire)
-        await run.run_to_completion(project_run_id)
+        await enqueue_run_drive(project_run_id)
 
 
 class NoopReviewDispositionEmitter:

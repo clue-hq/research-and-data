@@ -13,13 +13,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
+from typing import Protocol
 
-from clue_fleet.worker import ProjectRunWorker
+
+class RunnableWorker(Protocol):
+    def stop(self) -> None: ...
+
+    async def run(self) -> None: ...
+
 
 _DRAIN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 
 
-async def run_worker(worker: ProjectRunWorker, *, install_signal_handlers: bool = True) -> None:
+async def run_worker(worker: RunnableWorker, *, install_signal_handlers: bool = True) -> None:
     """Drive ``worker.run()`` to completion, draining gracefully on SIGTERM/SIGINT.
 
     A second signal does not escalate — kill -9 is the unclean path the lease/queue staleness

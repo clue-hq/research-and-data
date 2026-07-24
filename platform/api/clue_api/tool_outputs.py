@@ -194,6 +194,38 @@ class ConfirmedProjectRunOutput(ToolOutput):
     readiness_decision_id: str
 
 
+class RecipeExecutionStartOutput(ToolOutput):
+    execution_id: str
+    status: str
+    enqueued: bool
+
+
+class RecipeExecutionStatusOutput(ToolOutput):
+    execution_id: str
+    status: str
+    enqueued: bool
+
+
+class RecipeGateDecisionOutput(ToolOutput):
+    execution_id: str
+    node_key: str
+    decision: str
+    enqueued: bool
+
+
+class RecipeProposalOutput(ToolOutput):
+    recipe_revision_id: str
+    recipe_key: str
+    version: int
+    status: str
+
+
+class ProjectPhaseAdvanceOutput(ToolOutput):
+    project_run_id: str
+    phase: str
+    status: str
+
+
 __all__ = [
     "CommitteeOutput",
     "ConfirmedProjectRunOutput",
@@ -217,6 +249,10 @@ __all__ = [
     "ProjectRunStartOutput",
     "ProjectRunStatusOutput",
     "ReconOutput",
+    "RecipeExecutionStartOutput",
+    "RecipeExecutionStatusOutput",
+    "RecipeGateDecisionOutput",
+    "RecipeProposalOutput",
     "ResearchAccountGapsOutput",
     "ReverseProfileOutput",
     "SourceProposalDecisionOutput",
@@ -225,4 +261,5 @@ __all__ = [
     "Stage0ReadinessOutput",
     "SynthesizeIcpsOutput",
     "TierCheckpointOutput",
+    "ProjectPhaseAdvanceOutput",
 ]

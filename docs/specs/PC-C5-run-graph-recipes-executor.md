@@ -1,6 +1,6 @@
 # Phase C5 — Run-Graph Journal, Recipes, Durable Executor, and Supervisor
 
-**Status:** C5.2 implemented; C5.3 next on `platform/c5-recipe-execution` (2026-07-24)
+**Status:** C5.3 implemented; C5.4 next on `platform/c5-recipe-execution` (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 
@@ -854,6 +854,21 @@ already live for executable definitions and requires exact tool/schema/config pi
 
 **Gate:** existing fleet exit suite stays green; kill/restart at every crash boundary completes
 without duplicate database effect; provider retries are accurately journaled.
+
+**Implemented boundary (2026-07-24):** the fleet now has a generic `WorkId`/`WorkHandler` shell,
+monotone lease generations, and an `execute_graph` task while preserving the original project-run
+APIs as adapters. `RecipeExecutor` fail-before-task loads exact promoted revisions and pins,
+materializes immutable nodes/edges, selects ready work deterministically, bounds concurrency and
+map expansion, journals stable operation-scoped attempts, rebuilds cursors, abandons unterminated
+attempts, fences every execution projection by `(worker_id, lease_generation)`, and implements
+pause/resume/human-gate semantics. The production worker drains both legacy project drives and
+recipe graphs. Start/pause/resume/decide/pin/phase-advance controls are typed and replay-certified;
+steering controls carry display-safe before/after snapshots. Resume, tier checkpoint, and
+review-finalize routing now targets the one Recipe-#1 owner when present and the legacy driver
+otherwise. Real subprocess SIGKILL tests cover attempt-start, pre-tool, post-domain-commit,
+post-completion, event-insert, and cursor-update boundaries; transactional fault tests cover map
+expansion, gate decision, and stale-lease fencing. C5.3 does not cut over Recipe #0 or Recipe #1
+and exposes no cancellation control.
 
 ### C5.4 — Recipe #0 migration
 

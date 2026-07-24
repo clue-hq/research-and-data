@@ -124,7 +124,7 @@ async def _execute(sql: str) -> None:
 
 async def _done_account_jobs(run_id: ProjectRunId) -> int:
     rows = await _query(
-        "SELECT count(*) FROM fleet_task WHERE project_run_id = :run "
+        "SELECT count(*) FROM fleet_task WHERE work_id = :run "
         "AND kind = 'account_job' AND status = 'done'",
         run=run_id,
     )
@@ -229,14 +229,14 @@ async def _assert_exactly_once(run_id: ProjectRunId, worker_a: str, worker_b: st
         assert await get_run_lease(conn, run_id) is None
 
     statuses = await _query(
-        "SELECT status, count(*) FROM fleet_task WHERE project_run_id = :run "
+        "SELECT status, count(*) FROM fleet_task WHERE work_id = :run "
         "AND kind = 'account_job' GROUP BY status",
         run=run_id,
     )
     assert {str(s): int(n) for s, n in statuses} == {FleetTaskStatus.DONE.value: N_ACCOUNTS}
     drive = await _query(
         "SELECT status, result_ref_json->>'outcome' FROM fleet_task "
-        "WHERE project_run_id = :run AND kind = 'drive_run'",
+        "WHERE work_id = :run AND kind = 'drive_run'",
         run=run_id,
     )
     assert len(drive) == 1 and str(drive[0][0]) == FleetTaskStatus.DONE.value

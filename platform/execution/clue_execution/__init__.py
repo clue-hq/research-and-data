@@ -11,6 +11,21 @@ from clue_execution.compatibility import (
     ResourceObservation,
     canonical_payload_digest,
 )
+from clue_execution.executor import (
+    SUPPORTED_EXECUTOR_PROTOCOL,
+    ActivityInvoker,
+    CrashHook,
+    DbExecutionStarter,
+    ExecutionConflict,
+    ExecutionError,
+    ExecutionParameterStore,
+    ExecutionRunResult,
+    ExecutionStart,
+    IncompatibleRecipe,
+    PlaceholderRecipe,
+    RecipeExecutor,
+    execution_node_id,
+)
 from clue_execution.graph import (
     ActivityNode,
     BarrierNode,
@@ -36,6 +51,8 @@ from clue_execution.journal import (
     DbInvocationJournal,
     ExecutionCursor,
     ExecutionTransportWriter,
+    JournalCrashHook,
+    LostExecutionLease,
     OperationConflict,
     StaleCursor,
     get_cursor,
@@ -90,6 +107,7 @@ from clue_execution.views import (
     ExecutionRunView,
     ExecutionSummary,
 )
+from clue_execution.worker import RecipeExecutionHandler, enqueue_recipe_execution
 
 __all__ = [
     "ControlAction",
@@ -132,10 +150,25 @@ __all__ = [
     "canonical_sha256",
     "node_requirements",
     "validate_graph",
+    "ActivityInvoker",
+    "CrashHook",
+    "DbExecutionStarter",
+    "ExecutionConflict",
+    "ExecutionError",
+    "ExecutionParameterStore",
+    "ExecutionRunResult",
+    "ExecutionStart",
+    "IncompatibleRecipe",
+    "PlaceholderRecipe",
+    "RecipeExecutor",
+    "SUPPORTED_EXECUTOR_PROTOCOL",
+    "execution_node_id",
     "DbExecutionJournal",
     "DbInvocationJournal",
     "ExecutionCursor",
     "ExecutionTransportWriter",
+    "JournalCrashHook",
+    "LostExecutionLease",
     "OperationConflict",
     "StaleCursor",
     "get_cursor",
@@ -168,4 +201,6 @@ __all__ = [
     "ExecutionPinView",
     "ExecutionRunView",
     "ExecutionSummary",
+    "RecipeExecutionHandler",
+    "enqueue_recipe_execution",
 ]

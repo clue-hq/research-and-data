@@ -37,18 +37,32 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from sqlalchemy import text
+
 from clue_api.locks import build_account_lock_factory, lazy_account_lock_factory
 from clue_config import Settings
-from clue_core import ProjectPhase, ProjectRunId
+from clue_core import ExecutionId, ProjectPhase, ProjectRunId
+from clue_db import ConnFactory, transaction
+from clue_execution import enqueue_recipe_execution
 from clue_fleet import (
     DbLeaseStore,
     DbTaskQueue,
+    DbWorkLeaseStore,
+    DbWorkQueue,
+    FleetTaskKind,
+    LeasedWorkWorker,
     LeaseStore,
     ProjectRunWorker,
+    ProjectRunWorkHandler,
     QueueBackedScheduler,
     RunDriver,
     TaskQueue,
     TierPriority,
+    WorkContext,
+    WorkHandler,
+    WorkLeaseStore,
+    WorkQueue,
+    WorkResult,
     default_tier_priority,
     enqueue_drive,
 )
@@ -75,10 +89,46 @@ __all__ = [
     "build_fleet_deep_scheduler",
     "build_fleet_run_driver",
     "build_fleet_worker",
+    "build_multi_work_worker",
     "enqueue_run_drive",
 ]
 
 log = get_logger("clue_api.fleet_wiring")
+
+
+class _OwnedRunGuardHandler:
+    """Refuse the legacy driver whenever Recipe #1 owns the run."""
+
+    kind = FleetTaskKind.DRIVE_RUN
+
+    def __init__(
+        self,
+        inner: WorkHandler,
+        *,
+        conn_factory: ConnFactory = transaction,
+    ) -> None:
+        self._inner = inner
+        self._conn_factory = conn_factory
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        async with self._conn_factory() as conn:
+            owner = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT execution_id FROM project_run_execution_owner
+                        WHERE project_run_id = :run_id
+                        """
+                    ),
+                    {"run_id": context.work_id},
+                )
+            ).scalar_one_or_none()
+        if owner is not None:
+            raise RuntimeError(
+                f"project run {context.work_id} is owned by recipe execution {owner}; "
+                "legacy drive is forbidden"
+            )
+        return await self._inner.handle(context)
 
 
 def register_boot_handlers(
@@ -251,13 +301,70 @@ def build_fleet_worker(
     )
 
 
+def build_multi_work_worker(
+    settings: Settings,
+    *,
+    driver: RunDriver,
+    graph_handler: WorkHandler,
+    queue: WorkQueue | None = None,
+    leases: WorkLeaseStore | None = None,
+    worker_id: str | None = None,
+) -> LeasedWorkWorker:
+    """C5.3 production drain: unchanged project-run handler plus recipe graph handler."""
+    return LeasedWorkWorker(
+        handlers=(
+            _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
+            graph_handler,
+        ),
+        queue=queue if queue is not None else DbWorkQueue(),
+        leases=leases if leases is not None else DbWorkLeaseStore(),
+        worker_id=worker_id,
+        poll_interval=settings.fleet_poll_interval_s,
+        lease_ttl=timedelta(seconds=settings.fleet_lease_ttl_s),
+        heartbeat_interval=settings.fleet_heartbeat_interval_s,
+        task_stale_after=timedelta(seconds=settings.fleet_task_stale_after_s),
+    )
+
+
 async def enqueue_run_drive(
-    project_run_id: ProjectRunId, *, queue: TaskQueue | None = None, priority: int = 0
+    project_run_id: ProjectRunId,
+    *,
+    queue: TaskQueue | None = None,
+    work_queue: WorkQueue | None = None,
+    conn_factory: ConnFactory = transaction,
+    priority: int = 0,
 ) -> bool:
     """Offer a run to the fleet — the resume-surface helper (spec §2.4). Re-driving a paused run
     after ``submit_checkpoint``/``resume`` is a *fresh* :func:`~clue_fleet.enqueue_drive`, which
     re-opens the finished ``drive_run`` task (``reopen_terminal``). The B4 toolbelt calls this after
     a resume; ``queue`` defaults to the Postgres :class:`DbTaskQueue`."""
-    return await enqueue_drive(
-        queue if queue is not None else DbTaskQueue(), project_run_id, priority=priority
+    task_queue = queue if queue is not None else DbTaskQueue()
+    # Preserve the original pure queue-adapter surface for focused fake-queue tests. Production
+    # uses DbTaskQueue; integration tests that need routing inject their connection factory.
+    should_route = (
+        queue is None
+        or isinstance(task_queue, DbTaskQueue)
+        or conn_factory is not transaction
+        or work_queue is not None
     )
+    if not should_route:
+        return await enqueue_drive(task_queue, project_run_id, priority=priority)
+    async with conn_factory() as conn:
+        owner = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT execution_id FROM project_run_execution_owner
+                    WHERE project_run_id = :run_id
+                    """
+                ),
+                {"run_id": project_run_id},
+            )
+        ).scalar_one_or_none()
+    if owner is not None:
+        return await enqueue_recipe_execution(
+            work_queue if work_queue is not None else DbWorkQueue(task_queue),
+            ExecutionId(owner),
+            priority=priority,
+        )
+    return await enqueue_drive(task_queue, project_run_id, priority=priority)

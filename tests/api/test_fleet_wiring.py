@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -168,6 +171,41 @@ def test_enqueue_run_drive_offers_a_reopenable_drive_run() -> None:
     (call,) = queue.calls
     assert call["kind"] is FleetTaskKind.DRIVE_RUN
     assert call["dedup_key"] == str(run_id)
+    assert call["reopen_terminal"] is True
+
+
+def test_enqueue_run_drive_routes_recipe_owned_run_to_graph_work() -> None:
+    owner = uuid4()
+    legacy_queue = _RecordingQueue()
+    graph_queue = _RecordingQueue()
+
+    class _OwnerResult:
+        def scalar_one_or_none(self) -> object:
+            return owner
+
+    class _OwnerConnection:
+        async def execute(self, _statement: object, _params: object) -> _OwnerResult:
+            return _OwnerResult()
+
+    @asynccontextmanager
+    async def owner_connection() -> AsyncIterator[_OwnerConnection]:
+        yield _OwnerConnection()
+
+    run_id = new_project_run_id()
+    ok = run_async(
+        enqueue_run_drive(
+            run_id,
+            queue=legacy_queue,  # type: ignore[arg-type]
+            work_queue=graph_queue,  # type: ignore[arg-type]
+            conn_factory=owner_connection,  # type: ignore[arg-type]
+        )
+    )
+    assert ok
+    assert legacy_queue.calls == []
+    (call,) = graph_queue.calls
+    assert call["kind"] is FleetTaskKind.EXECUTE_GRAPH
+    assert call["work_id"] == owner
+    assert call["dedup_key"] == str(owner)
     assert call["reopen_terminal"] is True
 
 
