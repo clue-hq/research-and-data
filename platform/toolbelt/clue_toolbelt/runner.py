@@ -1,8 +1,9 @@
 """The invocation wrapper — the sanctioned path to run a tool (D5: runner-mediated ⇒ logged).
 
-:func:`invoke_tool` is the single entry point every caller (the slice-3 HTTP route, the agent plane,
-a test) goes through. It is the choke point that makes the toolbelt's guarantees hold for every
-runner-mediated invocation:
+:func:`invoke_tool` is the pure typed runner used internally by C5's required production
+``ToolInvoker`` and directly by focused unit tests. Production roots do not call it bare: the
+journaled invoker snapshots parameters and establishes the durable execution node first. This
+runner provides the inner invocation guarantees:
 
 1. **Resolve** the tool from the registry (``UnknownTool`` if absent).
 2. **Validate** the request body against the tool's pydantic ``input_model`` (a bad body is a loud
@@ -37,7 +38,7 @@ from clue_toolbelt.errors import IdempotencyConflict, PreconditionFailed, ToolCo
 from clue_toolbelt.idempotency import IdempotencyStore, StoredInvocation, body_sha256
 from clue_toolbelt.registry import ToolRegistry
 
-__all__ = ["invoke_tool"]
+__all__ = ["invoke_tool", "validate_tool_result"]
 
 log = get_logger("clue_toolbelt.runner")
 
@@ -57,10 +58,10 @@ def _replay_or_conflict(
         raise IdempotencyConflict(key, reason="pending")
     # A completed row with the matching tool + body → replay (no re-execution).
     replayed = ToolResult.model_validate(existing.response_json or {})
-    return _validate_result(tool, replayed).model_copy(update={"replayed": True})
+    return validate_tool_result(tool, replayed).model_copy(update={"replayed": True})
 
 
-def _validate_result(tool: Tool, result: ToolResult) -> ToolResult:
+def validate_tool_result(tool: Tool, result: ToolResult) -> ToolResult:
     """Validate identity and typed references against the exact registered descriptor."""
     descriptor = tool.descriptor
     if result.tool != descriptor.name or result.version != descriptor.version:
@@ -159,7 +160,7 @@ async def invoke_tool(
                 raise IdempotencyConflict(idempotency_key, reason="pending")
 
         try:
-            result = _validate_result(tool, await tool.invoke(inputs, ctx))
+            result = validate_tool_result(tool, await tool.invoke(inputs, ctx))
         except BaseException:
             # A failed invoke must never be cached — release the reservation so a retry re-executes.
             if engage_idempotency:

@@ -59,6 +59,11 @@ from clue_api.disposition_wiring import (
     build_disposition_store,
     build_review_disposition_emitter,
 )
+from clue_api.execution_wiring import (
+    ExecutionRunEventWriter,
+    StorageParameterArtifactStore,
+    build_tool_invoker,
+)
 from clue_api.fleet_wiring import (
     build_account_lock_factory,
     build_fleet_deep_scheduler,
@@ -305,6 +310,10 @@ __all__ = [
     # B4 slice 2: the concrete toolbelt over the existing capabilities (toolbelt_wiring)
     "build_toolbelt",
     "GatewayRequired",
+    # C5.1: mandatory parameter snapshot + execution journal invocation composition
+    "ExecutionRunEventWriter",
+    "StorageParameterArtifactStore",
+    "build_tool_invoker",
     # B4 slice 3: the read-side HTTP surface (projections + tool route + manifest ops + SSE)
     "create_projections_app",
     "create_projections_router",

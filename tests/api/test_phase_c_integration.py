@@ -10,6 +10,7 @@ from clue_api import (
     IngestionProposalSink,
     ProductionIngestionClaimErasureRoute,
     ProductionIngestionContactClaimRoute,
+    build_tool_invoker,
     create_projections_app,
     register_generic_web_wiring,
 )
@@ -82,12 +83,20 @@ class _Scraper:
 
 
 def test_phase_c_routes_are_aggregated_at_the_http_root() -> None:
+    settings = load_settings(_env_file=None)
+    registry = ToolRegistry()
+    idempotency_store = DbIdempotencyStore()
+    storage = cast(StorageBackend, object())
     app = create_projections_app(
         surface=cast(ObservabilitySurface, object()),
-        registry=ToolRegistry(),
-        idempotency_store=DbIdempotencyStore(),
-        settings=load_settings(_env_file=None),
-        ingestion_storage=cast(StorageBackend, object()),
+        tool_invoker=build_tool_invoker(
+            registry=registry,
+            idempotency_store=idempotency_store,
+            storage=storage,
+            settings=settings,
+        ),
+        settings=settings,
+        ingestion_storage=storage,
         manage_db_lifespan=False,
     )
     paths = set(app.openapi()["paths"])

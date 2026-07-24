@@ -38,7 +38,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from clue_core import OperationId
+from clue_core import ExecutionId, ExecutionNodeId, OperationId
 from clue_db import ConnFactory
 
 __all__ = [
@@ -234,6 +234,10 @@ class ToolContext:
     conn_factory: ConnFactory
     operation_id: OperationId
     quality_mode: str | None = None
+    execution_id: ExecutionId | None = None
+    execution_node_id: ExecutionNodeId | None = None
+    execution_node_key: str | None = None
+    parent_execution_id: ExecutionId | None = None
 
 
 @dataclass(frozen=True, slots=True)

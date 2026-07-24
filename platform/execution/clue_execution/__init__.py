@@ -1,9 +1,15 @@
-"""Platform execution-plane contracts.
+"""Platform execution-plane contracts and the C5.1 append-only journal."""
 
-C5.0 freezes types only. Persistence, journaling, compatibility loading, and scheduling arrive in
-later C5 checkpoints.
-"""
-
+from clue_execution.journal import (
+    DbExecutionJournal,
+    DbInvocationJournal,
+    ExecutionCursor,
+    ExecutionTransportWriter,
+    OperationConflict,
+    StaleCursor,
+    get_cursor,
+    rebuild_cursor,
+)
 from clue_execution.models import (
     ControlAction,
     ControlKind,
@@ -18,6 +24,27 @@ from clue_execution.models import (
     RecipeScopeType,
     ResolvedPin,
     RunAggregateSnapshot,
+)
+from clue_execution.parameters import (
+    PARAMETER_MEDIA_TYPE,
+    CanonicalParameterSnapshotter,
+    ParameterArtifactState,
+    ParameterArtifactStore,
+    ParameterBodyView,
+    StoredParameterArtifact,
+    resolve_parameter_body,
+)
+from clue_execution.recipes import DbRecipeReader, RecipeRevisionView
+from clue_execution.views import (
+    DbExecutionRunViewReader,
+    ExecutionArtifactRefView,
+    ExecutionAttemptView,
+    ExecutionEdgeView,
+    ExecutionEventView,
+    ExecutionNodeView,
+    ExecutionPinView,
+    ExecutionRunView,
+    ExecutionSummary,
 )
 
 __all__ = [
@@ -34,4 +61,30 @@ __all__ = [
     "RecipeScopeType",
     "ResolvedPin",
     "RunAggregateSnapshot",
+    "DbExecutionJournal",
+    "DbInvocationJournal",
+    "ExecutionCursor",
+    "ExecutionTransportWriter",
+    "OperationConflict",
+    "StaleCursor",
+    "get_cursor",
+    "rebuild_cursor",
+    "CanonicalParameterSnapshotter",
+    "PARAMETER_MEDIA_TYPE",
+    "ParameterArtifactState",
+    "ParameterArtifactStore",
+    "ParameterBodyView",
+    "StoredParameterArtifact",
+    "resolve_parameter_body",
+    "DbRecipeReader",
+    "RecipeRevisionView",
+    "DbExecutionRunViewReader",
+    "ExecutionArtifactRefView",
+    "ExecutionAttemptView",
+    "ExecutionEdgeView",
+    "ExecutionEventView",
+    "ExecutionNodeView",
+    "ExecutionPinView",
+    "ExecutionRunView",
+    "ExecutionSummary",
 ]

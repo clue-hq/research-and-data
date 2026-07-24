@@ -6,7 +6,10 @@ requires-python = ">=3.12"
 license = { text = "Proprietary" }
 dependencies = [
     "clue-core",
+    "clue-db",
+    "clue-toolbelt",
     "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
 ]
 
 [build-system]
@@ -18,3 +21,5 @@ packages = ["clue_execution"]
 
 [tool.uv.sources]
 clue-core = { workspace = true }
+clue-db = { workspace = true }
+clue-toolbelt = { workspace = true }

@@ -15,9 +15,10 @@ What ships here:
   :class:`ToolContext` (workspace + actor + conn factory + the A8 ``quality_mode`` slot),
   :class:`PreconditionFailure`, :class:`ToolEstimate`, :class:`ToolResult` (references not blobs).
 * :mod:`clue_toolbelt.registry` — :class:`ToolRegistry` (register/get/list; duplicate = loud).
-* :mod:`clue_toolbelt.runner` — :func:`invoke_tool`, the one wrapper that validates, checks
-  idempotency (D6) + preconditions, and runs the body inside a mandatory ``log_span`` (an unlogged
-  invocation is structurally impossible).
+* :mod:`clue_toolbelt.runner` — :func:`invoke_tool`, the inner wrapper that validates, checks
+  idempotency (D6) + preconditions, and runs the body inside a mandatory ``log_span``.
+* :mod:`clue_toolbelt.invoker` — :class:`ToolInvoker`, the required production boundary that
+  snapshots validated parameters and journals every invocation around the inner runner.
 * :mod:`clue_toolbelt.idempotency` — the A9 store seam + its ``tool_invocation`` Db impl.
 * :mod:`clue_toolbelt.errors` — ``UnknownTool`` / ``PreconditionFailed`` / ``IdempotencyConflict``.
 """
@@ -54,6 +55,14 @@ from clue_toolbelt.idempotency import (
     StoredInvocation,
     body_sha256,
 )
+from clue_toolbelt.invoker import (
+    InvocationJournal,
+    JournalDisposition,
+    JournalStart,
+    ParameterSnapshot,
+    ParameterSnapshotter,
+    ToolInvoker,
+)
 from clue_toolbelt.registry import ToolRegistry
 from clue_toolbelt.runner import invoke_tool
 
@@ -83,6 +92,13 @@ __all__ = [
     "DbIdempotencyStore",
     "StoredInvocation",
     "body_sha256",
+    # durable production invocation
+    "InvocationJournal",
+    "JournalDisposition",
+    "JournalStart",
+    "ParameterSnapshot",
+    "ParameterSnapshotter",
+    "ToolInvoker",
     # errors
     "ToolbeltError",
     "ToolContractViolation",

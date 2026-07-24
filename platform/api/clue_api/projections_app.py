@@ -53,6 +53,7 @@ from clue_core import (
 from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
+from clue_execution import OperationConflict
 from clue_projections import (
     MANIFEST_OP_TOOLS,
     PROJECTIONS_SCHEMA_VERSION,
@@ -78,13 +79,11 @@ from clue_storage import StorageBackend
 from clue_toolbelt import (
     Actor,
     IdempotencyConflict,
-    IdempotencyStore,
     PreconditionFailed,
     ToolContext,
-    ToolRegistry,
+    ToolInvoker,
     ToolResult,
     UnknownTool,
-    invoke_tool,
 )
 
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
@@ -163,8 +162,7 @@ def _sse_frame(*, event: str, data: dict[str, Any], seq: int | None = None) -> s
 def create_projections_router(
     *,
     surface: ObservabilitySurface,
-    registry: ToolRegistry,
-    idempotency_store: IdempotencyStore,
+    tool_invoker: ToolInvoker,
     settings: Settings,
     conn_factory: ConnFactory,
     sse_poll_interval_s: float,
@@ -397,14 +395,11 @@ def create_projections_router(
             quality_mode=quality_mode,
         )
         try:
-            return await invoke_tool(
-                registry,
+            return await tool_invoker.invoke(
                 name,
                 body,
                 ctx,
                 idempotency_key=idempotency_key,
-                store=idempotency_store,
-                idempotency_ttl_s=settings.toolbelt_idempotency_ttl_s,
             )
         except UnknownTool as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -427,6 +422,11 @@ def create_projections_router(
             raise HTTPException(
                 status_code=409,
                 detail={"error": "idempotency_conflict", "reason": exc.reason, "key": exc.key},
+            ) from exc
+        except OperationConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "idempotency_conflict", "reason": "operation"},
             ) from exc
 
     @router.post("/tools/{name}")
@@ -593,8 +593,7 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
 def create_projections_app(
     *,
     surface: ObservabilitySurface,
-    registry: ToolRegistry,
-    idempotency_store: IdempotencyStore,
+    tool_invoker: ToolInvoker,
     settings: Settings | None = None,
     conn_factory: ConnFactory = transaction,
     workspace_resolver: WorkspaceResolver | None = None,
@@ -606,8 +605,8 @@ def create_projections_app(
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
-    ``surface`` / ``registry`` / ``idempotency_store`` are the injected M13.4 observability surface,
-    the slice-2 toolbelt, and the A9 store. ``conn_factory`` is the connection seam every projection
+    ``surface`` / ``tool_invoker`` are the injected M13.4 observability surface and the mandatory
+    C5.1 journaled invocation boundary. ``conn_factory`` is the connection seam every projection
     read + tool precondition + stream-token write uses (tests bind a savepoint-scoped factory).
     ``workspace_resolver`` / ``actor_resolver`` swap the auth seams via ``dependency_overrides``.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
@@ -637,8 +636,7 @@ def create_projections_app(
     app.include_router(
         create_projections_router(
             surface=surface,
-            registry=registry,
-            idempotency_store=idempotency_store,
+            tool_invoker=tool_invoker,
             settings=resolved,
             conn_factory=conn_factory,
             sse_poll_interval_s=sse_poll_interval_s,
@@ -648,11 +646,9 @@ def create_projections_app(
     if ingestion_storage is not None:
         app.include_router(
             build_ingestion_router(
-                registry=registry,
-                idempotency_store=idempotency_store,
+                tool_invoker=tool_invoker,
                 storage=ingestion_storage,
                 conn_factory=conn_factory,
-                settings=resolved,
             )
         )
     return app

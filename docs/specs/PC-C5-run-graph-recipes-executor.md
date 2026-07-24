@@ -1,6 +1,6 @@
 # Phase C5 — Run-Graph Journal, Recipes, Durable Executor, and Supervisor
 
-**Status:** C5.0 implemented; C5.1 next on `platform/c5-recipe-execution` (2026-07-24)
+**Status:** C5.1 implemented; C5.2 next on `platform/c5-recipe-execution` (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 
@@ -40,7 +40,7 @@ contracts. C5 owns the execution substrate that makes those future plans durable
 
 ---
 
-## 2. Current code reality
+## 2. Starting code reality
 
 C5 starts from the following implemented surfaces:
 
@@ -812,6 +812,19 @@ intentionally contains no migration, journal repository, scheduler, or executor.
 
 **Gate:** every HTTP/human/Recipe-#0 test invocation has exactly one graph node, actor, pins, params
 ref, and reference-only result; no orphan invocation; cross-workspace reads fail closed.
+
+**Implemented:** random-hash migration `128c83d5e151` creates the full execution/recipe/control
+schema, append-only history guards, one rebuildable cursor, and the transactional
+`execution_event` → `run_event` projection. The required production `ToolInvoker` now owns exact
+descriptor resolution, validated content-addressed parameter snapshots, permanent
+operation-scoped replay, actor-attributed terminal/steering events, and the existing short A9 cache.
+The HTTP tool route, ingestion route, and narrow Recipe-#0 runner cannot call the bare runner.
+Parameter bodies resolve only through the workspace-scoped artifact seam and become metadata-only
+tombstones after erasure. Database tests cover success, durable replay/blocking, retry after a
+failed attempt, operation conflicts, no-orphan failures, CAS rollback, cursor rebuild, append-only
+guards, cross-workspace reads, parameter privacy/erasure, and gapless SSE replay of node events.
+No recipe mutation/compatibility behavior, executor, fleet generalization, or supervisor runtime
+behavior is included; those remain C5.2+.
 
 ### C5.2 — Recipes and compatibility loader
 

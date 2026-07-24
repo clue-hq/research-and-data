@@ -10,11 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from clue_core import operation_id_from_key
 from clue_toolbelt import (
-    IdempotencyStore,
     ToolContext,
-    ToolRegistry,
+    ToolInvoker,
     ToolResult,
-    invoke_tool,
 )
 
 
@@ -38,14 +36,10 @@ class ToolbeltRecipeRunner:
     def __init__(
         self,
         *,
-        registry: ToolRegistry,
-        idempotency_store: IdempotencyStore,
-        idempotency_ttl_s: float,
+        tool_invoker: ToolInvoker,
         recipe_id: str = "recipe0@1",
     ) -> None:
-        self._registry = registry
-        self._store = idempotency_store
-        self._ttl = idempotency_ttl_s
+        self._tool_invoker = tool_invoker
         self._recipe_id = recipe_id
 
     async def run_step(self, step: RecipeStep, *, ctx: ToolContext) -> ToolResult:
@@ -56,15 +50,12 @@ class ToolbeltRecipeRunner:
                 f"{self._recipe_id}:{step.step_id}",
             ),
         )
-        return await invoke_tool(
-            self._registry,
+        return await self._tool_invoker.invoke(
             step.tool_name,
             dict(step.input_refs),
             step_ctx,
             version=step.tool_version,
             idempotency_key=f"{self._recipe_id}:{step.step_id}",
-            store=self._store,
-            idempotency_ttl_s=self._ttl,
         )
 
     async def run(
