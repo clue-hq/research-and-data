@@ -3,7 +3,8 @@
 Date: 2026-07-24
 Branch: `platform/c1-coverage-goal-judge`
 Base: C0 contract-freeze commit `421848f`
-State: implementation complete and intentionally uncommitted at user request
+State: implemented and committed at `bae135a`; annotated checkpoint tag
+`phase-c1-coverage-goal-judge-v1`
 
 ## Implemented
 
@@ -48,6 +49,30 @@ State: implementation complete and intentionally uncommitted at user request
 Per the C0 ownership treaty, central toolbelt registration and central
 projection exports remain integration-owned and were not edited in this lane.
 
+## Future C6 evaluator-placement flag
+
+Product direction recorded after the C1 checkpoint: the advisory coverage
+evaluation will probably move inside the platform deepagent or governed
+research subagent when C6 lands.
+
+This is an open placement decision, not a change to current C1 behavior. C1
+keeps the bounded `LLMGateway` leaf call so its typed assessment and safety
+boundaries remain executable before the agent exists. At C6:
+
+- explicitly choose one evaluator owner;
+- do not run both an engine-side evaluator and an agent-side evaluator;
+- if it moves into the agent, remove or disable the standalone C1 evaluator
+  call rather than duplicating its judgment;
+- preserve agent planning authority and engine authority over promotable
+  evidence, budget, policy, idempotency, and hard terminal states;
+- preserve the append-only coverage ledger and reference-only contracts;
+- keep malformed advice and `propose_stop` non-terminal by themselves;
+- decide how agent-local advice is journaled/projected without making it
+  authoritative durable state.
+
+Until C6 closes this decision, the committed C1 leaf-call implementation is the
+current contract.
+
 ## Verification
 
 Using an isolated PostgreSQL/pgvector 16 container at port 55433 because the
@@ -69,7 +94,6 @@ modified or removed.
 
 ## Handoff
 
-- Do not commit until the user asks.
 - On Phase-C integration, register the C1 tool and projections only after the
   lanes are combined, per the C0 contract freeze.
 - When C6 connects the governed research agent, pass its chosen gap set and
