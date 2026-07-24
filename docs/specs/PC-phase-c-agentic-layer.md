@@ -1,6 +1,6 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** RATIFIED PLAN — implementation not started (2026-07-24)
+**Status:** RATIFIED PLAN — C0 contracts frozen; C1–C4 implementation not started (2026-07-24)
 
 **Integration branch:** `platform/workspace-restructure`
 
@@ -285,6 +285,15 @@ C8 cross-cutting prerequisites land before the dependent slice.
 **Purpose.** Prevent four worktrees from inventing incompatible ledgers, config shapes, tool
 contracts, and Stage-0 identities.
 
+**Executed record:** [`PC-C0-step4-contract-freeze.md`](./PC-C0-step4-contract-freeze.md).
+Its shared types, schema ownership, tool/projection names, fixtures, and worktree treaty are
+binding on all four child specs:
+
+- [`PC-C1 — coverage and goal judge`](./PC-C1-coverage-and-goal-judge.md);
+- [`PC-C2 — field/source proposals`](./PC-C2-field-source-proposals.md);
+- [`PC-C3 — ingestion`](./PC-C3-ingestion.md);
+- [`PC-C4 — governed Stage 0 and Recipe #0`](./PC-C4-stage0-recipe0.md).
+
 **Deliverables before worktrees open:**
 
 1. child specs `PC-C1` through `PC-C4`, each with owned/must-not-touch surfaces;
@@ -298,7 +307,7 @@ contracts, and Stage-0 identities.
 7. current documentation/backlog synchronization.
 
 **Exit gate:** the four child specs can be implemented without any lane editing another lane's
-owned package or independently defining the same domain shape.
+owned package or independently defining the same domain shape. **Closed 2026-07-24.**
 
 ### C1 — coverage ledger + goal-judge loop (REQ-04)
 
