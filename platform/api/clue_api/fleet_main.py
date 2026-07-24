@@ -55,7 +55,11 @@ from clue_api.fleet_wiring import (
     build_multi_work_worker,
     register_boot_handlers,
 )
-from clue_api.recipe_wiring import build_recipe_pin_registry
+from clue_api.recipe_wiring import (
+    build_recipe_lifecycle,
+    build_recipe_pin_registry,
+    seed_system_recipes,
+)
 from clue_api.run_composition import ComposingRunDriver
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
@@ -175,6 +179,14 @@ async def _serve() -> None:
         )
         recipe_reader = DbRecipeReader(conn_factory=transaction)
         recipe_repository = DbRecipeRepository(conn_factory=transaction)
+        await seed_system_recipes(
+            repository=recipe_repository,
+            lifecycle=build_recipe_lifecycle(
+                tool_registry=registry,
+                conn_factory=transaction,
+                pin_registry=pin_registry,
+            ),
+        )
         starter = DbExecutionStarter(
             conn_factory=transaction,
             recipes=recipe_reader,

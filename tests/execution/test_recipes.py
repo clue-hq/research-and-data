@@ -10,18 +10,21 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.recipe_contracts import RECIPE_0_TOOL_ADDRESSES
 from clue_api.recipe_wiring import (
+    build_recipe_pin_registry,
     load_system_recipe_definitions,
     seed_system_recipes,
 )
+from clue_api.toolbelt_wiring import build_toolbelt
 from clue_db import ConnFactory
 from clue_execution import (
     CompatibilityContext,
     CompatibilityLoader,
     CompatibilityManifest,
     DbRecipeRepository,
+    GateNode,
     InvalidRecipeTransition,
-    PinResolverRegistry,
     RecipeDefinition,
     RecipeGraph,
     RecipeLifecycle,
@@ -30,7 +33,6 @@ from clue_execution import (
     RecipeVersionConflict,
     ToolNode,
 )
-from clue_toolbelt import ToolRegistry
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
@@ -55,11 +57,17 @@ def _savepoint_factory(conn: AsyncConnection) -> ConnFactory:
 def _lifecycle(
     conn: AsyncConnection,
 ) -> tuple[DbRecipeRepository, RecipeLifecycle]:
-    repository = DbRecipeRepository(conn_factory=_savepoint_factory(conn))
+    factory = _savepoint_factory(conn)
+    repository = DbRecipeRepository(conn_factory=factory)
+    registry = build_toolbelt(storage=None)
+    pins = build_recipe_pin_registry(
+        tool_registry=registry,
+        conn_factory=factory,
+    )
     lifecycle = RecipeLifecycle(
         repository=repository,
-        tool_catalog=ToolRegistry(),
-        compatibility_loader=CompatibilityLoader(PinResolverRegistry()),
+        tool_catalog=registry,
+        compatibility_loader=CompatibilityLoader(pins),
     )
     return repository, lifecycle
 
@@ -101,13 +109,59 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                 )
             ).mappings()
             assert {row["event_type"]: row["count"] for row in events} == {
-                "promoted": 2,
-                "proposed": 2,
+                "promoted": 3,
+                "proposed": 3,
+                "superseded": 1,
             }
 
             mismatch = definitions[0].model_copy(update={"max_nodes": 129})
             with pytest.raises(RecipeVersionConflict, match="bump the recipe version"):
                 await repository.propose(mismatch)
+
+    run_async(scenario())
+
+
+def test_recipe0_v2_is_the_only_promoted_executable_stage0_revision() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            repository, lifecycle = _lifecycle(conn)
+            definitions = load_system_recipe_definitions()
+            seeded = await seed_system_recipes(
+                repository=repository,
+                lifecycle=lifecycle,
+                definitions=definitions,
+            )
+            recipe0 = [
+                (definition, revision)
+                for definition, revision in zip(definitions, seeded, strict=True)
+                if definition.recipe_key == "recipe0-stage0"
+            ]
+            assert [(item.version, item.graph.migration_state) for item, _ in recipe0] == [
+                (1, "placeholder"),
+                (2, "executable"),
+            ]
+            effective = [
+                (
+                    definition.version,
+                    (
+                        await repository.effective_event(
+                            recipe_revision_id=revision.recipe_revision_id
+                        )
+                    ).event_type,
+                )
+                for definition, revision in recipe0
+            ]
+            assert effective == [
+                (1, RecipeRevisionEventType.SUPERSEDED),
+                (2, RecipeRevisionEventType.PROMOTED),
+            ]
+            slot = next(
+                node for node in recipe0[1][0].graph.nodes if node.node_key == "stage0_interactions"
+            )
+            assert isinstance(slot, GateNode)
+            assert set(slot.dynamic_tool_allowlist) == set(RECIPE_0_TOOL_ADDRESSES)
+            assert slot.max_children == 125
+            assert recipe0[1][0].max_nodes == 128
 
     run_async(scenario())
 

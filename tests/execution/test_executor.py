@@ -18,6 +18,7 @@ from clue_config import Settings
 from clue_core import ExecutionId
 from clue_db import ConnFactory
 from clue_execution import (
+    BarrierNode,
     CallablePinResolver,
     CompatibilityContext,
     CompatibilityLoader,
@@ -163,6 +164,8 @@ async def _runtime(
     max_nodes: int = 4,
     max_depth: int = 1,
     max_fanout: int = 2,
+    interaction: bool = False,
+    storage: _MemoryStorage | None = None,
 ) -> tuple[ExecutionId, RecipeExecutor, _CertifiedEcho, LeaseGeneration]:
     workspace_id = await seed_workspace(conn, "ws-c5-executor")
     factory = _factory(conn)
@@ -185,31 +188,60 @@ async def _runtime(
 
     pin_registry.register(CallablePinResolver(kind="tool", loader=observe))
     compatibility = CompatibilityLoader(pin_registry)
-    resolved_graph = graph or RecipeGraph(
-        nodes=(
-            ToolNode(
-                node_key="echo",
-                ordinal=0,
-                tool_name=tool.name,
-                tool_version=tool.version,
-                input_schema_sha256=descriptor.input_schema_sha256,
-                output_schema_sha256=descriptor.output_schema_sha256,
-                bindings={"value": ParameterBinding(kind="parameter", name="value")},
-                requirements=(tool_pin,),
+    if interaction:
+        resolved_graph = RecipeGraph(
+            nodes=(
+                GateNode(
+                    node_key="interactions",
+                    ordinal=0,
+                    authority="human",
+                    resume_condition=GateResumeCondition.INPUT_AVAILABLE,
+                    dynamic_tool_allowlist=(descriptor.address,),
+                    max_children=2,
+                    requirements=(tool_pin,),
+                ),
+                BarrierNode(
+                    node_key="complete",
+                    ordinal=1,
+                    dependencies=("interactions",),
+                ),
             ),
-        ),
-        tool_allowlist=(descriptor.address,),
-    )
-    resolved_compatibility = compatibility_manifest or CompatibilityManifest(
-        nodes={"echo": (tool_pin,)}
-    )
-    resolved_parameters = parameters if parameters is not None else {"value": 7}
-    resolved_schema = parameter_schema or {
-        "type": "object",
-        "properties": {"value": {"type": "integer"}},
-        "required": ["value"],
-        "additionalProperties": False,
-    }
+            tool_allowlist=(descriptor.address,),
+            authority_allowlist=("human",),
+        )
+        resolved_compatibility = CompatibilityManifest(nodes={"interactions": (tool_pin,)})
+        resolved_parameters = parameters if parameters is not None else {}
+        resolved_schema = parameter_schema or {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+    else:
+        resolved_graph = graph or RecipeGraph(
+            nodes=(
+                ToolNode(
+                    node_key="echo",
+                    ordinal=0,
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    input_schema_sha256=descriptor.input_schema_sha256,
+                    output_schema_sha256=descriptor.output_schema_sha256,
+                    bindings={"value": ParameterBinding(kind="parameter", name="value")},
+                    requirements=(tool_pin,),
+                ),
+            ),
+            tool_allowlist=(descriptor.address,),
+        )
+        resolved_compatibility = compatibility_manifest or CompatibilityManifest(
+            nodes={"echo": (tool_pin,)}
+        )
+        resolved_parameters = parameters if parameters is not None else {"value": 7}
+        resolved_schema = parameter_schema or {
+            "type": "object",
+            "properties": {"value": {"type": "integer"}},
+            "required": ["value"],
+            "additionalProperties": False,
+        }
     definition = RecipeDefinition(
         recipe_key="executor-test",
         scope_type=RecipeScopeType.WORKSPACE,
@@ -238,7 +270,7 @@ async def _runtime(
     )
     assert promoted.promoted, promoted.graph_validation.issues
 
-    storage = _MemoryStorage()
+    storage = storage or _MemoryStorage()
     artifact_store = StorageParameterArtifactStore(
         storage=storage,
         conn_factory=factory,
@@ -339,6 +371,325 @@ def test_lost_lease_generation_cannot_project_execution_state() -> None:
                     lease_generation=generation,
                 )
             assert tool.calls == 0
+
+    run_async(scenario())
+
+
+def test_bounded_interaction_child_is_durable_replayable_and_human_closable() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(
+                conn,
+                interaction=True,
+            )
+            opened = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert opened.status is ExecutionStatus.AWAITING_INPUT
+
+            appended = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-001",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 17},
+                actor="human",
+            )
+            with pytest.raises(ExecutionConflict, match="durable parameter artifact"):
+                await executor.invoke_interaction_tool(
+                    appended,
+                    inputs={"value": 18},
+                    actor="human",
+                )
+            with pytest.raises(ExecutionConflict, match="actor differs"):
+                await executor.invoke_interaction_tool(
+                    appended,
+                    inputs={"value": 17},
+                    actor="agent",
+                )
+            first = await executor.invoke_interaction_tool(
+                appended,
+                inputs={"value": 17},
+                actor="human",
+            )
+            replayed_append = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-001",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 17},
+                actor="human",
+            )
+            replayed = await executor.invoke_interaction_tool(
+                replayed_append,
+                inputs={"value": 17},
+                actor="human",
+            )
+            assert first.references == replayed.references == {"echoed": 17}
+            assert replayed.replayed is True
+            assert tool.calls == 1
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT n.declared_by_node_id, n.parameter_artifact_key,
+                                   n.parameter_sha256, n.definition_json,
+                                   e.payload_json
+                            FROM execution_node n
+                            JOIN execution_event e ON e.node_id = n.id
+                            WHERE n.execution_id = :execution_id
+                              AND n.node_key = 'answer-001'
+                              AND e.event_type = 'node.completed'
+                            """
+                        ),
+                        {"execution_id": execution_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert row["declared_by_node_id"] is not None
+            assert row["parameter_artifact_key"]
+            assert len(row["parameter_sha256"]) == 64
+            assert row["definition_json"]["actor"] == "human"
+            assert "value" not in row["definition_json"]
+            assert row["payload_json"]["result"]["references"] == {"echoed": 17}
+
+            with pytest.raises(ValueError, match="outside this workspace"):
+                await executor.append_interaction_tool(
+                    execution_id=execution_id,
+                    workspace_id="other-workspace",
+                    slot_key="interactions",
+                    node_key="foreign",
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    inputs={"value": 99},
+                    actor="human",
+                )
+
+            await executor.decide_gate(
+                execution_id=execution_id,
+                node_key="interactions",
+                actor="human",
+                decision="stage0_complete",
+            )
+            completed = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert completed.status is ExecutionStatus.COMPLETED
+            assert completed.completed_node_keys == (
+                "answer-001",
+                "complete",
+                "interactions",
+            )
+            terminal_replay = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-001",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 17},
+                actor="human",
+            )
+            replayed_after_completion = await executor.invoke_interaction_tool(
+                terminal_replay,
+                inputs={"value": 17},
+                actor="human",
+            )
+            assert replayed_after_completion.replayed is True
+            assert tool.calls == 1
+
+    run_async(scenario())
+
+
+def test_interaction_child_recovers_after_domain_commit_without_duplicate_effect() -> None:
+    async def scenario() -> None:
+        crashed = False
+
+        async def crash(
+            point: str,
+            *,
+            context: ToolContext,
+            start: Any,
+        ) -> None:
+            del context, start
+            nonlocal crashed
+            if point == "after_domain_commit" and not crashed:
+                crashed = True
+                raise asyncio.CancelledError
+
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(
+                conn,
+                interaction=True,
+                crash_hook=crash,
+            )
+            opened = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert opened.status is ExecutionStatus.AWAITING_INPUT
+            appended = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="crash-answer",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 23},
+                actor="human",
+            )
+            with pytest.raises(asyncio.CancelledError):
+                await executor.invoke_interaction_tool(
+                    appended,
+                    inputs={"value": 23},
+                    actor="human",
+                )
+            recovered = await executor.invoke_interaction_tool(
+                appended,
+                inputs={"value": 23},
+                actor="human",
+            )
+            assert recovered.references == {"echoed": 23}
+            assert tool.calls == 1
+            attempts = int(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT count(*) FROM execution_attempt
+                            WHERE execution_id = :execution_id
+                              AND node_id = :node_id
+                            """
+                        ),
+                        {
+                            "execution_id": execution_id,
+                            "node_id": appended.node_id,
+                        },
+                    )
+                ).scalar_one()
+            )
+            assert attempts == 2
+
+    run_async(scenario())
+
+
+def test_worker_recovers_an_appended_interaction_before_invocation() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(
+                conn,
+                interaction=True,
+            )
+            opened = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert opened.status is ExecutionStatus.AWAITING_INPUT
+            await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="worker-answer",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 29},
+                actor="agent",
+            )
+            recovered = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert recovered.status is ExecutionStatus.AWAITING_INPUT
+            assert recovered.completed_node_keys == ("worker-answer",)
+            assert tool.values == [29]
+
+    run_async(scenario())
+
+
+def test_erased_interaction_body_is_a_tombstone_and_cannot_be_recovered() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            storage = _MemoryStorage()
+            execution_id, executor, _tool, generation = await _runtime(
+                conn,
+                interaction=True,
+                storage=storage,
+            )
+            opened = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert opened.status is ExecutionStatus.AWAITING_INPUT
+            await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="private-answer",
+                tool_name="executor_echo",
+                tool_version="1",
+                inputs={"value": 41},
+                actor="human",
+            )
+            artifact_key = str(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT parameter_artifact_key
+                            FROM execution_node
+                            WHERE execution_id = :execution_id
+                              AND node_key = 'private-answer'
+                            """
+                        ),
+                        {"execution_id": execution_id},
+                    )
+                ).scalar_one()
+            )
+            artifact_store = StorageParameterArtifactStore(
+                storage=storage,
+                conn_factory=_factory(conn),
+            )
+            assert await artifact_store.erase_parameter(
+                workspace_id="ws-c5-executor",
+                execution_id=execution_id,
+                artifact_key=artifact_key,
+            )
+            with pytest.raises(ValueError, match="erased or missing"):
+                await executor.execute(
+                    execution_id,
+                    worker_id="worker",
+                    lease_generation=generation,
+                )
+            journal_text = str(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT jsonb_agg(payload_json)::text
+                            FROM execution_event
+                            WHERE execution_id = :execution_id
+                            """
+                        ),
+                        {"execution_id": execution_id},
+                    )
+                ).scalar_one()
+            )
+            assert '"value": 41' not in journal_text
 
     run_async(scenario())
 

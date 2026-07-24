@@ -55,11 +55,12 @@ from clue_execution.models import (
     EdgeKind,
     ExecutionEventType,
     ExecutionStatus,
+    PinRequest,
     RecipeRevisionEventType,
     ResolvedPin,
 )
 from clue_execution.recipes import DbRecipeReader, RecipeDefinition, RecipeRevisionView
-from clue_toolbelt import ToolContext, ToolInvoker
+from clue_toolbelt import ToolContext, ToolInvoker, ToolResult
 
 SUPPORTED_EXECUTOR_PROTOCOL = 1
 MAX_EXECUTION_CONCURRENCY = 32
@@ -86,6 +87,13 @@ class ExecutionConflict(ExecutionError):
 
 
 class ExecutionParameterStore(Protocol):
+    async def snapshot(
+        self,
+        *,
+        workspace_id: str,
+        parameters: dict[str, JsonValue],
+    ) -> tuple[str, str]: ...
+
     async def resolve(
         self,
         *,
@@ -136,6 +144,15 @@ class ExecutionRunResult:
 
 
 @dataclass(frozen=True, slots=True)
+class InteractionAppend:
+    execution_id: ExecutionId
+    node_id: ExecutionNodeId
+    operation_id: OperationId
+    node_key: str
+    created: bool
+
+
+@dataclass(frozen=True, slots=True)
 class _Runtime:
     execution_id: ExecutionId
     workspace_id: str
@@ -156,6 +173,10 @@ class _Node:
     spec: GraphNode
     local_parameters: dict[str, JsonValue]
     compatibility_node_key: str
+    actor: str
+    parameter_artifact_key: str | None
+    parameter_sha256: str | None
+    dynamic_requirements: tuple[PinRequest, ...]
 
 
 def execution_node_id(execution_id: ExecutionId, node_key: str) -> ExecutionNodeId:
@@ -553,6 +574,8 @@ async def _insert_node(
     depth: int,
     definition: dict[str, object],
     declared_by_node_id: ExecutionNodeId | None = None,
+    parameter_artifact_key: str | None = None,
+    parameter_sha256: str | None = None,
 ) -> ExecutionNodeId:
     node_id = execution_node_id(execution_id, spec.node_key)
     operation_id = operation_id_from_key(str(execution_id), spec.node_key)
@@ -563,12 +586,14 @@ async def _insert_node(
             INSERT INTO execution_node (
                 id, execution_id, node_key, kind, tool_name, tool_version, operation_id,
                 input_schema_sha256, output_schema_sha256, display_params_json,
-                declared_by_node_id, ordinal, depth, definition_json
+                parameter_artifact_key, parameter_sha256, declared_by_node_id,
+                ordinal, depth, definition_json
             )
             VALUES (
                 :id, :execution_id, :node_key, :kind, :tool_name, :tool_version, :operation_id,
                 :input_sha, :output_sha, '{}'::jsonb,
-                :declared_by, :ordinal, :depth, CAST(:definition AS jsonb)
+                :parameter_artifact_key, :parameter_sha256, :declared_by,
+                :ordinal, :depth, CAST(:definition AS jsonb)
             )
             ON CONFLICT DO NOTHING
             """
@@ -580,6 +605,8 @@ async def _insert_node(
             "kind": spec.kind.value,
             **tool,
             "operation_id": operation_id,
+            "parameter_artifact_key": parameter_artifact_key,
+            "parameter_sha256": parameter_sha256,
             "declared_by": declared_by_node_id,
             "ordinal": spec.ordinal,
             "depth": depth,
@@ -725,6 +752,7 @@ class RecipeExecutor:
             nodes = await self._load_nodes(execution_id)
             completed = await self._completed_keys(execution_id)
             failed = await self._failed_keys(execution_id)
+            opened_gates = await self._event_node_keys(execution_id, "gate.opened")
             if failed:
                 await self._append(
                     runtime,
@@ -748,9 +776,36 @@ class RecipeExecutor:
                 for node in nodes
                 if node.spec.node_key not in completed
                 and set(node.spec.dependencies).issubset(completed)
+                and not (isinstance(node.spec, GateNode) and node.spec.node_key in opened_gates)
             ]
             ready.sort(key=lambda item: (item.ordinal, item.spec.node_key))
             if not ready:
+                waiting_gate = next(
+                    (
+                        node
+                        for node in nodes
+                        if isinstance(node.spec, GateNode)
+                        and node.spec.node_key in opened_gates
+                        and node.spec.node_key not in completed
+                    ),
+                    None,
+                )
+                if waiting_gate is not None:
+                    waiting_spec = waiting_gate.spec
+                    assert isinstance(waiting_spec, GateNode)
+                    await self._append(
+                        runtime,
+                        event_type=ExecutionEventType.GATE_OPENED,
+                        node_id=waiting_gate.node_id,
+                        payload={
+                            "authority": waiting_spec.authority,
+                            "resume_condition": waiting_spec.resume_condition.value,
+                            "reason_code": "awaiting_interaction",
+                        },
+                        worker_id=worker_id,
+                        lease_generation=lease_generation,
+                    )
+                    continue
                 await self._append(
                     runtime,
                     event_type=ExecutionEventType.EXECUTION_FAILED,
@@ -772,6 +827,415 @@ class RecipeExecutor:
                     )
                     for node in batch
                 )
+            )
+
+    async def append_interaction_tool(
+        self,
+        *,
+        execution_id: ExecutionId,
+        workspace_id: str,
+        slot_key: str,
+        node_key: str,
+        tool_name: str,
+        tool_version: str,
+        inputs: dict[str, JsonValue],
+        actor: str,
+        dependencies: Sequence[str] = (),
+        pin_requests: Sequence[PinRequest] = (),
+    ) -> InteractionAppend:
+        """Append one exact tool beneath a promoted bounded interaction gate.
+
+        The validated body is snapshotted before graph materialization and only its artifact
+        key/hash enters the journal. Reusing ``node_key`` with the same immutable definition is a
+        replay; changing its tool, body, actor, dependencies, or pins is a conflict.
+        """
+        runtime = await self._load_runtime(execution_id)
+        if runtime.workspace_id != workspace_id:
+            raise ValueError("execution is unknown or outside this workspace")
+        by_key = {node.node_key: node for node in runtime.definition.graph.nodes}
+        slot = by_key.get(slot_key)
+        if not isinstance(slot, GateNode) or not slot.dynamic_tool_allowlist:
+            raise ExecutionConflict("the requested node is not a dynamic interaction slot")
+        address = f"{tool_name}@{tool_version}"
+        if address not in slot.dynamic_tool_allowlist:
+            raise ExecutionConflict(f"{address} is not allowed beneath interaction slot {slot_key}")
+        if actor not in {"human", "agent"}:
+            raise ValueError("interaction tool actor must be human or agent")
+        descriptor = self._tool_invoker.descriptor(tool_name, tool_version)
+        if not descriptor.recipe_safe:
+            raise ExecutionConflict(f"{address} is not recipe-safe")
+        validated = descriptor.input_model.model_validate(inputs).model_dump(mode="json")
+        artifact_key, parameter_sha256 = await self._parameters.snapshot(
+            workspace_id=runtime.workspace_id,
+            parameters=cast(dict[str, JsonValue], validated),
+        )
+        static_requests = (
+            *runtime.definition.compatibility.execution,
+            *runtime.definition.compatibility.nodes.get(slot_key, ()),
+        )
+        static_kinds = {item.kind for item in static_requests}
+        supplied_kinds = {item.kind for item in pin_requests}
+        missing = set(descriptor.pin_requirements) - static_kinds - supplied_kinds
+        if missing:
+            raise ExecutionConflict(f"{address} is missing dynamic pin kinds: {sorted(missing)}")
+        undeclared = supplied_kinds - set(slot.dynamic_pin_kinds)
+        if undeclared:
+            raise ExecutionConflict(
+                f"dynamic pin kinds are absent from the promoted slot: {sorted(undeclared)}"
+            )
+        requirements = (*static_requests, *pin_requests)
+        compatibility = await self._compatibility.resolve_requirements(
+            requirements,
+            context=CompatibilityContext(
+                workspace_id=runtime.workspace_id,
+                project_id=runtime.project_id,
+            ),
+        )
+        if not compatibility.compatible:
+            raise IncompatibleRecipe(compatibility)
+
+        child_ordinal = slot.ordinal * 1_000_000
+        definition: dict[str, object] = {
+            "node": ToolNode(
+                node_key=node_key,
+                ordinal=child_ordinal,
+                dependencies=tuple(dependencies),
+                tool_name=tool_name,
+                tool_version=tool_version,
+                input_schema_sha256=descriptor.input_schema_sha256,
+                output_schema_sha256=descriptor.output_schema_sha256,
+            ).model_dump(mode="json"),
+            "local_parameters": {},
+            "compatibility_node_key": slot_key,
+            "actor": actor,
+            "dynamic_parameter": {
+                "artifact_key": artifact_key,
+                "content_sha256": parameter_sha256,
+            },
+            "dynamic_requirements": [item.model_dump(mode="json") for item in pin_requests],
+        }
+        node_id = execution_node_id(execution_id, node_key)
+        operation_id = operation_id_from_key(str(execution_id), node_key)
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text("SELECT id FROM execution WHERE id = :id FOR UPDATE"),
+                {"id": execution_id},
+            )
+            slot_id = execution_node_id(execution_id, slot_key)
+            existing = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT id, operation_id, parameter_artifact_key, parameter_sha256,
+                                   definition_json
+                            FROM execution_node
+                            WHERE execution_id = :execution_id AND node_key = :node_key
+                            """
+                        ),
+                        {"execution_id": execution_id, "node_key": node_key},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if existing is not None:
+                stored_definition = decode_jsonb(existing["definition_json"])
+                stored_node = stored_definition.get("node", {})
+                if (
+                    str(existing["id"]) != str(node_id)
+                    or str(existing["operation_id"]) != str(operation_id)
+                    or str(existing["parameter_artifact_key"]) != artifact_key
+                    or str(existing["parameter_sha256"]) != parameter_sha256
+                    or not isinstance(stored_node, Mapping)
+                    or stored_node.get("node_key") != node_key
+                    or stored_node.get("tool_name") != tool_name
+                    or stored_node.get("tool_version") != tool_version
+                    or tuple(stored_node.get("dependencies", ())) != tuple(dependencies)
+                    or stored_definition.get("actor") != actor
+                    or stored_definition.get("dynamic_parameter") != definition["dynamic_parameter"]
+                    or stored_definition.get("dynamic_requirements")
+                    != definition["dynamic_requirements"]
+                ):
+                    raise ExecutionConflict(
+                        f"interaction node {node_key!r} was replayed with different inputs"
+                    )
+                return InteractionAppend(
+                    execution_id=execution_id,
+                    node_id=node_id,
+                    operation_id=operation_id,
+                    node_key=node_key,
+                    created=False,
+                )
+
+            cursor = await get_cursor(conn, execution_id, for_update=True)
+            if cursor.status in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED}:
+                raise ExecutionConflict("terminal executions cannot accept interaction children")
+            slot_state = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT
+                            EXISTS (
+                                SELECT 1 FROM execution_event
+                                WHERE execution_id = :execution_id
+                                  AND node_id = :slot_id
+                                  AND event_type = 'gate.opened'
+                            ) AS opened,
+                            EXISTS (
+                                SELECT 1 FROM execution_event
+                                WHERE execution_id = :execution_id
+                                  AND node_id = :slot_id
+                                  AND event_type = 'node.completed'
+                            ) AS completed
+                        """
+                    ),
+                    {"execution_id": execution_id, "slot_id": slot_id},
+                )
+            ).one()
+            if not bool(slot_state.opened) or bool(slot_state.completed):
+                raise ExecutionConflict("the interaction slot is not accepting input")
+            child_count = int(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT count(*) FROM execution_node
+                            WHERE execution_id = :execution_id
+                              AND declared_by_node_id = :slot_id
+                            """
+                        ),
+                        {"execution_id": execution_id, "slot_id": slot_id},
+                    )
+                ).scalar_one()
+            )
+            total_count = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM execution_node WHERE execution_id = :execution_id"
+                        ),
+                        {"execution_id": execution_id},
+                    )
+                ).scalar_one()
+            )
+            if child_count >= slot.max_children or total_count >= runtime.definition.max_nodes:
+                raise ExecutionConflict("the Stage-0 interaction/node ceiling is exhausted")
+            known_dependencies = {
+                str(row[0])
+                for row in (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT node_key FROM execution_node
+                            WHERE execution_id = :execution_id
+                              AND node_key = ANY(CAST(:keys AS text[]))
+                            """
+                        ),
+                        {"execution_id": execution_id, "keys": list(dependencies)},
+                    )
+                ).all()
+            }
+            if known_dependencies != set(dependencies):
+                raise ExecutionConflict("interaction dependencies are missing from the execution")
+            if dependencies:
+                completed_dependencies = {
+                    str(row[0])
+                    for row in (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT n.node_key
+                                FROM execution_node n
+                                JOIN execution_event e ON e.node_id = n.id
+                                WHERE n.execution_id = :execution_id
+                                  AND n.node_key = ANY(CAST(:keys AS text[]))
+                                  AND e.event_type = 'node.completed'
+                                """
+                            ),
+                            {"execution_id": execution_id, "keys": list(dependencies)},
+                        )
+                    ).all()
+                }
+                if completed_dependencies != set(dependencies):
+                    raise ExecutionConflict(
+                        "interaction dependencies must already be durably completed"
+                    )
+
+            ordinal = child_ordinal + child_count + 1
+            node_spec = ToolNode(
+                node_key=node_key,
+                ordinal=ordinal,
+                dependencies=tuple(dependencies),
+                tool_name=tool_name,
+                tool_version=tool_version,
+                input_schema_sha256=descriptor.input_schema_sha256,
+                output_schema_sha256=descriptor.output_schema_sha256,
+            )
+            definition["node"] = node_spec.model_dump(mode="json")
+            node_id = await _insert_node(
+                conn,
+                execution_id=execution_id,
+                spec=node_spec,
+                depth=1,
+                definition=definition,
+                declared_by_node_id=slot_id,
+                parameter_artifact_key=artifact_key,
+                parameter_sha256=parameter_sha256,
+            )
+            await _insert_edge(
+                conn,
+                execution_id=execution_id,
+                from_key=slot_key,
+                to_key=node_key,
+                edge_kind=EdgeKind.PARENT,
+            )
+            for dependency in dependencies:
+                await _insert_edge(
+                    conn,
+                    execution_id=execution_id,
+                    from_key=dependency,
+                    to_key=node_key,
+                    edge_kind=EdgeKind.DEPENDENCY,
+                )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO execution_artifact_ref (
+                        execution_id, node_id, workspace_id, artifact_key, role, content_sha256
+                    )
+                    VALUES (:execution_id, :node_id, :workspace_id, :artifact_key,
+                            'parameter', :sha)
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                {
+                    "execution_id": execution_id,
+                    "node_id": node_id,
+                    "workspace_id": runtime.workspace_id,
+                    "artifact_key": artifact_key,
+                    "sha": parameter_sha256,
+                },
+            )
+            await DbExecutionStarter._insert_pins(
+                conn,
+                execution_id=execution_id,
+                node_id=node_id,
+                pins=compatibility.pins,
+            )
+            cursor = await get_cursor(conn, execution_id, for_update=True)
+            await self._journal.append_event(
+                conn,
+                execution_id=execution_id,
+                node_id=node_id,
+                event_type=ExecutionEventType.NODE_SCHEDULED,
+                actor=actor,
+                payload={
+                    "declared_by_node_id": str(slot_id),
+                    "tool_address": address,
+                    "parameter_artifact_key": artifact_key,
+                    "parameter_sha256": parameter_sha256,
+                    "ordinal": ordinal,
+                    "depth": 1,
+                },
+                expected_state_version=cursor.state_version,
+            )
+            cursor = await get_cursor(conn, execution_id, for_update=True)
+            if cursor.status is ExecutionStatus.AWAITING_INPUT:
+                await self._journal.append_event(
+                    conn,
+                    execution_id=execution_id,
+                    event_type=ExecutionEventType.EXECUTION_RESUMED,
+                    actor=actor,
+                    payload={"reason_code": "interaction_child_appended"},
+                    expected_state_version=cursor.state_version,
+                )
+        return InteractionAppend(
+            execution_id=execution_id,
+            node_id=node_id,
+            operation_id=operation_id,
+            node_key=node_key,
+            created=True,
+        )
+
+    async def invoke_interaction_tool(
+        self,
+        append: InteractionAppend,
+        *,
+        inputs: dict[str, JsonValue],
+        actor: str,
+    ) -> ToolResult:
+        """Execute/replay one appended child through the mandatory tool journal."""
+        runtime = await self._load_runtime(append.execution_id)
+        nodes = {node.spec.node_key: node for node in await self._load_nodes(append.execution_id)}
+        node = nodes.get(append.node_key)
+        if node is None or not isinstance(node.spec, ToolNode):
+            raise ExecutionConflict("the appended interaction tool disappeared")
+        if actor != node.actor:
+            raise ExecutionConflict("interaction tool actor differs from its durable declaration")
+        if node.parameter_artifact_key is None or node.parameter_sha256 is None:
+            raise ExecutionConflict("the appended interaction tool has no durable parameter body")
+        durable_inputs = await self._parameters.resolve(
+            workspace_id=runtime.workspace_id,
+            artifact_key=node.parameter_artifact_key,
+            content_sha256=node.parameter_sha256,
+        )
+        descriptor = self._tool_invoker.descriptor(node.spec.tool_name, node.spec.tool_version)
+        supplied = descriptor.input_model.model_validate(inputs).model_dump(mode="json")
+        durable = descriptor.input_model.model_validate(durable_inputs).model_dump(mode="json")
+        if _canonical_bytes(supplied) != _canonical_bytes(durable):
+            raise ExecutionConflict(
+                "interaction tool inputs differ from its durable parameter artifact"
+            )
+        result = await self._tool_invoker.invoke(
+            node.spec.tool_name,
+            cast(dict[str, object], durable),
+            ToolContext(
+                workspace_id=runtime.workspace_id,
+                actor="human" if node.actor == "human" else "agent",
+                conn_factory=self._conn_factory,
+                operation_id=node.operation_id,
+                execution_id=runtime.execution_id,
+                execution_node_id=node.node_id,
+                execution_node_key=node.spec.node_key,
+            ),
+            version=node.spec.tool_version,
+        )
+        await self._return_to_interaction_slot(runtime, node)
+        return result
+
+    async def _return_to_interaction_slot(self, runtime: _Runtime, node: _Node) -> None:
+        slot_key = node.compatibility_node_key
+        slot = next(
+            (
+                candidate
+                for candidate in runtime.definition.graph.nodes
+                if candidate.node_key == slot_key
+            ),
+            None,
+        )
+        if not isinstance(slot, GateNode) or not slot.dynamic_tool_allowlist:
+            return
+        async with self._conn_factory() as conn:
+            cursor = await get_cursor(conn, runtime.execution_id, for_update=True)
+            if cursor.status in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+                ExecutionStatus.AWAITING_INPUT,
+            }:
+                return
+            await self._journal.append_event(
+                conn,
+                execution_id=runtime.execution_id,
+                node_id=execution_node_id(runtime.execution_id, slot_key),
+                event_type=ExecutionEventType.GATE_OPENED,
+                actor=node.actor,
+                payload={
+                    "authority": slot.authority,
+                    "resume_condition": slot.resume_condition.value,
+                    "reason_code": "interaction_child_completed",
+                },
+                expected_state_version=cursor.state_version,
             )
 
     async def pause(
@@ -832,18 +1296,22 @@ class RecipeExecutor:
                 f"gate requires authority {node.spec.authority!r}, not {actor!r}"
             )
         async with self._conn_factory() as conn:
-            opened = (
-                await conn.execute(
-                    text(
-                        """
-                        SELECT 1 FROM execution_event
-                        WHERE execution_id = :execution_id AND node_id = :node_id
-                          AND event_type = 'gate.opened'
-                        """
-                    ),
-                    {"execution_id": execution_id, "node_id": node.node_id},
-                )
-            ).one_or_none()
+            opened = bool(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1 FROM execution_event
+                                WHERE execution_id = :execution_id AND node_id = :node_id
+                                  AND event_type = 'gate.opened'
+                            )
+                            """
+                        ),
+                        {"execution_id": execution_id, "node_id": node.node_id},
+                    )
+                ).scalar_one()
+            )
             completed = (
                 await conn.execute(
                     text(
@@ -874,7 +1342,7 @@ class RecipeExecutor:
                 return
             if completed is not None and prior_decision != decision:
                 raise ExecutionConflict("gate already has a different terminal decision")
-            if opened is None:
+            if not opened:
                 raise ExecutionConflict("gate is not awaiting a decision")
             attempt = int(
                 (
@@ -952,14 +1420,25 @@ class RecipeExecutor:
         worker_id: str,
         lease_generation: int,
     ) -> None:
-        report = await self._compatibility.recheck_node(
-            runtime.definition.compatibility,
-            node_key=node.compatibility_node_key,
-            context=CompatibilityContext(
-                workspace_id=runtime.workspace_id,
-                project_id=runtime.project_id,
-            ),
+        compatibility_context = CompatibilityContext(
+            workspace_id=runtime.workspace_id,
+            project_id=runtime.project_id,
         )
+        if node.dynamic_requirements:
+            report = await self._compatibility.resolve_requirements(
+                (
+                    *runtime.definition.compatibility.execution,
+                    *runtime.definition.compatibility.nodes.get(node.compatibility_node_key, ()),
+                    *node.dynamic_requirements,
+                ),
+                context=compatibility_context,
+            )
+        else:
+            report = await self._compatibility.recheck_node(
+                runtime.definition.compatibility,
+                node_key=node.compatibility_node_key,
+                context=compatibility_context,
+            )
         if not report.compatible:
             await self._append(
                 runtime,
@@ -1000,7 +1479,7 @@ class RecipeExecutor:
                     body,
                     ToolContext(
                         workspace_id=runtime.workspace_id,
-                        actor="agent",
+                        actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
                         execution_id=runtime.execution_id,
@@ -1051,7 +1530,7 @@ class RecipeExecutor:
                     parameters=body,
                     context=ToolContext(
                         workspace_id=runtime.workspace_id,
-                        actor="agent",
+                        actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
                         execution_id=runtime.execution_id,
@@ -1271,6 +1750,17 @@ class RecipeExecutor:
         *,
         root_parameters: dict[str, JsonValue],
     ) -> dict[str, object]:
+        if node.parameter_artifact_key is not None:
+            if node.parameter_sha256 is None:
+                raise ExecutionConflict("dynamic parameter artifact is missing its digest")
+            return cast(
+                dict[str, object],
+                await self._parameters.resolve(
+                    workspace_id=runtime.workspace_id,
+                    artifact_key=node.parameter_artifact_key,
+                    content_sha256=node.parameter_sha256,
+                ),
+            )
         bindings = node.spec.bindings if isinstance(node.spec, ToolNode | ActivityNode) else {}
         return {
             name: await self._resolve_binding(
@@ -1480,7 +1970,8 @@ class RecipeExecutor:
                     await conn.execute(
                         text(
                             """
-                            SELECT id, operation_id, ordinal, depth, definition_json
+                            SELECT id, operation_id, ordinal, depth, parameter_artifact_key,
+                                   parameter_sha256, definition_json
                             FROM execution_node
                             WHERE execution_id = :execution_id
                             ORDER BY ordinal, node_key
@@ -1498,12 +1989,24 @@ class RecipeExecutor:
             node_raw = definition.get("node")
             local_raw = definition.get("local_parameters", {})
             compatibility_key = definition.get("compatibility_node_key")
+            actor = definition.get("actor", "agent")
+            dynamic_requirements_raw = definition.get("dynamic_requirements", [])
             if (
                 not isinstance(node_raw, Mapping)
                 or not isinstance(local_raw, Mapping)
                 or (compatibility_key is not None and not isinstance(compatibility_key, str))
+                or actor not in {"human", "agent", "system"}
+                or not isinstance(dynamic_requirements_raw, list)
             ):
                 raise ExecutionConflict("materialized node definition is malformed")
+            try:
+                dynamic_requirements = tuple(
+                    PinRequest.model_validate(item) for item in dynamic_requirements_raw
+                )
+            except Exception as exc:
+                raise ExecutionConflict(
+                    "materialized dynamic compatibility requirements are malformed"
+                ) from exc
             nodes.append(
                 _Node(
                     node_id=ExecutionNodeId(row["id"]),
@@ -1520,6 +2023,18 @@ class RecipeExecutor:
                         if isinstance(compatibility_key, str)
                         else str(node_raw["node_key"])
                     ),
+                    actor=str(actor),
+                    parameter_artifact_key=(
+                        str(row["parameter_artifact_key"])
+                        if row["parameter_artifact_key"] is not None
+                        else None
+                    ),
+                    parameter_sha256=(
+                        str(row["parameter_sha256"])
+                        if row["parameter_sha256"] is not None
+                        else None
+                    ),
+                    dynamic_requirements=dynamic_requirements,
                 )
             )
         return tuple(nodes)

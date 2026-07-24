@@ -1,6 +1,6 @@
 # Phase C5 — Run-Graph Journal, Recipes, Durable Executor, and Supervisor
 
-**Status:** C5.3 implemented; C5.4 next on `platform/c5-recipe-execution` (2026-07-24)
+**Status:** C5.4 implemented; C5.5 next on `platform/c5-recipe-execution` (2026-07-25)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 
@@ -880,6 +880,31 @@ and exposes no cancellation control.
 
 **Gate:** the C4 URL-only, interview, correction, readiness, override, and run-entry fixture yields
 the same normalized outcomes before/after migration and resumes after kill.
+
+**Implemented boundary (2026-07-25):** Recipe #0 v2 is the promoted executable Stage-0 revision;
+the immutable v1 placeholder is superseded, not rewritten. Its formal graph contains an
+`input_available` interaction gate with an exact nine-tool allowlist, exact tool/schema/config
+pins, a 125-child ceiling, and a 128-node total envelope. C4's `ToolbeltRecipeRunner.run_step`
+now appends one artifact-backed child to that gate and invokes it only through the C5 tool journal;
+the old in-memory graph runner is removed.
+
+Every child freezes its actor, stable operation id, dependencies, validated parameter hash/artifact
+reference, and exact workspace-local resource pins. Tool bodies, interview text, and claims do not
+enter graph/event JSON. Worker recovery can execute a child that was materialized before a crash;
+replay after terminal Recipe-#0 completion remains valid; input or actor drift is rejected. The
+optional memory switch is rechecked live and records `disabled` without re-enabling memory.
+Erased parameter artifacts remain metadata-only tombstones and fail closed.
+
+The `start_confirmed_project_run` completion is Recipe #0's stable handoff record: it durably
+contains the new `project_run_id` and immutable Stage-0 lineage refs. It does **not** pretend the
+C5.2 Recipe-#1 placeholder is executable or claim `project_run_execution_owner`; C5.6 consumes this
+handoff when it appends the executable Recipe-#1 revision and atomically attaches the sole owner.
+This preserves current C4 run-entry/routing behavior while making the cutover input durable.
+
+The normalized direct-vs-durable fixture covers URL onboarding, two-speed recon, product
+confirmation, interview/correction lineage, readiness failure, human override, and confirmed-run
+entry. Fault injection at fast recon, background recon, interview routing, and confirmed-run
+creation recovers without duplicate domain effects.
 
 ### C5.5 — Supervisor and enforced controls
 

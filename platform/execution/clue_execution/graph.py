@@ -89,7 +89,25 @@ class GateNode(_FrozenModel):
     dependencies: tuple[str, ...] = ()
     authority: str = Field(min_length=1)
     resume_condition: GateResumeCondition
+    dynamic_tool_allowlist: tuple[str, ...] = ()
+    dynamic_pin_kinds: tuple[str, ...] = ()
+    max_children: int = Field(default=0, ge=0)
     requirements: tuple[PinRequest, ...] = ()
+
+    @model_validator(mode="after")
+    def _dynamic_slot_shape(self) -> GateNode:
+        values = self.dynamic_tool_allowlist
+        if len(values) != len(set(values)):
+            raise ValueError("dynamic tool allowlist entries must be unique")
+        if len(self.dynamic_pin_kinds) != len(set(self.dynamic_pin_kinds)):
+            raise ValueError("dynamic pin kinds must be unique")
+        if values and self.resume_condition is not GateResumeCondition.INPUT_AVAILABLE:
+            raise ValueError("dynamic tool children require an input_available gate")
+        if bool(values) != bool(self.max_children):
+            raise ValueError(
+                "dynamic tool allowlist and a positive max_children must be declared together"
+            )
+        return self
 
 
 class BarrierNode(_FrozenModel):
@@ -593,8 +611,12 @@ def validate_graph(
 
     by_key = {node.node_key: node for node in graph.nodes}
     descriptors: dict[str, ToolDescriptor] = {}
-    expanded_nodes = len(graph.nodes) + sum(
-        node.max_items * len(node.template) for node in graph.nodes if isinstance(node, MapNode)
+    expanded_nodes = (
+        len(graph.nodes)
+        + sum(
+            node.max_items * len(node.template) for node in graph.nodes if isinstance(node, MapNode)
+        )
+        + sum(node.max_children for node in graph.nodes if isinstance(node, GateNode))
     )
     if expanded_nodes > max_nodes:
         issues.append(
@@ -654,6 +676,60 @@ def validate_graph(
                         f"authority {node.authority!r} is absent from the authority allowlist",
                     )
                 )
+            node_pin_kinds = execution_pin_kinds | {item.kind for item in node.requirements}
+            node_tool_pins = execution_tool_pins | {
+                (item.key, item.version) for item in node.requirements if item.kind == "tool"
+            }
+            for address in node.dynamic_tool_allowlist:
+                if address not in graph.tool_allowlist:
+                    issues.append(
+                        GraphIssue(
+                            "tool_not_allowed",
+                            location,
+                            f"{address} is absent from the tool allowlist",
+                        )
+                    )
+                    continue
+                name, separator, version = address.rpartition("@")
+                if not separator or not name or not version:
+                    issues.append(
+                        GraphIssue(
+                            "invalid_tool_address",
+                            location,
+                            f"{address!r} is not an exact tool address",
+                        )
+                    )
+                    continue
+                try:
+                    descriptor = tool_catalog.descriptor(name, version)
+                except Exception as exc:
+                    issues.append(GraphIssue("unknown_tool", location, str(exc)))
+                    continue
+                if not descriptor.recipe_safe:
+                    issues.append(
+                        GraphIssue(
+                            "tool_not_recipe_safe",
+                            location,
+                            f"{address} is not recipe-safe",
+                        )
+                    )
+                if (name, version) not in node_tool_pins:
+                    issues.append(
+                        GraphIssue(
+                            "missing_tool_pin",
+                            location,
+                            f"{address} has no exact compatibility pin",
+                        )
+                    )
+                available_pin_kinds = node_pin_kinds | set(node.dynamic_pin_kinds)
+                for pin_kind in sorted(set(descriptor.pin_requirements) - available_pin_kinds):
+                    issues.append(
+                        GraphIssue(
+                            "missing_tool_requirement",
+                            location,
+                            f"{address} requires pin kind {pin_kind!r}",
+                        )
+                    )
         elif isinstance(node, ActivityNode):
             if node.activity_address not in graph.activity_allowlist:
                 issues.append(

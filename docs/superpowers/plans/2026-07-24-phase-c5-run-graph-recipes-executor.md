@@ -388,6 +388,12 @@ Assert normalized database effects, ledger rows, graph attempts/events, and prov
 
 ## 6. C5.4 — Migrate Recipe #0
 
+**Status:** implemented and verified on 2026-07-25. Recipe #0 v2 is executable and promoted; v1 is
+superseded and immutable. The governed interaction slot preserves Stage 0's non-fixed conversation
+order while bounding it to the exact C4 tool/pin/node envelope. The direct-vs-durable fixture and
+four Stage-0 crash boundaries are green. Recipe #1 remains an honest placeholder until C5.6; the
+confirmed-run node completion is the durable attachment input, not a second project-run driver.
+
 ### 6.1 Formal graph
 
 Translate C4's step shape into the promoted Recipe-#0 revision:

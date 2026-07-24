@@ -248,6 +248,62 @@ def test_gate_and_bounded_map_envelopes_are_enforced() -> None:
     assert {"authority_not_allowed", "depth_ceiling", "fanout_ceiling", "node_ceiling"} <= codes
 
 
+def test_bounded_interaction_slot_requires_exact_safe_tools_and_pin_envelope() -> None:
+    registry = _catalog()
+    unsafe = EchoTool()
+    registry.register(unsafe, make_default=True)
+    graph = RecipeGraph(
+        nodes=(
+            GateNode(
+                node_key="interactions",
+                ordinal=0,
+                authority="human",
+                resume_condition=GateResumeCondition.INPUT_AVAILABLE,
+                dynamic_tool_allowlist=("source@1", "echo@1"),
+                dynamic_pin_kinds=("source_profile",),
+                max_children=3,
+                requirements=(PinRequest(kind="tool", key="source", version="1"),),
+            ),
+        ),
+        tool_allowlist=("source@1", "echo@1"),
+        authority_allowlist=("human",),
+    )
+    report = validate_graph(
+        graph,
+        parameter_schema={"type": "object", "properties": {}},
+        tool_catalog=registry,
+        max_nodes=3,
+        max_depth=1,
+        max_fanout=1,
+    )
+    codes = {issue.code for issue in report.issues}
+    assert {
+        "node_ceiling",
+        "missing_tool_pin",
+        "tool_not_recipe_safe",
+    } <= codes
+
+
+def test_dynamic_children_require_an_input_gate_and_positive_ceiling() -> None:
+    with pytest.raises(ValidationError, match="input_available"):
+        GateNode(
+            node_key="interactions",
+            ordinal=0,
+            authority="human",
+            resume_condition=GateResumeCondition.HUMAN_DECISION,
+            dynamic_tool_allowlist=("source@1",),
+            max_children=1,
+        )
+    with pytest.raises(ValidationError, match="positive max_children"):
+        GateNode(
+            node_key="interactions",
+            ordinal=0,
+            authority="human",
+            resume_condition=GateResumeCondition.INPUT_AVAILABLE,
+            dynamic_tool_allowlist=("source@1",),
+        )
+
+
 def test_binding_ast_rejects_templates_callables_and_jsonpath() -> None:
     for payload in (
         {"kind": "jinja", "template": "{{ secret }}"},

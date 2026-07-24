@@ -155,6 +155,34 @@ class CompatibilityLoader:
             context=context,
         )
 
+    async def resolve_requirements(
+        self,
+        requirements: Sequence[PinRequest],
+        *,
+        context: CompatibilityContext,
+    ) -> CompatibilityReport:
+        """Resolve an execution-time exact requirement set.
+
+        Immutable recipes use :meth:`load` at promotion/start. Dynamic children declared by a
+        bounded recipe slot do not exist at promotion time, so they carry their own exact
+        requests and use this same resolver immediately before materialization and dispatch.
+        """
+        return await self._resolve(requirements, context=context)
+
+    async def observe_current(
+        self,
+        *,
+        kind: str,
+        key: str,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        """Observe a resource so an API-root pin builder can freeze its exact version/digest."""
+        resolver = self._registry.get(kind)
+        if resolver is None:
+            return None
+        probe = PinRequest(kind=kind, key=key, version="__observe_current__", required=False)
+        return await resolver.observe(probe, context)
+
     async def _resolve(
         self,
         requirements: Sequence[PinRequest],

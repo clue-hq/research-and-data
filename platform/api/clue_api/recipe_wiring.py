@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -24,6 +24,7 @@ from clue_execution import (
     PinResolverRegistry,
     RecipeDefinition,
     RecipeLifecycle,
+    RecipeRevisionEventType,
     RecipeRevisionView,
     ResourceObservation,
     canonical_payload_digest,
@@ -35,6 +36,7 @@ from clue_toolbelt import ToolRegistry
 STAGE0_POLICY_VERSION = "1"
 SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v1.json",
+    "recipe0-stage0-v2.json",
     "recipe1-classic-v1.json",
 )
 
@@ -161,6 +163,20 @@ def build_recipe_pin_registry(
         key_column: str,
     ) -> ResourceObservation | None:
         async with conn_factory() as conn:
+            if request.key == "__all_active__":
+                rows = (
+                    (
+                        await conn.execute(
+                            text(
+                                f"SELECT to_jsonb(t) AS payload FROM {table} t "
+                                f"WHERE active ORDER BY {key_column}"
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                return _observation(version="snapshot-v1", payload=list(rows))
             row = (
                 (
                     await conn.execute(
@@ -209,12 +225,160 @@ def build_recipe_pin_registry(
     for kind in ("source_manifest", "source_registry"):
         registry.register(CallablePinResolver(kind=kind, loader=source))
 
+    async def scoped_spine_row(
+        request: PinRequest,
+        context: CompatibilityContext,
+        *,
+        table: str,
+        key_column: str,
+    ) -> ResourceObservation | None:
+        async with conn_factory() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        f"SELECT to_jsonb(t) AS payload FROM {table} t "
+                        f"WHERE {key_column} = :key AND workspace_id = :workspace_id"
+                    ),
+                    {"key": request.key, "workspace_id": context.workspace_id},
+                )
+            ).scalar_one_or_none()
+        return None if row is None else _observation(version="1", payload=row)
+
+    def spine_loader(
+        table: str,
+        key_column: str,
+    ) -> Callable[
+        [PinRequest, CompatibilityContext],
+        Awaitable[ResourceObservation | None],
+    ]:
+        async def load(
+            request: PinRequest,
+            context: CompatibilityContext,
+        ) -> ResourceObservation | None:
+            return await scoped_spine_row(
+                request,
+                context,
+                table=table,
+                key_column=key_column,
+            )
+
+        return load
+
+    for kind, table, key_column in (
+        ("brand", "brand", "brand_id"),
+        ("product", "product", "product_id"),
+        ("project", "project", "project_id"),
+    ):
+        registry.register(
+            CallablePinResolver(
+                kind=kind,
+                loader=spine_loader(table, key_column),
+            )
+        )
+
+    async def client_kb(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        entity_id, separator, product_id = request.key.partition("|")
+        if not separator or request.version is None:
+            return None
+        try:
+            UUID(entity_id)
+            version = int(request.version)
+        except ValueError:
+            return None
+        async with conn_factory() as conn:
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT id, field_key, value_json, evidence_span, run_id, product_id
+                            FROM claim
+                            WHERE workspace_id = :workspace_id
+                              AND entity_id = CAST(:entity_id AS uuid)
+                              AND (
+                                  (:product_id = '-' AND product_id IS NULL)
+                                  OR product_id = :product_id
+                              )
+                              AND (
+                                  field_key <> 'client.kb_version'
+                                  OR (value_json->>'version')::int = :version
+                              )
+                            ORDER BY field_key, id
+                            """
+                        ),
+                        {
+                            "workspace_id": context.workspace_id,
+                            "entity_id": entity_id,
+                            "product_id": product_id,
+                            "version": version,
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        marker = next(
+            (
+                row
+                for row in rows
+                if row["field_key"] == "client.kb_version"
+                and int(row["value_json"]["version"]) == version
+            ),
+            None,
+        )
+        if marker is None:
+            return None
+        run_id = marker["run_id"]
+        pinned = [dict(row) for row in rows if row["run_id"] == run_id]
+        return _observation(version=str(version), payload=pinned)
+
+    registry.register(CallablePinResolver(kind="client_kb", loader=client_kb))
+
+    async def readiness_decision(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        try:
+            UUID(request.key)
+        except ValueError:
+            return None
+        async with conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT to_jsonb(r) AS payload, spec_version
+                            FROM readiness_decision r
+                            WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
+                            """
+                        ),
+                        {"key": request.key, "workspace_id": context.workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _observation(version=str(row["spec_version"]), payload=row["payload"])
+
+    registry.register(CallablePinResolver(kind="readiness_decision", loader=readiness_decision))
+
     async def icp(
         request: PinRequest,
         context: CompatibilityContext,
     ) -> ResourceObservation | None:
         try:
-            requested_version = int(request.version) if request.version is not None else None
+            version_text = request.version
+            requested_version = (
+                None
+                if version_text is None or version_text == "__observe_current__"
+                else int(version_text)
+            )
         except ValueError:
             return None
         async with conn_factory() as conn:
@@ -276,7 +440,12 @@ def build_recipe_pin_registry(
         context: CompatibilityContext,
     ) -> ResourceObservation | None:
         try:
-            requested_version = int(request.version) if request.version is not None else None
+            version_text = request.version
+            requested_version = (
+                None
+                if version_text is None or version_text == "__observe_current__"
+                else int(version_text)
+            )
         except ValueError:
             return None
         async with conn_factory() as conn:
@@ -550,10 +719,21 @@ def build_recipe_pin_registry(
         kind="model_policy",
         resources=resolved_model_policy_resources,
     )
+    default_stage0_prompt = VersionedPinResource(
+        key="stage0-icp-synthesis",
+        version="1",
+        payload={
+            "implementation": "clue_research.stage0.icp_synthesis",
+            "contract_version": 1,
+        },
+    )
+    model_prompt_resources = (*prompt_resources, *resolved_model_policy_resources)
+    if not any(item.key == default_stage0_prompt.key for item in model_prompt_resources):
+        model_prompt_resources = (*model_prompt_resources, default_stage0_prompt)
     _register_static_catalog(
         registry,
         kind="model_prompt",
-        resources=(*prompt_resources, *resolved_model_policy_resources),
+        resources=model_prompt_resources,
     )
 
     readiness = stage0_policy.readiness
@@ -697,26 +877,45 @@ async def seed_system_recipes(
         if definition.scope_type.value != "system":
             raise ValueError("the system recipe seed accepts system-scoped definitions only")
         revision = await repository.propose(definition)
-        result = await lifecycle.promote(
-            revision,
-            context=CompatibilityContext(workspace_id="__system__"),
-            actor="system",
-        )
-        if not result.promoted:
-            graph_reasons = [
-                f"{issue.location}:{issue.code}" for issue in result.graph_validation.issues
-            ]
-            pin_reasons = [
-                f"{item.kind}:{item.key}:{item.reason}"
-                for item in result.compatibility.incompatibilities
-            ]
-            raise ValueError(
-                f"system recipe {definition.recipe_key}@{definition.version} failed promotion: "
-                f"{graph_reasons + pin_reasons}"
+        effective = await repository.effective_event(recipe_revision_id=revision.recipe_revision_id)
+        if effective is not None and effective.event_type is RecipeRevisionEventType.PROPOSED:
+            result = await lifecycle.promote(
+                revision,
+                context=CompatibilityContext(workspace_id="__system__"),
+                actor="system",
             )
+            if not result.promoted:
+                graph_reasons = [
+                    f"{issue.location}:{issue.code}" for issue in result.graph_validation.issues
+                ]
+                pin_reasons = [
+                    f"{item.kind}:{item.key}:{item.reason}"
+                    for item in result.compatibility.incompatibilities
+                ]
+                raise ValueError(
+                    f"system recipe {definition.recipe_key}@{definition.version} "
+                    f"failed promotion: {graph_reasons + pin_reasons}"
+                )
         if revision.definition_sha256 != definition.definition_sha256:
             raise RuntimeError("promoted seed digest differs from the checked-in definition")
         seeded.append(revision)
+    by_recipe: dict[str, list[RecipeRevisionView]] = {}
+    for revision in seeded:
+        by_recipe.setdefault(str(revision.recipe_id), []).append(revision)
+    for revisions in by_recipe.values():
+        latest = max(revisions, key=lambda item: item.version)
+        for older in revisions:
+            if older.version >= latest.version:
+                continue
+            effective = await repository.effective_event(
+                recipe_revision_id=older.recipe_revision_id
+            )
+            if effective is not None and effective.event_type is RecipeRevisionEventType.PROMOTED:
+                await lifecycle.supersede(
+                    recipe_revision_id=older.recipe_revision_id,
+                    replacement=latest,
+                    actor="system",
+                )
     return tuple(seeded)
 
 

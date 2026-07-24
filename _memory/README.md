@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-25-phase-c5-4-recipe0-migration.md` — C5.4 implemented: promoted executable Recipe #0
+  v2, bounded durable Stage-0 interaction children, exact resource pins, direct-vs-durable parity,
+  four-boundary crash recovery, tombstone/memory/locality enforcement, and the honest C5.5/C5.6
+  handoff.
 - `2026-07-24-phase-c5-3-durable-executor.md` — C5.3 implemented: generic generated-lease fleet,
   deterministic crash-resumable recipe executor, bounded maps and human gates, typed/audited
   controls, single-owner routing, real SIGKILL recovery evidence, full verification, and C5.4
