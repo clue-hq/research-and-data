@@ -164,13 +164,11 @@ async def insert_account_entity(
     Strong-key collisions raise (the partial-unique constraints) — that is the deterministic dedup
     guard, surfaced to the caller (M2.3 turns it into a merge). Strong-key uniqueness is
     *workspace-scoped* (accounts are workspace-local; founder ruling 2026-07-22): the same
-    domain/registry id under two workspaces coexists, a NULL-workspace legacy row keeps global
-    uniqueness.
+    domain/registry id under two workspaces coexists.
 
     ``workspace_id`` is **required** (accounts are workspace-local — [B3×research] Task 3): every
     creation chain threads the caller's workspace, and the row's composite workspace anchor backs
-    the contact→account and merge fences. A legacy NULL-workspace account is only insertable via raw
-    SQL (the migration keeps it representable for fail-closed memory semantics), never through here.
+    the contact→account and merge fences. Migration ``82a80fb80c9e`` makes the column ``NOT NULL``.
     """
     result = await conn.execute(
         _INSERT_ACCOUNT,
@@ -303,9 +301,7 @@ async def mark_merged(
     (the ``merged ⟺ merged_into`` CHECK is satisfied atomically). Idempotent on the pair.
 
     Refuses a cross-workspace pair (accounts are workspace-local; founder ruling 2026-07-22) with a
-    clear :class:`CrossWorkspaceMergeError` *before* the composite merge FK would fire. The app
-    check also covers the NULL/legacy asymmetry the FK cannot enforce (a NULL workspace makes the
-    composite FK MATCH-SIMPLE-unenforced, so a NULL/non-NULL merge would slip past the DB)."""
+    clear :class:`CrossWorkspaceMergeError` *before* the composite merge FK would fire."""
     if loser_id == survivor_id:
         raise MergeCycleError("an entity cannot be merged into itself")
     table = _table(entity_type)
@@ -417,8 +413,7 @@ async def resolve_alias(
 
     ``workspace_id`` is **required** (accounts/contacts are workspace-local; founder ruling
     2026-07-22): every branch is scoped to it, so client A's exact-name lookup can never hit client
-    B's account (a NULL-workspace legacy row is invisible — ``workspace_id = :ws`` never matches
-    NULL, fail-closed)."""
+    B's account."""
     if entity_type is EntityType.ACCOUNT:
         domain = registrable_domain(key)
         if domain is not None:

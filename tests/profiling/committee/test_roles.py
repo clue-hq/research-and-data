@@ -22,7 +22,10 @@ from ..conftest import FakeGateway
 
 def _account() -> AccountEntity:
     return AccountEntity(
-        id=new_entity_id(), canonical_name="Acme Robotics", primary_domain="acme.example"
+        id=new_entity_id(),
+        canonical_name="Acme Robotics",
+        primary_domain="acme.example",
+        workspace_id="ws-test",
     )
 
 

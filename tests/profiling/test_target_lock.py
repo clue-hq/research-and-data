@@ -39,6 +39,7 @@ def _account(
         hq_geo=hq_geo,
         registry_ids=registry_ids or {},
         aliases=aliases,
+        workspace_id="ws-test",
     )
 
 

@@ -20,6 +20,7 @@ def _contact(**kw: object) -> ContactEntity:
         "account_entity_id": new_entity_id(),
         "full_name": "Jane Smith",
         "linkedin_url": "https://linkedin.com/in/jane-smith",
+        "workspace_id": "ws-test",
     }
     base.update(kw)
     return ContactEntity.model_validate(base)

@@ -19,10 +19,9 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
 
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import ICPCreatedFrom, new_entity_id
+from clue_core import ICPCreatedFrom
 from clue_research.icp import (
     ScoringRubric,
     TierBand,
@@ -209,10 +208,9 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
 ) -> None:
     """[B3×research] slice 4 — the account guard is fail-closed, not a warning. The three
     account-scoped spend tools (``run_deep_account`` / ``resolve_committee`` / ``profile_contact``)
-    load the account through ``_load_account``, so an account in another workspace — or a legacy
-    NULL-workspace account (decision D5: a legacy ``None`` never equals a real ctx workspace) —
-    refuses ``account_not_found``, indistinguishable from a truly-absent id (no existence leak),
-    while an in-workspace account passes the guard."""
+    load the account through ``_load_account``, so an account in another workspace refuses
+    ``account_not_found``, indistinguishable from a truly-absent id (no existence leak), while an
+    in-workspace account passes the guard."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=True) as conn:
@@ -249,13 +247,6 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
             acc_b = await insert_account_entity(
                 conn, canonical_name="Other-WS", primary_domain="b.example", workspace_id=ws_b
             )
-            # A legacy NULL-workspace account (only insertable via raw SQL — the migration keeps it
-            # representable for fail-closed memory semantics).
-            legacy = new_entity_id()
-            await conn.execute(
-                text("INSERT INTO account_entity (id, canonical_name) VALUES (:id, 'Legacy')"),
-                {"id": legacy},
-            )
             # A contact under the in-workspace account so profile_contact's accepted case fully
             # passes (its account guard runs before the contact check).
             contact_a = await insert_contact_entity(
@@ -287,8 +278,6 @@ def test_account_tools_fail_closed_on_workspace_scope(  # noqa: F811
                 assert "account_not_found" not in await codes(name, str(acc_a)), name
                 # Cross-workspace → refused exactly as an unknown id (no existence leak).
                 assert await codes(name, str(acc_b)) == ("account_not_found",), name
-                # Legacy NULL-workspace → refused (decision D5).
-                assert await codes(name, str(legacy)) == ("account_not_found",), name
 
     run_async(scenario())
 

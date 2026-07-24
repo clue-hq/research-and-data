@@ -44,10 +44,10 @@ class AccountEntity(BaseModel):
     registry_ids: dict[str, str] = {}  # NPI | DUNS | CIK | LEI ... vertical-dependent
     status: AccountStatus = AccountStatus.CANDIDATE
     merged_into: EntityId | None = None  # set when status == MERGED
-    # Workspace tenancy (contract-delta 2026-07-23, [B3×research]): accounts are workspace-local
-    # (founder ruling 2026-07-22; migrations 50b778e4009a + the research-lane follow-up). Defaulted
-    # None so pre-delta readers and legacy NULL-workspace rows keep validating.
-    workspace_id: str | None = None
+    # Workspace tenancy (contract-delta 2026-07-24, [B3×research]): accounts are workspace-local.
+    # Required in both the domain shape and DB from migration 82a80fb80c9e; the dev-only legacy
+    # NULL state was retired rather than backfilled.
+    workspace_id: str
     brand_id: str | None = None
 
     def as_entity(self) -> Entity:
@@ -77,9 +77,9 @@ class ContactEntity(BaseModel):
     jurisdiction: str | None = None  # resolved per Doc D §1; nullable until a location claim lands
     status: AccountStatus = AccountStatus.CANDIDATE
     merged_into: EntityId | None = None  # set when status == MERGED
-    # Workspace tenancy (contract-delta 2026-07-23, [B3×research]): denormalized from the parent
-    # account; the composite FK (account_entity_id, workspace_id) makes a mismatch unrepresentable.
-    workspace_id: str | None = None
+    # Workspace tenancy (contract-delta 2026-07-24, [B3×research]): required and denormalized from
+    # the parent account; the composite FK makes a mismatch unrepresentable.
+    workspace_id: str
 
     def as_entity(self) -> Entity:
         """The resolved reference for this contact (its ``id`` is the claim ``entity_id``)."""
