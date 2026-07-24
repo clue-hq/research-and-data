@@ -158,6 +158,29 @@ def test_confident_tier1_calls_only_tier1() -> None:
     run_async(_run())
 
 
+def test_optional_attempt_recorder_observes_the_final_result() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "attempt_probe", tier=1)
+            bind_resolver("attempt_probe", _Fake([_claim(100, tier=1, confidence=_HI)]))
+            observed = []
+
+            async def record(result):
+                observed.append(result)
+
+            result = await resolve_field(
+                conn,
+                _entity(),
+                _field(("attempt_probe",)),
+                mode=_MODE,
+                run_id=new_run_id(),
+                attempt_recorder=record,
+            )
+            assert observed == [result]
+
+    run_async(_run())
+
+
 def test_advances_until_first_confident() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:

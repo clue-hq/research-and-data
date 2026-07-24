@@ -396,9 +396,11 @@ references:
   terminal
 ```
 
-This tool does not let the caller select a trust tier, bypass a source plan, or set a round above
-the deterministic cap. Existing `run_deep_account` may call the same controller; it must not
-reimplement the loop.
+`gap_fields` and `strategy_hint` are caller/agent planning inputs. The hint may select among
+engine-permitted transitions, but it cannot select a trust tier, bypass a source plan, or set a
+round above the deterministic cap. A goal evaluator may advise on sufficiency but may never supply
+or override either input. Existing `run_deep_account` may call the same controller; it must not
+reimplement the enforcement loop.
 
 ### 5.2 C2
 

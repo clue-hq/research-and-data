@@ -21,13 +21,32 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import Claim, ClaimId, LLMGateway, Message, PassKind, Role
+from clue_core import (
+    Claim,
+    ClaimId,
+    FieldDef,
+    LLMGateway,
+    Message,
+    PassKind,
+    ReuseScope,
+    Role,
+    classify_field_key,
+    is_valid_field_key,
+)
+from clue_core.proposals import FieldProposalRef
 from clue_research.claimstore import list_fields
 from clue_research.icp import get_pack_field_set, get_pack_source_profile, list_packs
+from clue_research.proposals import (
+    FieldProposalPayload,
+    ProposalScope,
+    propose_field,
+    reject_field_concept,
+)
 from clue_research.stage0.client_kb import read_client_kb_claims
 from clue_research.stage0.fields import (
     CLIENT_DELIVERED_VALUE,
@@ -60,6 +79,21 @@ _FLOOR_GROWTH_PROXY = "account.recent_funding"
 _FLOOR_GROWTH_NARRATIVE = "account.hiring_velocity_eng"
 
 
+class ICPSynthesisResult(BaseModel):
+    """Co-confirmation payload: bounded ICP candidates plus preserved new-concept references."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    proposals: tuple[ICPProposal, ...]
+    field_proposal_refs: tuple[FieldProposalRef, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _RejectedConcept:
+    raw_input: JsonValue
+    reason: str
+
+
 async def synthesize_icps(
     conn: AsyncConnection,
     client_kb_ref: ClientKnowledgeBaseRef,
@@ -77,6 +111,56 @@ async def synthesize_icps(
     With no gateway (or on any LLM/parse failure), a deterministic floor proposal is returned —
     there is always ≥1 complete proposal. The synthesis never resolves names or runs discovery: seed
     accounts are supplied by M5.4 downstream (empty in the floor)."""
+    result = await _synthesize(
+        conn,
+        client_kb_ref,
+        workspace_id=workspace_id,
+        gateway=gateway,
+        synthesis_model=synthesis_model,
+        proposal_scope=None,
+        proposed_by_actor="system",
+        proposed_by_ref=None,
+    )
+    return list(result.proposals)
+
+
+async def synthesize_icps_with_proposals(
+    conn: AsyncConnection,
+    client_kb_ref: ClientKnowledgeBaseRef,
+    *,
+    workspace_id: str,
+    proposal_scope: ProposalScope,
+    proposed_by_actor: str,
+    proposed_by_ref: str | None = None,
+    gateway: LLMGateway | None = None,
+    synthesis_model: str | None = None,
+) -> ICPSynthesisResult:
+    """Open-schema synthesis for C4: unknown concepts become scoped proposal references."""
+    if proposal_scope.workspace_id != workspace_id:
+        raise ValueError("proposal_scope must belong to the synthesis workspace")
+    return await _synthesize(
+        conn,
+        client_kb_ref,
+        workspace_id=workspace_id,
+        gateway=gateway,
+        synthesis_model=synthesis_model,
+        proposal_scope=proposal_scope,
+        proposed_by_actor=proposed_by_actor,
+        proposed_by_ref=proposed_by_ref,
+    )
+
+
+async def _synthesize(
+    conn: AsyncConnection,
+    client_kb_ref: ClientKnowledgeBaseRef,
+    *,
+    workspace_id: str,
+    gateway: LLMGateway | None,
+    synthesis_model: str | None,
+    proposal_scope: ProposalScope | None,
+    proposed_by_actor: str,
+    proposed_by_ref: str | None,
+) -> ICPSynthesisResult:
     kb_claims = await read_client_kb_claims(
         conn,
         client_kb_ref.client_entity_id,
@@ -88,9 +172,11 @@ async def synthesize_icps(
     pack_field_keys, pack_priors = await _pack_offerings(conn)
 
     used_llm = gateway is not None and synthesis_model is not None
+    field_payloads: tuple[FieldProposalPayload, ...] = ()
+    rejected_concepts: tuple[_RejectedConcept, ...] = ()
     if used_llm:
         assert gateway is not None and synthesis_model is not None  # narrowed by used_llm
-        proposals = _proposals_from_llm(
+        proposals, field_payloads, rejected_concepts = _proposals_from_llm(
             gateway,
             synthesis_model,
             kb_claims,
@@ -99,18 +185,55 @@ async def synthesize_icps(
             pack_field_keys=pack_field_keys,
             pack_priors=pack_priors,
         )
-        if proposals:
-            return proposals
+    else:
+        proposals = []
+    if not proposals:
+        proposals = [
+            _floor_proposal(
+                kb_claims,
+                scoring_keys=scoring_keys,
+                deep_keys=deep_keys,
+                pack_field_keys=pack_field_keys,
+                pack_priors=pack_priors,
+            )
+        ]
 
-    return [
-        _floor_proposal(
-            kb_claims,
-            scoring_keys=scoring_keys,
-            deep_keys=deep_keys,
-            pack_field_keys=pack_field_keys,
-            pack_priors=pack_priors,
-        )
-    ]
+    refs: list[FieldProposalRef] = []
+    if proposal_scope is not None:
+        for payload in field_payloads:
+            proposal = await propose_field(
+                conn,
+                scope=proposal_scope,
+                payload=payload,
+                proposed_by_actor=proposed_by_actor,
+                proposed_by_ref=proposed_by_ref,
+            )
+            refs.append(
+                FieldProposalRef(
+                    proposal_id=proposal.id,
+                    field_key=proposal.payload.field_def.field_key,
+                    status=proposal.status,
+                )
+            )
+        evidence_refs = tuple(str(claim.id) for claim in kb_claims.values())
+        for rejected in rejected_concepts:
+            proposal = await reject_field_concept(
+                conn,
+                scope=proposal_scope,
+                raw_input=rejected.raw_input,
+                reason=rejected.reason,
+                proposed_by_actor=proposed_by_actor,
+                proposed_by_ref=proposed_by_ref,
+                evidence_refs=evidence_refs,
+            )
+            refs.append(
+                FieldProposalRef(
+                    proposal_id=proposal.id,
+                    field_key=proposal.payload.field_def.field_key,
+                    status=proposal.status,
+                )
+            )
+    return ICPSynthesisResult(proposals=tuple(proposals), field_proposal_refs=tuple(refs))
 
 
 # --- offered bounds (config-bounding the synthesis) -------------------------
@@ -333,7 +456,11 @@ def _proposals_from_llm(
     deep_keys: frozenset[str],
     pack_field_keys: dict[str, tuple[str, ...]],
     pack_priors: dict[str, tuple[SourcePrior, ...]],
-) -> list[ICPProposal]:
+) -> tuple[
+    list[ICPProposal],
+    tuple[FieldProposalPayload, ...],
+    tuple[_RejectedConcept, ...],
+]:
     """Run the config-bounded synthesis LLM and map its JSON into proposals, dropping any field/pack
     it names outside the offered bounds. Any failure → ``[]`` (the caller falls back to floor)."""
     try:
@@ -342,13 +469,13 @@ def _proposals_from_llm(
             messages=_synthesis_messages(kb_claims, scoring_keys, deep_keys, pack_field_keys),
         )
     except Exception:  # noqa: BLE001 — any gateway failure degrades to the floor (never raises)
-        return []
+        return [], (), ()
     parsed = _parse_json(completion.text)
     if parsed is None:
-        return []
+        return [], (), ()
     raw_icps = parsed.get("icps")
     if not isinstance(raw_icps, list):
-        return []
+        return [], (), ()
 
     by_field, all_ids = _justifier(kb_claims)
     proposals: list[ICPProposal] = []
@@ -369,7 +496,148 @@ def _proposals_from_llm(
         )
         if proposal is not None:
             proposals.append(proposal)
-    return proposals
+    field_payloads, rejected = _field_proposal_payloads(raw_icps, scoring_keys, deep_keys, all_ids)
+    return proposals, field_payloads, rejected
+
+
+def _field_proposal_payloads(
+    raw_icps: list[JsonValue],
+    scoring_keys: frozenset[str],
+    deep_keys: frozenset[str],
+    evidence_ids: tuple[ClaimId, ...],
+) -> tuple[tuple[FieldProposalPayload, ...], tuple[_RejectedConcept, ...]]:
+    """Preserve well-formed, out-of-registry concepts without admitting them to the ICP."""
+    known = scoring_keys | deep_keys
+    drafts: dict[str, tuple[PassKind, dict[str, JsonValue] | None]] = {}
+    rejected: list[_RejectedConcept] = []
+
+    def notice(value: JsonValue, pass_kind: PassKind) -> None:
+        if not isinstance(value, str) or value in known:
+            return
+        if is_valid_field_key(value):
+            drafts.setdefault(value, (pass_kind, None))
+        else:
+            rejected.append(
+                _RejectedConcept(
+                    raw_input={"field_key": value, "pass_kind": pass_kind.value},
+                    reason="field_key is malformed; expected a lowercase dotted identifier",
+                )
+            )
+
+    for raw_icp in raw_icps:
+        if not isinstance(raw_icp, dict):
+            continue
+        for value in _str_list(raw_icp.get("firmographic_field_keys")):
+            notice(value, PassKind.SCORING)
+        for value in _str_list(raw_icp.get("technographic_field_keys")):
+            notice(value, PassKind.DEEP)
+        raw_signals = raw_icp.get("candidate_signals")
+        if isinstance(raw_signals, list):
+            for signal in raw_signals:
+                if not isinstance(signal, dict):
+                    continue
+                for value in _str_list(signal.get("proxy_field_keys")):
+                    notice(value, PassKind.SCORING)
+                for value in _str_list(signal.get("narrative_field_keys")):
+                    notice(value, PassKind.DEEP)
+        rubric = raw_icp.get("rubric")
+        if isinstance(rubric, dict):
+            for dimension in ("fit", "intent"):
+                entries = rubric.get(dimension)
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        notice(entry.get("field_key"), PassKind.SCORING)
+
+        concepts = raw_icp.get("new_field_concepts")
+        if isinstance(concepts, list):
+            for concept in concepts:
+                if not isinstance(concept, dict):
+                    rejected.append(
+                        _RejectedConcept(
+                            raw_input=concept,
+                            reason="new field concept must be a JSON object",
+                        )
+                    )
+                    continue
+                key = concept.get("field_key")
+                if not isinstance(key, str):
+                    rejected.append(
+                        _RejectedConcept(
+                            raw_input=concept,
+                            reason="new field concept requires a string field_key",
+                        )
+                    )
+                    continue
+                if key in known:
+                    continue
+                if not is_valid_field_key(key):
+                    rejected.append(
+                        _RejectedConcept(
+                            raw_input=concept,
+                            reason="field_key is malformed; expected a lowercase dotted identifier",
+                        )
+                    )
+                    continue
+                try:
+                    pass_kind = PassKind(str(concept.get("pass_kind", PassKind.DEEP.value)))
+                except ValueError:
+                    rejected.append(
+                        _RejectedConcept(
+                            raw_input=concept,
+                            reason="pass_kind must be scoring or deep",
+                        )
+                    )
+                    continue
+                drafts[key] = (pass_kind, concept)
+
+    payloads: list[FieldProposalPayload] = []
+    evidence_refs = tuple(str(claim_id) for claim_id in evidence_ids)
+    for key, (pass_kind, concept) in drafts.items():
+        raw = concept or {}
+        reuse_raw = raw.get("reuse_scope")
+        try:
+            reuse_scope = ReuseScope(reuse_raw) if isinstance(reuse_raw, str) else None
+            field_class = classify_field_key(key)
+            pack = key.split(".", 1)[0] if field_class.value == "pack" else None
+            value_schema = raw.get("value_schema")
+            payloads.append(
+                FieldProposalPayload(
+                    field_def=FieldDef(
+                        field_key=key,
+                        value_type=(
+                            str(raw.get("value_type"))
+                            if isinstance(raw.get("value_type"), str)
+                            else "str"
+                        ),
+                        tier_plan=("generic_web",),
+                        pass_kind=pass_kind,
+                        reuse_scope=reuse_scope,
+                    ),
+                    value_schema=value_schema if isinstance(value_schema, dict) else None,
+                    description=(
+                        str(raw.get("description"))
+                        if isinstance(raw.get("description"), str)
+                        else None
+                    ),
+                    pack=pack,
+                    rationale=(
+                        str(raw.get("rationale"))
+                        if isinstance(raw.get("rationale"), str)
+                        else "Out-of-registry concept noticed during ICP synthesis."
+                    ),
+                    evidence_refs=evidence_refs,
+                )
+            )
+        except (ValidationError, ValueError) as exc:
+            rejected.append(
+                _RejectedConcept(
+                    raw_input=raw,
+                    reason=f"field concept failed proposal validation: {exc}",
+                )
+            )
+    return tuple(payloads), tuple(rejected)
 
 
 def _proposal_from_raw(
@@ -509,8 +777,9 @@ def _synthesis_messages(
         "one or more candidate ICPs as structured hypotheses. Propose MULTIPLE ICPs only when "
         "the client's customer evidence clearly clusters into distinct segments.\n"
         "HARD RULES:\n"
-        "1. Use ONLY field_keys and pack keys from the provided catalog. Never invent a field, a "
-        "pack, a company, or a fact.\n"
+        "1. Existing ICP slots may use ONLY field_keys and pack keys from the provided catalog. "
+        "If an important concept is missing, keep it OUT of those slots and describe it under "
+        "new_field_concepts for governed review. Never invent a company or a fact.\n"
         "2. Fit and intent rubric entries must be SCORING field_keys (cheap Pass-A proxies).\n"
         "3. Do not propose seed accounts (those are resolved separately).\n"
         'Return STRICT JSON: {"icps": [{"icp_key": str, "label": str, "rationale": str, '
@@ -520,7 +789,10 @@ def _synthesis_messages(
         '"proxy_field_keys": [scoring_field_key, ...], "narrative_field_keys": [deep_field_key, '
         '...]}], "rubric": {"fit": [{"field_key": scoring_field_key, "weight": number}], "intent": '
         '[{"field_key": scoring_field_key, "weight": number}], "fit_threshold": number, '
-        '"intent_threshold": number}}]}. No prose, no code fences.'
+        '"intent_threshold": number}, "new_field_concepts": [{"field_key": str, '
+        '"value_type": str, "pass_kind": "scoring"|"deep", "reuse_scope": '
+        '"public_footprint"|"tenant_private"|null, "description": str, "rationale": str}]}]}. '
+        "No prose, no code fences."
     )
     user = json.dumps(
         {
