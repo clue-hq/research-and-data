@@ -27,6 +27,7 @@ class FleetTaskKind(StrEnum):
 
     DRIVE_RUN = "drive_run"
     ACCOUNT_JOB = "account_job"
+    EXECUTE_GRAPH = "execute_graph"
 
 
 class FleetTaskStatus(StrEnum):

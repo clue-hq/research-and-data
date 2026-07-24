@@ -360,14 +360,28 @@ def test_default_resume_run_writes_a_phase_ledger_row() -> None:
                 before = await _run_phase_ledger_count(run_id)
                 assert before == 0  # the pause path writes no ledger row
 
-                # Resume via the DEFAULT hook (no injected project_run → the fleet-parity
-                # _default_resume_run() with a DbIdempotencyStore ledger).
+                # Resume via the DEFAULT hook. C5.3 finalizes the checkpoint under the
+                # fleet-parity ledger, then offers the detached driver work rather than racing it
+                # in-process.
                 await ProjectRunResumeHook().resume_review(run_id)
 
                 after = await _run_phase_ledger_count(run_id)
                 assert after > before  # the default driver's ledger recorded the finalized phase(s)
                 final = await machine.status(run_id)
-                assert final.status is ProjectRunStatus.COMPLETED
+                assert final.status is ProjectRunStatus.ACTIVE
+                async with transaction() as conn:
+                    drive_status = (
+                        await conn.execute(
+                            text(
+                                """
+                                SELECT status FROM fleet_task
+                                WHERE work_id = :run_id AND kind = 'drive_run'
+                                """
+                            ),
+                            {"run_id": run_id},
+                        )
+                    ).scalar_one()
+                assert str(drive_status) == "queued"
             finally:
                 registry.clear()
                 for handler in saved.values():

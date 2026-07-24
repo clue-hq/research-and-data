@@ -1,32 +1,15 @@
-"""The per-run driver lease (PB-B1) — at most one worker drives a project run at a time.
+"""Generic fleet work leases with monotone takeover generations.
 
-M7.3's state machine *documents* single-driver-per-run as a precondition ("a per-run driver lock
-that would enforce this … is left to the scheduler/ops layer" — ``durable/campaign.py``); this
-module is that layer. One ``run_lease`` row per driven run: a worker **acquires** it before
-driving, **renews** it on a heartbeat while driving, and **releases** it when the drive ends. A
-kill -9'd driver simply stops renewing; the lease expires by TTL and the next worker's acquire
-atomically re-owns it — takeover is possible *only* after expiry (the exit-gate property).
-
-All clock reads are database ``now()`` (the M7.4 ledger convention — no cross-worker NTP skew),
-and every mutation after acquire is **holder-guarded** (``WHERE worker_id = :me``): a fenced-out
-zombie's renew/release matches zero rows instead of stealing the lease back. Fencing is
-**supervised-heartbeat + immediate mid-phase cancellation** (see :mod:`clue_fleet.worker` and
-spec §2.3): the worker supervises its lease heartbeat and cancels the in-flight phase the moment
-the lease is lost, rather than waiting for the next phase boundary. Hard fence tokens (a lease
-token checked on every durable write) are deferred to integration; the residual zombie-mid-phase
-window is now cancellation latency, governed by the account-step ledger and the entity locks,
-exactly as on today's resume path (spec §2.3).
-
-Repository shape mirrors ``durable/project_run.py``: module-level ``text(...)`` + ``async def``
-helpers over an :class:`~sqlalchemy.ext.asyncio.AsyncConnection`; :class:`DbLeaseStore` wraps
-them in ``db.transaction()`` behind the :class:`LeaseStore` seam so the worker loop is testable
-on an in-memory store (conventions §2).
+``work_lease`` is fleet-private state.  A generation changes only when an expired lease is
+re-owned, giving execution-plane writers a hard fence in addition to the worker's supervised
+heartbeat.  The project-run functions at the bottom are compatibility adapters for PB-B1 callers.
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Protocol, runtime_checkable
+from typing import NewType, Protocol, runtime_checkable
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
@@ -35,77 +18,213 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import ProjectRunId, UtcDatetime
 from clue_db import transaction
 
-# Default driver-lease TTL. Generous enough that a healthy heartbeat (a fraction of this — see
-# ``Settings.fleet_heartbeat_interval_s``) never lets a live drive lapse, short enough that a
-# killed driver's run is re-drivable quickly. Policy-as-data: the worker passes the configured
-# value; this is only the seam default.
+WorkId = NewType("WorkId", UUID)
+LeaseGeneration = NewType("LeaseGeneration", int)
 DEFAULT_LEASE_TTL = timedelta(seconds=30)
 
 
-class RunLeaseRow(BaseModel):
-    """One ``run_lease`` row (PB-B1). ``live`` is computed against database ``now()`` at read
-    time — ``True`` while the lease is held (``expires_at > now()``)."""
-
+class WorkLeaseRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    project_run_id: ProjectRunId
+    work_id: UUID
     worker_id: str
+    generation: int
     acquired_at: UtcDatetime
     renewed_at: UtcDatetime
     expires_at: UtcDatetime
     live: bool
 
 
-# Atomic acquire: insert if absent, else re-own ONLY an expired row — or re-enter one this worker
-# already holds (an idempotent re-acquire extends it). A live foreign lease leaves the predicate
-# false → no row returned → not acquired. Same single-upsert atomicity as the M7.4 ledger claim:
-# two racing acquirers can never both get a returned row.
+class RunLeaseRow(BaseModel):
+    """PB-B1 compatibility projection of a generic work lease."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_run_id: ProjectRunId
+    worker_id: str
+    generation: int = 1
+    acquired_at: UtcDatetime
+    renewed_at: UtcDatetime
+    expires_at: UtcDatetime
+    live: bool
+
+
 _ACQUIRE_SQL = text(
     """
-    INSERT INTO run_lease (project_run_id, worker_id, acquired_at, renewed_at, expires_at)
-    VALUES (:project_run_id, :worker_id, now(), now(), now() + CAST(:ttl AS interval))
-    ON CONFLICT (project_run_id) DO UPDATE
+    INSERT INTO work_lease
+        (work_id, worker_id, generation, acquired_at, renewed_at, expires_at)
+    VALUES (:work_id, :worker_id, 1, now(), now(), now() + CAST(:ttl AS interval))
+    ON CONFLICT (work_id) DO UPDATE
         SET worker_id = :worker_id,
-            acquired_at = now(),
+            generation = CASE
+                WHEN work_lease.expires_at <= now() THEN work_lease.generation + 1
+                ELSE work_lease.generation
+            END,
+            acquired_at = CASE
+                WHEN work_lease.expires_at <= now() THEN now()
+                ELSE work_lease.acquired_at
+            END,
             renewed_at = now(),
             expires_at = now() + CAST(:ttl AS interval)
-        WHERE run_lease.expires_at <= now()
-           OR run_lease.worker_id = :worker_id
-    RETURNING project_run_id
+        WHERE work_lease.expires_at <= now()
+           OR work_lease.worker_id = :worker_id
+    RETURNING work_id, worker_id, generation, acquired_at, renewed_at, expires_at,
+              (expires_at > now()) AS live
     """
 )
 
-# Holder-guarded renew: only the current holder of a still-live lease may extend it. An expired
-# lease is NOT renewable even by its old holder — once past ``expires_at`` a takeover may already
-# have happened (or be racing this statement), so the old driver must treat renewal failure as
-# "lease lost" and abort its drive.
 _RENEW_SQL = text(
     """
-    UPDATE run_lease
+    UPDATE work_lease
     SET renewed_at = now(), expires_at = now() + CAST(:ttl AS interval)
-    WHERE project_run_id = :project_run_id
+    WHERE work_id = :work_id
       AND worker_id = :worker_id
+      AND generation = :generation
       AND expires_at > now()
-    RETURNING project_run_id
+    RETURNING work_id
     """
 )
 
-# Holder-guarded release; a lost lease (re-owned by another worker) matches zero rows — a no-op.
 _RELEASE_SQL = text(
     """
-    DELETE FROM run_lease
-    WHERE project_run_id = :project_run_id AND worker_id = :worker_id
+    DELETE FROM work_lease
+    WHERE work_id = :work_id AND worker_id = :worker_id AND generation = :generation
     """
 )
 
 _GET_SQL = text(
     """
-    SELECT project_run_id, worker_id, acquired_at, renewed_at, expires_at,
+    SELECT work_id, worker_id, generation, acquired_at, renewed_at, expires_at,
            (expires_at > now()) AS live
-    FROM run_lease
-    WHERE project_run_id = :project_run_id
+    FROM work_lease
+    WHERE work_id = :work_id
     """
 )
+
+
+async def acquire_work_lease(
+    conn: AsyncConnection,
+    *,
+    work_id: WorkId,
+    worker_id: str,
+    ttl: timedelta = DEFAULT_LEASE_TTL,
+) -> WorkLeaseRow | None:
+    row = (
+        (
+            await conn.execute(
+                _ACQUIRE_SQL,
+                {"work_id": work_id, "worker_id": worker_id, "ttl": ttl},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return WorkLeaseRow.model_validate(dict(row)) if row is not None else None
+
+
+async def renew_work_lease(
+    conn: AsyncConnection,
+    *,
+    work_id: WorkId,
+    worker_id: str,
+    generation: LeaseGeneration,
+    ttl: timedelta = DEFAULT_LEASE_TTL,
+) -> bool:
+    row = (
+        await conn.execute(
+            _RENEW_SQL,
+            {
+                "work_id": work_id,
+                "worker_id": worker_id,
+                "generation": generation,
+                "ttl": ttl,
+            },
+        )
+    ).first()
+    return row is not None
+
+
+async def release_work_lease(
+    conn: AsyncConnection,
+    *,
+    work_id: WorkId,
+    worker_id: str,
+    generation: LeaseGeneration,
+) -> None:
+    await conn.execute(
+        _RELEASE_SQL,
+        {"work_id": work_id, "worker_id": worker_id, "generation": generation},
+    )
+
+
+async def get_work_lease(conn: AsyncConnection, work_id: WorkId) -> WorkLeaseRow | None:
+    row = (await conn.execute(_GET_SQL, {"work_id": work_id})).mappings().one_or_none()
+    return WorkLeaseRow.model_validate(dict(row)) if row is not None else None
+
+
+@runtime_checkable
+class WorkLeaseStore(Protocol):
+    async def acquire(
+        self, *, work_id: WorkId, worker_id: str, ttl: timedelta
+    ) -> WorkLeaseRow | None: ...
+
+    async def renew(
+        self,
+        *,
+        work_id: WorkId,
+        worker_id: str,
+        generation: LeaseGeneration,
+        ttl: timedelta,
+    ) -> bool: ...
+
+    async def release(
+        self, *, work_id: WorkId, worker_id: str, generation: LeaseGeneration
+    ) -> None: ...
+
+    async def get(self, work_id: WorkId) -> WorkLeaseRow | None: ...
+
+
+class DbWorkLeaseStore:
+    async def acquire(
+        self, *, work_id: WorkId, worker_id: str, ttl: timedelta
+    ) -> WorkLeaseRow | None:
+        async with transaction() as conn:
+            return await acquire_work_lease(conn, work_id=work_id, worker_id=worker_id, ttl=ttl)
+
+    async def renew(
+        self,
+        *,
+        work_id: WorkId,
+        worker_id: str,
+        generation: LeaseGeneration,
+        ttl: timedelta,
+    ) -> bool:
+        async with transaction() as conn:
+            return await renew_work_lease(
+                conn,
+                work_id=work_id,
+                worker_id=worker_id,
+                generation=generation,
+                ttl=ttl,
+            )
+
+    async def release(
+        self, *, work_id: WorkId, worker_id: str, generation: LeaseGeneration
+    ) -> None:
+        async with transaction() as conn:
+            await release_work_lease(
+                conn,
+                work_id=work_id,
+                worker_id=worker_id,
+                generation=generation,
+            )
+
+    async def get(self, work_id: WorkId) -> WorkLeaseRow | None:
+        async with transaction() as conn:
+            return await get_work_lease(conn, work_id)
+
+
+# -- PB-B1 project-run compatibility ---------------------------------------------------------
 
 
 async def acquire_run_lease(
@@ -115,17 +234,15 @@ async def acquire_run_lease(
     worker_id: str,
     ttl: timedelta = DEFAULT_LEASE_TTL,
 ) -> bool:
-    """Atomically acquire (or re-enter) the driver lease for ``project_run_id``.
-
-    ``True`` when this worker now holds the lease (fresh, re-owned-after-expiry, or its own
-    re-acquire); ``False`` when another worker holds it live — the caller must not drive."""
-    row = (
-        await conn.execute(
-            _ACQUIRE_SQL,
-            {"project_run_id": project_run_id, "worker_id": worker_id, "ttl": ttl},
+    return (
+        await acquire_work_lease(
+            conn,
+            work_id=WorkId(project_run_id),
+            worker_id=worker_id,
+            ttl=ttl,
         )
-    ).first()
-    return row is not None
+        is not None
+    )
 
 
 async def renew_run_lease(
@@ -135,42 +252,48 @@ async def renew_run_lease(
     worker_id: str,
     ttl: timedelta = DEFAULT_LEASE_TTL,
 ) -> bool:
-    """Extend a still-live lease this worker holds. ``False`` = the lease was lost (expired or
-    taken over) — the driver must abort its drive at the next boundary."""
-    row = (
-        await conn.execute(
-            _RENEW_SQL,
-            {"project_run_id": project_run_id, "worker_id": worker_id, "ttl": ttl},
-        )
-    ).first()
-    return row is not None
+    current = await get_work_lease(conn, WorkId(project_run_id))
+    if current is None or current.worker_id != worker_id:
+        return False
+    return await renew_work_lease(
+        conn,
+        work_id=WorkId(project_run_id),
+        worker_id=worker_id,
+        generation=LeaseGeneration(current.generation),
+        ttl=ttl,
+    )
 
 
 async def release_run_lease(
     conn: AsyncConnection, *, project_run_id: ProjectRunId, worker_id: str
 ) -> None:
-    """Release the lease if this worker still holds it (holder-guarded; a lost lease is a
-    no-op)."""
-    await conn.execute(_RELEASE_SQL, {"project_run_id": project_run_id, "worker_id": worker_id})
+    current = await get_work_lease(conn, WorkId(project_run_id))
+    if current is not None:
+        await release_work_lease(
+            conn,
+            work_id=WorkId(project_run_id),
+            worker_id=worker_id,
+            generation=LeaseGeneration(current.generation),
+        )
 
 
 async def get_run_lease(conn: AsyncConnection, project_run_id: ProjectRunId) -> RunLeaseRow | None:
-    """Read the lease row (with its DB-clock ``live`` verdict), or ``None`` if never leased."""
-    row = (
-        (await conn.execute(_GET_SQL, {"project_run_id": project_run_id})).mappings().one_or_none()
+    row = await get_work_lease(conn, WorkId(project_run_id))
+    if row is None:
+        return None
+    return RunLeaseRow(
+        project_run_id=project_run_id,
+        worker_id=row.worker_id,
+        generation=row.generation,
+        acquired_at=row.acquired_at,
+        renewed_at=row.renewed_at,
+        expires_at=row.expires_at,
+        live=row.live,
     )
-    return RunLeaseRow.model_validate(dict(row)) if row is not None else None
-
-
-# --- the persistence seam --------------------------------------------------------------------
 
 
 @runtime_checkable
 class LeaseStore(Protocol):
-    """The seam the worker holds/renews leases through (PB-B1). Abstracting persistence keeps the
-    drive loop testable on an in-memory store; the production implementation is
-    :class:`DbLeaseStore` (conventions §2)."""
-
     async def acquire(
         self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta
     ) -> bool: ...
@@ -185,10 +308,6 @@ class LeaseStore(Protocol):
 
 
 class DbLeaseStore:
-    """The Postgres :class:`LeaseStore`. Each method runs in its own ``db.transaction()``
-    (mirroring :class:`~clue_research.durable.DbIdempotencyStore`) — a lease operation is a
-    single atomic statement, never part of a larger unit of work."""
-
     async def acquire(
         self, *, project_run_id: ProjectRunId, worker_id: str, ttl: timedelta
     ) -> bool:
@@ -210,3 +329,24 @@ class DbLeaseStore:
     async def get(self, project_run_id: ProjectRunId) -> RunLeaseRow | None:
         async with transaction() as conn:
             return await get_run_lease(conn, project_run_id)
+
+
+__all__ = [
+    "DEFAULT_LEASE_TTL",
+    "DbLeaseStore",
+    "DbWorkLeaseStore",
+    "LeaseGeneration",
+    "LeaseStore",
+    "RunLeaseRow",
+    "WorkId",
+    "WorkLeaseRow",
+    "WorkLeaseStore",
+    "acquire_run_lease",
+    "acquire_work_lease",
+    "get_run_lease",
+    "get_work_lease",
+    "release_run_lease",
+    "release_work_lease",
+    "renew_run_lease",
+    "renew_work_lease",
+]

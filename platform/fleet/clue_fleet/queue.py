@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import ProjectRunId, UtcDatetime, parse_value_json, serialize_value_json
 from clue_db import transaction
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
+from clue_fleet.lease import WorkId
 
 # A ``CLAIMED`` task older than this is presumed orphaned by a killed worker and is re-owned by
 # the next claimant. Sized to outlive the driver lease TTL (takeover is lease-gated first; the
@@ -69,8 +70,38 @@ class FleetTaskRow(BaseModel):
     updated_at: UtcDatetime
 
 
+class WorkTaskRow(BaseModel):
+    """Generic fleet view. ``FleetTaskRow`` remains the project-run compatibility view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    task_id: UUID
+    kind: FleetTaskKind
+    work_id: WorkId
+    dedup_key: str
+    priority: int
+    status: FleetTaskStatus
+    attempts: int
+    payload: dict[str, JsonValue]
+    result_ref: dict[str, JsonValue]
+    claimed_by: str | None
+    claimed_at: UtcDatetime | None
+    enqueued_at: UtcDatetime
+    enqueue_seq: int
+    updated_at: UtcDatetime
+
+
+def _to_work_task(row: FleetTaskRow) -> WorkTaskRow:
+    return WorkTaskRow.model_validate(
+        {
+            **row.model_dump(exclude={"project_run_id"}),
+            "work_id": row.project_run_id,
+        }
+    )
+
+
 _COLUMNS = (
-    "task_id, kind, project_run_id, dedup_key, priority, status, attempts, "
+    "task_id, kind, work_id AS project_run_id, dedup_key, priority, status, attempts, "
     "payload_json, result_ref_json, claimed_by, claimed_at, enqueued_at, enqueue_seq, updated_at"
 )
 
@@ -80,12 +111,12 @@ _QUALIFIED_COLUMNS = ", ".join(f"fleet_task.{col}" for col in _COLUMNS.split(", 
 
 _ENQUEUE_SQL = text(
     """
-    INSERT INTO fleet_task (task_id, kind, project_run_id, dedup_key, priority, payload_json)
+    INSERT INTO fleet_task (task_id, kind, work_id, dedup_key, priority, payload_json)
     VALUES (
         :task_id, CAST(:kind AS fleet_task_kind), :project_run_id, :dedup_key, :priority,
         CAST(:payload AS jsonb)
     )
-    ON CONFLICT (kind, project_run_id, dedup_key) DO NOTHING
+    ON CONFLICT (kind, work_id, dedup_key) DO NOTHING
     RETURNING task_id
     """
 )
@@ -98,12 +129,12 @@ _ENQUEUE_SQL = text(
 # resumed run retains its FIFO place ahead of newer work (intended, not incidental).
 _ENQUEUE_REOPEN_SQL = text(
     """
-    INSERT INTO fleet_task (task_id, kind, project_run_id, dedup_key, priority, payload_json)
+    INSERT INTO fleet_task (task_id, kind, work_id, dedup_key, priority, payload_json)
     VALUES (
         :task_id, CAST(:kind AS fleet_task_kind), :project_run_id, :dedup_key, :priority,
         CAST(:payload AS jsonb)
     )
-    ON CONFLICT (kind, project_run_id, dedup_key) DO UPDATE
+    ON CONFLICT (kind, work_id, dedup_key) DO UPDATE
         SET status = 'queued',
             claimed_by = NULL,
             claimed_at = NULL,
@@ -134,7 +165,7 @@ _CLAIM_NEXT_SQL = text(
         SELECT task_id
         FROM fleet_task
         WHERE kind = CAST(:kind AS fleet_task_kind)
-          AND (CAST(:project_run_id AS uuid) IS NULL OR project_run_id = :project_run_id)
+          AND (CAST(:project_run_id AS uuid) IS NULL OR work_id = :project_run_id)
           AND (
                 status = 'queued'
                 OR (status = 'claimed' AND claimed_at <= now() - CAST(:stale AS interval))
@@ -185,7 +216,7 @@ _REQUEUE_FAILED_SQL = text(
     UPDATE fleet_task
     SET status = 'queued', claimed_by = NULL, claimed_at = NULL, updated_at = now()
     WHERE kind = CAST(:kind AS fleet_task_kind)
-      AND project_run_id = :project_run_id
+      AND work_id = :project_run_id
       AND status = 'failed'
     """
 )
@@ -195,7 +226,7 @@ _GET_SQL = text(f"SELECT {_COLUMNS} FROM fleet_task WHERE task_id = :task_id")
 _LIST_SQL = text(
     f"""
     SELECT {_COLUMNS} FROM fleet_task
-    WHERE project_run_id = :project_run_id AND kind = CAST(:kind AS fleet_task_kind)
+    WHERE work_id = :project_run_id AND kind = CAST(:kind AS fleet_task_kind)
     ORDER BY priority, enqueue_seq
     """
 )
@@ -487,3 +518,123 @@ class DbTaskQueue:
     ) -> list[FleetTaskRow]:
         async with transaction() as conn:
             return await list_tasks(conn, project_run_id=project_run_id, kind=kind)
+
+
+@runtime_checkable
+class WorkQueue(Protocol):
+    """Generic top-level queue seam used by the multi-handler fleet worker."""
+
+    async def enqueue(
+        self,
+        *,
+        kind: FleetTaskKind,
+        work_id: WorkId,
+        dedup_key: str,
+        priority: int = 0,
+        payload: dict[str, JsonValue] | None = None,
+        reopen_terminal: bool = False,
+    ) -> bool: ...
+
+    async def claim_next(
+        self,
+        *,
+        kind: FleetTaskKind,
+        worker_id: str,
+        work_id: WorkId | None = None,
+        stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+    ) -> WorkTaskRow | None: ...
+
+    async def finish(
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        status: FleetTaskStatus,
+        result_ref: dict[str, JsonValue] | None = None,
+    ) -> bool: ...
+
+    async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
+
+    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool: ...
+
+
+class DbWorkQueue:
+    """Generic adapter over the fleet table's existing repository implementation."""
+
+    def __init__(self, queue: TaskQueue | None = None) -> None:
+        self._queue = queue if queue is not None else DbTaskQueue()
+
+    async def enqueue(
+        self,
+        *,
+        kind: FleetTaskKind,
+        work_id: WorkId,
+        dedup_key: str,
+        priority: int = 0,
+        payload: dict[str, JsonValue] | None = None,
+        reopen_terminal: bool = False,
+    ) -> bool:
+        return await self._queue.enqueue(
+            kind=kind,
+            project_run_id=ProjectRunId(work_id),
+            dedup_key=dedup_key,
+            priority=priority,
+            payload=payload,
+            reopen_terminal=reopen_terminal,
+        )
+
+    async def claim_next(
+        self,
+        *,
+        kind: FleetTaskKind,
+        worker_id: str,
+        work_id: WorkId | None = None,
+        stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+    ) -> WorkTaskRow | None:
+        row = await self._queue.claim_next(
+            kind=kind,
+            worker_id=worker_id,
+            project_run_id=ProjectRunId(work_id) if work_id is not None else None,
+            stale_after=stale_after,
+        )
+        return _to_work_task(row) if row is not None else None
+
+    async def finish(
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        status: FleetTaskStatus,
+        result_ref: dict[str, JsonValue] | None = None,
+    ) -> bool:
+        return await self._queue.finish(
+            task_id=task_id,
+            worker_id=worker_id,
+            status=status,
+            result_ref=result_ref,
+        )
+
+    async def touch(self, *, task_id: UUID, worker_id: str) -> bool:
+        return await self._queue.touch(task_id=task_id, worker_id=worker_id)
+
+    async def requeue(self, *, task_id: UUID, worker_id: str) -> bool:
+        return await self._queue.requeue(task_id=task_id, worker_id=worker_id)
+
+
+__all__ = [
+    "DEFAULT_TASK_STALE_AFTER",
+    "DbTaskQueue",
+    "DbWorkQueue",
+    "FleetTaskRow",
+    "TaskQueue",
+    "WorkQueue",
+    "WorkTaskRow",
+    "claim_next_task",
+    "enqueue_task",
+    "finish_task",
+    "get_task",
+    "list_tasks",
+    "requeue_failed_tasks",
+    "requeue_task",
+    "touch_task",
+]

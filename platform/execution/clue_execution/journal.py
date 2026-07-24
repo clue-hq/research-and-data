@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol, TypedDict, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import JsonValue
@@ -46,6 +47,15 @@ class OperationConflict(RuntimeError):
     pass
 
 
+class LostExecutionLease(RuntimeError):
+    pass
+
+
+class _LeaseKwargs(TypedDict):
+    expected_worker_id: str | None
+    expected_lease_generation: int | None
+
+
 class ExecutionTransportWriter(Protocol):
     async def append(
         self,
@@ -59,6 +69,21 @@ class ExecutionTransportWriter(Protocol):
     ) -> None: ...
 
 
+type JournalCrashHook = Callable[
+    [str, ExecutionId, ExecutionNodeId | None, ExecutionAttemptId | None],
+    Awaitable[None],
+]
+
+
+async def _no_journal_crash(
+    _point: str,
+    _execution_id: ExecutionId,
+    _node_id: ExecutionNodeId | None,
+    _attempt_id: ExecutionAttemptId | None,
+) -> None:
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionCursor:
     execution_id: ExecutionId
@@ -66,6 +91,7 @@ class ExecutionCursor:
     state_version: int
     active_node_count: int
     last_event_seq: int | None
+    lease_generation: int | None = None
 
 
 def _node_id(execution_id: ExecutionId, operation_id: UUID) -> ExecutionNodeId:
@@ -83,6 +109,11 @@ def _cursor_from_row(row: dict[str, object]) -> ExecutionCursor:
         last_event_seq=(
             int(cast(int, row["last_event_seq"])) if row["last_event_seq"] is not None else None
         ),
+        lease_generation=(
+            int(cast(int, row["lease_generation"]))
+            if row.get("lease_generation") is not None
+            else None
+        ),
     )
 
 
@@ -95,7 +126,8 @@ async def get_cursor(
             await conn.execute(
                 text(
                     "SELECT execution_id, status, state_version, active_node_count, "
-                    f"last_event_seq FROM execution_cursor WHERE execution_id = :id{suffix}"
+                    "last_event_seq, lease_generation "
+                    f"FROM execution_cursor WHERE execution_id = :id{suffix}"
                 ),
                 {"id": execution_id},
             )
@@ -148,8 +180,14 @@ def _project_event(
 class DbExecutionJournal:
     """Raw-SQL journal repository; all event/cursor/outbox writes share one transaction."""
 
-    def __init__(self, *, transport: ExecutionTransportWriter) -> None:
+    def __init__(
+        self,
+        *,
+        transport: ExecutionTransportWriter,
+        crash_hook: JournalCrashHook = _no_journal_crash,
+    ) -> None:
         self._transport = transport
+        self._crash_hook = crash_hook
 
     async def append_event(
         self,
@@ -162,7 +200,36 @@ class DbExecutionJournal:
         node_id: ExecutionNodeId | None = None,
         attempt_id: ExecutionAttemptId | None = None,
         expected_state_version: int,
+        expected_worker_id: str | None = None,
+        expected_lease_generation: int | None = None,
     ) -> int:
+        if (expected_worker_id is None) != (expected_lease_generation is None):
+            raise ValueError("lease worker and generation must be supplied together")
+        if expected_worker_id is not None:
+            lease = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT 1 FROM work_lease
+                        WHERE work_id = :execution_id
+                          AND worker_id = :worker_id
+                          AND generation = :generation
+                          AND expires_at > now()
+                        FOR UPDATE
+                        """
+                    ),
+                    {
+                        "execution_id": execution_id,
+                        "worker_id": expected_worker_id,
+                        "generation": expected_lease_generation,
+                    },
+                )
+            ).one_or_none()
+            if lease is None:
+                raise LostExecutionLease(
+                    f"execution {execution_id} lease generation "
+                    f"{expected_lease_generation} is no longer owned by {expected_worker_id}"
+                )
         cursor = await get_cursor(conn, execution_id, for_update=True)
         if cursor.state_version != expected_state_version:
             raise StaleCursor(execution_id, expected_state_version)
@@ -195,6 +262,12 @@ class DbExecutionJournal:
             .one()
         )
         seq = int(row["seq"])
+        await self._crash_hook(
+            "after_event_insert",
+            execution_id,
+            node_id,
+            attempt_id,
+        )
         execution = (
             (
                 await conn.execute(
@@ -232,8 +305,19 @@ class DbExecutionJournal:
                     state_version = state_version + 1,
                     active_node_count = :active,
                     last_event_seq = :seq,
+                    lease_generation = COALESCE(:lease_generation, lease_generation),
                     updated_at = now()
                 WHERE execution_id = :execution_id AND state_version = :expected
+                  AND (
+                    CAST(:lease_generation AS bigint) IS NULL
+                    OR EXISTS (
+                        SELECT 1 FROM work_lease
+                        WHERE work_id = :execution_id
+                          AND worker_id = :worker_id
+                          AND generation = :lease_generation
+                          AND expires_at > now()
+                    )
+                  )
                 """
             ),
             {
@@ -242,15 +326,58 @@ class DbExecutionJournal:
                 "seq": seq,
                 "execution_id": execution_id,
                 "expected": expected_state_version,
+                "worker_id": expected_worker_id,
+                "lease_generation": expected_lease_generation,
             },
         )
         if updated.rowcount != 1:
+            if expected_lease_generation is not None:
+                raise LostExecutionLease(
+                    f"execution {execution_id} lost lease generation "
+                    f"{expected_lease_generation} during cursor projection"
+                )
             raise StaleCursor(execution_id, expected_state_version)
+        await self._crash_hook(
+            "after_cursor_update",
+            execution_id,
+            node_id,
+            attempt_id,
+        )
         return seq
 
 
-async def rebuild_cursor(conn: AsyncConnection, execution_id: ExecutionId) -> ExecutionCursor:
+async def rebuild_cursor(
+    conn: AsyncConnection,
+    execution_id: ExecutionId,
+    *,
+    expected_worker_id: str | None = None,
+    expected_lease_generation: int | None = None,
+) -> ExecutionCursor:
     """Rebuild the mutable cursor only from authoritative append-only events."""
+    if (expected_worker_id is None) != (expected_lease_generation is None):
+        raise ValueError("lease worker and generation must be supplied together")
+    if expected_worker_id is not None:
+        lease = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM work_lease
+                    WHERE work_id = :execution_id
+                      AND worker_id = :worker_id
+                      AND generation = :generation
+                      AND expires_at > now()
+                    FOR UPDATE
+                    """
+                ),
+                {
+                    "execution_id": execution_id,
+                    "worker_id": expected_worker_id,
+                    "generation": expected_lease_generation,
+                },
+            )
+        ).one_or_none()
+        if lease is None:
+            raise LostExecutionLease("cannot rebuild cursor after losing the execution lease")
     exists = await conn.execute(
         text("SELECT 1 FROM execution WHERE id = :id"), {"id": execution_id}
     )
@@ -262,6 +389,7 @@ async def rebuild_cursor(conn: AsyncConnection, execution_id: ExecutionId) -> Ex
         state_version=0,
         active_node_count=0,
         last_event_seq=None,
+        lease_generation=expected_lease_generation,
     )
     rows = (
         (
@@ -284,18 +412,21 @@ async def rebuild_cursor(conn: AsyncConnection, execution_id: ExecutionId) -> Ex
             state_version=cursor.state_version + 1,
             active_node_count=active,
             last_event_seq=int(row["seq"]),
+            lease_generation=expected_lease_generation,
         )
     await conn.execute(
         text(
             """
             INSERT INTO execution_cursor
-                (execution_id, status, state_version, active_node_count, last_event_seq)
-            VALUES (:id, :status, :version, :active, :last_seq)
+                (execution_id, status, state_version, active_node_count, last_event_seq,
+                 lease_generation)
+            VALUES (:id, :status, :version, :active, :last_seq, :lease_generation)
             ON CONFLICT (execution_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 state_version = EXCLUDED.state_version,
                 active_node_count = EXCLUDED.active_node_count,
                 last_event_seq = EXCLUDED.last_event_seq,
+                lease_generation = EXCLUDED.lease_generation,
                 updated_at = now()
             """
         ),
@@ -305,6 +436,7 @@ async def rebuild_cursor(conn: AsyncConnection, execution_id: ExecutionId) -> Ex
             "version": cursor.state_version,
             "active": cursor.active_node_count,
             "last_seq": cursor.last_event_seq,
+            "lease_generation": expected_lease_generation,
         },
     )
     return cursor
@@ -319,6 +451,13 @@ class DbInvocationJournal(InvocationJournal):
     ) -> None:
         self._conn_factory = conn_factory
         self._repository = repository
+
+    @staticmethod
+    def _lease_kwargs(context: ToolContext) -> _LeaseKwargs:
+        return {
+            "expected_worker_id": context.execution_worker_id,
+            "expected_lease_generation": context.lease_generation,
+        }
 
     async def begin(
         self,
@@ -401,6 +540,7 @@ class DbInvocationJournal(InvocationJournal):
                     event_type=ExecutionEventType.EXECUTION_QUEUED,
                     actor=context.actor,
                     expected_state_version=cursor.state_version,
+                    **self._lease_kwargs(context),
                 )
                 cursor = await get_cursor(conn, execution_id)
                 await self._repository.append_event(
@@ -409,6 +549,7 @@ class DbInvocationJournal(InvocationJournal):
                     event_type=ExecutionEventType.EXECUTION_STARTED,
                     actor=context.actor,
                     expected_state_version=cursor.state_version,
+                    **self._lease_kwargs(context),
                 )
 
             node_insert = await conn.execute(
@@ -464,8 +605,6 @@ class DbInvocationJournal(InvocationJournal):
                 node_key,
                 descriptor.name,
                 descriptor.version,
-                snapshot.artifact_key,
-                snapshot.content_sha256,
                 descriptor.input_schema_sha256,
                 descriptor.output_schema_sha256,
             )
@@ -474,8 +613,6 @@ class DbInvocationJournal(InvocationJournal):
                     str(node["node_key"]),
                     str(node["tool_name"]),
                     str(node["tool_version"]),
-                    str(node["parameter_artifact_key"]),
-                    str(node["parameter_sha256"]),
                     str(node["input_schema_sha256"]),
                     str(node["output_schema_sha256"]),
                 )
@@ -487,6 +624,31 @@ class DbInvocationJournal(InvocationJournal):
             ):
                 raise OperationConflict(
                     "operation id or node key was replayed with a different tool/body/schema"
+                )
+            existing_parameter = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT artifact_key, content_sha256
+                            FROM execution_artifact_ref
+                            WHERE execution_id = :execution_id
+                              AND node_id = :node_id
+                              AND role = 'parameter'
+                            """
+                        ),
+                        {"execution_id": execution_id, "node_id": node_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if existing_parameter is not None and (
+                str(existing_parameter["artifact_key"]) != snapshot.artifact_key
+                or str(existing_parameter["content_sha256"]) != snapshot.content_sha256
+            ):
+                raise OperationConflict(
+                    "operation id was replayed with a different parameter artifact"
                 )
             await conn.execute(
                 text(
@@ -561,8 +723,8 @@ class DbInvocationJournal(InvocationJournal):
                 text(
                     """
                     INSERT INTO execution_attempt
-                        (id, execution_id, node_id, attempt)
-                    VALUES (:id, :execution_id, :node_id, :attempt)
+                        (id, execution_id, node_id, attempt, worker_id, lease_generation)
+                    VALUES (:id, :execution_id, :node_id, :attempt, :worker_id, :generation)
                     """
                 ),
                 {
@@ -570,10 +732,12 @@ class DbInvocationJournal(InvocationJournal):
                     "execution_id": execution_id,
                     "node_id": node_id,
                     "attempt": attempt_number,
+                    "worker_id": context.execution_worker_id,
+                    "generation": context.lease_generation,
                 },
             )
             if node_created:
-                cursor = await get_cursor(conn, execution_id)
+                cursor = await get_cursor(conn, execution_id, for_update=True)
                 await self._repository.append_event(
                     conn,
                     execution_id=execution_id,
@@ -588,8 +752,9 @@ class DbInvocationJournal(InvocationJournal):
                         "output_schema_sha256": descriptor.output_schema_sha256,
                     },
                     expected_state_version=cursor.state_version,
+                    **self._lease_kwargs(context),
                 )
-            cursor = await get_cursor(conn, execution_id)
+            cursor = await get_cursor(conn, execution_id, for_update=True)
             await self._repository.append_event(
                 conn,
                 execution_id=execution_id,
@@ -599,6 +764,7 @@ class DbInvocationJournal(InvocationJournal):
                 actor=context.actor,
                 payload={"attempt": attempt_number},
                 expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
             )
             return JournalStart(
                 execution_id=execution_id,
@@ -620,7 +786,7 @@ class DbInvocationJournal(InvocationJournal):
             raise ValueError("steering snapshot phase must be before or after")
         assert start.attempt_id is not None
         async with self._conn_factory() as conn:
-            cursor = await get_cursor(conn, start.execution_id)
+            cursor = await get_cursor(conn, start.execution_id, for_update=True)
             await self._repository.append_event(
                 conn,
                 execution_id=start.execution_id,
@@ -634,6 +800,7 @@ class DbInvocationJournal(InvocationJournal):
                 actor=context.actor,
                 payload={"state": state},
                 expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
             )
 
     async def blocked(
@@ -651,7 +818,7 @@ class DbInvocationJournal(InvocationJournal):
             )
             if await self._has_terminal(conn, start.node_id):
                 return
-            cursor = await get_cursor(conn, start.execution_id)
+            cursor = await get_cursor(conn, start.execution_id, for_update=True)
             await self._repository.append_event(
                 conn,
                 execution_id=start.execution_id,
@@ -661,6 +828,7 @@ class DbInvocationJournal(InvocationJournal):
                 actor=context.actor,
                 payload={"reason_codes": list(reason_codes), "summary": "precondition blocked"},
                 expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
             )
 
     async def failed(
@@ -678,7 +846,7 @@ class DbInvocationJournal(InvocationJournal):
             )
             if await self._has_terminal(conn, start.node_id):
                 return
-            cursor = await get_cursor(conn, start.execution_id)
+            cursor = await get_cursor(conn, start.execution_id, for_update=True)
             await self._repository.append_event(
                 conn,
                 execution_id=start.execution_id,
@@ -691,6 +859,7 @@ class DbInvocationJournal(InvocationJournal):
                     "summary": "tool invocation failed",
                 },
                 expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
             )
 
     async def completed(
@@ -714,7 +883,7 @@ class DbInvocationJournal(InvocationJournal):
                 return ToolResult.model_validate(payload["result"]).model_copy(
                     update={"replayed": True}
                 )
-            cursor = await get_cursor(conn, start.execution_id)
+            cursor = await get_cursor(conn, start.execution_id, for_update=True)
             await self._repository.append_event(
                 conn,
                 execution_id=start.execution_id,
@@ -724,9 +893,10 @@ class DbInvocationJournal(InvocationJournal):
                 actor=context.actor,
                 payload={"result": result.model_dump(mode="json")},
                 expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
             )
             if start.owns_execution:
-                cursor = await get_cursor(conn, start.execution_id)
+                cursor = await get_cursor(conn, start.execution_id, for_update=True)
                 await self._repository.append_event(
                     conn,
                     execution_id=start.execution_id,
@@ -734,6 +904,7 @@ class DbInvocationJournal(InvocationJournal):
                     actor=context.actor,
                     payload={"node_id": str(start.node_id)},
                     expected_state_version=cursor.state_version,
+                    **self._lease_kwargs(context),
                 )
         return result
 
@@ -774,6 +945,8 @@ __all__ = [
     "EMPTY_MANIFEST_SHA256",
     "ExecutionCursor",
     "ExecutionTransportWriter",
+    "LostExecutionLease",
+    "JournalCrashHook",
     "OperationConflict",
     "StaleCursor",
     "get_cursor",

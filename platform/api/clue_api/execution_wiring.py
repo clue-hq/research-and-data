@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -15,6 +17,8 @@ from clue_execution import (
     CanonicalParameterSnapshotter,
     DbExecutionJournal,
     DbInvocationJournal,
+    ExecutionParameterStore,
+    JournalCrashHook,
     ParameterArtifactState,
     ParameterArtifactStore,
     StoredParameterArtifact,
@@ -27,7 +31,7 @@ from clue_storage import (
     purge_erased_artifacts,
     record_artifact,
 )
-from clue_toolbelt import IdempotencyStore, ToolInvoker, ToolRegistry
+from clue_toolbelt import IdempotencyStore, InvocationCrashHook, ToolInvoker, ToolRegistry
 
 
 class ExecutionRunEventWriter:
@@ -151,6 +155,57 @@ class StorageParameterArtifactStore(ParameterArtifactStore):
         return artifact_key in result.purged_keys
 
 
+class StorageExecutionParameterStore(ExecutionParameterStore):
+    """Canonical recipe-parameter manifests over the same governed artifact substrate."""
+
+    def __init__(self, store: StorageParameterArtifactStore) -> None:
+        self._store = store
+
+    async def snapshot(
+        self,
+        *,
+        workspace_id: str,
+        parameters: dict[str, JsonValue],
+    ) -> tuple[str, str]:
+        data = json.dumps(
+            parameters,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode()
+        digest = hashlib.sha256(data).hexdigest()
+        artifact_key = f"{workspace_id}/{digest}"
+        await self._store.persist(
+            workspace_id=workspace_id,
+            artifact_key=artifact_key,
+            content_sha256=digest,
+            data=data,
+            media_type="application/vnd.clue.recipe-parameters+json",
+        )
+        return artifact_key, digest
+
+    async def resolve(
+        self,
+        *,
+        workspace_id: str,
+        artifact_key: str,
+        content_sha256: str,
+    ) -> dict[str, JsonValue]:
+        artifact = await self._store.resolve(
+            workspace_id=workspace_id,
+            artifact_key=artifact_key,
+        )
+        if artifact.state is not ParameterArtifactState.LIVE or artifact.data is None:
+            raise ValueError("recipe parameter artifact is erased or missing")
+        if hashlib.sha256(artifact.data).hexdigest() != content_sha256:
+            raise ValueError("recipe parameter artifact digest mismatch")
+        value = json.loads(artifact.data)
+        if not isinstance(value, dict):
+            raise ValueError("recipe parameters must resolve to a JSON object")
+        return value
+
+
 def build_tool_invoker(
     *,
     registry: ToolRegistry,
@@ -158,27 +213,36 @@ def build_tool_invoker(
     storage: StorageBackend,
     settings: Settings,
     conn_factory: ConnFactory = transaction,
+    crash_hook: InvocationCrashHook | None = None,
+    journal_crash_hook: JournalCrashHook | None = None,
 ) -> ToolInvoker:
     """Build the mandatory production invoker; no null journal/storage fallback exists."""
     artifact_store = StorageParameterArtifactStore(
         storage=storage,
         conn_factory=conn_factory,
     )
+    journal_repository = DbExecutionJournal(
+        transport=ExecutionRunEventWriter(),
+        **({"crash_hook": journal_crash_hook} if journal_crash_hook is not None else {}),
+    )
     journal = DbInvocationJournal(
         conn_factory=conn_factory,
-        repository=DbExecutionJournal(transport=ExecutionRunEventWriter()),
+        repository=journal_repository,
     )
+    kwargs = {"crash_hook": crash_hook} if crash_hook is not None else {}
     return ToolInvoker(
         registry=registry,
         snapshotter=CanonicalParameterSnapshotter(artifact_store),
         journal=journal,
         idempotency_store=idempotency_store,
         idempotency_ttl_s=settings.toolbelt_idempotency_ttl_s,
+        **kwargs,
     )
 
 
 __all__ = [
     "ExecutionRunEventWriter",
     "StorageParameterArtifactStore",
+    "StorageExecutionParameterStore",
     "build_tool_invoker",
 ]

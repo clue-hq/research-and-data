@@ -7,6 +7,7 @@ license = { text = "Proprietary" }
 dependencies = [
     "clue-core",
     "clue-db",
+    "clue-fleet",
     "clue-toolbelt",
     "pydantic>=2.7",
     "sqlalchemy[asyncio]>=2.0",
@@ -25,4 +26,5 @@ packages = ["clue_execution"]
 [tool.uv.sources]
 clue-core = { workspace = true }
 clue-db = { workspace = true }
+clue-fleet = { workspace = true }
 clue-toolbelt = { workspace = true }

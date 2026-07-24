@@ -40,21 +40,43 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 
+from clue_api.execution_tools import (
+    ExecutionControlServices,
+    register_execution_control_tools,
+)
+from clue_api.execution_wiring import (
+    ExecutionRunEventWriter,
+    StorageExecutionParameterStore,
+    StorageParameterArtifactStore,
+    build_tool_invoker,
+)
 from clue_api.fleet_wiring import (
     build_account_lock_factory,
-    build_fleet_worker,
+    build_multi_work_worker,
     register_boot_handlers,
 )
+from clue_api.recipe_wiring import build_recipe_pin_registry
 from clue_api.run_composition import ComposingRunDriver
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
+from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings, load_settings
 from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
-from clue_fleet import run_worker
+from clue_execution import (
+    CompatibilityLoader,
+    DbExecutionJournal,
+    DbExecutionStarter,
+    DbRecipeReader,
+    DbRecipeRepository,
+    RecipeExecutionHandler,
+    RecipeExecutor,
+)
+from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
 from clue_storage import StorageBackend
+from clue_toolbelt import DbIdempotencyStore
 
 log = get_logger("clue_api.fleet_main")
 
@@ -131,7 +153,60 @@ async def _serve() -> None:
             lock_factory=build_account_lock_factory(),
             event_emitter=build_run_event_emitter(),
         )
-        worker = build_fleet_worker(settings, driver=driver)
+        task_queue = DbTaskQueue()
+        work_queue = DbWorkQueue(task_queue)
+        registry = build_toolbelt(
+            storage=storage,
+            settings=settings,
+            gateway=None,
+            queue=task_queue,
+        )
+        pin_registry = build_recipe_pin_registry(tool_registry=registry)
+        compatibility = CompatibilityLoader(pin_registry)
+        transport = ExecutionRunEventWriter()
+        journal = DbExecutionJournal(transport=transport)
+        artifact_store = StorageParameterArtifactStore(storage=storage)
+        execution_parameters = StorageExecutionParameterStore(artifact_store)
+        tool_invoker = build_tool_invoker(
+            registry=registry,
+            idempotency_store=DbIdempotencyStore(),
+            storage=storage,
+            settings=settings,
+        )
+        recipe_reader = DbRecipeReader(conn_factory=transaction)
+        recipe_repository = DbRecipeRepository(conn_factory=transaction)
+        starter = DbExecutionStarter(
+            conn_factory=transaction,
+            recipes=recipe_reader,
+            compatibility=compatibility,
+            journal=journal,
+        )
+        executor = RecipeExecutor(
+            conn_factory=transaction,
+            recipes=recipe_reader,
+            compatibility=compatibility,
+            journal=journal,
+            parameters=execution_parameters,
+            tool_invoker=tool_invoker,
+        )
+        register_execution_control_tools(
+            ExecutionControlServices(
+                starter=starter,
+                executor=executor,
+                parameters=execution_parameters,
+                recipes=recipe_repository,
+                run_machine=driver,
+                queue=work_queue,
+                conn_factory=transaction,
+                registry=registry,
+            )
+        )
+        worker = build_multi_work_worker(
+            settings,
+            driver=driver,
+            graph_handler=RecipeExecutionHandler(executor),
+            queue=work_queue,
+        )
         sweep = _start_orphan_sweep(settings, storage)
         try:
             await run_worker(worker)

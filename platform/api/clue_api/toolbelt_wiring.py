@@ -858,6 +858,12 @@ class SubmitTierCheckpointTool(_CapabilityTool):
         assert run_id is not None
         decision = cast(dict[str, JsonValue], inputs.decision)
         row = await self._run.submit_checkpoint(run_id, decision=decision)
+        if self._queue is not None:
+            await enqueue_run_drive(
+                run_id,
+                queue=self._queue,
+                conn_factory=self._conn_factory,
+            )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1433,7 +1439,11 @@ class ResumeRunTool(_CapabilityTool):
         # status flip stands and the in-process ProjectRunResumeHook drives out-of-band.
         enqueued = False
         if self._queue is not None:
-            enqueued = await enqueue_run_drive(run_id, queue=self._queue)
+            enqueued = await enqueue_run_drive(
+                run_id,
+                queue=self._queue,
+                conn_factory=self._conn_factory,
+            )
         return ToolResult(
             tool=self.name,
             version=self.version,

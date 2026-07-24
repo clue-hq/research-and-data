@@ -59,8 +59,16 @@ from clue_api.disposition_wiring import (
     build_disposition_store,
     build_review_disposition_emitter,
 )
+from clue_api.execution_tools import (
+    AdvanceProjectPhaseInput,
+    ExecutionControlServices,
+    PinExecutionAsRecipeInput,
+    execution_control_tools,
+    register_execution_control_tools,
+)
 from clue_api.execution_wiring import (
     ExecutionRunEventWriter,
+    StorageExecutionParameterStore,
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
@@ -69,6 +77,7 @@ from clue_api.fleet_wiring import (
     build_fleet_deep_scheduler,
     build_fleet_run_driver,
     build_fleet_worker,
+    build_multi_work_worker,
     enqueue_run_drive,
     lazy_account_lock_factory,
     register_boot_handlers,
@@ -289,6 +298,7 @@ __all__ = [
     "build_fleet_deep_scheduler",
     "build_fleet_run_driver",
     "build_fleet_worker",
+    "build_multi_work_worker",
     "enqueue_run_drive",
     # B4 slice 1: M5/M6 phase registration surfaces (phase_wiring)
     "build_reverse_profiling_handler",
@@ -322,8 +332,15 @@ __all__ = [
     "GatewayRequired",
     # C5.1: mandatory parameter snapshot + execution journal invocation composition
     "ExecutionRunEventWriter",
+    "StorageExecutionParameterStore",
     "StorageParameterArtifactStore",
     "build_tool_invoker",
+    # C5.3: graph execution controls and multi-kind fleet composition
+    "AdvanceProjectPhaseInput",
+    "ExecutionControlServices",
+    "PinExecutionAsRecipeInput",
+    "execution_control_tools",
+    "register_execution_control_tools",
     # C5.2: exact compatibility adapters + immutable system-recipe seed
     "STAGE0_POLICY_VERSION",
     "SYSTEM_RECIPE_FILENAMES",

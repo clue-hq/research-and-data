@@ -56,6 +56,7 @@ from clue_toolbelt.idempotency import (
     body_sha256,
 )
 from clue_toolbelt.invoker import (
+    InvocationCrashHook,
     InvocationJournal,
     JournalDisposition,
     JournalStart,
@@ -94,6 +95,7 @@ __all__ = [
     "body_sha256",
     # durable production invocation
     "InvocationJournal",
+    "InvocationCrashHook",
     "JournalDisposition",
     "JournalStart",
     "ParameterSnapshot",
