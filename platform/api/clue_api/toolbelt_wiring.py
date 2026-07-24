@@ -54,7 +54,7 @@ run is distinguishable from a truly-handed-off one (spec §2 amendment / slice-1
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import cast
 from uuid import UUID
@@ -63,9 +63,17 @@ from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.composition import build_pre_spend_gate
+from clue_api.coverage_tools import build_research_account_gaps_tool
 from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.fleet_wiring import enqueue_run_drive
+from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.proposal_tools import (
+    DecideFieldProposalTool,
+    DecideSourceProposalTool,
+    ProposeFieldTool,
+    ProposeSourceTool,
+)
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_api.verification import build_verification_phase_handler
 from clue_config import Settings, load_settings
@@ -113,6 +121,7 @@ from clue_research.durable import (
 from clue_research.icp.rubric import TierCutoffs, rubric_from_slot
 from clue_research.icp.spec import get_active_icp, get_icp_version
 from clue_research.identity import get_account, get_contact
+from clue_research.ingestion import IngestionEngine
 from clue_research.narrative import list_handoffs_for_run
 from clue_research.profiling import (
     CommitteeSource,
@@ -120,6 +129,7 @@ from clue_research.profiling import (
     profile_account,
     profile_contact,
 )
+from clue_research.proposals import SourceProposalPayload
 from clue_research.stage0 import (
     ClientInput,
     ClientKnowledgeBaseRef,
@@ -1239,6 +1249,9 @@ def build_toolbelt(
     conn_factory: ConnFactory = transaction,
     pre_spend_gate: PreSpendGate | None = None,
     lock_factory: LockFactory | None = None,
+    ingestion_engine: IngestionEngine | None = None,
+    proposal_credential_ready: Callable[[str], bool] | None = None,
+    proposal_personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1270,6 +1283,12 @@ def build_toolbelt(
       ``conn_factory``.
     * ``lock_factory`` — the Doc C §4 per-entity single-flight lock the account-scoped spend tools
       acquire (S1); defaults to the lazy production factory (Redis resolved at first acquisition).
+    * ``ingestion_engine`` — the C3 engine assembled with storage, extraction, governance, and
+      erasure collaborators. The two ingestion tools are always registered; without an engine they
+      fail closed with ``ingestion_not_configured`` after proving the referenced job/artifact.
+    * ``proposal_credential_ready`` / ``proposal_personal_source_allowed`` — C2 promotion
+      authorities. Absence leaves credentialed/personal source promotion unavailable rather than
+      silently approving it.
 
     Duplicate registration is loud (the :class:`ToolRegistry` contract), so a mis-wired double
     registration fails at construction, not in production."""
@@ -1306,4 +1325,28 @@ def build_toolbelt(
                 storage=storage,
             )
         )
+    registry.register(
+        build_research_account_gaps_tool(
+            gateway=gateway,
+            conn_factory=conn_factory,
+            pre_spend_gate=gate,
+            lock_factory=locks,
+        )
+    )
+    registry.register(ProposeFieldTool())
+    registry.register(
+        DecideFieldProposalTool(
+            credential_ready=proposal_credential_ready,
+            personal_source_allowed=proposal_personal_source_allowed,
+        )
+    )
+    registry.register(ProposeSourceTool())
+    registry.register(
+        DecideSourceProposalTool(
+            credential_ready=proposal_credential_ready,
+            personal_source_allowed=proposal_personal_source_allowed,
+        )
+    )
+    registry.register(SubmitIngestionTool(ingestion_engine))
+    registry.register(RetryIngestionTool(ingestion_engine))
     return registry

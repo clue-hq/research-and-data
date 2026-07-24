@@ -30,23 +30,40 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError
 
 import clue_obs
+from clue_api.ingestion_tools import (
+    build_ingestion_router,
+)
+from clue_api.ingestion_tools import (
+    header_actor_resolver as ingestion_header_actor_resolver,
+)
+from clue_api.ingestion_tools import (
+    header_workspace_resolver as ingestion_header_workspace_resolver,
+)
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_config import Settings, load_settings
-from clue_core import EntityId, ProjectRunId
+from clue_core import EntityId, ProjectRunId, RunId
+from clue_core.ingestion import IngestionJobId
+from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_projections import (
     MANIFEST_OP_TOOLS,
     PROJECTIONS_SCHEMA_VERSION,
     account_progress,
+    field_proposals,
+    ingestion_status,
     plan_replay,
+    research_attempt_history,
+    research_coverage,
     run_manifest,
     run_overview,
     run_readiness,
+    source_proposals,
     validate_manifest_op,
 )
 from clue_research.durable import list_run_events
 from clue_research.durable.project_run import get_project_run
 from clue_research.review import ObservabilitySurface
+from clue_storage import StorageBackend
 from clue_toolbelt import (
     Actor,
     IdempotencyConflict,
@@ -208,6 +225,98 @@ def create_projections_router(
         return {
             "schema_version": PROJECTIONS_SCHEMA_VERSION,
             "readiness": view.model_dump(mode="json"),
+        }
+
+    @router.get("/research_coverage/{run_id}")
+    async def get_research_coverage(
+        run_id: UUID,
+        workspace_id: WorkspaceDep,
+        project_run_id: Annotated[UUID | None, Query()] = None,
+        entity_id: Annotated[UUID | None, Query()] = None,
+    ) -> dict[str, Any]:
+        view = await research_coverage(
+            conn_factory=conn_factory,
+            workspace_id=workspace_id,
+            run_id=RunId(run_id),
+            project_run_id=(ProjectRunId(project_run_id) if project_run_id is not None else None),
+            entity_id=EntityId(entity_id) if entity_id is not None else None,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no research coverage for this run")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "research_coverage": view.model_dump(mode="json"),
+        }
+
+    @router.get("/research_attempt_history/{run_id}/{entity_id}/{field_key}")
+    async def get_research_attempt_history(
+        run_id: UUID,
+        entity_id: UUID,
+        field_key: str,
+        workspace_id: WorkspaceDep,
+    ) -> dict[str, Any]:
+        view = await research_attempt_history(
+            conn_factory=conn_factory,
+            workspace_id=workspace_id,
+            run_id=RunId(run_id),
+            entity_id=EntityId(entity_id),
+            field_key=field_key,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no research attempts for this field")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "research_attempt_history": view.model_dump(mode="json"),
+        }
+
+    @router.get("/field_proposals")
+    async def get_field_proposals(
+        workspace_id: WorkspaceDep,
+        brand_id: Annotated[str | None, Query()] = None,
+        status: Annotated[ProposalStatus | None, Query()] = None,
+    ) -> dict[str, Any]:
+        views = await field_proposals(
+            conn_factory=conn_factory,
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            status=status,
+        )
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "field_proposals": [view.model_dump(mode="json") for view in views],
+        }
+
+    @router.get("/source_proposals")
+    async def get_source_proposals(
+        workspace_id: WorkspaceDep,
+        brand_id: Annotated[str | None, Query()] = None,
+        status: Annotated[ProposalStatus | None, Query()] = None,
+    ) -> dict[str, Any]:
+        views = await source_proposals(
+            conn_factory=conn_factory,
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            status=status,
+        )
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "source_proposals": [view.model_dump(mode="json") for view in views],
+        }
+
+    @router.get("/ingestion_status/{ingestion_job_id}")
+    async def get_ingestion_status(
+        ingestion_job_id: UUID, workspace_id: WorkspaceDep
+    ) -> dict[str, Any]:
+        view = await ingestion_status(
+            conn_factory=conn_factory,
+            workspace_id=workspace_id,
+            ingestion_job_id=IngestionJobId(ingestion_job_id),
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such ingestion job")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "ingestion_status": view.model_dump(mode="json"),
         }
 
     # -- the tool-invocation route (the single typed write path; A9 idempotency at HTTP) --
@@ -430,6 +539,7 @@ def create_projections_app(
     conn_factory: ConnFactory = transaction,
     workspace_resolver: WorkspaceResolver | None = None,
     actor_resolver: ActorResolver | None = None,
+    ingestion_storage: StorageBackend | None = None,
     sse_poll_interval_s: float = 1.0,
     sse_live_tail: bool = True,
     manage_db_lifespan: bool = True,
@@ -460,8 +570,10 @@ def create_projections_app(
 
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[ingestion_header_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
+        app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver
     app.include_router(
         create_projections_router(
             surface=surface,
@@ -473,4 +585,14 @@ def create_projections_app(
             sse_live_tail=sse_live_tail,
         )
     )
+    if ingestion_storage is not None:
+        app.include_router(
+            build_ingestion_router(
+                registry=registry,
+                idempotency_store=idempotency_store,
+                storage=ingestion_storage,
+                conn_factory=conn_factory,
+                settings=resolved,
+            )
+        )
     return app

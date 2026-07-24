@@ -32,6 +32,7 @@ from clue_core import (
     PhaseContext,
     PhaseResult,
     PhaseStatus,
+    PreSpendGate,
     ProjectPhase,
     RunId,
 )
@@ -248,10 +249,12 @@ class ScoringPhaseHandler:
         config: ScoringConfig = DEFAULT_SCORING_CONFIG,
         thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
         session_factory: ConnFactory = transaction,
+        pre_spend_gate: PreSpendGate | None = None,
     ) -> None:
         self._config = config
         self._thresholds = thresholds
         self._session_factory = session_factory
+        self._pre_spend_gate = pre_spend_gate
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         discovery_run = _discovery_run_id(ctx)
@@ -310,6 +313,7 @@ class ScoringPhaseHandler:
                         icp_version=ctx.icp_version,
                         budget_envelope=ctx.budget_cap_cents,
                         thresholds=self._thresholds,
+                        pre_spend_gate=self._pre_spend_gate,
                     )
                 except Exception:  # noqa: BLE001 — isolate one account's fault; continue the phase.
                     # The commit is outside the try so a commit failure is never double-rolled-back.

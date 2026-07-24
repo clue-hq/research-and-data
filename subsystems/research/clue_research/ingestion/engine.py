@@ -16,6 +16,7 @@ from clue_core import (
     Claim,
     ClaimDraft,
     ClaimTagger,
+    ContactEntity,
     Entity,
     EntityType,
     ExtractionMethod,
@@ -62,6 +63,7 @@ from clue_research.ingestion.models import (
 from clue_research.ingestion.seams import (
     ClaimConstructionRoute,
     ClaimErasureRoute,
+    ContactClaimRoute,
     MemoryRoute,
     ProjectStateRoute,
     ProposalSink,
@@ -119,6 +121,7 @@ class IngestionEngine:
         project_state_route: ProjectStateRoute | None = None,
         claim_construction_route: ClaimConstructionRoute | None = None,
         claim_erasure_route: ClaimErasureRoute | None = None,
+        contact_claim_route: ContactClaimRoute | None = None,
         run_id_factory: Callable[[], RunId] = new_run_id,
     ) -> None:
         self._storage = storage
@@ -133,6 +136,7 @@ class IngestionEngine:
         self._project_state_route = project_state_route
         self._claim_construction_route = claim_construction_route
         self._claim_erasure_route = claim_erasure_route
+        self._contact_claim_route = contact_claim_route
         self._run_id_factory = run_id_factory
 
     async def submit(
@@ -440,7 +444,7 @@ class IngestionEngine:
                 if self._proposal_sink is not None:
                     proposal_refs.append(
                         await self._proposal_sink.preserve_unmapped(
-                            job_id=job.id, segment_ids=segment_ids, target=target
+                            job=job, segment_ids=segment_ids, target=target
                         )
                     )
                 else:
@@ -510,16 +514,30 @@ class IngestionEngine:
                         run_id=run_id,
                     )
                 if target.entity_type is EntityType.CONTACT:
-                    if self._claim_tagger is None:
+                    if not isinstance(entity, ContactEntity):
+                        raise IngestionError(
+                            IngestionFailureCode.INVALID_CONTEXT,
+                            "declared contact target did not resolve to a contact",
+                        )
+                    if self._contact_claim_route is not None:
+                        governed_claim = await self._contact_claim_route.tag(
+                            conn,
+                            claim=claim,
+                            contact=entity,
+                            field=field,
+                            target=target,
+                        )
+                    elif self._claim_tagger is not None:
+                        governed_claim = self._claim_tagger(claim)
+                    else:
                         raise IngestionError(
                             IngestionFailureCode.INVALID_CONTEXT,
                             "contact extraction requires an injected production ClaimTagger",
                         )
-                    tagged = self._claim_tagger(claim)
-                    if tagged is None:
+                    if governed_claim is None:
                         unmapped.append(segment[0])
                         continue
-                    claim = tagged
+                    claim = governed_claim
                 pending_claims.append(claim)
 
         claim_ids = []

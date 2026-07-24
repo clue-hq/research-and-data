@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from clue_core import Claim, ClaimDraft, ClaimId, FieldDef, RunId
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_core import Claim, ClaimDraft, ClaimId, ContactEntity, FieldDef, RunId
 from clue_core.ingestion import IngestionJobId, IngestionSegmentId
 from clue_research.ingestion.models import (
     DeclaredMaterialContext,
@@ -31,13 +33,28 @@ class ClaimConstructionRoute(Protocol):
 
 
 @runtime_checkable
+class ContactClaimRoute(Protocol):
+    """Apply authoritative born-governance to an extracted contact claim before insert."""
+
+    async def tag(
+        self,
+        conn: AsyncConnection,
+        *,
+        claim: Claim,
+        contact: ContactEntity,
+        field: FieldDef,
+        target: IngestionTarget,
+    ) -> Claim | None: ...
+
+
+@runtime_checkable
 class ProposalSink(Protocol):
     """Idempotent by ``(job_id, target)`` so a crash-safe retry cannot duplicate a proposal."""
 
     async def preserve_unmapped(
         self,
         *,
-        job_id: IngestionJobId,
+        job: IngestionJob,
         segment_ids: tuple[IngestionSegmentId, ...],
         target: IngestionTarget,
     ) -> str: ...

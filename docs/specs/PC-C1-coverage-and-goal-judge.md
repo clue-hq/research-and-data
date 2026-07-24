@@ -1,6 +1,6 @@
 # Phase C1 — Coverage Ledger and Goal Evaluation
 
-**Status:** ready for implementation
+**Status:** implemented and integrated on `platform/workspace-restructure` (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 

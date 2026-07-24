@@ -61,6 +61,13 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "pause_run": ("precondition", ("run_not_found",)),
     "resume_run": ("precondition", ("run_not_found",)),
     "adjust_budget": ("precondition", ("run_not_found",)),
+    "research_account_gaps": ("precondition", ("run_not_found",)),
+    "propose_field": ("precondition", ("proposal_scope_not_found",)),
+    "decide_field_proposal": ("precondition", ("proposal_not_found",)),
+    "propose_source": ("precondition", ("proposal_scope_not_found",)),
+    "decide_source_proposal": ("precondition", ("proposal_not_found",)),
+    "submit_ingestion": ("precondition", ("ingestion_artifact_not_found",)),
+    "retry_ingestion": ("precondition", ("ingestion_not_found",)),
 }
 
 
@@ -94,6 +101,53 @@ def _bodies() -> dict[str, dict[str, object]]:
         "pause_run": {"project_run_id": _UUID()},
         "resume_run": {"project_run_id": _UUID()},
         "adjust_budget": {"project_run_id": _UUID(), "budget_cap_cents": 1000},
+        "research_account_gaps": {
+            "project_run_id": _UUID(),
+            "account_entity_id": _UUID(),
+            "tier": "top",
+            "gap_fields": ["account.strategic_moves"],
+        },
+        "propose_field": {
+            "scope": {"brand_id": "brand_missing"},
+            "payload": {
+                "field_def": {
+                    "field_key": "account.proposed_signal",
+                    "value_type": "str",
+                    "pass_kind": "deep",
+                },
+                "rationale": "matrix proposal",
+            },
+        },
+        "decide_field_proposal": {
+            "field_proposal_id": _UUID(),
+            "decision": "reject",
+            "reason": "matrix decision",
+        },
+        "propose_source": {
+            "scope": {"brand_id": "brand_missing"},
+            "payload": {
+                "manifest": {
+                    "source_key": "matrix_source",
+                    "modality": "text",
+                    "entity_scope": "account",
+                    "yields": ["account"],
+                },
+                "discovery_url": "https://source.example",
+                "discovery_domain": "source.example",
+                "capability_description": "matrix source",
+                "rationale": "matrix proposal",
+            },
+        },
+        "decide_source_proposal": {
+            "source_proposal_id": _UUID(),
+            "decision": "reject",
+            "reason": "matrix decision",
+        },
+        "submit_ingestion": {
+            "artifact_key": "missing-artifact",
+            "declared_context": {"brand_id": "brand_missing"},
+        },
+        "retry_ingestion": {"ingestion_job_id": _UUID()},
     }
 
 
@@ -365,7 +419,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    assert len(registry) == 17
+    assert len(registry) == 24
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

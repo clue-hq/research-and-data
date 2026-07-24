@@ -31,11 +31,27 @@ from clue_projections.dtos import (
     RunOverview,
 )
 from clue_projections.events import ReplayPlan, plan_replay
+from clue_projections.ingestion import IngestionStatusView, ingestion_status
 from clue_projections.manifest import (
     MANIFEST_OP_TOOLS,
     UNSUPPORTED_OP,
     run_manifest,
     validate_manifest_op,
+)
+from clue_projections.proposals import (
+    FieldProposalCard,
+    ProposalScopeCard,
+    SourceProposalCard,
+    field_proposals,
+    source_proposals,
+)
+from clue_projections.research_coverage import (
+    ResearchAttemptHistory,
+    ResearchAttemptHistoryItem,
+    ResearchCoverage,
+    ResearchCoverageField,
+    research_attempt_history,
+    research_coverage,
 )
 from clue_projections.run_views import account_progress, run_overview, run_readiness
 
@@ -61,4 +77,20 @@ __all__ = [
     # SSE replay planning
     "plan_replay",
     "ReplayPlan",
+    # Phase C1 coverage
+    "ResearchCoverage",
+    "ResearchCoverageField",
+    "ResearchAttemptHistory",
+    "ResearchAttemptHistoryItem",
+    "research_coverage",
+    "research_attempt_history",
+    # Phase C2 proposals
+    "ProposalScopeCard",
+    "FieldProposalCard",
+    "SourceProposalCard",
+    "field_proposals",
+    "source_proposals",
+    # Phase C3 ingestion
+    "IngestionStatusView",
+    "ingestion_status",
 ]
