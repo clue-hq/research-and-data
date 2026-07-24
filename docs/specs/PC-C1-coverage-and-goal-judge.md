@@ -263,6 +263,30 @@ A caller-selected retry must change at least one stable strategy dimension:
 Changing free-text rationale while calling the same source/query is not a new strategy and must
 fail validation.
 
+### 4.4 Future evaluator placement flag (C6)
+
+The current C1 implementation places the advisory coverage evaluator behind a bounded
+`LLMGateway` leaf call. That location exists so C1's typed assessment and enforcement boundaries
+are executable and testable before the governed research agent exists; it is **not** a permanent
+ownership ruling.
+
+Product direction is that this advisory reasoning will probably become part of the platform
+deepagent or its governed research subagent in C6. C6 must make that placement decision explicitly:
+
+- there must be one evaluator owner, not parallel engine-side and agent-side evaluators;
+- if evaluation moves into the agent runtime, the standalone C1 evaluator call is removed or
+  disabled rather than duplicated;
+- the agent remains the planner and the evaluator remains advisory;
+- engine ownership of promotable evidence, budget, policy, idempotency, and hard terminal states
+  does not move;
+- the append-only coverage attempt/decision ledger and reference-only tool/projection contracts
+  remain stable;
+- malformed advice and `propose_stop` remain incapable of directly creating a terminal state;
+- C6 must define how agent-local advice is journaled or projected without turning it into
+  authoritative factual or execution state.
+
+Until C6 closes this decision, the bounded C1 leaf call is the implemented contract.
+
 ---
 
 ## 5. Existing seams reused

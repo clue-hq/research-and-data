@@ -330,6 +330,12 @@ advice only. Engine code validates the request, decides whether a round is permi
 promotable evidence, and enforces budget/backstops. C1 ships the substrate before C6 connects the
 agent; that sequencing does not transfer planning authority to the evaluator.
 
+**Future placement flag:** C1 implements the advisory evaluator as a bounded engine-invoked leaf so
+the contract is testable before C6. Product direction is that the evaluator will probably move
+inside the platform deepagent or governed research subagent. C6 must choose one final owner, remove
+the other execution path, and preserve the agent/evaluator/engine authority split plus C1's durable
+ledger contracts.
+
 **Exit gates:**
 
 - a failed field retries with a genuinely different strategy;
@@ -464,6 +470,9 @@ load.
 - shared filesystem record plus typed domain refs;
 - plan compiler/validator and authority checks;
 - delegation-node and context-bundle journaling through C5;
+- an explicit decision on whether C1's advisory coverage evaluator remains a bounded engine leaf or
+  moves inside the deepagent/research subagent, including one-owner/no-duplication enforcement and
+  journaling of non-authoritative advice;
 - honest finalize envelope.
 
 **Exit gates:**
@@ -474,6 +483,7 @@ load.
 - context bundles journal ids, never bodies;
 - the Stage-0 conversation demonstrates open-ended sufficiency reasoning over C4 without bypassing
   readiness;
+- exactly one coverage-evaluator path exists, and its advice cannot create engine terminal state;
 - a non-finalized turn is failed, never silently successful.
 
 **Not C6:** the frontend project/thread/tab shell. C6 provides the backend agent runtime and
@@ -637,6 +647,9 @@ These are deliberately not guessed in the parent plan:
 8. Recipe-#0 minimal runner representation before C5 generalization;
 9. product-context pinning migration shape;
 10. which C6 subagent profiles ship in the first vertical slice.
+11. whether the advisory C1 coverage evaluator remains an engine leaf or moves into the
+    deepagent/research subagent, and how agent-local advice is journaled without duplicating the
+    evaluator or becoming authoritative state.
 
 Each decision must be recorded once in the owning child spec and implemented as config or a stable
 contract—not scattered conditionals.
