@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-24-phase-c3-ingestion.md` — C3 implementation state: durable ingestion jobs/segments,
+  stable document adapters, governed claim routing, tool/projection surfaces, concurrency and DSAR
+  hardening, verification evidence, and integration-owned follow-ups.
 - `2026-07-24-phase-c-c0-contract-freeze.md` — C0 executed: exact C1–C4 shared types,
   schema/tool/projection ownership, fixtures, governance-prerequisite disposition, safe parallel
   wave, integration order, and later Phase-C concurrency ruling.
