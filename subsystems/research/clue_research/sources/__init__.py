@@ -50,6 +50,7 @@ from clue_research.sources.thresholds import (
     ConfidenceThresholds,
 )
 from clue_research.sources.waterfall import (
+    AttemptRecorder,
     StepOutcome,
     StopReason,
     TierStep,
@@ -84,6 +85,7 @@ __all__ = [
     # waterfall engine (M4.1)
     "resolve_field",
     "resolve_fields",
+    "AttemptRecorder",
     "WaterfallResult",
     "TierStep",
     "StopReason",
