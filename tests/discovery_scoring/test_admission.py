@@ -271,6 +271,18 @@ def test_admit_stamps_candidate_workspace() -> None:
     run_async(_run())
 
 
+def test_domain_lock_id_is_workspace_partitioned() -> None:
+    """The admit-lock id folds in the workspace, so two workspaces admitting the *same* domain get
+    different lock ids (no needless cross-tenant serialization — accounts are workspace-local,
+    [B3×research]), while the same ``(workspace, domain)`` is deterministic/stable."""
+    from clue_research.discovery_scoring.gate.admission import _domain_lock_id
+
+    a = _domain_lock_id("ws-a", "acme.com")
+    assert _domain_lock_id("ws-b", "acme.com") != a  # different ws, same domain → distinct lock
+    assert _domain_lock_id("ws-a", "acme.com") == a  # same (ws, domain) → stable
+    assert _domain_lock_id("ws-a", "beta.com") != a  # same ws, different domain → distinct lock
+
+
 def test_existence_check_is_a_pluggable_gate() -> None:
     """A custom existence check can reject even a well-formed candidate (the live-domain seam)."""
 

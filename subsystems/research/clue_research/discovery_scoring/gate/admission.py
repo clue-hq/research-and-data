@@ -76,10 +76,13 @@ IMPORT_CHANNEL = "import"
 _LOCK_PREFIX = "clue:discovery-admit:"
 
 
-def _domain_lock_id(domain: str) -> EntityId:
-    """A deterministic lock id derived from a candidate's registrable domain, so two workers
-    admitting the same company contend on one Redis lock even before either entity exists."""
-    return EntityId(uuid5(NAMESPACE_URL, f"{_LOCK_PREFIX}{domain}"))
+def _domain_lock_id(workspace_id: str, domain: str) -> EntityId:
+    """A deterministic lock id derived from a candidate's ``(workspace, registrable domain)``, so
+    two workers admitting the same company *in the same workspace* contend on one Redis lock even
+    before either entity exists — while two workspaces admitting the same domain never serialize on
+    each other. Accounts are workspace-local ([B3×research]) and the DB strong-key uniqueness is
+    likewise ``(workspace_id, domain)``; a domain-only lock would serialize tenants needlessly."""
+    return EntityId(uuid5(NAMESPACE_URL, f"{_LOCK_PREFIX}{workspace_id}:{domain}"))
 
 
 def _to_observation(candidate: CandidateHypothesis) -> Observation:
@@ -247,7 +250,9 @@ async def admit(
     # (name-only) candidate takes no lock: there is no unique constraint to race on, and fuzzy
     # name dedup / the review queue is the backstop for concurrent name-only admits.
     if redis is not None and observation.domain is not None:
-        async with entity_lock(redis, EntityType.ACCOUNT, _domain_lock_id(observation.domain)):
+        async with entity_lock(
+            redis, EntityType.ACCOUNT, _domain_lock_id(workspace_id, observation.domain)
+        ):
             return await _admit_resolved(
                 conn,
                 candidate,
