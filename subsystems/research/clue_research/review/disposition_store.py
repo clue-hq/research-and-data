@@ -50,6 +50,7 @@ from clue_research.identity import (
     DEFAULT_DISPOSITION_POLICY,
     Observation,
     ResolutionMethod,
+    get_account,
     resolve_many,
     surviving_id,
 )
@@ -349,6 +350,23 @@ async def capture_downstream(
     account's handoff provenance. Returns the new ``DispositionId`` or an
     :class:`IngestRejection`."""
     if row.account_entity_id is not None:
+        # Workspace-scope the explicit id the same way the resolve-by-name branch scopes its match
+        # (``resolve_many(..., workspace_id=row.workspace_id)`` below): an account that does not
+        # exist, or that belongs to another workspace, is rejected to the error queue — never
+        # recorded against a cross-tenant account (accounts are workspace-local — [B3×research]).
+        # A NULL-workspace legacy account is invisible here too (its ``workspace_id`` can't match).
+        account = await get_account(conn, row.account_entity_id)
+        if account is None or account.workspace_id != row.workspace_id:
+            return IngestRejection(
+                external_id=row.external_id,
+                disposition_type=row.disposition_type,
+                reason="unresolved",
+                detail=(
+                    "account_entity_id belongs to another workspace"
+                    if account is not None
+                    else "account_entity_id not found"
+                ),
+            )
         account_id = await surviving_id(conn, row.account_entity_id, EntityType.ACCOUNT)
     else:
         observation = Observation(
