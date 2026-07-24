@@ -41,9 +41,15 @@ from clue_core import (
     ExtractionMethod,
     FieldClass,
     FieldDef,
+    PreSpendGate,
+    PreSpendRequest,
+    PreSpendVerdict,
     ResearchMode,
     RunId,
     Score,
+    SourceGate,
+    SourceManifest,
+    SourceTier,
     account_claim,
     classify_field_key,
 )
@@ -144,6 +150,7 @@ async def score_account(
     icp_version: int,
     budget_envelope: Decimal | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
+    pre_spend_gate: PreSpendGate | None = None,
 ) -> AccountScoringOutcome:
     """Fill, score, and persist one account's Pass-A score object (idempotent on ``run_id``).
 
@@ -160,6 +167,25 @@ async def score_account(
 
     results: list[WaterfallResult] = []
     if fill_fields:
+
+        def source_gate_for(field: FieldDef) -> SourceGate | None:
+            if pre_spend_gate is None:
+                return None
+
+            async def check_source(manifest: SourceManifest) -> bool:
+                decision = await pre_spend_gate.check(
+                    PreSpendRequest(
+                        entity_id=account_id,
+                        entity_type=EntityType.ACCOUNT,
+                        field_key=field.field_key,
+                        source_tier=SourceTier(manifest.tier),
+                        run_id=run_id,
+                    )
+                )
+                return decision.verdict is not PreSpendVerdict.REJECT
+
+            return check_source
+
         results = await resolve_fields(
             conn,
             account.as_entity(),
@@ -170,6 +196,7 @@ async def score_account(
             budget_envelope=budget_envelope,
             thresholds=thresholds,
             idempotent=True,
+            source_gate_factory=source_gate_for,
         )
 
     result = await score_entity(

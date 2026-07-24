@@ -74,6 +74,8 @@ from clue_core import (
     PreSpendRequest,
     ResearchMode,
     RunId,
+    SourceGate,
+    SourceManifest,
     TargetLock,
     WorkerResult,
     WorkerStatus,
@@ -365,7 +367,32 @@ class AspectProfilingWorker:
 
         # 4. pre-spend gate (M9.1; injected). Use the tier of the first source that will actually
         # RUN — not ordered_sources[0], whose modality may be gated SKIP (it would spend nothing and
-        # the waterfall walks only the RUN sources via tier_plan()).
+        # the waterfall walks only the RUN sources via tier_plan()). The per-source callback below
+        # reuses this first decision and gates every later fallback source before its own call.
+        source_gate: SourceGate | None = None
+        gate_results: dict[str, bool] = {}
+        if self._pre_spend_gate is not None:
+            gate = self._pre_spend_gate
+
+            async def check_source(manifest: SourceManifest) -> bool:
+                cached = gate_results.get(manifest.source_key)
+                if cached is not None:
+                    return cached
+                decision = await gate.check(
+                    PreSpendRequest(
+                        entity_id=account.id,
+                        entity_type=EntityType.ACCOUNT,
+                        field_key=field_key,
+                        source_tier=manifest.tier,
+                        run_id=run_id,
+                    )
+                )
+                allowed = decision.verdict is not PreSpendVerdict.REJECT
+                gate_results[manifest.source_key] = allowed
+                return allowed
+
+            source_gate = check_source
+
         if self._pre_spend_gate is not None and plan is not None:
             first_run = next(
                 (s for s in plan.ordered_sources if s.gate_decision is GateDecision.RUN), None
@@ -386,6 +413,7 @@ class AspectProfilingWorker:
                         disposition=ProfilingFieldDisposition.GATE_REJECTED,
                         reasons=decision.reasons,
                     )
+                gate_results[first_run.source_key] = True
 
         # 5. waterfall fill (the only composer: writes + stamps + reuse + idempotency).
         field_for_run = (
@@ -417,6 +445,7 @@ class AspectProfilingWorker:
             budget_envelope=budget_remaining,
             # The per-field-class stop bar from the layered config (lever 1).
             thresholds=thresholds,
+            source_gate=source_gate,
         )
 
         # 6. post-fill target-lock + sensitivity validation.

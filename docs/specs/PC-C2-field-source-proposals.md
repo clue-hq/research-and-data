@@ -1,6 +1,6 @@
 # Phase C2 — Field/Source Proposals and Generic Tier-3 Web Resolution
 
-**Status:** ready for implementation
+**Status:** implemented and integrated on `platform/workspace-restructure` (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 

@@ -11,6 +11,7 @@ is tenant-private. The pure scorer itself is M3.4's (tested in ``tests/icp/test_
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 
@@ -22,6 +23,9 @@ from clue_core import (
     ICPCreatedFrom,
     Modality,
     PassKind,
+    PreSpendDecision,
+    PreSpendGate,
+    PreSpendVerdict,
     ResearchMode,
     ReuseScope,
     SourceManifest,
@@ -31,6 +35,7 @@ from clue_core import (
 from clue_research.claimstore import (
     WorkspaceScope,
     claims_for,
+    get_field,
     insert_claim,
     load_core_pack,
     register_field,
@@ -52,7 +57,12 @@ from clue_research.icp import (
     create_icp_spec,
 )
 from clue_research.identity import insert_account_entity
-from clue_research.sources import RegistrySourceManifest, register_source
+from clue_research.sources import (
+    RegistrySourceManifest,
+    bind_resolver,
+    register_source,
+    unbind_resolver,
+)
 
 from .conftest import rollback_conn, run_async
 
@@ -265,6 +275,75 @@ def test_pass_a_fill_strips_tier4_sources() -> None:
             fill = await pass_a_fill_fields(conn, plan, rubric, max_source_tier=3)
             assert len(fill) == 1
             assert fill[0].tier_plan == ("t1src",)  # the tier-4 source is stripped
+
+    run_async(_run())
+
+
+def test_pass_a_provider_observes_gate_before_resolution() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            eid = await _seed_account(conn, employee_count=None)
+            source_key = "pass_a_gate_probe"
+            await register_source(
+                conn,
+                RegistrySourceManifest(
+                    manifest=SourceManifest(
+                        source_key=source_key,
+                        modality=Modality.STRUCTURED,
+                        entity_scope=EntityScope.ACCOUNT,
+                        yields=(_EMP,),
+                        tier=1,
+                        cost_cents=Decimal(1),
+                    )
+                ),
+            )
+            field = await get_field(conn, _EMP)
+            assert field is not None
+            field = field.model_copy(update={"tier_plan": (source_key,)})
+            events: list[str] = []
+
+            class OrderedResolver:
+                tier = 1
+
+                def resolve(self, entity, resolved_field):
+                    events.append("resolver")
+                    return [
+                        account_claim(
+                            entity_id=entity.entity_id,
+                            field_key=str(resolved_field.field_key),
+                            value_json=500,
+                            source_tier=1,
+                            extraction_method=ExtractionMethod.API,
+                            confidence=0.9,
+                            run_id=new_run_id(),
+                            research_mode=ResearchMode.ACCOUNT_PROFILING,
+                            source_url="https://provider.example/employees",
+                            evidence_span="500 employees",
+                        )
+                    ]
+
+            class RecordingGate:
+                async def check(self, request):
+                    events.append("gate")
+                    return PreSpendDecision(verdict=PreSpendVerdict.PASS)
+
+            bind_resolver(source_key, OrderedResolver())
+            try:
+                await score_account(
+                    conn,
+                    eid,
+                    rubric=_rubric(),
+                    fill_fields=[field],
+                    run_id=new_run_id(),
+                    workspace_id=CLIENT,
+                    icp_key=ICP,
+                    icp_version=1,
+                    pre_spend_gate=cast(PreSpendGate, RecordingGate()),
+                )
+            finally:
+                unbind_resolver(source_key)
+            assert events == ["gate", "resolver"]
 
     run_async(_run())
 

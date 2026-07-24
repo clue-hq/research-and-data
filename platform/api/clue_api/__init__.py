@@ -109,6 +109,13 @@ from clue_api.observability_wiring import (
     build_pre_run_estimator,
     build_verification_health_reader,
 )
+from clue_api.phase_c_wiring import (
+    IngestionProposalSink,
+    ProductionIngestionClaimErasureRoute,
+    ProductionIngestionContactClaimRoute,
+    build_ingestion_engine,
+    register_generic_web_wiring,
+)
 from clue_api.phase_wiring import (
     build_discovery_handler,
     build_icp_confirmed_handler,
@@ -277,6 +284,12 @@ __all__ = [
     "build_tier_checkpoint_handler",
     "register_tier_checkpoint_handler",
     "snapshot_bound",
+    # Phase C1-C3 integration wiring
+    "IngestionProposalSink",
+    "ProductionIngestionClaimErasureRoute",
+    "ProductionIngestionContactClaimRoute",
+    "build_ingestion_engine",
+    "register_generic_web_wiring",
     # B4 slice 1: the fleet run-start composition (ComposingRunDriver)
     "ComposingRunDriver",
     "ComposedRun",

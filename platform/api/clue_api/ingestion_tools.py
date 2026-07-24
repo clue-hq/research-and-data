@@ -23,6 +23,7 @@ from clue_research.ingestion import (
     DeclaredMaterialContext,
     IngestionEngine,
     IngestionError,
+    get_job,
 )
 from clue_storage import SnapshotSink, StorageBackend, flush_snapshots, get_artifact
 from clue_toolbelt import (
@@ -85,7 +86,7 @@ class SubmitIngestionTool(Tool):
     version = "1"
     input_model = SubmitIngestionInput
 
-    def __init__(self, engine: IngestionEngine) -> None:
+    def __init__(self, engine: IngestionEngine | None) -> None:
         self._engine = engine
 
     async def preconditions(
@@ -108,10 +109,19 @@ class SubmitIngestionTool(Tool):
                     message="captured artifact has been erased; upload it again before ingestion",
                 ),
             )
+        if self._engine is None:
+            return (
+                PreconditionFailure(
+                    reason_code="ingestion_not_configured",
+                    message="the ingestion engine is not configured at the API composition root",
+                ),
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, SubmitIngestionInput)
+        if self._engine is None:
+            raise RuntimeError("submit_ingestion invoked without a configured ingestion engine")
         ref = await self._engine.submit(
             workspace_id=ctx.workspace_id,
             artifact_key=inputs.artifact_key,
@@ -134,7 +144,7 @@ class RetryIngestionTool(Tool):
     version = "1"
     input_model = RetryIngestionInput
 
-    def __init__(self, engine: IngestionEngine) -> None:
+    def __init__(self, engine: IngestionEngine | None) -> None:
         self._engine = engine
 
     async def preconditions(
@@ -149,12 +159,23 @@ class RetryIngestionTool(Tool):
                     message="ingestion job does not exist in this workspace",
                 ),
             )
-        job = await self._engine.status(workspace_id=ctx.workspace_id, job_id=job_id)
+        if self._engine is None:
+            async with ctx.conn_factory() as conn:
+                job = await get_job(conn, job_id, workspace_id=ctx.workspace_id)
+        else:
+            job = await self._engine.status(workspace_id=ctx.workspace_id, job_id=job_id)
         if job is None:
             return (
                 PreconditionFailure(
                     reason_code="ingestion_not_found",
                     message="ingestion job does not exist in this workspace",
+                ),
+            )
+        if self._engine is None:
+            return (
+                PreconditionFailure(
+                    reason_code="ingestion_not_configured",
+                    message="the ingestion engine is not configured at the API composition root",
                 ),
             )
         if job.status.value not in {"failed", "snapshotted", "extracting"}:
@@ -168,6 +189,8 @@ class RetryIngestionTool(Tool):
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, RetryIngestionInput)
+        if self._engine is None:
+            raise RuntimeError("retry_ingestion invoked without a configured ingestion engine")
         job_id = _job_id(inputs.ingestion_job_id)
         assert job_id is not None
         ref = await self._engine.retry(workspace_id=ctx.workspace_id, job_id=job_id)

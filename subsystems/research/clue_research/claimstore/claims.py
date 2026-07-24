@@ -208,10 +208,11 @@ async def supersede_claim(
     a forward pointer. Append-only history is preserved (substrate §1).
 
     ``validate_field`` is threaded to :func:`insert_claim`. It defaults ``True`` (the field-write
-    check runs); the **only** sanctioned ``False`` caller is M10.5's DSAR tombstone path, whose
-    ``new_claim`` carries a deliberately *redacted* ``value_json`` (a redaction sentinel, not a real
-    field value) that must bypass the registry ``value_schema`` check — the tombstone is written
-    ``REJECTED`` so it can never win the merge regardless (substrate §6 / Doc D §4).
+    check runs); sanctioned ``False`` callers are compliance-owned redaction/tombstone paths,
+    including M10.5 DSAR and exact-source erasure. Their ``new_claim`` carries a deliberately
+    *redacted* ``value_json`` (a redaction sentinel, not a real field value) that must bypass the
+    registry ``value_schema`` check — the tombstone is written ``REJECTED`` so it can never win the
+    merge regardless (substrate §6 / Doc D §4).
     """
     new_id = await insert_claim(conn, new_claim, validate_field=validate_field)
     await conn.execute(
@@ -239,7 +240,7 @@ async def supersede_claims(
     is preserved (substrate §1). ``old_ids`` may be empty — then it is exactly :func:`insert_claim`.
 
     ``validate_field`` is threaded to :func:`insert_claim` (default ``True``); see
-    :func:`supersede_claim` for the single sanctioned ``False`` caller (M10.5 redacted tombstones).
+    :func:`supersede_claim` for sanctioned compliance redaction/tombstone callers.
     """
     new_id = await insert_claim(conn, new_claim, validate_field=validate_field)
     ids = list(old_ids)

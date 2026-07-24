@@ -85,7 +85,7 @@ class ResearchAccountGapsTool(Tool):
     def __init__(
         self,
         *,
-        gateway: LLMGateway,
+        gateway: LLMGateway | None,
         conn_factory: ConnFactory = transaction,
         budget: BudgetEngineContract,
         pre_spend_gate: PreSpendGate,
@@ -139,6 +139,11 @@ class ResearchAccountGapsTool(Tool):
                     "unplanned_gap_fields",
                     f"gap fields are not registered in the durable account plan: {sorted(invalid)}",
                 )
+        if self._gateway is None:
+            return _fail(
+                "gateway_required",
+                "research gap evaluation requires a configured LLM gateway",
+            )
         return ()
 
     def estimate(self, inputs: ToolInput) -> ToolEstimate:
@@ -153,6 +158,8 @@ class ResearchAccountGapsTool(Tool):
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, ResearchAccountGapsInput)
+        if self._gateway is None:
+            raise RuntimeError("research_account_gaps invoked without a configured LLM gateway")
         project_run_id = ProjectRunId(UUID(inputs.project_run_id))
         account_id = EntityId(UUID(inputs.account_entity_id))
         async with self._lock_factory(account_id), self._conn_factory() as conn:
@@ -211,7 +218,7 @@ class ResearchAccountGapsTool(Tool):
 
 def build_research_account_gaps_tool(
     *,
-    gateway: LLMGateway,
+    gateway: LLMGateway | None,
     conn_factory: ConnFactory = transaction,
     budget: BudgetEngineContract | None = None,
     pre_spend_gate: PreSpendGate | None = None,

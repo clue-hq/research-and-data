@@ -36,8 +36,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from clue_api.composition import build_pre_spend_gate
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
-from clue_core import FaithfulnessJudge, LLMGateway, PhaseHandler
+from clue_core import FaithfulnessJudge, LLMGateway, PhaseHandler, PreSpendGate
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.discovery_scoring.phases import (
     DiscoveryPhaseHandler,
@@ -163,18 +164,21 @@ def register_discovery_handler(
 # --- SCORING (M6.3) — fetches ----------------------------------------------------------------
 
 
-def build_scoring_handler() -> ScoringPhaseHandler:
+def build_scoring_handler(*, pre_spend_gate: PreSpendGate | None = None) -> ScoringPhaseHandler:
     """The SCORING handler (M6.3): cheap deterministic-first Pass-A fit/intent scoring over every
     admitted account. Config/thresholds default to their production constants."""
-    return ScoringPhaseHandler()
+    return ScoringPhaseHandler(pre_spend_gate=pre_spend_gate or build_pre_spend_gate())
 
 
 def register_scoring_handler(
-    *, storage: StorageBackend | None, register: _Register = register_phase_handler
+    *,
+    storage: StorageBackend | None,
+    pre_spend_gate: PreSpendGate | None = None,
+    register: _Register = register_phase_handler,
 ) -> PhaseHandler:
     """Build + register the SCORING handler (snapshot-wrapped when ``storage`` is passed — the
     Pass-A waterfall **fetches**, so the wrapper is load-bearing)."""
-    handler = snapshot_bound(build_scoring_handler(), storage=storage)
+    handler = snapshot_bound(build_scoring_handler(pre_spend_gate=pre_spend_gate), storage=storage)
     register(handler)
     return handler
 

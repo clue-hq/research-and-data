@@ -450,6 +450,7 @@ async def resolve_fields(
     snapshots: SnapshotSink | None = None,
     storage: StorageBackend | None = None,
     attempt_recorder: AttemptRecorder | None = None,
+    source_gate_factory: Callable[[FieldDef], SourceGate | None] | None = None,
 ) -> list[WaterfallResult]:
     """Resolve several fields for one entity, threading the running spend so a single
     ``budget_envelope`` bounds the whole batch. ``workspace_id`` / ``reuse_policy`` are threaded to
@@ -474,6 +475,9 @@ async def resolve_fields(
             snapshots=snapshots,
             storage=storage,
             attempt_recorder=attempt_recorder,
+            source_gate=(
+                source_gate_factory(field_def) if source_gate_factory is not None else None
+            ),
         )
         results.append(result)
         spent += result.total_cost_cents

@@ -1,6 +1,6 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** RATIFIED PLAN — C0 contracts frozen; C1–C4 implementation not started (2026-07-24)
+**Status:** ACTIVE — C0 frozen; C1–C3 implemented and integrated; C4 next (2026-07-24)
 
 **Integration branch:** `platform/workspace-restructure`
 
@@ -40,7 +40,7 @@ spend, trust, promotion, compliance, fan-out, and durable truth.**
 
 ## 2. Current baseline (what Phase C may assume)
 
-As of `platform/workspace-restructure` at merge commit `8864573`:
+As of the C1–C3 merge checkpoint on `platform/workspace-restructure`:
 
 - Phase A is complete: uv workspace structure, `workspace_id` vocabulary, object spine, shared
   libraries, platform/subsystem boundaries, and API composition root.
@@ -48,7 +48,7 @@ As of `platform/workspace-restructure` at merge commit `8864573`:
   - detached project-run fleet and lease/task machinery;
   - storage backend, artifact table, source snapshots, DSAR reach, and millicredit groundwork;
   - scoped-memory slice 1 and both enforced memory seams;
-  - 17-tool typed toolbelt, loud preconditions, workspace-scoped A9 idempotency;
+  - 24-tool typed toolbelt, loud preconditions, workspace-scoped A9 idempotency;
   - projection API, run manifest, run-event outbox, and treaty SSE;
   - per-run `ComposingRunDriver` capable of driving the existing fixed project-run state machine.
 - Account/contact ownership is mandatory and workspace-local. Identity resolution, strong-key
@@ -58,24 +58,35 @@ As of `platform/workspace-restructure` at merge commit `8864573`:
 - The claim store, waterfall, verification, compliance, ICP compiler, discovery/scoring,
   deep-research workers, value narrative, review surfaces, and observability substrate exist.
 - The legacy scripts 01–06 pipeline remains the Recipe-#1 regression reference.
-- Baseline verification on the merged head: `make check` green; 23 import contracts kept;
-  2254 tests passed / 20 external-service-gated skips; one Alembic head
-  `b366c985ca12`; working tree clean.
+- Verification at the C1–C3 integration checkpoint: DB-enabled `make check` green; 23 import
+  contracts kept; 2328 tests passed / 20 external-service-gated skips; one Alembic head
+  `fc1f3d22a167`.
 
-### 2.1 What is still absent
+### 2.1 C1–C3 integration checkpoint
+
+The platform now has:
+
+- a durable research-coverage attempt/decision ledger, one-round coverage tool, bounded goal
+  evaluator, and coverage/history projections;
+- durable field/source proposals, governed decision/promotion tools, proposal projections, and the
+  fixed tier-3 generic-web resolver registration seam;
+- durable upload jobs and stable segments, supported document adapters, claim/proposal routing,
+  authoritative contact binding/use classification before insert, exact-source tombstoning on
+  erasure, upload/submit/retry tools, and ingestion projection/upload routes;
+- one Alembic head joining the three parallel C1/C2/C3 migration branches;
+- a static claim-producing spend-path inventory. The two remaining ungated waterfall callers are
+  exactly the C4-owned Stage-0 paths named in C0.
+
+### 2.2 What is still absent
 
 - no real Recipe-#0 orchestration;
 - no fast-plus-background recon controller;
 - no durable onboarding-input record;
 - no live composition-root registration of the Stage-0 scrape resolver;
 - no recon-brief/fork-card projection;
-- no coverage-attempt ledger or terminal-gap record;
-- no durable coverage-round evaluator;
 - no readiness-spec versions or recorded override;
 - no `client_interview` source/resolver;
 - no `volunteered_statement` preservation path;
-- no `propose_field` / `propose_source` ledgers and promotion flow;
-- no general upload-ingestion flow;
 - no generic run-graph journal or recipe executor;
 - no platform deepagent, research subagent, or governed per-account worker agent;
 - no production `HandoffCommitteeReader`;

@@ -296,8 +296,8 @@ async def _apply_tombstone(
         # so there is no orphan; report it as already-tombstoned (the caller's count stays honest).
         return None
     # validate_field=False: the redaction sentinel is intentionally not a valid field value (the
-    # tombstone is REJECTED, so it never wins the merge regardless). This is the single sanctioned
-    # validate_field=False caller (documented on claimstore.supersede_claim).
+    # tombstone is REJECTED, so it never wins the merge regardless). This is one of the sanctioned
+    # compliance redaction callers documented on claimstore.supersede_claim.
     tombstone_id = await supersede_claims(conn, [target.id], tombstone, validate_field=False)
     sink.add(METRIC_DSAR_TOMBSTONED, 1, {"reason": reason.value})
     # PB-B2.5 — erasure reaches stored evidence snapshots (refcounted, ruling 2), in TWO phases.
