@@ -19,7 +19,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
-from tests._workspace import seed_workspace
+from tests._workspace import seed_project, seed_workspace
 from tests.api.test_storage_wiring import FakeStorage
 from tests.fleet.conftest import ProcessLocalLockFactory, run_async
 
@@ -100,6 +100,7 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
                     # satisfies the account_entity workspace FK (accounts are workspace-local —
                     # [B3×research]).
                     await seed_workspace(conn, workspace_id)
+                    project = await seed_project(conn, workspace_id)
                     await load_core_pack(conn)
                 async with transaction() as conn:
                     await create_icp_spec(
@@ -117,7 +118,10 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
                     store=store, budget_engine=BudgetEngine(), ledger=DbIdempotencyStore()
                 )
                 run_id = await machine.start(
-                    workspace_id=workspace_id, icp_key=icp_key, icp_version=1
+                    project_id=project.project_id,
+                    workspace_id=workspace_id,
+                    icp_key=icp_key,
+                    icp_version=1,
                 )
 
                 async def provide_client_input(_ctx: PhaseContext) -> ClientInput:

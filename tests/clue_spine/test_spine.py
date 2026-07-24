@@ -233,8 +233,8 @@ def test_duplicate_product_name_under_brand_rejected_by_constraint() -> None:
 # --- project_run executes FOR a project ------------------------------------
 _INSERT_RUN = text(
     """
-    INSERT INTO project_run (id, workspace_id, icp_key, icp_version, project_id)
-    VALUES (:id, :workspace_id, :icp_key, 1, :project_id)
+    INSERT INTO project_run (id, project_id, brand_id, workspace_id, icp_key, icp_version)
+    VALUES (:id, :project_id, :brand_id, :workspace_id, :icp_key, 1)
     RETURNING project_id
     """
 )
@@ -254,6 +254,7 @@ def test_project_run_accepts_valid_project_id() -> None:
                     "workspace_id": workspace_id,
                     "icp_key": "default",
                     "project_id": project.project_id,
+                    "brand_id": project.brand_id,
                 },
             )
             assert result.scalar_one() == project.project_id
@@ -264,8 +265,8 @@ def test_project_run_accepts_valid_project_id() -> None:
 def test_project_run_rejects_dangling_project_id() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            workspace_id, _ = await _seed(conn)
-            with pytest.raises(IntegrityError, match="project_run_project_fk"):
+            workspace_id, brand_id = await _seed(conn)
+            with pytest.raises(IntegrityError, match="project_run_project_context_fk"):
                 await conn.execute(
                     _INSERT_RUN,
                     {
@@ -273,6 +274,35 @@ def test_project_run_rejects_dangling_project_id() -> None:
                         "workspace_id": workspace_id,
                         "icp_key": "default",
                         "project_id": "prj_missing",
+                        "brand_id": brand_id,
+                    },
+                )
+
+    run_async(scenario())
+
+
+def test_project_run_rejects_a_different_same_workspace_brand() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id, project_brand_id = await _seed(conn)
+            other_brand = await create_brand(
+                conn, workspace_id=workspace_id, name="Different sender"
+            )
+            project = await create_project(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=project_brand_id,
+                name="Pinned sender project",
+            )
+            with pytest.raises(IntegrityError, match="project_run_project_context_fk"):
+                await conn.execute(
+                    _INSERT_RUN,
+                    {
+                        "id": uuid4(),
+                        "workspace_id": workspace_id,
+                        "icp_key": "default",
+                        "project_id": project.project_id,
+                        "brand_id": other_brand.brand_id,
                     },
                 )
 

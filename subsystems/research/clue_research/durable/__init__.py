@@ -108,6 +108,8 @@ from clue_research.durable.project import (
 from clue_research.durable.project_run import (
     AdjustmentRow,
     ProjectPhaseCheckpointRow,
+    ProjectRunIdentityConflict,
+    ProjectRunProjectNotFound,
     ProjectRunRow,
     TierCutoffs,
     ensure_project_run,
@@ -210,6 +212,8 @@ __all__ = [
     "BudgetEngineNotConfigured",
     # project_run / checkpoint / journal repository (M7.3)
     "ProjectRunRow",
+    "ProjectRunProjectNotFound",
+    "ProjectRunIdentityConflict",
     "ProjectPhaseCheckpointRow",
     "AdjustmentRow",
     "TierCutoffs",

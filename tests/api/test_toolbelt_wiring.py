@@ -1,9 +1,10 @@
 """The concrete toolbelt — the out-of-order matrix (the step-2 de-risk) + the B1 workspace guard.
 
-On a fresh workspace with **no** prerequisites, every registered tool either raises
+On a fresh workspace with only its required project context, every registered tool either raises
 ``PreconditionFailed`` with its documented ``reason_code`` — asserted as the **exact** reason tuple
-(N3) — or, for the genuinely prerequisite-free tools (``reverse_profile`` / ``estimate_project`` /
-``start_project_run``), succeeds with a real result. Never a silent-empty success (pre-mortem #2).
+(N3) — or succeeds with a real result: ``reverse_profile`` / ``estimate_project`` are
+prerequisite-free, while ``start_project_run`` consumes the seeded project. Never a silent-empty
+success (pre-mortem #2).
 The matrix asserts the **full** registered tool list is covered, so a new tool without a matrix
 entry fails the test.
 
@@ -32,7 +33,7 @@ from clue_research.icp import (
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.stage0 import ICPProposal
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolResult, invoke_tool
-from tests._workspace import seed_workspace
+from tests._workspace import seed_project, seed_workspace
 from tests.api.conftest import require_profiling_db as require_profiling_db  # noqa: F401
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn, seed_packs
@@ -85,7 +86,11 @@ def _bodies() -> dict[str, dict[str, object]]:
         "run_verification": {"project_run_id": _UUID()},
         "compose_handoff": {"project_run_id": _UUID()},
         "estimate_project": {},
-        "start_project_run": {"icp_key": "matrix", "icp_version": 1},
+        "start_project_run": {
+            "project_id": "prj_replaced_by_test",
+            "icp_key": "matrix",
+            "icp_version": 1,
+        },
         "pause_run": {"project_run_id": _UUID()},
         "resume_run": {"project_run_id": _UUID()},
         "adjust_budget": {"project_run_id": _UUID(), "budget_cap_cents": 1000},
@@ -109,8 +114,10 @@ def test_out_of_order_matrix(require_profiling_db: None) -> None:  # noqa: F811
                 conn_factory=cf,
             )
             ws = await seed_workspace(conn, f"ws_{uuid4().hex[:8]}")
+            project = await seed_project(conn, ws)
             ctx = ToolContext(workspace_id=ws, actor="human", conn_factory=cf)
             bodies = _bodies()
+            bodies["start_project_run"]["project_id"] = project.project_id
 
             # Coverage: every registered tool has a matrix entry (a new tool without one fails).
             assert set(registry.names()) == set(_MATRIX), (
@@ -152,13 +159,26 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
             await load_research_packs(conn)
             cf = conn_session_factory(conn)
             registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
+            project_a = await seed_project(conn, "ws_A")
+            await seed_project(conn, "ws_B")
             ctx_a = ToolContext(workspace_id="ws_A", actor="human", conn_factory=cf)
             ctx_b = ToolContext(workspace_id="ws_B", actor="human", conn_factory=cf)
+
+            start_body = {
+                "project_id": project_a.project_id,
+                "icp_key": "matrix",
+                "icp_version": 1,
+            }
+            start_tool = registry.get("start_project_run")
+            foreign_failures = await start_tool.preconditions(
+                start_tool.input_model(**start_body), ctx_b
+            )
+            assert tuple(f.reason_code for f in foreign_failures) == ("project_not_found",)
 
             started = await invoke_tool(
                 registry,
                 "start_project_run",
-                {"icp_key": "matrix", "icp_version": 1},
+                start_body,
                 ctx_a,
                 idempotency_ttl_s=TTL,
             )

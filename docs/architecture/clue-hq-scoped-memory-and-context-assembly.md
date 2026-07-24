@@ -140,7 +140,7 @@ content; content changes are supersessions). Fields, grouped:
 **Identity & scope**
 - `memory_id`
 - `workspace_id` — tenancy root; every query is tenant-filtered at the seam, fail-closed
-- `scope_type` ∈ {workspace, brand, product, campaign, account} + `scope_id` — the owning scope
+- `scope_type` ∈ {workspace, brand, product, project, account} + `scope_id` — the owning scope
   instance
 
 **Content**
@@ -263,15 +263,15 @@ The assembly pipeline, in full:
    cycle-relative freshness, then `confirmation_count`. No blended numeric scores, no LLM-rated
    importance at read time. Ranking decides what fits the budget; it never decides who is
    *right*.
-3. **Assemble in stability order:** brand → product → campaign → account. **This order is cache
-   semantics (stable prefix first) and carries zero priority semantics.** All priority
-   information lives in labels; position means nothing — stated here so no future implementer
-   reads priority into position.
+3. **Assemble in stability order:** workspace → selected brand → product → project → account.
+   **This order is cache semantics (stable prefix first) and carries zero priority semantics.**
+   All priority information lives in labels; position means nothing — stated here so no future
+   implementer reads priority into position.
 4. **Label everything:** scope, type, trigger, provenance class, trust grade, freshness,
    confirmation count, claim refs. The label *is* the reconciliation input for the agent.
 5. **Journal the bundle** (§11).
 
-**Cross-branch conflict posture (ruled):** when sibling-scope advice conflicts (campaign says
+**Cross-branch conflict posture (ruled):** when sibling-scope advice conflicts (project says
 formal; account says this committee responds casual), the engine includes **both, labeled**, and
 the agent reconciles at proposal time — legitimate because memory is advisory (Q4). The engine
 never silently picks a winner across orthogonal axes. Every such labeled tension is journaled;
@@ -474,7 +474,7 @@ and the v1 design already collects the evidence.
 | **Memory→config graduation bridge** (Q4, parked) | None | A memory-recorded pattern accumulating strong evidence may be *proposed* into an M13.3 config revision through its normal human-reviewed pipeline — connects the two learning systems without merging them |
 | **Vector/pgvector, graph storage** | Plain Postgres | Vector: only if trigger-matching at scale demands it (see search row). Graph: only if scope traversal or cross-memory relational queries become hot paths |
 | **Per-campaign kill-switch override** | Workspace toggle only | User request |
-| **Multi-brand** | **Shipped 2026-07-24:** workspace-owned brands; projects select one same-workspace brand | No longer deferred |
+| **Multi-brand** | **Shipped 2026-07-24:** workspace-owned brands; projects select one same-workspace brand; every run derives and pins that selection | No longer deferred |
 
 ---
 

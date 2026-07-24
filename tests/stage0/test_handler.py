@@ -60,6 +60,8 @@ def _ctx(
 ) -> PhaseContext:
     return PhaseContext(
         project_run_id=project_run_id if project_run_id is not None else new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
         phase=ProjectPhase.REVERSE_PROFILING,
         workspace_id=f"tenant-handler-{suffix}",
         icp_key="__reverse_profiling__",

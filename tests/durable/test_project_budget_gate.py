@@ -45,7 +45,9 @@ def test_over_cap_run_graceful_stops_before_first_spend_phase() -> None:
         engine = BudgetEngine(store=budget_store)
         machine = ProjectRun(store=campaign_store, registry=registry, budget_engine=engine)
 
-        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
         # Simulate prior spend already at/over the cap (cap lowered below spend).
         budget_store.set_run(run_id, spent=Decimal("900"), cap=Decimal("500"))
 
@@ -73,7 +75,9 @@ def test_raising_cap_then_resume_continues_the_same_phase() -> None:
         engine = BudgetEngine(store=budget_store)
         machine = ProjectRun(store=campaign_store, registry=registry, budget_engine=engine)
 
-        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
         budget_store.set_run(run_id, spent=Decimal("900"), cap=Decimal("500"))
         run = await machine.run_to_completion(run_id)
         assert run.status is ProjectRunStatus.PAUSED
@@ -108,7 +112,9 @@ def test_within_cap_run_completes_normally() -> None:
         engine = BudgetEngine(store=budget_store)
         machine = ProjectRun(store=campaign_store, registry=registry, budget_engine=engine)
 
-        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
         budget_store.set_run(run_id, spent=Decimal("100"), cap=Decimal("100000"))  # plenty
 
         run = await machine.run_to_completion(run_id)
@@ -137,6 +143,7 @@ def test_pre_run_estimate_reflects_a_cutoff_adjust() -> None:
         machine = ProjectRun(store=campaign_store, registry=registry, budget_engine=engine)
 
         run_id = await machine.start(
+            project_id="prj-test",
             workspace_id="c1",
             icp_key="default",
             icp_version=1,
@@ -163,7 +170,9 @@ def test_uncapped_run_with_engine_is_never_gated() -> None:
         engine = BudgetEngine(store=budget_store)
         machine = ProjectRun(store=campaign_store, registry=registry, budget_engine=engine)
 
-        run_id = await machine.start(workspace_id="c1", icp_key="default", icp_version=1)
+        run_id = await machine.start(
+            project_id="prj-test", workspace_id="c1", icp_key="default", icp_version=1
+        )
         budget_store.set_run(run_id, spent=Decimal("999999"), cap=None)  # no cap → never stops
 
         run = await machine.run_to_completion(run_id)

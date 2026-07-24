@@ -67,6 +67,7 @@ from clue_research.profiling import (
 from clue_research.profiling.committee.coverage import estimate_committee_coverage
 from clue_research.profiling.committee.results import CommitteeMemberRef
 from clue_research.profiling.committee.stopping import CommitteeStopReason
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 
@@ -225,9 +226,11 @@ def test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references(
         total = account_cost + committee_cost + contact_cost * 3
 
         async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "client-1")
             await ensure_project_run(
                 conn,
                 project_run_id=campaign,
+                project_id=project.project_id,
                 workspace_id="client-1",
                 icp_key="icp-a",
                 icp_version=1,
