@@ -57,7 +57,11 @@ from clue_research.stage0.icp_fields import (
     load_icp_feedback_pack,
 )
 from clue_research.stage0.icp_handler import IcpConfirmedHandler
-from clue_research.stage0.icp_synthesis import synthesize_icps
+from clue_research.stage0.icp_synthesis import (
+    ICPSynthesisResult,
+    synthesize_icps,
+    synthesize_icps_with_proposals,
+)
 from clue_research.stage0.icp_types import (
     CandidateSignal,
     FirmographicDimensions,
@@ -144,6 +148,8 @@ __all__ = [
     "SURFACE_CLASS_FIELDS",
     # M5.2 — ICP synthesis & proposal
     "synthesize_icps",
+    "synthesize_icps_with_proposals",
+    "ICPSynthesisResult",
     "DEFAULT_SYNTHESIS_MODEL",
     "confirm_icp",
     "estimate_campaign",
