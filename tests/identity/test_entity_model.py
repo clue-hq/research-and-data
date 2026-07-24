@@ -57,7 +57,6 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                         "status",
                         "merged_into",
                         "workspace_id",
-                        "brand_id",
                         "created_at",
                         "updated_at",
                     },
@@ -94,6 +93,22 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                     ).all()
                 }
                 assert expected <= cols, f"{table} missing columns: {expected - cols}"
+                if table == "account_entity":
+                    assert "brand_id" not in cols
+
+            account_constraints = {
+                row[0]
+                for row in (
+                    await conn.execute(
+                        text(
+                            "SELECT conname FROM pg_constraint "
+                            "WHERE conrelid = 'account_entity'::regclass"
+                        )
+                    )
+                ).all()
+            }
+            assert "account_entity_brand_fk" not in account_constraints
+            assert "account_entity_brand_needs_workspace" not in account_constraints
 
     run_async(_run())
 

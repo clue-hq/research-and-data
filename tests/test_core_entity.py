@@ -50,6 +50,18 @@ def test_account_entity_requires_workspace_ownership() -> None:
         AccountEntity.model_validate({"id": new_entity_id(), "canonical_name": "Unowned"})
 
 
+def test_account_entity_rejects_brand_assignment() -> None:
+    with pytest.raises(ValidationError):
+        AccountEntity.model_validate(
+            {
+                "id": new_entity_id(),
+                "canonical_name": "Acme",
+                "workspace_id": "ws-test",
+                "brand_id": "brd-not-an-account-field",
+            }
+        )
+
+
 def test_contact_entity_requires_workspace_ownership() -> None:
     with pytest.raises(ValidationError):
         ContactEntity.model_validate({"id": new_entity_id(), "account_entity_id": new_entity_id()})

@@ -43,7 +43,7 @@ pytestmark = pytest.mark.usefixtures("require_identity_db")
 
 
 def test_insert_account_stamps_workspace() -> None:
-    """A stamped account round-trips its workspace_id; brand_id stays None when unset."""
+    """A target account round-trips its required workspace ownership."""
 
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -54,7 +54,6 @@ def test_insert_account_stamps_workspace() -> None:
             account = await get_account(conn, eid)
             assert account is not None
             assert account.workspace_id == ws
-            assert account.brand_id is None
 
     run_async(_run())
 

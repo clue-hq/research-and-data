@@ -82,21 +82,19 @@ async def seed_account(
     conn: AsyncConnection,
     *,
     workspace_id: str,
-    brand_id: str | None = None,
     canonical_name: str = "Company X",
 ) -> UUID:
     """A workspace-local ``account_entity`` (founder ruling 2026-07-22)."""
     account_id = uuid4()
     await conn.execute(
         text(
-            "INSERT INTO account_entity (id, canonical_name, workspace_id, brand_id) "
-            "VALUES (:id, :name, :workspace_id, :brand_id)"
+            "INSERT INTO account_entity (id, canonical_name, workspace_id) "
+            "VALUES (:id, :name, :workspace_id)"
         ),
         {
             "id": account_id,
             "name": canonical_name,
             "workspace_id": workspace_id,
-            "brand_id": brand_id,
         },
     )
     return account_id
@@ -116,7 +114,6 @@ async def seed_spine(conn: AsyncConnection, tag: str = "") -> SimpleNamespace:
     account_id = await seed_account(
         conn,
         workspace_id=ws.workspace_id,
-        brand_id=brand.brand_id,
         canonical_name=f"Company X{tag}",
     )
     return SimpleNamespace(

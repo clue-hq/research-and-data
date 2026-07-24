@@ -212,9 +212,7 @@ def test_reconciliation_is_scoped_per_account_instance() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             spine = await seed_spine(conn)
-            account_2 = await seed_account(
-                conn, workspace_id=spine.workspace_id, brand_id=spine.brand_id
-            )
+            account_2 = await seed_account(conn, workspace_id=spine.workspace_id)
             body = "Never use fear-based hooks."
             first = await _write_account(
                 conn, spine.workspace_id, spine.account_entity_id, body=body

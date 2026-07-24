@@ -48,7 +48,6 @@ class AccountEntity(BaseModel):
     # Required in both the domain shape and DB from migration 82a80fb80c9e; the dev-only legacy
     # NULL state was retired rather than backfilled.
     workspace_id: str
-    brand_id: str | None = None
 
     def as_entity(self) -> Entity:
         """The resolved reference for this account (its ``id`` is the claim ``entity_id``)."""

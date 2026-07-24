@@ -33,12 +33,17 @@
    > own controller). Company X in workspaces A and B is two separate `account_entity` rows.
    > `account` scope is now **IMPLEMENTED** in migration `50b778e4009a`: the `MemoryScopeType.ACCOUNT`
    > enum member, a `memory.scope_account_entity_id` composite FK anchored to the memory's own
-   > workspace (`account_entity` gains nullable `workspace_id`/`brand_id` + an `(id, workspace_id)`
+   > workspace (`account_entity` gained nullable `workspace_id`/`brand_id` + an `(id, workspace_id)`
    > anchor), the CHECK arm, and the regenerated `scope_id`. A legacy account row with NULL
    > `workspace_id` can never own workspace-scoped memory (the FK is unrepresentable — fail-closed).
    > **Still research-lane follow-up (NOT done here):** the full account localization — workspace-local
    > domain/registry uniqueness, contact locality, resolver/cache keying by workspace, and superseding
    > the cross-tenant `reuse_scope` language — see the CLAUDE.md backlog entry `[B3×research]`.
+
+   > **Addendum — 2026-07-24 brand correction.** The earlier `brand_id` addition was transitional
+   > and is now retired by migration `068426c5ea34`: target accounts belong to a workspace and are
+   > brand-neutral. Projects—not target accounts—select one of their workspace's brand kits. The
+   > `(account_entity.id, workspace_id)` anchor used by account-scoped memory is unchanged.
 6. **Q6 — caps/budgets shape lives in `clue-config` `schema.py`** (append-only, `MergePolicy`
    pattern), default-constructed + injectable; per-client `config_revision` plumbing rides at
    integration.
