@@ -782,6 +782,28 @@ def _build_claim(
     return revalidate_with(claim)
 
 
+def build_ingestion_claim(
+    *,
+    job: IngestionJob,
+    target: IngestionTarget,
+    field: FieldDef,
+    draft: ClaimDraft,
+    segment_id: str,
+    canonical_key: str,
+    run_id: RunId,
+) -> Claim:
+    """The public C3 claim factory used by C4's additive product-scope route."""
+    return _build_claim(
+        job=job,
+        target=target,
+        field=field,
+        draft=draft,
+        segment_id=segment_id,
+        canonical_key=canonical_key,
+        run_id=run_id,
+    )
+
+
 def _ref(job: IngestionJob) -> IngestionJobRef:
     return IngestionJobRef(
         ingestion_job_id=job.id, artifact_key=job.artifact_key, status=job.status

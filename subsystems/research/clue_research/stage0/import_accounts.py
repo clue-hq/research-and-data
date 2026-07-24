@@ -49,9 +49,14 @@ from clue_core import (
     EntityType,
     ExtractionMethod,
     IdentityBinding,
+    PreSpendGate,
+    PreSpendRequest,
+    PreSpendVerdict,
     ResearchMode,
     RunId,
     Score,
+    SourceGate,
+    SourceManifest,
     UseClass,
     account_claim,
     contact_claim,
@@ -141,6 +146,7 @@ async def import_accounts(
     crm_enrich: bool = False,
     decided_by: str = "auto",
     disposition_policy: DispositionPolicy = DEFAULT_DISPOSITION_POLICY,
+    pre_spend_gate: PreSpendGate | None = None,
 ) -> ImportResult:
     """Bulk-resolve ``rows`` to canonical accounts, back-score them against the confirmed
     ``ICPSpec`` referenced by ``icp_spec_ref``, and return the resolved / needs-review / unresolved
@@ -230,6 +236,7 @@ async def import_accounts(
                         crm_enrich=crm_enrich,
                         decided_by=decided_by,
                         disposition_policy=disposition_policy,
+                        pre_spend_gate=pre_spend_gate,
                     )
             except Exception:  # noqa: BLE001 — poison-row isolation; the row is surfaced, not dropped
                 unresolved.append(
@@ -301,6 +308,7 @@ async def _resolve_row(
     crm_enrich: bool,
     decided_by: str,
     disposition_policy: DispositionPolicy,
+    pre_spend_gate: PreSpendGate | None,
 ) -> _RowOutcome:
     """Resolve one row to its outcome inside the caller's savepoint: dispose it (auto-merge / review
     / new-entity / intra-batch), then for a resolved account write provenance, CRM-enrich (opt-in),
@@ -375,6 +383,7 @@ async def _resolve_row(
             scope=scope,
             workspace_id=workspace_id,
             run_id=run_id,
+            pre_spend_gate=pre_spend_gate,
         )
         already_customer = crm_relationship in _CUSTOMER_RELATIONSHIPS
 
@@ -546,6 +555,7 @@ async def _crm_enrich(
     scope: WorkspaceScope,
     workspace_id: str,
     run_id: RunId,
+    pre_spend_gate: PreSpendGate | None,
 ) -> str | None:
     """Resolve every ``crm``-tier field (the CRM relationship plus any rubric scoring field whose
     tier plan starts at ``crm``) through the M4 waterfall, writing tier-1 ``crm_import`` claims,
@@ -553,6 +563,23 @@ async def _crm_enrich(
     "already a customer / already in pipeline" signal. A field with no ``crm`` resolver bound simply
     no-ops (the waterfall stops at ``NO_RESOLVER``)."""
     from clue_research.sources import resolve_field  # lazy: keep the import seam narrow
+
+    def gate_for(field_key: str) -> SourceGate:
+        async def source_gate(manifest: SourceManifest) -> bool:
+            if pre_spend_gate is None:
+                return True
+            decision = await pre_spend_gate.check(
+                PreSpendRequest(
+                    entity_id=entity_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key=field_key,
+                    source_tier=manifest.tier,
+                    run_id=run_id,
+                )
+            )
+            return decision.verdict is PreSpendVerdict.PASS
+
+        return source_gate
 
     field_keys = {_CRM_RELATIONSHIP_FIELD}
     if rubric is not None:
@@ -571,6 +598,7 @@ async def _crm_enrich(
             run_id=run_id,
             workspace_id=workspace_id,
             reuse_policy=DEFAULT_REUSE_POLICY,  # crm_import → tenant_private via default methods
+            source_gate=gate_for(field_key),
         )
 
     cv = await current_value(conn, entity_id, _CRM_RELATIONSHIP_FIELD, scope=scope)

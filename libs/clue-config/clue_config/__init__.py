@@ -78,6 +78,13 @@ from clue_config.secrets import (
     redact_mapping,
 )
 from clue_config.settings import DEFAULT_SYNTHESIS_MODEL, Settings, load_settings
+from clue_config.stage0 import (
+    DEFAULT_STAGE0_POLICY,
+    ReadinessFloor,
+    ReadinessSpec,
+    Stage0Policy,
+    default_readiness_spec,
+)
 
 __all__ = [
     # loader / seam
@@ -131,6 +138,12 @@ __all__ = [
     "Settings",
     "load_settings",
     "DEFAULT_SYNTHESIS_MODEL",
+    # governed Stage 0 / readiness
+    "ReadinessFloor",
+    "ReadinessSpec",
+    "Stage0Policy",
+    "DEFAULT_STAGE0_POLICY",
+    "default_readiness_spec",
     # secrets
     "Secrets",
     "redact",

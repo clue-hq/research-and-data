@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    EntityId,
     ICPCreatedFrom,
     ICPSpec,
     ICPStatus,
@@ -82,7 +83,7 @@ async def validate_icp_references(
 _COLUMNS = (
     "workspace_id, icp_key, version, status, created_from, parent_version, label, description, "
     "field_keys, enabled_packs, discovery_strategy, source_profile_ref, scoring_rubric, "
-    "created_by, created_at"
+    "created_by, created_at, client_entity_id, client_kb_version, product_id"
 )
 
 _INSERT = text(
@@ -90,13 +91,14 @@ _INSERT = text(
     INSERT INTO icp_spec (
         workspace_id, icp_key, version, status, created_from, parent_version, label, description,
         field_keys, enabled_packs, discovery_strategy, source_profile_ref, scoring_rubric,
-        created_by
+        created_by, client_entity_id, client_kb_version, product_id
     ) VALUES (
         :workspace_id, :icp_key, :version, CAST(:status AS icp_status),
         CAST(:created_from AS icp_created_from), :parent_version, :label, :description,
         CAST(:field_keys AS jsonb), CAST(:enabled_packs AS jsonb),
         CAST(:discovery_strategy AS jsonb), CAST(:source_profile_ref AS jsonb),
-        CAST(:scoring_rubric AS jsonb), :created_by
+        CAST(:scoring_rubric AS jsonb), :created_by, :client_entity_id, :client_kb_version,
+        :product_id
     )
     """
 )
@@ -114,6 +116,9 @@ def _row_to_icp_spec(row: Mapping[str, Any]) -> ICPSpec:
         description=row["description"],
         created_by=row["created_by"],
         created_at=row["created_at"],
+        client_entity_id=row["client_entity_id"],
+        client_kb_version=row["client_kb_version"],
+        product_id=row["product_id"],
         field_keys=tuple(decode_jsonb(row["field_keys"]) or ()),
         enabled_packs=tuple(decode_jsonb(row["enabled_packs"]) or ()),
         discovery_strategy=decode_jsonb(row["discovery_strategy"]) or {},
@@ -160,6 +165,9 @@ async def create_icp_spec(
     label: str | None = None,
     description: str | None = None,
     activate: bool = False,
+    client_entity_id: EntityId | None = None,
+    client_kb_version: int | None = None,
+    product_id: str | None = None,
 ) -> ICPSpec:
     """Append a new ICP-spec version for ``(workspace_id, icp_key)`` and return it.
 
@@ -200,6 +208,9 @@ async def create_icp_spec(
             "source_profile_ref": serialize_value_json(dict(source_profile_ref or {})),
             "scoring_rubric": serialize_value_json(dict(scoring_rubric or {})),
             "created_by": created_by,
+            "client_entity_id": client_entity_id,
+            "client_kb_version": client_kb_version,
+            "product_id": product_id,
         },
     )
     spec = await get_icp_version(conn, workspace_id, icp_key, version)

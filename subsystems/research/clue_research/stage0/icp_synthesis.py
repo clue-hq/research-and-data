@@ -166,6 +166,7 @@ async def _synthesize(
         client_kb_ref.client_entity_id,
         workspace_id=workspace_id,
         version=client_kb_ref.client_kb_version,
+        product_id=client_kb_ref.product_id,
     )
 
     scoring_keys, deep_keys = await _candidate_field_keys(conn)

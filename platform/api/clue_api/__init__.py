@@ -111,9 +111,12 @@ from clue_api.observability_wiring import (
 )
 from clue_api.phase_c_wiring import (
     IngestionProposalSink,
+    ProductionIngestionClaimConstructionRoute,
     ProductionIngestionClaimErasureRoute,
     ProductionIngestionContactClaimRoute,
+    Stage0ScrapeBinder,
     build_ingestion_engine,
+    build_stage0_scrape_binder,
     register_generic_web_wiring,
 )
 from clue_api.phase_wiring import (
@@ -287,8 +290,11 @@ __all__ = [
     # Phase C1-C3 integration wiring
     "IngestionProposalSink",
     "ProductionIngestionClaimErasureRoute",
+    "ProductionIngestionClaimConstructionRoute",
     "ProductionIngestionContactClaimRoute",
+    "Stage0ScrapeBinder",
     "build_ingestion_engine",
+    "build_stage0_scrape_binder",
     "register_generic_web_wiring",
     # B4 slice 1: the fleet run-start composition (ComposingRunDriver)
     "ComposingRunDriver",

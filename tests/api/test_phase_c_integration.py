@@ -98,6 +98,9 @@ def test_phase_c_routes_are_aggregated_at_the_http_root() -> None:
         "/source_proposals",
         "/ingestion_status/{ingestion_job_id}",
         "/ingestion/uploads",
+        "/stage0/recon/{recon_run_id}/brief",
+        "/stage0/recon/{recon_run_id}/progress",
+        "/stage0/readiness/{readiness_decision_id}",
     } <= paths
 
 

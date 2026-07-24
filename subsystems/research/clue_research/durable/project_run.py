@@ -24,8 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     CostCents,
+    EntityId,
+    ProductContextVersionId,
     ProjectPhase,
     ProjectRunId,
+    ReadinessDecisionId,
     UtcDatetime,
     decode_jsonb,
     serialize_value_json,
@@ -57,6 +60,11 @@ class ProjectRunRow(BaseModel):
     resumed_at: UtcDatetime | None
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    client_entity_id: EntityId | None = None
+    client_kb_version: int | None = None
+    product_id: str | None = None
+    product_context_version_id: ProductContextVersionId | None = None
+    readiness_decision_id: ReadinessDecisionId | None = None
 
 
 class ProjectPhaseCheckpointRow(BaseModel):
@@ -95,22 +103,27 @@ class AdjustmentRow(BaseModel):
 _RUN_COLUMNS = (
     "id, project_id, brand_id, workspace_id, icp_key, icp_version, phase, status, "
     "budget_cap_cents, spent_cents, "
-    "tier_cutoffs_json, paused_at, resumed_at, created_at, updated_at"
+    "tier_cutoffs_json, paused_at, resumed_at, created_at, updated_at, "
+    "client_entity_id, client_kb_version, product_id, product_context_version_id, "
+    "readiness_decision_id"
 )
 
 _ENSURE_RUN_SQL = text(
     """
     INSERT INTO project_run (
         id, project_id, brand_id, workspace_id, icp_key, icp_version,
-        phase, status, budget_cap_cents, tier_cutoffs_json
+        phase, status, budget_cap_cents, tier_cutoffs_json, client_entity_id, client_kb_version,
+        product_id, product_context_version_id, readiness_decision_id
     )
     SELECT
         :id, project.project_id, project.brand_id, project.workspace_id, :icp_key, :icp_version,
         CAST(:phase AS project_phase), CAST(:status AS project_run_status),
-        :budget_cap_cents, CAST(:tier_cutoffs AS jsonb)
+        :budget_cap_cents, CAST(:tier_cutoffs AS jsonb), :client_entity_id, :client_kb_version,
+        CAST(:product_id AS text), :product_context_version_id, :readiness_decision_id
     FROM project
     WHERE project.project_id = :project_id
       AND project.workspace_id = :workspace_id
+      AND (CAST(:product_id AS text) IS NULL OR project.product_id = CAST(:product_id AS text))
     ON CONFLICT (id) DO NOTHING
     """
 )
@@ -138,6 +151,11 @@ async def ensure_project_run(
     tier_cutoffs: TierCutoffs | None = None,
     phase: ProjectPhase = ProjectPhase.REVERSE_PROFILING,
     status: ProjectRunStatus = ProjectRunStatus.ACTIVE,
+    client_entity_id: EntityId | None = None,
+    client_kb_version: int | None = None,
+    product_id: str | None = None,
+    product_context_version_id: ProductContextVersionId | None = None,
+    readiness_decision_id: ReadinessDecisionId | None = None,
 ) -> None:
     """Insert a project-derived ``project_run`` row if absent.
 
@@ -160,6 +178,11 @@ async def ensure_project_run(
             "tier_cutoffs": serialize_value_json(tier_cutoffs if tier_cutoffs is not None else {}),
             "phase": phase.value,
             "status": status.value,
+            "client_entity_id": client_entity_id,
+            "client_kb_version": client_kb_version,
+            "product_id": product_id,
+            "product_context_version_id": product_context_version_id,
+            "readiness_decision_id": readiness_decision_id,
         },
     )
     row = await get_project_run(conn, project_run_id)
@@ -397,6 +420,11 @@ def _row_to_project_run(row: dict[str, object]) -> ProjectRunRow:
             "budget_cap_cents": row["budget_cap_cents"],
             "spent_cents": row["spent_cents"] if row["spent_cents"] is not None else Decimal(0),
             "tier_cutoffs": decode_jsonb(row["tier_cutoffs_json"]),
+            "client_entity_id": row["client_entity_id"],
+            "client_kb_version": row["client_kb_version"],
+            "product_id": row["product_id"],
+            "product_context_version_id": row["product_context_version_id"],
+            "readiness_decision_id": row["readiness_decision_id"],
             "paused_at": row["paused_at"],
             "resumed_at": row["resumed_at"],
             "created_at": row["created_at"],

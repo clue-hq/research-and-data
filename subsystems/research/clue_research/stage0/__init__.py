@@ -48,6 +48,25 @@ from clue_research.stage0.fields import (
     SurfaceClass,
     load_client_knowledge_pack,
 )
+from clue_research.stage0.governed import (
+    OnboardingInputRow,
+    ReadinessDecisionRow,
+    ReconLaneStatus,
+    ReconRunRow,
+    StatementRoute,
+    compile_product_context,
+    ensure_readiness_spec,
+    evaluate_readiness,
+    get_onboarding_input,
+    get_readiness_decision,
+    get_recon,
+    override_readiness,
+    recon_dedupe_hash,
+    record_statement,
+    start_recon,
+    submit_onboarding_input,
+    transition_recon_lane,
+)
 from clue_research.stage0.icp_confirm import confirm_icp
 from clue_research.stage0.icp_estimate import EstimateInputs, estimate_campaign
 from clue_research.stage0.icp_fields import (
@@ -95,6 +114,13 @@ from clue_research.stage0.import_types import (
     NeedsReviewRow,
     ResolvedAccount,
     UnresolvedRow,
+)
+from clue_research.stage0.interview import (
+    InterviewRoute,
+    InterviewRoutingResult,
+    InterviewStatement,
+    register_client_interview_source,
+    route_interview_answer,
 )
 from clue_research.stage0.reuse import (
     CLIENT_KNOWLEDGE_REUSE_POLICY,
@@ -206,4 +232,27 @@ __all__ = [
     "ICP_REUSE_POLICY",
     "IMPORT_REUSE_POLICY",
     "SEED_REUSE_POLICY",
+    # C4 governed Stage 0
+    "OnboardingInputRow",
+    "ReadinessDecisionRow",
+    "ReconLaneStatus",
+    "ReconRunRow",
+    "StatementRoute",
+    "compile_product_context",
+    "ensure_readiness_spec",
+    "evaluate_readiness",
+    "get_onboarding_input",
+    "get_readiness_decision",
+    "get_recon",
+    "override_readiness",
+    "recon_dedupe_hash",
+    "record_statement",
+    "start_recon",
+    "submit_onboarding_input",
+    "transition_recon_lane",
+    "InterviewRoute",
+    "InterviewRoutingResult",
+    "InterviewStatement",
+    "register_client_interview_source",
+    "route_interview_answer",
 ]

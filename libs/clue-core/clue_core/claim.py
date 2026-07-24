@@ -134,6 +134,10 @@ class Claim(BaseModel):
     # classifier (identity.classify_reuse_scope) stamps these at write; the merge read scopes on it.
     reuse_scope: ReuseScope = ReuseScope.PUBLIC_FOOTPRINT
     workspace_id: str | None = None
+    # Product-scoped client truth (REQ-22 / Phase C4). Product-neutral target facts and legacy
+    # client claims leave this null. Born immutable: product context is provenance, not metadata
+    # that may be attached after a claim exists.
+    product_id: str | None = None
     # --- promotion state (additive; driven by M9, not a conventions §4 field) ---
     verification_status: VerificationStatus = VerificationStatus.UNVERIFIED
 
@@ -197,6 +201,12 @@ class Claim(BaseModel):
             raise ValueError("a tenant_private claim must carry a workspace_id")
         if self.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and self.workspace_id is not None:
             raise ValueError("a public_footprint claim must not carry a workspace_id")
+        if self.product_id is not None and (
+            self.reuse_scope is not ReuseScope.TENANT_PRIVATE or self.workspace_id is None
+        ):
+            raise ValueError(
+                "a product-scoped claim must be tenant_private and carry a workspace_id"
+            )
         return self
 
     @property

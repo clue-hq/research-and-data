@@ -74,15 +74,17 @@ from clue_api.proposal_tools import (
     ProposeFieldTool,
     ProposeSourceTool,
 )
+from clue_api.stage0_tools import stage0_tools
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_api.verification import build_verification_phase_handler
-from clue_config import Settings, load_settings
+from clue_config import DEFAULT_STAGE0_POLICY, Settings, load_settings
 from clue_core import (
     AccountEntity,
     CostCents,
     EntityId,
     ICPSpec,
     LLMGateway,
+    MemoryWriteSeam,
     PhaseContext,
     PhaseHandler,
     PreSpendGate,
@@ -203,6 +205,7 @@ class ReverseProfileInput(ToolInput):
 class SynthesizeIcpsInput(ToolInput):
     client_entity_id: str
     kb_version: int | None = None
+    product_id: str | None = None
 
 
 class ConfirmIcpInput(ToolInput):
@@ -210,6 +213,8 @@ class ConfirmIcpInput(ToolInput):
     proposal: ICPProposal
     edits: ICPProposalEdits | None = None
     created_by: str | None = None
+    client_kb_version: int | None = None
+    product_id: str | None = None
 
 
 class ImportAccountsInput(ToolInput):
@@ -413,6 +418,7 @@ class ReverseProfileTool(_CapabilityTool):
                 conn,
                 ClientInput(name=inputs.name, website=inputs.website),
                 workspace_id=ctx.workspace_id,
+                pre_spend_gate=self._pre_spend_gate,
             )
         return ToolResult(
             tool=self.name,
@@ -438,10 +444,22 @@ class SynthesizeIcpsTool(_CapabilityTool):
             return _fail("no_client_kb", "client_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
             version = await current_kb_version(conn, entity, workspace_id=ctx.workspace_id)
+            if inputs.product_id is not None:
+                version = await current_kb_version(
+                    conn,
+                    entity,
+                    workspace_id=ctx.workspace_id,
+                    product_id=inputs.product_id,
+                )
         if version is None:
             return _fail(
                 "no_client_kb",
                 "no Client Knowledge Base for this client — run reverse_profile first",
+            )
+        if inputs.kb_version is not None and inputs.kb_version != version:
+            return _fail(
+                "client_kb_version_missing",
+                "the requested product-scoped Client Knowledge Base version is not current",
             )
         return ()
 
@@ -453,8 +471,19 @@ class SynthesizeIcpsTool(_CapabilityTool):
             version = inputs.kb_version
             if version is None:
                 version = await current_kb_version(conn, entity, workspace_id=ctx.workspace_id)
+                if inputs.product_id is not None:
+                    version = await current_kb_version(
+                        conn,
+                        entity,
+                        workspace_id=ctx.workspace_id,
+                        product_id=inputs.product_id,
+                    )
             assert version is not None
-            ref = ClientKnowledgeBaseRef(client_entity_id=entity, client_kb_version=version)
+            ref = ClientKnowledgeBaseRef(
+                client_entity_id=entity,
+                client_kb_version=version,
+                product_id=inputs.product_id,
+            )
             proposals = await synthesize_icps(
                 conn, ref, workspace_id=ctx.workspace_id, gateway=self._gateway
             )
@@ -473,15 +502,32 @@ class ConfirmIcpTool(_CapabilityTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ConfirmIcpInput)
+        if (inputs.client_kb_version is None) != (inputs.product_id is None):
+            return _fail(
+                "incomplete_stage0_lineage",
+                "C4 confirmation requires both client_kb_version and product_id",
+            )
         entity = _parse_entity_id(inputs.client_entity_id)
         if entity is None:
             return _fail("no_client_kb", "client_entity_id is not a valid entity id")
         async with ctx.conn_factory() as conn:
             version = await current_kb_version(conn, entity, workspace_id=ctx.workspace_id)
+            if inputs.product_id is not None:
+                version = await current_kb_version(
+                    conn,
+                    entity,
+                    workspace_id=ctx.workspace_id,
+                    product_id=inputs.product_id,
+                )
         if version is None:
             return _fail(
                 "no_client_kb",
                 "no Client Knowledge Base for this client — run reverse_profile first",
+            )
+        if inputs.client_kb_version is not None and inputs.client_kb_version != version:
+            return _fail(
+                "client_kb_version_missing",
+                "the requested product-scoped Client Knowledge Base version is not current",
             )
         return ()
 
@@ -497,6 +543,8 @@ class ConfirmIcpTool(_CapabilityTool):
                 workspace_id=ctx.workspace_id,
                 client_entity_id=entity,
                 created_by=inputs.created_by,
+                client_kb_version=inputs.client_kb_version,
+                product_id=inputs.product_id,
             )
         return ToolResult(
             tool=self.name,
@@ -552,6 +600,7 @@ class ImportAccountsTool(_CapabilityTool):
                 spec_ref,
                 workspace_id=ctx.workspace_id,
                 client_entity_id=entity,
+                pre_spend_gate=self._pre_spend_gate,
             )
         return ToolResult(
             tool=self.name,
@@ -1252,6 +1301,8 @@ def build_toolbelt(
     ingestion_engine: IngestionEngine | None = None,
     proposal_credential_ready: Callable[[str], bool] | None = None,
     proposal_personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
+    stage0_memory_write: MemoryWriteSeam | None = None,
+    stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1289,6 +1340,9 @@ def build_toolbelt(
     * ``proposal_credential_ready`` / ``proposal_personal_source_allowed`` — C2 promotion
       authorities. Absence leaves credentialed/personal source promotion unavailable rather than
       silently approving it.
+    * ``stage0_scrape_binder`` — C4's required composition-root bridge to the live official-site
+      resolver. Build it with :func:`clue_api.phase_c_wiring.build_stage0_scrape_binder`; when it
+      is absent, ``start_recon`` refuses before spend instead of running a fake/no-source recon.
 
     Duplicate registration is loud (the :class:`ToolRegistry` contract), so a mis-wired double
     registration fails at construction, not in production."""
@@ -1349,4 +1403,13 @@ def build_toolbelt(
     )
     registry.register(SubmitIngestionTool(ingestion_engine))
     registry.register(RetryIngestionTool(ingestion_engine))
+    for tool in stage0_tools(
+        conn_factory=conn_factory,
+        policy=DEFAULT_STAGE0_POLICY,
+        pre_spend_gate=gate,
+        memory_write=stage0_memory_write,
+        scrape_binder=stage0_scrape_binder,
+        storage=storage,
+    ):
+        registry.register(tool)
     return registry

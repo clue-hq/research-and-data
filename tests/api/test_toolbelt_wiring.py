@@ -68,6 +68,16 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "decide_source_proposal": ("precondition", ("proposal_not_found",)),
     "submit_ingestion": ("precondition", ("ingestion_artifact_not_found",)),
     "retry_ingestion": ("precondition", ("ingestion_not_found",)),
+    "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
+    "start_recon": ("precondition", ("onboarding_input_not_found",)),
+    "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
+    "confirm_project_product": ("precondition", ("project_product_not_found",)),
+    "evaluate_stage0_readiness": ("precondition", ("stage0_scope_not_found",)),
+    "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
+    "start_confirmed_project_run": (
+        "precondition",
+        ("confirmed_stage0_context_not_found",),
+    ),
 }
 
 
@@ -148,6 +158,50 @@ def _bodies() -> dict[str, dict[str, object]]:
             "declared_context": {"brand_id": "brand_missing"},
         },
         "retry_ingestion": {"ingestion_job_id": _UUID()},
+        "submit_onboarding_input": {
+            "brand_id": "brand_missing",
+            "kind": "website",
+            "artifact_key": "missing-artifact",
+            "content_sha256": "0" * 64,
+        },
+        "start_recon": {
+            "brand_id": "brand_missing",
+            "name": "Acme",
+            "website": "https://acme.example",
+            "onboarding_input_ids": [_UUID()],
+        },
+        "record_interview_answer": {
+            "brand_id": "brand_missing",
+            "onboarding_input_id": _UUID(),
+            "artifact_key": "missing-artifact",
+            "answer": "hello",
+            "client_entity_id": _UUID(),
+            "statements": [],
+        },
+        "confirm_project_product": {
+            "project_id": "project_missing",
+            "product_id": "product_missing",
+        },
+        "evaluate_stage0_readiness": {
+            "brand_id": "brand_missing",
+            "gate": "icp_synthesis",
+            "metrics": {},
+        },
+        "override_stage0_readiness": {
+            "readiness_decision_id": _UUID(),
+            "gate": "icp_synthesis",
+            "reason": "matrix",
+        },
+        "start_confirmed_project_run": {
+            "project_id": "project_missing",
+            "client_entity_id": _UUID(),
+            "client_kb_version": 1,
+            "product_id": "product_missing",
+            "product_context_version_id": _UUID(),
+            "readiness_decision_id": _UUID(),
+            "icp_key": "matrix",
+            "icp_version": 1,
+        },
     }
 
 
@@ -419,7 +473,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    assert len(registry) == 24
+    assert len(registry) == 31
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

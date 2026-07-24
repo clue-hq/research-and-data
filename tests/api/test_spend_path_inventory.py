@@ -8,12 +8,6 @@ from pathlib import Path
 _ROOT = Path(__file__).parents[2]
 _RESEARCH = _ROOT / "subsystems/research/clue_research"
 
-# The two explicit C0 exceptions are C4-owned and may exist only at these exact call sites.
-_PENDING_C4 = {
-    ("stage0/client_kb.py", "reverse_profile", "resolve_field"),
-    ("stage0/import_accounts.py", "_crm_enrich", "resolve_field"),
-}
-
 _GATED_CALLS = {
     ("coverage/controller.py", "run_round", "resolve_field"): "source_gate",
     (
@@ -24,6 +18,8 @@ _GATED_CALLS = {
     ("profiling/aspect_worker.py", "_fill_field", "resolve_field"): "source_gate",
     ("profiling/contact/fill.py", "fill_contact_field", "resolve_field"): "source_gate",
     ("sources/waterfall.py", "resolve_fields", "resolve_field"): "source_gate",
+    ("stage0/client_kb.py", "reverse_profile", "resolve_field"): "source_gate",
+    ("stage0/import_accounts.py", "_crm_enrich", "resolve_field"): "source_gate",
 }
 
 
@@ -57,9 +53,9 @@ def _production_waterfall_calls() -> dict[tuple[str, str, str], set[str]]:
     return calls
 
 
-def test_every_production_waterfall_caller_is_gated_or_c4_owned() -> None:
+def test_every_production_waterfall_caller_is_gated() -> None:
     calls = _production_waterfall_calls()
-    assert set(calls) == set(_GATED_CALLS) | _PENDING_C4
+    assert set(calls) == set(_GATED_CALLS)
     for call, gate_keyword in _GATED_CALLS.items():
         assert gate_keyword in calls[call], f"{call} lost its pre-spend routing"
 

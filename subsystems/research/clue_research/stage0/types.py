@@ -68,6 +68,7 @@ class ClientKnowledgeBaseRef(BaseModel):
 
     client_entity_id: EntityId
     client_kb_version: int
+    product_id: str | None = None
 
 
 class SurfaceCoverage(BaseModel):
