@@ -13,6 +13,8 @@ dependencies = [
     "clue-obs",
     "clue-storage",
     "clue-execution",
+    "clue-toolbelt",
+    "clue-agents",
     # app-layer runtime
     "fastapi>=0.138.0",
 ]
@@ -32,3 +34,5 @@ clue-db = { workspace = true }
 clue-obs = { workspace = true }
 clue-storage = { workspace = true }
 clue-execution = { workspace = true }
+clue-toolbelt = { workspace = true }
+clue-agents = { workspace = true }

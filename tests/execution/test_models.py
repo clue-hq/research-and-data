@@ -26,6 +26,10 @@ def test_pin_request_requires_exact_version_or_digest() -> None:
         PinRequest(kind="tool", key="reverse_profile")
     pin = PinRequest(kind="tool", key="reverse_profile", version="1")
     assert pin.version == "1"
+    with pytest.raises(ValidationError):
+        PinRequest(kind="tool", key="reverse_profile", version="")
+    with pytest.raises(ValidationError):
+        PinRequest(kind="tool", key="reverse_profile", digest="not-a-sha256")
 
 
 def test_aggregate_snapshot_is_frozen_and_strict() -> None:

@@ -19,6 +19,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["clue_execution"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"recipes" = "clue_execution/recipes"
+
 [tool.uv.sources]
 clue-core = { workspace = true }
 clue-db = { workspace = true }

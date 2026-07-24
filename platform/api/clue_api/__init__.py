@@ -142,6 +142,16 @@ from clue_api.projections_app import (
     create_projections_app,
     create_projections_router,
 )
+from clue_api.recipe_wiring import (
+    STAGE0_POLICY_VERSION,
+    SYSTEM_RECIPE_FILENAMES,
+    VersionedPinResource,
+    build_recipe_lifecycle,
+    build_recipe_pin_registry,
+    load_system_recipe_definitions,
+    seed_system_recipes,
+    system_recipe_asset_root,
+)
 from clue_api.review import (
     DbVerificationAnnotationReader,
     NoopReviewDispositionEmitter,
@@ -314,6 +324,15 @@ __all__ = [
     "ExecutionRunEventWriter",
     "StorageParameterArtifactStore",
     "build_tool_invoker",
+    # C5.2: exact compatibility adapters + immutable system-recipe seed
+    "STAGE0_POLICY_VERSION",
+    "SYSTEM_RECIPE_FILENAMES",
+    "VersionedPinResource",
+    "build_recipe_lifecycle",
+    "build_recipe_pin_registry",
+    "load_system_recipe_definitions",
+    "seed_system_recipes",
+    "system_recipe_asset_root",
     # B4 slice 3: the read-side HTTP surface (projections + tool route + manifest ops + SSE)
     "create_projections_app",
     "create_projections_router",

@@ -87,8 +87,8 @@ class _FrozenModel(BaseModel):
 class PinRequest(_FrozenModel):
     kind: str = Field(min_length=1)
     key: str = Field(min_length=1)
-    version: str | None = None
-    digest: str | None = None
+    version: str | None = Field(default=None, min_length=1)
+    digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     required: bool = True
 
     @model_validator(mode="after")
@@ -102,7 +102,7 @@ class ResolvedPin(_FrozenModel):
     kind: str = Field(min_length=1)
     key: str = Field(min_length=1)
     version: str | None = None
-    digest: str = Field(min_length=1)
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: str = Field(min_length=1)
     metadata: dict[str, str | int | bool | None] = Field(default_factory=dict)
 
