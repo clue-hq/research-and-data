@@ -600,6 +600,7 @@ name = "clue-api"
 version = "0.0.0"
 source = { editable = "platform/api" }
 dependencies = [
+    { name = "clue-agents" },
     { name = "clue-config" },
     { name = "clue-core" },
     { name = "clue-db" },
@@ -607,11 +608,13 @@ dependencies = [
     { name = "clue-obs" },
     { name = "clue-research" },
     { name = "clue-storage" },
+    { name = "clue-toolbelt" },
     { name = "fastapi" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "clue-agents", editable = "platform/agents" },
     { name = "clue-config", editable = "libs/clue-config" },
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-db", editable = "libs/clue-db" },
@@ -619,6 +622,7 @@ requires-dist = [
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-research", editable = "subsystems/research" },
     { name = "clue-storage", editable = "libs/clue-storage" },
+    { name = "clue-toolbelt", editable = "platform/toolbelt" },
     { name = "fastapi", specifier = ">=0.138.0" },
 ]
 

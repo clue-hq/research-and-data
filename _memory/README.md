@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-24-phase-c5-2-recipes-compatibility.md` — C5.2 implemented: append-only immutable
+  recipe lifecycle, closed typed graph/bindings, exact all-error compatibility loader, API-root
+  production adapters, promoted non-runnable Recipe-#0/#1 identity seeds, full verification, and
+  the C5.3 handoff.
 - `2026-07-24-phase-c5-1-execution-journal.md` — C5.1 implemented: full append-only execution
   schema, journal/cursor/outbox transaction, governed parameter artifacts and erasure tombstones,
   mandatory production ToolInvoker, durable replay/retry/blocking, read views, verification, and

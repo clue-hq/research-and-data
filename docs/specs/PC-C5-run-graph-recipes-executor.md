@@ -1,6 +1,6 @@
 # Phase C5 — Run-Graph Journal, Recipes, Durable Executor, and Supervisor
 
-**Status:** C5.1 implemented; C5.2 next on `platform/c5-recipe-execution` (2026-07-24)
+**Status:** C5.2 implemented; C5.3 next on `platform/c5-recipe-execution` (2026-07-24)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 
@@ -835,6 +835,13 @@ behavior is included; those remain C5.2+.
 
 **Gate:** all incompatibilities are named before execution; retired field/source and unavailable
 tool versions never reach a tool body.
+
+**Implemented boundary (2026-07-24):** the two checked-in v1 assets establish promoted, immutable
+system identities with `migration_state=placeholder`. A placeholder is structurally limited to
+barriers and therefore cannot claim that the C4/C5 phase cutovers already happened. C5.4 and C5.6
+must append newer executable revisions containing the formal Recipe #0 and Recipe #1 graphs; they
+must not mutate these promoted seeds. C5.2 creates no runnable task. The same promotion validator is
+already live for executable definitions and requires exact tool/schema/config pins before promotion.
 
 ### C5.3 — Durable executor and fleet generalization
 
