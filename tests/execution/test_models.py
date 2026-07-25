@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from clue_core import ExecutionId, operation_id_from_key
+from clue_core import ExecutionId, ProjectRunId, operation_id_from_key
 from clue_execution import (
     ExecutionEventType,
     ExecutionNodeKind,
@@ -33,12 +33,15 @@ def test_pin_request_requires_exact_version_or_digest() -> None:
 
 
 def test_aggregate_snapshot_is_frozen_and_strict() -> None:
+    project_run_id = ProjectRunId(uuid4())
     snapshot = RunAggregateSnapshot(
         execution_id=ExecutionId(uuid4()),
+        project_run_id=project_run_id,
         policy_version="supervisor@1",
         counts={"attempts": 3},
         rates={"failure_rate": 0.0},
     )
+    assert snapshot.project_run_id == project_run_id
     assert snapshot.counts == {"attempts": 3}
     with pytest.raises(ValidationError):
         snapshot.policy_version = "changed"  # type: ignore[misc]

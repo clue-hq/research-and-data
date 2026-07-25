@@ -288,6 +288,7 @@ def _source_gate(
                 entity_type=EntityType.ACCOUNT,
                 field_key=field_key,
                 source_tier=source_tier,
+                source_key=manifest.source_key,
                 run_id=run_id,
             )
         )

@@ -384,6 +384,7 @@ class AspectProfilingWorker:
                         entity_type=EntityType.ACCOUNT,
                         field_key=field_key,
                         source_tier=manifest.tier,
+                        source_key=manifest.source_key,
                         run_id=run_id,
                     )
                 )
@@ -404,6 +405,7 @@ class AspectProfilingWorker:
                         entity_type=EntityType.ACCOUNT,
                         field_key=field_key,
                         source_tier=first_run.tier,
+                        source_key=first_run.source_key,
                         run_id=run_id,
                     )
                 )

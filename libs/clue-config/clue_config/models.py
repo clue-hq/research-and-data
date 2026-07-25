@@ -29,6 +29,7 @@ from clue_config.schema import (
     ScoringRubric,
     SourcePlanPolicy,
     SourceProfile,
+    SupervisorPolicy,
     VerificationHealthThresholds,
 )
 
@@ -72,6 +73,7 @@ class ConfigOverlay(BaseModel):
     freshness_ttls: FreshnessTtls | None = None
     gateway: GatewayConfig | None = None
     verification_health_thresholds: VerificationHealthThresholds | None = None
+    supervisor_policy: SupervisorPolicy | None = None
     # M13.4/D7 — whether the cost & progress ObservabilitySurface is exposed to the client. A
     # top-level scalar (not a sub-tree) so a client can flip *just* this flag without re-supplying a
     # whole sub-object (ConfigOverlay has no partial sub-tree merge).
@@ -103,6 +105,7 @@ class Config(BaseModel):
     freshness_ttls: FreshnessTtls = FreshnessTtls()
     gateway: GatewayConfig = Field(default_factory=default_gateway_config)
     verification_health_thresholds: VerificationHealthThresholds = VerificationHealthThresholds()
+    supervisor_policy: SupervisorPolicy = SupervisorPolicy()
     # M13.4/D7 — whether the cost & progress ObservabilitySurface read projections are exposed to
     # the
     # client (cost pass-through) vs. kept as an internal control. Defaults to the recommended

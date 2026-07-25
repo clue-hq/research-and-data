@@ -54,6 +54,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
+from clue_api.composition import build_pre_spend_gate
 from clue_api.deep.composition import (
     DeepPhaseComposition,
     build_deep_phase_handler,
@@ -66,6 +67,7 @@ from clue_api.fleet_wiring import (
 )
 from clue_api.handoff_retention import build_retention_sweeping_handoff_handler
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.observability_wiring import build_observability_surface
 from clue_api.phase_wiring import (
     build_reverse_profiling_handler,
     register_discovery_handler,
@@ -76,8 +78,15 @@ from clue_api.phase_wiring import (
 )
 from clue_api.run_events_wiring import NullRunEventEmitter, RunEventEmitter
 from clue_api.storage_wiring import build_storage_backend
+from clue_api.supervisor_wiring import (
+    ApiDeepCanaryController,
+    ApiRunAggregateReader,
+    RunControlAccountAdmission,
+    RunControlledPreSpendGate,
+    SupervisorActions,
+)
 from clue_api.verification import build_verification_phase_handler
-from clue_config import Secrets, Settings, default_gateway_config, load_settings
+from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
 from clue_core import (
     ICPSpec,
     LLMGateway,
@@ -89,6 +98,7 @@ from clue_core import (
     ProjectRunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_execution import DbExecutionJournal, DbRunControlStore, SupervisorEngine
 from clue_fleet import TierPriority, default_tier_priority
 from clue_gateway import build_gateway
 from clue_obs import get_logger
@@ -291,6 +301,9 @@ class ComposingRunDriver:
         cache_size: int | None = None,
         session_factory: ConnFactory = transaction,
         event_emitter: RunEventEmitter | None = None,
+        controls: DbRunControlStore | None = None,
+        supervisor_actions: SupervisorActions | None = None,
+        execution_journal: DbExecutionJournal | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -305,6 +318,13 @@ class ComposingRunDriver:
         self._channels = channels if channels is not None else ChannelRegistry()
         self._client_input_provider = client_input_provider
         self._session_factory = session_factory
+        self._controls = controls
+        self._supervisor_actions = supervisor_actions
+        self._execution_journal = execution_journal
+        if (controls is None) != (supervisor_actions is None):
+            raise ValueError("controls and supervisor_actions must be supplied together")
+        if controls is not None and execution_journal is None:
+            raise ValueError("supervised composition requires an execution journal")
         # D8: the SSE run-event emitter fired at every advance boundary. Defaults to the no-op
         # emitter (a composer driven in a unit test emits nothing); ``fleet_main`` binds the
         # production ``DbRunEventEmitter`` over the ``run_event`` outbox so the detached worker's
@@ -427,11 +447,61 @@ class ComposingRunDriver:
 
         # DEEP — campaign-scoped (one ICPSpec) over the fleet scheduler; single-flight + rubric
         # priority ON (D2 / the B1-wiring residuals).
+        priority_for = self._priority_for(spec)
+        policy = get_config(row.workspace_id, row.icp_key).supervisor_policy
+        account_admission = (
+            RunControlAccountAdmission(
+                controls=self._controls,
+                conn_factory=self._session_factory,
+            )
+            if self._controls is not None
+            else None
+        )
         scheduler = build_fleet_deep_scheduler(
             self._settings,
             lock_factory=self._lock_factory,
-            priority_for=self._priority_for(spec),
+            priority_for=priority_for,
+            account_admission=account_admission,
         )
+        base_gate = build_pre_spend_gate()
+        pre_spend_gate = (
+            RunControlledPreSpendGate(
+                inner=base_gate,
+                controls=self._controls,
+                conn_factory=self._session_factory,
+            )
+            if self._controls is not None
+            else base_gate
+        )
+        canary_controller = None
+        if (
+            self._controls is not None
+            and self._supervisor_actions is not None
+            and self._execution_journal is not None
+        ):
+            aggregate_reader = ApiRunAggregateReader(
+                observability=build_observability_surface(
+                    budget=self._budget,
+                    conn_factory=self._session_factory,
+                ),
+                stalled_after_s=policy.stalled_account_age_s,
+                conn_factory=self._session_factory,
+            )
+            supervisor = SupervisorEngine(
+                aggregates=aggregate_reader,
+                policy=policy,
+                conn_factory=self._session_factory,
+                journal=self._execution_journal,
+                gateway=self._gateway,
+            )
+            canary_controller = ApiDeepCanaryController(
+                policy=policy,
+                controls=self._controls,
+                supervisor=supervisor,
+                actions=self._supervisor_actions,
+                priority_for=priority_for,
+                conn_factory=self._session_factory,
+            )
         deep = build_deep_phase_handler(
             spec=spec,
             gateway=self._gateway,
@@ -439,6 +509,8 @@ class ComposingRunDriver:
             storage=self._storage,
             scheduler=scheduler,
             high_tier_resolver=high_tier_resolver,
+            pre_spend_gate=pre_spend_gate,
+            canary_controller=canary_controller,
         )
         registry.register(deep.handler)
 

@@ -179,6 +179,7 @@ async def score_account(
                         entity_type=EntityType.ACCOUNT,
                         field_key=field.field_key,
                         source_tier=SourceTier(manifest.tier),
+                        source_key=manifest.source_key,
                         run_id=run_id,
                     )
                 )

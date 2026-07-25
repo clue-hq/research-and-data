@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -17,6 +18,7 @@ from clue_api.tool_outputs import (
     RecipeExecutionStatusOutput,
     RecipeGateDecisionOutput,
     RecipeProposalOutput,
+    RunControlOutput,
 )
 from clue_core import (
     ExecutionId,
@@ -28,8 +30,11 @@ from clue_db import ConnFactory
 from clue_execution import (
     Binding,
     CompatibilityManifest,
+    ControlAction,
+    ControlKind,
     DbExecutionStarter,
     DbRecipeRepository,
+    DbRunControlStore,
     ExecutionStatus,
     ParameterBinding,
     PinRequest,
@@ -40,7 +45,7 @@ from clue_execution import (
     ToolNode,
     get_cursor,
 )
-from clue_fleet import RunDriver, WorkQueue
+from clue_fleet import RunDriver, WorkQueue, reoffer_governed_partial_task
 from clue_research.durable import ProjectRunRow, get_project_run
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -101,6 +106,32 @@ class AdvanceProjectPhaseInput(ToolInput):
     expected_phase: ProjectPhase
 
 
+class ApplyRunControlInput(ToolInput):
+    execution_id: str
+    control_kind: ControlKind
+    subject_ref: str
+    reason_code: str
+    observation_id: str | None = None
+    diagnosis_id: str | None = None
+    limits: dict[str, int] | None = None
+
+
+class ReleaseRunControlInput(ToolInput):
+    execution_id: str
+    control_kind: ControlKind
+    subject_ref: str
+    reason_code: str
+    observation_id: str | None = None
+    diagnosis_id: str | None = None
+
+
+class AcknowledgeRunEscalationInput(ToolInput):
+    execution_id: str
+    reason_code: str
+    observation_id: str | None = None
+    diagnosis_id: str | None = None
+
+
 def _uuid(raw: str) -> UUID | None:
     try:
         return UUID(raw)
@@ -122,6 +153,7 @@ class ExecutionControlServices:
     queue: WorkQueue
     conn_factory: ConnFactory
     registry: ToolRegistry
+    controls: DbRunControlStore | None = None
 
 
 class _ExecutionTool(Tool):
@@ -754,10 +786,290 @@ class AdvanceProjectPhaseTool(_ExecutionTool):
         )
 
 
+class _RunControlTool(_ExecutionTool):
+    effect_class = ToolEffectClass.STEERING
+    output_model = RunControlOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="execution + stable operation id in append-only run_control_event",
+        operation_id_required=True,
+    )
+    pin_requirements = ("execution", "supervisor_policy")
+
+    @property
+    def _controls(self) -> DbRunControlStore:
+        if self._services.controls is None:
+            raise RuntimeError("run-control tools require DbRunControlStore")
+        return self._services.controls
+
+    async def _snapshot(
+        self,
+        *,
+        execution_id: str,
+        kind: ControlKind,
+        subject_ref: str,
+        ctx: ToolContext,
+    ) -> Mapping[str, object]:
+        owned = await self._owned_execution(execution_id, ctx)
+        if owned is None:
+            return {
+                "execution_id": execution_id,
+                "control_kind": kind.value,
+                "subject_ref": subject_ref,
+                "exists": False,
+            }
+        current = await self._controls.latest(owned, kind, subject_ref)
+        return {
+            "execution_id": execution_id,
+            "control_kind": kind.value,
+            "subject_ref": subject_ref,
+            "exists": True,
+            "active": bool(current.after.get("active")) if current is not None else False,
+            "last_action": current.action.value if current is not None else None,
+            "reason_code": current.reason_code if current is not None else None,
+        }
+
+    async def _preconditions(
+        self,
+        *,
+        execution_id: str,
+        kind: ControlKind,
+    ) -> Sequence[PreconditionFailure]:
+        if kind not in set(ControlKind):
+            return _failure("invalid_control_kind", "control kind is not supported")
+        if _uuid(execution_id) is None:
+            return _failure("execution_not_found", "execution id is not a UUID")
+        return ()
+
+    async def _mutate(
+        self,
+        *,
+        execution_id: str,
+        kind: ControlKind,
+        subject_ref: str,
+        action: ControlAction,
+        reason_code: str,
+        observation_id: str | None,
+        diagnosis_id: str | None,
+        limits: dict[str, int] | None,
+        ctx: ToolContext,
+    ) -> ToolResult:
+        target = await self._owned_execution(execution_id, ctx)
+        if target is None:
+            raise ValueError("execution is unknown or outside this workspace")
+        observation = _uuid(observation_id) if observation_id is not None else None
+        diagnosis = _uuid(diagnosis_id) if diagnosis_id is not None else None
+        if observation_id is not None and observation is None:
+            raise ValueError("observation_id is not a UUID")
+        if diagnosis_id is not None and diagnosis is None:
+            raise ValueError("diagnosis_id is not a UUID")
+        requested_after: dict[str, JsonValue] = {}
+        if limits is not None:
+            requested_after["limits"] = cast(JsonValue, limits)
+        event = await self._controls.mutate(
+            workspace_id=ctx.workspace_id,
+            execution_id=target,
+            operation_id=ctx.operation_id,
+            control_kind=kind,
+            subject_ref=subject_ref,
+            action=action,
+            reason_code=reason_code,
+            actor=ctx.actor,
+            requested_after=requested_after,
+            observation_id=observation,
+            diagnosis_id=diagnosis,
+        )
+        reoffered = False
+        if kind is ControlKind.ACCOUNT_QUARANTINE and action is ControlAction.RELEASE:
+            async with ctx.conn_factory() as conn:
+                project_run_id = (
+                    await conn.execute(
+                        text("SELECT project_run_id FROM execution WHERE id = :id"),
+                        {"id": target},
+                    )
+                ).scalar_one_or_none()
+                if project_run_id is not None:
+                    reoffered = await reoffer_governed_partial_task(
+                        conn,
+                        project_run_id=ProjectRunId(project_run_id),
+                        dedup_key=subject_ref,
+                    )
+        if kind is ControlKind.ESCALATION and action is ControlAction.APPLY:
+            await self._services.executor.pause(
+                execution_id=target,
+                actor=ctx.actor,
+                reason_code=reason_code,
+            )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "execution_id": execution_id,
+                "control_kind": kind.value,
+                "subject_ref": subject_ref,
+                "action": action.value,
+                "active": bool(event.after.get("active")),
+                "reoffered": reoffered,
+            },
+        )
+
+
+class ApplyRunControlTool(_RunControlTool):
+    name = "apply_run_control"
+    input_model = ApplyRunControlInput
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "execution_id",
+            "control_kind",
+            "subject_ref",
+            "reason_code",
+            "observation_id",
+            "diagnosis_id",
+            "limits",
+        )
+    )
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> Mapping[str, object]:
+        assert isinstance(inputs, ApplyRunControlInput)
+        return await self._snapshot(
+            execution_id=inputs.execution_id,
+            kind=inputs.control_kind,
+            subject_ref=inputs.subject_ref,
+            ctx=ctx,
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ApplyRunControlInput)
+        failures = await self._preconditions(
+            execution_id=inputs.execution_id,
+            kind=inputs.control_kind,
+        )
+        if failures:
+            return failures
+        if await self._owned_execution(inputs.execution_id, ctx) is None:
+            return _failure("execution_not_found", "no such execution")
+        if inputs.control_kind is ControlKind.ENVELOPE and inputs.limits is None:
+            return _failure("envelope_limits_required", "envelope apply requires limits")
+        if inputs.control_kind is not ControlKind.ENVELOPE and inputs.limits is not None:
+            return _failure("unexpected_envelope_limits", "limits apply only to envelope controls")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ApplyRunControlInput)
+        return await self._mutate(
+            execution_id=inputs.execution_id,
+            kind=inputs.control_kind,
+            subject_ref=inputs.subject_ref,
+            action=ControlAction.APPLY,
+            reason_code=inputs.reason_code,
+            observation_id=inputs.observation_id,
+            diagnosis_id=inputs.diagnosis_id,
+            limits=inputs.limits,
+            ctx=ctx,
+        )
+
+
+class ReleaseRunControlTool(_RunControlTool):
+    name = "release_run_control"
+    input_model = ReleaseRunControlInput
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "execution_id",
+            "control_kind",
+            "subject_ref",
+            "reason_code",
+            "observation_id",
+            "diagnosis_id",
+        )
+    )
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> Mapping[str, object]:
+        assert isinstance(inputs, ReleaseRunControlInput)
+        return await self._snapshot(
+            execution_id=inputs.execution_id,
+            kind=inputs.control_kind,
+            subject_ref=inputs.subject_ref,
+            ctx=ctx,
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ReleaseRunControlInput)
+        if inputs.control_kind is ControlKind.ESCALATION:
+            return _failure(
+                "escalation_requires_acknowledge",
+                "use acknowledge_run_escalation for escalations",
+            )
+        if await self._owned_execution(inputs.execution_id, ctx) is None:
+            return _failure("execution_not_found", "no such execution")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReleaseRunControlInput)
+        return await self._mutate(
+            execution_id=inputs.execution_id,
+            kind=inputs.control_kind,
+            subject_ref=inputs.subject_ref,
+            action=ControlAction.RELEASE,
+            reason_code=inputs.reason_code,
+            observation_id=inputs.observation_id,
+            diagnosis_id=inputs.diagnosis_id,
+            limits=None,
+            ctx=ctx,
+        )
+
+
+class AcknowledgeRunEscalationTool(_RunControlTool):
+    name = "acknowledge_run_escalation"
+    input_model = AcknowledgeRunEscalationInput
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "execution_id",
+            "reason_code",
+            "observation_id",
+            "diagnosis_id",
+        )
+    )
+
+    async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> Mapping[str, object]:
+        assert isinstance(inputs, AcknowledgeRunEscalationInput)
+        return await self._snapshot(
+            execution_id=inputs.execution_id,
+            kind=ControlKind.ESCALATION,
+            subject_ref="deep_gate",
+            ctx=ctx,
+        )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, AcknowledgeRunEscalationInput)
+        if await self._owned_execution(inputs.execution_id, ctx) is None:
+            return _failure("execution_not_found", "no such execution")
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, AcknowledgeRunEscalationInput)
+        return await self._mutate(
+            execution_id=inputs.execution_id,
+            kind=ControlKind.ESCALATION,
+            subject_ref="deep_gate",
+            action=ControlAction.ACKNOWLEDGE,
+            reason_code=inputs.reason_code,
+            observation_id=inputs.observation_id,
+            diagnosis_id=inputs.diagnosis_id,
+            limits=None,
+            ctx=ctx,
+        )
+
+
 def execution_control_tools(
     services: ExecutionControlServices,
 ) -> tuple[Tool, ...]:
-    return (
+    tools: tuple[Tool, ...] = (
         StartRecipeExecutionTool(services),
         PauseRecipeExecutionTool(services),
         ResumeRecipeExecutionTool(services),
@@ -765,6 +1077,14 @@ def execution_control_tools(
         PinExecutionAsRecipeTool(services),
         AdvanceProjectPhaseTool(services),
     )
+    if services.controls is not None:
+        tools = (
+            *tools,
+            ApplyRunControlTool(services),
+            ReleaseRunControlTool(services),
+            AcknowledgeRunEscalationTool(services),
+        )
+    return tools
 
 
 def register_execution_control_tools(services: ExecutionControlServices) -> None:
@@ -774,7 +1094,10 @@ def register_execution_control_tools(services: ExecutionControlServices) -> None
 
 __all__ = [
     "AdvanceProjectPhaseInput",
+    "AcknowledgeRunEscalationInput",
+    "ApplyRunControlInput",
     "ExecutionControlServices",
     "PinExecutionAsRecipeInput",
+    "ReleaseRunControlInput",
     "register_execution_control_tools",
 ]

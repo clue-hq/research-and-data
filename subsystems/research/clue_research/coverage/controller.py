@@ -374,6 +374,7 @@ class CoverageController:
                     entity_type=entity.entity_type,
                     field_key=field.field_key,
                     source_tier=manifest.tier,
+                    source_key=manifest.source_key,
                     run_id=run_id,
                 )
             )

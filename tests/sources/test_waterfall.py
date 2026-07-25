@@ -37,9 +37,12 @@ from clue_core import (
 from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope, claims_for, current_value
 from clue_research.sources import (
     RegistrySourceManifest,
+    SourceCallEvent,
+    SourceCallOutcome,
     StepOutcome,
     StopReason,
     bind_resolver,
+    bind_source_call_observer,
     register_source,
     resolve_field,
     resolve_fields,
@@ -68,6 +71,21 @@ class _Fake:
         self.calls += 1
         # a real resolver builds claims for the entity it was handed; mirror that here.
         return [c.model_copy(update={"entity_id": entity.entity_id}) for c in self._claims]
+
+
+class _FailingFake(_Fake):
+    def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
+        del entity, field
+        self.calls += 1
+        raise RuntimeError("synthetic provider failure")
+
+
+class _SourceObserver:
+    def __init__(self) -> None:
+        self.events: list[SourceCallEvent] = []
+
+    async def observe(self, event: SourceCallEvent) -> None:
+        self.events.append(event)
 
 
 def _entity() -> Entity:
@@ -177,6 +195,63 @@ def test_optional_attempt_recorder_observes_the_final_result() -> None:
                 attempt_recorder=record,
             )
             assert observed == [result]
+
+    run_async(_run())
+
+
+def test_run_scoped_observer_records_one_physical_source_call() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "telemetry_success", tier=1, cost=Decimal("2"))
+            bind_resolver(
+                "telemetry_success",
+                _Fake([_claim(100, tier=1, confidence=_HI, cost=Decimal("2"))]),
+            )
+            observer = _SourceObserver()
+            entity = _entity()
+            run_id = new_run_id()
+            with bind_source_call_observer(observer):
+                await resolve_field(
+                    conn,
+                    entity,
+                    _field(("telemetry_success",)),
+                    mode=_MODE,
+                    run_id=run_id,
+                )
+            assert len(observer.events) == 1
+            event = observer.events[0]
+            assert event.account_entity_id == entity.entity_id
+            assert event.account_run_id == run_id
+            assert event.source_key == "telemetry_success"
+            assert event.outcome is SourceCallOutcome.CLAIMS_PRODUCED
+            assert event.claims_count == 1
+            assert event.cost_cents == Decimal("2")
+
+    run_async(_run())
+
+
+def test_run_scoped_observer_records_provider_failure_before_reraising() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "telemetry_failure", tier=1)
+            bind_resolver("telemetry_failure", _FailingFake([]))
+            observer = _SourceObserver()
+            with (
+                bind_source_call_observer(observer),
+                pytest.raises(RuntimeError, match="synthetic provider failure"),
+            ):
+                await resolve_field(
+                    conn,
+                    _entity(),
+                    _field(("telemetry_failure",)),
+                    mode=_MODE,
+                    run_id=new_run_id(),
+                )
+            assert len(observer.events) == 1
+            event = observer.events[0]
+            assert event.outcome is SourceCallOutcome.FAILED
+            assert event.error_code == "RuntimeError"
+            assert event.claims_count == 0
 
     run_async(_run())
 

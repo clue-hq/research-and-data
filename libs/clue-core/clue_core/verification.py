@@ -77,6 +77,10 @@ class PreSpendRequest(BaseModel):
     field_key: FieldKey | None = None
     scope: EnumerationScope | None = None
     source_tier: SourceTier
+    # C5.5 source-breaker coordinate.  The API-root gate resolves ``run_id`` to the owning recipe
+    # execution and rejects this exact registered source before provider I/O.  Optional keeps
+    # non-source/legacy gate callers compatible; every waterfall/committee source path supplies it.
+    source_key: str | None = None
     run_id: RunId
     value_json: JsonValue | None = None
 

@@ -226,6 +226,15 @@ class ProjectPhaseAdvanceOutput(ToolOutput):
     status: str
 
 
+class RunControlOutput(ToolOutput):
+    execution_id: str
+    control_kind: str
+    subject_ref: str
+    action: str
+    active: bool
+    reoffered: bool = False
+
+
 __all__ = [
     "CommitteeOutput",
     "ConfirmedProjectRunOutput",
@@ -248,6 +257,7 @@ __all__ = [
     "ProjectRunResumeOutput",
     "ProjectRunStartOutput",
     "ProjectRunStatusOutput",
+    "RunControlOutput",
     "ReconOutput",
     "RecipeExecutionStartOutput",
     "RecipeExecutionStatusOutput",

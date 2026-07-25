@@ -46,7 +46,8 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
@@ -67,6 +68,29 @@ _TIER_NAME_RANK = {"top": 0, "high": 1, "mid": 2, "medium": 2, "low": 3}
 _UNKNOWN_TIER_PRIORITY = 100
 
 TierPriority = Callable[[str], int]
+
+
+@dataclass(frozen=True, slots=True)
+class AccountAdmissionDecision:
+    allowed: bool
+    reason_code: str | None = None
+    control_ref: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GovernedPartialAccount:
+    entity_id: str
+    reason_code: str
+    control_ref: str | None = None
+
+
+AccountAdmission = Callable[[ProjectRunId, AccountSpec, int], Awaitable[AccountAdmissionDecision]]
+
+
+async def _allow_account(
+    _project_run_id: ProjectRunId, _spec: AccountSpec, _ordinal: int
+) -> AccountAdmissionDecision:
+    return AccountAdmissionDecision(allowed=True)
 
 
 def default_tier_priority(tier: str) -> int:
@@ -109,6 +133,7 @@ class QueueBackedScheduler:
         priority_for: TierPriority = default_tier_priority,
         stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
         poll_interval: float = 0.2,
+        account_admission: AccountAdmission = _allow_account,
     ) -> None:
         if window < 1:
             raise ValueError(f"window must be >= 1 (got {window})")
@@ -118,6 +143,7 @@ class QueueBackedScheduler:
         self._priority_for = priority_for
         self._stale_after = stale_after
         self._poll_interval = poll_interval
+        self._account_admission = account_admission
         # The claimant id: one per scheduler instance, so a restarted driver is a *different*
         # claimant and the old instance's claims age out instead of being confusable with ours.
         self._claimant_id = f"deep-drain:{uuid4()}"
@@ -154,13 +180,14 @@ class QueueBackedScheduler:
 
         # (Re-)offer the work, idempotently: fresh specs insert; re-entered specs are no-ops;
         # FAILED jobs from a previous drive are explicitly re-opened for retry.
-        for spec in ordered:
+        ordinal_by_key = {str(spec.entity_id): ordinal for ordinal, spec in enumerate(ordered)}
+        for ordinal, spec in enumerate(ordered):
             await self._queue.enqueue(
                 kind=FleetTaskKind.ACCOUNT_JOB,
                 project_run_id=project_run_id,
                 dedup_key=str(spec.entity_id),
                 priority=self._priority_for(spec.tier),
-                payload={"tier": spec.tier},
+                payload={"tier": spec.tier, "ordinal": ordinal},
             )
         requeued = await self._queue.requeue_failed(
             kind=FleetTaskKind.ACCOUNT_JOB, project_run_id=project_run_id
@@ -186,13 +213,27 @@ class QueueBackedScheduler:
         in_flight: set[str] = set()
 
         # Jobs a previous drive already finished: replay for their results, off-queue.
-        done_keys = {
-            task.dedup_key
+        done_tasks = {
+            task.dedup_key: task
             for task in await self._queue.list_tasks(
                 project_run_id=project_run_id, kind=FleetTaskKind.ACCOUNT_JOB
             )
             if task.status is FleetTaskStatus.DONE and task.dedup_key in by_key
         }
+
+        async def _admission(key: str) -> AccountAdmissionDecision:
+            return await self._account_admission(
+                project_run_id,
+                by_key[key],
+                ordinal_by_key[key],
+            )
+
+        def _partial(key: str, decision: AccountAdmissionDecision) -> GovernedPartialAccount:
+            return GovernedPartialAccount(
+                entity_id=key,
+                reason_code=decision.reason_code or "account_not_admitted",
+                control_ref=decision.control_ref,
+            )
 
         async def _run_locked(key: str) -> Any:
             """The Doc C §4 single-flight core, in exactly ONE place (used by both the drain and
@@ -213,6 +254,15 @@ class QueueBackedScheduler:
                 return
             async with semaphore:
                 if aborted.is_set():
+                    return
+                task = done_tasks[key]
+                if task.result_ref.get("status") == "governed_partial":
+                    decision = await _admission(key)
+                    if decision.allowed:
+                        raise RuntimeError(
+                            "released governed-partial account was not explicitly reoffered"
+                        )
+                    results[key] = _partial(key, decision)
                     return
                 results[key] = await _run_locked(key)
 
@@ -248,6 +298,21 @@ class QueueBackedScheduler:
                         pass
                     else:
                         key = task.dedup_key
+                        decision = await _admission(key)
+                        if not decision.allowed:
+                            partial = _partial(key, decision)
+                            results[key] = partial
+                            await self._queue.finish(
+                                task_id=task.task_id,
+                                worker_id=self._claimant_id,
+                                status=FleetTaskStatus.DONE,
+                                result_ref={
+                                    "status": "governed_partial",
+                                    "reason_code": partial.reason_code,
+                                    "control_ref": partial.control_ref,
+                                },
+                            )
+                            continue
                         # Mark in-flight BEFORE awaiting the entity lock: while this drainer blocks
                         # on a lock held by another run, its claimed row can cross the staleness
                         # window and look orphaned to a sibling's claim-next; the in_flight guard
@@ -279,6 +344,6 @@ class QueueBackedScheduler:
                 await asyncio.sleep(self._poll_interval)
 
         drainers = [_drain() for _ in range(min(self._window, len(by_key)))]
-        replays = [_replay(key) for key in done_keys]
+        replays = [_replay(key) for key in done_tasks]
         await asyncio.gather(*drainers, *replays)
         return [results[str(spec.entity_id)] for spec in ordered]

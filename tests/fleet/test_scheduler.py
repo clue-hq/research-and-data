@@ -15,8 +15,10 @@ from tests.fleet.conftest import FakeTaskQueue, ProcessLocalLockFactory
 
 from clue_core import EntityId, new_project_run_id
 from clue_fleet import (
+    AccountAdmissionDecision,
     FleetTaskKind,
     FleetTaskStatus,
+    GovernedPartialAccount,
     QueueBackedScheduler,
     default_tier_priority,
 )
@@ -221,6 +223,62 @@ def test_empty_specs_is_a_clean_noop() -> None:
             )
             == []
         )
+
+    asyncio.run(_run())
+
+
+def test_quarantined_account_is_parked_without_running_and_requires_explicit_reoffer() -> None:
+    async def _run() -> None:
+        run_id = new_project_run_id()
+        queue = FakeTaskQueue()
+        spec = _spec("quarantined", "top")
+        allowed = False
+        calls = 0
+
+        async def admission(
+            _run_id: object, _spec: AccountSpec, _ordinal: int
+        ) -> AccountAdmissionDecision:
+            return AccountAdmissionDecision(
+                allowed=allowed,
+                reason_code="account_quarantined",
+                control_ref="run_control_event:7",
+            )
+
+        async def run_one(_spec: AccountSpec) -> str:
+            nonlocal calls
+            calls += 1
+            return "spent"
+
+        scheduler = QueueBackedScheduler(
+            queue=queue,
+            window=1,
+            poll_interval=0.005,
+            lock_factory=ProcessLocalLockFactory(),
+            account_admission=admission,
+        )
+        result = await scheduler.run_accounts(
+            [spec], project_run_id=run_id, checkpointer=None, run_one=run_one
+        )
+        assert calls == 0
+        assert result == [
+            GovernedPartialAccount(
+                entity_id=str(spec.entity_id),
+                reason_code="account_quarantined",
+                control_ref="run_control_event:7",
+            )
+        ]
+        row = queue.row(FleetTaskKind.ACCOUNT_JOB, run_id, str(spec.entity_id))
+        assert row.status is FleetTaskStatus.DONE
+        assert row.result_ref["status"] == "governed_partial"
+
+        # Merely making admission permissive cannot silently re-run parked work. The release tool
+        # must explicitly reoffer the durable task first.
+        allowed = True
+        with pytest.raises(RuntimeError, match="explicitly reoffered"):
+            await scheduler.run_accounts(
+                [spec], project_run_id=run_id, checkpointer=None, run_one=run_one
+            )
+        assert calls == 0
 
     asyncio.run(_run())
 

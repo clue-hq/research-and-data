@@ -67,6 +67,8 @@ from clue_config.schema import (
     ScoringRubric,
     SourcePlanPolicy,
     SourceProfile,
+    SupervisorAutomaticAction,
+    SupervisorPolicy,
     TierRecursionCaps,
     VerificationHealthThresholds,
 )
@@ -117,6 +119,8 @@ __all__ = [
     "MergePolicy",
     "MemoryCaps",
     "VerificationHealthThresholds",
+    "SupervisorAutomaticAction",
+    "SupervisorPolicy",
     "ScoringRubric",
     "SourceProfile",
     "BudgetCaps",

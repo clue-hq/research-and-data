@@ -62,6 +62,7 @@ from clue_api.composition import (
 from clue_api.deep.handler import (
     CheckpointerFactory,
     DeepAccountScheduler,
+    DeepCanaryController,
     DeepPhaseHandler,
     HighTierResolver,
 )
@@ -304,6 +305,7 @@ def build_deep_phase_handler(
     storage: StorageBackend | None = None,
     lock_factory: LockFactory | None | _LazyLockDefault = _LAZY_LOCK_DEFAULT,
     scheduler: DeepAccountScheduler | None = None,
+    canary_controller: DeepCanaryController | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -408,6 +410,7 @@ def build_deep_phase_handler(
         orchestrator=orchestrator,
         high_tier_resolver=resolver,
         checkpointer_factory=checkpointers,
+        canary_controller=canary_controller,
     )
     # B2: when a storage backend is supplied, register the run-scoped snapshot-binding wrapper so
     # each deep run captures/flushes under one ambient per-run sink (audit finding 5). The wrapper

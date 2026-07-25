@@ -181,6 +181,7 @@ async def fill_contact_field(
                     entity_type=EntityType.CONTACT,
                     field_key=field_def.field_key,
                     source_tier=SourceTier(manifest.tier),
+                    source_key=manifest.source_key,
                     run_id=run_id,
                 )
             )
