@@ -168,6 +168,7 @@ async def _runtime(
     interaction: bool = False,
     storage: _MemoryStorage | None = None,
     controls: Any | None = None,
+    pre_satisfied_nodes: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[ExecutionId, RecipeExecutor, _CertifiedEcho, LeaseGeneration]:
     workspace_id = await seed_workspace(conn, "ws-c5-executor")
     factory = _factory(conn)
@@ -299,6 +300,7 @@ async def _runtime(
         parameter_artifact_key=artifact_key,
         parameter_manifest_hash=digest,
         actor="human",
+        pre_satisfied_nodes=pre_satisfied_nodes,
     )
     invoker = build_tool_invoker(
         registry=registry,
@@ -327,6 +329,43 @@ async def _runtime(
     )
     assert lease is not None
     return start.execution_id, executor, tool, LeaseGeneration(lease.generation)
+
+
+def test_starter_materializes_pre_satisfied_nodes_as_born_complete() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(
+                conn,
+                pre_satisfied_nodes={"echo": {"echoed": 7, "pre_satisfied": True}},
+            )
+            result = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert result.status is ExecutionStatus.COMPLETED
+            assert tool.calls == 0
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT e.event_type, a.worker_id
+                        FROM execution_event e
+                        LEFT JOIN execution_attempt a ON a.id = e.attempt_id
+                        WHERE e.execution_id = :id AND e.node_id IS NOT NULL
+                        ORDER BY e.seq
+                        """
+                    ),
+                    {"id": execution_id},
+                )
+            ).all()
+            assert rows == [
+                ("node.scheduled", None),
+                ("node.started", "pre_satisfied"),
+                ("node.completed", "pre_satisfied"),
+            ]
+
+    run_async(scenario())
 
 
 def test_executor_completes_recipe_and_stamps_lease_generation() -> None:

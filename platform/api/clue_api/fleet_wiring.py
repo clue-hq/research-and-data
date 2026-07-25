@@ -40,6 +40,7 @@ from datetime import timedelta
 from sqlalchemy import text
 
 from clue_api.locks import build_account_lock_factory, lazy_account_lock_factory
+from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_config import Settings
 from clue_core import ExecutionId, ProjectPhase, ProjectRunId
 from clue_db import ConnFactory, transaction
@@ -137,6 +138,7 @@ def register_boot_handlers(
     *,
     storage: StorageBackend | None,
     registry: PhaseHandlerRegistry | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> frozenset[ProjectPhase]:
     """Register every phase handler the fleet worker can compose **process-wide from settings** and
     return the set of phases now bound. The worker owns *execution*, but the phase-handler registry
@@ -184,7 +186,7 @@ def register_boot_handlers(
     target = registry if registry is not None else default_phase_handler_registry()
     # Construction is DB-free (every collaborator only stores its conn/session factory); the handler
     # touches the DB only when the state machine drives REVIEW.
-    target.register(build_reviewed_phase_handler())
+    target.register(build_reviewed_phase_handler(project_execution_router=project_execution_router))
 
     phases = target.phases()
     log.info(

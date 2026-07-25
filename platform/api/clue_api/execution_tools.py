@@ -46,7 +46,7 @@ from clue_execution import (
     get_cursor,
 )
 from clue_fleet import RunDriver, WorkQueue, reoffer_governed_partial_task
-from clue_research.durable import ProjectRunRow, get_project_run
+from clue_research.durable import ProjectRunRow, ProjectRunStatus, get_project_run
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -54,6 +54,7 @@ from clue_toolbelt import (
     ReplayPolicy,
     ReplaySafety,
     Tool,
+    ToolAwaitingInput,
     ToolContext,
     ToolEffectClass,
     ToolInput,
@@ -775,6 +776,10 @@ class AdvanceProjectPhaseTool(_ExecutionTool):
         run = run_raw
         if run.phase is inputs.expected_phase:
             run = await self._services.run_machine.advance(run_id)
+        if run.status is ProjectRunStatus.FAILED:
+            raise RuntimeError(f"project phase {inputs.expected_phase.value} failed")
+        if run.phase is inputs.expected_phase and run.status is ProjectRunStatus.PAUSED:
+            raise ToolAwaitingInput(f"project_phase_{inputs.expected_phase.value}_awaiting_input")
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1094,6 +1099,7 @@ def register_execution_control_tools(services: ExecutionControlServices) -> None
 
 __all__ = [
     "AdvanceProjectPhaseInput",
+    "AdvanceProjectPhaseTool",
     "AcknowledgeRunEscalationInput",
     "ApplyRunControlInput",
     "ExecutionControlServices",

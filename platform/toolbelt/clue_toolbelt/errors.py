@@ -21,6 +21,7 @@ from clue_toolbelt.envelope import PreconditionFailure
 __all__ = [
     "ToolbeltError",
     "ToolContractViolation",
+    "ToolAwaitingInput",
     "UnknownTool",
     "PreconditionFailed",
     "IdempotencyConflict",
@@ -38,6 +39,21 @@ class ToolContractViolation(ToolbeltError):
         self.address = address
         self.detail = detail
         super().__init__(f"tool {address!r} violated its output contract: {detail}")
+
+
+class ToolAwaitingInput(ToolbeltError):
+    """A durable tool attempt reached a recoverable external wait.
+
+    Unlike :class:`PreconditionFailed`, this does not terminally block the logical node. The
+    journal abandons the current attempt, pauses the execution, and permits the same stable
+    operation to retry after the external project state has been resumed.
+    """
+
+    def __init__(self, reason_code: str) -> None:
+        if not reason_code:
+            raise ValueError("awaiting-input reason code cannot be empty")
+        self.reason_code = reason_code
+        super().__init__(f"tool is awaiting external input: {reason_code}")
 
 
 class UnknownTool(ToolbeltError):

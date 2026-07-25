@@ -55,6 +55,10 @@ from clue_api.fleet_wiring import (
     build_multi_work_worker,
     register_boot_handlers,
 )
+from clue_api.project_execution_router import (
+    DeferredProjectExecutionRouter,
+    Recipe1ProjectExecutionRouter,
+)
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -140,11 +144,16 @@ async def _serve() -> None:
     settings = load_settings()
     storage = build_storage_backend(settings)
     async with db_lifespan(), redis_lifespan():
+        project_execution_router = DeferredProjectExecutionRouter()
         # Boot smoke: the process-wide-composable handler set (REVIEW today) must compose — a clean
         # refuse-to-start if it cannot (a degenerate no-composer deployment). The ComposingRunDriver
         # (below) *re-folds* these same boot handlers into every per-run registry, so this
         # process-default registration is a composition-machinery health check, not the drive path.
-        phases = register_boot_handlers(settings, storage=storage)
+        phases = register_boot_handlers(
+            settings,
+            storage=storage,
+            project_execution_router=project_execution_router,
+        )
         _require_registered(phases)
         log.info("fleet.boot.phases", phases=sorted(phase.value for phase in phases))
         task_queue = DbTaskQueue()
@@ -154,6 +163,7 @@ async def _serve() -> None:
             settings=settings,
             gateway=None,
             queue=task_queue,
+            project_execution_router=project_execution_router,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -178,6 +188,7 @@ async def _serve() -> None:
             controls=controls,
             supervisor_actions=deferred_supervisor_actions,
             execution_journal=journal,
+            project_execution_router=project_execution_router,
         )
         artifact_store = StorageParameterArtifactStore(storage=storage)
         execution_parameters = StorageExecutionParameterStore(artifact_store)
@@ -192,14 +203,6 @@ async def _serve() -> None:
         )
         recipe_reader = DbRecipeReader(conn_factory=transaction)
         recipe_repository = DbRecipeRepository(conn_factory=transaction)
-        await seed_system_recipes(
-            repository=recipe_repository,
-            lifecycle=build_recipe_lifecycle(
-                tool_registry=registry,
-                conn_factory=transaction,
-                pin_registry=pin_registry,
-            ),
-        )
         starter = DbExecutionStarter(
             conn_factory=transaction,
             recipes=recipe_reader,
@@ -214,6 +217,7 @@ async def _serve() -> None:
             parameters=execution_parameters,
             tool_invoker=tool_invoker,
             controls=controls,
+            max_concurrency=settings.recipe_executor_max_concurrency,
         )
         register_execution_control_tools(
             ExecutionControlServices(
@@ -226,6 +230,25 @@ async def _serve() -> None:
                 conn_factory=transaction,
                 registry=registry,
                 controls=controls,
+            )
+        )
+        await seed_system_recipes(
+            repository=recipe_repository,
+            lifecycle=build_recipe_lifecycle(
+                tool_registry=registry,
+                conn_factory=transaction,
+                pin_registry=pin_registry,
+            ),
+        )
+        project_execution_router.bind(
+            Recipe1ProjectExecutionRouter(
+                settings=settings,
+                recipes=recipe_reader,
+                starter=starter,
+                executor=executor,
+                parameters=execution_parameters,
+                compatibility=compatibility,
+                queue=work_queue,
             )
         )
         worker = build_multi_work_worker(

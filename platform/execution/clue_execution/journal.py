@@ -831,6 +831,45 @@ class DbInvocationJournal(InvocationJournal):
                 **self._lease_kwargs(context),
             )
 
+    async def awaiting_input(
+        self,
+        *,
+        start: JournalStart,
+        context: ToolContext,
+        reason_code: str,
+    ) -> None:
+        """End this attempt without terminally resolving its node, then pause the execution."""
+        assert start.attempt_id is not None
+        async with self._conn_factory() as conn:
+            await conn.execute(
+                text("SELECT id FROM execution_node WHERE id = :id FOR UPDATE"),
+                {"id": start.node_id},
+            )
+            if await self._has_terminal(conn, start.node_id):
+                return
+            cursor = await get_cursor(conn, start.execution_id, for_update=True)
+            await self._repository.append_event(
+                conn,
+                execution_id=start.execution_id,
+                node_id=start.node_id,
+                attempt_id=start.attempt_id,
+                event_type=ExecutionEventType.NODE_ABANDONED,
+                actor=context.actor,
+                payload={"reason_code": reason_code},
+                expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
+            )
+            cursor = await get_cursor(conn, start.execution_id, for_update=True)
+            await self._repository.append_event(
+                conn,
+                execution_id=start.execution_id,
+                event_type=ExecutionEventType.EXECUTION_PAUSED,
+                actor=context.actor,
+                payload={"reason_code": reason_code, "node_id": str(start.node_id)},
+                expected_state_version=cursor.state_version,
+                **self._lease_kwargs(context),
+            )
+
     async def failed(
         self,
         *,

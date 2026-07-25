@@ -176,7 +176,11 @@ async def _recipe_runner(
         tool_catalog=registry,
         compatibility_loader=compatibility,
     )
-    definitions = load_system_recipe_definitions()
+    definitions = tuple(
+        definition
+        for definition in load_system_recipe_definitions()
+        if definition.recipe_key == "recipe0-stage0"
+    )
     revisions = await seed_system_recipes(
         repository=repository,
         lifecycle=lifecycle,

@@ -294,6 +294,8 @@ class DbExecutionStarter:
         project_id: str | None = None,
         project_run_id: ProjectRunId | None = None,
         parent_execution_id: ExecutionId | None = None,
+        additional_requirements: Sequence[PinRequest] = (),
+        pre_satisfied_nodes: Mapping[str, Mapping[str, JsonValue]] | None = None,
     ) -> ExecutionStart:
         revision = await self._recipes.get_revision(
             recipe_revision_id=recipe_revision_id,
@@ -319,7 +321,13 @@ class DbExecutionStarter:
             workspace_id=workspace_id,
             project_id=project_id,
         )
-        report = await self._compatibility.load(definition.compatibility, context=context)
+        static_requirements = list(definition.compatibility.execution)
+        for node_key in sorted(definition.compatibility.nodes):
+            static_requirements.extend(definition.compatibility.nodes[node_key])
+        report = await self._compatibility.resolve_requirements(
+            (*static_requirements, *additional_requirements),
+            context=context,
+        )
         if not report.compatible:
             raise IncompatibleRecipe(report)
         node_reports = {
@@ -336,6 +344,20 @@ class DbExecutionStarter:
         )
         if changed is not None:
             raise IncompatibleRecipe(changed)
+        pre_satisfied = dict(pre_satisfied_nodes or {})
+        graph_by_key = {node.node_key: node for node in definition.graph.nodes}
+        unknown_pre_satisfied = set(pre_satisfied) - set(graph_by_key)
+        if unknown_pre_satisfied:
+            raise ValueError(
+                f"pre-satisfied nodes are absent from the recipe: {sorted(unknown_pre_satisfied)}"
+            )
+        for node_key in pre_satisfied:
+            missing_dependencies = set(graph_by_key[node_key].dependencies) - set(pre_satisfied)
+            if missing_dependencies:
+                raise ValueError(
+                    f"pre-satisfied node {node_key!r} is missing dependencies "
+                    f"{sorted(missing_dependencies)}"
+                )
 
         resolved_execution_id = execution_id or new_execution_id()
         async with self._conn_factory() as conn:
@@ -348,7 +370,8 @@ class DbExecutionStarter:
                         text(
                             """
                             SELECT workspace_id, project_id, project_run_id, recipe_revision_id,
-                                   parameter_artifact_key, parameter_manifest_hash
+                                   parameter_artifact_key, parameter_manifest_hash,
+                                   pin_manifest_hash, parent_execution_id
                             FROM execution WHERE id = :execution_id
                             """
                         ),
@@ -365,6 +388,8 @@ class DbExecutionStarter:
                 str(recipe_revision_id),
                 parameter_artifact_key,
                 parameter_manifest_hash,
+                report.report_sha256,
+                str(parent_execution_id) if parent_execution_id is not None else None,
             )
             if existing is not None:
                 actual = (
@@ -378,6 +403,12 @@ class DbExecutionStarter:
                     str(existing["recipe_revision_id"]),
                     str(existing["parameter_artifact_key"]),
                     str(existing["parameter_manifest_hash"]),
+                    str(existing["pin_manifest_hash"]),
+                    (
+                        str(existing["parent_execution_id"])
+                        if existing["parent_execution_id"] is not None
+                        else None
+                    ),
                 )
                 if actual != expected:
                     raise ExecutionConflict(
@@ -473,10 +504,79 @@ class DbExecutionStarter:
                     node_id=execution_node_id(resolved_execution_id, node_key),
                     pins=node_report.pins,
                 )
+            for node_key in sorted(
+                pre_satisfied,
+                key=lambda key: (graph_by_key[key].ordinal, key),
+            ):
+                await self._complete_pre_satisfied_node(
+                    conn,
+                    execution_id=resolved_execution_id,
+                    node_key=node_key,
+                    actor=actor,
+                    references=pre_satisfied[node_key],
+                )
         return ExecutionStart(
             execution_id=resolved_execution_id,
             created=True,
             compatibility=report,
+        )
+
+    async def _complete_pre_satisfied_node(
+        self,
+        conn: AsyncConnection,
+        *,
+        execution_id: ExecutionId,
+        node_key: str,
+        actor: str,
+        references: Mapping[str, JsonValue],
+    ) -> None:
+        """Record a born-complete node inside the same transaction as execution creation."""
+        node_id = execution_node_id(execution_id, node_key)
+        attempt_id = ExecutionAttemptId(uuid4())
+        await conn.execute(
+            text(
+                """
+                INSERT INTO execution_attempt (
+                    id, execution_id, node_id, attempt, worker_id
+                )
+                VALUES (:id, :execution_id, :node_id, 1, 'pre_satisfied')
+                """
+            ),
+            {
+                "id": attempt_id,
+                "execution_id": execution_id,
+                "node_id": node_id,
+            },
+        )
+        cursor = await get_cursor(conn, execution_id, for_update=True)
+        await self._journal.append_event(
+            conn,
+            execution_id=execution_id,
+            node_id=node_id,
+            attempt_id=attempt_id,
+            event_type=ExecutionEventType.NODE_STARTED,
+            actor=actor,
+            payload={"attempt": 1, "pre_satisfied": True},
+            expected_state_version=cursor.state_version,
+        )
+        cursor = await get_cursor(conn, execution_id, for_update=True)
+        await self._journal.append_event(
+            conn,
+            execution_id=execution_id,
+            node_id=node_id,
+            attempt_id=attempt_id,
+            event_type=ExecutionEventType.NODE_COMPLETED,
+            actor=actor,
+            payload={
+                "result": {
+                    "tool": "advance_project_phase",
+                    "version": "1",
+                    "references": dict(references),
+                    "replayed": False,
+                    "meta": {"pre_satisfied": True},
+                }
+            },
+            expected_state_version=cursor.state_version,
         )
 
     async def _materialize_graph(
@@ -685,7 +785,10 @@ class RecipeExecutor:
         controls: DbRunControlStore | None = None,
         activity_invoker: ActivityInvoker | None = None,
         crash_hook: CrashHook = _no_crash,
+        max_concurrency: int = MAX_EXECUTION_CONCURRENCY,
     ) -> None:
+        if max_concurrency < 1:
+            raise ValueError("executor max concurrency must be positive")
         self._conn_factory = conn_factory
         self._recipes = recipes
         self._compatibility = compatibility
@@ -695,6 +798,7 @@ class RecipeExecutor:
         self._controls = controls
         self._activity_invoker = activity_invoker
         self._crash_hook = crash_hook
+        self._max_concurrency = max_concurrency
 
     async def execute(
         self,
@@ -818,7 +922,7 @@ class RecipeExecutor:
                 )
                 continue
             envelope = await self._effective_envelope(runtime)
-            limit = min(envelope.max_fanout, MAX_EXECUTION_CONCURRENCY)
+            limit = min(envelope.max_fanout, self._max_concurrency)
             batch = ready[:limit]
             await asyncio.gather(
                 *(

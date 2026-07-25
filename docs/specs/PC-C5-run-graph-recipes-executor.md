@@ -1,6 +1,7 @@
 # Phase C5 — Run-Graph Journal, Recipes, Durable Executor, and Supervisor
 
-**Status:** C5.5 implemented; C5.6 next on `platform/c5-recipe-execution` (2026-07-25)
+**Status:** COMPLETE — C5.0–C5.6 implemented and verified on
+`platform/c5-recipe-execution` (2026-07-25)
 
 **Parent:** [`PC-phase-c-agentic-layer.md`](./PC-phase-c-agentic-layer.md)
 

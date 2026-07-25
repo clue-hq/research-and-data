@@ -11,12 +11,19 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from clue_core import CoverageReport, EntityId, ProjectPhase, ProjectRunId
+from clue_core import (
+    CoverageReport,
+    EntityId,
+    ExecutionId,
+    ProjectPhase,
+    ProjectRunId,
+    RecipeRevisionId,
+)
 from clue_research.review import CostBurnDown, PhaseProgress, VerificationHealth
 
 # The read-side schema version served on the projection HTTP surface (mirrors the handoff API's
 # ``HANDOFF_SCHEMA_VERSION`` header discipline — an additive bump keeps a pinned consumer ok).
-PROJECTIONS_SCHEMA_VERSION = "1"
+PROJECTIONS_SCHEMA_VERSION = "2"
 
 
 class RunOverview(BaseModel):
@@ -112,6 +119,19 @@ class ManifestNode(BaseModel):
     est_cost_cents: str | None = None
 
 
+class ManifestPin(BaseModel):
+    """A C5 execution pin rendered without exposing parameter or artifact bodies."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    node_key: str | None = None
+    kind: str
+    key: str
+    version: str | None = None
+    digest: str
+    resolved_status: str
+
+
 class RunManifest(BaseModel):
     """The A4 run-manifest projection (REQ-16 A4): the run machine (phase spine) + the account
     graphs projected into a node DAG a UI renders and a client steers. Read-only; the mutating ops
@@ -125,4 +145,7 @@ class RunManifest(BaseModel):
     # The run row's lifecycle status (review F9a): a manifest-only UI must see a paused run —
     # node statuses alone cannot carry it (the current node still reads in_progress).
     run_status: str
+    execution_id: ExecutionId | None = None
+    recipe_revision_id: RecipeRevisionId | None = None
     nodes: tuple[ManifestNode, ...] = ()
+    pins: tuple[ManifestPin, ...] = ()

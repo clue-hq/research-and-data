@@ -14,6 +14,7 @@ from clue_execution import (
     ControlKind,
     ControlPolicyViolation,
     DbExecutionJournal,
+    DbExecutionRunViewReader,
     DbRunControlStore,
 )
 from clue_research.durable import ensure_project_run
@@ -93,6 +94,13 @@ def test_controls_are_replay_safe_isolated_and_append_only() -> None:
                 actor="agent",
             )
             assert await store.source_allowed(execution_id, "provider-a")
+            supervision = await DbExecutionRunViewReader(conn_factory=factory).read_supervision(
+                workspace_id="ws-c5-executor",
+                execution_id=execution_id,
+            )
+            assert supervision is not None
+            assert len(supervision.controls) == 2
+            assert supervision.effective_controls == ()
 
             with pytest.raises(DBAPIError):
                 async with factory() as write_conn:

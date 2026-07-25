@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Final, Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
@@ -51,6 +52,23 @@ class Settings(BaseSettings):
     # The deep-phase concurrency window — account jobs in flight at once (REQ-10 ~16–32; the
     # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
     fleet_deep_window: int = 16
+
+    # --- C5 Recipe #1 new-run routing -------------------------------------------------------
+    # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are
+    # never backfilled. Env: ``CLUE_RECIPE1_ROUTING_ENABLED``.
+    recipe1_routing_enabled: bool = False
+    # Explicit workspace canary targets (JSON array in environment configuration).
+    # Env: ``CLUE_RECIPE1_WORKSPACE_ALLOWLIST``.
+    recipe1_workspace_allowlist: tuple[str, ...] = ()
+    # Deterministic workspace-hash percentage canary. Zero plus an empty allowlist means no target.
+    # Env: ``CLUE_RECIPE1_CANARY_PERCENT``.
+    recipe1_canary_percent: int = Field(default=0, ge=0, le=100)
+    # The supervisor policy version Recipe #1 must pin at start.
+    # Env: ``CLUE_RECIPE1_SUPERVISOR_POLICY_VERSION``.
+    recipe1_supervisor_policy_version: str = "supervisor-v1"
+    # Process-local ceiling applied in addition to each recipe's promoted max_fanout.
+    # Env: ``CLUE_RECIPE_EXECUTOR_MAX_CONCURRENCY``.
+    recipe_executor_max_concurrency: int = Field(default=32, ge=1)
     # --- scoped memory (PB-B3; append-only additions per treaty §3.2) -----------------------
     # Deploy-level master default for the memory substrate. The *real* mechanism is the
     # per-workspace toggle + audit journal (Doc M §17a — the ``memory_switch`` table); this flag

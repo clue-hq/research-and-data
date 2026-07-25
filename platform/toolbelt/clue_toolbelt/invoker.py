@@ -21,7 +21,7 @@ from clue_toolbelt.envelope import (
     ToolInput,
     ToolResult,
 )
-from clue_toolbelt.errors import PreconditionFailed
+from clue_toolbelt.errors import PreconditionFailed, ToolAwaitingInput
 from clue_toolbelt.idempotency import IdempotencyStore
 from clue_toolbelt.registry import ToolRegistry
 from clue_toolbelt.runner import invoke_tool, validate_tool_result
@@ -93,6 +93,14 @@ class InvocationJournal(Protocol):
         start: JournalStart,
         context: ToolContext,
         reason_codes: tuple[str, ...],
+    ) -> None: ...
+
+    async def awaiting_input(
+        self,
+        *,
+        start: JournalStart,
+        context: ToolContext,
+        reason_code: str,
     ) -> None: ...
 
     async def failed(
@@ -249,6 +257,13 @@ class ToolInvoker:
                 start=start,
                 context=effective_context,
                 reason_codes=exc.reason_codes,
+            )
+            raise
+        except ToolAwaitingInput as exc:
+            await self._journal.awaiting_input(
+                start=start,
+                context=effective_context,
+                reason_code=exc.reason_code,
             )
             raise
         except BaseException as exc:

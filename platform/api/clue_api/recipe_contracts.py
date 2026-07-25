@@ -31,6 +31,8 @@ RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
     "discover_accounts@1",
     "score_accounts@1",
     "submit_tier_checkpoint@1",
+    "submit_project_checkpoint@1",
+    "advance_project_phase@1",
     "run_deep_account@1",
     "resolve_committee@1",
     "profile_contact@1",

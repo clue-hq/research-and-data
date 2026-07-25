@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from typing import cast
+
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 
 from clue_core import (
     ExecutionAttemptId,
@@ -16,7 +20,9 @@ from clue_core import (
     decode_jsonb,
 )
 from clue_db import ConnFactory
+from clue_execution.compatibility import CompatibilityContext, CompatibilityLoader
 from clue_execution.models import EdgeKind, ExecutionEventType, ExecutionNodeKind, ExecutionStatus
+from clue_execution.recipes import RecipeDefinition
 
 
 class _View(BaseModel):
@@ -109,9 +115,305 @@ class ExecutionRunView(_View):
     artifact_refs: tuple[ExecutionArtifactRefView, ...]
 
 
+class RecipeLibraryRevisionView(_View):
+    recipe_revision_id: RecipeRevisionId
+    recipe_key: str
+    scope_type: str
+    workspace_id: str | None
+    version: int
+    lifecycle_status: str
+    migration_state: str
+    definition_sha256: str
+    compatibility_status: str
+    created_at: UtcDatetime
+
+
+class SupervisorObservationView(_View):
+    observation_id: str
+    project_run_id: ProjectRunId | None
+    policy_version: str
+    aggregate_snapshot: dict[str, JsonValue]
+    trigger_codes: tuple[str, ...]
+    created_at: UtcDatetime
+
+
+class SupervisorDiagnosisView(_View):
+    diagnosis_id: str
+    observation_id: str
+    requested_model: str
+    answering_model: str
+    prompt_version: str
+    diagnosis_codes: tuple[str, ...]
+    affected_refs: tuple[str, ...]
+    confidence: float
+    created_at: UtcDatetime
+
+
+class SupervisorControlView(_View):
+    seq: int
+    control_kind: str
+    subject_ref: str
+    action: str
+    before: dict[str, JsonValue]
+    after: dict[str, JsonValue]
+    reason_code: str
+    observation_id: str | None
+    diagnosis_id: str | None
+    actor: str
+    created_at: UtcDatetime
+
+
+class ExecutionSupervisionView(_View):
+    observations: tuple[SupervisorObservationView, ...]
+    diagnoses: tuple[SupervisorDiagnosisView, ...]
+    controls: tuple[SupervisorControlView, ...]
+    effective_controls: tuple[SupervisorControlView, ...]
+
+
 class DbExecutionRunViewReader:
-    def __init__(self, *, conn_factory: ConnFactory) -> None:
+    def __init__(
+        self,
+        *,
+        conn_factory: ConnFactory,
+        compatibility: CompatibilityLoader | None = None,
+    ) -> None:
         self._conn_factory = conn_factory
+        self._compatibility = compatibility
+
+    async def read_project_run(
+        self, *, workspace_id: str, project_run_id: ProjectRunId
+    ) -> ExecutionRunView | None:
+        async with self._conn_factory() as conn:
+            execution_id = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT execution_id FROM project_run_execution_owner
+                        WHERE project_run_id = :run_id AND workspace_id = :workspace_id
+                        """
+                    ),
+                    {"run_id": project_run_id, "workspace_id": workspace_id},
+                )
+            ).scalar_one_or_none()
+        return (
+            None
+            if execution_id is None
+            else await self.read_execution(
+                workspace_id=workspace_id,
+                execution_id=ExecutionId(execution_id),
+            )
+        )
+
+    async def list_recipe_library(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str | None = None,
+    ) -> tuple[RecipeLibraryRevisionView, ...]:
+        async with self._conn_factory() as conn:
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT rr.id, r.recipe_key, r.scope_type, r.workspace_id, rr.version,
+                                   rr.graph_json, rr.parameter_schema_json, rr.compatibility_json,
+                                   rr.requested_memory_types, rr.executor_protocol, rr.max_nodes,
+                                   rr.max_depth, rr.max_fanout, rr.source_execution_id,
+                                   rr.definition_sha256, rr.created_by, rr.created_at,
+                                   (
+                                       SELECT event_type FROM recipe_revision_event e
+                                       WHERE e.recipe_revision_id = rr.id
+                                       ORDER BY seq DESC LIMIT 1
+                                   ) AS lifecycle_status
+                            FROM recipe_revision rr
+                            JOIN recipe r ON r.id = rr.recipe_id
+                            WHERE r.scope_type = 'system' OR r.workspace_id = :workspace_id
+                            ORDER BY r.recipe_key, rr.version
+                            """
+                        ),
+                        {"workspace_id": workspace_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        result: list[RecipeLibraryRevisionView] = []
+        for row in rows:
+            graph = decode_jsonb(row["graph_json"])
+            status = "not_evaluated"
+            if self._compatibility is not None:
+                definition = RecipeDefinition.model_validate_json(
+                    json.dumps(
+                        {
+                            "recipe_key": row["recipe_key"],
+                            "scope_type": row["scope_type"],
+                            "workspace_id": row["workspace_id"],
+                            "version": row["version"],
+                            "executor_protocol": row["executor_protocol"],
+                            "parameter_schema": decode_jsonb(row["parameter_schema_json"]),
+                            "graph": graph,
+                            "compatibility": decode_jsonb(row["compatibility_json"]),
+                            "requested_memory_types": decode_jsonb(row["requested_memory_types"]),
+                            "max_nodes": row["max_nodes"],
+                            "max_depth": row["max_depth"],
+                            "max_fanout": row["max_fanout"],
+                            "source_execution_id": row["source_execution_id"],
+                            "created_by": row["created_by"],
+                        },
+                        default=str,
+                    )
+                )
+                report = await self._compatibility.load(
+                    definition.compatibility,
+                    context=CompatibilityContext(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                    ),
+                )
+                status = "compatible" if report.compatible else "incompatible"
+            result.append(
+                RecipeLibraryRevisionView(
+                    recipe_revision_id=row["id"],
+                    recipe_key=str(row["recipe_key"]),
+                    scope_type=str(row["scope_type"]),
+                    workspace_id=(
+                        str(row["workspace_id"]) if row["workspace_id"] is not None else None
+                    ),
+                    version=int(row["version"]),
+                    lifecycle_status=str(row["lifecycle_status"]),
+                    migration_state=str(graph["migration_state"]),
+                    definition_sha256=str(row["definition_sha256"]),
+                    compatibility_status=status,
+                    created_at=row["created_at"],
+                )
+            )
+        return tuple(result)
+
+    async def read_supervision(
+        self, *, workspace_id: str, execution_id: ExecutionId
+    ) -> ExecutionSupervisionView | None:
+        async with self._conn_factory() as conn:
+            exists = (
+                await conn.execute(
+                    text("SELECT 1 FROM execution WHERE id = :id AND workspace_id = :workspace_id"),
+                    {"id": execution_id, "workspace_id": workspace_id},
+                )
+            ).scalar_one_or_none()
+            if exists is None:
+                return None
+            observations = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT id, project_run_id, policy_version, aggregate_snapshot_json,
+                                   trigger_codes_json, created_at
+                            FROM supervisor_observation
+                            WHERE execution_id = :id AND workspace_id = :workspace_id
+                            ORDER BY created_at, id
+                            """
+                        ),
+                        {"id": execution_id, "workspace_id": workspace_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            diagnoses = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT d.id, d.observation_id, d.requested_model, d.answering_model,
+                                   d.prompt_version, d.diagnosis_codes_json,
+                                   d.affected_refs_json, d.confidence, d.created_at
+                            FROM supervisor_diagnosis d
+                            JOIN supervisor_observation o ON o.id = d.observation_id
+                            WHERE o.execution_id = :id AND o.workspace_id = :workspace_id
+                            ORDER BY d.created_at, d.id
+                            """
+                        ),
+                        {"id": execution_id, "workspace_id": workspace_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            controls = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT seq, control_kind, subject_ref, action, before_json, after_json,
+                                   reason_code, observation_id, diagnosis_id, actor, created_at
+                            FROM run_control_event
+                            WHERE execution_id = :id AND workspace_id = :workspace_id
+                            ORDER BY seq
+                            """
+                        ),
+                        {"id": execution_id, "workspace_id": workspace_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+
+        def control(values: RowMapping) -> SupervisorControlView:
+            return SupervisorControlView(
+                seq=cast(int, values["seq"]),
+                control_kind=str(values["control_kind"]),
+                subject_ref=str(values["subject_ref"]),
+                action=str(values["action"]),
+                before=decode_jsonb(values["before_json"]),
+                after=decode_jsonb(values["after_json"]),
+                reason_code=str(values["reason_code"]),
+                observation_id=(
+                    str(values["observation_id"]) if values["observation_id"] is not None else None
+                ),
+                diagnosis_id=(
+                    str(values["diagnosis_id"]) if values["diagnosis_id"] is not None else None
+                ),
+                actor=str(values["actor"]),
+                created_at=cast(UtcDatetime, values["created_at"]),
+            )
+
+        control_views = tuple(control(row) for row in controls)
+        latest: dict[tuple[str, str], SupervisorControlView] = {}
+        for item in control_views:
+            latest[(item.control_kind, item.subject_ref)] = item
+        effective = tuple(
+            latest[key] for key in sorted(latest) if latest[key].after.get("active") is True
+        )
+        return ExecutionSupervisionView(
+            observations=tuple(
+                SupervisorObservationView(
+                    observation_id=str(row["id"]),
+                    project_run_id=row["project_run_id"],
+                    policy_version=str(row["policy_version"]),
+                    aggregate_snapshot=decode_jsonb(row["aggregate_snapshot_json"]),
+                    trigger_codes=tuple(decode_jsonb(row["trigger_codes_json"])),
+                    created_at=row["created_at"],
+                )
+                for row in observations
+            ),
+            diagnoses=tuple(
+                SupervisorDiagnosisView(
+                    diagnosis_id=str(row["id"]),
+                    observation_id=str(row["observation_id"]),
+                    requested_model=str(row["requested_model"]),
+                    answering_model=str(row["answering_model"]),
+                    prompt_version=str(row["prompt_version"]),
+                    diagnosis_codes=tuple(decode_jsonb(row["diagnosis_codes_json"])),
+                    affected_refs=tuple(decode_jsonb(row["affected_refs_json"])),
+                    confidence=float(row["confidence"]),
+                    created_at=row["created_at"],
+                )
+                for row in diagnoses
+            ),
+            controls=control_views,
+            effective_controls=effective,
+        )
 
     async def read_execution(
         self, *, workspace_id: str, execution_id: ExecutionId
@@ -348,4 +650,9 @@ __all__ = [
     "ExecutionPinView",
     "ExecutionRunView",
     "ExecutionSummary",
+    "ExecutionSupervisionView",
+    "RecipeLibraryRevisionView",
+    "SupervisorControlView",
+    "SupervisorDiagnosisView",
+    "SupervisorObservationView",
 ]

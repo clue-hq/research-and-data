@@ -17,6 +17,8 @@ import argparse
 import asyncio
 from uuid import UUID, uuid4
 
+from script_support import ensure_script_workspace
+
 import clue_obs
 from clue_api.composition import load_research_packs
 from clue_config import GatewayConfig
@@ -42,6 +44,7 @@ async def main(
         # Pack registration + the (optional) seed must be committed before profile_account,
         # which opens its own sessions.
         async with transaction() as conn:
+            await ensure_script_workspace(conn, workspace_id)
             await load_research_packs(conn)
             if account_id is None:
                 tag = uuid4().hex[:8]  # unique per run so re-runs don't collide on domain
@@ -49,6 +52,7 @@ async def main(
                     conn,
                     canonical_name=f"Acme Robotics {tag}",
                     primary_domain=f"acme-{tag}.example",
+                    workspace_id=workspace_id,
                 )
                 account_id = str(seeded)
                 print(f"seeded demo account: {account_id}")

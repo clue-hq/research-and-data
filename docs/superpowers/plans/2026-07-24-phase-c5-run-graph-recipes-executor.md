@@ -8,6 +8,8 @@
 
 **Binding spec:** `docs/specs/PC-C5-run-graph-recipes-executor.md`
 
+**Status:** complete. C5.0–C5.6 are implemented and verified; the handoff is C6.
+
 ## 1. Delivery posture
 
 C5 is one serial integration lane. Its first four slices change the shared execution choke
@@ -537,6 +539,13 @@ No second deep implementation is allowed.
 - `make check`.
 
 ## 8. C5.6 — Recipe #1 cutover and run views
+
+**Status:** implemented and verified on 2026-07-25. Recipe #1 v2 is the promoted executable phase
+graph; feature-gated new starts acquire its sole execution owner while pre-existing unowned runs
+retain the fixed driver. Confirmed Stage-0 lineage becomes exact pins plus born-complete
+reverse/ICP nodes. Legacy and two isolated Recipe #1 runs have matching canonical fingerprints;
+historical graph/pin/control views, SSE reconnect, scripts 01–06, the full configured suite, and
+head→base→head migration smoke are green.
 
 ### 8.1 Phase graph
 

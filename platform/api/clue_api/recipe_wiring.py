@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 import clue_execution
 from clue_agents import discover_skills
-from clue_config import DEFAULT_STAGE0_POLICY, Config, Stage0Policy
+from clue_config import DEFAULT_STAGE0_POLICY, Config, Stage0Policy, get_config
 from clue_db import ConnFactory, transaction
 from clue_execution import (
     CallablePinResolver,
@@ -38,6 +38,7 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v1.json",
     "recipe0-stage0-v2.json",
     "recipe1-classic-v1.json",
+    "recipe1-classic-v2.json",
 )
 
 
@@ -120,6 +121,7 @@ def build_recipe_pin_registry(
     prompt_resources: Sequence[VersionedPinResource] = (),
     model_policy_resources: Sequence[VersionedPinResource] = (),
     extra_static_resources: Mapping[str, Sequence[VersionedPinResource]] | None = None,
+    config_for: Callable[[str, str | None], Config] = get_config,
 ) -> PinResolverRegistry:
     """Register the production adapters at the API composition root.
 
@@ -275,6 +277,56 @@ def build_recipe_pin_registry(
                 loader=spine_loader(table, key_column),
             )
         )
+
+    async def project_run(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        try:
+            UUID(request.key)
+        except ValueError:
+            return None
+        async with conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT id, workspace_id, project_id, icp_key, icp_version,
+                                   client_entity_id, client_kb_version, product_id,
+                                   product_context_version_id, readiness_decision_id,
+                                   tier_cutoffs_json
+                            FROM project_run
+                            WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
+                            """
+                        ),
+                        {"key": request.key, "workspace_id": context.workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        # Deliberately excludes mutable phase/status/budget counters. This pin is the immutable
+        # run identity and lineage Recipe #1 is allowed to resume against.
+        return _observation(version="1", payload=dict(row))
+
+    registry.register(CallablePinResolver(kind="project_run", loader=project_run))
+
+    async def supervisor_policy(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        config_value = config_for(context.workspace_id, request.key)
+        policy = config_value.supervisor_policy
+        return _observation(
+            version=policy.version,
+            payload=policy,
+            metadata={"icp_key": request.key},
+        )
+
+    registry.register(CallablePinResolver(kind="supervisor_policy", loader=supervisor_policy))
 
     async def client_kb(
         request: PinRequest,

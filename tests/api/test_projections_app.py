@@ -162,7 +162,7 @@ def test_overview_route_serves_live_run_with_gap_marker() -> None:
                 unauth = await client.get(f"/project_runs/{run_id}/overview")
             assert ok.status_code == 200
             body = ok.json()
-            assert body["schema_version"] == "1"
+            assert body["schema_version"] == "2"
             overview = body["overview"]
             assert overview["narrative_emit_skipped"] is True
             assert overview["handoff_reached"] is True
@@ -665,8 +665,8 @@ def test_schema_version_header_served_on_json_and_sse() -> None:
                     params={"stream_token": token},
                     headers={"X-Workspace-Id": _WS},
                 )
-            assert overview.headers["X-Projections-Schema-Version"] == "1"
-            assert sse.headers["X-Projections-Schema-Version"] == "1"
+            assert overview.headers["X-Projections-Schema-Version"] == "2"
+            assert sse.headers["X-Projections-Schema-Version"] == "2"
 
     run_async(_run())
 

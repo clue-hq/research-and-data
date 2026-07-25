@@ -1,6 +1,6 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5.0–C5.5 implemented, C5.6 next
+**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5 implemented; C6 next
 (2026-07-25)
 
 **Integration branch:** `platform/workspace-restructure`
@@ -451,6 +451,11 @@ workflow through a test harness/minimal actor; C6 binds the real mind to the sam
 - Recipe #0 is the first live end-to-end exercise of B1+B4.
 
 ### C5 — run-graph journal, recipes, executor, supervisor (Step 5)
+
+**Implementation state:** complete. Recipe #0 and Recipe #1 execute through the durable graph
+runtime; new-run routing is feature-gated and defaults off; legacy runs retain their fixed-driver
+fallback; normalized legacy/two-run Recipe #1 outcomes, historical views, SSE replay, scripts
+01–06, the full suite, and migration smoke are green.
 
 **Goal.** Make work outcome-reproducible and crash-resumable beyond the fixed pipeline.
 
