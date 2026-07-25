@@ -19,6 +19,7 @@ import argparse
 import asyncio
 from uuid import uuid4
 
+from script_support import ensure_script_workspace
 from sqlalchemy.exc import IntegrityError
 
 import clue_obs
@@ -36,18 +37,23 @@ async def main(
     skipped: list[tuple[str, str | None]] = []
 
     async with db_lifespan():
+        async with transaction() as conn:
+            await ensure_script_workspace(conn, workspace_id)
         for name, domain in capped:
             try:
                 # Each import in its own transaction so a duplicate skips just that row.
                 async with transaction() as conn:
                     account_id = await insert_account_entity(
-                        conn, canonical_name=name, primary_domain=domain
+                        conn,
+                        canonical_name=name,
+                        primary_domain=domain,
+                        workspace_id=workspace_id,
                     )
                 created.append((str(account_id), name, domain))
             except IntegrityError:
                 skipped.append((name, domain))
 
-    print(f"\n=== accounts resolved (cap={max_accounts}, tenant={workspace_id}) ===")
+    print(f"\n=== accounts resolved (cap={max_accounts}, workspace={workspace_id}) ===")
     for account_id, name, domain in created:
         print(f"  {account_id}  {name} ({domain})")
     for name, domain in skipped:

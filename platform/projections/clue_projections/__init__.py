@@ -26,6 +26,7 @@ from clue_projections.dtos import (
     AccountProgress,
     AccountReadiness,
     ManifestNode,
+    ManifestPin,
     Readiness,
     RunManifest,
     RunOverview,
@@ -73,6 +74,7 @@ __all__ = [
     "Readiness",
     "RunManifest",
     "ManifestNode",
+    "ManifestPin",
     # run views
     "run_overview",
     "account_progress",

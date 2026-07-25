@@ -18,6 +18,8 @@ import argparse
 import asyncio
 from uuid import UUID, uuid4
 
+from script_support import ensure_script_workspace
+
 import clue_obs
 from clue_api.composition import load_research_packs
 from clue_core import (
@@ -81,6 +83,7 @@ async def main(
     )  # the facet fields' tier-4 source
 
     async with db_lifespan(), transaction() as conn:
+        await ensure_script_workspace(conn, workspace_id)
         await load_research_packs(conn)
         if account_id is None:
             account_id = str(
@@ -88,6 +91,7 @@ async def main(
                     conn,
                     canonical_name=f"Acme Robotics {tag}",
                     primary_domain=f"acme-{tag}.example",
+                    workspace_id=workspace_id,
                 )
             )
             print(f"seeded demo account: {account_id}")

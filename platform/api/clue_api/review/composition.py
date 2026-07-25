@@ -27,6 +27,7 @@ from sqlalchemy import bindparam, text
 
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.handoff_wiring import DurableHandoffReadinessReader
+from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
 from clue_core import (
     ClaimId,
@@ -177,8 +178,14 @@ class ProjectRunResumeHook:
     an unowned run resumes the legacy drive task. The injectable ``project_run`` seam remains for
     tests and alternate composition, but no caller races the detached driver in-process."""
 
-    def __init__(self, *, project_run: ProjectRun | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        project_run: ProjectRun | None = None,
+        project_execution_router: ProjectExecutionRouter | None = None,
+    ) -> None:
         self._run = project_run
+        self._project_execution_router = project_execution_router
 
     async def resume_review(self, project_run_id: ProjectRunId) -> None:
         run = self._run if self._run is not None else _default_resume_run()
@@ -186,7 +193,13 @@ class ProjectRunResumeHook:
             await run.submit_checkpoint(project_run_id, decision={"action": "approve"})
         except CheckpointNotAwaiting:
             return  # already resumed/advanced (idempotent re-fire)
-        await enqueue_run_drive(project_run_id)
+        routed = (
+            await self._project_execution_router.resume_owned(project_run_id, actor="human")
+            if self._project_execution_router is not None
+            else False
+        )
+        if not routed:
+            await enqueue_run_drive(project_run_id)
 
 
 class NoopReviewDispositionEmitter:
@@ -235,6 +248,7 @@ def build_review_surface(
     project_run: ProjectRun | None = None,
     annotation_reader: VerificationAnnotationReader | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> ReviewSurfaceImpl:
     """Construct the production :class:`~clue_research.review.ReviewSurfaceImpl` — the projection
     over the durable annotation reader, the campaign resume hook, and the M13.2 disposition emitter.
@@ -247,7 +261,10 @@ def build_review_surface(
     return ReviewSurfaceImpl(
         projector=ReviewProjector(annotation_reader=reader),
         session_factory=session_factory,
-        resume_hook=ProjectRunResumeHook(project_run=project_run),
+        resume_hook=ProjectRunResumeHook(
+            project_run=project_run,
+            project_execution_router=project_execution_router,
+        ),
         disposition_emitter=disposition_emitter or NoopReviewDispositionEmitter(),
     )
 
@@ -260,6 +277,7 @@ def build_review_phase_handler(
     session_factory: ConnFactory = transaction,
     project_run: ProjectRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> ReviewPhaseHandler:
     """Construct the ``ProjectPhase.REVIEW`` handler with the concrete seams (mirrors
     ``build_verification_phase_handler``). ``disposition_emitter`` is threaded into the default
@@ -273,6 +291,7 @@ def build_review_phase_handler(
             session_factory=session_factory,
             project_run=project_run,
             disposition_emitter=disposition_emitter,
+            project_execution_router=project_execution_router,
         ),
     )
 
@@ -285,6 +304,7 @@ def register_review_phase_handler(
     session_factory: ConnFactory = transaction,
     project_run: ProjectRun | None = None,
     disposition_emitter: ReviewDispositionEmitter | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> ReviewPhaseHandler:
     """Build + register the REVIEW handler into the M7.3 process-default ``PhaseHandlerRegistry``
     (the api-root binder; mirrors ``register_verification_phase_handler``). Pass
@@ -297,6 +317,7 @@ def register_review_phase_handler(
         session_factory=session_factory,
         project_run=project_run,
         disposition_emitter=disposition_emitter,
+        project_execution_router=project_execution_router,
     )
     register_phase_handler(handler)
     return handler

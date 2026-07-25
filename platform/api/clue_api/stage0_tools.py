@@ -11,6 +11,7 @@ from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.tool_outputs import (
     ConfirmedProjectRunOutput,
     InterviewAnswerOutput,
@@ -296,6 +297,7 @@ class _Stage0Tool(Tool):
         memory_write: MemoryWriteSeam | None = None,
         scrape_binder: Callable[[AccountEntity], None] | None = None,
         storage: StorageBackend | None = None,
+        project_execution_router: ProjectExecutionRouter | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._policy = policy
@@ -303,6 +305,7 @@ class _Stage0Tool(Tool):
         self._memory_write = memory_write
         self._scrape_binder = scrape_binder
         self._storage = storage
+        self._project_execution_router = project_execution_router
 
     async def _project_audit_snapshot(self, project_id: str, ctx: ToolContext) -> dict[str, object]:
         async with self._conn_factory() as conn:
@@ -1010,6 +1013,12 @@ class StartConfirmedProjectRunTool(_Stage0Tool):
                     else None
                 ),
             )
+        if self._project_execution_router is not None:
+            await self._project_execution_router.attach_if_eligible(
+                run_id,
+                actor=ctx.actor,
+                parent_execution_id=ctx.execution_id,
+            )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1030,6 +1039,7 @@ def stage0_tools(
     memory_write: MemoryWriteSeam | None,
     scrape_binder: Callable[[AccountEntity], None] | None,
     storage: StorageBackend | None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> tuple[Tool, ...]:
     def make(tool_type: type[_Stage0Tool]) -> _Stage0Tool:
         return tool_type(
@@ -1039,6 +1049,7 @@ def stage0_tools(
             memory_write=memory_write,
             scrape_binder=scrape_binder,
             storage=storage,
+            project_execution_router=project_execution_router,
         )
 
     return (

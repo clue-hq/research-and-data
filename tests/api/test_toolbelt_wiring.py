@@ -51,6 +51,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "discover_accounts": ("precondition", ("run_not_found",)),
     "score_accounts": ("precondition", ("run_not_found",)),
     "submit_tier_checkpoint": ("precondition", ("run_not_found",)),
+    "submit_project_checkpoint": ("precondition", ("run_not_found",)),
     "run_deep_account": ("precondition", ("no_active_icp",)),
     "resolve_committee": ("precondition", ("account_not_found",)),
     "profile_contact": ("precondition", ("account_not_found",)),
@@ -93,6 +94,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         "discover_accounts": {"project_run_id": _UUID()},
         "score_accounts": {"project_run_id": _UUID()},
         "submit_tier_checkpoint": {"project_run_id": _UUID()},
+        "submit_project_checkpoint": {"project_run_id": _UUID()},
         "run_deep_account": {"account_entity_id": _UUID(), "icp_key": "matrix", "tier": "top"},
         "resolve_committee": {"account_entity_id": _UUID()},
         "profile_contact": {
@@ -507,7 +509,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    assert len(registry) == 31
+    assert len(registry) == 32
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

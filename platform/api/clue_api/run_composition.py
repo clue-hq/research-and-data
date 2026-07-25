@@ -76,6 +76,7 @@ from clue_api.phase_wiring import (
     register_tier_checkpoint_handler,
     snapshot_bound,
 )
+from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.run_events_wiring import NullRunEventEmitter, RunEventEmitter
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.supervisor_wiring import (
@@ -304,6 +305,7 @@ class ComposingRunDriver:
         controls: DbRunControlStore | None = None,
         supervisor_actions: SupervisorActions | None = None,
         execution_journal: DbExecutionJournal | None = None,
+        project_execution_router: ProjectExecutionRouter | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -321,6 +323,7 @@ class ComposingRunDriver:
         self._controls = controls
         self._supervisor_actions = supervisor_actions
         self._execution_journal = execution_journal
+        self._project_execution_router = project_execution_router
         if (controls is None) != (supervisor_actions is None):
             raise ValueError("controls and supervisor_actions must be supplied together")
         if controls is not None and execution_journal is None:
@@ -420,7 +423,12 @@ class ComposingRunDriver:
         high_tier_resolver = build_high_tier_resolver(spec=spec)
 
         # Process-wide-composable handlers (REVIEW today) folded into this per-run registry (D1).
-        register_boot_handlers(self._settings, storage=self._storage, registry=registry)
+        register_boot_handlers(
+            self._settings,
+            storage=self._storage,
+            registry=registry,
+            project_execution_router=self._project_execution_router,
+        )
 
         # M5/M6 (snapshot-wrapped, D3). REVERSE_PROFILING threads client input when a provider is
         # wired ([M5×M7]); with no provider the phase cannot build a ClientInput, so we register a

@@ -45,6 +45,7 @@ from clue_toolbelt.envelope import (
 from clue_toolbelt.errors import (
     IdempotencyConflict,
     PreconditionFailed,
+    ToolAwaitingInput,
     ToolbeltError,
     ToolContractViolation,
     UnknownTool,
@@ -104,6 +105,7 @@ __all__ = [
     # errors
     "ToolbeltError",
     "ToolContractViolation",
+    "ToolAwaitingInput",
     "UnknownTool",
     "PreconditionFailed",
     "IdempotencyConflict",

@@ -56,7 +56,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from decimal import Decimal
-from typing import cast
+from typing import ClassVar, cast
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -68,6 +68,7 @@ from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
@@ -334,6 +335,7 @@ class _CapabilityTool(Tool):
         pre_spend_gate: PreSpendGate,
         lock_factory: LockFactory,
         storage: StorageBackend | None,
+        project_execution_router: ProjectExecutionRouter | None,
     ) -> None:
         self._settings = settings
         self._gateway = gateway
@@ -345,6 +347,7 @@ class _CapabilityTool(Tool):
         self._pre_spend_gate = pre_spend_gate
         self._lock_factory = lock_factory
         self._storage = storage
+        self._project_execution_router = project_execution_router
 
     def _require_gateway(self) -> LLMGateway:
         if self._gateway is None:
@@ -817,7 +820,7 @@ class SubmitTierCheckpointTool(_CapabilityTool):
     )
     effect_class = ToolEffectClass.STEERING
     parameter_policy = JournalParameterPolicy(safe_display_fields=("project_run_id",))
-    pin_requirements = ("project_run", "tier_policy")
+    pin_requirements: ClassVar[tuple[str, ...]] = ("project_run", "tier_policy")
 
     async def audit_snapshot(self, inputs: ToolInput, ctx: ToolContext) -> dict[str, object]:
         assert isinstance(inputs, SubmitTierCheckpointInput)
@@ -858,7 +861,12 @@ class SubmitTierCheckpointTool(_CapabilityTool):
         assert run_id is not None
         decision = cast(dict[str, JsonValue], inputs.decision)
         row = await self._run.submit_checkpoint(run_id, decision=decision)
-        if self._queue is not None:
+        routed = (
+            await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
+            if self._project_execution_router is not None
+            else False
+        )
+        if not routed and self._queue is not None:
             await enqueue_run_drive(
                 run_id,
                 queue=self._queue,
@@ -869,6 +877,37 @@ class SubmitTierCheckpointTool(_CapabilityTool):
             version=self.version,
             references={"project_run_id": str(row.id), "phase": row.phase.value},
         )
+
+
+class SubmitProjectCheckpointTool(SubmitTierCheckpointTool):
+    """Generic human/supervisor checkpoint decision for non-tier Recipe #1 waits."""
+
+    name = "submit_project_checkpoint"
+    pin_requirements: ClassVar[tuple[str, ...]] = ("project_run",)
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, SubmitTierCheckpointInput)
+        run = await self._load_run(inputs.project_run_id, ctx)
+        if run is None:
+            return _fail("run_not_found", "no such project run")
+        async with self._conn_factory() as conn:
+            checkpoint = await get_checkpoint(conn, run.id, run.phase)
+        awaiting = (
+            checkpoint is not None and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT
+        )
+        self_heal = (
+            checkpoint is not None
+            and checkpoint.status == PhaseCheckpointStatus.COMMITTED
+            and run.status in (ProjectRunStatus.PAUSED, ProjectRunStatus.ACTIVE)
+        )
+        if not (awaiting or self_heal):
+            return _fail(
+                "checkpoint_not_awaiting",
+                "the run is not suspended at an actionable project checkpoint",
+            )
+        return ()
 
 
 # =============================================================================================
@@ -1362,6 +1401,12 @@ class StartProjectRunTool(_CapabilityTool):
             budget_cap_cents=cap,
             project_run_id=ProjectRunId(ctx.operation_id),
         )
+        if self._project_execution_router is not None:
+            await self._project_execution_router.attach_if_eligible(
+                run_id,
+                actor=ctx.actor,
+                parent_execution_id=ctx.execution_id,
+            )
         return ToolResult(
             tool=self.name, version=self.version, references={"project_run_id": str(run_id)}
         )
@@ -1396,6 +1441,12 @@ class PauseRunTool(_CapabilityTool):
         run_id = _parse_run_id(inputs.project_run_id)
         assert run_id is not None
         row = await self._run.pause(run_id)
+        if self._project_execution_router is not None:
+            await self._project_execution_router.pause_owned(
+                run_id,
+                actor=ctx.actor,
+                reason_code="project_run_paused",
+            )
         return ToolResult(
             tool=self.name,
             version=self.version,
@@ -1438,7 +1489,12 @@ class ResumeRunTool(_CapabilityTool):
         # D4: fleet deployments re-drive by enqueue (a fresh drive task); with no queue wired the
         # status flip stands and the in-process ProjectRunResumeHook drives out-of-band.
         enqueued = False
-        if self._queue is not None:
+        routed = (
+            await self._project_execution_router.resume_owned(run_id, actor=ctx.actor)
+            if self._project_execution_router is not None
+            else False
+        )
+        if not routed and self._queue is not None:
             enqueued = await enqueue_run_drive(
                 run_id,
                 queue=self._queue,
@@ -1514,6 +1570,7 @@ _TOOL_TYPES: tuple[type[_CapabilityTool], ...] = (
     DiscoverAccountsTool,
     ScoreAccountsTool,
     SubmitTierCheckpointTool,
+    SubmitProjectCheckpointTool,
     RunDeepAccountTool,
     ResolveCommitteeTool,
     ProfileContactTool,
@@ -1544,6 +1601,7 @@ def build_toolbelt(
     proposal_personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
     stage0_memory_write: MemoryWriteSeam | None = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1618,6 +1676,7 @@ def build_toolbelt(
                 pre_spend_gate=gate,
                 lock_factory=locks,
                 storage=storage,
+                project_execution_router=project_execution_router,
             ),
             make_default=True,
         )
@@ -1655,6 +1714,7 @@ def build_toolbelt(
         memory_write=stage0_memory_write,
         scrape_binder=stage0_scrape_binder,
         storage=storage,
+        project_execution_router=project_execution_router,
     ):
         registry.register(tool, make_default=True)
     return registry

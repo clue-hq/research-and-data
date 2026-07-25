@@ -125,6 +125,11 @@ from clue_execution.views import (
     ExecutionPinView,
     ExecutionRunView,
     ExecutionSummary,
+    ExecutionSupervisionView,
+    RecipeLibraryRevisionView,
+    SupervisorControlView,
+    SupervisorDiagnosisView,
+    SupervisorObservationView,
 )
 from clue_execution.worker import RecipeExecutionHandler, enqueue_recipe_execution
 
@@ -235,6 +240,11 @@ __all__ = [
     "ExecutionPinView",
     "ExecutionRunView",
     "ExecutionSummary",
+    "ExecutionSupervisionView",
+    "RecipeLibraryRevisionView",
+    "SupervisorControlView",
+    "SupervisorDiagnosisView",
+    "SupervisorObservationView",
     "RecipeExecutionHandler",
     "enqueue_recipe_execution",
 ]

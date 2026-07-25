@@ -16,6 +16,8 @@ import argparse
 import asyncio
 from uuid import uuid4
 
+from script_support import ensure_script_workspace
+
 import clue_obs
 from clue_api.composition import load_research_packs
 from clue_db import db_lifespan, transaction
@@ -24,6 +26,7 @@ from clue_research.stage0 import ClientInput, reverse_profile
 
 async def main(name: str, website: str, workspace_id: str) -> None:
     async with db_lifespan(), transaction() as conn:
+        await ensure_script_workspace(conn, workspace_id)
         await load_research_packs(conn)  # register field packs (idempotent)
         result = await reverse_profile(
             conn,

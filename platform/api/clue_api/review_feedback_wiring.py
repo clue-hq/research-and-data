@@ -47,6 +47,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from clue_api.disposition_wiring import build_review_disposition_emitter
+from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.review import (
     ReviewPhaseHandler,
     build_review_phase_handler,
@@ -93,6 +94,7 @@ def build_reviewed_phase_handler(
     disposition_emitter: ReviewDispositionEmitter | None = None,
     emitter_conn_factory: ConnFactory = transaction,
     emitter_sink: MetricSink | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> ReviewPhaseHandler:
     """Build the ``ProjectPhase.REVIEW`` handler whose surface emits **real** dispositions (no
     registration) — the M13.1 ↔ M13.2 join. Defaults the surface's disposition emitter to M13.2's
@@ -107,6 +109,7 @@ def build_reviewed_phase_handler(
             emitter_conn_factory=emitter_conn_factory,
             emitter_sink=emitter_sink,
         ),
+        project_execution_router=project_execution_router,
     )
 
 
@@ -118,6 +121,7 @@ def register_reviewed_phase_handler(
     disposition_emitter: ReviewDispositionEmitter | None = None,
     emitter_conn_factory: ConnFactory = transaction,
     emitter_sink: MetricSink | None = None,
+    project_execution_router: ProjectExecutionRouter | None = None,
 ) -> ReviewPhaseHandler:
     """Build + register the production ``ProjectPhase.REVIEW`` handler (emitting real dispositions)
     into the M7.3 process-default ``PhaseHandlerRegistry`` (the M13.1 ↔ M13.2 join). Mirrors
@@ -131,6 +135,7 @@ def register_reviewed_phase_handler(
             emitter_conn_factory=emitter_conn_factory,
             emitter_sink=emitter_sink,
         ),
+        project_execution_router=project_execution_router,
     )
 
 

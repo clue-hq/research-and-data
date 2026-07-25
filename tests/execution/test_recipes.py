@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.execution_tools import AdvanceProjectPhaseTool, ExecutionControlServices
 from clue_api.recipe_contracts import RECIPE_0_TOOL_ADDRESSES
 from clue_api.recipe_wiring import (
     build_recipe_pin_registry,
@@ -60,6 +62,21 @@ def _lifecycle(
     factory = _savepoint_factory(conn)
     repository = DbRecipeRepository(conn_factory=factory)
     registry = build_toolbelt(storage=None)
+    registry.register(
+        AdvanceProjectPhaseTool(
+            ExecutionControlServices(
+                starter=cast(Any, None),
+                executor=cast(Any, None),
+                parameters=cast(Any, None),
+                recipes=repository,
+                run_machine=cast(Any, None),
+                queue=cast(Any, None),
+                conn_factory=factory,
+                registry=registry,
+            )
+        ),
+        make_default=True,
+    )
     pins = build_recipe_pin_registry(
         tool_registry=registry,
         conn_factory=factory,
@@ -109,9 +126,9 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                 )
             ).mappings()
             assert {row["event_type"]: row["count"] for row in events} == {
-                "promoted": 3,
-                "proposed": 3,
-                "superseded": 1,
+                "promoted": 4,
+                "proposed": 4,
+                "superseded": 2,
             }
 
             mismatch = definitions[0].model_copy(update={"max_nodes": 129})

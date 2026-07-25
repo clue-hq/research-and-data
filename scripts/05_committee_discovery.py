@@ -19,6 +19,8 @@ from collections.abc import Sequence
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from script_support import ensure_script_workspace
+
 import clue_obs
 from clue_api.composition import load_research_packs
 from clue_config import GatewayConfig
@@ -74,11 +76,15 @@ async def main(workspace_id: str, tier: str, account_id: str | None) -> None:
     source = DemoPeopleSource(_DEMO_CANDIDATES)
 
     async with db_lifespan(), transaction() as conn:
+        await ensure_script_workspace(conn, workspace_id)
         await load_research_packs(conn)
         if account_id is None:
             tag = uuid4().hex[:8]  # unique per run so re-runs don't collide on domain
             seeded = await insert_account_entity(
-                conn, canonical_name=f"Acme Robotics {tag}", primary_domain=f"acme-{tag}.example"
+                conn,
+                canonical_name=f"Acme Robotics {tag}",
+                primary_domain=f"acme-{tag}.example",
+                workspace_id=workspace_id,
             )
             account_id = str(seeded)
             print(f"seeded demo account: {account_id}")
