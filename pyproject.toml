@@ -218,6 +218,7 @@ source_modules = [
     "clue_research.synthesis",
     "clue_research.narrative",
     "clue_research.review",
+    "clue_agents",
     "clue_api",
 ]
 forbidden_modules = [
@@ -281,6 +282,7 @@ source_modules = [
     "clue_research.synthesis",
     "clue_research.narrative",
     "clue_research.review",
+    "clue_agents",
     "clue_api",
 ]
 forbidden_modules = ["openai"]
@@ -362,13 +364,25 @@ name = "subsystems are independent"
 type = "independence"
 modules = ["clue_research", "clue_memory", "clue_content"]
 
-# Rule S2 — the agents package may reach the toolbelt facade + projections only (REQ-02):
-# never claim-store writes, resolvers, the gateway, the fleet, or any subsystem directly.
+# Rule S2 — the agents package may reach the shared core, toolbelt facade, and projections only
+# (REQ-02): never claim-store writes, resolvers, execution/storage infrastructure, the gateway,
+# fleet, object spine, locks, API, or any subsystem directly. Concrete bridges are injected at API.
 [[tool.importlinter.contracts]]
 name = "agents import only the toolbelt facade + projections"
 type = "forbidden"
 source_modules = ["clue_agents"]
-forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_api"]
+forbidden_modules = [
+    "clue_research",
+    "clue_memory",
+    "clue_content",
+    "clue_execution",
+    "clue_fleet",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_storage",
+    "clue_api",
+]
 
 # Rule T1 — toolbelt purity (D5, PB-B4 slice 2): the typed tool envelope is dependency-inverted like
 # the resolver seam — it imports ONLY the shared base (clue_core / clue_config / clue_db / clue_obs).

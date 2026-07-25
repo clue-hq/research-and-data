@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** PLANNED — contract frozen before implementation (2026-07-26)
+**Status:** IN PROGRESS — C6.0 contract freeze and dependency spikes complete (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -607,6 +607,191 @@ idempotency, coverage, verification, and evaluator-one-owner tests pass.
 **Gate:** a canaried workspace completes the Stage-0 and governed research verticals; a failed
 turn is visibly failed; non-canaried work retains current behavior; one migration head and the
 full repository gate are green.
+
+---
+
+## 7A. C6.0 implementation record
+
+C6.0 is a contract and evidence checkpoint only. It adds no database migration, API route,
+production executor, runtime workspace factory, catalog implementation, or feature routing.
+
+### 7A.1 Selected dependencies and ownership
+
+| Dependency | C6.0 pin | Owner/use |
+|---|---|---|
+| `deepagents` | `0.6.12` exact | `clue_agents` framework construction and state vocabulary |
+| `langchain-core` | `>=1.5,<2` | provider-neutral model/messages/tools protocol |
+| `langchain-openai` | `1.4.1` exact | `clue_gateway` only; OpenRouter-compatible tool-call adapter |
+| `langgraph-checkpoint-postgres` | existing `3.1.0` lock | async durable mind-state checkpoint/resume |
+
+`clue_agents` imports neither `clue_gateway` nor `langchain_openai` nor a vendor SDK. The concrete
+`OpenRouterAgentModelProvider` lives in `clue_gateway`, consumes the existing `GatewayConfig` and
+secret, and returns the standard `BaseChatModel` required by `deepagents`. Its requested timeout
+and retry count cannot exceed the gateway policy.
+
+The import contract now also forbids `clue_agents` from directly importing `clue_execution`,
+`clue_storage`, `clue_locks`, or `clue_spine`. Those implementations bind only through injected
+ports at the future API composition root.
+
+### 7A.2 Frozen contract surface
+
+The implementation lives in:
+
+- `platform/agents/clue_agents/contracts.py`;
+- `platform/agents/clue_agents/ports.py`;
+- `platform/agents/clue_agents/state.py`.
+
+Every value contract is strict, frozen, and extra-field-forbidden. Plan arguments cannot supply
+trusted workspace, project, actor, execution, parent-execution, or operation identity. Plans are
+acyclic; validated operations carry stable operation ids, exact tool addresses, artifact-backed
+parameters, authority hashes, and a budget-total invariant. All durable bodies are referenced,
+not embedded.
+
+The JSON Schema digest test freezes these C6.0 shapes:
+
+| Contract | Schema SHA-256 |
+|---|---|
+| `AgentProfile` | `30ea90d77ca95751adb6acc020059b206bb96ef1ca6c1580ff58cc880d4e5f4b` |
+| `SkillBundle` | `ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521` |
+| `AgentConstitution` | `b3fa6888af9a1a7d427877a426943b2c959944edcf8c4203bfbd1720887de1a5` |
+| `AgentTurnRequest` | `fd8dc5c626099b24442aefa3f71eb5ba2c715cb565f60e5fef41c670991f4ebb` |
+| `AgentPlan` | `a954471a676c23101629f3babe2e523a6de96d21f7cc96de7983c8f265073c4e` |
+| `ValidatedPlan` | `4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026` |
+| `DelegationRequest` | `421ad5b96a036115f492c687bab8d8fc46dafd57991b80ce0718a8bfa3f65be3` |
+| `DelegationResult` | `956ec6033fa560ba7704031a0df4b5aa3aa98ebbb0702bc137018ab3adafb36c` |
+| `ContextBundleManifest` | `1d2f8ce14873a9413ac525d022a48de1fc72c9061bc28130ce0c12da3344a488` |
+| `AgentFinalizeEnvelope` | `ee5a8ac990a3329fce7f1d6acd5160cfdb6eb243bcdcc4dc4f647a9188030dae` |
+
+Changing one of these shapes requires an explicit contract revision and an updated digest gate
+before a migration consumes it.
+
+The injected ports are:
+
+| Port | Frozen responsibility | Deliberately absent |
+|---|---|---|
+| `AgentModelProvider` | build a bounded `BaseChatModel` | provider client, credential, or domain access |
+| `AgentWorkspaceBackend` | relative text list/read/write/edit and output snapshot | host paths, links, environment, shell, subprocess, execute |
+| `AgentHistoryStore` | append/load body refs in thread order | mutable transcript bodies |
+| `AgentContextAssembler` | deterministic request/profile/history → messages + manifest | ad-hoc model retrieval |
+| `AgentExecutionAdapter` | validate/execute/delegate/finalize/recover and supply checkpointer | domain implementation or tool bypass |
+
+`ClueDeepAgentState` extends the framework state with the trusted constitution, context manifest,
+turn id, and optional finalize-artifact key. These compatible custom fields propagate to
+declarative children; parent messages, todos, and structured response do not.
+
+### 7A.3 Executable spike results
+
+| Spike | Executable evidence | Result |
+|---|---|---|
+| Real framework and fresh wake | real `create_deep_agent`; explicit parent and child fake models/tools; child tool inspects runtime state | child receives only its task message while constitution/context markers propagate |
+| Governed OpenRouter tool call | real `ChatOpenAI` built by `clue_gateway`; `httpx.MockTransport`; sync and async calls | standard tool arguments and usage metadata parse without network or secrets |
+| Async Postgres checkpoint/resume | real `AsyncPostgresSaver`; first node commits, next node fails; fresh graph resumes same thread | completed node runs once, failed node retries, final state is restored; framework tables cleaned |
+| Artifact-backed filesystem | real deepagent file tools over a disposable content-addressed backend | relative model path writes/reads; a new backend resumes bytes; another execution cannot see them |
+| Honest finalization | real deepagent terminates normally without a finalize adapter | no finalize key exists; framework stop is not treated as successful C6 completion |
+
+All model/framework tests are deterministic and offline. The Postgres spike uses a reachable local
+Postgres and creates only LangGraph-owned checkpoint tables at runtime; it drops them after the
+test. No Alembic state changes.
+
+### 7A.4 Framework findings that bind C6.1
+
+1. `deepagents` can consume an injected model, backend, checkpointer, custom state schema, explicit
+   tools, and explicit subagents. Declarative subagents inherit the compatible custom state schema.
+2. The stock `FilesystemBackend(root_dir=..., virtual_mode=True)` is not a production sandbox for
+   an API service. `virtual_mode` is a path-semantic guardrail, not process or host isolation.
+   Production must use the hardened C6 backend; the stock backend is rejected.
+3. The framework file middleware normalizes a relative model argument such as `work/report.md` to
+   the virtual form `/work/report.md` before calling its backend. That erases whether the model
+   supplied a leading slash. Therefore C6.1 must validate relative syntax in the agent-facing file
+   tool before framework normalization, then adapt the single virtual slash internally. The public
+   C6 workspace port remains relative-only.
+4. A single backend instance is shared with framework subagents. C6 must layer narrowed child
+   path permissions over that shared artifact namespace; sharing bytes must not imply sharing
+   authority.
+5. A backend implementing an execution/sandbox protocol would cause the framework to expose code
+   execution. The C6 backend must implement file operations only.
+
+### 7A.5 Initial 32-tool replay and authority audit
+
+This is the C6.0 admission decision, not production routing. C6.2 writes reviewed folder profiles;
+C6.4 creates adapters for only the admitted addresses. Codes: `H` = Head-of-ABM, `R` = research
+specialist, `A` = account-research worker, `C` = content drafter, `V` = reviewer. `—` means the
+tool is structurally absent from every initial agent profile.
+
+| Tool | Effect | Replay / external boundary | Operation id | Initial agent roles or disposition |
+|---|---|---|---:|---|
+| `adjust_budget@1` | steering | domain-idempotent / none | no | — human authority |
+| `compose_handoff@1` | read | effect-free / none | no | H, C, V |
+| `confirm_icp@1` | write | domain-idempotent / none | no | — explicit human confirmation |
+| `confirm_project_product@1` | steering | domain-idempotent / none | no | — explicit human confirmation |
+| `decide_field_proposal@1` | write | uncertified / none | no | — human decision and replay-blocked |
+| `decide_source_proposal@1` | write | uncertified / none | no | — human decision and replay-blocked |
+| `discover_accounts@1` | spend | domain-idempotent / at-least-once | no | H |
+| `estimate_project@1` | read | effect-free / none | no | H |
+| `evaluate_stage0_readiness@1` | write | operation-idempotent / none | yes | H |
+| `import_accounts@1` | spend | operation-idempotent / at-least-once | yes | H |
+| `override_stage0_readiness@1` | steering | domain-idempotent / none | no | — human override |
+| `pause_run@1` | steering | domain-idempotent / none | no | — human control |
+| `profile_contact@1` | spend | operation-idempotent / at-least-once | yes | R, A |
+| `propose_field@1` | write | uncertified / none | no | — replay-blocked; intended H/R/A after audit |
+| `propose_source@1` | write | uncertified / none | no | — replay-blocked; intended H/R/A after audit |
+| `record_interview_answer@1` | spend | operation-idempotent / at-least-once | yes | H |
+| `research_account_gaps@1` | write | uncertified / none | no | — replay-blocked before C6.7 |
+| `resolve_committee@1` | spend | operation-idempotent / at-least-once | yes | R, A |
+| `resume_run@1` | steering | domain-idempotent / none | no | — human control |
+| `retry_ingestion@1` | write | uncertified / none | no | — replay-blocked |
+| `reverse_profile@1` | spend | operation-idempotent / at-least-once | yes | H |
+| `run_deep_account@1` | spend | operation-idempotent / at-least-once | yes | R, A |
+| `run_verification@1` | spend | domain-idempotent / at-least-once | no | R, A |
+| `score_accounts@1` | write | domain-idempotent / none | no | H |
+| `start_confirmed_project_run@1` | write | operation-idempotent / none | yes | H, after the human gate |
+| `start_project_run@1` | write | operation-idempotent / none | yes | — legacy/unconfirmed entry path |
+| `start_recon@1` | spend | at-least-once / at-least-once | yes | H |
+| `submit_ingestion@1` | write | uncertified / none | no | — replay-blocked |
+| `submit_onboarding_input@1` | write | operation-idempotent / none | yes | H |
+| `submit_project_checkpoint@1` | steering | domain-idempotent / none | no | — human checkpoint |
+| `submit_tier_checkpoint@1` | steering | domain-idempotent / none | no | — human checkpoint |
+| `synthesize_icps@1` | spend | at-least-once / at-least-once | no | H |
+
+The executable audit fails if the registry no longer contains exactly these 32 decisions, if an
+uncertified tool is admitted, or if a steering tool is admitted. The C5 execution-control tools
+are not exposed directly to the model: the future `AgentExecutionAdapter` compiles validated plans
+and invokes C5 under trusted authority.
+
+Seven current tools are replay-blocked:
+
+- `propose_field@1`;
+- `decide_field_proposal@1`;
+- `propose_source@1`;
+- `decide_source_proposal@1`;
+- `research_account_gaps@1`;
+- `submit_ingestion@1`;
+- `retry_ingestion@1`.
+
+This is an explicit residual gate, not an implicit promise. The field/source proposal tools are
+still part of the intended agent surface, but C6 must first add truthful durable identity/replay
+contracts. `research_account_gaps@1` must be certified or replaced by an equally governed C5
+operation before C6.7; two competing gap evaluators remain forbidden.
+
+### 7A.6 Initial filesystem threat matrix
+
+| Threat | C6.0 decision/evidence | Production closure |
+|---|---|---|
+| absolute, drive, backslash, dot, traversal, control path | frozen path contract rejects | pre-normalization tool validation in C6.1 |
+| host-path disclosure/escape | host path absent from contracts and artifact spike | opaque root factory + anchored no-follow I/O |
+| cross-execution access | artifact index is keyed by opaque execution root | per-execution directory and authorization checks |
+| write to prompt/input/context | writable prefixes exclude them | immutable materialization + permission tests |
+| source/executable file creation | data/document extension allowlist rejects it | file-type, mode, and content/materialization checks |
+| shell/process/environment/package access | absent from workspace protocol; no sandbox execute | construction regression asserting no execution tool |
+| symlink, hard link, device, socket, FIFO | impossible in artifact spike | no-follow host checks and type rejection |
+| quota exhaustion | quota fields frozen | atomic per-file/total/count enforcement |
+| resource mutation after pin | exact version and content digests frozen | copy, verify, read-only, manifest-last materialization |
+| concurrent path swap/TOCTOU | not claimed by C6.0 | directory-fd anchored operations and adversarial test |
+| child authority widening | explicit granted paths/roles/budget refs | effective-subset compiler and shared-backend permission view |
+| secret/repository exposure | neither appears in any agent port | dedicated external root validation and negative scans |
+
+The threat matrix does not claim that the disposable in-memory backend is production-ready. It
+defines the acceptance battery the C6.1 backend must satisfy.
 
 ---
 

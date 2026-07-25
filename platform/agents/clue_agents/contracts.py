@@ -1,0 +1,789 @@
+"""Frozen C6 agent-runtime value contracts.
+
+These types are deliberately framework-neutral and body-light.  They describe the immutable
+authority, resource, plan, context, delegation, and finalization records that surround a real
+deepagent.  Raw prompt/context/file bodies belong to artifacts or ephemeral model input, never to
+these durable envelopes.
+
+C6.0 freezes the shapes before any C6 migration or production executor exists.  A schema digest
+test makes later changes explicit contract revisions rather than accidental drift.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable
+from enum import StrEnum
+from typing import Annotated, Literal
+from uuid import UUID
+
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+
+from clue_core import ExecutionId, OperationId
+
+__all__ = [
+    "AgentConstitution",
+    "AgentFinalizeEnvelope",
+    "AgentPlan",
+    "AgentProfile",
+    "AgentResourceManifest",
+    "AgentResourceRef",
+    "AgentRole",
+    "AgentTurnRequest",
+    "ArtifactRef",
+    "ContextBundleManifest",
+    "ContextLayer",
+    "ContextLayerManifest",
+    "DelegationRequest",
+    "DelegationResult",
+    "DomainObjectRef",
+    "FinalizeStatus",
+    "ModelPolicy",
+    "PlanDelegationStep",
+    "PlanStep",
+    "PlanToolStep",
+    "ResourceKind",
+    "SkillBundle",
+    "ToolPin",
+    "ValidatedOperation",
+    "ValidatedPlan",
+    "WorkspacePolicy",
+    "normalize_virtual_path",
+]
+
+Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+ResourceName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128, pattern=r"^[a-z0-9-]+$"),
+]
+ResourceVersion = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=64,
+        pattern=r"^(?:v?[0-9]+(?:\.[0-9]+){0,2})(?:[-+][a-z0-9.-]+)?$",
+    ),
+]
+StableId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+ReasonCode = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9_.-]+$",
+    ),
+]
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+_SOURCE_EXTENSIONS = {
+    ".bash",
+    ".c",
+    ".cc",
+    ".class",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".h",
+    ".hpp",
+    ".java",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".php",
+    ".pl",
+    ".ps1",
+    ".py",
+    ".pyc",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".swift",
+    ".ts",
+    ".tsx",
+}
+_MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
+    {
+        "actor_id",
+        "execution_id",
+        "operation_id",
+        "parent_execution_id",
+        "project_id",
+        "workspace_id",
+    }
+)
+
+
+def normalize_virtual_path(value: str) -> str:
+    """Validate a model-visible path and return its normalized POSIX representation.
+
+    The accepted representation is already normalized and relative to the opaque execution root.
+    We intentionally do not "fix" hostile input: an absolute path, backslash, duplicate separator,
+    dot component, or control character fails loudly.
+    """
+
+    if not isinstance(value, str) or not value:
+        raise ValueError("virtual path must be a non-empty string")
+    if _CONTROL_CHARS.search(value):
+        raise ValueError("virtual path must not contain control characters")
+    if value.startswith("/") or value.startswith("\\"):
+        raise ValueError("virtual path must be relative to the workspace root")
+    if "\\" in value:
+        raise ValueError("virtual path must use POSIX separators")
+    if ":" in value.split("/", maxsplit=1)[0]:
+        raise ValueError("virtual path must not be drive-qualified")
+    parts = value.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("virtual path must be normalized and must not contain dot components")
+    return "/".join(parts)
+
+
+def _unique(values: Iterable[object], *, label: str) -> None:
+    materialized = tuple(values)
+    if len(set(materialized)) != len(materialized):
+        raise ValueError(f"{label} must be unique")
+
+
+class FrozenContract(BaseModel):
+    """Common strict, immutable C6 contract behavior."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+
+class AgentRole(StrEnum):
+    HEAD_OF_ABM = "head_of_abm"
+    RESEARCH = "research"
+    CONTENT_DRAFTER = "content_drafter"
+    REVIEWER = "reviewer"
+    ACCOUNT_RESEARCH = "account_research"
+
+
+class ResourceKind(StrEnum):
+    PROFILE = "profile"
+    PROMPT = "prompt"
+    SKILL = "skill"
+
+
+class ArtifactRef(FrozenContract):
+    """Opaque durable-artifact identity; never a host path or an inline body."""
+
+    workspace_id: StableId
+    artifact_key: StableId
+    sha256: Sha256
+    media_type: StableId
+    byte_count: int = Field(ge=0)
+
+    @field_validator("artifact_key")
+    @classmethod
+    def artifact_key_is_not_a_path_escape(cls, value: str) -> str:
+        if value.startswith(("/", "\\")) or _CONTROL_CHARS.search(value):
+            raise ValueError("artifact_key must be opaque and must not expose an absolute path")
+        return value
+
+
+class DomainObjectRef(FrozenContract):
+    """Typed, scoped reference to domain state owned outside the agent runtime."""
+
+    workspace_id: StableId
+    object_type: StableId
+    object_id: StableId
+    version: int | None = Field(default=None, ge=1)
+
+
+class AgentResourceRef(FrozenContract):
+    """Exact immutable folder-catalog resource address."""
+
+    kind: ResourceKind
+    name: ResourceName
+    version: ResourceVersion
+    sha256: Sha256
+
+    @model_validator(mode="after")
+    def reject_mutable_aliases(self) -> AgentResourceRef:
+        if self.version.lower() in {"latest", "current", "default", "head"}:
+            raise ValueError("agent resources must be pinned to an immutable version")
+        return self
+
+    @property
+    def address(self) -> str:
+        return f"{self.kind.value}:{self.name}@{self.version}"
+
+
+class ToolPin(FrozenContract):
+    """An exact recipe-safe agent tool address and schema commitment."""
+
+    name: StableId
+    version: StableId
+    input_schema_sha256: Sha256
+    output_schema_sha256: Sha256
+
+    @field_validator("name", "version")
+    @classmethod
+    def address_parts_are_exact(cls, value: str) -> str:
+        if "@" in value:
+            raise ValueError("tool name and version are stored separately")
+        return value
+
+    @property
+    def address(self) -> str:
+        return f"{self.name}@{self.version}"
+
+
+class ModelPolicy(FrozenContract):
+    """Provider-neutral model request policy passed to the injected gateway adapter."""
+
+    model_id: StableId
+    timeout_s: float = Field(gt=0, le=600)
+    max_retries: int = Field(ge=0, le=5)
+    max_output_tokens: int = Field(ge=1, le=131_072)
+    temperature: float = Field(ge=0, le=2)
+
+
+class WorkspacePolicy(FrozenContract):
+    """Model-visible workspace authority; the host root is intentionally absent."""
+
+    virtual_mode: Literal[True] = True
+    max_total_bytes: int = Field(ge=1)
+    max_file_bytes: int = Field(ge=1)
+    max_file_count: int = Field(ge=1)
+    allowed_extensions: tuple[str, ...]
+    readable_prefixes: tuple[str, ...]
+    writable_prefixes: tuple[str, ...]
+    retention_class: StableId
+
+    @field_validator("allowed_extensions")
+    @classmethod
+    def extensions_are_data_only(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        _unique(values, label="allowed extensions")
+        for value in values:
+            if not value.startswith(".") or value.lower() != value or "/" in value or "\\" in value:
+                raise ValueError("allowed extensions must be lowercase suffixes such as '.md'")
+            if value in _SOURCE_EXTENSIONS:
+                raise ValueError(f"source or executable extension {value!r} is not allowed")
+        return values
+
+    @field_validator("readable_prefixes", "writable_prefixes")
+    @classmethod
+    def prefixes_are_relative(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(normalize_virtual_path(value.rstrip("/")) for value in values)
+        _unique(normalized, label="workspace prefixes")
+        return normalized
+
+    @model_validator(mode="after")
+    def writable_prefixes_are_readable_and_quota_is_coherent(self) -> WorkspacePolicy:
+        for writable in self.writable_prefixes:
+            if not any(
+                writable == readable or writable.startswith(f"{readable}/")
+                for readable in self.readable_prefixes
+            ):
+                raise ValueError(f"writable prefix {writable!r} must also be readable")
+        if self.max_file_bytes > self.max_total_bytes:
+            raise ValueError("per-file quota cannot exceed total workspace quota")
+        return self
+
+
+class SkillBundle(FrozenContract):
+    """A progressive-disclosure skill descriptor pinned into one profile."""
+
+    resource: AgentResourceRef
+    summary: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+    materialized_path: str
+    required_tools: tuple[ToolPin, ...] = ()
+    readiness_refs: tuple[DomainObjectRef, ...] = ()
+
+    @field_validator("materialized_path")
+    @classmethod
+    def skill_path_is_normalized(cls, value: str) -> str:
+        normalized = normalize_virtual_path(value)
+        if not normalized.startswith(".deepagent/skills/"):
+            raise ValueError("skill bundle must materialize below .deepagent/skills/")
+        return normalized
+
+    @model_validator(mode="after")
+    def resource_is_a_skill_and_tools_are_unique(self) -> SkillBundle:
+        if self.resource.kind is not ResourceKind.SKILL:
+            raise ValueError("SkillBundle.resource must have kind='skill'")
+        _unique((item.address for item in self.required_tools), label="required tool addresses")
+        return self
+
+
+class AgentProfile(FrozenContract):
+    """Exact role policy used to construct one mind."""
+
+    name: ResourceName
+    version: ResourceVersion
+    role: AgentRole
+    prompt: AgentResourceRef
+    skills: tuple[SkillBundle, ...]
+    tools: tuple[ToolPin, ...]
+    model: ModelPolicy
+    workspace: WorkspacePolicy
+    delegation_roles: tuple[AgentRole, ...] = ()
+    max_delegation_depth: int = Field(ge=0, le=4)
+    max_delegations: int = Field(ge=0, le=32)
+    max_plan_nodes: int = Field(ge=1, le=256)
+
+    @model_validator(mode="after")
+    def profile_is_internally_coherent(self) -> AgentProfile:
+        if self.prompt.kind is not ResourceKind.PROMPT:
+            raise ValueError("AgentProfile.prompt must have kind='prompt'")
+        _unique((item.resource.address for item in self.skills), label="skill addresses")
+        _unique((item.address for item in self.tools), label="tool addresses")
+        _unique(self.delegation_roles, label="delegation roles")
+        if self.role in self.delegation_roles:
+            raise ValueError("a profile cannot delegate to its own role")
+        effective = {item.address for item in self.tools}
+        missing = {
+            pin.address
+            for skill in self.skills
+            for pin in skill.required_tools
+            if pin.address not in effective
+        }
+        if missing:
+            raise ValueError(f"skills require tools absent from the profile: {sorted(missing)}")
+        if not self.delegation_roles and (self.max_delegation_depth or self.max_delegations):
+            raise ValueError("a non-delegating profile must use zero delegation limits")
+        return self
+
+
+class AgentResourceManifest(FrozenContract):
+    """Immutable resource snapshot committed before the first model call."""
+
+    schema_version: Literal["1"]
+    role: AgentRole
+    profile: AgentResourceRef
+    prompt: AgentResourceRef
+    skills: tuple[AgentResourceRef, ...]
+    tools: tuple[ToolPin, ...]
+    aggregate_sha256: Sha256
+
+    @model_validator(mode="after")
+    def resources_have_correct_kinds_and_unique_addresses(self) -> AgentResourceManifest:
+        if self.profile.kind is not ResourceKind.PROFILE:
+            raise ValueError("manifest profile must have kind='profile'")
+        if self.prompt.kind is not ResourceKind.PROMPT:
+            raise ValueError("manifest prompt must have kind='prompt'")
+        if any(item.kind is not ResourceKind.SKILL for item in self.skills):
+            raise ValueError("manifest skills must all have kind='skill'")
+        _unique((item.address for item in self.skills), label="manifest skill addresses")
+        _unique((item.address for item in self.tools), label="manifest tool addresses")
+        return self
+
+
+class AgentConstitution(FrozenContract):
+    """Trusted immutable authority injected into a parent and every child mind."""
+
+    workspace_id: StableId
+    project_id: StableId
+    execution_id: ExecutionId
+    actor_id: StableId
+    role: AgentRole
+    brand_id: StableId | None = None
+    product_id: StableId | None = None
+    workspace_root_id: StableId
+    stage_snapshot_ref: ArtifactRef
+    readiness_snapshot_ref: ArtifactRef
+    budget_envelope_ref: ArtifactRef
+    profile_ref: AgentResourceRef
+    resource_manifest_ref: ArtifactRef
+    resource_manifest_sha256: Sha256
+    focus_refs: tuple[DomainObjectRef, ...] = ()
+
+    @model_validator(mode="after")
+    def refs_match_workspace_and_profile_kind(self) -> AgentConstitution:
+        refs = (
+            self.stage_snapshot_ref,
+            self.readiness_snapshot_ref,
+            self.budget_envelope_ref,
+            self.resource_manifest_ref,
+        )
+        if any(item.workspace_id != self.workspace_id for item in refs):
+            raise ValueError("constitution artifact refs must belong to the constitution workspace")
+        if any(item.workspace_id != self.workspace_id for item in self.focus_refs):
+            raise ValueError("constitution focus refs must belong to the constitution workspace")
+        if self.profile_ref.kind is not ResourceKind.PROFILE:
+            raise ValueError("constitution profile_ref must have kind='profile'")
+        return self
+
+
+class AgentTurnRequest(FrozenContract):
+    """One body-free request to wake the platform agent."""
+
+    turn_id: UUID
+    thread_id: StableId
+    constitution: AgentConstitution
+    user_message_artifact_ref: ArtifactRef
+    attachment_refs: tuple[ArtifactRef, ...] = ()
+    focus_refs: tuple[DomainObjectRef, ...] = ()
+    requested_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def turn_refs_match_workspace(self) -> AgentTurnRequest:
+        workspace_id = self.constitution.workspace_id
+        artifacts = (self.user_message_artifact_ref, *self.attachment_refs)
+        if any(item.workspace_id != workspace_id for item in artifacts):
+            raise ValueError("turn artifact refs must belong to the constitution workspace")
+        if any(item.workspace_id != workspace_id for item in self.focus_refs):
+            raise ValueError("turn focus refs must belong to the constitution workspace")
+        _unique((item.artifact_key for item in artifacts), label="turn artifact keys")
+        return self
+
+
+class PlanToolStep(FrozenContract):
+    kind: Literal["tool"] = "tool"
+    node_key: StableId
+    depends_on: tuple[StableId, ...] = ()
+    tool: ToolPin
+    arguments: dict[str, JsonValue] = Field(default_factory=dict)
+    purpose: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+
+    @field_validator("arguments")
+    @classmethod
+    def model_cannot_supply_trusted_authority(
+        cls,
+        values: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]:
+        forbidden = set(values) & _MODEL_FORBIDDEN_AUTHORITY_KEYS
+        if forbidden:
+            raise ValueError(
+                f"model plan arguments cannot supply trusted authority: {sorted(forbidden)}"
+            )
+        return values
+
+
+class PlanDelegationStep(FrozenContract):
+    kind: Literal["delegation"] = "delegation"
+    node_key: StableId
+    depends_on: tuple[StableId, ...] = ()
+    role: AgentRole
+    task_artifact_ref: ArtifactRef
+    granted_paths: tuple[str, ...]
+    domain_refs: tuple[DomainObjectRef, ...] = ()
+    purpose: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+
+    @field_validator("granted_paths")
+    @classmethod
+    def grants_are_relative(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(normalize_virtual_path(value) for value in values)
+        _unique(normalized, label="delegation path grants")
+        return normalized
+
+
+PlanStep = Annotated[PlanToolStep | PlanDelegationStep, Field(discriminator="kind")]
+
+
+def _validate_plan_graph(steps: tuple[PlanStep, ...]) -> None:
+    keys = tuple(step.node_key for step in steps)
+    _unique(keys, label="plan node keys")
+    known = set(keys)
+    for step in steps:
+        _unique(step.depends_on, label=f"dependencies for {step.node_key}")
+        unknown = set(step.depends_on) - known
+        if unknown:
+            raise ValueError(
+                f"plan node {step.node_key!r} has unknown dependencies: {sorted(unknown)}"
+            )
+        if step.node_key in step.depends_on:
+            raise ValueError(f"plan node {step.node_key!r} cannot depend on itself")
+
+    incoming = {step.node_key: set(step.depends_on) for step in steps}
+    ready = sorted(key for key, dependencies in incoming.items() if not dependencies)
+    visited = 0
+    while ready:
+        current = ready.pop(0)
+        visited += 1
+        for key, dependencies in incoming.items():
+            if current in dependencies:
+                dependencies.remove(current)
+                if not dependencies:
+                    ready.append(key)
+        ready.sort()
+    if visited != len(steps):
+        raise ValueError("agent plan must be acyclic")
+
+
+class AgentPlan(FrozenContract):
+    """A model proposal. It has no execution authority until compiled and validated."""
+
+    plan_id: UUID
+    execution_id: ExecutionId
+    role: AgentRole
+    goal_ref: ArtifactRef
+    steps: tuple[PlanStep, ...]
+    proposed_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def graph_is_well_formed(self) -> AgentPlan:
+        if not self.steps:
+            raise ValueError("agent plan must contain at least one step")
+        _validate_plan_graph(self.steps)
+        for step in self.steps:
+            if isinstance(step, PlanDelegationStep):
+                if step.task_artifact_ref.workspace_id != self.goal_ref.workspace_id:
+                    raise ValueError("delegation task and plan goal must share a workspace")
+                if any(
+                    item.workspace_id != self.goal_ref.workspace_id for item in step.domain_refs
+                ):
+                    raise ValueError("delegation refs and plan goal must share a workspace")
+        return self
+
+
+class ValidatedOperation(FrozenContract):
+    """One trusted C5-ready operation compiled from a proposal step."""
+
+    node_key: StableId
+    operation_id: OperationId
+    kind: Literal["tool", "delegation"]
+    address: StableId
+    depends_on: tuple[StableId, ...]
+    parameter_artifact_ref: ArtifactRef
+    parameter_sha256: Sha256
+    estimated_cost_millicents: int = Field(ge=0)
+    authority_sha256: Sha256
+
+    @field_validator("depends_on")
+    @classmethod
+    def operation_dependencies_are_unique(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        _unique(values, label="validated operation dependencies")
+        return values
+
+    @model_validator(mode="after")
+    def address_matches_operation_kind(self) -> ValidatedOperation:
+        if self.kind == "tool" and self.address.count("@") != 1:
+            raise ValueError("validated tool operation must use an exact name@version address")
+        if self.kind == "delegation" and "@" in self.address:
+            raise ValueError("delegation address is a governed role, not a tool version")
+        return self
+
+
+class ValidatedPlan(FrozenContract):
+    """Trusted, bounded, exact-version execution plan accepted by the C5 adapter."""
+
+    plan_id: UUID
+    execution_id: ExecutionId
+    validated_plan_artifact_ref: ArtifactRef
+    proposal_sha256: Sha256
+    resource_manifest_sha256: Sha256
+    operations: tuple[ValidatedOperation, ...]
+    max_parallelism: int = Field(ge=1, le=32)
+    estimated_cost_millicents: int = Field(ge=0)
+    budget_limit_millicents: int = Field(ge=0)
+    validated_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def operations_form_a_bounded_graph(self) -> ValidatedPlan:
+        if not self.operations:
+            raise ValueError("validated plan must contain at least one operation")
+        keys = tuple(item.node_key for item in self.operations)
+        _unique(keys, label="validated operation node keys")
+        _unique((item.operation_id for item in self.operations), label="operation ids")
+        known = set(keys)
+        for operation in self.operations:
+            if set(operation.depends_on) - known:
+                raise ValueError(
+                    f"validated operation {operation.node_key!r} has unknown dependencies"
+                )
+            if operation.node_key in operation.depends_on:
+                raise ValueError(
+                    f"validated operation {operation.node_key!r} cannot depend on itself"
+                )
+            if (
+                operation.parameter_artifact_ref.workspace_id
+                != self.validated_plan_artifact_ref.workspace_id
+            ):
+                raise ValueError("validated plan parameter artifacts must share a workspace")
+        incoming = {operation.node_key: set(operation.depends_on) for operation in self.operations}
+        ready = sorted(key for key, dependencies in incoming.items() if not dependencies)
+        visited = 0
+        while ready:
+            current = ready.pop(0)
+            visited += 1
+            for key, dependencies in incoming.items():
+                if current in dependencies:
+                    dependencies.remove(current)
+                    if not dependencies:
+                        ready.append(key)
+            ready.sort()
+        if visited != len(self.operations):
+            raise ValueError("validated plan must be acyclic")
+        operation_estimate = sum(
+            operation.estimated_cost_millicents for operation in self.operations
+        )
+        if self.estimated_cost_millicents != operation_estimate:
+            raise ValueError("validated plan estimate must equal the sum of operation estimates")
+        if self.estimated_cost_millicents > self.budget_limit_millicents:
+            raise ValueError("validated plan estimate exceeds its budget limit")
+        return self
+
+
+class DelegationRequest(FrozenContract):
+    """Narrowed child authority and explicit fresh-wake inputs."""
+
+    delegation_id: UUID
+    parent_execution_id: ExecutionId
+    parent_role: AgentRole
+    subagent_role: AgentRole
+    task_artifact_ref: ArtifactRef
+    granted_paths: tuple[str, ...]
+    domain_refs: tuple[DomainObjectRef, ...]
+    child_budget_envelope_ref: ArtifactRef
+    resource_manifest_ref: ArtifactRef
+    resource_manifest_sha256: Sha256
+    depth: int = Field(ge=1, le=4)
+
+    @field_validator("granted_paths")
+    @classmethod
+    def delegation_paths_are_relative(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(normalize_virtual_path(value) for value in values)
+        _unique(normalized, label="delegation path grants")
+        return normalized
+
+    @model_validator(mode="after")
+    def child_is_fresh_and_workspace_scoped(self) -> DelegationRequest:
+        if self.parent_role is self.subagent_role:
+            raise ValueError("delegation must wake a distinct governed role")
+        workspace_id = self.task_artifact_ref.workspace_id
+        if self.child_budget_envelope_ref.workspace_id != workspace_id:
+            raise ValueError("child budget and task must belong to the same workspace")
+        if self.resource_manifest_ref.workspace_id != workspace_id:
+            raise ValueError("child resource manifest and task must belong to the same workspace")
+        if any(item.workspace_id != workspace_id for item in self.domain_refs):
+            raise ValueError("delegation domain refs must belong to the task workspace")
+        return self
+
+
+class DelegationResult(FrozenContract):
+    """Body-free child completion receipt returned to the parent."""
+
+    delegation_id: UUID
+    parent_execution_id: ExecutionId
+    child_execution_id: ExecutionId
+    status: Literal["completed", "awaiting_input", "blocked", "failed"]
+    output_refs: tuple[ArtifactRef, ...] = ()
+    domain_refs: tuple[DomainObjectRef, ...] = ()
+    finalization_ref: ArtifactRef
+    spend_millicents: int = Field(ge=0)
+    completed_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def successful_child_has_a_durable_output(self) -> DelegationResult:
+        if self.child_execution_id == self.parent_execution_id:
+            raise ValueError("child execution must be distinct from parent execution")
+        if self.status == "completed" and not (self.output_refs or self.domain_refs):
+            raise ValueError("completed delegation must return at least one durable reference")
+        workspace_id = self.finalization_ref.workspace_id
+        if any(item.workspace_id != workspace_id for item in self.output_refs):
+            raise ValueError("delegation output refs must share the finalization workspace")
+        if any(item.workspace_id != workspace_id for item in self.domain_refs):
+            raise ValueError("delegation domain refs must share the finalization workspace")
+        return self
+
+
+class ContextLayer(StrEnum):
+    L1_IDENTITY = "l1_identity"
+    L2_WORKSPACE_PRODUCT = "l2_workspace_product"
+    L3_PROJECT = "l3_project"
+    L4_MEMORY = "l4_memory"
+    L5_FOCUS = "l5_focus"
+    L6_CONVERSATION = "l6_conversation"
+    L7_TURN = "l7_turn"
+
+
+_CONTEXT_LAYER_ORDER = tuple(ContextLayer)
+
+
+class ContextLayerManifest(FrozenContract):
+    layer: ContextLayer
+    source_refs: tuple[DomainObjectRef | ArtifactRef, ...] = ()
+    materialized_paths: tuple[str, ...] = ()
+    content_sha256s: tuple[Sha256, ...] = ()
+    token_count: int = Field(ge=0)
+    excluded_refs: tuple[DomainObjectRef | ArtifactRef, ...] = ()
+    exclusion_reason_codes: tuple[ReasonCode, ...] = ()
+
+    @field_validator("materialized_paths")
+    @classmethod
+    def context_paths_are_relative(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(normalize_virtual_path(value) for value in values)
+        if any(
+            not value.startswith(("context/", "inputs/", ".deepagent/")) for value in normalized
+        ):
+            raise ValueError("context materializations must stay in read-only runtime prefixes")
+        _unique(normalized, label="context materialized paths")
+        return normalized
+
+    @model_validator(mode="after")
+    def exclusions_have_reason_codes(self) -> ContextLayerManifest:
+        if bool(self.excluded_refs) != bool(self.exclusion_reason_codes):
+            raise ValueError("excluded context refs and reason codes must be present together")
+        return self
+
+
+class ContextBundleManifest(FrozenContract):
+    """Durable body-free receipt for the deterministic seven-layer opening context."""
+
+    context_bundle_id: UUID
+    execution_id: ExecutionId
+    schema_version: Literal["1"]
+    layers: tuple[ContextLayerManifest, ...]
+    aggregate_sha256: Sha256
+    assembled_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def exactly_seven_ordered_layers(self) -> ContextBundleManifest:
+        actual = tuple(item.layer for item in self.layers)
+        if actual != _CONTEXT_LAYER_ORDER:
+            raise ValueError("context bundle must contain exactly L1-L7 in canonical order")
+        return self
+
+
+class FinalizeStatus(StrEnum):
+    COMPLETED = "completed"
+    AWAITING_INPUT = "awaiting_input"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+
+
+class AgentFinalizeEnvelope(FrozenContract):
+    """The only honest terminal envelope; normal model termination is not success."""
+
+    finalization_id: UUID
+    execution_id: ExecutionId
+    status: FinalizeStatus
+    user_message_artifact_ref: ArtifactRef | None = None
+    output_refs: tuple[ArtifactRef, ...] = ()
+    domain_refs: tuple[DomainObjectRef, ...] = ()
+    open_gate_refs: tuple[DomainObjectRef, ...] = ()
+    assumption_refs: tuple[ArtifactRef, ...] = ()
+    next_action_refs: tuple[ArtifactRef, ...] = ()
+    failure_code: ReasonCode | None = None
+    finalized_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def terminal_shape_is_honest(self) -> AgentFinalizeEnvelope:
+        if self.status is FinalizeStatus.COMPLETED:
+            if self.user_message_artifact_ref is None:
+                raise ValueError("completed turn must have a durable user-message artifact")
+            if self.failure_code is not None:
+                raise ValueError("completed turn cannot carry a failure code")
+        elif self.status is FinalizeStatus.FAILED:
+            if self.failure_code is None:
+                raise ValueError("failed turn must carry a stable failure code")
+        elif self.failure_code is not None:
+            raise ValueError("only failed turns may carry a failure code")
+
+        if self.status in {FinalizeStatus.AWAITING_INPUT, FinalizeStatus.BLOCKED} and not (
+            self.open_gate_refs or self.next_action_refs
+        ):
+            raise ValueError("non-terminal progress status must identify a gate or next action")
+        return self
