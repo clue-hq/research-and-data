@@ -12,8 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import ALL_TENANTS, TenantScope, claims_for, current_value
-from clue_research.core import (
+from clue_core import (
     Claim,
     Entity,
     EntityScope,
@@ -33,12 +32,17 @@ from clue_research.core import (
     contact_claim,
     new_entity_id,
     new_run_id,
+    revalidate_with,
 )
+from clue_research.claimstore import ALL_WORKSPACES, WorkspaceScope, claims_for, current_value
 from clue_research.sources import (
     RegistrySourceManifest,
+    SourceCallEvent,
+    SourceCallOutcome,
     StepOutcome,
     StopReason,
     bind_resolver,
+    bind_source_call_observer,
     register_source,
     resolve_field,
     resolve_fields,
@@ -67,6 +71,21 @@ class _Fake:
         self.calls += 1
         # a real resolver builds claims for the entity it was handed; mirror that here.
         return [c.model_copy(update={"entity_id": entity.entity_id}) for c in self._claims]
+
+
+class _FailingFake(_Fake):
+    def resolve(self, entity: Entity, field: FieldDef) -> list[Claim]:
+        del entity, field
+        self.calls += 1
+        raise RuntimeError("synthetic provider failure")
+
+
+class _SourceObserver:
+    def __init__(self) -> None:
+        self.events: list[SourceCallEvent] = []
+
+    async def observe(self, event: SourceCallEvent) -> None:
+        self.events.append(event)
 
 
 def _entity() -> Entity:
@@ -157,6 +176,86 @@ def test_confident_tier1_calls_only_tier1() -> None:
     run_async(_run())
 
 
+def test_optional_attempt_recorder_observes_the_final_result() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "attempt_probe", tier=1)
+            bind_resolver("attempt_probe", _Fake([_claim(100, tier=1, confidence=_HI)]))
+            observed = []
+
+            async def record(result):
+                observed.append(result)
+
+            result = await resolve_field(
+                conn,
+                _entity(),
+                _field(("attempt_probe",)),
+                mode=_MODE,
+                run_id=new_run_id(),
+                attempt_recorder=record,
+            )
+            assert observed == [result]
+
+    run_async(_run())
+
+
+def test_run_scoped_observer_records_one_physical_source_call() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "telemetry_success", tier=1, cost=Decimal("2"))
+            bind_resolver(
+                "telemetry_success",
+                _Fake([_claim(100, tier=1, confidence=_HI, cost=Decimal("2"))]),
+            )
+            observer = _SourceObserver()
+            entity = _entity()
+            run_id = new_run_id()
+            with bind_source_call_observer(observer):
+                await resolve_field(
+                    conn,
+                    entity,
+                    _field(("telemetry_success",)),
+                    mode=_MODE,
+                    run_id=run_id,
+                )
+            assert len(observer.events) == 1
+            event = observer.events[0]
+            assert event.account_entity_id == entity.entity_id
+            assert event.account_run_id == run_id
+            assert event.source_key == "telemetry_success"
+            assert event.outcome is SourceCallOutcome.CLAIMS_PRODUCED
+            assert event.claims_count == 1
+            assert event.cost_cents == Decimal("2")
+
+    run_async(_run())
+
+
+def test_run_scoped_observer_records_provider_failure_before_reraising() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "telemetry_failure", tier=1)
+            bind_resolver("telemetry_failure", _FailingFake([]))
+            observer = _SourceObserver()
+            with (
+                bind_source_call_observer(observer),
+                pytest.raises(RuntimeError, match="synthetic provider failure"),
+            ):
+                await resolve_field(
+                    conn,
+                    _entity(),
+                    _field(("telemetry_failure",)),
+                    mode=_MODE,
+                    run_id=new_run_id(),
+                )
+            assert len(observer.events) == 1
+            event = observer.events[0]
+            assert event.outcome is SourceCallOutcome.FAILED
+            assert event.error_code == "RuntimeError"
+            assert event.claims_count == 0
+
+    run_async(_run())
+
+
 def test_advances_until_first_confident() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -232,7 +331,7 @@ def test_written_claims_are_unverified_with_correct_provenance() -> None:
             result = await resolve_field(conn, entity, _field(("t1",)), mode=_MODE, run_id=run_id)
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert len(written) == 1
             claim = written[0]
@@ -276,7 +375,7 @@ def test_tier4_null_span_written_unverified_and_unpromotable() -> None:
             )
             assert result.stop_reason is StopReason.CONFIDENT_HIT  # 0.9 >= account threshold 0.75
             written = await claims_for(
-                conn, entity.entity_id, "account.operational_pain", scope=ALL_TENANTS
+                conn, entity.entity_id, "account.operational_pain", scope=ALL_WORKSPACES
             )
             assert len(written) == 1
             assert written[0].verification_status is VerificationStatus.UNVERIFIED
@@ -370,7 +469,7 @@ def test_idempotent_retry_does_not_double_write() -> None:
             assert first.claim_refs == second.claim_refs  # same claim id, no second write
             assert second.per_tier[0].outcome is StepOutcome.IDEMPOTENT_SKIP
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert len(written) == 1  # exactly one claim despite two resolve_field calls
 
@@ -472,24 +571,24 @@ def test_contact_claim_identity_binding_from_manifest() -> None:
                 pass_kind=PassKind.DEEP,
             )
             # contact.facet.* + crm_import classifies tenant_private (decision #6) → the engine
-            # requires the run's tenant_id to stamp it (a private claim must bind to a tenant).
+            # requires the run's workspace_id to stamp it (a private claim must bind to a tenant).
             await resolve_field(
                 conn,
                 entity,
                 field,
                 mode=ResearchMode.CONTACT_PROFILING,
                 run_id=new_run_id(),
-                tenant_id="tenant-x",
+                workspace_id="tenant-x",
             )
             written = await claims_for(
-                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_TENANTS
+                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_WORKSPACES
             )
             assert len(written) == 1
             # the manifest's binding strength is authoritative — the engine stamped STRONG.
             assert written[0].identity_binding is IdentityBinding.STRONG
             # the engine stamped the personal claim tenant-private and bound it to the run tenant.
             assert written[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert written[0].tenant_id == "tenant-x"
+            assert written[0].workspace_id == "tenant-x"
 
     run_async(_run())
 
@@ -520,7 +619,7 @@ def test_same_tier_retry_attributes_per_source() -> None:
                 assert by_source["clay"].n_claims == 1
             assert first.claim_refs == second.claim_refs  # no double-write on retry
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert len(written) == 1 and written[0].source_key == "clay"
 
@@ -593,12 +692,14 @@ def test_engine_stamps_crm_import_claim_tenant_private() -> None:
                 _field(("crm",)),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
-            assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.tenant_id == "tenant-a"
+            assert (
+                claim.reuse_scope is ReuseScope.TENANT_PRIVATE and claim.workspace_id == "tenant-a"
+            )
 
     run_async(_run())
 
@@ -616,18 +717,18 @@ def test_engine_keeps_a_public_claim_public_even_when_a_tenant_is_supplied() -> 
                 _field(("clay",)),
                 mode=_MODE,
                 run_id=new_run_id(),
-                tenant_id="tenant-a",
+                workspace_id="tenant-a",
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
-            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.tenant_id is None
+            assert claim.reuse_scope is ReuseScope.PUBLIC_FOOTPRINT and claim.workspace_id is None
 
     run_async(_run())
 
 
 def test_engine_fails_loud_on_a_private_claim_with_no_tenant() -> None:
-    # A crm_import claim with NO tenant_id is a wiring error — the engine refuses it rather than
+    # A crm_import claim with NO workspace_id is a wiring error — the engine refuses it rather than
     # silently writing client data into the shared public pool (fail-closed, substrate §2).
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -644,7 +745,7 @@ def test_engine_fails_loud_on_a_private_claim_with_no_tenant() -> None:
     run_async(_run())
 
 
-def test_idempotent_reuse_is_tenant_scoped_no_cross_tenant_private_leak() -> None:
+def test_idempotent_reuse_is_workspace_scoped_no_cross_tenant_private_leak() -> None:
     # Defense-in-depth (substrate §2): even if two tenants shared a run_id (a caller bug — run_id is
     # per-run-per-tenant), the idempotency reuse is tenant-scoped, so tenant-B never receives
     # tenant-A's tenant_private CRM claim. Tenant-B re-resolves and writes its OWN private claim.
@@ -679,28 +780,183 @@ def test_idempotent_reuse_is_tenant_scoped_no_cross_tenant_private_leak() -> Non
             entity = _entity()
             run_id = new_run_id()
             field = _field(("crm",), field_key="account.crm_relationship_status")
-            a = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id, tenant_id="a")
-            b = await resolve_field(conn, entity, field, mode=_MODE, run_id=run_id, tenant_id="b")
+            a = await resolve_field(
+                conn, entity, field, mode=_MODE, run_id=run_id, workspace_id="a"
+            )
+            b = await resolve_field(
+                conn, entity, field, mode=_MODE, run_id=run_id, workspace_id="b"
+            )
             assert (
                 crm.calls == 2
             )  # tenant-b did NOT reuse tenant-a's private claim — it re-resolved
             assert a.claim_refs != b.claim_refs  # a distinct private claim per tenant
             # Each tenant sees ONLY its own private claim — never the other's.
-            a_claims = await claims_for(conn, entity.entity_id, scope=TenantScope.for_tenant("a"))
-            b_claims = await claims_for(conn, entity.entity_id, scope=TenantScope.for_tenant("b"))
-            assert {c.tenant_id for c in a_claims} == {"a"}
-            assert {c.tenant_id for c in b_claims} == {"b"}
+            a_claims = await claims_for(
+                conn, entity.entity_id, scope=WorkspaceScope.for_workspace("a")
+            )
+            b_claims = await claims_for(
+                conn, entity.entity_id, scope=WorkspaceScope.for_workspace("b")
+            )
+            assert {c.workspace_id for c in a_claims} == {"a"}
+            assert {c.workspace_id for c in b_claims} == {"b"}
             field_key = "account.crm_relationship_status"
             assert (
                 await current_value(
-                    conn, entity.entity_id, field_key, scope=TenantScope.for_tenant("a")
+                    conn, entity.entity_id, field_key, scope=WorkspaceScope.for_workspace("a")
                 )
             ) is not None
             assert (
                 await current_value(
-                    conn, entity.entity_id, field_key, scope=TenantScope.public_only()
+                    conn, entity.entity_id, field_key, scope=WorkspaceScope.public_only()
                 )
             ) is None  # the private claims never surface publicly
+
+    run_async(_run())
+
+
+def test_claim_tagger_stamps_born_immutable_binding_pre_insert() -> None:
+    # The injected claim_tagger runs after engine validation and BEFORE the insert, so it can set a
+    # born-immutable column (identity_binding, 0004 trigger): the inserted row carries the tagger's
+    # STRONG, not the resolver's WEAK placeholder or a manifest prior (none declared here).
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "crm_t", tier=1, entity_scope=EntityScope.CONTACT)
+            placeholder = contact_claim(
+                entity_id=new_entity_id(),  # overridden by the fake to the resolved entity
+                field_key="contact.facet.recent_post",
+                value_json="spoke at KubeCon",
+                source_tier=1,
+                extraction_method=ExtractionMethod.CRM_IMPORT,
+                confidence=_HI,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.CONTACT_PROFILING,
+                identity_binding=IdentityBinding.WEAK,  # placeholder the tagger must override
+                use_class=UseClass.PROFESSIONAL_PUBLIC,
+            )
+            entity = Entity(entity_id=placeholder.entity_id, entity_type=EntityType.CONTACT)
+            bind_resolver("crm_t", _Fake([placeholder]))
+            field = FieldDef(
+                field_key="contact.facet.recent_post",
+                value_type="str",
+                tier_plan=("crm_t",),
+                pass_kind=PassKind.DEEP,
+            )
+
+            def tagger(claim: Claim) -> Claim | None:
+                return revalidate_with(claim, identity_binding=IdentityBinding.STRONG)
+
+            result = await resolve_field(
+                conn,
+                entity,
+                field,
+                mode=ResearchMode.CONTACT_PROFILING,
+                run_id=new_run_id(),
+                workspace_id="tenant-x",
+                claim_tagger=tagger,
+            )
+            assert result.stop_reason is StopReason.CONFIDENT_HIT
+            written = await claims_for(
+                conn, entity.entity_id, "contact.facet.recent_post", scope=ALL_WORKSPACES
+            )
+            assert len(written) == 1
+            # born with the tagger's verdict — stamped pre-insert on the immutable column.
+            assert written[0].identity_binding is IdentityBinding.STRONG
+
+    run_async(_run())
+
+
+def test_tagger_drop_removes_claim_and_does_not_stop_the_walk() -> None:
+    # A dropped 0.9-confidence claim must NOT produce CONFIDENT_HIT with nothing written — the
+    # confident-stop and the TierStep accounting follow the KEPT (post-tagger) set, so the walk
+    # continues to the next source as if the claim had never been produced.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1)
+            await _register(conn, "t2", tier=2)
+            r1 = _Fake([_claim(100, tier=1, confidence=_HI)])  # confident — but dropped below
+            r2 = _Fake([_claim(101, tier=2, confidence=_HI)])
+            bind_resolver("t1", r1)
+            bind_resolver("t2", r2)
+
+            def drop_tier1(claim: Claim) -> Claim | None:
+                return None if claim.source_key == "t1" else claim
+
+            entity = _entity()
+            result = await resolve_field(
+                conn,
+                entity,
+                _field(("t1", "t2")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                claim_tagger=drop_tier1,
+            )
+            assert (r1.calls, r2.calls) == (1, 1)  # the walk continued past the dropped hit
+            assert result.stop_reason is StopReason.CONFIDENT_HIT  # t2's KEPT claim stopped it
+            assert len(result.claim_refs) == 1
+            t1_step = result.per_tier[0]
+            assert t1_step.outcome is StepOutcome.RESOLVED
+            assert t1_step.n_claims == 0 and not t1_step.confident  # accounting = the kept set
+            written = await claims_for(
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
+            )
+            assert len(written) == 1
+            assert written[0].source_key == "t2"  # the dropped t1 claim was never inserted
+
+    run_async(_run())
+
+
+def test_source_gate_false_skips_only_that_source_and_none_hooks_match_control() -> None:
+    # source_gate=False skips exactly THAT source (GATE_SKIPPED) and the walk continues; and with
+    # both hooks None (the default) the engine output is identical to a control run.
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await _register(conn, "t1", tier=1)
+            await _register(conn, "t2", tier=2)
+            r1 = _Fake([_claim(100, tier=1, confidence=_HI)])
+            r2 = _Fake([_claim(101, tier=2, confidence=_HI)])
+            bind_resolver("t1", r1)
+            bind_resolver("t2", r2)
+
+            async def deny_t1(manifest: SourceManifest) -> bool:
+                return manifest.source_key != "t1"
+
+            gated = await resolve_field(
+                conn,
+                _entity(),
+                _field(("t1", "t2")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                source_gate=deny_t1,
+            )
+            assert (r1.calls, r2.calls) == (0, 1)  # exactly t1 skipped; the walk continued
+            assert gated.per_tier[0].outcome is StepOutcome.GATE_SKIPPED
+            assert gated.stop_reason is StopReason.CONFIDENT_HIT
+            assert len(gated.claim_refs) == 1
+
+            # Both hooks None == a control run with neither passed: identical engine output
+            # (stop reason, per-step accounting, spend) — only the claim ids differ per entity.
+            # Fresh fakes per run: the doubles carry client-generated claim ids, so reusing one
+            # across two written runs would collide on the claim PK.
+            bind_resolver("t1", _Fake([_claim(100, tier=1, confidence=_HI)]))
+            bind_resolver("t2", _Fake([_claim(101, tier=2, confidence=_HI)]))
+            control = await resolve_field(
+                conn, _entity(), _field(("t1", "t2")), mode=_MODE, run_id=new_run_id()
+            )
+            bind_resolver("t1", _Fake([_claim(100, tier=1, confidence=_HI)]))
+            bind_resolver("t2", _Fake([_claim(101, tier=2, confidence=_HI)]))
+            with_none = await resolve_field(
+                conn,
+                _entity(),
+                _field(("t1", "t2")),
+                mode=_MODE,
+                run_id=new_run_id(),
+                claim_tagger=None,
+                source_gate=None,
+            )
+            assert with_none.stop_reason is control.stop_reason
+            assert with_none.per_tier == control.per_tier
+            assert with_none.total_cost_cents == control.total_cost_cents
+            assert len(with_none.claim_refs) == len(control.claim_refs)
 
     run_async(_run())
 

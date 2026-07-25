@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.obs import (
-    CAMPAIGN_PHASES,
+from clue_obs.otel import (
+    PROJECT_PHASES,
     SPAN_COMPLIANCE_USE_GATE,
     SPAN_VERIFICATION_CORROBORATION,
     SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
@@ -14,7 +14,7 @@ from clue_research.obs import (
     phase_span,
     resolve_span,
 )
-from clue_research.obs.spans import SPAN_VERIFICATION_IDENTITY_BINDING
+from clue_obs.otel.spans import SPAN_VERIFICATION_IDENTITY_BINDING
 
 
 def test_faithfulness_judge_and_use_gate_are_distinct_spans() -> None:
@@ -44,8 +44,8 @@ def test_five_verification_spans_distinct_and_namespaced() -> None:
     assert SPAN_COMPLIANCE_USE_GATE not in names
 
 
-def test_campaign_phases_match_doc_c_section_4_exactly() -> None:
-    assert CAMPAIGN_PHASES == (
+def test_project_phases_match_doc_c_section_4_exactly() -> None:
+    assert PROJECT_PHASES == (
         "reverse_profiling",
         "icp_confirmed",
         "discovery",

@@ -1,0 +1,26 @@
+{
+  "name": "body_rule_rejected",
+  "submission": {
+    "workspace_id": "ws_golden",
+    "scope": {
+      "scope_type": "brand",
+      "scope_id": "brd_golden"
+    },
+    "type": "preference",
+    "trigger": "when writing outreach",
+    "body": "Their champion wrote: 'we will never buy anything with per-seat pricing, my CFO said so'.",
+    "provenance_class": "user_stated"
+  },
+  "candidates": [],
+  "judgment": {
+    "verdict": "add",
+    "target_memory_id": null,
+    "species_ok": true,
+    "body_ok": false,
+    "rationale": "quotes personal claim content verbatim"
+  },
+  "expected": {
+    "kind": "rejected",
+    "reason": "body_rule"
+  }
+}

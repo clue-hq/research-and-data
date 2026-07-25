@@ -5,8 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
-from clue_research.core import EntityType
-from clue_research.obs import safe_attributes, to_otel_value
+from clue_core import EntityType
+from clue_obs.otel import safe_attributes, to_otel_value
 
 
 def test_to_otel_value_coercions() -> None:

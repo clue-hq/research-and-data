@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import EntityScope, Modality, RunId, SourceManifest, new_run_id
+from clue_core import EntityScope, Modality, RunId, SourceManifest, new_run_id
 from clue_research.discovery_scoring import (
     CoverageConfidence,
     StoppingReason,
@@ -76,14 +76,14 @@ async def _write_discovery_yield(
     needs_review: int = 0,
     rejected: int = 0,
     cost_cents: Decimal = Decimal(0),
-    client_id: str = "acme",
+    workspace_id: str = "acme",
     icp_key: str = "default",
 ) -> None:
     """Write one per-channel discovery telemetry row exactly as the DISCOVERY phase does (the
     run-level facts — stopping reason + admitted-vs-seen — denormalised onto the row)."""
     await record_source_yield(
         conn,
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=1,
         source_key=source_key,
@@ -215,8 +215,8 @@ def test_coverage_report_reads_target_geos_from_strategy() -> None:
 def test_checkpoint_payload_includes_coverage() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            campaign_run_id = await _seed_and_score(conn)
-            disc_run = _discovery_run_id(_ctx(campaign_run_id))
+            project_run_id = await _seed_and_score(conn)
+            disc_run = _discovery_run_id(_ctx(project_run_id))
             await _register_account_source(conn, "exa")
             await _register_account_source(conn, "apollo")  # an unsearched gap
             await _write_discovery_yield(
@@ -230,7 +230,7 @@ def test_checkpoint_payload_includes_coverage() -> None:
             )
 
             handler = TierCheckpointPhaseHandler(session_factory=_tf(conn))
-            result = await handler.run(_ctx(campaign_run_id))
+            result = await handler.run(_ctx(project_run_id))
 
             coverage = result.payload["coverage"]
             assert isinstance(coverage, dict)
@@ -251,9 +251,9 @@ def test_checkpoint_coverage_is_none_without_discovery_telemetry() -> None:
         async with rollback_conn() as conn:
             # scored campaign but NO discovery telemetry written → coverage stays unpopulated, and
             # the checkpoint never fails on its absence (the placeholder is simply None).
-            campaign_run_id = await _seed_and_score(conn)
+            project_run_id = await _seed_and_score(conn)
             handler = TierCheckpointPhaseHandler(session_factory=_tf(conn))
-            result = await handler.run(_ctx(campaign_run_id))
+            result = await handler.run(_ctx(project_run_id))
             assert result.payload["coverage"] is None
 
     run_async(_run())

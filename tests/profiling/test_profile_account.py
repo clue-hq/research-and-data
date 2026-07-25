@@ -15,9 +15,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from clue_research.claimstore import insert_claim, register_field
-from clue_research.config import RecursionPolicy, TierRecursionCaps
-from clue_research.core import (
+from clue_config import RecursionPolicy, TierRecursionCaps
+from clue_core import (
     EntityType,
     ExtractionMethod,
     FieldDef,
@@ -32,8 +31,10 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import insert_claim, register_field
 from clue_research.identity import insert_account_entity, mark_merged
 from clue_research.profiling import profile_account
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import conn_session_factory, rollback_conn, run_async
 
@@ -76,7 +77,7 @@ class _StubWorker:
 
 def _spec(field_keys=_ALL) -> ICPSpec:
     return ICPSpec(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="k",
         created_from=ICPCreatedFrom.SYNTHESIS,
         version=1,
@@ -92,8 +93,12 @@ async def _register_fields(conn) -> None:
 
 
 async def _insert_account(conn):
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(
-        conn, canonical_name="Acme Robotics", primary_domain="acme-robotics.com"
+        conn,
+        canonical_name="Acme Robotics",
+        primary_domain="acme-robotics.com",
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 
@@ -115,7 +120,7 @@ def test_dispatches_one_worker_per_gap_cluster() -> None:
                 account_entity_id=acct,
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -150,7 +155,7 @@ def test_aspects_run_in_parallel() -> None:
                     account_entity_id=acct,
                     spec=_spec(),
                     tier="top",
-                    tenant_id="acme",
+                    workspace_id="acme",
                     session_factory=conn_session_factory(conn),
                     worker_for=_stub_builder(stubs),
                 ),
@@ -182,7 +187,7 @@ def test_per_tier_aspect_cap_drops_excess_clusters() -> None:
                 account_entity_id=acct,
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 recursion_policy=policy,
                 worker_for=_stub_builder(top_stubs),
@@ -195,7 +200,7 @@ def test_per_tier_aspect_cap_drops_excess_clusters() -> None:
                 account_entity_id=acct,
                 spec=_spec(),
                 tier="small",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 recursion_policy=policy,
                 worker_for=_stub_builder(small_stubs),
@@ -237,7 +242,7 @@ def test_all_fresh_fields_is_complete_zero_work() -> None:
                 account_entity_id=acct,
                 spec=_spec((_CORE_F, _ACCT_F)),  # only the two now-fresh public fields
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -255,7 +260,7 @@ def test_unresolved_account_fails_cleanly() -> None:
                 account_entity_id=new_entity_id(),  # never inserted
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder({}),
             )
@@ -279,7 +284,7 @@ def test_run_id_is_threaded_to_every_aspect() -> None:
                 spec=_spec(),
                 tier="top",
                 run_id=run_id,
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -328,7 +333,7 @@ def test_stale_field_is_treated_as_a_gap() -> None:
                 account_entity_id=acct,
                 spec=_spec((_ACCT_F,)),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )
@@ -342,8 +347,12 @@ def test_profile_account_follows_account_merge_to_survivor() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             await _register_fields(conn)
+            await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
             loser = await insert_account_entity(
-                conn, canonical_name="Acme Old", primary_domain="old.example.com"
+                conn,
+                canonical_name="Acme Old",
+                primary_domain="old.example.com",
+                workspace_id=DEFAULT_TEST_WORKSPACE,
             )
             survivor = await _insert_account(conn)  # "Acme Robotics" / acme-robotics.com
             await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
@@ -353,7 +362,7 @@ def test_profile_account_follows_account_merge_to_survivor() -> None:
                 account_entity_id=loser,  # called with the merged-away id
                 spec=_spec(),
                 tier="top",
-                tenant_id="acme",
+                workspace_id="acme",
                 session_factory=conn_session_factory(conn),
                 worker_for=_stub_builder(stubs),
             )

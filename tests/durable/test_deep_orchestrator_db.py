@@ -4,7 +4,7 @@ The ``test_budget_reconciliation`` tests prove the ``run_step`` *primitive* is e
 one proves the property the spec actually scopes AC1 to: a crash *inside a per-contact step* of the
 ``AccountDeepOrchestrator``'s 3-stage sequence, then a real resume (re-entry via the ``sub_phase``
 marker + the cost-seed from ``account_run.cost_cents`` + the durable-ledger recovery of already-paid
-contacts), leaves ``account_run.cost_cents == campaign_run.spent_cents == SUM(ledger charges)`` — no
+contacts), leaves ``account_run.cost_cents == project_run.spent_cents == SUM(ledger charges)`` — no
 under-count, no double-charge — and **no committed contact's references dropped**. Driven by the
 real ``AccountDeepOrchestrator`` + ``DbExactlyOnceSpend`` + ``DbAccountRunIO`` + a real engine over
 a connection, with the per-stage transaction modelled by a SAVEPOINT (so the whole thing stays
@@ -22,25 +22,25 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.deep import (
+from clue_api.deep import (
     AccountDeepOrchestrator,
     DbAccountRunIO,
     DbExactlyOnceSpend,
     deep_account_run_id,
     deep_step_key,
 )
-from clue_research.config import DeepPhaseConfig
-from clue_research.core import (
+from clue_config import DeepPhaseConfig
+from clue_core import (
     EntityId,
     Persona,
     SourceTier,
     WorkerStatus,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
 )
-from clue_research.core.enums import ICPCreatedFrom
-from clue_research.core.handoff import ICPSpec, ProfileClaimView
+from clue_core.enums import ICPCreatedFrom
+from clue_core.handoff import ICPSpec, ProfileClaimView
 from clue_research.durable import (
     AccountRunStatus,
     AccountRunSubPhase,
@@ -48,7 +48,7 @@ from clue_research.durable import (
     BudgetEngine,
     add_account_spend,
     add_run_spend,
-    ensure_campaign_run,
+    ensure_project_run,
     fold_references,
     get_account_budget_state,
     get_account_run,
@@ -67,6 +67,7 @@ from clue_research.profiling import (
 from clue_research.profiling.committee.coverage import estimate_committee_coverage
 from clue_research.profiling.committee.results import CommitteeMemberRef
 from clue_research.profiling.committee.stopping import CommitteeStopReason
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 
@@ -74,7 +75,7 @@ pytestmark = pytest.mark.usefixtures("require_durable_db")
 
 
 def _spec() -> ICPSpec:
-    return ICPSpec(client_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
+    return ICPSpec(workspace_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
 
 
 class _ConnBudgetStore:
@@ -93,7 +94,7 @@ class _ConnBudgetStore:
     async def add_spend(
         self,
         *,
-        campaign_run_id: Any,
+        project_run_id: Any,
         cost_cents: Decimal,
         account_run_id: Any | None = None,
         conn: AsyncConnection | None = None,
@@ -101,24 +102,24 @@ class _ConnBudgetStore:
         # ``record(conn=…)`` passes the per-stage savepoint connection (which IS the shared conn);
         # fall back to the shared conn when omitted. Fail-loud, mirroring DbBudgetStore.add_spend.
         c = conn if conn is not None else self._conn
-        if await add_run_spend(c, campaign_run_id, cost_cents) == 0:
-            raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+        if await add_run_spend(c, project_run_id, cost_cents) == 0:
+            raise BudgetStateNotFound(f"project_run {project_run_id}")
         if (
             account_run_id is not None
             and await add_account_spend(c, account_run_id, cost_cents) == 0
         ):
             raise BudgetStateNotFound(f"account_run {account_run_id}")
 
-    async def run_state(self, campaign_run_id: Any) -> Any:  # pragma: no cover - unused here
+    async def run_state(self, project_run_id: Any) -> Any:  # pragma: no cover - unused here
         raise NotImplementedError
 
-    async def set_campaign_cap(self, campaign_run_id: Any, cap_cents: Decimal) -> None:
+    async def set_campaign_cap(self, project_run_id: Any, cap_cents: Decimal) -> None:
         raise NotImplementedError  # pragma: no cover - unused here
 
     async def set_account_cap(self, account_run_id: Any, cap_cents: Decimal | None) -> None:
         raise NotImplementedError  # pragma: no cover - unused here
 
-    async def set_estimated(self, campaign_run_id: Any, estimated_cents: Decimal) -> None:
+    async def set_estimated(self, project_run_id: Any, estimated_cents: Decimal) -> None:
         raise NotImplementedError  # pragma: no cover - unused here
 
     async def record_event(self, **kwargs: Any) -> None:  # pragma: no cover - unused here
@@ -213,22 +214,24 @@ def test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references(
     the ``contacts_complete`` fold persisted the ``contact:*`` refs + marker — by reverting the
     durable index/marker to that exact state. On resume the account is at its cap, so re-admission
     would be ``DENY``-ed; the orchestrator instead recovers every charged contact from the ledger.
-    Asserts ``account_run.cost_cents == campaign_run.spent_cents == SUM(ledger charges)`` (no
+    Asserts ``account_run.cost_cents == project_run.spent_cents == SUM(ledger charges)`` (no
     double-charge) and that **no committed contact's references were dropped** (nor re-run)."""
 
     async def _run() -> None:
         members = [new_entity_id(), new_entity_id(), new_entity_id()]
-        campaign = new_campaign_run_id()
+        campaign = new_project_run_id()
         entity = new_entity_id()
         run_id = deep_account_run_id(campaign, entity)
         account_cost, committee_cost, contact_cost = Decimal("12"), Decimal("7"), Decimal("5")
         total = account_cost + committee_cost + contact_cost * 3
 
         async with rollback_conn(seed_pack=False) as conn:
-            await ensure_campaign_run(
+            project = await seed_project(conn, "client-1")
+            await ensure_project_run(
                 conn,
-                campaign_run_id=campaign,
-                client_id="client-1",
+                project_run_id=campaign,
+                project_id=project.project_id,
+                workspace_id="client-1",
                 icp_key="icp-a",
                 icp_version=1,
                 budget_cap_cents=Decimal("100000"),
@@ -236,7 +239,7 @@ def test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references(
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=campaign,
+                project_run_id=campaign,
                 entity_id=entity,
                 tier="top",
                 status=AccountRunStatus.RUNNING,
@@ -265,7 +268,7 @@ def test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references(
             )
 
             # Run 1: the full sequence commits — every stage charged through ``record`` once.
-            await orch.run_one(AccountSpec(entity_id=entity, tier="top"), campaign_run_id=campaign)
+            await orch.run_one(AccountSpec(entity_id=entity, tier="top"), project_run_id=campaign)
             assert (await get_run_budget_state(conn, campaign)).spent_cents == total
             row = await get_account_run(conn, run_id)
             assert row is not None and row.cost_cents == total
@@ -286,7 +289,7 @@ def test_resume_after_a_pre_fold_crash_reconciles_cost_and_keeps_all_references(
             # Resume: stage 3 re-runs, but every contact is recovered from the ledger (NO re-charge,
             # NO re-run) and the marker advances to CONTACTS_COMPLETE.
             result = await orch.run_one(
-                AccountSpec(entity_id=entity, tier="top"), campaign_run_id=campaign
+                AccountSpec(entity_id=entity, tier="top"), project_run_id=campaign
             )
 
             # the counters did not move on resume — no double-charge

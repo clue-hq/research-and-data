@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.core import EntityScope, IdentityBinding, Modality, SourceManifest
+from clue_core import EntityScope, IdentityBinding, Modality, SourceManifest
 
 
 @pytest.mark.parametrize("modality", list(Modality))
@@ -28,8 +28,15 @@ def test_source_manifest_round_trips_every_modality_and_scope(
     assert SourceManifest.model_validate(manifest.model_dump()) == manifest
 
 
-def test_source_manifest_covers_all_five_modalities() -> None:
-    assert {m.value for m in Modality} == {"text", "video", "audio", "pdf", "structured"}
+def test_source_manifest_covers_all_six_modalities() -> None:
+    assert {m.value for m in Modality} == {
+        "text",
+        "video",
+        "audio",
+        "pdf",
+        "structured",
+        "conversation",
+    }
 
 
 def test_source_manifest_tier_is_bounded() -> None:

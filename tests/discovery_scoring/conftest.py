@@ -21,7 +21,7 @@ from alembic.config import Config
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     Completion,
     EmbeddingResult,
     EntityId,
@@ -29,12 +29,17 @@ from clue_research.core import (
     ICPSpec,
     Message,
 )
-from clue_research.db import db_lifespan
+from clue_db import db_lifespan
 from clue_research.discovery_scoring.discovery import (
     CandidateHypothesis,
     CandidateRecord,
     DiscoveryQuery,
 )
+
+# Accounts/contacts are workspace-local ([B3×research]): every account-creating call needs a
+# ``workspace`` row for its FK. Seed the conventional test workspace once, inside the rollback
+# harness, so every suite's inserts/resolve/admit/phase-runs on this conn satisfy the FK (DRY).
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 # Reuse the M0.3 helpers (DRY): the single-loop coroutine runner + the reachable-DB gate.
 from tests.db.conftest import _db_available
@@ -104,6 +109,9 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
         conn = await engine.connect()
         trans = await conn.begin()
         try:
+            # Seed the conventional test workspace so account-entity FKs resolve; rolled back with
+            # the rest of the transaction (custom-workspace tests seed their own id on top).
+            await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
             yield conn
         finally:
             await trans.rollback()
@@ -113,7 +121,7 @@ async def rollback_conn() -> AsyncIterator[AsyncConnection]:
 def icp_spec(discovery_strategy: dict[str, JsonValue] | None = None) -> ICPSpec:
     """Build an in-memory ICP spec carrying a discovery-strategy slot (the only field M6.1 uses)."""
     return ICPSpec(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         created_from=ICPCreatedFrom.SYNTHESIS,
         discovery_strategy=discovery_strategy or {},

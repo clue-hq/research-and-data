@@ -1,0 +1,234 @@
+{
+  "recipe_key": "recipe1-classic",
+  "scope_type": "system",
+  "workspace_id": null,
+  "version": 2,
+  "executor_protocol": 1,
+  "parameter_schema": {
+    "type": "object",
+    "required": ["project_run_id"],
+    "properties": {
+      "project_run_id": {"type": "string"}
+    },
+    "additionalProperties": false
+  },
+  "graph": {
+    "nodes": [
+      {
+        "kind": "tool",
+        "node_key": "reverse_profiling",
+        "ordinal": 0,
+        "dependencies": [],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "reverse_profiling"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "icp_confirmed",
+        "ordinal": 1,
+        "dependencies": ["reverse_profiling"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "icp_confirmed"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "discovery",
+        "ordinal": 2,
+        "dependencies": ["icp_confirmed"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "discovery"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "scoring",
+        "ordinal": 3,
+        "dependencies": ["discovery"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "scoring"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "tier_checkpoint",
+        "ordinal": 4,
+        "dependencies": ["scoring"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "tier_checkpoint"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "deep",
+        "ordinal": 5,
+        "dependencies": ["tier_checkpoint"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "deep"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false},
+          {"kind": "supervisor_policy", "key": "__runtime__", "version": "supervisor-v1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "verification",
+        "ordinal": 6,
+        "dependencies": ["deep"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "verification"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "review",
+        "ordinal": 7,
+        "dependencies": ["verification"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "review"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      },
+      {
+        "kind": "tool",
+        "node_key": "handoff",
+        "ordinal": 8,
+        "dependencies": ["review"],
+        "tool_name": "advance_project_phase",
+        "tool_version": "1",
+        "input_schema_sha256": "8ef8ec12d3f7cecd8a7e014325ecb6e45bb961fe95983ea2a80ec357badcb13f",
+        "output_schema_sha256": "eb4cac3156c45d912b6c69a64fd46840788ba2a12a77732ebaf84443d4f463df",
+        "bindings": {
+          "project_run_id": {"kind": "parameter", "name": "project_run_id"},
+          "expected_phase": {"kind": "literal", "value": "handoff"}
+        },
+        "requirements": [
+          {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+          {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+        ]
+      }
+    ],
+    "tool_allowlist": ["advance_project_phase@1"],
+    "authority_allowlist": [],
+    "activity_allowlist": [],
+    "migration_state": "executable"
+  },
+  "compatibility": {
+    "execution": [],
+    "nodes": {
+      "reverse_profiling": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "icp_confirmed": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "discovery": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "scoring": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "tier_checkpoint": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "deep": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false},
+        {"kind": "supervisor_policy", "key": "__runtime__", "version": "supervisor-v1", "required": false}
+      ],
+      "verification": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "review": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ],
+      "handoff": [
+        {"kind": "tool", "key": "advance_project_phase", "version": "1"},
+        {"kind": "project_run", "key": "__runtime__", "version": "1", "required": false}
+      ]
+    }
+  },
+  "requested_memory_types": [],
+  "max_nodes": 9,
+  "max_depth": 1,
+  "max_fanout": 1,
+  "source_execution_id": null,
+  "created_by": "system"
+}

@@ -17,8 +17,8 @@ audit must honestly record it instead of overloading ``field_key`` with a synthe
 * a coherence CHECK pinning ``request_kind`` ⇄ ``field_key`` ⇄ ``enumeration_scope`` (mirrors the
   ``PreSpendRequest._check_kind`` model validator).
 
-``pre_spend_kind`` / ``enumeration_scope`` mirror :class:`clue_research.core.enums.PreSpendKind` /
-:class:`~clue_research.core.enums.EnumerationScope`; the enum-parity tests in
+``pre_spend_kind`` / ``enumeration_scope`` mirror :class:`clue_core.enums.PreSpendKind` /
+:class:`~clue_core.enums.EnumerationScope`; the enum-parity tests in
 ``tests/verification/test_prespend_gate.py`` guard drift. The ``gate_decision_entity_field``
 ``(entity_id, field_key)`` index tolerates NULL ``field_key`` (B-tree indexes NULLs), so it is left
 unchanged. ``downgrade()`` cleanly reverses ``upgrade()`` (CI runs up → down → up on a clean DB).
@@ -36,7 +36,7 @@ down_revision: str | None = "089dc65b5814"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums.PreSpendKind / EnumerationScope (parity-tested). The labels here
+# Mirror clue_core.enums.PreSpendKind / EnumerationScope (parity-tested). The labels here
 # ARE the StrEnum ``.value``s — the parity test asserts the PG enum labels equal these.
 _PRE_SPEND_KIND = ("field", "enumeration")
 _ENUMERATION_SCOPE = ("committee",)

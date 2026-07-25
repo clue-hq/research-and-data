@@ -22,8 +22,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan
 
 # Reuse the M0.3 helpers: the single-loop coroutine runner and the reachable-DB gate (DRY — these
 # are not re-implemented). ``run_async`` is re-exported here for the claim-store test modules.

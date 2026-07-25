@@ -17,18 +17,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    CorroborationConfig,
-    MergePolicy,
-    current_value,
-    get_corroboration_config,
-    insert_claim,
-    record_verification,
-    register_field,
-)
-from clue_research.config import MergePolicy as ConfigMergePolicy
-from clue_research.core import (
+from clue_config import MergePolicy as ConfigMergePolicy
+from clue_core import (
     DEFAULT_NUMERIC_ABS_TOLERANCE,
     DEFAULT_NUMERIC_REL_TOLERANCE,
     DEFAULT_SEMANTIC_JACCARD_THRESHOLD,
@@ -46,8 +36,18 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import InMemorySink
+from clue_research.claimstore import (
+    ALL_WORKSPACES,
+    CorroborationConfig,
+    MergePolicy,
+    current_value,
+    get_corroboration_config,
+    insert_claim,
+    record_verification,
+    register_field,
+)
 from clue_research.identity import insert_account_entity
-from clue_research.obs import InMemorySink
 from clue_research.verification import (
     CorroborationPolicy,
     Corroborator,
@@ -61,6 +61,7 @@ from clue_research.verification.corroboration import (
     METRIC_CORROBORATION_CONFLICTS,
     METRIC_CORROBORATION_PROMOTED,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -272,8 +273,13 @@ def _corroborator(conn: AsyncConnection, *, sink: InMemorySink | None = None) ->
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(  # type: ignore[return-value]
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 
@@ -387,7 +393,7 @@ def test_threshold_2_not_verified_on_one_tier3_source() -> None:
             a = await _add_claim(
                 conn, entity, "account.lb", "v", tier=3, source_key="exa", host="a.com"
             )
-            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             status, corr = await _state(conn, a)
             assert status == "unverified" and corr == 1
             assert result.promoted_claim_ids == ()
@@ -408,7 +414,7 @@ def test_threshold_2_verified_on_two_independent_tier3_sources() -> None:
             b = await _add_claim(
                 conn, entity, "account.lb", "v", tier=3, source_key="parallel", host="b.com"
             )
-            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             assert (await _state(conn, a)) == ("verified", 2)
             assert (await _state(conn, b)) == ("verified", 2)
             assert set(result.promoted_claim_ids) == {a, b}
@@ -428,7 +434,7 @@ def test_two_claims_from_same_vendor_count_as_one() -> None:
             b = await _add_claim(
                 conn, entity, "account.lb", "v", tier=3, source_key="exa", host="b.com"
             )  # same vendor
-            await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             assert (await _state(conn, a)) == ("unverified", 1)
             assert (await _state(conn, b)) == ("unverified", 1)
 
@@ -444,7 +450,7 @@ def test_threshold_1_promotes_on_single_confident_claim() -> None:
             a = await _add_claim(
                 conn, entity, "account.nlb", "v", tier=3, source_key="exa", host="a.com"
             )
-            await _corroborator(conn).evaluate(entity, "account.nlb", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.nlb", scope=ALL_WORKSPACES)
             assert (await _state(conn, a)) == ("verified", 1)
 
     run_async(_run())
@@ -467,7 +473,7 @@ def test_tier1_single_source_sufficient_verified_without_corroboration() -> None
                 source_key="registry",
                 host="reg.gov",
             )
-            await _corroborator(conn).evaluate(entity, "account.regid", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.regid", scope=ALL_WORKSPACES)
             # a lone tier-1 deterministic claim verifies despite corroboration_min=2.
             assert (await _state(conn, a))[0] == "verified"
 
@@ -486,7 +492,7 @@ def test_single_source_sufficient_does_not_promote_a_tier3_claim() -> None:
             a = await _add_claim(
                 conn, entity, "account.regid", "X", tier=3, source_key="exa", host="a.com"
             )
-            await _corroborator(conn).evaluate(entity, "account.regid", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.regid", scope=ALL_WORKSPACES)
             assert (await _state(conn, a))[0] == "unverified"
 
     run_async(_run())
@@ -504,7 +510,7 @@ def test_two_tier2_sources_disagree_raise_conflict_and_no_silent_pick() -> None:
             b = await _add_claim(
                 conn, entity, "account.lb", "Y", tier=2, source_key="parallel", host="b.com"
             )
-            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             assert result.conflict
             assert set(result.conflicting_claim_ids) == {a, b}
             # no value silently chosen: neither claim is promoted.
@@ -513,7 +519,7 @@ def test_two_tier2_sources_disagree_raise_conflict_and_no_silent_pick() -> None:
             # a conflict_flag row is raised...
             assert await _conflict_flag_count(conn, entity, "account.lb") == 1
             # ...and the merge result carries the conflict flag (substrate §1).
-            cv = await current_value(conn, entity, "account.lb", scope=ALL_TENANTS)
+            cv = await current_value(conn, entity, "account.lb", scope=ALL_WORKSPACES)
             assert cv is not None and cv.conflict
 
     run_async(_run())
@@ -539,7 +545,7 @@ def test_open_conflict_suppresses_a_would_promote_group() -> None:
             await _add_claim(
                 conn, entity, "account.lb", "W", tier=2, source_key="bing", host="d.com"
             )
-            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             assert result.conflict
             assert result.promoted_claim_ids == ()  # the open conflict blocks ALL promotion
             assert (await _state(conn, a))[0] == "unverified"
@@ -563,7 +569,7 @@ def test_flagged_claim_does_not_corroborate_its_neighbours() -> None:
             # a is flagged for human review → it must NOT count as an independent corroboration, so
             # b alone (1 source) stays below threshold 2.
             await record_verification(conn, a, status=VerificationStatus.FLAGGED)
-            await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             assert (await _state(conn, a))[0] == "flagged"  # untouched by the corroborator
             assert (await _state(conn, b)) == ("unverified", 1)  # only b counts
 
@@ -595,7 +601,7 @@ def test_non_transitive_numeric_conflict_is_not_masked() -> None:
                 conn, entity, "account.headcount", 1040, tier=2, source_key="clay", host="c.com"
             )
             result = await _corroborator(conn).evaluate(
-                entity, "account.headcount", scope=ALL_TENANTS
+                entity, "account.headcount", scope=ALL_WORKSPACES
             )
             assert result.conflict
             assert set(result.conflicting_claim_ids) == {lo, hi}  # the bridging 1000 is not flagged
@@ -624,11 +630,11 @@ def test_idempotent_re_evaluation_writes_no_new_rows() -> None:
                 conn, entity, "account.lb", "W", tier=2, source_key="bing", host="d.com"
             )
 
-            first = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            first = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             state_a1, state_b1 = await _state(conn, a), await _state(conn, b)
             flags1 = await _conflict_flag_count(conn, entity, "account.lb")
 
-            second = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            second = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             # same verdicts, and crucially no extra conflict_flag row.
             assert (await _state(conn, a)) == state_a1
             assert (await _state(conn, b)) == state_b1
@@ -663,7 +669,7 @@ def test_numeric_tolerance_corroborates_and_separates() -> None:
             c = await _add_claim(
                 conn, entity, "account.headcount", 5000, tier=3, source_key="clay", host="c.com"
             )  # far off → its own group
-            await _corroborator(conn).evaluate(entity, "account.headcount", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.headcount", scope=ALL_WORKSPACES)
             assert (await _state(conn, a)) == ("verified", 2)
             assert (await _state(conn, b)) == ("verified", 2)
             assert (await _state(conn, c)) == ("unverified", 1)
@@ -692,7 +698,7 @@ def test_semantic_equality_corroborates_and_separates() -> None:
             c = await _add_claim(
                 conn, entity, "account.tech", "Databricks", tier=3, source_key="clay", host="c.com"
             )
-            await _corroborator(conn).evaluate(entity, "account.tech", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.tech", scope=ALL_WORKSPACES)
             assert (await _state(conn, a))[0] == "verified"
             assert (await _state(conn, b))[0] == "verified"
             assert (await _state(conn, c))[0] == "unverified"
@@ -716,8 +722,8 @@ def test_changing_threshold_changes_promotion_with_no_code_change() -> None:
                 conn, entity, "account.thresh2", "v", tier=3, source_key="exa", host="a.com"
             )
             corroborator = _corroborator(conn)
-            await corroborator.evaluate(entity, "account.thresh1", scope=ALL_TENANTS)
-            await corroborator.evaluate(entity, "account.thresh2", scope=ALL_TENANTS)
+            await corroborator.evaluate(entity, "account.thresh1", scope=ALL_WORKSPACES)
+            await corroborator.evaluate(entity, "account.thresh2", scope=ALL_WORKSPACES)
             assert (await _state(conn, a))[0] == "verified"
             assert (await _state(conn, b))[0] == "unverified"
 
@@ -740,7 +746,7 @@ def test_tier4_left_to_the_judge_but_corroborations_recorded() -> None:
             t4 = await _add_claim(
                 conn, entity, "account.lb", "v", tier=4, source_key="gpt", host="llm.local"
             )
-            await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             # tier-3 promoted; tier-4 stays unverified (M9.3's faithfulness judge owns it) but its
             # corroborations count is set (independent tier≤3 sources = 2).
             assert (await _state(conn, a)) == ("verified", 2)
@@ -763,7 +769,9 @@ def test_metrics_emitted() -> None:
             await _add_claim(
                 conn, entity, "account.lb", "v", tier=3, source_key="parallel", host="b.com"
             )
-            await _corroborator(conn, sink=sink).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            await _corroborator(conn, sink=sink).evaluate(
+                entity, "account.lb", scope=ALL_WORKSPACES
+            )
             assert sink.counter(METRIC_CORROBORATION_PROMOTED, field_key="account.lb") == 2
             assert sink.counter(METRIC_CORROBORATION_CONFLICTS, field_key="account.lb") == 0
 
@@ -838,7 +846,7 @@ def test_single_tier2_vs_tier3_is_not_a_conflict() -> None:
             b = await _add_claim(
                 conn, entity, "account.lb", "Y", tier=3, source_key="parallel", host="b.com"
             )
-            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_TENANTS)
+            result = await _corroborator(conn).evaluate(entity, "account.lb", scope=ALL_WORKSPACES)
             assert not result.conflict
             assert await _conflict_flag_count(conn, entity, "account.lb") == 0
             assert a and b

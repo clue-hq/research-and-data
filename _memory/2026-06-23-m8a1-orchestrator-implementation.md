@@ -1,7 +1,7 @@
 # M8A.1 — `AccountDeepOrchestrator` (the per-account account→committee→contact trunk) — implementation
 
 **Date:** 2026-06-23 · **Branch:** `m8a/orchestrator` (off `m8a/durable-seams` = M8A.0) · **Spec:**
-`docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.1 · **Plan:**
+`docs/specs/M8A-project-run-deep-orchestration.md` §M8A.1 · **Plan:**
 [[2026-06-23-m8a-implementation-plan]].
 
 The trunk the rest of M8A builds against. Pure composition: sequences the three M8 worker families

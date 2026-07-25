@@ -15,31 +15,31 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 
-from clue_research.api.deep import (
+from clue_api.deep import (
     AccountDeepOrchestrator,
     StepInfo,
     deep_account_run_id,
 )
-from clue_research.api.deep.run_io import DeepRunState
-from clue_research.config import DeepPhaseConfig, RecursionPolicy
-from clue_research.core import (
+from clue_api.deep.run_io import DeepRunState
+from clue_config import DeepPhaseConfig, RecursionPolicy
+from clue_core import (
     BudgetDecision,
     BudgetScope,
     BudgetVerdict,
     BurnDown,
-    CampaignRunId,
     CostCents,
     EntityId,
     Estimate,
     Persona,
+    ProjectRunId,
     RunId,
     WorkerStatus,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
 )
-from clue_research.core.enums import ICPCreatedFrom
-from clue_research.core.handoff import ICPSpec
+from clue_core.enums import ICPCreatedFrom
+from clue_core.handoff import ICPSpec
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import (
     AccountProfileResult,
@@ -55,7 +55,7 @@ from tests.db.conftest import run_async
 
 
 class FakeAccountRunIO:
-    """In-memory :class:`~clue_research.api.deep.run_io.AccountRunIO` (no DB).
+    """In-memory :class:`~clue_api.deep.run_io.AccountRunIO` (no DB).
 
     Records each ``fold`` and supports ``seed`` to simulate a prior run's persisted resume state
     (sub_phase + references + cost) so the resume path is exercised without a database. ``fold``
@@ -70,7 +70,7 @@ class FakeAccountRunIO:
         self,
         *,
         account_run_id: RunId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId,
         tier: str,
     ) -> None:
@@ -230,7 +230,7 @@ class FakeProfileContact:
 
 
 class FakeBudgetEngine:
-    """A configurable :class:`~clue_research.core.BudgetEngine` for the admission tests (M8A.3).
+    """A configurable :class:`~clue_core.BudgetEngine` for the admission tests (M8A.3).
 
     ``check`` returns a scripted sequence of verdicts (falling back to ``default`` — ``ALLOW`` —
     once the script is exhausted) and records every call, so a test can assert the projected
@@ -260,7 +260,7 @@ class FakeBudgetEngine:
         *,
         scope: BudgetScope,
         projected_cents: CostCents,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> BudgetDecision:
@@ -275,7 +275,7 @@ class FakeBudgetEngine:
             {
                 "scope": scope,
                 "projected_cents": projected_cents,
-                "campaign_run_id": campaign_run_id,
+                "project_run_id": project_run_id,
                 "entity_id": entity_id,
                 "account_run_id": account_run_id,
             }
@@ -286,7 +286,7 @@ class FakeBudgetEngine:
 
     async def estimate(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
         discovered_count: int,
         tier_cutoffs: dict[str, float] | None = None,
@@ -304,16 +304,16 @@ class FakeBudgetEngine:
         *,
         cost_cents: CostCents,
         scope: BudgetScope,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> None:
         return None
 
-    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
+    async def set_campaign_cap(self, project_run_id: ProjectRunId, cap_cents: CostCents) -> None:
         return None
 
-    async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown:
+    async def burn_down(self, project_run_id: ProjectRunId) -> BurnDown:
         zero = Decimal(0)
         return BurnDown(
             spent_cents=zero, estimated_cents=zero, cap_cents=zero, remaining_cents=zero
@@ -321,7 +321,7 @@ class FakeBudgetEngine:
 
 
 class FakeExactlyOnceSpend:
-    """In-memory :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` (no DB, no ledger).
+    """In-memory :class:`~clue_api.deep.spend.ExactlyOnceSpend` (no DB, no ledger).
 
     Default behaviour: run ``work`` and record its charge exactly once, returning the result + a
     fresh :class:`StepInfo`. ``replay`` maps a step ``key`` → ``(claim_ids, cost)`` to simulate a
@@ -338,7 +338,7 @@ class FakeExactlyOnceSpend:
         conn: Any,
         *,
         key: str,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         account_run_id: RunId,
         entity_id: EntityId,
         work: Any,
@@ -352,7 +352,7 @@ class FakeExactlyOnceSpend:
         self.charges.append(
             {
                 "key": key,
-                "campaign_run_id": campaign_run_id,
+                "project_run_id": project_run_id,
                 "account_run_id": account_run_id,
                 "entity_id": entity_id,
                 "cost_cents": result.cost_cents,
@@ -379,7 +379,7 @@ def _fake_session_factory() -> Any:
 
 
 def _spec() -> ICPSpec:
-    return ICPSpec(client_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
+    return ICPSpec(workspace_id="client-1", icp_key="icp-a", created_from=ICPCreatedFrom.SYNTHESIS)
 
 
 def _orchestrator(
@@ -421,12 +421,12 @@ def test_fresh_run_sequences_account_then_committee_then_contacts() -> None:
         make_discover_committee(rec, n_members=3),
         FakeProfileContact(rec),
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         # account first, committee second (a hard gate), then the three contacts
         assert rec.order[0] == "account"
         assert rec.order[1] == "committee"
@@ -460,9 +460,9 @@ def test_resume_at_committee_discovered_skips_account_and_committee() -> None:
         make_discover_committee(rec),
         FakeProfileContact(rec),
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
     run_id = deep_account_run_id(campaign, entity)
     contact_ids = [new_entity_id(), new_entity_id()]
     io.seed(
@@ -473,7 +473,7 @@ def test_resume_at_committee_discovered_skips_account_and_committee() -> None:
     )
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         # neither the account nor the committee was re-run — only the contact fan-out resumed
         assert "account" not in rec.order
         assert "committee" not in rec.order
@@ -497,9 +497,9 @@ def test_full_resume_is_a_no_op() -> None:
         make_discover_committee(rec),
         FakeProfileContact(rec),
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
     run_id = deep_account_run_id(campaign, entity)
     io.seed(
         run_id,
@@ -509,7 +509,7 @@ def test_full_resume_is_a_no_op() -> None:
     )
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         assert rec.order == []  # nothing re-ran
         assert result.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
         assert result.cost_cents == Decimal("20")
@@ -528,10 +528,10 @@ def test_committee_size_cap_truncates_the_fan_out() -> None:
         FakeProfileContact(rec),
         config=DeepPhaseConfig(committee_size_cap=2),
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         # 5 members discovered, but only committee_size_cap=2 are profiled
         assert len(rec.contact_ids) == 2
         assert len(result.contacts) == 2
@@ -550,10 +550,10 @@ def test_max_contacts_in_flight_bounds_concurrency() -> None:
         contact,
         config=DeepPhaseConfig(committee_size_cap=10, max_contacts_in_flight=2),
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        await orch.run_one(spec, project_run_id=new_project_run_id())
         assert contact.peak <= 2  # the intra-account semaphore held the line
         assert contact.peak == 2  # ...and the fan-out actually reached the cap
 
@@ -569,21 +569,21 @@ def test_account_axis_carries_spec_and_explicit_kwargs_with_one_run_id() -> None
         make_discover_committee(rec, n_members=1),
         FakeProfileContact(rec),
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        await orch.run_one(spec, campaign_run_id=campaign)
+        await orch.run_one(spec, project_run_id=campaign)
         run_id = deep_account_run_id(campaign, entity)
         acc = rec.account_kwargs[0]
         com = rec.committee_kwargs[0]
         # account axis: the ICP spec + tenant + the deterministic run id, all explicit kwargs
-        assert acc["spec"].client_id == "client-1"
-        assert acc["tenant_id"] == "client-1"
+        assert acc["spec"].workspace_id == "client-1"
+        assert acc["workspace_id"] == "client-1"
         assert acc["run_id"] == run_id
         # committee axis: tenant + run id as explicit kwargs (never via ctx.params)
-        assert com["tenant_id"] == "client-1"
+        assert com["workspace_id"] == "client-1"
         assert com["run_id"] == run_id  # one provenance line across stages
 
     run_async(_run())
@@ -598,10 +598,10 @@ def test_not_found_account_short_circuits_before_committee() -> None:
         make_discover_committee(rec),
         FakeProfileContact(rec),
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         # the account did not resolve → stop before discovery; committee/contact never reached
         assert rec.order == ["account"]
         assert "committee" not in rec.order and "contact" not in rec.order
@@ -622,12 +622,12 @@ def test_empty_committee_completes_with_zero_contacts() -> None:
         make_discover_committee(rec, n_members=0),
         FakeProfileContact(rec),
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         # a discoverable-but-empty committee is a successful partial (coverage), not a failure
         assert rec.order == ["account", "committee"]
         assert result.contacts == ()
@@ -641,10 +641,10 @@ def test_empty_committee_completes_with_zero_contacts() -> None:
 
 
 def test_deterministic_account_run_id() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
     assert deep_account_run_id(campaign, entity) == deep_account_run_id(campaign, entity)
     assert deep_account_run_id(campaign, entity) != deep_account_run_id(
-        new_campaign_run_id(), entity
+        new_project_run_id(), entity
     )
     assert deep_account_run_id(campaign, entity) != deep_account_run_id(campaign, new_entity_id())

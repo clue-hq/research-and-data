@@ -12,8 +12,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from clue_research.config import redact
-from clue_research.core import EntityScope, IdentityBinding, Modality, SourceManifest
+from clue_config import redact
+from clue_core import EntityScope, IdentityBinding, Modality, SourceManifest
 from clue_research.icp import (
     Pack,
     PackSourceSlot,

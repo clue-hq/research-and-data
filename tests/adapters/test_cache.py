@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from clue_core import NormalizedText
 from clue_research.adapters import (
     CachedArtifact,
     InMemoryArtifactCache,
@@ -16,18 +17,26 @@ from clue_research.adapters import (
     freshness_ttl,
     is_fresh,
 )
-from clue_research.core import NormalizedText
 
 
 def test_content_key_is_deterministic_and_separator_safe() -> None:
-    assert content_key("firecrawl_site", "https://x.com") == content_key(
-        "firecrawl_site", "https://x.com"
+    assert content_key("firecrawl_site", "https://x.com", None) == content_key(
+        "firecrawl_site", "https://x.com", None
     )
     # (a, bc) and (ab, c) must not collide — the NUL separator guards that.
-    assert content_key("a", "bc") != content_key("ab", "c")
-    assert content_key("firecrawl_site", "https://x.com") != content_key(
-        "firecrawl_site", "https://y.com"
+    assert content_key("a", "bc", None) != content_key("ab", "c", None)
+    assert content_key("firecrawl_site", "https://x.com", None) != content_key(
+        "firecrawl_site", "https://y.com", None
     )
+
+
+def test_content_key_is_workspace_scoped() -> None:
+    # No cross-tenant cache sharing ([B3×research]): the same (source, ref) in different workspaces
+    # — and the None public/unscoped lane — are three distinct partitions.
+    a = content_key("src", "ref", "ws_a")
+    b = content_key("src", "ref", "ws_b")
+    n = content_key("src", "ref", None)
+    assert len({a, b, n}) == 3
 
 
 def test_freshness_ttl_maps_profiles_and_defaults() -> None:

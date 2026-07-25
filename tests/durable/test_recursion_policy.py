@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.config import (
+from clue_config import (
     Config,
     ConfigOverlay,
     OverlayStore,
@@ -49,7 +49,7 @@ def test_validation_rejects_out_of_range_caps() -> None:
 
 
 def test_default_config_carries_a_recursion_policy() -> None:
-    cfg = Config(client_id="acme")
+    cfg = Config(workspace_id="acme")
     assert isinstance(cfg.recursion_policy, RecursionPolicy)
     assert cfg.recursion_policy.caps_for("top").max_depth == 2
 

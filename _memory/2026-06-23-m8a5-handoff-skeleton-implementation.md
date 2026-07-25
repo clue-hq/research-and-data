@@ -1,7 +1,7 @@
 # M8A.5 — Per-account handoff skeleton (references-only, (account,persona)-keyed) — implementation
 
 **Date:** 2026-06-23 · **Branch:** `m8a/handoff-skeleton-v2` (off the M8A.1 trunk = `m8a/orchestrator-v2`
-@ `b8a51cb`) · **Spec:** `docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.5 · **Brief:**
+@ `b8a51cb`) · **Spec:** `docs/specs/M8A-project-run-deep-orchestration.md` §M8A.5 · **Brief:**
 [[2026-06-23-m8a5-handoff]] · **Trunk:** [[2026-06-23-m8a1-orchestrator-implementation]].
 
 The references-only `(account, persona)`-keyed join that proves a deep-researched account is

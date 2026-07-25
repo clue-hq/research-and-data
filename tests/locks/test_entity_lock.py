@@ -10,8 +10,8 @@ import asyncio
 
 import pytest
 
-from clue_research.core import EntityType, new_entity_id
-from clue_research.locks import (
+from clue_core import EntityType, new_entity_id
+from clue_locks import (
     METRIC_LOCK_ACQUIRED,
     METRIC_LOCK_CONTENDED,
     EntityLock,
@@ -19,7 +19,7 @@ from clue_research.locks import (
     lock_key,
     multi_lock,
 )
-from clue_research.obs import InMemorySink, set_metric_sink
+from clue_obs.otel import InMemorySink, set_metric_sink
 
 from .conftest import redis_conn, run_async
 

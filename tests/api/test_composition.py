@@ -7,13 +7,13 @@ tests use the migrated DB and ``pytest.skip`` without one.
 
 from __future__ import annotations
 
-from clue_research.api import (
+from clue_api import (
     build_worker_registry,
     load_research_packs,
     production_binding_classifier,
 )
+from clue_core import IdentityBinding
 from clue_research.claimstore import get_field
-from clue_research.core import IdentityBinding
 from clue_research.profiling import FACET_FIELD_KEYS, RESONANCE_FIELD_KEYS
 from clue_research.profiling.committee import COMMITTEE_FIELD_KEYS
 from clue_research.profiling.contact.binding import (

@@ -7,7 +7,7 @@ intern-as-economic_buyer case) rather than guessing.
 
 from __future__ import annotations
 
-from clue_research.core import AccountEntity, Persona, new_entity_id
+from clue_core import AccountEntity, Persona, new_entity_id
 from clue_research.profiling.committee.roles import (
     RoleSeniority,
     _first_json_object,
@@ -22,7 +22,10 @@ from ..conftest import FakeGateway
 
 def _account() -> AccountEntity:
     return AccountEntity(
-        id=new_entity_id(), canonical_name="Acme Robotics", primary_domain="acme.example"
+        id=new_entity_id(),
+        canonical_name="Acme Robotics",
+        primary_domain="acme.example",
+        workspace_id="ws-test",
     )
 
 

@@ -11,8 +11,15 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import JsonValue
 
-from clue_research.stage0 import read_client_kb_claims, synthesize_icps
+from clue_core.proposals import ProposalStatus
+from clue_research.proposals import ProposalScope, get_field_proposal
+from clue_research.stage0 import (
+    read_client_kb_claims,
+    synthesize_icps,
+    synthesize_icps_with_proposals,
+)
 from clue_research.stage0.fields import (
     CLIENT_CUSTOMER,
     CLIENT_DELIVERED_VALUE,
@@ -22,6 +29,7 @@ from clue_research.stage0.fields import (
     CLIENT_VALUE_PROP,
 )
 from clue_research.stage0.icp_types import ICPProposal
+from clue_spine import create_brand
 from tests.stage0._fakes import FakeGateway, build_client_kb
 from tests.stage0.conftest import rollback_conn, run_async
 
@@ -30,7 +38,7 @@ pytestmark = pytest.mark.usefixtures("require_stage0_db")
 _CLIENT = "tenant-synth"
 
 # A client whose own prose ("data infrastructure") matches the data_infra starter pack.
-_ASSERTED: dict[str, object] = {
+_ASSERTED: dict[str, JsonValue] = {
     CLIENT_VALUE_PROP: "We sell a data infrastructure platform",
     CLIENT_PRODUCT: "data infrastructure platform for analytics teams",
     CLIENT_DIFFERENTIATOR: "the fastest query engine",
@@ -58,9 +66,11 @@ def _all_justifying(proposal: ICPProposal) -> set[object]:
 
 def test_floor_proposal_has_all_six_elements() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="floor", asserted=_ASSERTED)
-            proposals = await synthesize_icps(conn, ref, client_id=_CLIENT)
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="floor", asserted=_ASSERTED
+            )
+            proposals = await synthesize_icps(conn, ref, workspace_id=_CLIENT)
 
             assert len(proposals) >= 1
             p = proposals[0]
@@ -79,15 +89,17 @@ def test_floor_proposal_has_all_six_elements() -> None:
 
 def test_floor_justifying_ids_are_real_client_claims() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="just", asserted=_ASSERTED)
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="just", asserted=_ASSERTED
+            )
             kb = await read_client_kb_claims(
-                conn, ref.client_entity_id, client_id=_CLIENT, version=ref.client_kb_version
+                conn, ref.client_entity_id, workspace_id=_CLIENT, version=ref.client_kb_version
             )
             real_ids = {claim.id for claim in kb.values()}
             assert real_ids  # the KB is non-empty
 
-            (proposal,) = await synthesize_icps(conn, ref, client_id=_CLIENT)
+            (proposal,) = await synthesize_icps(conn, ref, workspace_id=_CLIENT)
             cited = _all_justifying(proposal)
             assert cited  # every proposal cites its evidence
             # no element is justified by an invented id — every citation is a real client claim
@@ -149,11 +161,13 @@ def _two_icp_json() -> str:
 
 def test_llm_multi_icp_split_and_config_bounding() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="multi", asserted=_ASSERTED)
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="multi", asserted=_ASSERTED
+            )
             gateway = FakeGateway(_two_icp_json())
             proposals = await synthesize_icps(
-                conn, ref, client_id=_CLIENT, gateway=gateway, synthesis_model="fake/model"
+                conn, ref, workspace_id=_CLIENT, gateway=gateway, synthesis_model="fake/model"
             )
 
             assert len(proposals) == 2  # the LLM split into two ICPs (D5)
@@ -176,16 +190,112 @@ def test_llm_multi_icp_split_and_config_bounding() -> None:
     run_async(_run())
 
 
+def test_out_of_registry_icp_concept_becomes_durable_proposal_ref() -> None:
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="open-schema", asserted=_ASSERTED
+            )
+            brand = await create_brand(conn, workspace_id=_CLIENT, name="Synthesis brand")
+            scope = ProposalScope(workspace_id=_CLIENT, brand_id=brand.brand_id)
+            response = json.dumps(
+                {
+                    "icps": [
+                        {
+                            "icp_key": "open_schema",
+                            "firmographic_field_keys": [
+                                "core.employee_count",
+                                "account.partner_ecosystem_maturity",
+                            ],
+                            "new_field_concepts": [
+                                {
+                                    "field_key": "account.partner_ecosystem_maturity",
+                                    "value_type": "str",
+                                    "pass_kind": "scoring",
+                                    "description": "Strength of the account partner ecosystem.",
+                                    "rationale": "The client sells through alliance partners.",
+                                },
+                                {
+                                    "field_key": "new_vertical.unsafe_signal",
+                                    "value_type": "str",
+                                    "pass_kind": "deep",
+                                    "rationale": "A pack field without a declared reuse scope.",
+                                },
+                            ],
+                        }
+                    ]
+                }
+            )
+            result = await synthesize_icps_with_proposals(
+                conn,
+                ref,
+                workspace_id=_CLIENT,
+                proposal_scope=scope,
+                proposed_by_actor="agent",
+                proposed_by_ref="thread:stage0",
+                gateway=FakeGateway(response),
+                synthesis_model="fake/model",
+            )
+
+            assert len(result.proposals) == 1
+            assert (
+                "account.partner_ecosystem_maturity"
+                not in result.proposals[0].firmographic.field_keys
+            )
+            assert len(result.field_proposal_refs) == 2
+            proposal_ref = next(
+                ref for ref in result.field_proposal_refs if ref.status is ProposalStatus.PROPOSED
+            )
+            assert proposal_ref.field_key == "account.partner_ecosystem_maturity"
+            stored = await get_field_proposal(conn, proposal_ref.proposal_id, workspace_id=_CLIENT)
+            assert stored is not None
+            assert stored.payload.description == "Strength of the account partner ecosystem."
+            assert stored.payload.evidence_refs
+
+            rejected_ref = next(
+                ref for ref in result.field_proposal_refs if ref.status is ProposalStatus.REJECTED
+            )
+            rejected = await get_field_proposal(
+                conn, rejected_ref.proposal_id, workspace_id=_CLIENT
+            )
+            assert rejected is not None
+            assert rejected.decision_reason is not None
+            assert "reuse_scope" in rejected.decision_reason
+            assert rejected.payload.field_def.validation == {
+                "rejected_input": {
+                    "field_key": "new_vertical.unsafe_signal",
+                    "value_type": "str",
+                    "pass_kind": "deep",
+                    "rationale": "A pack field without a declared reuse scope.",
+                }
+            }
+
+            repeated = await synthesize_icps_with_proposals(
+                conn,
+                ref,
+                workspace_id=_CLIENT,
+                proposal_scope=scope,
+                proposed_by_actor="agent",
+                gateway=FakeGateway(response),
+                synthesis_model="fake/model",
+            )
+            assert repeated.field_proposal_refs == result.field_proposal_refs
+
+    run_async(_run())
+
+
 def test_llm_failure_degrades_to_floor() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
-            ref = await build_client_kb(conn, client_id=_CLIENT, suffix="fail", asserted=_ASSERTED)
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await build_client_kb(
+                conn, workspace_id=_CLIENT, suffix="fail", asserted=_ASSERTED
+            )
 
             # a raising gateway → the deterministic floor stands (never propagates the failure)
             raising = await synthesize_icps(
                 conn,
                 ref,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 gateway=FakeGateway(raise_exc=True),
                 synthesis_model="fake/model",
             )
@@ -195,7 +305,7 @@ def test_llm_failure_degrades_to_floor() -> None:
             garbage = await synthesize_icps(
                 conn,
                 ref,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 gateway=FakeGateway("not json at all"),
                 synthesis_model="fake/model",
             )
@@ -203,7 +313,7 @@ def test_llm_failure_degrades_to_floor() -> None:
 
             # a gateway with no model id is not used at all → floor
             no_model = await synthesize_icps(
-                conn, ref, client_id=_CLIENT, gateway=FakeGateway(_two_icp_json())
+                conn, ref, workspace_id=_CLIENT, gateway=FakeGateway(_two_icp_json())
             )
             assert [p.icp_key for p in no_model] == ["primary"]
 

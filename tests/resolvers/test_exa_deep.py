@@ -16,9 +16,8 @@ from decimal import Decimal
 import pytest
 from pydantic import SecretStr
 
-from clue_research.claimstore import ALL_TENANTS, claims_for
-from clue_research.config import Secrets
-from clue_research.core import (
+from clue_config import Secrets
+from clue_core import (
     AccountEntity,
     Claim,
     Entity,
@@ -33,6 +32,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import ALL_WORKSPACES, claims_for
 from clue_research.resolvers import (
     RetryableResolverError,
     SynthesisResult,
@@ -80,6 +80,7 @@ def _account(domain: str = "acme.com") -> AccountEntity:
         primary_domain=domain,
         aliases=("Acme",),
         hq_geo={"country": "US"},
+        workspace_id="ws-test",
     )
 
 
@@ -291,7 +292,7 @@ def test_config_default_cost_cents_is_honored_on_a_zero_cost_call() -> None:
 
 def test_register_synthesis_wiring_binds_a_tier4_resolver_to_exa_deep() -> None:
     # The PF-7 api-composition-root path (not just a direct register_exa_deep_resolver call).
-    from clue_research.api.synthesis_wiring import register_synthesis_wiring
+    from clue_api.synthesis_wiring import register_synthesis_wiring
 
     register_synthesis_wiring(accounts=_Accounts(_account()))
     resolver = get_resolver("exa_deep")
@@ -302,7 +303,7 @@ def test_register_synthesis_wiring_binds_a_tier4_resolver_to_exa_deep() -> None:
 
 
 async def _claims(conn: object, entity_id: EntityId, field_key: str) -> list[Claim]:
-    return list(await claims_for(conn, entity_id, field_key, scope=ALL_TENANTS))  # type: ignore[arg-type]
+    return list(await claims_for(conn, entity_id, field_key, scope=ALL_WORKSPACES))  # type: ignore[arg-type]
 
 
 def test_exa_fires_through_the_waterfall_with_engine_stamped_provenance(require_db: None) -> None:
@@ -445,11 +446,11 @@ def test_resonance_synthesis_is_tenant_private(require_db: None) -> None:
             )
             entity = account.as_entity()
             result = await resolve_field(
-                conn, entity, field, mode=_MODE, run_id=new_run_id(), tenant_id="client-1"
+                conn, entity, field, mode=_MODE, run_id=new_run_id(), workspace_id="client-1"
             )
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             (claim,) = await _claims(conn, entity.entity_id, "account.resonance.culture")
             assert claim.reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert claim.tenant_id == "client-1"
+            assert claim.workspace_id == "client-1"
 
     run_async(_run())

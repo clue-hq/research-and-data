@@ -1,0 +1,125 @@
+"""Standing Recipe #0/#1 tool inventory and replay-safety audit."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from clue_toolbelt import (
+    ExternalReplayBoundary,
+    ReplayPolicy,
+    ToolEffectClass,
+    ToolRegistry,
+)
+
+RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
+    "submit_onboarding_input@1",
+    "start_recon@1",
+    "record_interview_answer@1",
+    "confirm_project_product@1",
+    "evaluate_stage0_readiness@1",
+    "synthesize_icps@1",
+    "confirm_icp@1",
+    "override_stage0_readiness@1",
+    "start_confirmed_project_run@1",
+)
+
+RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
+    "reverse_profile@1",
+    "synthesize_icps@1",
+    "confirm_icp@1",
+    "import_accounts@1",
+    "discover_accounts@1",
+    "score_accounts@1",
+    "submit_tier_checkpoint@1",
+    "submit_project_checkpoint@1",
+    "advance_project_phase@1",
+    "run_deep_account@1",
+    "resolve_committee@1",
+    "profile_contact@1",
+    "run_verification@1",
+    "compose_handoff@1",
+    "estimate_project@1",
+    "start_project_run@1",
+    "pause_run@1",
+    "resume_run@1",
+    "adjust_budget@1",
+)
+
+
+def _split_address(address: str) -> tuple[str, str]:
+    name, separator, version = address.rpartition("@")
+    if not separator or not name or not version:
+        raise ValueError(f"invalid exact tool address {address!r}")
+    return name, version
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayAuditEntry:
+    address: str
+    recipes: tuple[str, ...]
+    replay_policy: ReplayPolicy
+    durable_identity: str
+    operation_id_required: bool
+    external_boundary: ExternalReplayBoundary
+    effect_class: ToolEffectClass
+    input_schema_sha256: str
+    output_schema_sha256: str
+    pin_requirements: tuple[str, ...]
+
+
+def standing_recipe_addresses() -> tuple[str, ...]:
+    return tuple(sorted(set(RECIPE_0_TOOL_ADDRESSES) | set(RECIPE_1_TOOL_ADDRESSES)))
+
+
+def build_replay_safety_audit(registry: ToolRegistry) -> tuple[ReplayAuditEntry, ...]:
+    """Resolve every standing tool exactly and return the machine-readable replay audit."""
+    entries: list[ReplayAuditEntry] = []
+    failures: list[str] = []
+    for address in standing_recipe_addresses():
+        name, version = _split_address(address)
+        descriptor = registry.descriptor(name, version)
+        if not descriptor.has_typed_output:
+            failures.append(f"{address}: output is untyped")
+        if descriptor.replay.policy is ReplayPolicy.UNCERTIFIED:
+            failures.append(f"{address}: replay policy is uncertified")
+        if not descriptor.pin_requirements:
+            failures.append(f"{address}: pin requirements are empty")
+        if (
+            descriptor.effect_class is ToolEffectClass.STEERING
+            and not descriptor.has_steering_snapshot
+        ):
+            failures.append(f"{address}: steering snapshot is absent")
+        recipes = tuple(
+            recipe
+            for recipe, addresses in (
+                ("recipe0@1", RECIPE_0_TOOL_ADDRESSES),
+                ("recipe1@1", RECIPE_1_TOOL_ADDRESSES),
+            )
+            if address in addresses
+        )
+        entries.append(
+            ReplayAuditEntry(
+                address=address,
+                recipes=recipes,
+                replay_policy=descriptor.replay.policy,
+                durable_identity=descriptor.replay.durable_identity,
+                operation_id_required=descriptor.replay.operation_id_required,
+                external_boundary=descriptor.replay.external_boundary,
+                effect_class=descriptor.effect_class,
+                input_schema_sha256=descriptor.input_schema_sha256,
+                output_schema_sha256=descriptor.output_schema_sha256,
+                pin_requirements=descriptor.pin_requirements,
+            )
+        )
+    if failures:
+        raise ValueError("standing recipe contract audit failed:\n" + "\n".join(failures))
+    return tuple(entries)
+
+
+__all__ = [
+    "RECIPE_0_TOOL_ADDRESSES",
+    "RECIPE_1_TOOL_ADDRESSES",
+    "ReplayAuditEntry",
+    "build_replay_safety_audit",
+    "standing_recipe_addresses",
+]

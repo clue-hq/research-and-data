@@ -7,13 +7,13 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     ExtractionMethod,
     IdentityBinding,
     VerificationStatus,
 )
-from clue_research.obs import (
+from clue_obs.otel import (
     METRIC_CLAIMS_SURVIVING,
     METRIC_CLAIMS_TOTAL,
     METRIC_CONTACT_CLAIMS_TOTAL,

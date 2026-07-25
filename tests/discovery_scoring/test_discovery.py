@@ -11,7 +11,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.core import new_entity_id, new_run_id
+from clue_core import new_entity_id, new_run_id
 from clue_research.discovery_scoring import (
     LOOKALIKE_CHANNEL,
     CandidateHypothesis,

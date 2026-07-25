@@ -17,9 +17,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import ALL_TENANTS, insert_claim
-from clue_research.config.gateway import GatewayConfig
-from clue_research.core import (
+from clue_config.gateway import GatewayConfig
+from clue_core import (
     EntityId,
     ExtractionMethod,
     PreSpendRequest,
@@ -29,7 +28,10 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.enums import EntityType
+from clue_core.enums import EntityType
+from clue_gateway.stub import StubGateway
+from clue_obs.otel import InMemorySink, collect_spans
+from clue_research.claimstore import ALL_WORKSPACES, insert_claim
 from clue_research.evals import (
     EvalHarness,
     EvalReport,
@@ -41,8 +43,6 @@ from clue_research.evals import (
     StubJudge,
     default_scorers,
 )
-from clue_research.gateway.stub import StubGateway
-from clue_research.obs import InMemorySink, collect_spans
 from clue_research.verification import (
     GOLD_SUITE,
     GatewayJudge,
@@ -395,7 +395,7 @@ def test_spot_check_sampler_stratified_and_ingest_round_trip() -> None:
                     claim.model_copy(update={"verification_status": VerificationStatus.VERIFIED}),
                     validate_field=False,
                 )
-            samples = await sample_promoted_claims(conn, per_stratum=1, scope=ALL_TENANTS)
+            samples = await sample_promoted_claims(conn, per_stratum=1, scope=ALL_WORKSPACES)
             classes = [s.field_class for s in samples]
             # stratified: at most one per field-class (core has 2 claims -> only 1 sampled).
             assert classes.count("core") == 1

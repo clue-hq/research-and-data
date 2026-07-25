@@ -16,8 +16,7 @@ from decimal import Decimal
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from clue_research.claimstore import register_field
-from clue_research.core import (
+from clue_core import (
     Claim,
     Entity,
     EntityScope,
@@ -28,10 +27,11 @@ from clue_research.core import (
     ResearchMode,
     SourceManifest,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
+from clue_research.claimstore import register_field
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,
@@ -42,6 +42,7 @@ from clue_research.durable import (
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import AspectProfilingWorker
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 from tests.durable.conftest import FakeAccountRunStore
 
 from .conftest import conn_session_factory, rollback_conn, run_async
@@ -100,8 +101,12 @@ def test_real_worker_runs_inside_account_research_graph() -> None:
                 evidence_span="evidence",
             )
             bind_resolver("fake1", _Fake([claim]))
+            await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
             acct = await insert_account_entity(
-                conn, canonical_name="Acme Robotics", primary_domain="acme-robotics.com"
+                conn,
+                canonical_name="Acme Robotics",
+                primary_domain="acme-robotics.com",
+                workspace_id=DEFAULT_TEST_WORKSPACE,
             )
 
             # The graph dispatches by the field-class aspect key "account" — the same key the real
@@ -121,7 +126,7 @@ def test_real_worker_runs_inside_account_research_graph() -> None:
             result = await graph.run(
                 acct,
                 tier="top",
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 checkpointer=InMemorySaver(),
             )
 

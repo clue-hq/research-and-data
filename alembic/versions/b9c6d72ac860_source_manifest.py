@@ -9,7 +9,7 @@ row says *where to learn it and how much to trust each place* (staged-flow §7a;
 source is a row — adding Clay, dropping ZoomInfo, or wiring a new directory is a registry edit, and
 **nothing downstream learns a provider's name** (everything references a source by ``source_key``).
 
-Columns realize :class:`clue_research.core.SourceManifest` (the M0.2 capability contract — the
+Columns realize :class:`clue_core.SourceManifest` (the M0.2 capability contract — the
 scalar ``cost_cents``/``latency_ms``/``freshness_profile`` shape, NOT re-introducing §7a's looser
 jsonb cost, which would contradict core) **plus** the registry-row operational metadata (locked
 decision #2 — *wrap, don't redefine*): ``active``, ``provider`` (vendor/human name, for billing/ops
@@ -18,7 +18,7 @@ the secret itself), ``rate_limit``, ``requires_adapter`` (M4.3 modality-adapter 
 ``created_at``.
 
 Enums: ``modality`` and ``entity_scope`` are NEW types created here (mirroring
-``clue_research.core.enums.Modality`` / ``EntityScope``; the parity test guards drift).
+``clue_core.enums.Modality`` / ``EntityScope``; the parity test guards drift).
 ``identity_binding`` is REUSED (created in 0004) — a shared type, so ``downgrade`` does not drop it.
 ``yields`` references ``field_definition`` field-keys/classes BY NAME (the registry validates
 existence at ``register_source`` time; no FK — a field-class like ``contact`` is not a row).
@@ -36,7 +36,7 @@ down_revision: str | None = "0011"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums.Modality / EntityScope. The enum-parity test in
+# Mirror clue_core.enums.Modality / EntityScope. The enum-parity test in
 # tests/sources/test_source_manifest.py guards these against drift (as 0002/0003/0004 do).
 _MODALITY = ("text", "video", "audio", "pdf", "structured")
 _ENTITY_SCOPE = ("account", "contact", "both")

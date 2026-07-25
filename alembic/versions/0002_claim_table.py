@@ -48,7 +48,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# Enum value sets mirror clue_research.core.enums (StrEnum members) exactly. The enum-parity test
+# Enum value sets mirror clue_core.enums (StrEnum members) exactly. The enum-parity test
 # tests/claimstore/test_claim_table.py::test_db_enums_match_core introspects the live pg_enum and
 # asserts these stay in lock-step with the Python enums (the DB and the domain model can't import
 # each other's spelling, so the test is the guard against drift).

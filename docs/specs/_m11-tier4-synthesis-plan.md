@@ -269,7 +269,7 @@ synthesis fields), nor re-implement the merge gate. What it ships (this commit),
    simplified by PF-6); tests assert the actual base value.
 
 ### Deferred to integration (documented, not built on this isolated branch)
-- The `CampaignPhase.VERIFICATION` handler that runs corroboration+judge+promote over the unverified
+- The `ProjectPhase.VERIFICATION` handler that runs corroboration+judge+promote over the unverified
   tier-4 claims (M9's phase) — the live call site for `guard_synthesis_resolution` (pre-resolution) and
   `record_synthesis_health` (post-judge) is there / at the api root.
 - The api-root `PreSpendGate.check` routing for the tier-4 spend path (M9.1 AC-6).

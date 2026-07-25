@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.config import (
+from clue_config import (
     ConfidenceThresholds,
     Config,
     ConfigError,
@@ -25,6 +25,7 @@ from clue_research.config import (
     ScoringRubric,
     SourcePlanPolicy,
     SourceScope,
+    SupervisorPolicy,
     get_config,
     get_policy,
     overlay_from_mapping,
@@ -40,7 +41,7 @@ def store() -> OverlayStore:
 def test_defaults_when_no_overlays(store: OverlayStore) -> None:
     cfg = get_config("acme", store=store)
     assert isinstance(cfg, Config)
-    assert cfg.client_id == "acme"
+    assert cfg.workspace_id == "acme"
     assert cfg.icp_id is None
     assert cfg.policy.posture is Posture.CONSERVATIVE_DEFAULT
     # only the defaults layer contributed
@@ -96,6 +97,32 @@ def test_icp_inherits_unset_subtrees_from_client(store: OverlayStore) -> None:
     cfg = get_config("acme", "icp-eu", store=store)
     assert cfg.policy.posture is Posture.PROFESSIONAL_PUBLIC_ONLY  # inherited from client
     assert cfg.scoring_rubric.fit_weight == pytest.approx(0.6)  # from ICP
+
+
+def test_supervisor_policy_is_versioned_and_icp_overridable(store: OverlayStore) -> None:
+    store.set_client_overlay(
+        "acme",
+        ConfigOverlay(
+            supervisor_policy=SupervisorPolicy(
+                version="client-supervisor-v2",
+                canary_size=4,
+            )
+        ),
+    )
+    store.set_icp_overlay(
+        "acme",
+        "icp-eu",
+        ConfigOverlay(
+            supervisor_policy=SupervisorPolicy(
+                version="icp-supervisor-v3",
+                canary_size=2,
+            )
+        ),
+    )
+    assert get_config("acme", store=store).supervisor_policy.version == "client-supervisor-v2"
+    icp_policy = get_config("acme", "icp-eu", store=store).supervisor_policy
+    assert icp_policy.version == "icp-supervisor-v3"
+    assert icp_policy.canary_size == 2
 
 
 def test_get_policy_reflects_merged_overlays(store: OverlayStore) -> None:

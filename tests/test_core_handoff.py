@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from clue_research.core import (
+from clue_core import (
     AccountHandoff,
     CommitteeMember,
     IdentityBinding,

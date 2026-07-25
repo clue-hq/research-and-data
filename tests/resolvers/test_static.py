@@ -8,7 +8,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from clue_research.config import redact
+from clue_config import redact
 from clue_research.resolvers import (
     apollo,
     builtwith,
@@ -136,7 +136,7 @@ def test_every_seeded_auth_ref_resolves_to_a_secrets_field() -> None:
     ``extra="ignore"``, so a manifest ``auth_ref`` with no matching field would silently resolve to
     ``None`` even when the env var IS set (the DUNS gap) — making the source's live credential
     credential unresolvable. This guard fails the moment a credentialed source lacks its field."""
-    from clue_research.config import Secrets
+    from clue_config import Secrets
     from clue_research.sources import SEED_MANIFESTS
 
     for manifest in SEED_MANIFESTS:

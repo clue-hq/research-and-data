@@ -8,14 +8,17 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import pytest
+
+from clue_core import EntityType, ResearchMode
 from clue_research.claimstore import PUBLIC_ONLY, claims_for
-from clue_research.core import EntityType, ResearchMode
 from clue_research.identity import get_contact, insert_contact_entity
 from clue_research.profiling.committee.admission import (
     DISCOVERY_PROVENANCE_FIELD,
     AdmissionStatus,
     admit_candidate,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from ..conftest import insert_test_account, make_candidate, rollback_conn, run_async
 
@@ -137,5 +140,51 @@ def test_discovery_provenance_separate_across_runs(require_profiling_db: None) -
                 conn, first.contact_entity_id, DISCOVERY_PROVENANCE_FIELD, scope=PUBLIC_ONLY
             )
             assert {c.run_id for c in claims} == {_RUN, _RUN2}
+
+    run_async(scenario())
+
+
+def test_admitted_committee_contact_inherits_account_workspace(require_profiling_db: None) -> None:
+    """A contact admitted under a workspace-stamped account inherits that workspace: admission
+    derives ``workspace_id = account.workspace_id`` and ``insert_contact_entity`` auto-stamps the
+    contact from its parent account (accounts/contacts are workspace-local; [B3×research])."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
+            account = await insert_test_account(conn, workspace_id=ws)
+            assert account.workspace_id == ws
+            candidate = make_candidate(
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+                full_name="Jane CFO",
+                title="CFO",
+                source_url="https://acme.example/team",
+            )
+            outcome = await admit_candidate(conn, account, candidate, run_id=_RUN)
+            assert outcome.status is AdmissionStatus.ADMITTED
+            assert outcome.contact_entity_id is not None
+            contact = await get_contact(conn, outcome.contact_entity_id)
+            assert contact is not None
+            assert contact.workspace_id == ws  # auto-inherited from the parent account
+
+    run_async(scenario())
+
+
+def test_admit_candidate_rejects_unstamped_account(require_profiling_db: None) -> None:
+    """An account with no ``workspace_id`` cannot admit a committee contact — admission fails loud
+    (committee contacts are workspace-local and must derive their workspace from the account)."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            account = await insert_test_account(conn)
+            unstamped = account.model_copy(update={"workspace_id": None})
+            candidate = make_candidate(
+                linkedin_url="https://linkedin.com/in/jane-cfo",
+                full_name="Jane CFO",
+                title="CFO",
+                source_url="https://acme.example/team",
+            )
+            with pytest.raises(ValueError, match="workspace"):
+                await admit_candidate(conn, unstamped, candidate, run_id=_RUN)
 
     run_async(scenario())

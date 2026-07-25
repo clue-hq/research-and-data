@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import IdentityBinding, ResearchMode, UseClass
+from clue_core import IdentityBinding, ResearchMode, UseClass
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling.contact.fill import fill_contact_field
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings
@@ -20,6 +20,7 @@ from ..conftest import (
     icp_spec,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -48,7 +49,7 @@ def test_no_resolver_yields_flagged_empty(require_profiling_db: None) -> None:
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
             result = await fill_contact_field(
-                conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             assert result.claim_refs == []
             assert result.stop_reason == "no_resolver"
@@ -77,11 +78,12 @@ def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 field = await _field_def(conn, FACET_STATED_INTERESTS)
                 result = await fill_contact_field(
-                    conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                    conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
                 )
                 assert len(result.claim_refs) == 1
                 written = (
@@ -89,7 +91,7 @@ def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
                         conn,
                         contact.id,
                         FACET_STATED_INTERESTS,
-                        scope=TenantScope.for_tenant(_TENANT),
+                        scope=WorkspaceScope.for_workspace(_TENANT),
                     )
                 )[0]
                 # M8.4 re-tagged: verified handle → STRONG; religious marker → SENSITIVE.
@@ -98,7 +100,7 @@ def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
                 assert written.research_mode is ResearchMode.CONTACT_PROFILING
                 assert written.source_key == _FACET_SOURCE
                 assert written.run_id == _RUN
-                assert written.tenant_id == _TENANT
+                assert written.workspace_id == _TENANT
         finally:
             clear_resolver_bindings()
 
@@ -124,15 +126,19 @@ def test_fill_rejects_tier4_same_name_stranger(require_profiling_db: None) -> No
         bind_resolver(_FACET_SOURCE, resolver)
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
             result = await fill_contact_field(
-                conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             assert result.claim_refs == []  # tier-4 same-name claim never written
             written = await claims_for(
-                conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                conn,
+                contact.id,
+                FACET_STATED_INTERESTS,
+                scope=WorkspaceScope.for_workspace(_TENANT),
             )
             assert written == []
 
@@ -158,16 +164,24 @@ def test_fill_writes_lower_tier_weak_unpromotable(require_profiling_db: None) ->
         bind_resolver(_FACET_SOURCE, resolver)
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            # Founder-sanctioned re-fixture (claim_tagger consolidation): the shared engine
+            # enforces claim.source_tier == manifest.tier, so the tier-3 fake now binds behind a
+            # genuine tier-3 manifest (a version-bumped test-local variant of the source key)
+            # instead of lying under the tier-4 seed. Product assertions below are unchanged.
+            await register_facet_source(conn, tier=3)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
             result = await fill_contact_field(
-                conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             assert len(result.claim_refs) == 1
             written = (
                 await claims_for(
-                    conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                    conn,
+                    contact.id,
+                    FACET_STATED_INTERESTS,
+                    scope=WorkspaceScope.for_workspace(_TENANT),
                 )
             )[0]
             assert written.identity_binding is IdentityBinding.WEAK  # same-name trap → weak
@@ -176,7 +190,7 @@ def test_fill_writes_lower_tier_weak_unpromotable(require_profiling_db: None) ->
     run_async(scenario())
 
 
-def test_facet_claims_are_tenant_scoped(require_profiling_db: None) -> None:
+def test_facet_claims_are_workspace_scoped(require_profiling_db: None) -> None:
     """A facet claim is tenant-private: visible to its tenant, never another (substrate §2)."""
 
     async def scenario() -> None:
@@ -196,18 +210,25 @@ def test_facet_claims_are_tenant_scoped(require_profiling_db: None) -> None:
         )
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
             await fill_contact_field(
-                conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             mine = await claims_for(
-                conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                conn,
+                contact.id,
+                FACET_STATED_INTERESTS,
+                scope=WorkspaceScope.for_workspace(_TENANT),
             )
             assert len(mine) == 1
             other = await claims_for(
-                conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant("other_co")
+                conn,
+                contact.id,
+                FACET_STATED_INTERESTS,
+                scope=WorkspaceScope.for_workspace("other_co"),
             )
             assert other == []  # another tenant never sees this private facet claim
 
@@ -236,6 +257,7 @@ def test_planner_declines_when_spec_authorizes_no_source(require_profiling_db: N
         )
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await _field_def(conn, FACET_STATED_INTERESTS)
@@ -246,14 +268,14 @@ def test_planner_declines_when_spec_authorizes_no_source(require_profiling_db: N
                 account,
                 field,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 tier="low",
                 spec=icp_spec(),
             )
             assert gated.claim_refs == []
             # Sanity: with no spec, the field's tier_plan drives the (bound) resolver directly.
             direct = await fill_contact_field(
-                conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
             )
             assert len(direct.claim_refs) == 1
 
@@ -278,18 +300,22 @@ def test_fill_is_idempotent(require_profiling_db: None) -> None:
         try:
             async with rollback_conn() as conn:
                 await seed_packs(conn)
+                await register_facet_source(conn)
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 field = await _field_def(conn, FACET_STATED_INTERESTS)
                 first = await fill_contact_field(
-                    conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                    conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
                 )
                 second = await fill_contact_field(
-                    conn, contact, account, field, run_id=_RUN, tenant_id=_TENANT, tier="top"
+                    conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
                 )
                 assert first.claim_refs == second.claim_refs  # reused, not double-written
                 live = await claims_for(
-                    conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                    conn,
+                    contact.id,
+                    FACET_STATED_INTERESTS,
+                    scope=WorkspaceScope.for_workspace(_TENANT),
                 )
                 assert len(live) == 1
         finally:

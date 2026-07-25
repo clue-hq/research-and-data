@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 import pytest
 from redis.asyncio import Redis
 
-from clue_research.locks import REDIS_URL_ENV, create_redis
+from clue_locks import REDIS_URL_ENV, create_redis
 from tests.db.conftest import run_async as run_async
 
 

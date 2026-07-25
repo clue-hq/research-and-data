@@ -8,7 +8,7 @@ that skips a disallowed surface *without scraping it*; the manifest's ``rate_lim
 transport; and the waterfall ordering (CRM/tier-1 before Firecrawl/tier-2 before any tier-3 source).
 
 The scrape backend is a **double** (no live crawl, no credential) — the adapter seam is what's
-proven. Official-site facts are public-footprint, so these resolves need no tenant_id.
+proven. Official-site facts are public-footprint, so these resolves need no workspace_id.
 """
 
 from __future__ import annotations
@@ -17,13 +17,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.adapters import (
-    CallableClaimExtractor,
-    FirecrawlHtmlAdapter,
-    register_adapter,
-    span_for,
-)
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     ClaimDraft,
@@ -42,10 +36,18 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.adapters import (
+    CallableClaimExtractor,
+    FirecrawlHtmlAdapter,
+    ScraplingScrapeBackend,
+    register_adapter,
+    span_for,
+)
 from clue_research.resolvers import ScrapePolicy, ScrapeResolver, register_scrape_resolver
 from clue_research.sources import (
     SEED_MANIFESTS,
     RegistrySourceManifest,
+    StepOutcome,
     StopReason,
     bind_resolver,
     register_source,
@@ -111,7 +113,12 @@ def _extractor() -> CallableClaimExtractor:
 
 
 def _account(domain: str = "acme.com") -> AccountEntity:
-    return AccountEntity(id=new_entity_id(), canonical_name="Acme Corp", primary_domain=domain)
+    return AccountEntity(
+        id=new_entity_id(),
+        canonical_name="Acme Corp",
+        primary_domain=domain,
+        workspace_id="ws-test",
+    )
 
 
 def _field() -> FieldDef:
@@ -257,6 +264,7 @@ def test_excluded_jurisdiction_is_skipped() -> None:
                 canonical_name="Acme GmbH",
                 primary_domain="acme.de",
                 hq_geo={"country": "DE"},
+                workspace_id="ws-test",
             )
             scraper = _RecordingScraper()
             register_scrape_resolver(
@@ -352,6 +360,62 @@ def test_waterfall_consults_crm_then_firecrawl_then_tier3() -> None:
     run_async(_run())
 
 
+# --- AC (PB-B2.4 / audit finding 6): scrapling binds its own credit-free source -------------------
+
+
+class _ScraplingPage:
+    status = 200
+    html_content = f"<html><body><h1>Acme</h1><p>{_FACT}.</p></body></html>"
+
+
+class _ScraplingFetcher:
+    def get(self, ref: str, *, stealthy_headers: bool = True) -> _ScraplingPage:
+        return _ScraplingPage()
+
+
+def test_scrapling_binds_its_own_source_and_never_spends_firecrawl_budget() -> None:
+    """Selecting scrapling swaps the *source*, not just the transport: claims attribute to
+    ``scrapling_site`` (provider scrapling, cost 0), the paid ``firecrawl_site`` step is walked
+    past unbound at zero spend — a credit-free scrape can no longer consume internal budget or
+    distort provider economics."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account = _account()
+            bound = register_scrape_resolver(
+                extractor=_extractor(),
+                accounts=_Accounts(account),
+                scraper=ScraplingScrapeBackend(fetcher=_ScraplingFetcher()),
+            )
+            assert bound == "scrapling_site"
+            field = FieldDef(
+                field_key=_FIELD_KEY,
+                value_type="str",
+                tier_plan=("firecrawl_site", "scrapling_site"),
+                pass_kind=PassKind.DEEP,
+            )
+            result = await resolve_field(
+                conn, account.as_entity(), field, mode=_MODE, run_id=new_run_id()
+            )
+            assert result.stop_reason is StopReason.CONFIDENT_HIT
+            outcomes = {s.source_key: s for s in result.per_tier}
+            assert outcomes["firecrawl_site"].outcome is StepOutcome.NO_RESOLVER
+            assert outcomes["firecrawl_site"].cost_cents == Decimal(0)
+            (claim,) = await claims_for_field(conn, account.as_entity().entity_id, _FIELD_KEY)
+            assert claim.source_key == "scrapling_site"
+            assert claim.cost_cents == Decimal(0)
+            assert result.total_cost_cents == Decimal(0)
+
+    run_async(_run())
+
+
+def test_firecrawl_backend_still_binds_the_paid_source() -> None:
+    bound = register_scrape_resolver(
+        extractor=_extractor(), accounts=_Accounts(_account()), scraper=_RecordingScraper()
+    )
+    assert bound == "firecrawl_site"
+
+
 # --- helpers ----------------------------------------------------------------
 
 
@@ -360,6 +424,6 @@ def _seed_manifest() -> RegistrySourceManifest:
 
 
 async def claims_for_field(conn: object, entity_id: EntityId, field_key: str) -> list[Claim]:
-    from clue_research.claimstore import ALL_TENANTS, claims_for
+    from clue_research.claimstore import ALL_WORKSPACES, claims_for
 
-    return list(await claims_for(conn, entity_id, field_key, scope=ALL_TENANTS))  # type: ignore[arg-type]
+    return list(await claims_for(conn, entity_id, field_key, scope=ALL_WORKSPACES))  # type: ignore[arg-type]

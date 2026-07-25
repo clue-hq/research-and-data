@@ -1,44 +1,5 @@
-[project]
-name = "clue-research"
-version = "0.0.0"
-description = "Clue-HQ Research & Data subsystem — trustworthy claim-with-provenance data layer for ABM."
-readme = "readme.md"
-requires-python = ">=3.12"
-license = { text = "Proprietary" }
-# Runtime stack lands per-milestone. pydantic is declared now (M0.1) because it is the
-# runtime-validation library the core domain models (M0.2 / core/) are built on: it enforces
-# claim invariants (source_tier in 1..4, confidence in 0..1, "no evidence_span -> not promotable")
-# at runtime, where mypy (static) cannot. See readme.md "Type checking & validation".
-dependencies = [
-    "pydantic>=2.7",
-    # M0.3 — Postgres + pgvector + async migrations (db/)
-    "sqlalchemy[asyncio]>=2.0",
-    "asyncpg",
-    "alembic",
-    "pgvector",
-    # M0.4 — env-based settings/secrets (config/)
-    "pydantic-settings>=2",
-    # M0.4 — the LLM gateway's OpenAI-compatible client (OpenRouter egress). Used ONLY behind the
-    # gateway/ package (import-linter Rule 4b); lazy-imported in the live client so CI's stub path
-    # never needs it. The gateway is to models what the Resolver protocol is to data sources.
-    "openai>=1.40",
-    # M0.5 — observability/tracing skeleton (obs/). Console exporter ships with the SDK; an OTLP
-    # exporter is added when a collector is wired (the exporter sits behind the traced_step wrapper).
-    "opentelemetry-api>=1.20",
-    "opentelemetry-sdk>=1.20",
-    # M2.4 — distributed in-flight locks + rate-limit coordination (locks/). Redis is the
-    # ephemeral-state half of the stack (conventions §6); Postgres remains the only source of truth.
-    "redis>=5",
-    # M4.3 — PDF text extraction for the modality-adapter framework (adapters/). Used ONLY behind the
-    # adapters/ PdfTextExtractor seam (import-linter Rule 4 exempts adapters/); lazy-imported in the
-    # default extractor so CI's double-driven path never needs it. A PDF library was anticipated for
-    # M4.3 (the M4 kickoff "pyproject Rule 4 ... + a PDF library for M4.3").
-    "pypdf>=6",
-    "langgraph>=0.2",
-    "langgraph-checkpoint-postgres>=2",
-    "fastapi>=0.138.0",
-    "httpx>=0.28.1",
-]
+# Clue platform backend — uv workspace root (Doc R). Virtual root: the deployable packages
+# live in libs/ · subsystems/ · platform/; this file holds the workspace + shared tooling.
 
 [dependency-groups]
 # Dev toolchain — the M0.1 enforcement baseline. Pinned loosely; uv.lock pins exact versions.
@@ -47,33 +8,42 @@ dev = [
     "mypy>=1.11",         # static ("compile-time") type checker
     "import-linter>=2.0", # machine-enforced modular dependency rules (the M0.1 seam contracts)
     "pytest>=8.2",        # structure + contract tests (M0.6 grows this into the full harness)
-    "fakeredis>=2.20",    # M2.4 — in-process Redis fake for the lock tests when no Redis is reachable
+    "fakeredis>=2.20",
+    "alembic",         # migrations CLI (env.py imports clue_db; run from the workspace root)    # M2.4 — in-process Redis fake for the lock tests when no Redis is reachable
+    "aioboto3>=13",    # B2 — the S3-leg of the storage contract suite (MinIO); prod installs clue-storage[s3]
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# --- uv workspace (Doc R): libs/ now; subsystems/ + platform/ join in later phases ---
+[tool.uv.workspace]
+members = ["libs/*", "subsystems/*", "platform/*"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/clue_research"]
 
 # --- ruff: format + lint ----------------------------------------------------
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = ["subsystems", "platform", "tests", "libs"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+# T20 (flake8-print): `print` is banned outside the sanctioned CLI/demo surfaces — structured
+# logging goes through clue_obs (Doc R §4 "enforced, not trusted").
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+# Sanctioned print surfaces: operator-facing CLIs/demos and the offline run-scripts.
+"subsystems/research/clue_research/evals/**" = ["T20"]
+"subsystems/research/clue_research/verification/eval_cli.py" = ["T20"]
+"scripts/**" = ["T20"]
+"tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api", "clue_memory", "clue_content", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["src/clue_research"]
-mypy_path = "src"
+files = ["subsystems/research/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config", "libs/clue-gateway/clue_gateway", "libs/clue-locks/clue_locks", "libs/clue-spine/clue_spine", "libs/clue-storage/clue_storage", "subsystems/memory/clue_memory", "subsystems/content/clue_content", "platform/toolbelt/clue_toolbelt", "platform/agents/clue_agents", "platform/execution/clue_execution", "platform/fleet/clue_fleet", "platform/projections/clue_projections", "platform/api/clue_api"]
+mypy_path = "subsystems/research:subsystems/memory:subsystems/content:platform/toolbelt:platform/agents:platform/execution:platform/fleet:platform/projections:platform/api:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config:libs/clue-gateway:libs/clue-locks:libs/clue-spine:libs/clue-storage"
 explicit_package_bases = true
 namespace_packages = true
 strict = true
@@ -103,6 +73,15 @@ module = ["pypdf", "firecrawl"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
+# B2 — the S3 SDK is an external boundary used ONLY behind the clue_storage.s3 seam, lazy-imported
+# and duck-typed (the client is deliberately ``Any``, same stance as the OpenAI SDK above).
+# Scrapling + markdownify (B2.4) are the credit-free ScrapeBackend's libraries, likewise lazy
+# behind adapters/concrete (Rule 4).
+[[tool.mypy.overrides]]
+module = ["aioboto3", "scrapling.*", "markdownify"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
 # --- pytest -----------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -112,45 +91,29 @@ addopts = "-q"
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
 # breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
 [tool.importlinter]
-root_package = "clue_research"
+root_packages = ["clue_research", "clue_core", "clue_obs", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_memory", "clue_content", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_api"]
 include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
 
 # Rule 2 — core/ is the shared kernel: it imports nothing else inside clue_research.
 [[tool.importlinter.contracts]]
 name = "core is the shared kernel (imports nothing internal)"
 type = "forbidden"
-source_modules = ["clue_research.core"]
-forbidden_modules = [
-    "clue_research.config",
-    "clue_research.obs",
-    "clue_research.db",
-    "clue_research.evals",
-    "clue_research.claimstore",
-    "clue_research.identity",
-    "clue_research.locks",
-    "clue_research.icp",
-    "clue_research.sources",
-    "clue_research.resolvers",
-    "clue_research.adapters",
-    "clue_research.stage0",
-    "clue_research.discovery_scoring",
-    "clue_research.durable",
-    "clue_research.profiling",
-    "clue_research.verification",
-    "clue_research.compliance",
-    "clue_research.synthesis",
-    "clue_research.narrative",
-    "clue_research.review",
-    "clue_research.api",
-]
+source_modules = ["clue_core"]
+forbidden_modules = ["clue_research", "clue_obs", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage"]
 
-# Rule 1 (shape) — the shared base is layered obs -> config -> core; no upward imports.
-# Everything else may freely import this trio (that is the default, not constrained here).
+# Rule 1 (shape) — the shared base stays layered, now across root-level libs:
+# clue_obs (top) -> clue_config -> clue_core (bottom). Lower layers never import higher ones.
 [[tool.importlinter.contracts]]
 name = "shared base is layered: obs -> config -> core"
 type = "layers"
-containers = ["clue_research"]
-layers = ["obs", "config", "core"]
+layers = ["clue_obs", "clue_config", "clue_core"]
+
+# Rule 1b — config must not reach back into the subsystem or sideways into db.
+[[tool.importlinter.contracts]]
+name = "config imports only core (no subsystem/db backreach)"
+type = "forbidden"
+source_modules = ["clue_config"]
+forbidden_modules = ["clue_research", "clue_db"]
 
 # Rule 3 — workers coordinate through the claim store, never by importing a sibling worker. Judges
 # live in verification/; scorers in discovery_scoring/. M4.5 carve-out: a resolver whose source needs
@@ -233,14 +196,17 @@ forbidden_modules = ["clue_research.resolvers"]
 name = "provider SDKs only behind resolvers/<provider> and adapters/<source>"
 type = "forbidden"
 source_modules = [
-    "clue_research.core",
-    "clue_research.config",
-    "clue_research.obs",
-    "clue_research.db",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.stage0",
@@ -252,7 +218,7 @@ source_modules = [
     "clue_research.synthesis",
     "clue_research.narrative",
     "clue_research.review",
-    "clue_research.api",
+    "clue_api",
 ]
 forbidden_modules = [
     "clay",
@@ -262,6 +228,8 @@ forbidden_modules = [
     "exa_py",
     "parallel",
     "firecrawl",
+    "scrapling",
+    "markdownify",
     "simple_salesforce",
     "hubspot",
 ]
@@ -274,7 +242,12 @@ forbidden_modules = [
 # single sanctioned edge severs that transitive path; a *direct* SDK import by any source module is a
 # different edge and is still caught. (M11 is the first api-root resolver wiring to need this; the
 # deferred firecrawl/deterministic composition-root wiring needs it identically.)
-ignore_imports = ["clue_research.adapters.concrete -> firecrawl"]
+# B2.4 adds the scrapling backend beside it — same sanctioned lazy edges, same seam.
+ignore_imports = [
+    "clue_research.adapters.concrete -> firecrawl",
+    "clue_research.adapters.concrete -> scrapling",
+    "clue_research.adapters.concrete -> markdownify",
+]
 
 # Rule 4b — the LLM-vendor SDK lives ONLY behind the gateway/ package (the model analogue of
 # Rule 4 for data-source SDKs). The gateway is the single egress for every *direct* LLM call
@@ -285,14 +258,16 @@ ignore_imports = ["clue_research.adapters.concrete -> firecrawl"]
 name = "the LLM-vendor SDK lives only behind the gateway/ package"
 type = "forbidden"
 source_modules = [
-    "clue_research.core",
-    "clue_research.config",
-    "clue_research.obs",
-    "clue_research.db",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_locks",
+    "clue_spine",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",
@@ -306,9 +281,202 @@ source_modules = [
     "clue_research.synthesis",
     "clue_research.narrative",
     "clue_research.review",
-    "clue_research.api",
+    "clue_api",
 ]
 forbidden_modules = ["openai"]
+# The ONE sanctioned gateway edge (mirrors the firecrawl exemption above): the api composition root
+# builds the injected gateway once, at ``run_composition._default_gateway``, via a static
+# ``from clue_gateway import build_gateway`` — the worker entrypoint (``python -m
+# clue_api.fleet_main``) lives *inside* ``clue_api``, so it cannot inject the gateway from outside
+# the way ``scripts/`` do. ``clue_gateway`` transitively reaches the ``openai`` SDK (its live
+# OpenRouter client), so without severing this single edge the composition root could never build
+# the one sanctioned egress. Ignoring exactly ``clue_api.run_composition -> clue_gateway`` severs
+# that transitive path; a *direct* ``openai`` import by any source module is a different edge and is
+# still caught. A model swap stays a ``default_gateway_config`` change — ``clue_api`` never touches
+# the vendor SDK.
+ignore_imports = ["clue_api.run_composition -> clue_gateway"]
+
+# Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
+[[tool.importlinter.contracts]]
+name = "libs never import the subsystem"
+type = "forbidden"
+source_modules = ["clue_core", "clue_config", "clue_obs", "clue_db", "clue_gateway", "clue_locks", "clue_spine", "clue_storage"]
+forbidden_modules = ["clue_research", "clue_api"]
+
+# Rule 2c — the object spine imports only core + db (mirrors clue-config's Rule 1b): row models +
+# plain CRUD, no config/gateway/locks/obs reach and never the subsystem.
+[[tool.importlinter.contracts]]
+name = "spine imports only core + db"
+type = "forbidden"
+source_modules = ["clue_spine"]
+forbidden_modules = ["clue_research", "clue_config", "clue_gateway", "clue_locks", "clue_obs"]
+
+# Rule 2d (B2) — durable storage imports only core + db + config (config: the settings-driven
+# fs↔S3 factory). Never the subsystem (Rule 2b covers that too), never gateway/locks/obs, never
+# another lib's internals.
+[[tool.importlinter.contracts]]
+name = "storage imports only core + db + config"
+type = "forbidden"
+source_modules = ["clue_storage"]
+forbidden_modules = ["clue_research", "clue_gateway", "clue_locks", "clue_obs", "clue_spine"]
+
+# Rule 4c (B2) — the S3 SDK lives ONLY behind clue_storage.s3 (the storage analogue of Rule 4):
+# every other workspace package — and every other clue_storage module — is forbidden from
+# importing it, so the object-store vendor never leaks past the StorageBackend seam.
+[[tool.importlinter.contracts]]
+name = "the S3 SDK lives only behind clue_storage.s3"
+type = "forbidden"
+source_modules = [
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_storage.protocol",
+    "clue_storage.fs",
+    "clue_storage.factory",
+    "clue_storage.artifacts",
+    "clue_storage.snapshot",
+    "clue_research",
+    "clue_memory",
+    "clue_content",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_fleet",
+    "clue_projections",
+    "clue_api",
+]
+forbidden_modules = ["aioboto3", "aiobotocore", "boto3", "botocore"]
+# The ONE sanctioned SDK edge (mirrors the firecrawl exemption above): the SDK import is lazy,
+# inside S3Storage._client. import-linter follows lazy edges, so without severing this one the
+# in-package composition (factory/__init__ -> s3) would transitively trip the contract for every
+# source module that imports clue_storage. A *direct* SDK import anywhere else is still caught.
+ignore_imports = ["clue_storage.s3 -> aioboto3"]
+
+# Rule S1 — subsystems are independent: they communicate only through the shared substrates
+# (claim store; memory seams), never by importing each other (repo charter).
+[[tool.importlinter.contracts]]
+name = "subsystems are independent"
+type = "independence"
+modules = ["clue_research", "clue_memory", "clue_content"]
+
+# Rule S2 — the agents package may reach the toolbelt facade + projections only (REQ-02):
+# never claim-store writes, resolvers, the gateway, the fleet, or any subsystem directly.
+[[tool.importlinter.contracts]]
+name = "agents import only the toolbelt facade + projections"
+type = "forbidden"
+source_modules = ["clue_agents"]
+forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_fleet", "clue_gateway", "clue_api"]
+
+# Rule T1 — toolbelt purity (D5, PB-B4 slice 2): the typed tool envelope is dependency-inverted like
+# the resolver seam — it imports ONLY the shared base (clue_core / clue_config / clue_db / clue_obs).
+# The concrete tools that actually touch a capability are constructed at the clue_api composition
+# root (the only package that may import everything), NOT in clue_toolbelt. So the toolbelt shape
+# stays stable while the capabilities behind it evolve, and a tool can never smuggle a research
+# import into the pure envelope. Machine-enforced.
+[[tool.importlinter.contracts]]
+name = "toolbelt imports only the shared base"
+type = "forbidden"
+source_modules = ["clue_toolbelt"]
+forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_execution", "clue_fleet", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api"]
+
+# Rule E1 — execution owns generic recipe/graph contracts and may depend inward on the toolbelt,
+# generic fleet seam, and shared base only. Subsystem/domain adapters bind at clue_api.
+[[tool.importlinter.contracts]]
+name = "execution imports only toolbelt fleet and shared base"
+type = "forbidden"
+source_modules = ["clue_execution"]
+forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_agents", "clue_projections", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_api"]
+
+# Rule P1 — projections purity (D7, PB-B4 slice 3): the read side may import the clue_research READ
+# surfaces (review's ObservabilitySurface panels + the durable/discovery_scoring read helpers) and
+# the shared base (clue_core / clue_db), but NEVER the write/execution planes — toolbelt, agents,
+# fleet, api, another subsystem (memory/content), the gateway, or the lock lib. The concrete
+# durable-backed readers are built at the clue_api composition root and injected in, so the
+# projection logic stays a pure read; the run_event EMITTER + the manifest PATCH ops (writes) live
+# at that root, never here (a write in clue_projections would break the MVCC-only read discipline).
+# Machine-enforced.
+[[tool.importlinter.contracts]]
+name = "projections import only research read surfaces + shared base"
+type = "forbidden"
+source_modules = ["clue_projections"]
+# Direct imports only (mirrors the fleet F2 contract): projections directly import only the
+# clue_research READ surfaces (review / durable / discovery_scoring) + the base; those research
+# packages *themselves* legitimately reach clue_locks (durable's Beat-0 entity lock;
+# discovery_scoring -> identity -> review), and those transitive edges are their business, not a
+# projections leak. A *direct* projections -> forbidden import is still caught.
+allow_indirect_imports = "True"
+forbidden_modules = ["clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_api", "clue_memory", "clue_content", "clue_gateway", "clue_locks"]
+
+# Rule F1 — the fleet is the platform's execution shell AROUND the research subsystem: research
+# never imports it (the drive seam is one-way — the worker drives durable's public surface, and
+# no research code may learn the queue/lease exist). PB-B1.
+[[tool.importlinter.contracts]]
+name = "research never imports the fleet shell (one-way drive seam)"
+type = "forbidden"
+source_modules = ["clue_research"]
+forbidden_modules = ["clue_fleet"]
+
+# Rule F2 — the fleet touches research ONLY through the durable seam (the PB-B1 treaty
+# must-not-touch list, machine-enforced): never sources/resolvers/adapters, never the judges or
+# scorers, never the claim store or another subsystem. The worker drives CampaignRun; the
+# queue-backed scheduler implements durable's run_accounts seam — nothing else crosses.
+# Direct imports only (allow_indirect_imports): durable itself legitimately reaches
+# claimstore/locks (Beat-0), and those transitive edges are durable's business, not a fleet leak.
+[[tool.importlinter.contracts]]
+name = "fleet touches research only through the durable seam"
+type = "forbidden"
+source_modules = ["clue_fleet"]
+allow_indirect_imports = "True"
+forbidden_modules = [
+    "clue_research.sources",
+    "clue_research.resolvers",
+    "clue_research.adapters",
+    "clue_research.compliance",
+    "clue_research.verification",
+    "clue_research.profiling",
+    "clue_research.stage0",
+    "clue_research.discovery_scoring",
+    "clue_research.narrative",
+    "clue_research.synthesis",
+    "clue_research.review",
+    "clue_research.claimstore",
+    "clue_research.identity",
+    "clue_research.icp",
+    "clue_research.evals",
+    "clue_memory",
+    "clue_content",
+    "clue_gateway",
+    "clue_locks",
+    # F2 hardening at B2/B3 integration (PB-B1 audit note): the fleet may not reach the storage
+    # lib directly either — snapshots/artifacts are wired at the composition root, and the shell
+    # sees only durable's seam.
+    "clue_storage",
+]
+
+# Rule S3 (PB-B3) — the memory substrate is storage + seams only: it imports core (the seam
+# contracts + shared types), db, and config (caps/settings) — nothing else. The gateway concrete
+# for its reconcile judge is INJECTED at the composition root (the LLMGateway protocol lives in
+# core), so a model swap never touches this package; spine scope validity is DB-constraint
+# enforcement, not a clue_spine import. (Rule S1 already keeps other subsystems out entirely.)
+[[tool.importlinter.contracts]]
+name = "memory substrate imports only core + db + config"
+type = "forbidden"
+source_modules = ["clue_memory"]
+forbidden_modules = [
+    "clue_gateway",
+    "clue_locks",
+    "clue_obs",
+    "clue_spine",
+    "clue_storage",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_execution",
+    "clue_fleet",
+    "clue_projections",
+]
 
 # Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
 # into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —
@@ -329,7 +497,7 @@ forbidden_modules = ["clue_research.resolvers"]
 name = "claim store does not import identity / locks (no inversion)"
 type = "forbidden"
 source_modules = ["clue_research.claimstore"]
-forbidden_modules = ["clue_research.identity", "clue_research.locks"]
+forbidden_modules = ["clue_research.identity", "clue_locks"]
 
 # Rule 7 — the eval scaffold (evals/) is a CORE-ONLY leaf. It defines the generic gold-set / rubric /
 # report shapes every milestone's accuracy battery binds to (M9.6 fills it), so it must import only
@@ -343,15 +511,15 @@ name = "the eval scaffold (evals/) is a core-only leaf"
 type = "forbidden"
 source_modules = ["clue_research.evals"]
 forbidden_modules = [
-    "clue_research.db",
+    "clue_db",
     "clue_research.claimstore",
     "clue_research.identity",
-    "clue_research.locks",
+    "clue_locks",
     "clue_research.icp",
     "clue_research.sources",
     "clue_research.resolvers",
     "clue_research.adapters",
-    "clue_research.gateway",
+    "clue_gateway",
     "clue_research.stage0",
     "clue_research.discovery_scoring",
     "clue_research.durable",
@@ -361,34 +529,31 @@ forbidden_modules = [
     "clue_research.synthesis",
     "clue_research.narrative",
     "clue_research.review",
-    "clue_research.api",
+    "clue_api",
 ]
 
-# Rule 5 — nothing imports the FastAPI app layer (api/). Dependencies point inward only.
+# Rule 5 — nothing imports the composition root (platform/api, Doc R R3). Dependencies point
+# inward only: clue_api is the ONLY package allowed to import everything, so no lib, subsystem,
+# or platform package may reach back into it. (Pre-R3 this enumerated clue_research subpackages;
+# now the app layer is top-level the sources are simply every other workspace package.)
 [[tool.importlinter.contracts]]
 name = "nothing imports the api app layer"
 type = "forbidden"
 source_modules = [
-    "clue_research.core",
-    "clue_research.config",
-    "clue_research.obs",
-    "clue_research.db",
-    "clue_research.evals",
-    "clue_research.claimstore",
-    "clue_research.identity",
-    "clue_research.locks",
-    "clue_research.icp",
-    "clue_research.sources",
-    "clue_research.resolvers",
-    "clue_research.adapters",
-    "clue_research.stage0",
-    "clue_research.discovery_scoring",
-    "clue_research.durable",
-    "clue_research.profiling",
-    "clue_research.verification",
-    "clue_research.compliance",
-    "clue_research.synthesis",
-    "clue_research.narrative",
-    "clue_research.review",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_storage",
+    "clue_research",
+    "clue_memory",
+    "clue_content",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_fleet",
+    "clue_projections",
 ]
-forbidden_modules = ["clue_research.api"]
+forbidden_modules = ["clue_api"]

@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import ICPCreatedFrom, ICPStatus
+from clue_core import ICPCreatedFrom, ICPStatus
 from clue_research.icp import (
     HEALTHCARE_PRACTICE,
     ICPSpecValidationError,
@@ -51,7 +51,7 @@ def test_create_persists_immutable_versioned_row() -> None:
         async with rollback_conn(seed_core=True) as conn:
             spec = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count", "core.primary_domain"),
@@ -71,7 +71,7 @@ def test_edit_appends_version_and_prior_is_byte_identical() -> None:
         async with rollback_conn(seed_core=True) as conn:
             v1 = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -79,7 +79,7 @@ def test_edit_appends_version_and_prior_is_byte_identical() -> None:
             )
             v2 = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.CLIENT_EDIT,
                 field_keys=("core.employee_count", "core.primary_domain"),
@@ -101,14 +101,14 @@ def test_multiple_icp_keys_per_client_coexist() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="enterprise",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
             )
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="smb",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.primary_domain",),
@@ -127,7 +127,7 @@ def test_activation_archives_prior_atomically_one_active() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -135,7 +135,7 @@ def test_activation_archives_prior_atomically_one_active() -> None:
             )
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.CLIENT_EDIT,
                 field_keys=("core.primary_domain",),
@@ -158,7 +158,7 @@ def test_unknown_field_key_rejected_at_write() -> None:
             with pytest.raises(ICPSpecValidationError) as exc:
                 await create_icp_spec(
                     conn,
-                    client_id="acme",
+                    workspace_id="acme",
                     icp_key="default",
                     created_from=ICPCreatedFrom.SYNTHESIS,
                     field_keys=("core.employee_count", "account.ghost_field"),
@@ -174,7 +174,7 @@ def test_unknown_pack_rejected_at_write() -> None:
             with pytest.raises(ICPSpecValidationError) as exc:
                 await create_icp_spec(
                     conn,
-                    client_id="acme",
+                    workspace_id="acme",
                     icp_key="default",
                     created_from=ICPCreatedFrom.SYNTHESIS,
                     field_keys=("core.employee_count",),
@@ -191,7 +191,7 @@ def test_enabled_pack_validates_against_m33_catalog() -> None:
             await register_pack_catalog(conn, HEALTHCARE_PRACTICE)  # M3.3 catalog + healthcare.npi
             spec = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="health",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("healthcare.npi",),
@@ -208,7 +208,7 @@ def test_diff_icp_reports_structural_delta() -> None:
         async with rollback_conn(seed_core=True) as conn:
             v1 = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count", "core.primary_domain"),
@@ -218,7 +218,7 @@ def test_diff_icp_reports_structural_delta() -> None:
             )
             v2 = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.CLIENT_EDIT,
                 field_keys=("core.employee_count", "core.work_email"),
@@ -250,7 +250,7 @@ def test_field_keys_and_packs_deduped_on_write() -> None:
             await register_pack_catalog(conn, HEALTHCARE_PRACTICE)
             spec = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count", "core.employee_count", "healthcare.npi"),
@@ -268,7 +268,7 @@ def test_pinned_version_reproducible_after_later_edits() -> None:
         async with rollback_conn(seed_core=True) as conn:
             v1 = await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -277,7 +277,7 @@ def test_pinned_version_reproducible_after_later_edits() -> None:
             for fields in [("core.primary_domain",), ("core.work_email",)]:
                 await create_icp_spec(
                     conn,
-                    client_id="acme",
+                    workspace_id="acme",
                     icp_key="default",
                     created_from=ICPCreatedFrom.CLIENT_EDIT,
                     field_keys=fields,
@@ -292,7 +292,7 @@ def test_append_only_trigger_rejects_content_update_allows_status() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -303,7 +303,7 @@ def test_append_only_trigger_rejects_content_update_allows_status() -> None:
                 await conn.execute(
                     text(
                         "UPDATE icp_spec SET label = 'hacked' "
-                        "WHERE client_id = 'acme' AND icp_key = 'default' AND version = 1"
+                        "WHERE workspace_id = 'acme' AND icp_key = 'default' AND version = 1"
                     )
                 )
             await sp.rollback()
@@ -311,7 +311,7 @@ def test_append_only_trigger_rejects_content_update_allows_status() -> None:
             await conn.execute(
                 text(
                     "UPDATE icp_spec SET status = 'active' "
-                    "WHERE client_id = 'acme' AND icp_key = 'default' AND version = 1"
+                    "WHERE workspace_id = 'acme' AND icp_key = 'default' AND version = 1"
                 )
             )
             active = await get_active_icp(conn, "acme", "default")

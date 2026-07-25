@@ -5,8 +5,8 @@ loads alongside M8's deep pack and M12's narrative pack without any milestone co
 
 from __future__ import annotations
 
-from clue_research.api import composition
-from clue_research.api.compliance_wiring import register_compliance_wiring
+from clue_api import composition
+from clue_api.compliance_wiring import register_compliance_wiring
 from clue_research.compliance import load_compliance_pack
 
 

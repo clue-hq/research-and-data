@@ -4,7 +4,7 @@
 These prove the airtight property the M7.5 ``record`` docstring deferred to "the M8 claim-write
 path": the spend commits on the **caller's** connection, so a crash (a rolled-back savepoint) leaves
 NO charge and NO orphan ledger row, a replay never re-charges, and ``account_run.cost_cents`` ==
-``campaign_run.spent_cents`` == ``SUM(ledger cost_cents_charged)``. Need a reachable migrated
+``project_run.spent_cents`` == ``SUM(ledger cost_cents_charged)``. Need a reachable migrated
 Postgres; ``pytest.skip`` without one. The outer work runs in a rolled-back transaction (and each
 simulated crash in a savepoint), so no rows leak.
 """
@@ -17,27 +17,28 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.deep import DbExactlyOnceSpend, already_done, deep_step_key
-from clue_research.core import (
+from clue_api.deep import DbExactlyOnceSpend, already_done, deep_step_key
+from clue_core import (
     BudgetScope,
-    CampaignRunId,
     ClaimId,
     CostCents,
+    ProjectRunId,
     RunId,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
 from clue_research.durable import (
     AccountRunStatus,
     BudgetEngine,
-    ensure_campaign_run,
+    ensure_project_run,
     get_account_budget_state,
     get_idempotency_ledger,
     get_run_budget_state,
     insert_account_run,
 )
+from tests._workspace import seed_project
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 
@@ -50,7 +51,7 @@ class _Boom(Exception):
 
 @dataclass(frozen=True)
 class _Work:
-    """A minimal :class:`~clue_research.api.deep.spend.Spendable` for one deep spend step."""
+    """A minimal :class:`~clue_api.deep.spend.Spendable` for one deep spend step."""
 
     cost_cents: CostCents
     claim_refs: tuple[ClaimId, ...] = ()
@@ -58,14 +59,16 @@ class _Work:
 
 async def _seed(
     conn: AsyncConnection, *, cap: CostCents = Decimal("100000")
-) -> tuple[CampaignRunId, RunId]:
-    """Seed a fresh campaign_run (capped) + account_run (RUNNING) so the charge has rows to move."""
-    campaign = new_campaign_run_id()
+) -> tuple[ProjectRunId, RunId]:
+    """Seed a fresh project_run (capped) + account_run (RUNNING) so the charge has rows to move."""
+    campaign = new_project_run_id()
     account = new_run_id()
-    await ensure_campaign_run(
+    project = await seed_project(conn, "client-1")
+    await ensure_project_run(
         conn,
-        campaign_run_id=campaign,
-        client_id="client-1",
+        project_run_id=campaign,
+        project_id=project.project_id,
+        workspace_id="client-1",
         icp_key="icp-a",
         icp_version=1,
         budget_cap_cents=cap,
@@ -73,7 +76,7 @@ async def _seed(
     await insert_account_run(
         conn,
         account_run_id=account,
-        campaign_run_id=campaign,
+        project_run_id=campaign,
         entity_id=new_entity_id(),
         tier="top",
         status=AccountRunStatus.RUNNING,
@@ -85,7 +88,7 @@ def _spend() -> DbExactlyOnceSpend:
     return DbExactlyOnceSpend(BudgetEngine())
 
 
-async def _spent(conn: AsyncConnection, campaign: CampaignRunId) -> CostCents:
+async def _spent(conn: AsyncConnection, campaign: ProjectRunId) -> CostCents:
     state = await get_run_budget_state(conn, campaign)
     assert state is not None
     return state.spent_cents
@@ -108,7 +111,7 @@ def test_record_with_conn_charges_on_the_callers_transaction() -> None:
             await engine.record(
                 cost_cents=Decimal("40"),
                 scope=BudgetScope.ACCOUNT,
-                campaign_run_id=campaign,
+                project_run_id=campaign,
                 account_run_id=account,
                 conn=conn,
             )
@@ -120,7 +123,7 @@ def test_record_with_conn_charges_on_the_callers_transaction() -> None:
                     await engine.record(
                         cost_cents=Decimal("10"),
                         scope=BudgetScope.ACCOUNT,
-                        campaign_run_id=campaign,
+                        project_run_id=campaign,
                         account_run_id=account,
                         conn=conn,
                     )
@@ -147,7 +150,7 @@ def test_run_step_execute_then_replay_charges_exactly_once() -> None:
             result, info = await spend.run_step(
                 conn,
                 key=key,
-                campaign_run_id=campaign,
+                project_run_id=campaign,
                 account_run_id=account,
                 entity_id=new_entity_id(),
                 work=work,
@@ -164,7 +167,7 @@ def test_run_step_execute_then_replay_charges_exactly_once() -> None:
             again_result, again_info = await spend.run_step(
                 conn,
                 key=key,
-                campaign_run_id=campaign,
+                project_run_id=campaign,
                 account_run_id=account,
                 entity_id=new_entity_id(),
                 work=already_done(_Work(cost_cents=Decimal("999"))),  # would be wrong if it ran
@@ -198,7 +201,7 @@ def test_crash_inside_a_step_rolls_back_the_whole_unit_then_reexecutes_once() ->
                     await spend.run_step(
                         conn,
                         key=key,
-                        campaign_run_id=campaign,
+                        project_run_id=campaign,
                         account_run_id=account,
                         entity_id=new_entity_id(),
                         work=_boom,
@@ -212,7 +215,7 @@ def test_crash_inside_a_step_rolls_back_the_whole_unit_then_reexecutes_once() ->
             _, info = await spend.run_step(
                 conn,
                 key=key,
-                campaign_run_id=campaign,
+                project_run_id=campaign,
                 account_run_id=account,
                 entity_id=new_entity_id(),
                 work=already_done(_Work(cost_cents=Decimal("40"), claim_refs=(new_claim_id(),))),
@@ -225,7 +228,7 @@ def test_crash_inside_a_step_rolls_back_the_whole_unit_then_reexecutes_once() ->
 
 def test_cost_cents_reconciles_with_the_ledger_charge_sum() -> None:
     """After the account/committee/contact spend steps, ``account_run.cost_cents`` ==
-    ``campaign_run.spent_cents`` == ``SUM(ledger cost_cents_charged)`` — ``record`` is the single
+    ``project_run.spent_cents`` == ``SUM(ledger cost_cents_charged)`` — ``record`` is the single
     writer (AC2)."""
 
     async def _run() -> None:
@@ -242,7 +245,7 @@ def test_cost_cents_reconciles_with_the_ledger_charge_sum() -> None:
                 await spend.run_step(
                     conn,
                     key=deep_step_key(account, step),
-                    campaign_run_id=campaign,
+                    project_run_id=campaign,
                     account_run_id=account,
                     entity_id=new_entity_id(),
                     work=already_done(_Work(cost_cents=cost, claim_refs=(new_claim_id(),))),

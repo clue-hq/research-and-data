@@ -2,6 +2,8 @@
 
 ### Read this first. It is the map; the other docs are the territory.
 
+> **Scope note (platform-backend reframe).** This repo is the platform's **backend home**, organized as **subsystems behind shared substrates and seams**. This document maps its **first subsystem — data & research**; the **second — scoped memory & context assembly** — is Doc M (`clue-hq-scoped-memory-and-context-assembly.md`), the first substrate added under the harness era. Future subsystems land in the same repo under the same seam discipline. Where this doc says "this subsystem" it means the research subsystem specifically; "the repo" or "the platform backend" means the whole. The harness-era authoritative record is `clue-hq-harness-architecture-and-requirements.md`.
+
 The two original architecture docs (`clue-hq-research-layer-architecture.md`, the **substrate doc**, and `clue-hq-discovery-and-research-staged-architecture.md`, the **staged-flow doc**) were written reacting to a scrappy prototype — they are organized around *not repeating its failures*. That framing is defensible but backwards for orientation. This doc derives the subsystem from the **outputs it must produce**, indexes the full document set, and pins the one boundary the originals left implicit: **what this subsystem hands downstream.**
 
 Nothing here overturns the original two docs. The core bet still stands: *verifiability is a property of the data model (the typed claim with provenance), not a QA pass.* This doc adds the front edge, the output edge, and the cross-cutting governance the prototype never lived long enough to reach.
@@ -108,6 +110,11 @@ account_handoff
 4. **`clue-hq-stage0-client-and-icp.md`** (Doc B) — the front edge: client reverse-profiling, ICP synthesis, and the two entry scenarios. *Extends substrate §8 and staged-flow §2.*
 5. **`clue-hq-signal-execution-cost.md`** (Doc C) — the two-tier signal model, new resonance/personal-facet field-classes, the bounded two-level fan-out, campaign-level orchestration, cost governance, observability. *Extends substrate §3, §5 and staged-flow §4.*
 6. **`clue-hq-compliance-and-personal-data.md`** (Doc D) — jurisdiction switch, use-class taxonomy, the appropriateness/use gate, lawful basis, and the three deep-research postures. *Extends substrate §6 and staged-flow §6, §8.*
+7. **`clue-hq-scoped-memory-and-context-assembly.md`** (Doc M) — the **second shared substrate** beside the claim store: the five-scope (workspace/brand/product/campaign/account) preference & behavioral-learning store behind two seams, deterministic context assembly, freshness/caps/eviction, and its DSAR surface. *Harness-era; extends the harness architecture doc the way Doc D extends the substrate. Facts stay claims — memory holds only advisory preferences/learnings.*
+8. **`clue-hq-platform-agent-runtime.md`** (Doc A) — the binding agentic taxonomy (tool / skill / worker fleet / deepagent), the platform deepagent's anatomy, the seven-layer context-assembly pipeline, and product profiles. *Harness-era.*
+9. **`clue-hq-content-and-artifact-scaling.md`** (Doc S) — the content plane between research handoff and the design engine: content schema ↔ slot contract, template finalization, per-account/contact scaled derivation. *Harness-era; resolves D2.*
+
+> **Harness-era note.** Entries 1–6 are the substrate-era doc set and remain authoritative for the data layer. The platform has since pivoted to a deep-agent harness; the authoritative statement of that era is **`clue-hq-harness-architecture-and-requirements.md`** (with `clue-hq-harness-replatform-proposal.md` as its evidence trail), and **Doc M** (entry 7) is the first substrate added under it.
 
 ---
 
@@ -118,7 +125,7 @@ Decisions that shape the docs and are deliberately left to the founders / data-a
 | # | Decision | Current state | Owner |
 |---|---|---|---|
 | D1 | **Output boundary** — claims only vs. + value narrative vs. through content schema | Recommended: **+ value narrative** (§3). Assumed in all docs, pending confirm. | Founders |
-| D2 | **Design-subsystem interface** — what does the built design system ingest? | Unknown; needed to finalize the §3 contract. | Aryan |
+| D2 | **Design-subsystem interface** — what does the built design system ingest? | **Resolved (2026-07-16):** binding sets validated against a frozen template slot contract, produced by the content plane — a content layer sits between research and design exactly as §3 recommended. See Doc S (`clue-hq-content-and-artifact-scaling.md`). | — |
 | D3 | **Personal-data posture** — conservative-default vs. gather-broadly-gate-at-use vs. professional-only | All three documented as per-client config (Doc D); decision deferred. | Data/compliance owner |
 | D4 | **Contact geography** | **Resolved: mixed/global** → jurisdiction is a first-class per-client switch (Doc D). | — |
 | D5 | **ICP multiplicity** — one ICP per client vs. several segments | Recommended: **support multiple ICPs**, each compiles its own plan (Doc B). | Founders |

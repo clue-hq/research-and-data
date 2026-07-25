@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.config import RecursionPolicy, TierRecursionCaps
+from clue_config import RecursionPolicy, TierRecursionCaps
 from clue_research.durable import SpawnDenyReason, SpawnGuard
 
 _POLICY = RecursionPolicy(

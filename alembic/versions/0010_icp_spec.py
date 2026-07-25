@@ -38,7 +38,7 @@ down_revision: str | None = "0009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums (ICPStatus / ICPCreatedFrom). The enum-parity test
+# Mirror clue_core.enums (ICPStatus / ICPCreatedFrom). The enum-parity test
 # tests/icp/test_icp_spec.py::test_icp_spec_enums_match_core guards against drift.
 _ICP_STATUS = ("draft", "active", "archived")
 _ICP_CREATED_FROM = ("synthesis", "client_edit", "import_rederive")

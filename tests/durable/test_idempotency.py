@@ -15,16 +15,16 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.core import (
-    CampaignPhase,
+from clue_core import (
     IdempotencyScope,
-    new_campaign_run_id,
+    ProjectPhase,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
-from clue_research.core.field import FieldKey
-from clue_research.core.idempotency import account_step_key, phase_key
+from clue_core.field import FieldKey
+from clue_core.idempotency import account_step_key, phase_key
 from clue_research.durable import (
     IdempotencyConflict,
     IdempotencyStatus,
@@ -269,18 +269,18 @@ def test_key_derivation_is_deterministic_and_scope_separated() -> None:
     run_id = new_run_id()
     entity_id = new_entity_id()
     field = FieldKey("account.recent_funding")
-    crun = new_campaign_run_id()
+    crun = new_project_run_id()
 
     assert account_step_key(run_id, entity_id, field, 2) == account_step_key(
         run_id, entity_id, field, 2
     )
-    assert phase_key(crun, CampaignPhase.DEEP) == phase_key(crun, CampaignPhase.DEEP)
+    assert phase_key(crun, ProjectPhase.DEEP) == phase_key(crun, ProjectPhase.DEEP)
     # Different tier → different key; scope prefixes keep the two shapes disjoint.
     assert account_step_key(run_id, entity_id, field, 2) != account_step_key(
         run_id, entity_id, field, 3
     )
     assert account_step_key(run_id, entity_id, field, 2).startswith("account_step:")
-    assert phase_key(crun, CampaignPhase.DEEP).startswith("campaign_phase:")
+    assert phase_key(crun, ProjectPhase.DEEP).startswith("campaign_phase:")
 
 
 def test_fake_store_satisfies_protocol() -> None:

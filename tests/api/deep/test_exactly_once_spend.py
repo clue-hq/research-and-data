@@ -1,7 +1,7 @@
 """M8A.4 — exactly-once spend + concurrent-admit reservation, driven by fakes (no DB).
 
 These prove the *orchestration-level* exactly-once contract: every deep stage's spend routes through
-the injected :class:`~clue_research.api.deep.spend.ExactlyOnceSpend` (so the budget charge, claim
+the injected :class:`~clue_api.deep.spend.ExactlyOnceSpend` (so the budget charge, claim
 writes, and ledger ``succeed`` commit together) keyed once per stage; a resumed fan-out **replays**
 already-committed contacts without re-charging; the references-fold never carries cost (the budget
 engine's ``record`` is the single writer); and the per-account reservation stops admitting before
@@ -13,12 +13,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.api.deep import deep_account_run_id, deep_step_key
-from clue_research.config import DeepPhaseConfig
-from clue_research.core import (
+from clue_api.deep import deep_account_run_id, deep_step_key
+from clue_config import DeepPhaseConfig
+from clue_core import (
     BudgetVerdict,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from tests.api.deep.test_orchestrator import (
@@ -47,12 +47,12 @@ def test_each_stage_charges_exactly_once_through_the_spend_seam() -> None:
         FakeProfileContact(rec),
         spend=spend,
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         run_id = deep_account_run_id(campaign, entity)
         keys = [c["key"] for c in spend.charges]
         # one account + one committee + one per admitted contact, each charged exactly once
@@ -63,7 +63,7 @@ def test_each_stage_charges_exactly_once_through_the_spend_seam() -> None:
         for charge in spend.charges:
             assert charge["account_run_id"] == run_id
             assert charge["entity_id"] == entity
-            assert charge["campaign_run_id"] == campaign
+            assert charge["project_run_id"] == campaign
         # cost = account 5 + committee 3 + 3 contacts × 2 — the sum of the spend steps
         assert result.cost_cents == Decimal("5") + Decimal("3") + Decimal("6")
 
@@ -75,7 +75,7 @@ def test_resumed_fan_out_replays_committed_contacts_without_recharge() -> None:
     re-run and its charge is not re-recorded); only the still-pending contacts spend afresh."""
     io = FakeAccountRunIO()
     rec = Recorder()
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
     run_id = deep_account_run_id(campaign, entity)
     done_contact, pending_a, pending_b = new_entity_id(), new_entity_id(), new_entity_id()
@@ -99,10 +99,10 @@ def test_resumed_fan_out_replays_committed_contacts_without_recharge() -> None:
         FakeProfileContact(rec),
         spend=spend,
     )
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         # the replayed contact's work was NOT re-run; only the two pending contacts were profiled
         assert sorted(str(c) for c in rec.contact_ids) == sorted([str(pending_a), str(pending_b)])
         # exactly two fresh charges (the two pending) — the replayed contact was NOT re-charged
@@ -150,10 +150,10 @@ def test_reservation_guard_stops_admitting_when_reservations_would_breach_the_ca
         config=config,
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         # the cap admitted only two of the five members before the reservation guard fired
         assert len(result.contacts) == 2
         assert result.budget_stop is BudgetVerdict.DENY
@@ -179,10 +179,10 @@ def test_uncapped_account_runs_the_reservation_guard_inert() -> None:
         config=DeepPhaseConfig(per_contact_estimate_cents=Decimal("1000"), committee_size_cap=8),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         assert len(result.contacts) == 4  # all admitted despite a huge estimate — no cap to breach
         assert result.budget_stop is None
 
@@ -197,7 +197,7 @@ def test_cap_saturated_resume_recovers_all_committed_contact_references() -> Non
     gate*, so no committed contact's references drop (the handoff keeps the buying committee)."""
     io = FakeAccountRunIO()
     rec = Recorder()
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
     run_id = deep_account_run_id(campaign, entity)
     members = [new_entity_id() for _ in range(5)]
@@ -225,10 +225,10 @@ def test_cap_saturated_resume_recovers_all_committed_contact_references() -> Non
         budget=budget,
         spend=spend,
     )
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         refs = io.runs[run_id]["references_index"]
         # every committed contact's references are recovered from the ledger — none dropped
         for i, m in enumerate(members):
@@ -257,12 +257,12 @@ def test_references_fold_does_not_write_cost_record_is_single_writer() -> None:
         make_discover_committee(rec, n_members=2),
         FakeProfileContact(rec),
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         run_id = deep_account_run_id(campaign, entity)
         # the fold never touched cost_cents (record owns it); the run still accounts the real total
         assert io.runs[run_id]["cost_cents"] == Decimal(0)

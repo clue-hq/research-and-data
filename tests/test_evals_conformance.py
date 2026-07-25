@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.core import Claim, Entity, EntityScope, FieldDef, Modality, SourceManifest
+from clue_core import Claim, Entity, EntityScope, FieldDef, Modality, SourceManifest
 from clue_research.evals import assert_resolver_conformance, assert_valid_source_manifest
 
 

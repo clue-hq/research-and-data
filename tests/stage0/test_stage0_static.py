@@ -6,8 +6,8 @@ reverse-profiling tests rely on.
 
 from __future__ import annotations
 
-from clue_research.core import ExtractionMethod, ReuseScope, can_be_promoted, new_campaign_run_id
-from clue_research.core.field import classify_field_key, is_valid_field_key
+from clue_core import ExtractionMethod, ReuseScope, can_be_promoted, new_project_run_id
+from clue_core.field import classify_field_key, is_valid_field_key
 from clue_research.identity import DEFAULT_REUSE_POLICY, classify_reuse_scope
 from clue_research.stage0 import (
     CLIENT_KB_VERSION,
@@ -63,7 +63,7 @@ def test_client_fields_declare_tenant_private_scope() -> None:
     # ENG-165: a <pack>.* field has NO safe default reuse_scope, and the claim-write boundary is
     # fail-closed — so every client-knowledge field must DECLARE tenant_private or no client claim
     # could be written at all. Guards against an undeclared field silently failing closed.
-    from clue_research.core.field import resolve_reuse_scope
+    from clue_core.field import resolve_reuse_scope
 
     for sf in CLIENT_KNOWLEDGE_PACK:
         assert sf.field_def.reuse_scope is ReuseScope.TENANT_PRIVATE, sf.field_def.field_key
@@ -80,9 +80,9 @@ def test_surface_taxonomy_covers_all_four_surfaces_and_all_fields() -> None:
 
 
 def test_reverse_profiling_run_id_is_deterministic() -> None:
-    crid = new_campaign_run_id()
+    crid = new_project_run_id()
     assert reverse_profiling_run_id(crid) == reverse_profiling_run_id(crid)
-    assert reverse_profiling_run_id(crid) != reverse_profiling_run_id(new_campaign_run_id())
+    assert reverse_profiling_run_id(crid) != reverse_profiling_run_id(new_project_run_id())
 
 
 def test_client_input_from_params_nested_and_flat() -> None:
@@ -118,6 +118,6 @@ def test_tier4_promotion_predicate() -> None:
 
 
 def _an_id() -> object:
-    from clue_research.core import new_entity_id
+    from clue_core import new_entity_id
 
     return new_entity_id()

@@ -1,0 +1,37 @@
+{
+  "recipe_key": "recipe1-classic",
+  "scope_type": "system",
+  "workspace_id": null,
+  "version": 1,
+  "executor_protocol": 1,
+  "parameter_schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "graph": {
+    "nodes": [
+      {
+        "kind": "barrier",
+        "node_key": "c5_6_recipe1_cutover",
+        "ordinal": 0,
+        "dependencies": [],
+        "requirements": []
+      }
+    ],
+    "tool_allowlist": [],
+    "authority_allowlist": [],
+    "activity_allowlist": [],
+    "migration_state": "placeholder"
+  },
+  "compatibility": {
+    "execution": [],
+    "nodes": {}
+  },
+  "requested_memory_types": [],
+  "max_nodes": 256,
+  "max_depth": 4,
+  "max_fanout": 100,
+  "source_execution_id": null,
+  "created_by": "system"
+}

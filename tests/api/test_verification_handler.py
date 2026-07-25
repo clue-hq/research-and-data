@@ -1,4 +1,4 @@
-"""The ``CampaignPhase.VERIFICATION`` handler (integration keystone) — driven entirely by fakes (no
+"""The ``ProjectPhase.VERIFICATION`` handler (integration keystone) — driven entirely by fakes (no
 DB). These prove the handler *policy*: it drives the frozen ``VERIFICATION_GATE_ORDER`` over each
 high-tier account's claims in order — corroboration (per ``(entity, field)``) → faithfulness (every
 live tier-4 claim) → use-gate (``contact.facet.*`` claims) **last** — records per-field
@@ -14,19 +14,17 @@ import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
 
-from clue_research.api.verification import (
+from clue_api.verification import (
     VerificationPhaseHandler,
     build_verification_phase_handler,
 )
-from clue_research.api.verification.handler import (
+from clue_api.verification.handler import (
     ClaimLoader,
     ContactResolver,
     UseGateProvider,
     VerificationAccountResolver,
 )
-from clue_research.claimstore import TenantScope
-from clue_research.core import (
-    CampaignPhase,
+from clue_core import (
     Claim,
     EntityId,
     ExtractionMethod,
@@ -34,20 +32,22 @@ from clue_research.core import (
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
+    ProjectPhase,
     ResearchMode,
     UseClass,
     account_claim,
     contact_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
-from clue_research.core.compliance import UseDecision
-from clue_research.core.enums import JudgeVerdict, UseReason
-from clue_research.core.gateway import Completion, Message
-from clue_research.core.verification import JudgeResult
+from clue_core.compliance import UseDecision
+from clue_core.enums import JudgeVerdict, UseReason
+from clue_core.gateway import Completion, Message
+from clue_core.verification import JudgeResult
+from clue_obs.otel.metrics import METRIC_TIER4_TOTAL, InMemorySink
+from clue_research.claimstore import WorkspaceScope
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
-from clue_research.obs.metrics import METRIC_TIER4_TOTAL, InMemorySink
 
 _PAIN = "account.operational_pain"
 _MOVES = "account.strategic_moves"
@@ -77,7 +77,7 @@ class FakeCorroborator:
         entity_id: EntityId,
         field_key: object,
         *,
-        scope: TenantScope,
+        scope: WorkspaceScope,
         entity_type: object = None,
     ) -> object:
         self._rec.log.append(("corroborate", str(field_key)))
@@ -148,7 +148,7 @@ def _resolver(specs: Sequence[AccountSpec]) -> VerificationAccountResolver:
 def _loader(
     by_entity: dict[EntityId, list[Claim]], *, raise_for: EntityId | None = None
 ) -> ClaimLoader:
-    async def _l(entity_id: EntityId, scope: TenantScope) -> Sequence[Claim]:
+    async def _l(entity_id: EntityId, scope: WorkspaceScope) -> Sequence[Claim]:
         if raise_for is not None and entity_id == raise_for:
             raise RuntimeError("boom — claim load failed for this account")
         return by_entity.get(entity_id, [])
@@ -157,14 +157,16 @@ def _loader(
 
 
 def _spec(entity_id: EntityId) -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier="top", tenant_id=_CLIENT)
+    return AccountSpec(entity_id=entity_id, tier="top", workspace_id=_CLIENT)
 
 
 def _ctx(campaign: object | None = None) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=campaign or new_campaign_run_id(),
-        phase=CampaignPhase.VERIFICATION,
-        client_id=_CLIENT,
+        project_run_id=campaign or new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
+        phase=ProjectPhase.VERIFICATION,
+        workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
     )
@@ -206,7 +208,7 @@ def _use_gate_provider(use_gate: FakeUseGate | None) -> UseGateProvider | None:
     if use_gate is None:
         return None
 
-    async def _provide(client_id: str) -> FakeUseGate:
+    async def _provide(workspace_id: str) -> FakeUseGate:
         return use_gate
 
     return _provide
@@ -249,11 +251,11 @@ def test_handler_conforms_to_protocol_and_registers() -> None:
     rec = _Recorder()
     handler = _handler(specs=(), by_entity={}, rec=rec, use_gate=FakeUseGate(rec))
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.VERIFICATION
+    assert handler.phase is ProjectPhase.VERIFICATION
     registry = PhaseHandlerRegistry()
-    assert registry.get(CampaignPhase.VERIFICATION) is None
+    assert registry.get(ProjectPhase.VERIFICATION) is None
     registry.register(handler)
-    assert registry.get(CampaignPhase.VERIFICATION) is handler
+    assert registry.get(ProjectPhase.VERIFICATION) is handler
 
 
 def test_runs_full_gate_chain_with_use_gate_last() -> None:
@@ -470,4 +472,4 @@ def test_build_verification_phase_handler_wires_the_concrete_seams() -> None:
         account_resolver=_resolver(()),
     )
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.VERIFICATION
+    assert handler.phase is ProjectPhase.VERIFICATION

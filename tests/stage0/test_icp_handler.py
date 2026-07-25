@@ -2,7 +2,7 @@
 
 The handler implements the frozen ``PhaseHandler`` protocol and opens its own (committing)
 transaction, so this exercises it against a real DB. ``ICP_CONFIRMED`` is a checkpoint over an
-*already-confirmed* spec: it reads the pinned ``(client_id, icp_key, icp_version)``, compiles it,
+*already-confirmed* spec: it reads the pinned ``(workspace_id, icp_key, icp_version)``, compiles it,
 and emits the artifact (plan_hash + two-pass counts + pre-run estimate). A fresh tenant per run
 gives a brand-new client + spec at version 1 (the claim/icp tables are append-only — no cleanup).
 """
@@ -13,15 +13,15 @@ from uuid import uuid4
 
 import pytest
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
-    CampaignPhase,
+from clue_core import (
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
-    new_campaign_run_id,
+    ProjectPhase,
+    new_project_run_id,
 )
-from clue_research.db import db_lifespan, transaction
+from clue_db import db_lifespan, transaction
+from clue_research.claimstore import load_core_pack
 from clue_research.icp import load_starter_packs
 from clue_research.sources import seed_source_manifests
 from clue_research.stage0 import (
@@ -36,6 +36,7 @@ from clue_research.stage0.fields import (
     CLIENT_PRODUCT,
     CLIENT_VALUE_PROP,
 )
+from tests._workspace import seed_workspace
 from tests.stage0._fakes import build_client_kb
 from tests.stage0.conftest import run_async
 
@@ -51,7 +52,7 @@ _ASSERTED: dict[str, object] = {
 def test_handler_conforms_to_protocol() -> None:
     handler = IcpConfirmedHandler()
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.ICP_CONFIRMED
+    assert handler.phase is ProjectPhase.ICP_CONFIRMED
 
 
 async def _seed_committed() -> None:
@@ -64,11 +65,13 @@ async def _seed_committed() -> None:
         await seed_source_manifests(conn)
 
 
-def _ctx(client_id: str, icp_key: str, icp_version: int) -> PhaseContext:
+def _ctx(workspace_id: str, icp_key: str, icp_version: int) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.ICP_CONFIRMED,
-        client_id=client_id,
+        project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
+        phase=ProjectPhase.ICP_CONFIRMED,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         icp_version=icp_version,
     )
@@ -82,12 +85,14 @@ def test_handler_emits_artifact_for_confirmed_spec() -> None:
             client = f"tenant-icp-{suffix}"
             # build + confirm a spec in a committed transaction, then run the handler over it
             async with transaction() as conn:
+                # accounts are workspace-local — seed the workspace before the KB build inserts one
+                await seed_workspace(conn, client)
                 ref = await build_client_kb(
-                    conn, client_id=client, suffix=suffix, asserted=_ASSERTED
+                    conn, workspace_id=client, suffix=suffix, asserted=_ASSERTED
                 )
-                (proposal,) = await synthesize_icps(conn, ref, client_id=client)
+                (proposal,) = await synthesize_icps(conn, ref, workspace_id=client)
                 confirmation = await confirm_icp(
-                    conn, proposal, client_id=client, client_entity_id=ref.client_entity_id
+                    conn, proposal, workspace_id=client, client_entity_id=ref.client_entity_id
                 )
 
             spec_ref = confirmation.ref

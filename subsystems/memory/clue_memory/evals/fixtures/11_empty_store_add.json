@@ -1,0 +1,27 @@
+{
+  "name": "empty_store_add",
+  "submission": {
+    "workspace_id": "ws_golden",
+    "scope": {
+      "scope_type": "brand",
+      "scope_id": "brd_golden"
+    },
+    "type": "preference",
+    "trigger": "when writing outreach",
+    "body": "Always co-brand landing pages with the client logo lockup.",
+    "provenance_class": "user_stated"
+  },
+  "candidates": [],
+  "judgment": {
+    "verdict": "add",
+    "target_memory_id": null,
+    "species_ok": true,
+    "body_ok": true,
+    "rationale": "scripted"
+  },
+  "expected": {
+    "kind": "disposition",
+    "verdict": "add",
+    "target_memory_id": null
+  }
+}

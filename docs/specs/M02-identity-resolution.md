@@ -1,6 +1,6 @@
 # M2 — Identity Resolution
 **Layer label:** layer:identity  ·  **Depends on:** M0, M1  ·  **Priority:** 2 (High)
-**Architecture sources:** substrate §2 (identity service); substrate §1 (claim store / `current_value` / `field_definition` / `Resolver`); substrate §6(1) (schema/identity gates as the pre-spend entry gate); staged-flow §3 (existence/identity gate, mode M1), §6 (committee identity-resolution + identity-binding, modes M3/M4), §8 (mode-specific anti-hallucination), §9 (identity service as shared backbone for both axes); Doc B §4 (Scenario B bulk import resolution); Doc C §3 (per-entity hard budget cap — single-flight precondition), §4 (campaign idempotency `(campaign_run, phase)`); Doc D §1 (jurisdiction on contacts — D4), §4 (DSAR/erasure tractability); conventions §2 (modularity/DRY), §3 (taxonomies), §4 (contracts), §6 (stack).
+**Architecture sources:** substrate §2 (identity service); substrate §1 (claim store / `current_value` / `field_definition` / `Resolver`); substrate §6(1) (schema/identity gates as the pre-spend entry gate); staged-flow §3 (existence/identity gate, mode M1), §6 (committee identity-resolution + identity-binding, modes M3/M4), §8 (mode-specific anti-hallucination), §9 (identity service as shared backbone for both axes); Doc B §4 (Scenario B bulk import resolution); Doc C §3 (per-entity hard budget cap — single-flight precondition), §4 (campaign idempotency `(project_run, phase)`); Doc D §1 (jurisdiction on contacts — D4), §4 (DSAR/erasure tractability); conventions §2 (modularity/DRY), §3 (taxonomies), §4 (contracts), §6 (stack).
 
 ## Goal & scope of this milestone
 
@@ -90,7 +90,7 @@ Five issues, in build order:
 
 ### M2.4 — Redis in-flight locks
 - **Purpose:** Prevent two workers from researching (or merging) the same entity concurrently. Substrate §2 prescribes *distributed in-flight locks (Redis) to replace the prototype's `run_pause.flag` and ad-hoc in-flight checks: `lock(account_id)` before any expensive work so two workers never research the same account.* This is both a correctness guard (no double-write / no merge race against an in-flight profiling run) and a cost guard (no duplicate spend on the same entity — Doc C §3 per-entity budget discipline depends on single-flight execution). It is the ephemeral-state half of the stack (conventions §6: *Redis for in-flight account locks and rate-limit coordination*).
-- **Architecture sources:** substrate §2 (distributed in-flight locks; `lock(account_id)` before expensive work), §5c (idempotency keyed on `(account, field, tier)`; locks complement idempotency for concurrency); Doc C §3 (per-entity hard budget cap — single-flight is its precondition), §4 (campaign-level idempotency `(campaign_run, phase)`); conventions §6 (Redis for in-flight locks + rate-limit coordination).
+- **Architecture sources:** substrate §2 (distributed in-flight locks; `lock(account_id)` before expensive work), §5c (idempotency keyed on `(account, field, tier)`; locks complement idempotency for concurrency); Doc C §3 (per-entity hard budget cap — single-flight is its precondition), §4 (campaign-level idempotency `(project_run, phase)`); conventions §6 (Redis for in-flight locks + rate-limit coordination).
 - **Scope / deliverables:**
   - A distributed lock primitive over Redis: `lock(entity_id, *, ttl, owner)` / `release(...)` with a context-manager / `async with` ergonomics, atomic acquire (SET NX PX), a fencing token or owner check on release (so a slow worker can't release someone else's lock), and a **TTL with renewal/heartbeat** so a crashed holder's lock auto-expires (no permanent deadlock — the failure the `run_pause.flag` couldn't handle).
   - Lock keyspace conventions: `lock:account:{id}`, `lock:contact:{id}`, namespaced by tenant where reuse boundaries require it (coordinated with M2.5 — public-entity work may be cross-tenant single-flight; client-private work is tenant-scoped).
@@ -108,10 +108,20 @@ Five issues, in build order:
   - The rate limiter caps calls per `source_key` across N concurrent workers to the configured budget within tolerance.
   - Lock contention/expiry metrics are emitted through the tracing wrapper.
   - Killing Redis does not corrupt Postgres truth: in-flight work may duplicate (degraded), but idempotency keys (M1 / §5c) prevent double-write — documented and tested as the failure posture.
-- **Out of scope:** Per-entity / per-run **budget caps** and the hard-stop on `sum(cost_cents)` (M7.5, substrate §5c / Doc C §3 — locks are a precondition, not the cap); the per-account LangGraph checkpointing (`AsyncPostgresSaver`, M7); the campaign-run state machine and `(campaign_run, phase)` idempotency (M7 / Doc C §4); resolver-specific retry/backoff policy (M4).
+- **Out of scope:** Per-entity / per-run **budget caps** and the hard-stop on `sum(cost_cents)` (M7.5, substrate §5c / Doc C §3 — locks are a precondition, not the cap); the per-account LangGraph checkpointing (`AsyncPostgresSaver`, M7); the project-run state machine and `(project_run, phase)` idempotency (M7 / Doc C §4); resolver-specific retry/backoff policy (M4).
 - **Open decisions:** None of D1–D8 bind directly. Cross-tenant lock scoping is coordinated with **M2.5** (public-entity single-flight vs. tenant-scoped private work).
 
 ### M2.5 — Cross-tenant reuse with tenant isolation
+
+> **Superseded 2026-07-23 ([B3×research]):** accounts are now workspace-local (founder ruling
+> 2026-07-22; provider licensing + GDPR controller separation). Public-footprint claims are no
+> longer shareable across workspaces — the cross-tenant reuse, entity sharing, and cost-amortization
+> hook described throughout this section (and its acceptance criteria) are retired; entity ids are
+> workspace-bound, so a cross-workspace claim read is structurally unrepresentable. `reuse_scope`
+> survives only as the privacy classification (the write-leak guard `check_claim_writable` and the
+> DSAR selector `dsar_private_claims`) — it no longer grants sharing. The `reusable_public_value`
+> amortization hook was deleted.
+
 - **Purpose:** Realize the architecture's stated moat while keeping it safe. Substrate §2: *Public-footprint claims about a company (employee count, tech stack, funding) are partially reusable across clients and amortize cost; client-specific scoring and any client-private data stay strictly tenant-isolated. This is a real moat — your claim store gets better and cheaper per account as more clients touch the same public entities.* This issue defines the **reuse boundary** as a property of the data model: which claims are public-footprint (shared, keyed on the canonical entity) versus tenant-private (scoring, CRM-imported, client-knowledge-derived, any contact `facet` / personal data), and enforces the isolation so reuse never leaks one client's private signal to another.
 - **Architecture sources:** substrate §2 (cross-tenant reuse, carefully; public-footprint reusable, client-specific scoring + private data tenant-isolated; the moat); substrate §4 (CRM resolver pulls client data as tier-1 claims — inherently tenant-private); substrate §9 (scoring is per-client/per-ICP — tenant-private by construction); Doc D §4 (personal claims, retention, erasure resolve per `contact_entity_id` — DSAR tractability); staged-flow §9 (one substrate, richer typing); conventions §2 (policy-as-data; tenant isolation as a seam), §4 (`claim`, `current_value`, `account_handoff`).
 - **Scope / deliverables:**

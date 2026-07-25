@@ -12,12 +12,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from clue_research.config import (
+from clue_config import (
     DEFAULT_USE_CLASS_LEXICON,
     JurisdictionPolicy,
     UseClassLexicon,
 )
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityType,
     ExtractionMethod,
@@ -27,7 +27,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.obs import (
+from clue_obs.otel import (
     METRIC_USE_CLASS_TOTAL,
     InMemorySink,
     record_use_class_distribution,

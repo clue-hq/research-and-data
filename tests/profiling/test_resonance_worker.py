@@ -13,8 +13,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import register_field
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     Claim,
     Entity,
@@ -27,10 +26,11 @@ from clue_research.core import (
     SourceManifest,
     WorkerStatus,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
+from clue_research.claimstore import register_field
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import (
     ProfilingFieldDisposition,
@@ -39,6 +39,7 @@ from clue_research.profiling import (
     params_for_run,
 )
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
+from tests._workspace import seed_workspace
 
 from .conftest import conn_session_factory, rollback_conn, run_async
 
@@ -110,23 +111,25 @@ async def _register_custom_resonance_field(
 
 
 async def _insert_account(conn):
+    await seed_workspace(conn, _TENANT)
     return await insert_account_entity(
         conn,
         canonical_name="Acme Robotics",
         primary_domain=_DOMAIN,
         hq_geo={"city": "Boston", "region": "Massachusetts"},
+        workspace_id=_TENANT,
     )
 
 
-def _ctx(entity_id, field_keys, *, tenant_id=_TENANT):
+def _ctx(entity_id, field_keys, *, workspace_id=_TENANT):
     return AspectContext(
         entity_id=entity_id,
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         run_id=new_run_id(),
         tier="top",
         aspect="account.resonance",
         field_keys=field_keys,
-        params=params_for_run(client_id=None, icp_key=None, icp_version=None, tenant_id=tenant_id),
+        params=params_for_run(workspace_id=workspace_id, icp_key=None, icp_version=None),
     )
 
 
@@ -238,7 +241,7 @@ def test_collect_resonance_entrypoint_returns_worker_result() -> None:
                 account_entity_id=acct,
                 run_id=new_run_id(),
                 tier="top",
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 field_keys=("account.resonance.employee_sentiment",),
                 worker=worker,
             )

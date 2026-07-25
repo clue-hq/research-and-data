@@ -14,8 +14,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from clue_research.claimstore import CORE_PACK, DEFAULT_MERGE_POLICY, merge_claims
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityType,
     ExtractionMethod,
@@ -31,6 +30,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import CORE_PACK, DEFAULT_MERGE_POLICY, merge_claims
 from clue_research.synthesis import (
     PASS_B_MODE,
     SynthesisGateError,

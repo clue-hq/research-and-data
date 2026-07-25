@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     Claim,
     EntityId,
     ExtractionMethod,
@@ -56,7 +56,7 @@ def make_contact(entity_id: EntityId, run_id: RunId) -> Callable[..., Claim]:
     """Build a valid contact claim (identity_binding + use_class default to strong/professional)."""
 
     def _make(**overrides: object) -> Claim:
-        from clue_research.core import IdentityBinding, UseClass
+        from clue_core import IdentityBinding, UseClass
 
         kwargs: dict[str, object] = {
             "entity_id": entity_id,

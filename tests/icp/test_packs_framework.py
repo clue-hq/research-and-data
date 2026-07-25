@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from clue_core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import SeedField, get_field, list_fields
-from clue_research.core import FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.icp import (
     DATA_INFRA,
     FRONTIER_AI,
@@ -144,13 +144,17 @@ def test_per_client_override_beats_default_and_leaves_base_unchanged() -> None:
                 ],
             )
 
-            over = await get_pack_source_profile(conn, "healthcare_practice", client_id="client_x")
+            over = await get_pack_source_profile(
+                conn, "healthcare_practice", workspace_id="client_x"
+            )
             assert [s.source_key for s in over.default] == ["cms", "npi"]
 
             # base unchanged (no client) and a different client sees the base
             base = await get_pack_source_profile(conn, "healthcare_practice")
             assert [s.source_key for s in base.default][:2] == ["npi", "cms"]
-            other = await get_pack_source_profile(conn, "healthcare_practice", client_id="client_y")
+            other = await get_pack_source_profile(
+                conn, "healthcare_practice", workspace_id="client_y"
+            )
             assert [s.source_key for s in other.default] == [s.source_key for s in base.default]
 
     run_async(_run())
@@ -175,7 +179,7 @@ def test_override_is_versioned_latest_wins() -> None:
                 [WeightedSource(source_key="job_postings", weight=_HI, rank=1)],
                 version=2,
             )
-            resolved = await get_pack_source_profile(conn, "data_infra", client_id="c")
+            resolved = await get_pack_source_profile(conn, "data_infra", workspace_id="c")
             assert [s.source_key for s in resolved.default] == ["job_postings"]
 
     run_async(_run())

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from clue_research.core import AccountEntity, new_entity_id
+from clue_core import AccountEntity, new_entity_id
 from clue_research.identity.canonicalize import plan_merge
 
 
 def _account(name: str, **kwargs: object) -> AccountEntity:
+    kwargs.setdefault("workspace_id", "ws-test")
     return AccountEntity(id=new_entity_id(), canonical_name=name, **kwargs)  # type: ignore[arg-type]
 
 

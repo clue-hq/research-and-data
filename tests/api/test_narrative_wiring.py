@@ -3,13 +3,13 @@ Client-Knowledge retriever stub. Pure (no DB) — the stub's DB read is exercise
 
 from __future__ import annotations
 
-from clue_research.api import composition
-from clue_research.api.narrative_wiring import (
+from clue_api import composition
+from clue_api.narrative_wiring import (
     ClientKnowledgeRetrieverStub,
     build_client_knowledge_retriever,
     register_narrative_wiring,
 )
-from clue_research.core.retrieval import ClientKnowledgeRetriever
+from clue_core.retrieval import ClientKnowledgeRetriever
 from clue_research.narrative import load_narrative_pack
 
 

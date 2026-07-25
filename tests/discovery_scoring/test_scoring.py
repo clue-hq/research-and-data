@@ -11,17 +11,11 @@ is tenant-private. The pure scorer itself is M3.4's (tested in ``tests/icp/test_
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 
-from clue_research.claimstore import (
-    TenantScope,
-    claims_for,
-    insert_claim,
-    load_core_pack,
-    register_field,
-)
-from clue_research.core import (
+from clue_core import (
     EntityScope,
     ExtractionMethod,
     FieldClass,
@@ -29,11 +23,22 @@ from clue_research.core import (
     ICPCreatedFrom,
     Modality,
     PassKind,
+    PreSpendDecision,
+    PreSpendGate,
+    PreSpendVerdict,
     ResearchMode,
     ReuseScope,
     SourceManifest,
     account_claim,
     new_run_id,
+)
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_for,
+    get_field,
+    insert_claim,
+    load_core_pack,
+    register_field,
 )
 from clue_research.discovery_scoring.scoring import (
     FIT_FIELD,
@@ -52,7 +57,12 @@ from clue_research.icp import (
     create_icp_spec,
 )
 from clue_research.identity import insert_account_entity
-from clue_research.sources import RegistrySourceManifest, register_source
+from clue_research.sources import (
+    RegistrySourceManifest,
+    bind_resolver,
+    register_source,
+    unbind_resolver,
+)
 
 from .conftest import rollback_conn, run_async
 
@@ -96,7 +106,9 @@ async def _seed_account(
     funding: bool = True,
 ):
     """An admitted account + its two scoring-proxy input claims (public footprint)."""
-    eid = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    eid = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=CLIENT
+    )
     if employee_count is not None:
         await insert_claim(
             conn,
@@ -137,7 +149,7 @@ async def _score(conn, eid, *, rubric, run_id, icp_version: int = 1):
         rubric=rubric,
         fill_fields=[],
         run_id=run_id,
-        client_id=CLIENT,
+        workspace_id=CLIENT,
         icp_key=ICP,
         icp_version=icp_version,
     )
@@ -206,7 +218,7 @@ def test_score_claims_are_tier1_and_not_synthesized() -> None:
             await _score(conn, eid, rubric=_rubric(), run_id=new_run_id())
             for field_key in (FIT_FIELD, INTENT_FIELD):
                 claims = await claims_for(
-                    conn, eid, field_key, scope=TenantScope.for_tenant(CLIENT)
+                    conn, eid, field_key, scope=WorkspaceScope.for_workspace(CLIENT)
                 )
                 assert len(claims) == 1
                 assert 1 <= claims[0].source_tier <= 3
@@ -244,7 +256,7 @@ def test_pass_a_fill_strips_tier4_sources() -> None:
                 )
             spec = await create_icp_spec(
                 conn,
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key=ICP,
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("account.test_signal",),
@@ -267,6 +279,75 @@ def test_pass_a_fill_strips_tier4_sources() -> None:
     run_async(_run())
 
 
+def test_pass_a_provider_observes_gate_before_resolution() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            eid = await _seed_account(conn, employee_count=None)
+            source_key = "pass_a_gate_probe"
+            await register_source(
+                conn,
+                RegistrySourceManifest(
+                    manifest=SourceManifest(
+                        source_key=source_key,
+                        modality=Modality.STRUCTURED,
+                        entity_scope=EntityScope.ACCOUNT,
+                        yields=(_EMP,),
+                        tier=1,
+                        cost_cents=Decimal(1),
+                    )
+                ),
+            )
+            field = await get_field(conn, _EMP)
+            assert field is not None
+            field = field.model_copy(update={"tier_plan": (source_key,)})
+            events: list[str] = []
+
+            class OrderedResolver:
+                tier = 1
+
+                def resolve(self, entity, resolved_field):
+                    events.append("resolver")
+                    return [
+                        account_claim(
+                            entity_id=entity.entity_id,
+                            field_key=str(resolved_field.field_key),
+                            value_json=500,
+                            source_tier=1,
+                            extraction_method=ExtractionMethod.API,
+                            confidence=0.9,
+                            run_id=new_run_id(),
+                            research_mode=ResearchMode.ACCOUNT_PROFILING,
+                            source_url="https://provider.example/employees",
+                            evidence_span="500 employees",
+                        )
+                    ]
+
+            class RecordingGate:
+                async def check(self, request):
+                    events.append("gate")
+                    return PreSpendDecision(verdict=PreSpendVerdict.PASS)
+
+            bind_resolver(source_key, OrderedResolver())
+            try:
+                await score_account(
+                    conn,
+                    eid,
+                    rubric=_rubric(),
+                    fill_fields=[field],
+                    run_id=new_run_id(),
+                    workspace_id=CLIENT,
+                    icp_key=ICP,
+                    icp_version=1,
+                    pre_spend_gate=cast(PreSpendGate, RecordingGate()),
+                )
+            finally:
+                unbind_resolver(source_key)
+            assert events == ["gate", "resolver"]
+
+    run_async(_run())
+
+
 # --- AC3: missing source -> empty flagged field, not a fabricated proxy ------
 def test_missing_source_yields_flagged_not_fabricated() -> None:
     async def _run() -> None:
@@ -280,7 +361,9 @@ def test_missing_source_yields_flagged_not_fabricated() -> None:
             assert outcome.score.fit.value == pytest.approx(0.0)
             assert outcome.score.evidence[_EMP] == ()
             # no proxy claim was fabricated for the missing field
-            emp_claims = await claims_for(conn, eid, _EMP, scope=TenantScope.for_tenant(CLIENT))
+            emp_claims = await claims_for(
+                conn, eid, _EMP, scope=WorkspaceScope.for_workspace(CLIENT)
+            )
             assert emp_claims == []
 
     run_async(_run())
@@ -302,7 +385,9 @@ def test_rescore_same_run_writes_no_new_claim() -> None:
             assert second.score.fit.value == first.score.fit.value
             assert second.score.intent.value == first.score.intent.value
             for field_key in (FIT_FIELD, INTENT_FIELD):
-                live = await claims_for(conn, eid, field_key, scope=TenantScope.for_tenant(CLIENT))
+                live = await claims_for(
+                    conn, eid, field_key, scope=WorkspaceScope.for_workspace(CLIENT)
+                )
                 assert len(live) == 1  # no duplicate score claim on replay
 
     run_async(_run())
@@ -319,7 +404,7 @@ def test_non_fit_flag_below_floor_and_not_excluded() -> None:
             assert outcome.score.non_fit_flag is True
             # flag-and-proceed: still scored + persisted, with the evidence behind the low fit
             assert outcome.score.evidence[_EMP]  # the backing claim id(s)
-            fit = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT))
+            fit = await claims_for(conn, eid, FIT_FIELD, scope=WorkspaceScope.for_workspace(CLIENT))
             assert len(fit) == 1 and fit[0].value_json["non_fit_flag"] is True
             # not flagged when comfortably above the floor
             ok = await _score(
@@ -354,10 +439,16 @@ def test_new_rubric_version_supersedes_and_bumps() -> None:
 
             assert v1.score.rubric_version == 1 and v2.score.rubric_version == 2
             assert v2.written is True
-            live = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT))
+            live = await claims_for(
+                conn, eid, FIT_FIELD, scope=WorkspaceScope.for_workspace(CLIENT)
+            )
             assert len(live) == 1 and live[0].value_json["rubric_version"] == 2  # one live winner
             history = await claims_for(
-                conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT), include_superseded=True
+                conn,
+                eid,
+                FIT_FIELD,
+                scope=WorkspaceScope.for_workspace(CLIENT),
+                include_superseded=True,
             )
             assert len(history) == 2  # the v1 score is superseded, not deleted
 
@@ -371,11 +462,13 @@ def test_score_object_is_tenant_private() -> None:
             await load_core_pack(conn)
             eid = await _seed_account(conn)
             await _score(conn, eid, rubric=_rubric(), run_id=new_run_id())
-            claims = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.for_tenant(CLIENT))
+            claims = await claims_for(
+                conn, eid, FIT_FIELD, scope=WorkspaceScope.for_workspace(CLIENT)
+            )
             assert claims[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert claims[0].tenant_id == CLIENT
+            assert claims[0].workspace_id == CLIENT
             # invisible to a public-only read (tenant isolation)
-            public = await claims_for(conn, eid, FIT_FIELD, scope=TenantScope.public_only())
+            public = await claims_for(conn, eid, FIT_FIELD, scope=WorkspaceScope.public_only())
             assert public == []
 
     run_async(_run())
