@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-planning.md` — binding C6 child spec and cross-session implementation plan:
+  real Doc-A deepagent; external per-execution `virtual_mode=True` workspace; relative paths only;
+  no application code or execution tools in the runtime workspace; folder-backed prompts, skills,
+  and profiles; C5 durability; C1 evaluator ownership; C6.0–C6.8 sequencing and gates.
 - `2026-07-25-phase-c5-6-recipe1-cutover.md` — C5.6 and C5 complete: promoted executable Recipe #1
   phase graph, lineage-validated Stage-0 pre-satisfaction, feature-gated new-run routing with
   legacy fallback, retryable external waits, full historical views, canonical parity fingerprints,
