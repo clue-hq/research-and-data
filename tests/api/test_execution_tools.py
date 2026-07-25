@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, cast
 
 from clue_api.execution_tools import (
@@ -51,3 +52,23 @@ def test_execution_controls_register_as_exact_default_versions() -> None:
     for tool in execution_control_tools(services):
         assert registry.get(tool.name, tool.version) is not None
         assert registry.get(tool.name) is not None
+
+
+def test_c5_5_control_tools_have_typed_outputs_operation_identity_and_steering_audits() -> None:
+    registry = ToolRegistry()
+    services = replace(_services(registry), controls=cast(Any, object()))
+    tools = {tool.name: tool for tool in execution_control_tools(services)}
+    assert {
+        "apply_run_control",
+        "release_run_control",
+        "acknowledge_run_escalation",
+    } <= tools.keys()
+    for name in (
+        "apply_run_control",
+        "release_run_control",
+        "acknowledge_run_escalation",
+    ):
+        descriptor = tools[name].descriptor
+        assert descriptor.has_typed_output
+        assert descriptor.has_steering_snapshot
+        assert descriptor.replay.operation_id_required

@@ -44,12 +44,20 @@ from clue_fleet.queue import (
     finish_task,
     get_task,
     list_tasks,
+    reoffer_governed_partial_task,
     requeue_failed_tasks,
     requeue_task,
     touch_task,
 )
 from clue_fleet.runner import run_worker
-from clue_fleet.scheduler import QueueBackedScheduler, TierPriority, default_tier_priority
+from clue_fleet.scheduler import (
+    AccountAdmission,
+    AccountAdmissionDecision,
+    GovernedPartialAccount,
+    QueueBackedScheduler,
+    TierPriority,
+    default_tier_priority,
+)
 from clue_fleet.work_worker import (
     LeasedWorkWorker,
     WorkContext,
@@ -95,10 +103,14 @@ __all__ = [
     "touch_task",
     "requeue_task",
     "requeue_failed_tasks",
+    "reoffer_governed_partial_task",
     "get_task",
     "list_tasks",
     # tier-priority deep drain
     "QueueBackedScheduler",
+    "AccountAdmission",
+    "AccountAdmissionDecision",
+    "GovernedPartialAccount",
     "TierPriority",
     "default_tier_priority",
     # the worker

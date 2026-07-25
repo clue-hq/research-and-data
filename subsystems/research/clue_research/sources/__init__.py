@@ -45,6 +45,13 @@ from clue_research.sources.source_yield import (
     get_source_yield,
     record_source_yield,
 )
+from clue_research.sources.telemetry import (
+    SourceCallEvent,
+    SourceCallObserver,
+    SourceCallOutcome,
+    bind_source_call_observer,
+    current_source_call_observer,
+)
 from clue_research.sources.thresholds import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
     ConfidenceThresholds,
@@ -106,4 +113,9 @@ __all__ = [
     "record_source_yield",
     "get_source_yield",
     "SourceYieldStat",
+    "SourceCallEvent",
+    "SourceCallObserver",
+    "SourceCallOutcome",
+    "bind_source_call_observer",
+    "current_source_call_observer",
 ]

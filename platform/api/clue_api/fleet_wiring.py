@@ -45,6 +45,7 @@ from clue_core import ExecutionId, ProjectPhase, ProjectRunId
 from clue_db import ConnFactory, transaction
 from clue_execution import enqueue_recipe_execution
 from clue_fleet import (
+    AccountAdmission,
     DbLeaseStore,
     DbTaskQueue,
     DbWorkLeaseStore,
@@ -234,6 +235,7 @@ def build_fleet_deep_scheduler(
     lock_factory: LockFactory,
     priority_for: TierPriority,
     queue: TaskQueue | None = None,
+    account_admission: AccountAdmission | None = None,
 ) -> QueueBackedScheduler:
     """The PB-B1 queue-backed deep drain (fleet mode) — the durable tier-priority
     :data:`~clue_api.deep.handler.DeepAccountScheduler` the deep composition swaps in via its
@@ -243,12 +245,23 @@ def build_fleet_deep_scheduler(
     start so account jobs drain best-tier-first over the rubric's real labels. The stock
     :func:`~clue_fleet.default_tier_priority` must not be the bound policy for a real rubric (it
     collapses free-form band names to the unknown floor — spec §5), so it is *not* defaulted."""
+    resolved_queue = queue if queue is not None else DbTaskQueue()
+    stale_after = timedelta(seconds=settings.fleet_task_stale_after_s)
+    if account_admission is None:
+        return QueueBackedScheduler(
+            queue=resolved_queue,
+            window=settings.fleet_deep_window,
+            lock_factory=lock_factory,
+            priority_for=priority_for,
+            stale_after=stale_after,
+        )
     return QueueBackedScheduler(
-        queue=queue if queue is not None else DbTaskQueue(),
+        queue=resolved_queue,
         window=settings.fleet_deep_window,
         lock_factory=lock_factory,
         priority_for=priority_for,
-        stale_after=timedelta(seconds=settings.fleet_task_stale_after_s),
+        stale_after=stale_after,
+        account_admission=account_admission,
     )
 
 

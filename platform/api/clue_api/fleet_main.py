@@ -63,8 +63,9 @@ from clue_api.recipe_wiring import (
 from clue_api.run_composition import ComposingRunDriver
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
+from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_config import Settings, load_settings
+from clue_config import Settings, get_config, load_settings
 from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import (
@@ -73,6 +74,7 @@ from clue_execution import (
     DbExecutionStarter,
     DbRecipeReader,
     DbRecipeRepository,
+    DbRunControlStore,
     RecipeExecutionHandler,
     RecipeExecutor,
 )
@@ -145,18 +147,6 @@ async def _serve() -> None:
         phases = register_boot_handlers(settings, storage=storage)
         _require_registered(phases)
         log.info("fleet.boot.phases", phases=sorted(phase.value for phase in phases))
-        # The B4 per-``(workspace_id, icp_key, icp_version)`` composing driver: composes a per-run
-        # registry (DEEP/VERIFICATION campaign-scoped, single-flight + rubric priority ON) over the
-        # shared durable store/ledger/budget at each run's first advance. The lock factory is built
-        # **eager** here — the worker runs inside ``redis_lifespan``, so single-flight binds now.
-        # The B4 slice-3 SSE emitter: every advance boundary appends run_event rows so the detached
-        # worker's drives are visible on the treaty SSE stream (best-effort, never sinks a drive).
-        driver = ComposingRunDriver(
-            settings=settings,
-            storage=storage,
-            lock_factory=build_account_lock_factory(),
-            event_emitter=build_run_event_emitter(),
-        )
         task_queue = DbTaskQueue()
         work_queue = DbWorkQueue(task_queue)
         registry = build_toolbelt(
@@ -169,6 +159,26 @@ async def _serve() -> None:
         compatibility = CompatibilityLoader(pin_registry)
         transport = ExecutionRunEventWriter()
         journal = DbExecutionJournal(transport=transport)
+        controls = DbRunControlStore(
+            conn_factory=transaction,
+            journal=journal,
+            policy_for=lambda workspace_id, icp_key: (
+                get_config(workspace_id, icp_key).supervisor_policy
+            ),
+        )
+        deferred_supervisor_actions = DeferredSupervisorActions()
+        # The B4 per-run composer now also binds C5.5's run-local source breaker, account admission,
+        # aggregate supervisor, and deep canary. The deferred action seam is bound to the toolbelt
+        # below before the worker can claim its first task.
+        driver = ComposingRunDriver(
+            settings=settings,
+            storage=storage,
+            lock_factory=build_account_lock_factory(),
+            event_emitter=build_run_event_emitter(),
+            controls=controls,
+            supervisor_actions=deferred_supervisor_actions,
+            execution_journal=journal,
+        )
         artifact_store = StorageParameterArtifactStore(storage=storage)
         execution_parameters = StorageExecutionParameterStore(artifact_store)
         tool_invoker = build_tool_invoker(
@@ -176,6 +186,9 @@ async def _serve() -> None:
             idempotency_store=DbIdempotencyStore(),
             storage=storage,
             settings=settings,
+        )
+        deferred_supervisor_actions.bind(
+            ToolbeltSupervisorActions(invoker=tool_invoker, conn_factory=transaction)
         )
         recipe_reader = DbRecipeReader(conn_factory=transaction)
         recipe_repository = DbRecipeRepository(conn_factory=transaction)
@@ -200,6 +213,7 @@ async def _serve() -> None:
             journal=journal,
             parameters=execution_parameters,
             tool_invoker=tool_invoker,
+            controls=controls,
         )
         register_execution_control_tools(
             ExecutionControlServices(
@@ -211,6 +225,7 @@ async def _serve() -> None:
                 queue=work_queue,
                 conn_factory=transaction,
                 registry=registry,
+                controls=controls,
             )
         )
         worker = build_multi_work_worker(

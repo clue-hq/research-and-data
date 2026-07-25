@@ -44,7 +44,7 @@ from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from clue_api.deep.handoff_skeleton import build_handoff_skeleton
 from clue_api.deep.orchestrator import (
@@ -64,6 +64,7 @@ from clue_core import (
     RunId,
 )
 from clue_db import ConnFactory, transaction
+from clue_fleet import GovernedPartialAccount
 from clue_research.durable import (
     AccountRunStatus,
     AccountScheduler,
@@ -72,6 +73,7 @@ from clue_research.durable import (
     get_account_run,
     set_status,
 )
+from clue_research.sources import SourceCallObserver, bind_source_call_observer
 
 # --- injected seams ----------------------------------------------------------
 
@@ -97,6 +99,37 @@ CheckpointerFactory = Callable[[], AbstractAsyncContextManager[BaseCheckpointSav
 # spend that crash incurred (an exception returns no result, so the only surviving cost signal is
 # the row the orchestrator committed stage-by-stage). Under-counting here understates the burn-down.
 FinalizeFailedAccount = Callable[[RunId], Awaitable[CostCents]]
+
+
+class DeepCanaryPlan(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    canary: tuple[AccountSpec, ...] = ()
+    remainder: tuple[AccountSpec, ...] = ()
+    envelope_excluded: tuple[AccountSpec, ...] = ()
+
+
+class DeepCanaryGateResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    proceed: bool
+    trigger_codes: tuple[str, ...] = ()
+    observation_id: str | None = None
+    diagnosis_id: str | None = None
+
+
+@runtime_checkable
+class DeepCanaryController(Protocol):
+    async def plan(self, ctx: PhaseContext, specs: Sequence[AccountSpec]) -> DeepCanaryPlan: ...
+
+    async def source_observer(self, ctx: PhaseContext) -> SourceCallObserver | None: ...
+
+    async def evaluate(
+        self,
+        ctx: PhaseContext,
+        canary_specs: Sequence[AccountSpec],
+    ) -> DeepCanaryGateResult: ...
 
 
 @runtime_checkable
@@ -218,6 +251,32 @@ def _succeeded_outcome(result: AccountDeepResult) -> _AccountOutcome:
     )
 
 
+def _governed_partial_outcome(
+    spec: AccountSpec,
+    *,
+    project_run_id: ProjectRunId,
+    reason_code: str,
+    control_ref: str | None = None,
+) -> _AccountOutcome:
+    return _AccountOutcome(
+        cost_cents=Decimal(0),
+        succeeded=True,
+        budget_stop=BudgetVerdict.DENY,
+        manifest={
+            "account_entity_id": str(spec.entity_id),
+            "account_run_id": str(deep_account_run_id(project_run_id, spec.entity_id)),
+            "tier": spec.tier,
+            "committee_member_ids": [],
+            "coverage": None,
+            "cost_cents": "0",
+            "references_index": {},
+            "status": "governed_partial",
+            "reason_code": reason_code,
+            "control_ref": control_ref,
+        },
+    )
+
+
 class DeepPhaseHandler:
     """The ``ProjectPhase.DEEP`` :class:`~clue_core.PhaseHandler` (M8A.2).
 
@@ -236,12 +295,14 @@ class DeepPhaseHandler:
         high_tier_resolver: HighTierResolver,
         checkpointer_factory: CheckpointerFactory,
         finalize_failed_account: FinalizeFailedAccount = _DB_FINALIZE_FAILED_ACCOUNT,
+        canary_controller: DeepCanaryController | None = None,
     ) -> None:
         self._scheduler = scheduler
         self._orchestrator = orchestrator
         self._high_tier_resolver = high_tier_resolver
         self._checkpointer_factory = checkpointer_factory
         self._finalize_failed_account = finalize_failed_account
+        self._canary_controller = canary_controller
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         """Deep-research every approved high-tier account, isolated per account, then aggregate.
@@ -291,13 +352,64 @@ class DeepPhaseHandler:
                 )
             return _succeeded_outcome(result)
 
-        async with self._checkpointer_factory() as checkpointer:
-            outcomes: list[_AccountOutcome] = await self._scheduler.run_accounts(
-                specs,
+        async def _run_cohort(
+            cohort: Sequence[AccountSpec],
+            *,
+            checkpointer: BaseCheckpointSaver[Any],
+        ) -> list[_AccountOutcome]:
+            if not cohort:
+                return []
+            raw = await self._scheduler.run_accounts(
+                cohort,
                 project_run_id=project_run_id,
                 checkpointer=checkpointer,
                 run_one=_isolated,
             )
+            normalized: list[_AccountOutcome] = []
+            for spec, outcome in zip(cohort, raw, strict=True):
+                if isinstance(outcome, GovernedPartialAccount):
+                    normalized.append(
+                        _governed_partial_outcome(
+                            spec,
+                            project_run_id=project_run_id,
+                            reason_code=outcome.reason_code,
+                            control_ref=outcome.control_ref,
+                        )
+                    )
+                else:
+                    normalized.append(outcome)
+            return normalized
+
+        controller = self._canary_controller
+        plan = (
+            await controller.plan(ctx, specs)
+            if controller is not None
+            else DeepCanaryPlan(enabled=False, canary=specs)
+        )
+        observer = (
+            await controller.source_observer(ctx)
+            if controller is not None and plan.enabled
+            else None
+        )
+        with bind_source_call_observer(observer):
+            async with self._checkpointer_factory() as checkpointer:
+                outcomes = await _run_cohort(plan.canary, checkpointer=checkpointer)
+                gate: DeepCanaryGateResult | None = None
+                if plan.enabled:
+                    assert controller is not None
+                    gate = await controller.evaluate(ctx, plan.canary)
+                    if gate.proceed:
+                        outcomes.extend(
+                            await _run_cohort(plan.remainder, checkpointer=checkpointer)
+                        )
+                for excluded in plan.envelope_excluded:
+                    outcomes.append(
+                        _governed_partial_outcome(
+                            excluded,
+                            project_run_id=project_run_id,
+                            reason_code="execution_envelope_tightened",
+                        )
+                    )
 
         cost = sum((outcome.cost_cents for outcome in outcomes), Decimal(0))
         processed = sum(1 for outcome in outcomes if outcome.succeeded)
@@ -308,8 +420,20 @@ class DeepPhaseHandler:
             "accounts_failed": failed,
             "accounts": [outcome.manifest for outcome in outcomes],
         }
+        if plan.enabled and gate is not None:
+            payload["canary"] = {
+                "size": len(plan.canary),
+                "proceed": gate.proceed,
+                "trigger_codes": list(gate.trigger_codes),
+                "observation_id": gate.observation_id,
+                "diagnosis_id": gate.diagnosis_id,
+            }
         return PhaseResult(
-            status=PhaseStatus.PAUSED if paused else PhaseStatus.COMPLETED,
+            status=(
+                PhaseStatus.PAUSED
+                if paused or (plan.enabled and gate is not None and not gate.proceed)
+                else PhaseStatus.COMPLETED
+            ),
             accounts_processed=processed,
             cost_cents=cost,
             payload=payload,

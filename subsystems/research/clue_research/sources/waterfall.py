@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from decimal import Decimal
 from enum import StrEnum
+from time import perf_counter
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -62,6 +63,11 @@ from clue_obs.otel import (
 from clue_research.claimstore import PUBLIC_ONLY, WorkspaceScope, claims_for, insert_claim
 from clue_research.identity import DEFAULT_REUSE_POLICY, ReusePolicy, stamp_reuse
 from clue_research.sources.registry import NoResolverBoundError, get_resolver, get_source
+from clue_research.sources.telemetry import (
+    SourceCallEvent,
+    SourceCallOutcome,
+    current_source_call_observer,
+)
 from clue_research.sources.thresholds import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThresholds
 from clue_storage import (
     SnapshotSink,
@@ -349,6 +355,8 @@ async def resolve_field(
             )
             continue
 
+        observer = current_source_call_observer()
+        started = perf_counter()
         with traced_step(
             resolve_span(source_key),
             **{
@@ -363,8 +371,24 @@ async def resolve_field(
             # Re-bind the resolved sink around the resolver call: the sink the resolver captures
             # into is then, by construction, the same one flushed below — whether it arrived as
             # an explicit argument or as the run's ambient binding.
-            with bind_snapshots(snapshots, storage):
-                claims = list(resolver.resolve(entity, field_def))
+            try:
+                with bind_snapshots(snapshots, storage):
+                    claims = list(resolver.resolve(entity, field_def))
+            except Exception as exc:
+                if observer is not None:
+                    await observer.observe(
+                        SourceCallEvent(
+                            account_entity_id=entity.entity_id,
+                            account_run_id=run_id,
+                            field_key=field_def.field_key,
+                            source_key=source_key,
+                            outcome=SourceCallOutcome.FAILED,
+                            error_code=type(exc).__name__,
+                            cost_cents=manifest.cost_cents,
+                            latency_ms=(perf_counter() - started) * 1000,
+                        )
+                    )
+                raise
             # Flush evidence snapshots the resolver captured (via a shared per-run SnapshotSink,
             # PB-B2.3) BEFORE the insert loop: the claims below may carry artifact_key refs, and
             # the FK requires the artifact row first. Content-addressed → idempotent, so a step
@@ -412,6 +436,21 @@ async def resolve_field(
             apply_attributes(
                 span, {ATTR_COST_CENTS: step_cost, "best_confidence": _max_confidence(kept)}
             )
+            if observer is not None:
+                await observer.observe(
+                    SourceCallEvent(
+                        account_entity_id=entity.entity_id,
+                        account_run_id=run_id,
+                        field_key=field_def.field_key,
+                        source_key=source_key,
+                        outcome=(
+                            SourceCallOutcome.CLAIMS_PRODUCED if kept else SourceCallOutcome.EMPTY
+                        ),
+                        claims_count=len(kept),
+                        cost_cents=step_cost,
+                        latency_ms=(perf_counter() - started) * 1000,
+                    )
+                )
 
         ran_any = True
         budget.spend(step_cost)

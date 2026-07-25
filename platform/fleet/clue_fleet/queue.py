@@ -221,6 +221,23 @@ _REQUEUE_FAILED_SQL = text(
     """
 )
 
+_REOFFER_GOVERNED_PARTIAL_SQL = text(
+    """
+    UPDATE fleet_task
+    SET status = 'queued',
+        claimed_by = NULL,
+        claimed_at = NULL,
+        result_ref_json = '{}'::jsonb,
+        updated_at = now()
+    WHERE kind = 'account_job'
+      AND work_id = :project_run_id
+      AND dedup_key = :dedup_key
+      AND status = 'done'
+      AND result_ref_json->>'status' = 'governed_partial'
+    RETURNING task_id
+    """
+)
+
 _GET_SQL = text(f"SELECT {_COLUMNS} FROM fleet_task WHERE task_id = :task_id")
 
 _LIST_SQL = text(
@@ -377,6 +394,23 @@ async def requeue_failed_tasks(
         _REQUEUE_FAILED_SQL, {"kind": kind.value, "project_run_id": project_run_id}
     )
     return result.rowcount or 0
+
+
+async def reoffer_governed_partial_task(
+    conn: AsyncConnection,
+    *,
+    project_run_id: ProjectRunId,
+    dedup_key: str,
+) -> bool:
+    """Explicitly reoffer one scheduler-parked account after quarantine release."""
+
+    row = (
+        await conn.execute(
+            _REOFFER_GOVERNED_PARTIAL_SQL,
+            {"project_run_id": project_run_id, "dedup_key": dedup_key},
+        )
+    ).first()
+    return row is not None
 
 
 async def get_task(conn: AsyncConnection, task_id: UUID) -> FleetTaskRow | None:
@@ -635,6 +669,7 @@ __all__ = [
     "get_task",
     "list_tasks",
     "requeue_failed_tasks",
+    "reoffer_governed_partial_task",
     "requeue_task",
     "touch_task",
 ]

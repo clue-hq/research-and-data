@@ -27,6 +27,14 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-25-phase-c5-5-supervisor-controls.md` — C5.5 implemented: run-scoped source telemetry,
+  deterministic aggregate supervision, bounded durable diagnosis, replay-safe enforced controls,
+  canary-gated deep execution, exact ICP-policy validation, full repository verification, and the
+  C5.6 cutover handoff.
+- `2026-07-25-phase-c5-5-repository-verification.md` — C5.5 repository verification checkpoint:
+  clean DB-enabled full suite (2,432 passed, 20 skipped), lint/type/import-contract gates,
+  migration head→base→head smoke, the required project-run aggregate test correction, and the
+  untracked local skill-directory lint caveat.
 - `2026-07-25-phase-c5-4-recipe0-migration.md` — C5.4 implemented: promoted executable Recipe #0
   v2, bounded durable Stage-0 interaction children, exact resource pins, direct-vs-durable parity,
   four-boundary crash recovery, tombstone/memory/locality enforcement, and the honest C5.5/C5.6

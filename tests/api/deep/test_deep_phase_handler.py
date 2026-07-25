@@ -22,6 +22,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from clue_api.deep import (
     AccountDeepResult,
+    DeepCanaryGateResult,
+    DeepCanaryPlan,
     DeepPhaseHandler,
     HighTierResolver,
     deep_account_run_id,
@@ -185,6 +187,7 @@ class FakeScheduler:
 
     def __init__(self) -> None:
         self.specs: tuple[AccountSpec, ...] = ()
+        self.cohorts: list[tuple[AccountSpec, ...]] = []
         self.project_run_id: ProjectRunId | None = None
         self.checkpointer: Any = None
 
@@ -197,9 +200,39 @@ class FakeScheduler:
         run_one: Any,
     ) -> list[Any]:
         self.specs = tuple(specs)
+        self.cohorts.append(self.specs)
         self.project_run_id = project_run_id
         self.checkpointer = checkpointer
         return [await run_one(spec) for spec in self.specs]
+
+
+class FakeCanaryController:
+    def __init__(self, *, proceed: bool) -> None:
+        self.proceed = proceed
+        self.evaluated: tuple[AccountSpec, ...] = ()
+
+    async def plan(self, ctx: PhaseContext, specs: Sequence[AccountSpec]) -> DeepCanaryPlan:
+        del ctx
+        return DeepCanaryPlan(
+            enabled=True,
+            canary=tuple(specs[:1]),
+            remainder=tuple(specs[1:]),
+        )
+
+    async def source_observer(self, ctx: PhaseContext) -> None:
+        del ctx
+        return None
+
+    async def evaluate(
+        self, ctx: PhaseContext, canary_specs: Sequence[AccountSpec]
+    ) -> DeepCanaryGateResult:
+        del ctx
+        self.evaluated = tuple(canary_specs)
+        return DeepCanaryGateResult(
+            proceed=self.proceed,
+            trigger_codes=() if self.proceed else ("source_error_rate:provider-a",),
+            observation_id="observation-1",
+        )
 
 
 class FakeFinalizeFailed:
@@ -260,6 +293,7 @@ def _handler(
     specs: Sequence[AccountSpec],
     finalize_failed: FakeFinalizeFailed | None = None,
     checkpointer_factory: FakeCheckpointerFactory | None = None,
+    canary_controller: FakeCanaryController | None = None,
 ) -> DeepPhaseHandler:
     return DeepPhaseHandler(
         scheduler=scheduler,
@@ -267,6 +301,7 @@ def _handler(
         high_tier_resolver=_resolver(specs),
         checkpointer_factory=checkpointer_factory or FakeCheckpointerFactory(),
         finalize_failed_account=finalize_failed or FakeFinalizeFailed(),
+        canary_controller=canary_controller,
     )
 
 
@@ -508,6 +543,72 @@ def test_empty_high_tier_set_is_a_completed_no_op() -> None:
         # the scheduler is never driven when there is nothing to research
         assert sched.specs == ()
         assert sched.project_run_id is None
+
+    run_async(_run())
+
+
+def test_passing_canary_runs_remainder_through_the_same_scheduler() -> None:
+    campaign = new_project_run_id()
+    e1, e2, e3 = new_entity_id(), new_entity_id(), new_entity_id()
+    specs = (_spec(e1), _spec(e2), _spec(e3))
+    orch = FakeOrchestrator()
+    for entity_id in (e1, e2, e3):
+        orch.returns(
+            entity_id,
+            _result(
+                account_run_id=deep_account_run_id(campaign, entity_id),
+                entity_id=entity_id,
+            ),
+        )
+    scheduler = FakeScheduler()
+    canary = FakeCanaryController(proceed=True)
+    handler = _handler(
+        scheduler=scheduler,
+        orchestrator=orch,
+        specs=specs,
+        canary_controller=canary,
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx(campaign))
+        assert result.status is PhaseStatus.COMPLETED
+        assert scheduler.cohorts == [(specs[0],), specs[1:]]
+        assert canary.evaluated == (specs[0],)
+        assert orch.calls == [e1, e2, e3]
+        assert result.payload["canary"]["proceed"] is True
+
+    run_async(_run())
+
+
+def test_failing_canary_pauses_and_never_starts_the_remainder() -> None:
+    campaign = new_project_run_id()
+    e1, e2 = new_entity_id(), new_entity_id()
+    specs = (_spec(e1), _spec(e2))
+    orch = FakeOrchestrator()
+    for entity_id in (e1, e2):
+        orch.returns(
+            entity_id,
+            _result(
+                account_run_id=deep_account_run_id(campaign, entity_id),
+                entity_id=entity_id,
+            ),
+        )
+    scheduler = FakeScheduler()
+    canary = FakeCanaryController(proceed=False)
+    handler = _handler(
+        scheduler=scheduler,
+        orchestrator=orch,
+        specs=specs,
+        canary_controller=canary,
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx(campaign))
+        assert result.status is PhaseStatus.PAUSED
+        assert scheduler.cohorts == [(specs[0],)]
+        assert orch.calls == [e1]
+        assert result.payload["canary"]["proceed"] is False
+        assert result.payload["canary"]["trigger_codes"] == ["source_error_rate:provider-a"]
 
     run_async(_run())
 

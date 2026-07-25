@@ -7,7 +7,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from clue_core import ExecutionId
+from clue_core import ExecutionId, ProjectRunId
 
 
 class RecipeScopeType(StrEnum):
@@ -119,11 +119,33 @@ class Incompatibility(_FrozenModel):
 
 class RunAggregateSnapshot(_FrozenModel):
     execution_id: ExecutionId
+    project_run_id: ProjectRunId
     policy_version: str = Field(min_length=1)
+    labels: dict[str, str] = Field(default_factory=dict)
     counts: dict[str, int] = Field(default_factory=dict)
     rates: dict[str, float] = Field(default_factory=dict)
+    source_counts: dict[str, dict[str, int]] = Field(default_factory=dict)
+    source_rates: dict[str, dict[str, float]] = Field(default_factory=dict)
+    source_account_refs: dict[str, tuple[str, ...]] = Field(default_factory=dict)
     affected_refs: tuple[str, ...] = ()
     trigger_codes: tuple[str, ...] = ()
+
+
+class AggregateRequest(_FrozenModel):
+    workspace_id: str = Field(min_length=1)
+    execution_id: ExecutionId
+    project_run_id: ProjectRunId
+    policy_version: str = Field(min_length=1)
+
+
+class RunAggregateReader(Protocol):
+    async def snapshot(self, request: AggregateRequest) -> RunAggregateSnapshot: ...
+
+
+class RunControlReader(Protocol):
+    async def account_allowed(self, execution_id: ExecutionId, account_id: str) -> bool: ...
+
+    async def source_allowed(self, execution_id: ExecutionId, source_key: str) -> bool: ...
 
 
 class ExecutionRunViewReader(Protocol):
@@ -133,6 +155,7 @@ class ExecutionRunViewReader(Protocol):
 
 
 __all__ = [
+    "AggregateRequest",
     "ControlAction",
     "ControlKind",
     "EdgeKind",
@@ -146,4 +169,6 @@ __all__ = [
     "RecipeScopeType",
     "ResolvedPin",
     "RunAggregateSnapshot",
+    "RunAggregateReader",
+    "RunControlReader",
 ]

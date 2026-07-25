@@ -27,6 +27,7 @@ from clue_execution import (
     DbExecutionStarter,
     DbRecipeReader,
     DbRecipeRepository,
+    EffectiveEnvelope,
     ExecutionConflict,
     ExecutionEventType,
     ExecutionStatus,
@@ -166,6 +167,7 @@ async def _runtime(
     max_fanout: int = 2,
     interaction: bool = False,
     storage: _MemoryStorage | None = None,
+    controls: Any | None = None,
 ) -> tuple[ExecutionId, RecipeExecutor, _CertifiedEcho, LeaseGeneration]:
     workspace_id = await seed_workspace(conn, "ws-c5-executor")
     factory = _factory(conn)
@@ -314,6 +316,7 @@ async def _runtime(
         journal=journal,
         parameters=parameters,
         tool_invoker=invoker,
+        controls=controls,
         **({"crash_hook": executor_crash_hook} if executor_crash_hook is not None else {}),
     )
     lease = await acquire_work_lease(
@@ -1033,5 +1036,87 @@ def test_bounded_map_expands_in_stable_source_order_and_executes_once() -> None:
                 "fanout.000001.echo",
                 "fanout.000002.echo",
             )
+
+    run_async(scenario())
+
+
+def test_tightened_runtime_envelope_blocks_future_map_expansion() -> None:
+    class _EnvelopeControls:
+        async def effective_envelope(self, execution_id: ExecutionId) -> EffectiveEnvelope:
+            del execution_id
+            return EffectiveEnvelope(max_nodes=2, max_depth=1, max_fanout=1)
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            descriptor = _CertifiedEcho().descriptor
+            tool_pin = PinRequest(
+                kind="tool",
+                key=descriptor.name,
+                version=descriptor.version,
+            )
+            graph = RecipeGraph(
+                nodes=(
+                    MapNode(
+                        node_key="fanout",
+                        ordinal=0,
+                        source=ParameterBinding(kind="parameter", name="items"),
+                        item_parameter="item",
+                        max_items=3,
+                        template=(
+                            ToolNode(
+                                node_key="echo",
+                                ordinal=0,
+                                tool_name=descriptor.name,
+                                tool_version=descriptor.version,
+                                input_schema_sha256=descriptor.input_schema_sha256,
+                                output_schema_sha256=descriptor.output_schema_sha256,
+                                bindings={
+                                    "value": ParameterBinding(
+                                        kind="parameter",
+                                        name="item",
+                                    )
+                                },
+                                requirements=(tool_pin,),
+                            ),
+                        ),
+                    ),
+                ),
+                tool_allowlist=(descriptor.address,),
+            )
+            execution_id, executor, tool, generation = await _runtime(
+                conn,
+                graph=graph,
+                compatibility_manifest=CompatibilityManifest(nodes={"fanout": (tool_pin,)}),
+                parameter_schema={
+                    "type": "object",
+                    "properties": {"items": {"type": "array", "items": {"type": "integer"}}},
+                    "required": ["items"],
+                    "additionalProperties": False,
+                },
+                parameters={"items": [1, 2, 3]},
+                max_nodes=4,
+                max_depth=2,
+                max_fanout=3,
+                controls=_EnvelopeControls(),
+            )
+            result = await executor.execute(
+                execution_id,
+                worker_id="worker",
+                lease_generation=generation,
+            )
+            assert result.status is ExecutionStatus.FAILED
+            assert tool.calls == 0
+            assert (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT count(*) FROM execution_node
+                        WHERE execution_id = :id
+                          AND node_key LIKE 'fanout.%'
+                        """
+                    ),
+                    {"id": execution_id},
+                )
+            ).scalar_one() == 0
 
     run_async(scenario())

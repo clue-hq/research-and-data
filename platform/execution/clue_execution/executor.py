@@ -32,6 +32,7 @@ from clue_execution.compatibility import (
     CompatibilityLoader,
     CompatibilityReport,
 )
+from clue_execution.controls import DbRunControlStore, EffectiveEnvelope
 from clue_execution.graph import (
     ActivityNode,
     BarrierNode,
@@ -681,6 +682,7 @@ class RecipeExecutor:
         journal: DbExecutionJournal,
         parameters: ExecutionParameterStore,
         tool_invoker: ToolInvoker,
+        controls: DbRunControlStore | None = None,
         activity_invoker: ActivityInvoker | None = None,
         crash_hook: CrashHook = _no_crash,
     ) -> None:
@@ -690,6 +692,7 @@ class RecipeExecutor:
         self._journal = journal
         self._parameters = parameters
         self._tool_invoker = tool_invoker
+        self._controls = controls
         self._activity_invoker = activity_invoker
         self._crash_hook = crash_hook
 
@@ -814,7 +817,8 @@ class RecipeExecutor:
                     lease_generation=lease_generation,
                 )
                 continue
-            limit = min(runtime.definition.max_fanout, MAX_EXECUTION_CONCURRENCY)
+            envelope = await self._effective_envelope(runtime)
+            limit = min(envelope.max_fanout, MAX_EXECUTION_CONCURRENCY)
             batch = ready[:limit]
             await asyncio.gather(
                 *(
@@ -861,6 +865,7 @@ class RecipeExecutor:
             raise ExecutionConflict(f"{address} is not allowed beneath interaction slot {slot_key}")
         if actor not in {"human", "agent"}:
             raise ValueError("interaction tool actor must be human or agent")
+        envelope = await self._effective_envelope(runtime)
         descriptor = self._tool_invoker.descriptor(tool_name, tool_version)
         if not descriptor.recipe_safe:
             raise ExecutionConflict(f"{address} is not recipe-safe")
@@ -1019,7 +1024,7 @@ class RecipeExecutor:
                     )
                 ).scalar_one()
             )
-            if child_count >= slot.max_children or total_count >= runtime.definition.max_nodes:
+            if child_count >= slot.max_children or total_count >= envelope.max_nodes:
                 raise ExecutionConflict("the Stage-0 interaction/node ceiling is exhausted")
             known_dependencies = {
                 str(row[0])
@@ -1642,6 +1647,9 @@ class RecipeExecutor:
         ordered = sorted(source, key=lambda item: _canonical_bytes(item))
         if len(ordered) > node.spec.max_items:
             raise ValueError("map source exceeds its declared max_items")
+        envelope = await self._effective_envelope(runtime)
+        if node.depth + 1 > envelope.max_depth:
+            raise ValueError("map expansion exceeds the effective max_depth envelope")
         child_keys: list[str] = []
         async with self._conn_factory() as conn:
             existing_count = int(
@@ -1655,8 +1663,8 @@ class RecipeExecutor:
                 ).scalar_one()
             )
             requested = len(ordered) * len(node.spec.template)
-            if existing_count + requested > runtime.definition.max_nodes:
-                raise ValueError("map expansion exceeds the recipe max_nodes envelope")
+            if existing_count + requested > envelope.max_nodes:
+                raise ValueError("map expansion exceeds the effective max_nodes envelope")
             for index, item in enumerate(ordered):
                 translated = {
                     template.node_key: (f"{node.spec.node_key}.{index:06d}.{template.node_key}")
@@ -1742,6 +1750,15 @@ class RecipeExecutor:
                     )
             await self._crash_hook("map_expanded", runtime.execution_id, node.node_id)
         return {"child_node_keys": cast(JsonValue, child_keys)}
+
+    async def _effective_envelope(self, runtime: _Runtime) -> EffectiveEnvelope:
+        if self._controls is not None:
+            return await self._controls.effective_envelope(runtime.execution_id)
+        return EffectiveEnvelope(
+            max_nodes=runtime.definition.max_nodes,
+            max_depth=runtime.definition.max_depth,
+            max_fanout=runtime.definition.max_fanout,
+        )
 
     async def _resolve_bindings(
         self,

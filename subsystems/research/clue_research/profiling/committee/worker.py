@@ -264,6 +264,7 @@ async def discover_committee(
                     kind=PreSpendKind.ENUMERATION,
                     scope=EnumerationScope.COMMITTEE,
                     source_tier=SourceTier(source.tier),
+                    source_key=source.source_key,
                     run_id=run_id,
                 )
             )
@@ -315,6 +316,7 @@ async def discover_committee(
                         entity_type=EntityType.CONTACT,
                         field_key=ROLE_ON_COMMITTEE,
                         source_tier=SourceTier(4),
+                        source_key="llm_role_inference",
                         run_id=run_id,
                     )
                 )

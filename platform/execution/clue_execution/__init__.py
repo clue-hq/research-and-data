@@ -11,6 +11,12 @@ from clue_execution.compatibility import (
     ResourceObservation,
     canonical_payload_digest,
 )
+from clue_execution.controls import (
+    ControlEvent,
+    ControlPolicyViolation,
+    DbRunControlStore,
+    EffectiveEnvelope,
+)
 from clue_execution.executor import (
     SUPPORTED_EXECUTOR_PROTOCOL,
     ActivityInvoker,
@@ -60,6 +66,7 @@ from clue_execution.journal import (
     rebuild_cursor,
 )
 from clue_execution.models import (
+    AggregateRequest,
     ControlAction,
     ControlKind,
     EdgeKind,
@@ -72,7 +79,9 @@ from clue_execution.models import (
     RecipeRevisionEventType,
     RecipeScopeType,
     ResolvedPin,
+    RunAggregateReader,
     RunAggregateSnapshot,
+    RunControlReader,
 )
 from clue_execution.parameters import (
     PARAMETER_MEDIA_TYPE,
@@ -97,6 +106,15 @@ from clue_execution.recipes import (
     RecipeVersionConflict,
     load_recipe_definition,
 )
+from clue_execution.supervisor import (
+    DiagnosisActionCandidate,
+    SupervisorDiagnosis,
+    SupervisorEngine,
+    SupervisorObservation,
+    SupervisorTrigger,
+    TriageResponse,
+    deterministic_triggers,
+)
 from clue_execution.views import (
     DbExecutionRunViewReader,
     ExecutionArtifactRefView,
@@ -111,6 +129,7 @@ from clue_execution.views import (
 from clue_execution.worker import RecipeExecutionHandler, enqueue_recipe_execution
 
 __all__ = [
+    "AggregateRequest",
     "ControlAction",
     "ControlKind",
     "EdgeKind",
@@ -124,6 +143,19 @@ __all__ = [
     "RecipeScopeType",
     "ResolvedPin",
     "RunAggregateSnapshot",
+    "RunAggregateReader",
+    "RunControlReader",
+    "ControlEvent",
+    "ControlPolicyViolation",
+    "DbRunControlStore",
+    "EffectiveEnvelope",
+    "DiagnosisActionCandidate",
+    "SupervisorDiagnosis",
+    "SupervisorEngine",
+    "SupervisorObservation",
+    "SupervisorTrigger",
+    "TriageResponse",
+    "deterministic_triggers",
     "CallablePinResolver",
     "CompatibilityContext",
     "CompatibilityLoader",

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -206,6 +207,60 @@ class SourcePlanPolicy(BaseModel):
 
 
 DEFAULT_SOURCE_PLAN_POLICY = SourcePlanPolicy()
+
+
+class SupervisorAutomaticAction(StrEnum):
+    """The closed set of controls deterministic C5.5 policy may apply automatically."""
+
+    ACCOUNT_QUARANTINE = "account_quarantine"
+    SOURCE_BREAKER = "source_breaker"
+    ENVELOPE = "envelope"
+    ESCALATION = "escalation"
+
+
+class SupervisorPolicy(BaseModel):
+    """Versioned run-supervisor policy.
+
+    The monitor is deterministic.  These thresholds decide whether a canary is healthy and bound
+    the controls it may apply; the triage model can only diagnose an already-triggered aggregate.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: str = Field(default="supervisor-v1", min_length=1)
+    canary_size: int = Field(default=3, ge=1)
+    minimum_canary_accounts: int = Field(default=1, ge=1)
+    minimum_source_samples: int = Field(default=3, ge=1)
+    minimum_verification_samples: int = Field(default=3, ge=1)
+    source_error_rate_max: UnitInterval = 0.25
+    source_empty_rate_max: UnitInterval = 0.8
+    source_p95_latency_ms_max: float = Field(default=30_000.0, gt=0)
+    faithfulness_pass_floor: UnitInterval = 0.7
+    strong_binding_floor: UnitInterval = 0.7
+    corroboration_pass_floor: UnitInterval = 0.7
+    stalled_account_age_s: float = Field(default=300.0, gt=0)
+    repeated_failure_limit: int = Field(default=2, ge=1)
+    breaker_cooldown_s: float = Field(default=300.0, ge=0)
+    permitted_automatic_actions: tuple[SupervisorAutomaticAction, ...] = (
+        SupervisorAutomaticAction.ACCOUNT_QUARANTINE,
+        SupervisorAutomaticAction.SOURCE_BREAKER,
+        SupervisorAutomaticAction.ENVELOPE,
+        SupervisorAutomaticAction.ESCALATION,
+    )
+    max_quarantined_accounts: int = Field(default=10, ge=0)
+    max_source_breakers: int = Field(default=3, ge=0)
+    max_envelope_reduction_fraction: UnitInterval = 0.5
+    triage_model: str = Field(default="openai/gpt-4o-mini", min_length=1)
+    triage_prompt_version: str = Field(default="supervisor-triage-v1", min_length=1)
+    triage_confidence_floor: UnitInterval = 0.5
+
+    @model_validator(mode="after")
+    def _validate_canary_floor(self) -> SupervisorPolicy:
+        if self.minimum_canary_accounts > self.canary_size:
+            raise ValueError("minimum_canary_accounts must be <= canary_size")
+        if len(set(self.permitted_automatic_actions)) != len(self.permitted_automatic_actions):
+            raise ValueError("permitted_automatic_actions must not contain duplicates")
+        return self
 
 
 class BudgetCaps(BaseModel):

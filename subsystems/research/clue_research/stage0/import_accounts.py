@@ -574,6 +574,7 @@ async def _crm_enrich(
                     entity_type=EntityType.ACCOUNT,
                     field_key=field_key,
                     source_tier=manifest.tier,
+                    source_key=manifest.source_key,
                     run_id=run_id,
                 )
             )
