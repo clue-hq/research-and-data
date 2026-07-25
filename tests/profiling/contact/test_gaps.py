@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     IdentityBinding,
     ResearchMode,
     UseClass,
     contact_claim,
 )
+from clue_research.claimstore import insert_claim
 from clue_research.identity import stamp_reuse
 from clue_research.profiling.committee import PERSONA, ROLE_ON_COMMITTEE
 from clue_research.profiling.contact import compute_contact_gap_fields
@@ -39,7 +39,7 @@ def test_gaps_are_facet_fields_excluding_role_persona(require_profiling_db: None
             await seed_packs(conn)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
-            gaps = await compute_contact_gap_fields(conn, contact.id, tenant_id=_TENANT)
+            gaps = await compute_contact_gap_fields(conn, contact.id, workspace_id=_TENANT)
             keys = {g.field_key for g in gaps}
             assert set(FACET_FIELD_KEYS).issubset(keys)  # all seeded facets are gaps
             assert ROLE_ON_COMMITTEE not in keys  # no tier_plan → not fillable → not a gap
@@ -55,7 +55,7 @@ def test_field_keys_filter_narrows_gaps(require_profiling_db: None) -> None:
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             gaps = await compute_contact_gap_fields(
-                conn, contact.id, tenant_id=_TENANT, field_keys=[FACET_NICKNAME]
+                conn, contact.id, workspace_id=_TENANT, field_keys=[FACET_NICKNAME]
             )
             assert {g.field_key for g in gaps} == {FACET_NICKNAME}
 
@@ -82,8 +82,8 @@ def test_fresh_field_is_not_a_gap(require_profiling_db: None) -> None:
                 source_url="https://linkedin.com/in/jane-cfo",
                 evidence_span="Known as Janie.",
             )
-            await insert_claim(conn, stamp_reuse(claim, tenant_id=_TENANT))
-            gaps = await compute_contact_gap_fields(conn, contact.id, tenant_id=_TENANT)
+            await insert_claim(conn, stamp_reuse(claim, workspace_id=_TENANT))
+            gaps = await compute_contact_gap_fields(conn, contact.id, workspace_id=_TENANT)
             assert FACET_NICKNAME not in {g.field_key for g in gaps}
 
     run_async(scenario())

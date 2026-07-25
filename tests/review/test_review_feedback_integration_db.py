@@ -16,9 +16,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.review_feedback_wiring import build_reviewed_phase_handler
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_api.review_feedback_wiring import build_reviewed_phase_handler
+from clue_core import (
     AccountStatus,
     Claim,
     EntityId,
@@ -27,12 +26,14 @@ from clue_research.core import (
     ReviewAction,
     ReviewRejectReason,
     account_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
-from clue_research.durable.campaign_run import ensure_campaign_run
+from clue_research.claimstore import insert_claim
+from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_research.review.disposition_store import ReviewDispositionEmitterImpl
+from tests._workspace import seed_project, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -71,16 +72,23 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             factory = _factory(conn)
+            await seed_workspace(conn, _CLIENT)
             acct = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+                conn,
+                canonical_name="Acme",
+                primary_domain="acme.com",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_CLIENT,
             )
             orig = _orig(acct)
             await insert_claim(conn, orig)
-            run_id = new_campaign_run_id()
-            await ensure_campaign_run(
+            run_id = new_project_run_id()
+            project = await seed_project(conn, _CLIENT)
+            await ensure_project_run(
                 conn,
-                campaign_run_id=run_id,
-                client_id=_CLIENT,
+                project_run_id=run_id,
+                project_id=project.project_id,
+                workspace_id=_CLIENT,
                 icp_key=_ICP_KEY,
                 icp_version=_ICP_VERSION,
             )
@@ -93,7 +101,7 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
             assert isinstance(surface._emit, ReviewDispositionEmitterImpl)
 
             session = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=run_id, client_id=_CLIENT
+                account_entity_id=acct, project_run_id=run_id, workspace_id=_CLIENT
             )
             # A REJECT carries a reason_code; the mirrored disposition must preserve the REAL one —
             # proving the emitter read the committed ``review_action`` row, not the ``(None, now)``
@@ -113,7 +121,7 @@ def test_review_action_through_production_binder_writes_a_disposition() -> None:
                     await conn.execute(
                         text(
                             "SELECT disposition_type, reason_code FROM disposition "
-                            "WHERE client_id = :c AND account_entity_id = :a"
+                            "WHERE workspace_id = :c AND account_entity_id = :a"
                         ),
                         {"c": _CLIENT, "a": str(acct)},
                     )

@@ -21,9 +21,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, current_value, insert_claim
-from clue_research.compliance import DataSubjectRightsImpl, RetentionSweep, UseGateImpl
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     Completion,
@@ -38,16 +36,19 @@ from clue_research.core import (
     contact_claim,
     new_run_id,
 )
-from clue_research.core.compliance import is_outreach_promotable
+from clue_core.compliance import is_outreach_promotable
+from clue_research.claimstore import WorkspaceScope, current_value, insert_claim
+from clue_research.compliance import DataSubjectRightsImpl, RetentionSweep, UseGateImpl
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
 from clue_research.verification import FaithfulnessJudgeImpl, FreshnessImpl
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
 pytestmark = pytest.mark.usefixtures("require_compliance_db")
 
 _CLIENT = "client-acme"
-_SCOPE = TenantScope.for_tenant(_CLIENT)
+_SCOPE = WorkspaceScope.for_workspace(_CLIENT)
 _PAIN = "account.operational_pain"  # tier-4 synthesis field (core pack)
 _FACET = "contact.facet.test_hook"  # governed personal hook (compliance test pack, 90d freshness)
 
@@ -100,8 +101,13 @@ def _rights(conn: AsyncConnection) -> DataSubjectRightsImpl:
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
@@ -148,7 +154,7 @@ def _facet(
         evidence_span="Jana Doe ran the Berlin marathon in 2025.",
         observed_at=observed_at,
     )
-    return stamp_reuse(claim, tenant_id=_CLIENT)
+    return stamp_reuse(claim, workspace_id=_CLIENT)
 
 
 # --- A. M9.3 × M1.2: a fabricated tier-4 synthesis claim never reaches current_value -------

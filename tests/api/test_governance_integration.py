@@ -18,13 +18,12 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api import (
+from clue_api import (
     build_pre_spend_gate,
     build_profiling_workers,
     production_binding_classifier,
 )
-from clue_research.claimstore import PUBLIC_ONLY, TenantScope, claims_for, get_field, register_field
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     AspectContext,
     Claim,
@@ -40,9 +39,16 @@ from clue_research.core import (
     ResearchMode,
     SourceManifest,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
+)
+from clue_research.claimstore import (
+    PUBLIC_ONLY,
+    WorkspaceScope,
+    claims_for,
+    get_field,
+    register_field,
 )
 from clue_research.icp import (
     Pack,
@@ -58,6 +64,7 @@ from clue_research.profiling.contact.fill import fill_contact_field
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
 from clue_research.verification import classify_binding
+from tests._workspace import seed_workspace
 from tests.profiling.conftest import (
     FakeCommitteeSource,
     FakeFacetResolver,
@@ -65,6 +72,7 @@ from tests.profiling.conftest import (
     conn_session_factory,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -79,14 +87,18 @@ _COMMITTEE = [FakeCommitteeSource(source_key="apollo_people", tier=2)]
 # --- M9.4: the injected authoritative binding classifier stamps the born column -------------
 
 
-def _run_facet_fill(*, resolver: FakeFacetResolver) -> tuple[Claim, object, object]:
+def _run_facet_fill(
+    *, resolver: FakeFacetResolver, manifest_tier: int = 4
+) -> tuple[Claim, object, object]:
     """Drive M8.4 facet fill with the api-root binding classifier injected; return the written claim
-    plus its contact + account."""
+    plus its contact + account. ``manifest_tier`` registers the facet source's test manifest at that
+    tier (the shared engine enforces claim tier == manifest tier)."""
 
     async def scenario() -> tuple[Claim, object, object]:
         bind_resolver(_FACET_SOURCE, resolver)
         async with rollback_conn() as conn:
             await seed_packs(conn)
+            await register_facet_source(conn, tier=manifest_tier)
             account = await insert_test_account(conn)
             contact = await insert_test_contact(conn, account)
             field = await get_field(conn, FACET_STATED_INTERESTS)
@@ -97,14 +109,17 @@ def _run_facet_fill(*, resolver: FakeFacetResolver) -> tuple[Claim, object, obje
                 account,
                 field,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 tier="top",
                 binding_classifier=production_binding_classifier(),
             )
             assert len(result.claim_refs) == 1, result
             written = (
                 await claims_for(
-                    conn, contact.id, FACET_STATED_INTERESTS, scope=TenantScope.for_tenant(_TENANT)
+                    conn,
+                    contact.id,
+                    FACET_STATED_INTERESTS,
+                    scope=WorkspaceScope.for_workspace(_TENANT),
                 )
             )[0]
             return written, contact, account
@@ -143,7 +158,10 @@ def test_injected_classifier_born_binding_strong_on_verified_handle(
 def test_injected_classifier_born_binding_weak_on_same_name(require_profiling_db: None) -> None:
     """A lower-tier, name-only, off-handle facet claim is born WEAK — equal to the authoritative
     verdict, and unpromotable (the same-name trap)."""
+    # Founder-sanctioned re-fixture (claim_tagger consolidation): the tier-3 fake binds behind a
+    # genuine tier-3 test manifest — the shared engine enforces claim tier == manifest tier.
     written, contact, account = _run_facet_fill(
+        manifest_tier=3,
         resolver=FakeFacetResolver(
             tier=3,  # tier-3 scrape: written-but-weak (tier-4 same-name is rejected outright)
             extractions=[
@@ -154,7 +172,7 @@ def test_injected_classifier_born_binding_weak_on_same_name(require_profiling_db
                     "confidence": 0.9,
                 }
             ],
-        )
+        ),
     )
     verdict = classify_binding(
         written,
@@ -283,17 +301,19 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
             )
             spec = await create_icp_spec(
                 conn,
-                client_id=_TENANT,
+                workspace_id=_TENANT,
                 icp_key="seg1",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 enabled_packs=("probepack",),
             )
             bind_resolver(_GATE_SOURCE, _Fake([_probe_claim()]))
+            await seed_workspace(conn, _TENANT)
             account_id = await insert_account_entity(
                 conn,
                 canonical_name="Acme Robotics",
                 primary_domain="acme.com",
                 status=AccountStatus.ACTIVE,
+                workspace_id=_TENANT,
             )
 
             # The gate writes its audit into THIS rolled-back transaction (tests inject the conn).
@@ -313,12 +333,14 @@ def test_account_spend_records_prior_gate_decision(require_profiling_db: None) -
             run_id = new_run_id()
             ctx = AspectContext(
                 entity_id=account_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 run_id=run_id,
                 tier="top",
                 aspect="account",
                 field_keys=(_GATE_FIELD,),
-                params=params_for_run(client_id=_TENANT, icp_key="seg1", icp_version=spec.version),
+                params=params_for_run(
+                    workspace_id=_TENANT, icp_key="seg1", icp_version=spec.version
+                ),
             )
             await account_worker.research(ctx)
 
@@ -413,17 +435,19 @@ def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db:
             )
             spec = await create_icp_spec(
                 conn,
-                client_id=_TENANT,
+                workspace_id=_TENANT,
                 icp_key="seg1",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 enabled_packs=("synthpack",),
             )
             bind_resolver(_T4_SOURCE, _FakeT4([_t4_probe_claim()]))
+            await seed_workspace(conn, _TENANT)
             account_id = await insert_account_entity(
                 conn,
                 canonical_name="Acme Robotics",
                 primary_domain="acme.com",
                 status=AccountStatus.ACTIVE,
+                workspace_id=_TENANT,
             )
 
             @asynccontextmanager
@@ -442,12 +466,14 @@ def test_tier4_synthesis_spend_records_prior_gate_decision(require_profiling_db:
             run_id = new_run_id()
             ctx = AspectContext(
                 entity_id=account_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 run_id=run_id,
                 tier="top",
                 aspect="account",
                 field_keys=(_T4_FIELD,),
-                params=params_for_run(client_id=_TENANT, icp_key="seg1", icp_version=spec.version),
+                params=params_for_run(
+                    workspace_id=_TENANT, icp_key="seg1", icp_version=spec.version
+                ),
             )
             await account_worker.research(ctx)
 

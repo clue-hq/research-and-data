@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.core import (
+from clue_core import (
     EntityScope,
     FieldClass,
     ICPCreatedFrom,
@@ -50,7 +50,7 @@ async def _icp_with_packs(conn: AsyncConnection, *packs: str) -> ICPSpec:
     await load_starter_packs(conn)
     return await create_icp_spec(
         conn,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key=_ICP,
         created_from=ICPCreatedFrom.SYNTHESIS,
         enabled_packs=packs,
@@ -83,7 +83,7 @@ async def _icp_with_slots(conn: AsyncConnection, *slots: PackSourceSlot) -> ICPS
     )
     return await create_icp_spec(
         conn,
-        client_id=_CLIENT,
+        workspace_id=_CLIENT,
         icp_key=_ICP,
         created_from=ICPCreatedFrom.SYNTHESIS,
         enabled_packs=("cpack",),
@@ -336,7 +336,7 @@ def test_multi_pack_merge_keeps_strongest_weight_on_overlap() -> None:
             )
             spec = await create_icp_spec(
                 conn,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 icp_key=_ICP,
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 enabled_packs=("pa", "pb"),

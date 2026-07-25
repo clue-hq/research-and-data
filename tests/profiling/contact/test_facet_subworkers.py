@@ -13,8 +13,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.config import RecursionPolicy
-from clue_research.core import AspectContext
+from clue_config import RecursionPolicy
+from clue_core import AspectContext
 from clue_research.profiling.contact import ContactProfileAspectWorker
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver
@@ -23,6 +23,7 @@ from ..conftest import (
     FakeFacetResolver,
     insert_test_account,
     insert_test_contact,
+    register_facet_source,
     rollback_conn,
     run_async,
     seed_packs,
@@ -53,6 +54,7 @@ async def _run_worker(tier: str, *, depth: int = 0):  # type: ignore[no-untyped-
     """Run the contact worker for one contact at ``tier``/``depth`` and return its WorkerResult."""
     async with rollback_conn() as conn:
         await seed_packs(conn)
+        await register_facet_source(conn)
         account = await insert_test_account(conn)
         contact = await insert_test_contact(conn, account)
 
@@ -63,7 +65,7 @@ async def _run_worker(tier: str, *, depth: int = 0):  # type: ignore[no-untyped-
         worker = ContactProfileAspectWorker(session_factory=session_factory)
         ctx = AspectContext(
             entity_id=contact.id,
-            campaign_run_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            project_run_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             run_id=_RUN,
             tier=tier,
             aspect="contact.facet",
@@ -71,7 +73,7 @@ async def _run_worker(tier: str, *, depth: int = 0):  # type: ignore[no-untyped-
             depth=depth,
             params={
                 "account_entity_id": str(account.id),
-                "client_id": _TENANT,
+                "workspace_id": _TENANT,
                 "icp_key": "default",
                 "icp_version": 1,
             },

@@ -1,4 +1,4 @@
-"""M8A.2 — the ``CampaignPhase.DEEP`` handler, driven entirely by fakes (no DB).
+"""M8A.2 — the ``ProjectPhase.DEEP`` handler, driven entirely by fakes (no DB).
 
 These prove the handler *policy* around the M8A.1 orchestrator: it resolves the high-tier set and
 drives the scheduler with the per-account sequence bound as ``run_one``; it isolates a single
@@ -20,26 +20,28 @@ from typing import Any
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
-from clue_research.api.deep import (
+from clue_api.deep import (
     AccountDeepResult,
+    DeepCanaryGateResult,
+    DeepCanaryPlan,
     DeepPhaseHandler,
     HighTierResolver,
     deep_account_run_id,
 )
-from clue_research.core import (
+from clue_core import (
     BudgetVerdict,
-    CampaignPhase,
-    CampaignRunId,
     EntityId,
     Persona,
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     RunId,
     WorkerStatus,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_research.durable import AccountRunSubPhase, AccountSpec, PhaseHandlerRegistry
 from clue_research.profiling import (
@@ -170,7 +172,7 @@ class FakeOrchestrator:
         self._raise.add(entity_id)
 
     async def run_one(
-        self, spec: AccountSpec, *, campaign_run_id: CampaignRunId
+        self, spec: AccountSpec, *, project_run_id: ProjectRunId
     ) -> AccountDeepResult:
         self.calls.append(spec.entity_id)
         if spec.entity_id in self._raise:
@@ -185,21 +187,52 @@ class FakeScheduler:
 
     def __init__(self) -> None:
         self.specs: tuple[AccountSpec, ...] = ()
-        self.campaign_run_id: CampaignRunId | None = None
+        self.cohorts: list[tuple[AccountSpec, ...]] = []
+        self.project_run_id: ProjectRunId | None = None
         self.checkpointer: Any = None
 
     async def run_accounts(
         self,
         specs: Any,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
         run_one: Any,
     ) -> list[Any]:
         self.specs = tuple(specs)
-        self.campaign_run_id = campaign_run_id
+        self.cohorts.append(self.specs)
+        self.project_run_id = project_run_id
         self.checkpointer = checkpointer
         return [await run_one(spec) for spec in self.specs]
+
+
+class FakeCanaryController:
+    def __init__(self, *, proceed: bool) -> None:
+        self.proceed = proceed
+        self.evaluated: tuple[AccountSpec, ...] = ()
+
+    async def plan(self, ctx: PhaseContext, specs: Sequence[AccountSpec]) -> DeepCanaryPlan:
+        del ctx
+        return DeepCanaryPlan(
+            enabled=True,
+            canary=tuple(specs[:1]),
+            remainder=tuple(specs[1:]),
+        )
+
+    async def source_observer(self, ctx: PhaseContext) -> None:
+        del ctx
+        return None
+
+    async def evaluate(
+        self, ctx: PhaseContext, canary_specs: Sequence[AccountSpec]
+    ) -> DeepCanaryGateResult:
+        del ctx
+        self.evaluated = tuple(canary_specs)
+        return DeepCanaryGateResult(
+            proceed=self.proceed,
+            trigger_codes=() if self.proceed else ("source_error_rate:provider-a",),
+            observation_id="observation-1",
+        )
 
 
 class FakeFinalizeFailed:
@@ -237,18 +270,20 @@ def _resolver(specs: Sequence[AccountSpec]) -> HighTierResolver:
     return _f
 
 
-def _ctx(campaign: CampaignRunId) -> PhaseContext:
+def _ctx(campaign: ProjectRunId) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=campaign,
-        phase=CampaignPhase.DEEP,
-        client_id="client-1",
+        project_run_id=campaign,
+        project_id="prj-test",
+        brand_id="brd-test",
+        phase=ProjectPhase.DEEP,
+        workspace_id="client-1",
         icp_key="icp-a",
         icp_version=1,
     )
 
 
 def _spec(entity_id: EntityId, *, tier: str = "top") -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier=tier, tenant_id="client-1")
+    return AccountSpec(entity_id=entity_id, tier=tier, workspace_id="client-1")
 
 
 def _handler(
@@ -258,6 +293,7 @@ def _handler(
     specs: Sequence[AccountSpec],
     finalize_failed: FakeFinalizeFailed | None = None,
     checkpointer_factory: FakeCheckpointerFactory | None = None,
+    canary_controller: FakeCanaryController | None = None,
 ) -> DeepPhaseHandler:
     return DeepPhaseHandler(
         scheduler=scheduler,
@@ -265,6 +301,7 @@ def _handler(
         high_tier_resolver=_resolver(specs),
         checkpointer_factory=checkpointer_factory or FakeCheckpointerFactory(),
         finalize_failed_account=finalize_failed or FakeFinalizeFailed(),
+        canary_controller=canary_controller,
     )
 
 
@@ -287,17 +324,17 @@ def _all_keys(obj: Any) -> set[str]:
 def test_handler_conforms_to_protocol_and_registers() -> None:
     handler = _handler(scheduler=FakeScheduler(), orchestrator=FakeOrchestrator(), specs=())
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.DEEP
+    assert handler.phase is ProjectPhase.DEEP
     # registering it makes the state machine's dispatch table resolve DEEP (no NoPhaseHandler error)
     registry = PhaseHandlerRegistry()
-    assert registry.get(CampaignPhase.DEEP) is None
+    assert registry.get(ProjectPhase.DEEP) is None
     registry.register(handler)
-    assert registry.get(CampaignPhase.DEEP) is handler
-    assert CampaignPhase.DEEP in registry.phases()
+    assert registry.get(ProjectPhase.DEEP) is handler
+    assert ProjectPhase.DEEP in registry.phases()
 
 
 def test_resolves_high_tier_set_and_processes_every_account() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1, e2 = new_entity_id(), new_entity_id()
     specs = (_spec(e1, tier="top"), _spec(e2, tier="high"))
     orch = FakeOrchestrator()
@@ -321,7 +358,7 @@ def test_resolves_high_tier_set_and_processes_every_account() -> None:
         assert result.payload["accounts_failed"] == 0
         # the resolved specs reached the scheduler under the run's campaign id
         assert sched.specs == specs
-        assert sched.campaign_run_id == campaign
+        assert sched.project_run_id == campaign
         accounts = result.payload["accounts"]
         assert isinstance(accounts, list)
         assert {a["account_entity_id"] for a in accounts} == {str(e1), str(e2)}
@@ -331,7 +368,7 @@ def test_resolves_high_tier_set_and_processes_every_account() -> None:
 
 
 def test_one_account_raising_is_isolated_and_marked_failed() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1, e2 = new_entity_id(), new_entity_id()
     specs = (_spec(e1), _spec(e2))
     orch = FakeOrchestrator()
@@ -365,7 +402,7 @@ def test_one_account_raising_is_isolated_and_marked_failed() -> None:
 
 
 def test_not_found_account_is_recorded_failed() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1 = new_entity_id()
     specs = (_spec(e1),)
     orch = FakeOrchestrator()
@@ -395,7 +432,7 @@ def test_not_found_account_is_recorded_failed() -> None:
 
 
 def test_run_graceful_stop_pauses_the_phase() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1, e2 = new_entity_id(), new_entity_id()
     specs = (_spec(e1), _spec(e2))
     orch = FakeOrchestrator()
@@ -429,7 +466,7 @@ def test_run_graceful_stop_pauses_the_phase() -> None:
 
 
 def test_account_deny_is_partial_completed_not_paused() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1 = new_entity_id()
     specs = (_spec(e1),)
     orch = FakeOrchestrator()
@@ -458,7 +495,7 @@ def test_account_deny_is_partial_completed_not_paused() -> None:
 
 
 def test_payload_is_references_only_no_claim_bodies() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1 = new_entity_id()
     specs = (_spec(e1),)
     orch = FakeOrchestrator()
@@ -497,7 +534,7 @@ def test_empty_high_tier_set_is_a_completed_no_op() -> None:
     handler = _handler(scheduler=sched, orchestrator=FakeOrchestrator(), specs=())
 
     async def _run() -> None:
-        result = await handler.run(_ctx(new_campaign_run_id()))
+        result = await handler.run(_ctx(new_project_run_id()))
         assert result.status is PhaseStatus.COMPLETED
         assert result.accounts_processed == 0
         assert result.cost_cents == Decimal(0)
@@ -505,13 +542,79 @@ def test_empty_high_tier_set_is_a_completed_no_op() -> None:
         assert result.payload["accounts"] == []
         # the scheduler is never driven when there is nothing to research
         assert sched.specs == ()
-        assert sched.campaign_run_id is None
+        assert sched.project_run_id is None
+
+    run_async(_run())
+
+
+def test_passing_canary_runs_remainder_through_the_same_scheduler() -> None:
+    campaign = new_project_run_id()
+    e1, e2, e3 = new_entity_id(), new_entity_id(), new_entity_id()
+    specs = (_spec(e1), _spec(e2), _spec(e3))
+    orch = FakeOrchestrator()
+    for entity_id in (e1, e2, e3):
+        orch.returns(
+            entity_id,
+            _result(
+                account_run_id=deep_account_run_id(campaign, entity_id),
+                entity_id=entity_id,
+            ),
+        )
+    scheduler = FakeScheduler()
+    canary = FakeCanaryController(proceed=True)
+    handler = _handler(
+        scheduler=scheduler,
+        orchestrator=orch,
+        specs=specs,
+        canary_controller=canary,
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx(campaign))
+        assert result.status is PhaseStatus.COMPLETED
+        assert scheduler.cohorts == [(specs[0],), specs[1:]]
+        assert canary.evaluated == (specs[0],)
+        assert orch.calls == [e1, e2, e3]
+        assert result.payload["canary"]["proceed"] is True
+
+    run_async(_run())
+
+
+def test_failing_canary_pauses_and_never_starts_the_remainder() -> None:
+    campaign = new_project_run_id()
+    e1, e2 = new_entity_id(), new_entity_id()
+    specs = (_spec(e1), _spec(e2))
+    orch = FakeOrchestrator()
+    for entity_id in (e1, e2):
+        orch.returns(
+            entity_id,
+            _result(
+                account_run_id=deep_account_run_id(campaign, entity_id),
+                entity_id=entity_id,
+            ),
+        )
+    scheduler = FakeScheduler()
+    canary = FakeCanaryController(proceed=False)
+    handler = _handler(
+        scheduler=scheduler,
+        orchestrator=orch,
+        specs=specs,
+        canary_controller=canary,
+    )
+
+    async def _run() -> None:
+        result = await handler.run(_ctx(campaign))
+        assert result.status is PhaseStatus.PAUSED
+        assert scheduler.cohorts == [(specs[0],)]
+        assert orch.calls == [e1]
+        assert result.payload["canary"]["proceed"] is False
+        assert result.payload["canary"]["trigger_codes"] == ["source_error_rate:provider-a"]
 
     run_async(_run())
 
 
 def test_checkpointer_factory_is_opened_for_the_batch() -> None:
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1 = new_entity_id()
     specs = (_spec(e1),)
     orch = FakeOrchestrator()
@@ -535,7 +638,7 @@ def test_resumed_account_without_committee_lists_members_from_contacts() -> None
     # profiled contacts populated — the manifest must source admitted member ids from contacts and
     # carry no coverage (the committee result is not reloaded on resume). The orchestrator proves it
     # returns this shape; this proves the handler consumes it.
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     e1 = new_entity_id()
     c1, c2 = new_entity_id(), new_entity_id()
     contacts = tuple(

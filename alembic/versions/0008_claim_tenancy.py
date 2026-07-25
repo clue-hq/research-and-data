@@ -43,7 +43,7 @@ down_revision: str | None = "0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums.ReuseScope. Parity-tested in the M2.5 isolation test suite.
+# Mirror clue_core.enums.ReuseScope. Parity-tested in the M2.5 isolation test suite.
 _REUSE_SCOPE = ("public_footprint", "tenant_private")
 
 # The append-only guard's immutable-column list, kept in lock-step with 0002 (M1.1) + 0004 (M1.4).

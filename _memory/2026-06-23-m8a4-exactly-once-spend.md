@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-23 · **Branch:** `m8a/exactly-once` (off `m8a/orchestrator` @ `a002007`, which has
 M8A.0/.1/.2/.3/.5). New branch because m8a/orchestrator is being worked in parallel (user).
-**Spec:** `docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.4 · **Plan:**
+**Spec:** `docs/specs/M8A-project-run-deep-orchestration.md` §M8A.4 · **Plan:**
 [[2026-06-23-m8a-implementation-plan]] §M8A.4 · depends on M8A.1 (orchestrator) + M8A.3 (admission).
 
 ## The hole this closes (verified first-hand)

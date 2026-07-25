@@ -14,8 +14,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for
-from clue_research.core import ICPCreatedFrom, ICPStatus, ReuseScope
+from clue_core import ICPCreatedFrom, ICPStatus, ReuseScope
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.icp import (
     compile_field_plan,
     get_active_icp,
@@ -63,17 +63,17 @@ async def _floor_proposal(
     conn: AsyncConnection, suffix: str
 ) -> tuple[ClientKnowledgeBaseRef, ICPProposal]:
     """Build a KB + synthesize the floor proposal; return (ref, proposal)."""
-    ref = await build_client_kb(conn, client_id=_CLIENT, suffix=suffix, asserted=_ASSERTED)
-    (proposal,) = await synthesize_icps(conn, ref, client_id=_CLIENT)
+    ref = await build_client_kb(conn, workspace_id=_CLIENT, suffix=suffix, asserted=_ASSERTED)
+    (proposal,) = await synthesize_icps(conn, ref, workspace_id=_CLIENT)
     return ref, proposal
 
 
 def test_confirm_creates_compiled_active_spec() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "create")
             confirmation = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
 
             assert confirmation.ref.icp_key == "primary"
@@ -97,10 +97,10 @@ def test_confirm_creates_compiled_active_spec() -> None:
 
 def test_confirm_is_reproducible_from_pinned_version() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "repro")
             confirmation = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
 
             pinned = await get_icp_version(conn, _CLIENT, "primary", confirmation.ref.icp_version)
@@ -115,7 +115,7 @@ def test_confirm_is_reproducible_from_pinned_version() -> None:
 
 def test_confirm_round_trips_edits_and_persists_diff() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "edits")
             # drop the growth signal (removes its unique narrative field), drop a firmographic
             # field, and add an unrelated registered scoring field.
@@ -129,7 +129,7 @@ def test_confirm_round_trips_edits_and_persists_diff() -> None:
                 conn,
                 proposal,
                 edits,
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=ref.client_entity_id,
             )
 
@@ -149,7 +149,7 @@ def test_confirm_round_trips_edits_and_persists_diff() -> None:
             assert diff.notes == "enterprise focus"
 
             # the diff is persisted claim-native (one immutable icp.confirm_diff claim, private)
-            scope = TenantScope.for_tenant(_CLIENT)
+            scope = WorkspaceScope.for_workspace(_CLIENT)
             diff_claims = await claims_for(
                 conn, ref.client_entity_id, ICP_CONFIRM_DIFF, scope=scope
             )
@@ -170,16 +170,16 @@ def test_confirm_round_trips_edits_and_persists_diff() -> None:
 
 def test_confirm_multiple_icps_are_independent_specs() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "multi")
             first = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
             second = await confirm_icp(
                 conn,
                 proposal,
                 ICPProposalEdits(icp_key="secondary"),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=ref.client_entity_id,
             )
 
@@ -196,19 +196,19 @@ def test_confirm_multiple_icps_are_independent_specs() -> None:
 
 def test_confirm_is_idempotent_on_identical_reconfirm() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "idem")
             first = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
             second = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
             # an identical re-confirm reuses the active spec — no v2, no second diff claim
             assert first.ref.icp_version == 1
             assert second.ref.icp_version == 1
             assert len(await list_icp_versions(conn, _CLIENT, "primary")) == 1
-            scope = TenantScope.for_tenant(_CLIENT)
+            scope = WorkspaceScope.for_workspace(_CLIENT)
             diff_claims = await claims_for(
                 conn, ref.client_entity_id, ICP_CONFIRM_DIFF, scope=scope
             )
@@ -219,7 +219,7 @@ def test_confirm_is_idempotent_on_identical_reconfirm() -> None:
                 conn,
                 proposal,
                 ICPProposalEdits(removed_field_keys=("core.primary_domain",)),
-                client_id=_CLIENT,
+                workspace_id=_CLIENT,
                 client_entity_id=ref.client_entity_id,
             )
             assert edited.ref.icp_version == 2
@@ -230,10 +230,10 @@ def test_confirm_is_idempotent_on_identical_reconfirm() -> None:
 
 def test_confirm_returns_pre_run_estimate() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "estimate")
             confirmation = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
             est = confirmation.estimate
             # default cost-dial priors: 500 discovered, 20% deep, (5+1)/account + 500/deep account
@@ -247,10 +247,10 @@ def test_confirm_returns_pre_run_estimate() -> None:
 
 def test_downstream_consumes_only_the_compiled_spec() -> None:
     async def _run() -> None:
-        async with rollback_conn() as conn:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref, proposal = await _floor_proposal(conn, "seam")
             confirmation = await confirm_icp(
-                conn, proposal, client_id=_CLIENT, client_entity_id=ref.client_entity_id
+                conn, proposal, workspace_id=_CLIENT, client_entity_id=ref.client_entity_id
             )
             spec = await get_icp_version(conn, _CLIENT, "primary", confirmation.ref.icp_version)
             assert spec is not None

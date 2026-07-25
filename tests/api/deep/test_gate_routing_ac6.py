@@ -1,7 +1,7 @@
 """M8A.6 AC-6 — the deep committee/contact spend paths route through the pre-spend gate.
 
 The deferred M9.1 routing (CLAUDE.md ENG-130), closed at the deep composition root: the gate the
-composition builds (:func:`~clue_research.api.composition.build_pre_spend_gate`) is the one the
+composition builds (:func:`~clue_api.composition.build_pre_spend_gate`) is the one the
 orchestrator threads into the committee + contact callables, so neither people-enumeration nor a
 facet fill can spend without a recorded ``gate_decision`` first. These drive the **exact callables**
 ``AccountDeepOrchestrator`` invokes (``discover_committee`` / ``profile_contact``) with that gate
@@ -18,8 +18,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api import build_pre_spend_gate
-from clue_research.core import (
+from clue_api import build_pre_spend_gate
+from clue_core import (
     EntityScope,
     Modality,
     SourceManifest,
@@ -77,7 +77,7 @@ def test_deep_committee_enumeration_records_a_gate_decision(require_profiling_db
                 conn,
                 account_entity_id=account.id,
                 run_id=_RUN,
-                tenant_id=_TENANT,
+                workspace_id=_TENANT,
                 sources=[FakeCommitteeSource(source_key="apollo_people", tier=2, candidates=[])],
                 gateway=FakeGateway(),
                 role_model="stub/role",
@@ -120,6 +120,11 @@ def test_deep_contact_facet_fill_records_a_gate_decision(require_profiling_db: N
                 account = await insert_test_account(conn)
                 contact = await insert_test_contact(conn, account)
                 # the facet gate keys on the source's manifest tier — register one for the source.
+                # ``exa_deep`` is also a production seed manifest (sources/seeds.py) other tests
+                # COMMIT via ``seed_source_manifests``; on a persistent schema its v1 row may
+                # already exist with a different definition, so register the test's variant at a
+                # higher version (a versioned update, rolled back with this transaction) to keep
+                # the test rerun-idempotent.
                 await register_source(
                     conn,
                     RegistrySourceManifest(
@@ -132,6 +137,7 @@ def test_deep_contact_facet_fill_records_a_gate_decision(require_profiling_db: N
                             cost_cents=Decimal(0),
                         ),
                         active=True,
+                        version=2,
                     ),
                 )
 
@@ -145,7 +151,7 @@ def test_deep_contact_facet_fill_records_a_gate_decision(require_profiling_db: N
                     contact_entity_id=contact.id,
                     account_entity_id=account.id,
                     run_id=_RUN,
-                    tenant_id=_TENANT,
+                    workspace_id=_TENANT,
                     tier="top",
                     field_keys=(FACET_STATED_INTERESTS,),
                     pre_spend_gate=gate,

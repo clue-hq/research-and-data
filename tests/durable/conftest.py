@@ -20,18 +20,18 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
+from clue_core import (
     AspectContext,
-    CampaignRunId,
     CostCents,
     EntityId,
+    ProjectRunId,
     RunId,
     WorkerResult,
     WorkerStatus,
     new_claim_id,
 )
-from clue_research.db import db_lifespan
+from clue_db import db_lifespan
+from clue_research.claimstore import load_core_pack
 from clue_research.durable.account_run import ReferencesIndex
 from clue_research.durable.enums import AccountRunStatus, AccountRunSubPhase
 from clue_research.durable.graph import AccountRunStore
@@ -111,10 +111,10 @@ class FakeAccountRunStore:
         self,
         *,
         account_run_id: RunId,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId,
         tier: str,
-        tenant_id: str | None,
+        workspace_id: str | None,
         field_keys: Sequence[str] | None,
     ) -> ResearchPlan:
         self.begin_calls += 1
@@ -159,7 +159,7 @@ assert isinstance(FakeAccountRunStore(ResearchPlan(tier="low", aspects=())), Acc
 
 
 class StubAspectWorker:
-    """A recording :class:`~clue_research.core.AspectWorker` (no IO).
+    """A recording :class:`~clue_core.AspectWorker` (no IO).
 
     Returns ``n_claims`` freshly-minted claim-id references, records each invocation, and can be
     made to ``raise`` (to test sibling isolation), run a ``before`` hook (to test concurrency), or
@@ -211,71 +211,72 @@ class StubAspectWorker:
         )
 
 
-# --- in-memory fakes for the campaign-run state machine (M7.3) ---------------
+# --- in-memory fakes for the project-run state machine (M7.3) ---------------
 
 from datetime import UTC, datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from clue_research.core import (  # noqa: E402
+from clue_core import (  # noqa: E402
     BudgetDecision,
     BudgetScope,
     BudgetVerdict,
     BurnDown,
-    CampaignPhase,
     Estimate,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
-)
-from clue_research.durable.campaign_run import (  # noqa: E402
-    AdjustmentRow,
-    CampaignPhaseCheckpointRow,
-    CampaignRunRow,
-    TierCutoffs,
+    ProjectPhase,
 )
 from clue_research.durable.enums import (  # noqa: E402
-    CampaignRunStatus,
     PhaseCheckpointStatus,
+    ProjectRunStatus,
+)
+from clue_research.durable.project_run import (  # noqa: E402
+    AdjustmentRow,
+    ProjectPhaseCheckpointRow,
+    ProjectRunRow,
+    TierCutoffs,
 )
 
 # A fixed timestamp so the in-memory rows are deterministic (no clock dependency in pure tests).
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-class FakeCampaignRunStore:
-    """An in-memory :class:`~clue_research.durable.campaign.CampaignRunStore` (no DB).
+class FakeProjectRunStore:
+    """An in-memory :class:`~clue_research.durable.project.ProjectRunStore` (no DB).
 
     Backs the M7.3 state-machine tests so transition / pause-resume / idempotency / human-gate logic
     is exercised without Postgres. Mutable run state is kept as a dict and a fresh
-    :class:`CampaignRunRow` is rebuilt on each ``get`` (mirroring the DB read). ``adjustments``
+    :class:`ProjectRunRow` is rebuilt on each ``get`` (mirroring the DB read). ``adjustments``
     records every journaled change so a test can assert the audit trail."""
 
     def __init__(self) -> None:
-        self._runs: dict[CampaignRunId, dict[str, object]] = {}
-        self._checkpoints: dict[
-            tuple[CampaignRunId, CampaignPhase], CampaignPhaseCheckpointRow
-        ] = {}
+        self._runs: dict[ProjectRunId, dict[str, object]] = {}
+        self._checkpoints: dict[tuple[ProjectRunId, ProjectPhase], ProjectPhaseCheckpointRow] = {}
         self.adjustments: list[AdjustmentRow] = []
 
     async def create(
         self,
         *,
-        campaign_run_id: CampaignRunId,
-        client_id: str,
+        project_run_id: ProjectRunId,
+        project_id: str,
+        workspace_id: str,
         icp_key: str,
         icp_version: int,
         budget_cap_cents: CostCents | None,
         tier_cutoffs: TierCutoffs,
     ) -> None:
         self._runs.setdefault(
-            campaign_run_id,
+            project_run_id,
             {
-                "id": campaign_run_id,
-                "client_id": client_id,
+                "id": project_run_id,
+                "project_id": project_id,
+                "brand_id": f"brand-for-{project_id}",
+                "workspace_id": workspace_id,
                 "icp_key": icp_key,
                 "icp_version": icp_version,
-                "phase": CampaignPhase.REVERSE_PROFILING,
-                "status": CampaignRunStatus.ACTIVE,
+                "phase": ProjectPhase.REVERSE_PROFILING,
+                "status": ProjectRunStatus.ACTIVE,
                 "budget_cap_cents": budget_cap_cents,
                 "spent_cents": Decimal(0),
                 "tier_cutoffs": dict(tier_cutoffs),
@@ -284,28 +285,28 @@ class FakeCampaignRunStore:
             },
         )
 
-    async def get(self, campaign_run_id: CampaignRunId) -> CampaignRunRow | None:
-        state = self._runs.get(campaign_run_id)
+    async def get(self, project_run_id: ProjectRunId) -> ProjectRunRow | None:
+        state = self._runs.get(project_run_id)
         if state is None:
             return None
-        return CampaignRunRow(created_at=_T0, updated_at=_T0, **state)  # type: ignore[arg-type]
+        return ProjectRunRow(created_at=_T0, updated_at=_T0, **state)  # type: ignore[arg-type]
 
     async def transition(
-        self, campaign_run_id: CampaignRunId, *, phase: CampaignPhase, status: CampaignRunStatus
+        self, project_run_id: ProjectRunId, *, phase: ProjectPhase, status: ProjectRunStatus
     ) -> None:
-        state = self._runs[campaign_run_id]
+        state = self._runs[project_run_id]
         state["phase"] = phase
         state["status"] = status
 
     async def mark_status(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
-        status: CampaignRunStatus,
+        status: ProjectRunStatus,
         stamp_paused: bool = False,
         stamp_resumed: bool = False,
     ) -> None:
-        state = self._runs[campaign_run_id]
+        state = self._runs[project_run_id]
         state["status"] = status
         if stamp_paused:
             state["paused_at"] = _T0
@@ -315,16 +316,16 @@ class FakeCampaignRunStore:
     async def put_checkpoint(
         self,
         *,
-        campaign_run_id: CampaignRunId,
-        phase: CampaignPhase,
+        project_run_id: ProjectRunId,
+        phase: ProjectPhase,
         idempotency_key: str,
         status: PhaseCheckpointStatus,
         payload: dict[str, object],
     ) -> None:
-        existing = self._checkpoints.get((campaign_run_id, phase))
-        self._checkpoints[(campaign_run_id, phase)] = CampaignPhaseCheckpointRow(
+        existing = self._checkpoints.get((project_run_id, phase))
+        self._checkpoints[(project_run_id, phase)] = ProjectPhaseCheckpointRow(
             id=existing.id if existing is not None else uuid4(),
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             phase=phase,
             idempotency_key=idempotency_key,
             status=status,
@@ -335,38 +336,34 @@ class FakeCampaignRunStore:
         )
 
     async def get_checkpoint(
-        self, campaign_run_id: CampaignRunId, phase: CampaignPhase
-    ) -> CampaignPhaseCheckpointRow | None:
-        return self._checkpoints.get((campaign_run_id, phase))
+        self, project_run_id: ProjectRunId, phase: ProjectPhase
+    ) -> ProjectPhaseCheckpointRow | None:
+        return self._checkpoints.get((project_run_id, phase))
 
     async def adjust(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
         icp_version: int | None = None,
         budget_cap_cents: CostCents | None = None,
         tier_cutoffs: TierCutoffs | None = None,
     ) -> None:
-        state = self._runs[campaign_run_id]
+        state = self._runs[project_run_id]
         if icp_version is not None:
             state["icp_version"] = icp_version
-            self._journal(campaign_run_id, "icp_version", {"icp_version": icp_version})
+            self._journal(project_run_id, "icp_version", {"icp_version": icp_version})
         if budget_cap_cents is not None:
             state["budget_cap_cents"] = budget_cap_cents
-            self._journal(
-                campaign_run_id, "budget_cap", {"budget_cap_cents": str(budget_cap_cents)}
-            )
+            self._journal(project_run_id, "budget_cap", {"budget_cap_cents": str(budget_cap_cents)})
         if tier_cutoffs is not None:
             state["tier_cutoffs"] = dict(tier_cutoffs)
-            self._journal(campaign_run_id, "tier_cutoffs", {"tier_cutoffs": dict(tier_cutoffs)})
+            self._journal(project_run_id, "tier_cutoffs", {"tier_cutoffs": dict(tier_cutoffs)})
 
-    def _journal(
-        self, campaign_run_id: CampaignRunId, kind: str, detail: dict[str, object]
-    ) -> None:
+    def _journal(self, project_run_id: ProjectRunId, kind: str, detail: dict[str, object]) -> None:
         self.adjustments.append(
             AdjustmentRow(
                 id=uuid4(),
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 kind=kind,
                 detail=detail,
                 created_at=_T0,
@@ -375,7 +372,7 @@ class FakeCampaignRunStore:
 
 
 class RecordingPhaseHandler:
-    """A recording :class:`~clue_research.core.PhaseHandler` (no IO).
+    """A recording :class:`~clue_core.PhaseHandler` (no IO).
 
     Declares the ``phase`` it serves, records each invocation and the :class:`PhaseContext` it saw,
     and returns a configurable :class:`PhaseResult` (``COMPLETED`` by default; ``PAUSED`` models the
@@ -384,7 +381,7 @@ class RecordingPhaseHandler:
 
     def __init__(
         self,
-        phase: CampaignPhase,
+        phase: ProjectPhase,
         *,
         result_status: PhaseStatus = PhaseStatus.COMPLETED,
         payload: dict[str, object] | None = None,
@@ -411,7 +408,7 @@ class RecordingPhaseHandler:
 
 
 class FakeBudgetEngine:
-    """A minimal :class:`~clue_research.core.BudgetEngine` (M7.5 stub) for M7.3 tests.
+    """A minimal :class:`~clue_core.BudgetEngine` (M7.5 stub) for M7.3 tests.
 
     Only ``estimate`` (the ``pre_run_estimate`` delegate) and ``set_campaign_cap`` (the
     ``adjust(budget_cap)`` flow-through) are exercised by M7.3; ``check``/``record``/``burn_down``
@@ -425,12 +422,12 @@ class FakeBudgetEngine:
             estimated_cost_cents=Decimal(0),
             cost_per_account_cents=Decimal(0),
         )
-        self.caps_set: list[tuple[CampaignRunId, CostCents]] = []
+        self.caps_set: list[tuple[ProjectRunId, CostCents]] = []
         self.estimate_calls: list[dict[str, object]] = []
 
     async def estimate(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
         discovered_count: int,
         tier_cutoffs: dict[str, float] | None = None,
@@ -445,7 +442,7 @@ class FakeBudgetEngine:
         *,
         scope: BudgetScope,
         projected_cents: CostCents,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> BudgetDecision:
@@ -461,16 +458,16 @@ class FakeBudgetEngine:
         *,
         cost_cents: CostCents,
         scope: BudgetScope,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         entity_id: EntityId | None = None,
         account_run_id: RunId | None = None,
     ) -> None:
         return None
 
-    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
-        self.caps_set.append((campaign_run_id, cap_cents))
+    async def set_campaign_cap(self, project_run_id: ProjectRunId, cap_cents: CostCents) -> None:
+        self.caps_set.append((project_run_id, cap_cents))
 
-    async def burn_down(self, campaign_run_id: CampaignRunId) -> BurnDown:
+    async def burn_down(self, project_run_id: ProjectRunId) -> BurnDown:
         zero = Decimal(0)
         return BurnDown(
             spent_cents=zero, estimated_cents=zero, cap_cents=zero, remaining_cents=zero
@@ -481,7 +478,7 @@ class FakeBudgetEngine:
 
 from datetime import timedelta  # noqa: E402
 
-from clue_research.core import IdempotencyScope  # noqa: E402
+from clue_core import IdempotencyScope  # noqa: E402
 from clue_research.durable.enums import IdempotencyStatus  # noqa: E402
 from clue_research.durable.idempotency import (  # noqa: E402
     ClaimOutcome,
@@ -583,11 +580,11 @@ class FakeBudgetStore:
     Backs the M7.5 budget-engine tests so estimate / check / record / set_campaign_cap / burn_down
     are exercised without Postgres. ``set_run`` / ``set_account`` seed the run/account cost state a
     test needs; ``add_spend`` / ``set_*`` mutate it exactly as :class:`DbBudgetStore` mutates the
-    ``campaign_run`` / ``account_run`` columns; ``events`` records every governance event for
+    ``project_run`` / ``account_run`` columns; ``events`` records every governance event for
     assertions (the in-memory analogue of the append-only ``budget_event`` table)."""
 
     def __init__(self) -> None:
-        self._runs: dict[CampaignRunId, dict[str, object]] = {}
+        self._runs: dict[ProjectRunId, dict[str, object]] = {}
         self._accounts: dict[RunId, dict[str, object]] = {}
         self.events: list[BudgetEventRow] = []
         self._seq = 0
@@ -596,13 +593,13 @@ class FakeBudgetStore:
 
     def set_run(
         self,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         *,
         spent: CostCents = Decimal(0),
         cap: CostCents | None = None,
         estimated: CostCents | None = None,
     ) -> None:
-        self._runs[campaign_run_id] = {"spent": spent, "cap": cap, "estimated": estimated}
+        self._runs[project_run_id] = {"spent": spent, "cap": cap, "estimated": estimated}
 
     def set_account(
         self,
@@ -616,8 +613,8 @@ class FakeBudgetStore:
 
     # -- the BudgetStore protocol --
 
-    async def run_state(self, campaign_run_id: CampaignRunId) -> RunBudgetState | None:
-        state = self._runs.get(campaign_run_id)
+    async def run_state(self, project_run_id: ProjectRunId) -> RunBudgetState | None:
+        state = self._runs.get(project_run_id)
         if state is None:
             return None
         return RunBudgetState(
@@ -639,7 +636,7 @@ class FakeBudgetStore:
     async def add_spend(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         cost_cents: CostCents,
         account_run_id: RunId | None = None,
         conn: object | None = None,
@@ -650,19 +647,19 @@ class FakeBudgetStore:
         # DbBudgetStore.add_spend exactly: fail-loud on a missing run/account (a charge never
         # silently vanishes), and check both rows BEFORE applying either (DB does it in one txn).
         # No setdefault auto-create — that would diverge from production's no-op row.
-        if campaign_run_id not in self._runs:
-            raise BudgetStateNotFound(f"campaign_run {campaign_run_id}")
+        if project_run_id not in self._runs:
+            raise BudgetStateNotFound(f"project_run {project_run_id}")
         if account_run_id is not None and account_run_id not in self._accounts:
             raise BudgetStateNotFound(f"account_run {account_run_id}")
-        run = self._runs[campaign_run_id]
+        run = self._runs[project_run_id]
         run["spent"] = run["spent"] + cost_cents  # type: ignore[operator]
         if account_run_id is not None:
             acct = self._accounts[account_run_id]
             acct["cost"] = acct["cost"] + cost_cents  # type: ignore[operator]
 
-    async def set_campaign_cap(self, campaign_run_id: CampaignRunId, cap_cents: CostCents) -> None:
+    async def set_campaign_cap(self, project_run_id: ProjectRunId, cap_cents: CostCents) -> None:
         run = self._runs.setdefault(
-            campaign_run_id, {"spent": Decimal(0), "cap": None, "estimated": None}
+            project_run_id, {"spent": Decimal(0), "cap": None, "estimated": None}
         )
         run["cap"] = cap_cents
 
@@ -670,10 +667,8 @@ class FakeBudgetStore:
         if account_run_id in self._accounts:
             self._accounts[account_run_id]["cap"] = cap_cents
 
-    async def set_estimated(
-        self, campaign_run_id: CampaignRunId, estimated_cents: CostCents
-    ) -> None:
-        run = self._runs.get(campaign_run_id)
+    async def set_estimated(self, project_run_id: ProjectRunId, estimated_cents: CostCents) -> None:
+        run = self._runs.get(project_run_id)
         if (
             run is not None
         ):  # best-effort: a pre-start estimate (no run row) is a no-op, like the DB
@@ -682,7 +677,7 @@ class FakeBudgetStore:
     async def record_event(
         self,
         *,
-        campaign_run_id: CampaignRunId,
+        project_run_id: ProjectRunId,
         scope: BudgetScope,
         kind: BudgetEventKind,
         projected_cents: CostCents,
@@ -694,7 +689,7 @@ class FakeBudgetStore:
             BudgetEventRow(
                 id=uuid4(),
                 seq=self._seq,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 scope=scope,
                 kind=kind,
                 projected_cents=projected_cents,

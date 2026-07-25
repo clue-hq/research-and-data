@@ -18,8 +18,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, current_value, insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     EntityId,
@@ -30,9 +29,10 @@ from clue_research.core import (
     ReviewRejectReason,
     ReviewSessionStatus,
     account_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
+from clue_research.claimstore import WorkspaceScope, claims_for, current_value, insert_claim
 from clue_research.identity import insert_account_entity
 from clue_research.review import (
     InMemoryVerificationAnnotationReader,
@@ -40,13 +40,14 @@ from clue_research.review import (
     ReviewSurfaceImpl,
     finalized_review_account_ids,
 )
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
 pytestmark = pytest.mark.usefixtures("require_review_db")
 
 _CLIENT = "client-acme"
-_SCOPE = TenantScope.for_tenant(_CLIENT)
+_SCOPE = WorkspaceScope.for_workspace(_CLIENT)
 _PAIN = "account.operational_pain"  # a core-pack account field (string value)
 
 
@@ -68,7 +69,7 @@ class _RecordingEmitter:
         *,
         account_entity_id: EntityId,
         contact_entity_id: EntityId | None,
-        campaign_run_id: object,
+        project_run_id: object,
         actor: str,
     ) -> None:
         self.actions.append(outcome.action)
@@ -86,8 +87,13 @@ def _surface(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
@@ -114,7 +120,7 @@ def test_correction_wins_current_value_and_original_stays_queryable() -> None:
             await insert_claim(conn, orig)
             surface = _surface(conn)
             session = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=new_campaign_run_id(), client_id=_CLIENT
+                account_entity_id=acct, project_run_id=new_project_run_id(), workspace_id=_CLIENT
             )
             assert any(
                 r.field_key == _PAIN and r.is_current for r in session.account_claims
@@ -145,7 +151,7 @@ def test_reject_excludes_claim_from_current_value() -> None:
             await insert_claim(conn, orig)
             surface = _surface(conn)
             session = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=new_campaign_run_id(), client_id=_CLIENT
+                account_entity_id=acct, project_run_id=new_project_run_id(), workspace_id=_CLIENT
             )
             await surface.apply_action(
                 session_id=session.session_id,
@@ -168,12 +174,12 @@ def test_open_session_is_idempotent_and_action_emits_disposition() -> None:
             await insert_claim(conn, orig)
             emitter = _RecordingEmitter()
             surface = _surface(conn, emitter=emitter)
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             first = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=run_id, client_id=_CLIENT
+                account_entity_id=acct, project_run_id=run_id, workspace_id=_CLIENT
             )
             again = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=run_id, client_id=_CLIENT
+                account_entity_id=acct, project_run_id=run_id, workspace_id=_CLIENT
             )
             assert first.session_id == again.session_id  # idempotent on (account, run, round)
             await surface.apply_action(
@@ -198,10 +204,10 @@ def test_finalize_marks_session_and_feeds_the_handoff_gate() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             acct = await _account(conn)
-            run_id = new_campaign_run_id()
+            run_id = new_project_run_id()
             surface = _surface(conn)
             session = await surface.open_session(
-                account_entity_id=acct, campaign_run_id=run_id, client_id=_CLIENT
+                account_entity_id=acct, project_run_id=run_id, workspace_id=_CLIENT
             )
             assert await finalized_review_account_ids(conn, run_id) == frozenset()
             finalized = await surface.finalize(session_id=session.session_id, actor="reviewer")

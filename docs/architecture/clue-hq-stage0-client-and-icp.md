@@ -75,6 +75,8 @@ The client's imported list (and their existing customers from reverse-profiling)
 
 These hand off to discovery (A), directly to the scoring bridge (B), or both (hybrid) — see the end-to-end map in the overview doc §2.
 
+> **Harness-era extension (Doc M).** Under the deep-agent harness this reverse-profiling conversation generalizes into a **per-campaign kickoff interview** that is also scoped memory's `user_stated` writer and its re-confirmation gate: client-stated preferences and behavioral learnings become tenant-private *memory* records (the species split — facts still become claims, above), and memories whose staleness signals fired resurface here for confirm/amend. This is what makes each successive campaign start pre-loaded with what prior campaigns taught. See `clue-hq-scoped-memory-and-context-assembly.md` §7, §13, and REQ-08 in the harness architecture doc.
+
 ---
 
 ## 6. Open items (tracked in overview §5)

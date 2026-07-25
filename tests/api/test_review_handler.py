@@ -1,6 +1,6 @@
 """M13.1 — ``ReviewPhaseHandler`` unit tests (fakes only, no DB).
 
-Drives the REVIEW phase handler with a fake :class:`~clue_research.core.ReviewSurface` and a fake
+Drives the REVIEW phase handler with a fake :class:`~clue_core.ReviewSurface` and a fake
 account resolver, asserting: protocol conformance + registration, the empty-set COMPLETED no-op, the
 populated-set PAUSED-after-opening-sessions path (the human gate), per-account isolation, and the
 ``build_review_phase_handler`` composition smoke (construction touches no DB)."""
@@ -11,31 +11,31 @@ import asyncio
 from collections.abc import Sequence
 from uuid import uuid4
 
-from clue_research.api.review import ReviewPhaseHandler, build_review_phase_handler
-from clue_research.api.review.handler import ReviewAccountResolver
-from clue_research.core import (
-    CampaignPhase,
-    CampaignRunId,
+from clue_api.review import ReviewPhaseHandler, build_review_phase_handler
+from clue_api.review.handler import ReviewAccountResolver
+from clue_core import (
     EntityId,
     PhaseContext,
     PhaseHandler,
     PhaseStatus,
+    ProjectPhase,
+    ProjectRunId,
     ReviewAction,
     ReviewActionOutcome,
     ReviewRejectReason,
     ReviewSession,
     ReviewSessionStatus,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
 )
-from clue_research.core.review import ReviewSessionId
+from clue_core.review import ReviewSessionId
 from clue_research.durable import AccountSpec, PhaseHandlerRegistry
 
 _CLIENT = "client-acme"
 
 
 class FakeReviewSurface:
-    """A fake :class:`~clue_research.core.ReviewSurface` — records opened sessions; the handler only
+    """A fake :class:`~clue_core.ReviewSurface` — records opened sessions; the handler only
     calls ``open_session``. ``raise_for`` makes one account's open fail (isolation test)."""
 
     def __init__(self, *, raise_for: EntityId | None = None) -> None:
@@ -46,8 +46,8 @@ class FakeReviewSurface:
         self,
         *,
         account_entity_id: EntityId,
-        campaign_run_id: CampaignRunId,
-        client_id: str,
+        project_run_id: ProjectRunId,
+        workspace_id: str,
         review_round: int = 1,
         opened_by: str | None = None,
     ) -> ReviewSession:
@@ -57,7 +57,7 @@ class FakeReviewSurface:
         return ReviewSession(
             session_id=ReviewSessionId(uuid4()),
             account_entity_id=account_entity_id,
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             review_round=review_round,
             status=ReviewSessionStatus.OPEN,
         )
@@ -87,14 +87,16 @@ def _resolver(specs: Sequence[AccountSpec]) -> ReviewAccountResolver:
 
 
 def _spec(entity_id: EntityId) -> AccountSpec:
-    return AccountSpec(entity_id=entity_id, tier="top", tenant_id=_CLIENT)
+    return AccountSpec(entity_id=entity_id, tier="top", workspace_id=_CLIENT)
 
 
 def _ctx() -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.REVIEW,
-        client_id=_CLIENT,
+        project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
+        phase=ProjectPhase.REVIEW,
+        workspace_id=_CLIENT,
         icp_key="icp-1",
         icp_version=1,
     )
@@ -103,11 +105,11 @@ def _ctx() -> PhaseContext:
 def test_handler_conforms_to_protocol_and_registers() -> None:
     handler = ReviewPhaseHandler(account_resolver=_resolver(()), surface=FakeReviewSurface())
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.REVIEW
+    assert handler.phase is ProjectPhase.REVIEW
     registry = PhaseHandlerRegistry()
-    assert registry.get(CampaignPhase.REVIEW) is None
+    assert registry.get(ProjectPhase.REVIEW) is None
     registry.register(handler)
-    assert registry.get(CampaignPhase.REVIEW) is handler
+    assert registry.get(ProjectPhase.REVIEW) is handler
 
 
 def test_empty_account_set_is_a_completed_no_op() -> None:
@@ -165,4 +167,4 @@ def test_build_review_phase_handler_wires_the_concrete_seams() -> None:
     # Construction touches no DB (the readers/resolvers are lazy); proves the composition wiring.
     handler = build_review_phase_handler()
     assert isinstance(handler, PhaseHandler)
-    assert handler.phase is CampaignPhase.REVIEW
+    assert handler.phase is ProjectPhase.REVIEW

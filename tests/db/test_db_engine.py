@@ -14,7 +14,7 @@ import os
 import pytest
 from sqlalchemy import text
 
-from clue_research.db import (
+from clue_db import (
     DATABASE_URL_ENV,
     DEFAULT_DATABASE_URL,
     connection,

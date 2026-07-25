@@ -1,7 +1,7 @@
 # M8A.0 — durable seams (scheduler `run_one` callback + `account_run.sub_phase`) — implementation
 
 **Date:** 2026-06-23 · **Branch:** `m8a/durable-seams` (off `origin/main` @ 54b8c50) · **Spec:**
-`docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.0 · **Plan:**
+`docs/specs/M8A-project-run-deep-orchestration.md` §M8A.0 · **Plan:**
 [[2026-06-23-m8a-implementation-plan]] · **Design:** [[2026-06-22-m8a-orchestration-design]].
 
 First M8A issue: the additive, **`durable`-owned** substrate the deep-orchestration (M8A.1+) depends

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.core import FieldDef, UseClass
+from clue_core import FieldDef, UseClass
 from clue_research.profiling.contact.use_class import DEFAULT_USE_CLASS_TAGGER
 from clue_research.profiling.fields import (
     FACET_ALMA_MATER,

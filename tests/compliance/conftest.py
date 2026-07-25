@@ -23,10 +23,10 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_core import FieldDef, PassKind, ReuseScope
+from clue_db import db_lifespan
 from clue_research.claimstore import SeedField, load_core_pack, load_pack
 from clue_research.compliance import load_compliance_pack
-from clue_research.core import FieldDef, PassKind, ReuseScope
-from clue_research.db import db_lifespan
 from tests.db.conftest import _db_available
 from tests.db.conftest import run_async as run_async
 

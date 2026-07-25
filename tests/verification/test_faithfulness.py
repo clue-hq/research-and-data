@@ -21,8 +21,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import insert_claim, register_field
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     ClaimId,
@@ -41,12 +40,13 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.identity import insert_account_entity
-from clue_research.obs import (
+from clue_obs.otel import (
     SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
     InMemorySink,
     collect_spans,
 )
+from clue_research.claimstore import insert_claim, register_field
+from clue_research.identity import insert_account_entity
 from clue_research.verification import (
     DEFAULT_JUDGE_POLICY,
     PROMPT_VERSION,
@@ -64,6 +64,7 @@ from clue_research.verification.faithfulness import (
     METRIC_FAITHFULNESS_RE_RETRIEVAL,
     METRIC_FAITHFULNESS_SUPPORTED,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -71,7 +72,7 @@ from .conftest import rollback_conn, run_async
 
 
 class FakeGateway:
-    """A deterministic :class:`~clue_research.core.gateway.LLMGateway` for the judge tests: returns
+    """A deterministic :class:`~clue_core.gateway.LLMGateway` for the judge tests: returns
     one canned response and records every ``complete`` call (model + messages) so the test can
     assert *which* model was called and *how many times* (caching / no-call / model-swap)."""
 
@@ -265,8 +266,13 @@ def _judge(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(  # type: ignore[return-value]
-        conn, canonical_name="Acme", primary_domain="acme.com", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme",
+        primary_domain="acme.com",
+        status=AccountStatus.ACTIVE,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 
@@ -567,21 +573,21 @@ def test_load_judge_policy_per_client_then_global_then_default() -> None:
             await conn.execute(
                 text(
                     "INSERT INTO judge_policy "
-                    "(policy_id, client_id, judge_model, prompt_version, supported_threshold) "
+                    "(policy_id, workspace_id, judge_model, prompt_version, supported_threshold) "
                     "VALUES ('global', NULL, 'm/global', 'v1', 0.6)"
                 )
             )
-            glob = await load_judge_policy(conn, client_id="acme")
+            glob = await load_judge_policy(conn, workspace_id="acme")
             assert glob.judge_model == "m/global" and glob.supported_threshold == pytest.approx(0.6)
             # a per-client row wins over the global one.
             await conn.execute(
                 text(
                     "INSERT INTO judge_policy "
-                    "(policy_id, client_id, judge_model, prompt_version, supported_threshold) "
+                    "(policy_id, workspace_id, judge_model, prompt_version, supported_threshold) "
                     "VALUES ('acme', 'acme', 'm/acme', 'v1', 0.8)"
                 )
             )
-            cli = await load_judge_policy(conn, client_id="acme")
+            cli = await load_judge_policy(conn, workspace_id="acme")
             assert cli.judge_model == "m/acme" and cli.supported_threshold == pytest.approx(0.8)
 
     run_async(_run())
@@ -805,7 +811,7 @@ def test_unregistered_prompt_version_falls_back_to_default() -> None:
             await conn.execute(
                 text(
                     "INSERT INTO judge_policy "
-                    "(policy_id, client_id, judge_model, prompt_version, supported_threshold) "
+                    "(policy_id, workspace_id, judge_model, prompt_version, supported_threshold) "
                     "VALUES ('global', NULL, 'm/global', 'v-retired-999', 0.7)"
                 )
             )

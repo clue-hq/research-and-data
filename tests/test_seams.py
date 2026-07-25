@@ -8,8 +8,8 @@ machine-checked guard that the two never drift — a typo in either would silent
 
 from __future__ import annotations
 
-from clue_research.config import DB_DSN_ENV_VAR
-from clue_research.db import DATABASE_URL_ENV
+from clue_config import DB_DSN_ENV_VAR
+from clue_db import DATABASE_URL_ENV
 
 
 def test_database_dsn_env_var_seam_is_consistent() -> None:

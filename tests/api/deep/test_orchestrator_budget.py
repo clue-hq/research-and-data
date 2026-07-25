@@ -20,15 +20,15 @@ from typing import Any
 
 import pytest
 
-from clue_research.api.deep import deep_account_run_id
-from clue_research.config import DeepPhaseConfig, RecursionPolicy, TierRecursionCaps
-from clue_research.core import (
+from clue_api.deep import deep_account_run_id
+from clue_config import DeepPhaseConfig, RecursionPolicy, TierRecursionCaps
+from clue_core import (
     BudgetScope,
     BudgetVerdict,
     EntityId,
     WorkerStatus,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
 )
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
 from clue_research.profiling import ContactProfileResult
@@ -59,12 +59,12 @@ def test_deny_stops_admitting_and_records_partial_not_failed() -> None:
         config=DeepPhaseConfig(committee_size_cap=8),
         budget=budget,
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=campaign)
+        result = await orch.run_one(spec, project_run_id=campaign)
         # two ALLOWs admitted, the third check DENY-ed → admission stopped, the rest never checked
         assert len(rec.contact_ids) == 2
         assert len(result.contacts) == 2
@@ -92,10 +92,10 @@ def test_graceful_stop_is_surfaced_for_the_handler_to_pause() -> None:
         FakeProfileContact(rec),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         # one admitted before the run-cap breach; the second check GRACEFUL_STOP-ed
         assert len(result.contacts) == 1
         assert result.budget_stop is BudgetVerdict.GRACEFUL_STOP
@@ -119,10 +119,10 @@ def test_all_allow_profiles_every_in_cap_member_with_no_stop() -> None:
         FakeProfileContact(rec),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         assert len(result.contacts) == 3
         assert result.budget_stop is None
         assert len(budget.checks) == 3  # one admission check per admitted member
@@ -145,12 +145,12 @@ def test_admission_projects_per_contact_estimate_from_config() -> None:
         config=config,
         budget=budget,
     )
-    campaign = new_campaign_run_id()
+    campaign = new_project_run_id()
     entity = new_entity_id()
-    spec = AccountSpec(entity_id=entity, tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=entity, tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        await orch.run_one(spec, campaign_run_id=campaign)
+        await orch.run_one(spec, project_run_id=campaign)
         run_id = deep_account_run_id(campaign, entity)
         assert len(budget.checks) == 2
         for call in budget.checks:
@@ -160,7 +160,7 @@ def test_admission_projects_per_contact_estimate_from_config() -> None:
             # keyed to the ACCOUNT entity + the deterministic account_run id (the cost-dial axis)
             assert call["entity_id"] == entity
             assert call["account_run_id"] == run_id
-            assert call["campaign_run_id"] == campaign
+            assert call["project_run_id"] == campaign
 
     run_async(_run())
 
@@ -190,10 +190,10 @@ def test_facet_subworker_budget_is_read_from_recursion_policy_bound_c() -> None:
         _recording_contact,
         recursion_policy=policy,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        await orch.run_one(spec, project_run_id=new_project_run_id())
         # the value flows from the policy's tier caps (4), not a hardcoded constant
         assert seen == [4, 4]
 
@@ -212,10 +212,10 @@ def test_deny_on_first_contact_admits_zero_records_partial() -> None:
         FakeProfileContact(rec),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
-        result = await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+        result = await orch.run_one(spec, project_run_id=new_project_run_id())
         # the first check denied → nothing admitted, the rest never checked
         assert len(result.contacts) == 0
         assert len(budget.checks) == 1
@@ -243,11 +243,11 @@ def test_budget_check_exception_cancels_admitted_tasks_no_orphans() -> None:
         config=DeepPhaseConfig(committee_size_cap=8),
         budget=budget,
     )
-    spec = AccountSpec(entity_id=new_entity_id(), tier="top", tenant_id="client-1")
+    spec = AccountSpec(entity_id=new_entity_id(), tier="top", workspace_id="client-1")
 
     async def _run() -> None:
         with pytest.raises(RuntimeError, match="budget engine unavailable"):
-            await orch.run_one(spec, campaign_run_id=new_campaign_run_id())
+            await orch.run_one(spec, project_run_id=new_project_run_id())
         await asyncio.sleep(0)  # let the loop settle after the re-raise
         # no admitted contact task is left running detached (the cleanup cancelled + drained them)
         leftover = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]

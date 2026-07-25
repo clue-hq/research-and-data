@@ -14,7 +14,8 @@ from decimal import Decimal
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from clue_research.core import new_campaign_run_id, new_entity_id, new_run_id
+from clue_core import new_entity_id, new_project_run_id, new_run_id
+from clue_obs.otel import collect_spans
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,
@@ -22,7 +23,6 @@ from clue_research.durable import (
     ResearchPlan,
     WorkerRegistry,
 )
-from clue_research.obs import collect_spans
 from tests.db.conftest import run_async
 from tests.durable.conftest import FakeAccountRunStore, StubAspectWorker
 
@@ -56,7 +56,7 @@ def test_run_produces_references_only() -> None:
         result = await graph.run(
             new_entity_id(),
             tier="top",
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
         assert result.status is AccountRunStatus.DONE
@@ -87,7 +87,7 @@ def test_plan_is_persisted_before_any_worker_spawns() -> None:
         await graph.run(
             new_entity_id(),
             tier="top",
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
         # the lead's plan (begin) is committed before any worker runs, and collect runs last.
@@ -112,7 +112,7 @@ def test_failing_worker_is_isolated_run_continues() -> None:
         result = await graph.run(
             new_entity_id(),
             tier="top",
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
         # one aspect failed, but the run completes and the sibling's claims survive.
@@ -135,7 +135,7 @@ def test_all_workers_failing_marks_run_failed() -> None:
         result = await graph.run(
             new_entity_id(),
             tier="top",
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
         assert result.status is AccountRunStatus.FAILED
@@ -165,7 +165,7 @@ def test_workers_run_in_parallel() -> None:
             graph.run(
                 new_entity_id(),
                 tier="top",
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 checkpointer=InMemorySaver(),
             ),
             timeout=5.0,
@@ -184,7 +184,7 @@ def test_missing_worker_marks_aspect_failed() -> None:
         result = await graph.run(
             new_entity_id(),
             tier="top",
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
         assert result.status is AccountRunStatus.DONE
@@ -202,7 +202,7 @@ def test_no_aspects_routes_straight_to_collect() -> None:
         result = await graph.run(
             new_entity_id(),
             tier="low",
-            campaign_run_id=new_campaign_run_id(),
+            project_run_id=new_project_run_id(),
             checkpointer=InMemorySaver(),
         )
         assert result.status is AccountRunStatus.DONE
@@ -226,7 +226,7 @@ def test_per_node_trace_spans_are_emitted() -> None:
             await graph.run(
                 new_entity_id(),
                 tier="top",
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 checkpointer=InMemorySaver(),
             )
         names = {s.name for s in spans.get_finished_spans()}
@@ -246,11 +246,11 @@ def test_resume_completed_run_reruns_nothing() -> None:
         saver = InMemorySaver()
         run_id = new_run_id()
         entity_id = new_entity_id()
-        campaign_run_id = new_campaign_run_id()
+        project_run_id = new_project_run_id()
         first = await graph.run(
             entity_id,
             tier="top",
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             checkpointer=saver,
             account_run_id=run_id,
         )
@@ -261,7 +261,7 @@ def test_resume_completed_run_reruns_nothing() -> None:
         second = await graph.run(
             entity_id,
             tier="top",
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             checkpointer=saver,
             account_run_id=run_id,
         )
@@ -300,12 +300,12 @@ def test_crash_mid_fan_out_resumes_without_replanning() -> None:
         saver = InMemorySaver()
         run_id = new_run_id()
         entity_id = new_entity_id()
-        campaign_run_id = new_campaign_run_id()
+        project_run_id = new_project_run_id()
         with pytest.raises(BaseException):  # noqa: B017,PT011 — the deliberate crash aborts run 1
             await graph.run(
                 entity_id,
                 tier="top",
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 checkpointer=saver,
                 account_run_id=run_id,
             )
@@ -314,7 +314,7 @@ def test_crash_mid_fan_out_resumes_without_replanning() -> None:
         result = await graph.run(
             entity_id,
             tier="top",
-            campaign_run_id=campaign_run_id,
+            project_run_id=project_run_id,
             checkpointer=saver,
             account_run_id=run_id,
         )

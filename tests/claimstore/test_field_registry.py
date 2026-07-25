@@ -8,6 +8,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import text
 
+from clue_core import Claim, FieldClass, FieldDef, PassKind, ReuseScope
 from clue_research.claimstore import (
     FieldRedefinitionError,
     UnknownFieldError,
@@ -19,7 +20,6 @@ from clue_research.claimstore import (
     register_field,
     validate_value,
 )
-from clue_research.core import Claim, FieldClass, FieldDef, PassKind, ReuseScope
 
 from .conftest import rollback_conn, run_async
 
@@ -199,12 +199,15 @@ def test_register_accepts_each_canonical_and_a_pack() -> None:
                 fd = FieldDef(field_key=key, value_type="str", pass_kind=PassKind.DEEP)
                 await register_field(conn, fd, value_schema={"type": "string"})
                 assert await get_field(conn, key) is not None
-            # a vertical pack field, with the pack declared
+            # a vertical pack field, with the pack declared. Use a test-only namespace: production
+            # packs (e.g. the icp starter packs' `healthcare.npi`) are COMMITTED by other tests on
+            # a persistent schema, and re-registering one of their keys with a different definition
+            # would (correctly) raise FieldRedefinitionError on a rerun.
             pack_fd = FieldDef(
-                field_key="healthcare.npi", value_type="str", pass_kind=PassKind.SCORING
+                field_key="maritime.imo_number", value_type="str", pass_kind=PassKind.SCORING
             )
-            await register_field(conn, pack_fd, pack="healthcare", value_schema={"type": "string"})
-            stored = await get_field(conn, "healthcare.npi")
+            await register_field(conn, pack_fd, pack="maritime", value_schema={"type": "string"})
+            stored = await get_field(conn, "maritime.imo_number")
             assert stored is not None and stored.field_class is FieldClass.PACK
             # pack field without a declared pack is rejected
             with pytest.raises(ValueError, match="unregistered namespace"):
@@ -290,12 +293,16 @@ def test_governed_field_classes_are_deep() -> None:
         async with rollback_conn() as conn:
             facets = await list_fields(conn, field_class="contact.facet.*")
             resonance = await list_fields(conn, field_class=FieldClass.ACCOUNT_RESONANCE)
-        assert {f.field_key for f in facets} == {"contact.facet.recent_post"}
+        # Membership, not exact equality: on a persistent schema other suites COMMIT further
+        # governed fields (e.g. the icp starter packs' `account.resonance.research_prestige`).
+        # The seed rows must be present, and EVERY governed-class row — seeded or committed by
+        # another pack — must satisfy the deep-pass + field-class invariant.
+        assert "contact.facet.recent_post" in {f.field_key for f in facets}
         assert all(
             f.pass_kind is PassKind.DEEP and f.field_class is FieldClass.CONTACT_FACET
             for f in facets
         )
-        assert {f.field_key for f in resonance} == {"account.resonance.culture"}
+        assert "account.resonance.culture" in {f.field_key for f in resonance}
         assert all(
             f.pass_kind is PassKind.DEEP and f.field_class is FieldClass.ACCOUNT_RESONANCE
             for f in resonance
@@ -324,17 +331,21 @@ def test_two_packs_disjoint_load_and_redefinition_rejected() -> None:
 
     async def _run() -> None:
         async with rollback_conn() as conn:
+            # Test-only namespaces (see test_register_accepts_each_canonical_and_a_pack): the
+            # production `healthcare` starter pack may already be COMMITTED on a persistent schema.
             await register_field(
                 conn,
-                FieldDef(field_key="healthcare.npi", value_type="str", pass_kind=PassKind.SCORING),
-                pack="healthcare",
+                FieldDef(
+                    field_key="maritime.imo_number", value_type="str", pass_kind=PassKind.SCORING
+                ),
+                pack="maritime",
             )
             await register_field(
                 conn,
                 FieldDef(field_key="fintech.mrr", value_type="int", pass_kind=PassKind.SCORING),
                 pack="fintech",
             )
-            assert await get_field(conn, "healthcare.npi") is not None
+            assert await get_field(conn, "maritime.imo_number") is not None
             assert await get_field(conn, "fintech.mrr") is not None
 
             # idempotent re-register of an identical seed field is a no-op

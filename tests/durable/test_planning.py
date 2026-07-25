@@ -7,8 +7,8 @@ effort-scaling defaults the issue exposes.
 
 from __future__ import annotations
 
-from clue_research.core import PassKind
-from clue_research.core.field import FieldDef
+from clue_core import PassKind
+from clue_core.field import FieldDef
 from clue_research.durable.planning import build_plan
 
 

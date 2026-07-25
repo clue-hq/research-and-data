@@ -20,8 +20,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import insert_claim
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     ClaimFlavor,
@@ -38,12 +37,13 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.identity import insert_account_entity, insert_contact_entity
-from clue_research.obs import (
+from clue_obs.otel import (
     SPAN_VERIFICATION_IDENTITY_BINDING,
     InMemorySink,
     collect_spans,
 )
+from clue_research.claimstore import insert_claim
+from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.verification import (
     DEFAULT_BINDING_POLICY,
     BindingPolicy,
@@ -60,6 +60,7 @@ from clue_research.verification.identity_binding import (
     METRIC_IDENTITY_BINDING_STRONG,
     METRIC_IDENTITY_BINDING_WEAK,
 )
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -83,6 +84,7 @@ def _contact_entity(
         linkedin_url=linkedin_url,
         verified_email=verified_email,
         geo=geo,
+        workspace_id="ws-test",
     )
 
 
@@ -541,8 +543,13 @@ def _gate(
 async def _account(
     conn: AsyncConnection, *, name: str = "Acme Robotics", domain: str = "acme.com"
 ) -> EntityId:
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(  # type: ignore[return-value]
-        conn, canonical_name=name, primary_domain=domain, status=AccountStatus.ACTIVE
+        conn,
+        canonical_name=name,
+        primary_domain=domain,
+        status=AccountStatus.ACTIVE,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 
@@ -619,7 +626,7 @@ def test_name_only_web_match_is_weak_and_excluded_from_merge() -> None:
     # and excluded from the merge view's current_value (the handoff usable set) though it exists.
     async def _run() -> None:
         from clue_research.claimstore import current_value
-        from clue_research.claimstore.tenancy import ALL_TENANTS
+        from clue_research.claimstore.tenancy import ALL_WORKSPACES
 
         async with rollback_conn() as conn:
             account = await _account(conn, name="Acme Robotics")
@@ -637,7 +644,7 @@ def test_name_only_web_match_is_weak_and_excluded_from_merge() -> None:
             # born-weak → status stays unverified (spec: "never advance past unverified")...
             assert await _status(conn, claim.id) == "unverified"
             # ...and the merge view excludes a weak-bound contact claim from current truth.
-            cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_TENANTS)
+            cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_WORKSPACES)
             assert cv is None
 
     run_async(_run())
@@ -755,9 +762,9 @@ def test_drift_born_strong_classified_weak_is_rejected() -> None:
             # and the REJECTED backstop (not the immutable column, which wrongly says STRONG) is the
             # causal lever that removes the claim from the usable set (merge.exclude_rejected).
             from clue_research.claimstore import current_value
-            from clue_research.claimstore.tenancy import ALL_TENANTS
+            from clue_research.claimstore.tenancy import ALL_WORKSPACES
 
-            cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_TENANTS)
+            cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_WORKSPACES)
             assert cv is None
             # the immutable identity_binding column was NOT rewritten — it is still 'strong'.
             born = (
@@ -811,7 +818,7 @@ def test_born_none_non_facet_contact_weak_is_rejected_and_excluded() -> None:
     # of the usable set — verify it both flips the status AND drops it from current_value.
     async def _run() -> None:
         from clue_research.claimstore import current_value
-        from clue_research.claimstore.tenancy import ALL_TENANTS
+        from clue_research.claimstore.tenancy import ALL_WORKSPACES
 
         async with rollback_conn() as conn:
             account = await _account(conn)
@@ -829,7 +836,7 @@ def test_born_none_non_facet_contact_weak_is_rejected_and_excluded() -> None:
             binding = await _gate(conn).classify(claim)
             assert binding.strength is IdentityBinding.WEAK
             assert await _status(conn, claim.id) == "rejected"  # backstop is load-bearing here
-            cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_TENANTS)
+            cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_WORKSPACES)
             assert cv is None  # excluded by the REJECTED status, not the (None) column
 
     run_async(_run())
@@ -863,7 +870,7 @@ def test_policy_k_change_via_config_changes_classification() -> None:
             # a global policy row with K=3 → the SAME claim re-classifies (new fingerprint) → weak.
             await conn.execute(
                 text(
-                    "INSERT INTO binding_policy (policy_id, client_id, min_identifiers_k) "
+                    "INSERT INTO binding_policy (policy_id, workspace_id, min_identifiers_k) "
                     "VALUES ('global', NULL, 3)"
                 )
             )
@@ -925,9 +932,9 @@ def test_runs_before_use_gate_stub() -> None:
         # a faithful M10 stub: only acts on claims that survived into the usable set (current_value)
         # AND are recorded strong in the binding audit. It does NOT branch on an in-memory verdict.
         from clue_research.claimstore import current_value
-        from clue_research.claimstore.tenancy import ALL_TENANTS
+        from clue_research.claimstore.tenancy import ALL_WORKSPACES
 
-        cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_TENANTS)
+        cv = await current_value(conn, claim.entity_id, claim.field_key, scope=ALL_WORKSPACES)
         strength = (
             await conn.execute(
                 text(
@@ -1084,20 +1091,22 @@ def test_load_binding_policy_per_client_then_global_then_default() -> None:
             # a global row is read when no client row matches.
             await conn.execute(
                 text(
-                    "INSERT INTO binding_policy (policy_id, client_id, min_identifiers_k, version) "
+                    "INSERT INTO binding_policy "
+                    "(policy_id, workspace_id, min_identifiers_k, version) "
                     "VALUES ('global', NULL, 3, 1)"
                 )
             )
-            glob = await load_binding_policy(conn, client_id="acme")
+            glob = await load_binding_policy(conn, workspace_id="acme")
             assert glob.min_identifiers_k == 3
             # a per-client row wins over the global one.
             await conn.execute(
                 text(
-                    "INSERT INTO binding_policy (policy_id, client_id, min_identifiers_k, version) "
+                    "INSERT INTO binding_policy "
+                    "(policy_id, workspace_id, min_identifiers_k, version) "
                     "VALUES ('acme', 'acme', 4, 1)"
                 )
             )
-            cli = await load_binding_policy(conn, client_id="acme")
+            cli = await load_binding_policy(conn, workspace_id="acme")
             assert cli.min_identifiers_k == 4
 
     run_async(_run())

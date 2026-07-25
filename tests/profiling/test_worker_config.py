@@ -2,7 +2,8 @@
 
 Proves the live-wiring crux without a DB: the account-axis worker resolves the waterfall stop bar
 (``ConfidenceThresholds``, lever 1) + the planner tier reach (``SourcePlanPolicy``, lever 2) from
-``get_config`` keyed by the run's ``client_id`` (via an injected ``OverlayStore``), and falls back
+``get_config`` keyed by the run's ``workspace_id`` (via an injected ``OverlayStore``), and falls
+back
 to the conservative defaults when no client coordinate / no overlay is present — so behaviour is
 unchanged unless an overlay is registered.
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from clue_research.config import (
+from clue_config import (
     DEFAULT_CONFIDENCE_THRESHOLDS,
     DEFAULT_SOURCE_PLAN_POLICY,
     ConfidenceThresholds,
@@ -33,7 +34,7 @@ def test_worker_resolves_policies_from_overlay() -> None:
         ),
     )
     worker = AspectProfilingWorker("account", config_store=store)
-    thresholds, plan_policy = worker._source_policies(RunContext(client_id="acme"))
+    thresholds, plan_policy = worker._source_policies(RunContext(workspace_id="acme"))
     assert thresholds.default == pytest.approx(0.95)
     # tier_scope=3 widened to include tier-4 by prefer_deep_sources (lever 2).
     assert plan_policy.effective_max_tier() == 4
@@ -47,7 +48,7 @@ def test_worker_defaults_without_client_or_overlay() -> None:
         DEFAULT_SOURCE_PLAN_POLICY,
     )
     # A known client with no overlay → the dense defaults from get_config (unchanged behaviour).
-    thresholds, plan_policy = worker._source_policies(RunContext(client_id="globex"))
+    thresholds, plan_policy = worker._source_policies(RunContext(workspace_id="globex"))
     assert thresholds == DEFAULT_CONFIDENCE_THRESHOLDS
     assert plan_policy == DEFAULT_SOURCE_PLAN_POLICY
 
@@ -65,6 +66,6 @@ def test_worker_icp_overlay_wins_over_client() -> None:
     )
     worker = AspectProfilingWorker("account", config_store=store)
     thresholds, _ = worker._source_policies(
-        RunContext(client_id="acme", icp_key="icp-eu", icp_version=1)
+        RunContext(workspace_id="acme", icp_key="icp-eu", icp_version=1)
     )
     assert thresholds.default == pytest.approx(0.95)

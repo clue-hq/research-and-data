@@ -17,21 +17,24 @@ import argparse
 import asyncio
 from uuid import UUID, uuid4
 
-from clue_research.api.composition import load_research_packs
-from clue_research.config import GatewayConfig
-from clue_research.core import ICPCreatedFrom, ICPSpec
-from clue_research.db import db_lifespan, transaction
-from clue_research.gateway import build_gateway
+from script_support import ensure_script_workspace
+
+import clue_obs
+from clue_api.composition import load_research_packs
+from clue_config import GatewayConfig
+from clue_core import ICPCreatedFrom, ICPSpec
+from clue_db import db_lifespan, transaction
+from clue_gateway import build_gateway
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import profile_account
 
 
 async def main(
-    client_id: str, icp_key: str, icp_version: int, tier: str, account_id: str | None
+    workspace_id: str, icp_key: str, icp_version: int, tier: str, account_id: str | None
 ) -> None:
     gateway = build_gateway(GatewayConfig(), api_key=None)  # stub
     spec = ICPSpec(
-        client_id=client_id,
+        workspace_id=workspace_id,
         icp_key=icp_key,
         created_from=ICPCreatedFrom.SYNTHESIS,
         version=icp_version,
@@ -41,6 +44,7 @@ async def main(
         # Pack registration + the (optional) seed must be committed before profile_account,
         # which opens its own sessions.
         async with transaction() as conn:
+            await ensure_script_workspace(conn, workspace_id)
             await load_research_packs(conn)
             if account_id is None:
                 tag = uuid4().hex[:8]  # unique per run so re-runs don't collide on domain
@@ -48,6 +52,7 @@ async def main(
                     conn,
                     canonical_name=f"Acme Robotics {tag}",
                     primary_domain=f"acme-{tag}.example",
+                    workspace_id=workspace_id,
                 )
                 account_id = str(seeded)
                 print(f"seeded demo account: {account_id}")
@@ -56,7 +61,7 @@ async def main(
             account_entity_id=UUID(account_id),
             spec=spec,
             tier=tier,
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             gateway=gateway,
         )
 
@@ -70,14 +75,19 @@ async def main(
         print(f"dropped aspects   : {', '.join(result.dropped_aspects)}")
     for cov in result.aspects:
         print(f"  aspect {cov.aspect}: filled={cov.fields_filled}")
+    print(
+        "\nNext: scripts/05_committee_discovery.py "
+        f"--workspace-id {workspace_id} --account-id {result.account_entity_id} --tier {tier}"
+    )
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="M2 deep account profiling")
-    p.add_argument("--client-id", default="acme")
+    p.add_argument("--workspace-id", default="acme")
     p.add_argument("--icp-key", default="default")
     p.add_argument("--icp-version", type=int, default=1)
     p.add_argument("--tier", default="high")
     p.add_argument("--account-id", default=None, help="UUID from script 03 (seeds one if omitted)")
     args = p.parse_args()
-    asyncio.run(main(args.client_id, args.icp_key, args.icp_version, args.tier, args.account_id))
+    asyncio.run(main(args.workspace_id, args.icp_key, args.icp_version, args.tier, args.account_id))

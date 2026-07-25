@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Entity,
     EntityId,
@@ -26,7 +26,7 @@ from clue_research.core import (
     VerificationStatus,
     new_entity_id,
 )
-from clue_research.obs.testing import collect_spans
+from clue_obs.otel.testing import collect_spans
 from clue_research.resolvers import (
     GroundedSynthesisResolver,
     ResolverError,
@@ -62,7 +62,11 @@ class _Accounts:
 
 def _account(domain: str | None = "acme.com") -> AccountEntity:
     return AccountEntity(
-        id=new_entity_id(), canonical_name="Acme Corp", primary_domain=domain, aliases=("Acme",)
+        id=new_entity_id(),
+        canonical_name="Acme Corp",
+        primary_domain=domain,
+        aliases=("Acme",),
+        workspace_id="ws-test",
     )
 
 
@@ -243,7 +247,11 @@ def test_target_lock_short_alias_does_not_match_inside_a_word() -> None:
     # A short alias ("HP") must not match inside an unrelated word ("championship") — the
     # word-boundary fix; with no resolvable domain, the off-domain page is dropped (fail-closed).
     account = AccountEntity(
-        id=new_entity_id(), canonical_name="HP Inc", primary_domain=None, aliases=("HP",)
+        id=new_entity_id(),
+        canonical_name="HP Inc",
+        primary_domain=None,
+        aliases=("HP",),
+        workspace_id="ws-test",
     )
     field = _synth(
         "won the championship",

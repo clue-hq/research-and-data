@@ -17,8 +17,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan
 from clue_research.sources import clear_resolver_bindings
 
 # Reuse the M0.3 helpers (DRY). ``run_async`` is re-exported for the source test modules.

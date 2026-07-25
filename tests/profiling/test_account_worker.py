@@ -13,8 +13,7 @@ from decimal import Decimal
 
 import pytest
 
-from clue_research.claimstore import PUBLIC_ONLY, claims_for, register_field
-from clue_research.core import (
+from clue_core import (
     AspectContext,
     Claim,
     Entity,
@@ -27,13 +26,15 @@ from clue_research.core import (
     SourceManifest,
     WorkerStatus,
     account_claim,
-    new_campaign_run_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
+from clue_research.claimstore import PUBLIC_ONLY, claims_for, register_field
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import AspectProfilingWorker, ProfilingFieldDisposition, params_for_run
 from clue_research.sources import RegistrySourceManifest, bind_resolver, register_source
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 from .conftest import conn_session_factory, rollback_conn, run_async
 
@@ -109,21 +110,26 @@ async def _register_test_field(conn, *, field_key: str = _FIELD, tier_plan=("fak
 
 
 async def _insert_account(conn, *, domain: str | None = "acme-robotics.com", hq_geo=None):
+    await seed_workspace(conn, DEFAULT_TEST_WORKSPACE)
     return await insert_account_entity(
-        conn, canonical_name="Acme Robotics", primary_domain=domain, hq_geo=hq_geo
+        conn,
+        canonical_name="Acme Robotics",
+        primary_domain=domain,
+        hq_geo=hq_geo,
+        workspace_id=DEFAULT_TEST_WORKSPACE,
     )
 
 
-def _ctx(entity_id, *, field_keys=(_FIELD,), budget=None, tenant_id=None, aspect="account"):
+def _ctx(entity_id, *, field_keys=(_FIELD,), budget=None, workspace_id=None, aspect="account"):
     return AspectContext(
         entity_id=entity_id,
-        campaign_run_id=new_campaign_run_id(),
+        project_run_id=new_project_run_id(),
         run_id=new_run_id(),
         tier="top",
         aspect=aspect,
         field_keys=field_keys,
         budget_envelope_cents=budget,
-        params=params_for_run(client_id=None, icp_key=None, icp_version=None, tenant_id=tenant_id),
+        params=params_for_run(workspace_id=workspace_id, icp_key=None, icp_version=None),
     )
 
 
@@ -300,7 +306,7 @@ def test_target_lock_excludes_cross_entity_tier3_claim() -> None:
 def test_tenant_private_field_without_tenant_is_flagged() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
-            # a seeded tenant_private resonance field, profiled with NO tenant_id in context.
+            # a seeded tenant_private resonance field, profiled with NO workspace_id in context.
             acct = await _insert_account(conn)
             worker = AspectProfilingWorker(
                 "account.resonance", session_factory=conn_session_factory(conn)
@@ -310,7 +316,7 @@ def test_tenant_private_field_without_tenant_is_flagged() -> None:
                     acct,
                     field_keys=("account.resonance.employee_sentiment",),
                     aspect="account.resonance",
-                    tenant_id=None,
+                    workspace_id=None,
                 )
             )
             assert result.claim_refs == ()

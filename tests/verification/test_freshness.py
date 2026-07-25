@@ -22,17 +22,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    DEFAULT_MERGE_POLICY,
-    current_value,
-    insert_claim,
-    merge_claims,
-    register_field,
-)
-from clue_research.config.policy import RetentionTtls
-from clue_research.config.schema import FreshnessTtls
-from clue_research.core import (
+from clue_config.policy import RetentionTtls
+from clue_config.schema import FreshnessTtls
+from clue_core import (
     Claim,
     EntityId,
     EntityType,
@@ -47,9 +39,17 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.core.field import FieldDef
-from clue_research.core.verification import Freshness
-from clue_research.obs import SPAN_VERIFICATION_FRESHNESS, InMemorySink, collect_spans
+from clue_core.field import FieldDef
+from clue_core.verification import Freshness
+from clue_obs.otel import SPAN_VERIFICATION_FRESHNESS, InMemorySink, collect_spans
+from clue_research.claimstore import (
+    ALL_WORKSPACES,
+    DEFAULT_MERGE_POLICY,
+    current_value,
+    insert_claim,
+    merge_claims,
+    register_field,
+)
 from clue_research.verification import (
     DEFAULT_CADENCE_POLICY,
     METRIC_FRESHNESS_DUE,
@@ -451,7 +451,7 @@ def test_per_field_ttl_shortens_cadence_even_with_class_cadence_row() -> None:
                 text(
                     """
                     INSERT INTO cadence_policy
-                        (policy_id, client_id, field_class, ttl, refresh_cadence, version)
+                        (policy_id, workspace_id, field_class, ttl, refresh_cadence, version)
                     VALUES (:pid, NULL, CAST('account' AS field_class), :ttl, :cadence, 1)
                     """
                 ),
@@ -486,7 +486,7 @@ def test_config_swap_changes_staleness_no_code() -> None:
                 text(
                     """
                     INSERT INTO cadence_policy
-                        (policy_id, client_id, field_class, ttl, refresh_cadence, version)
+                        (policy_id, workspace_id, field_class, ttl, refresh_cadence, version)
                     VALUES (:pid, NULL, CAST(:fc AS field_class), :ttl, :cadence, 1)
                     """
                 ),
@@ -521,18 +521,20 @@ def test_load_cadence_policy_prefers_client_then_global_then_default() -> None:
                     text(
                         """
                         INSERT INTO cadence_policy
-                            (policy_id, client_id, field_class, ttl, refresh_cadence, version)
+                            (policy_id, workspace_id, field_class, ttl, refresh_cadence, version)
                         VALUES (:pid, :client, CAST('account' AS field_class), :ttl, :ttl, 1)
                         """
                     ),
                     {"pid": pid, "client": client, "ttl": timedelta(days=days)},
                 )
             global_policy = await load_cadence_policy(conn)
-            client_policy = await load_cadence_policy(conn, client_id="client-x")
+            workspace_policy = await load_cadence_policy(conn, workspace_id="client-x")
             assert global_policy.ttl_for(FieldClass.ACCOUNT) == timedelta(days=50)
-            assert client_policy.ttl_for(FieldClass.ACCOUNT) == timedelta(days=7)
+            assert workspace_policy.ttl_for(FieldClass.ACCOUNT) == timedelta(days=7)
             # an unspecified class still falls back to the FreshnessTtls default.
-            assert client_policy.ttl_for(FieldClass.CORE) == FreshnessTtls().by_field_class["core"]
+            assert (
+                workspace_policy.ttl_for(FieldClass.CORE) == FreshnessTtls().by_field_class["core"]
+            )
 
     run_async(_run())
 
@@ -568,7 +570,7 @@ def test_merge_keeps_stale_usable_and_status_unchanged() -> None:
             ).scalar_one()
 
             # the only claim is stale -> still the current value, flagged stale (never dropped).
-            cv = await current_value(conn, entity, "account.lonely_fact", scope=ALL_TENANTS)
+            cv = await current_value(conn, entity, "account.lonely_fact", scope=ALL_WORKSPACES)
             assert cv is not None
             assert cv.value_json == "old"
             assert cv.freshness_state is FreshnessState.STALE
@@ -768,7 +770,7 @@ def test_discovery_claims_excluded_from_scan() -> None:
     # the scan is over field claims; a discovery-provenance claim (admission evidence, not a field
     # value) is never a re-research candidate even if old.
     async def _run() -> None:
-        from clue_research.core import ClaimFlavor, DiscoveryProvenance
+        from clue_core import ClaimFlavor, DiscoveryProvenance
 
         async with rollback_conn() as conn:
             entity = new_entity_id()

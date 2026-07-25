@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from clue_research.core import new_run_id
-from clue_research.locks import RateLimiter
+from clue_core import new_run_id
+from clue_locks import RateLimiter
 
 from .conftest import redis_conn, run_async
 

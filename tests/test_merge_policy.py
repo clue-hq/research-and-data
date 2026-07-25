@@ -11,8 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from clue_research.claimstore import FreshnessMode, MergePolicy, merge_claims
-from clue_research.core import (
+from clue_core import (
     Claim,
     ClaimId,
     EntityType,
@@ -28,6 +27,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import FreshnessMode, MergePolicy, merge_claims
 
 _ENTITY = new_entity_id()
 _RUN = new_run_id()

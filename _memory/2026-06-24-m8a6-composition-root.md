@@ -1,7 +1,7 @@
 # M8A.6 — DEEP-phase composition root + AC-6/AC-4 enforcement
 
 **Date:** 2026-06-24 · **Branch:** `m8a/composition` (off `m8a/exactly-once` = the M8A.0–M8A.5 + M8A.4 chain).
-**Spec:** `docs/specs/M8A-campaign-run-deep-orchestration.md` §M8A.6 · **Plan:** [[2026-06-23-m8a-implementation-plan]] §M8A.6 · prior: [[2026-06-23-m8a4-exactly-once-spend]], [[2026-06-22-m8a-orchestration-design]].
+**Spec:** `docs/specs/M8A-project-run-deep-orchestration.md` §M8A.6 · **Plan:** [[2026-06-23-m8a-implementation-plan]] §M8A.6 · prior: [[2026-06-23-m8a4-exactly-once-spend]], [[2026-06-22-m8a-orchestration-design]].
 
 ## What M8A.6 is
 The one co-import point that wires the deep phase end to end: construct every concrete the M8A.1 orchestrator + M8A.2 handler are typed against, inject them, register `DeepPhaseHandler` so `CampaignRun.advance()` dispatches `CampaignPhase.DEEP`, and add the two deferred governance-enforcement tests (M9.1 AC-6 gate routing, M9.4 AC-4 born binding). New file: `src/clue_research/api/deep/composition.py`.

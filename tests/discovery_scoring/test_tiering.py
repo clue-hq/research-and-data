@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
-from clue_research.core import (
+from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
@@ -24,6 +23,7 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
 from clue_research.discovery_scoring.scoring import FIT_FIELD, INTENT_FIELD
 from clue_research.discovery_scoring.tiering import (
     DEFAULT_TIERING_CONFIG,
@@ -178,10 +178,10 @@ def test_persist_tier_idempotent_and_icp_supersede(require_discovery_db: None) -
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             eid = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
             )
             view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0, rubric_version=1)
-            scope = TenantScope.for_tenant(CLIENT)
+            scope = WorkspaceScope.for_workspace(CLIENT)
             run_a = new_run_id()
 
             claim1, written1 = await persist_tier(
@@ -190,7 +190,7 @@ def test_persist_tier_idempotent_and_icp_supersede(require_discovery_db: None) -
                 tier="high",
                 cutoff_version="v-aaa",
                 run_id=run_a,
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key=ICP,
                 icp_version=1,
             )
@@ -202,7 +202,7 @@ def test_persist_tier_idempotent_and_icp_supersede(require_discovery_db: None) -
                 tier="high",
                 cutoff_version="v-aaa",
                 run_id=run_a,
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key=ICP,
                 icp_version=1,
             )
@@ -216,7 +216,7 @@ def test_persist_tier_idempotent_and_icp_supersede(require_discovery_db: None) -
                 tier="medium",
                 cutoff_version="v-bbb",
                 run_id=run_b,
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key=ICP,
                 icp_version=1,
             )
@@ -226,12 +226,12 @@ def test_persist_tier_idempotent_and_icp_supersede(require_discovery_db: None) -
             assert live[0].value_json["tier"] == "medium"
             assert live[0].value_json["cutoff_version"] == "v-bbb"
             assert live[0].reuse_scope is ReuseScope.TENANT_PRIVATE
-            assert live[0].tenant_id == CLIENT
+            assert live[0].workspace_id == CLIENT
             history = await claims_for(conn, eid, TIER_FIELD, scope=scope, include_superseded=True)
             assert len(history) == 2  # the prior tier is superseded, not deleted
 
             # invisible to a public-only read (tenant isolation)
-            public = await claims_for(conn, eid, TIER_FIELD, scope=TenantScope.public_only())
+            public = await claims_for(conn, eid, TIER_FIELD, scope=WorkspaceScope.public_only())
             assert public == []
 
     run_async(_run())
@@ -242,10 +242,10 @@ def test_persist_tier_other_icp_not_superseded(require_discovery_db: None) -> No
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             eid = await insert_account_entity(
-                conn, canonical_name="Acme", primary_domain="acme.com"
+                conn, canonical_name="Acme", primary_domain="acme.com", workspace_id=CLIENT
             )
             view = AccountScoreView(account_id=eid, fit=0.5, intent=1.0)
-            scope = TenantScope.for_tenant(CLIENT)
+            scope = WorkspaceScope.for_workspace(CLIENT)
 
             await persist_tier(
                 conn,
@@ -253,7 +253,7 @@ def test_persist_tier_other_icp_not_superseded(require_discovery_db: None) -> No
                 tier="high",
                 cutoff_version="v-aaa",
                 run_id=new_run_id(),
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key="icp_one",
                 icp_version=1,
             )
@@ -263,7 +263,7 @@ def test_persist_tier_other_icp_not_superseded(require_discovery_db: None) -> No
                 tier="low",
                 cutoff_version="v-aaa",
                 run_id=new_run_id(),
-                client_id=CLIENT,
+                workspace_id=CLIENT,
                 icp_key="icp_two",
                 icp_version=1,
             )
@@ -280,7 +280,7 @@ def test_load_score_views_skips_unscored(require_discovery_db: None) -> None:
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             # no score claims for this run → empty views (never fabricates a score)
-            views = await load_score_views(conn, scoring_run=new_run_id(), client_id=CLIENT)
+            views = await load_score_views(conn, scoring_run=new_run_id(), workspace_id=CLIENT)
             assert views == []
 
     run_async(_run())
@@ -308,7 +308,7 @@ async def _insert_score(conn, eid: EntityId, field_key: str, value: float, run_i
                 run_id=run_id,
                 research_mode=ResearchMode.ACCOUNT_PROFILING,
             ),
-            tenant_id=CLIENT,
+            workspace_id=CLIENT,
         ),
     )
 
@@ -318,14 +318,18 @@ def test_load_score_views_collapses_merged_survivor(require_discovery_db: None) 
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             run_id = new_run_id()
-            a = await insert_account_entity(conn, canonical_name="A", primary_domain="a.example")
-            b = await insert_account_entity(conn, canonical_name="B", primary_domain="b.example")
+            a = await insert_account_entity(
+                conn, canonical_name="A", primary_domain="a.example", workspace_id=CLIENT
+            )
+            b = await insert_account_entity(
+                conn, canonical_name="B", primary_domain="b.example", workspace_id=CLIENT
+            )
             for eid in (a, b):
                 await _insert_score(conn, eid, FIT_FIELD, 0.5, run_id)
                 await _insert_score(conn, eid, INTENT_FIELD, 0.8, run_id)
             await mark_merged(conn, EntityType.ACCOUNT, a, b)  # a → b (b is the survivor)
 
-            views = await load_score_views(conn, scoring_run=run_id, client_id=CLIENT)
+            views = await load_score_views(conn, scoring_run=run_id, workspace_id=CLIENT)
             # the two pre-merge entities collapse to ONE survivor view (b), scored once
             assert len(views) == 1
             assert views[0].account_id == b
@@ -338,14 +342,18 @@ def test_load_score_views_skips_claim_on_merged_loser(require_discovery_db: None
         async with rollback_conn() as conn:
             await load_core_pack(conn)
             run_id = new_run_id()
-            a = await insert_account_entity(conn, canonical_name="A", primary_domain="a.example")
-            b = await insert_account_entity(conn, canonical_name="B", primary_domain="b.example")
+            a = await insert_account_entity(
+                conn, canonical_name="A", primary_domain="a.example", workspace_id=CLIENT
+            )
+            b = await insert_account_entity(
+                conn, canonical_name="B", primary_domain="b.example", workspace_id=CLIENT
+            )
             # only A is scored, then A merges INTO B (claims are never re-pointed on merge)
             await _insert_score(conn, a, FIT_FIELD, 0.5, run_id)
             await _insert_score(conn, a, INTENT_FIELD, 0.8, run_id)
             await mark_merged(conn, EntityType.ACCOUNT, a, b)  # a → b (b is the survivor)
 
-            views = await load_score_views(conn, scoring_run=run_id, client_id=CLIENT)
+            views = await load_score_views(conn, scoring_run=run_id, workspace_id=CLIENT)
             # the live FIT claim is on the merged-away loser, not the survivor → skipped (no crash)
             assert views == []
 

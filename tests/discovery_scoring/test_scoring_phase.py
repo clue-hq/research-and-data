@@ -16,20 +16,20 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import TenantScope, claims_for, insert_claim, load_core_pack
-from clue_research.core import (
-    CampaignPhase,
+from clue_core import (
     EntityType,
     ExtractionMethod,
     ICPCreatedFrom,
     PhaseContext,
     PhaseStatus,
+    ProjectPhase,
     ResearchMode,
     account_claim,
     discovery_claim,
-    new_campaign_run_id,
+    new_project_run_id,
     new_run_id,
 )
+from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
 from clue_research.discovery_scoring import ScoringPhaseHandler
 from clue_research.discovery_scoring.phases import _discovery_run_id
 from clue_research.discovery_scoring.scoring import FIT_FIELD, INTENT_FIELD
@@ -84,9 +84,11 @@ def _rubric() -> ScoringRubric:
 
 def _ctx(*, icp_version: int = 1) -> PhaseContext:
     return PhaseContext(
-        campaign_run_id=new_campaign_run_id(),
-        phase=CampaignPhase.SCORING,
-        client_id=CLIENT,
+        project_run_id=new_project_run_id(),
+        project_id="prj-test",
+        brand_id="brd-test",
+        phase=ProjectPhase.SCORING,
+        workspace_id=CLIENT,
         icp_key=ICP,
         icp_version=icp_version,
     )
@@ -95,7 +97,7 @@ def _ctx(*, icp_version: int = 1) -> PhaseContext:
 async def _seed_active_icp(conn: AsyncConnection, *, with_rubric: bool = True) -> None:
     await create_icp_spec(
         conn,
-        client_id=CLIENT,
+        workspace_id=CLIENT,
         icp_key=ICP,
         created_from=ICPCreatedFrom.SYNTHESIS,
         field_keys=(_EMP, _FUND),
@@ -106,7 +108,9 @@ async def _seed_active_icp(conn: AsyncConnection, *, with_rubric: bool = True) -
 
 async def _seed_admitted(conn: AsyncConnection, ctx: PhaseContext, *, name: str, domain: str):
     """An admitted account: an entity + its discovery-provenance for the run + the input proxies."""
-    eid = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    eid = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=CLIENT
+    )
     await insert_claim(
         conn,
         discovery_claim(
@@ -164,7 +168,7 @@ def test_scoring_phase_scores_admitted_and_records_yield() -> None:
             assert result.payload["written"] == 2
             assert result.payload["rubric_version"] == 1
             for eid in (e1, e2):
-                scope = TenantScope.for_tenant(CLIENT)
+                scope = WorkspaceScope.for_workspace(CLIENT)
                 assert len(await claims_for(conn, eid, FIT_FIELD, scope=scope)) == 1
                 assert len(await claims_for(conn, eid, INTENT_FIELD, scope=scope)) == 1
             # per-source scoring yield landed in the shared telemetry (disposition tags the kind)
@@ -200,7 +204,7 @@ def test_scoring_phase_replay_is_idempotent() -> None:
             assert second.payload["written"] == 0  # nothing re-written
             assert second.payload["replayed"] == 1
             # no duplicate score claims
-            scope = TenantScope.for_tenant(CLIENT)
+            scope = WorkspaceScope.for_workspace(CLIENT)
             assert len(await claims_for(conn, eid, FIT_FIELD, scope=scope)) == 1
             assert len(await claims_for(conn, eid, INTENT_FIELD, scope=scope)) == 1
 

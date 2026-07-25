@@ -7,7 +7,7 @@ are in the denominator — not the post-filter handoff committee, which would re
 
 from __future__ import annotations
 
-from clue_research.core import (
+from clue_core import (
     ClaimId,
     CommitteeMember,
     IdentityBinding,

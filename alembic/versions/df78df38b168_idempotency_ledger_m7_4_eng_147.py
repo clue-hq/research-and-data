@@ -11,9 +11,9 @@ resolver, never double-writes a claim, and a re-entered phase never double-spend
 record; this table sits *in front of the write path* for both idempotency shapes:
 
 * a per-account research **step** keyed ``(account_run, entity, field, tier)``
-  (:func:`clue_research.core.idempotency.account_step_key`), and
+  (:func:`clue_core.idempotency.account_step_key`), and
 * a campaign **phase** keyed ``(campaign_run, phase)``
-  (:func:`clue_research.core.idempotency.phase_key`).
+  (:func:`clue_core.idempotency.phase_key`).
 
 One row per derived ``key`` (PK = the spec's "unique-constrained on ``(key)``"). A step/phase
 consults the ledger before executing: ``succeeded`` → return the recorded ``result_ref`` without
@@ -27,7 +27,7 @@ back to ``in_progress``), exactly like ``account_run``/``campaign_run`` executio
 no reject trigger; the status lifecycle is guarded by a CHECK and by the repository's atomic claim
 upsert.
 
-Enums: ``idempotency_scope`` mirrors the **core** :class:`clue_research.core.enums.IdempotencyScope`
+Enums: ``idempotency_scope`` mirrors the **core** :class:`clue_core.enums.IdempotencyScope`
 (the cross-milestone key-shape vocabulary); ``idempotency_status`` mirrors the durable-internal
 :class:`clue_research.durable.enums.IdempotencyStatus`. Both are parity-tested against their Python
 sources in ``tests/durable/test_idempotency_db.py`` (the same ``StrEnum`` discipline as the other M7
@@ -46,7 +46,7 @@ down_revision: str | None = "ce08f0be1c20"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirror clue_research.core.enums.IdempotencyScope (a CORE enum — the shared key-shape vocabulary).
+# Mirror clue_core.enums.IdempotencyScope (a CORE enum — the shared key-shape vocabulary).
 _IDEMPOTENCY_SCOPE = ("account_step", "campaign_phase")
 
 # Mirror clue_research.durable.enums.IdempotencyStatus (durable-internal lifecycle).

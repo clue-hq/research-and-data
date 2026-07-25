@@ -1,7 +1,7 @@
 """Alembic migration environment — async (SQLAlchemy 2.0 + asyncpg), M0.3 / ENG-114.
 
 Runs migrations against the Postgres system of record using the same async engine and DSN as the
-runtime connection layer (:mod:`clue_research.db`), so the migrations and the app never disagree on
+runtime connection layer (:mod:`clue_db`), so the migrations and the app never disagree on
 which database they target. The DSN is read from ``CLUE_DATABASE_URL`` (the shared seam) — it is
 never stored in ``alembic.ini``.
 
@@ -17,7 +17,7 @@ from logging.config import fileConfig
 
 from alembic import context
 
-from clue_research.db import create_engine, database_url
+from clue_db import create_engine, database_url
 
 # Alembic Config object (values from alembic.ini).
 config = context.config

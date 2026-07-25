@@ -1,0 +1,127 @@
+"""``clue_fleet`` — the fleet shell: detached worker, per-run driver lease, task drain,
+tier-priority queue (PB-B1 / harness build step 0).
+
+The governance shell around the existing research pipeline (harness §6, Doc A §1.3 — "always
+mechanical"): the :class:`ProjectRunWorker` process drives M7 project-run state machines as
+``drive_run`` jobs under a per-run :mod:`~clue_fleet.lease`; the ``deep`` phase's account jobs
+drain from the durable tier-priority :mod:`~clue_fleet.queue` via the
+:class:`QueueBackedScheduler`. No new research behavior — the pipeline gains kill-resumability,
+single-driver enforcement, and best-tier-first ordering. See ``docs/specs/PB-B1-fleet-worker.md``.
+"""
+
+from __future__ import annotations
+
+from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
+from clue_fleet.lease import (
+    DEFAULT_LEASE_TTL,
+    DbLeaseStore,
+    DbWorkLeaseStore,
+    LeaseGeneration,
+    LeaseStore,
+    RunLeaseRow,
+    WorkId,
+    WorkLeaseRow,
+    WorkLeaseStore,
+    acquire_run_lease,
+    acquire_work_lease,
+    get_run_lease,
+    get_work_lease,
+    release_run_lease,
+    release_work_lease,
+    renew_run_lease,
+    renew_work_lease,
+)
+from clue_fleet.queue import (
+    DEFAULT_TASK_STALE_AFTER,
+    DbTaskQueue,
+    DbWorkQueue,
+    FleetTaskRow,
+    TaskQueue,
+    WorkQueue,
+    WorkTaskRow,
+    claim_next_task,
+    enqueue_task,
+    finish_task,
+    get_task,
+    list_tasks,
+    reoffer_governed_partial_task,
+    requeue_failed_tasks,
+    requeue_task,
+    touch_task,
+)
+from clue_fleet.runner import run_worker
+from clue_fleet.scheduler import (
+    AccountAdmission,
+    AccountAdmissionDecision,
+    GovernedPartialAccount,
+    QueueBackedScheduler,
+    TierPriority,
+    default_tier_priority,
+)
+from clue_fleet.work_worker import (
+    LeasedWorkWorker,
+    WorkContext,
+    WorkHandler,
+    WorkResult,
+    enqueue_work,
+)
+from clue_fleet.worker import ProjectRunWorker, ProjectRunWorkHandler, RunDriver, enqueue_drive
+
+__all__ = [
+    # enums
+    "FleetTaskKind",
+    "FleetTaskStatus",
+    # driver lease
+    "DEFAULT_LEASE_TTL",
+    "LeaseStore",
+    "DbLeaseStore",
+    "DbWorkLeaseStore",
+    "LeaseGeneration",
+    "RunLeaseRow",
+    "WorkId",
+    "WorkLeaseRow",
+    "WorkLeaseStore",
+    "acquire_run_lease",
+    "acquire_work_lease",
+    "renew_run_lease",
+    "renew_work_lease",
+    "release_run_lease",
+    "release_work_lease",
+    "get_run_lease",
+    "get_work_lease",
+    # task queue
+    "DEFAULT_TASK_STALE_AFTER",
+    "TaskQueue",
+    "DbTaskQueue",
+    "DbWorkQueue",
+    "FleetTaskRow",
+    "WorkQueue",
+    "WorkTaskRow",
+    "enqueue_task",
+    "claim_next_task",
+    "finish_task",
+    "touch_task",
+    "requeue_task",
+    "requeue_failed_tasks",
+    "reoffer_governed_partial_task",
+    "get_task",
+    "list_tasks",
+    # tier-priority deep drain
+    "QueueBackedScheduler",
+    "AccountAdmission",
+    "AccountAdmissionDecision",
+    "GovernedPartialAccount",
+    "TierPriority",
+    "default_tier_priority",
+    # the worker
+    "ProjectRunWorker",
+    "ProjectRunWorkHandler",
+    "RunDriver",
+    "enqueue_drive",
+    "LeasedWorkWorker",
+    "WorkContext",
+    "WorkHandler",
+    "WorkResult",
+    "enqueue_work",
+    "run_worker",
+]

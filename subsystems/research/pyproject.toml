@@ -1,0 +1,47 @@
+[project]
+name = "clue-research"
+version = "0.0.0"
+description = "Clue-HQ research subsystem — the claim-with-provenance data & research layer (subsystem one)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    # shared libs (Doc R)
+    "clue-core",
+    "clue-config",
+    "clue-db",
+    "clue-gateway",
+    "clue-locks",
+    "clue-obs",
+    "clue-storage",
+    # subsystem runtime
+    "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+    "pgvector",
+    "pypdf>=6",
+    "Pillow>=11",
+    "pytesseract>=0.3.13",
+    # B2.4 — the credit-free scrape backend (CLUE_SCRAPE_BACKEND=scrapling); both are used only
+    # behind the adapters/concrete seam (Rule 4), lazy-imported.
+    "scrapling[fetchers]>=0.4",
+    "markdownify>=1.2",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres>=2",
+    "httpx>=0.28.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clue_research"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }
+clue-config = { workspace = true }
+clue-db = { workspace = true }
+clue-gateway = { workspace = true }
+clue-locks = { workspace = true }
+clue-obs = { workspace = true }
+clue-storage = { workspace = true }

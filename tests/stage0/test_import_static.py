@@ -96,7 +96,7 @@ def test_import_result_counts() -> None:
 
 
 def test_import_contact_row_defaults_to_professional_public() -> None:
-    from clue_research.core import UseClass
+    from clue_core import UseClass
 
     assert ImportContactRow(name="X").use_class is UseClass.PROFESSIONAL_PUBLIC
 
@@ -104,13 +104,13 @@ def test_import_contact_row_defaults_to_professional_public() -> None:
 def _eid() -> object:
     from uuid import uuid4
 
-    from clue_research.core import EntityId
+    from clue_core import EntityId
 
     return EntityId(uuid4())
 
 
 def _resolved(row_index: int, flag: FitFlag) -> ResolvedAccount:
-    from clue_research.core import Score
+    from clue_core import Score
 
     return ResolvedAccount(
         account_entity_id=_eid(),  # type: ignore[arg-type]

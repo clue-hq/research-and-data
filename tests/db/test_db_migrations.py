@@ -20,13 +20,26 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 
-from clue_research.db import db_lifespan
+from clue_db import db_lifespan
 
 from .conftest import run_async
 
 # Repo root = tests/db/ -> tests/ -> <root>.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ALEMBIC_INI = _REPO_ROOT / "alembic.ini"
+
+# LangGraph's ``AsyncPostgresSaver.setup()`` (the durable-execution checkpointer) creates these
+# tables at RUNTIME, outside alembic's purview — they are ephemeral runtime state, not domain
+# schema, and alembic downgrades never touch them. The durable tests drop them on the way out, but
+# an interrupted / partial run can leave them behind on a persistent schema; since this test
+# already destructively downgrades the whole schema, it may equally clear runtime-only tables
+# before asserting the alembic-owned invariant. Any OTHER stray table still fails the assertion.
+_RUNTIME_CHECKPOINTER_TABLES = (
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoints",
+    "checkpoint_migrations",
+)
 
 
 def _alembic_config() -> Config:
@@ -60,24 +73,29 @@ def test_no_domain_tables_at_m0_head() -> None:
     command.downgrade(cfg, "0001")
 
     async def _run() -> None:
-        async with db_lifespan() as engine, engine.connect() as conn:
-            tables = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT table_name FROM information_schema.tables "
-                            "WHERE table_schema = 'public' ORDER BY table_name"
+        async with db_lifespan() as engine:
+            # Clear runtime (non-alembic) checkpointer leftovers first — see the constant's note.
+            async with engine.begin() as conn:
+                for tbl in _RUNTIME_CHECKPOINTER_TABLES:
+                    await conn.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
+            async with engine.connect() as conn:
+                tables = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT table_name FROM information_schema.tables "
+                                "WHERE table_schema = 'public' ORDER BY table_name"
+                            )
                         )
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            )
-            exts = (
-                (await conn.execute(text("SELECT extname FROM pg_extension ORDER BY extname")))
-                .scalars()
-                .all()
-            )
+                exts = (
+                    (await conn.execute(text("SELECT extname FROM pg_extension ORDER BY extname")))
+                    .scalars()
+                    .all()
+                )
 
         # Exactly one table — Alembic's bookkeeping table — and no domain tables at M0 head.
         assert tables == ["alembic_version"], f"unexpected tables at M0 head (0001): {tables}"

@@ -19,11 +19,14 @@ from collections.abc import Sequence
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from clue_research.api.composition import load_research_packs
-from clue_research.config import GatewayConfig
-from clue_research.core import AccountEntity, new_run_id
-from clue_research.db import db_lifespan, transaction
-from clue_research.gateway import build_gateway
+from script_support import ensure_script_workspace
+
+import clue_obs
+from clue_api.composition import load_research_packs
+from clue_config import GatewayConfig
+from clue_core import AccountEntity, new_run_id
+from clue_db import db_lifespan, transaction
+from clue_gateway import build_gateway
 from clue_research.identity import insert_account_entity
 from clue_research.profiling import discover_committee
 from clue_research.profiling.committee.sources import CommitteePersonCandidate
@@ -68,16 +71,20 @@ _DEMO_CANDIDATES = [
 ]
 
 
-async def main(client_id: str, tier: str, account_id: str | None) -> None:
+async def main(workspace_id: str, tier: str, account_id: str | None) -> None:
     gateway = build_gateway(GatewayConfig(), api_key=None)  # stub role inference
     source = DemoPeopleSource(_DEMO_CANDIDATES)
 
     async with db_lifespan(), transaction() as conn:
+        await ensure_script_workspace(conn, workspace_id)
         await load_research_packs(conn)
         if account_id is None:
             tag = uuid4().hex[:8]  # unique per run so re-runs don't collide on domain
             seeded = await insert_account_entity(
-                conn, canonical_name=f"Acme Robotics {tag}", primary_domain=f"acme-{tag}.example"
+                conn,
+                canonical_name=f"Acme Robotics {tag}",
+                primary_domain=f"acme-{tag}.example",
+                workspace_id=workspace_id,
             )
             account_id = str(seeded)
             print(f"seeded demo account: {account_id}")
@@ -86,7 +93,7 @@ async def main(client_id: str, tier: str, account_id: str | None) -> None:
             conn,
             account_entity_id=UUID(account_id),
             run_id=new_run_id(),
-            tenant_id=client_id,
+            workspace_id=workspace_id,
             sources=[source],
             gateway=gateway,
             role_model="openai/gpt-4o-mini",  # model id is config; the stub ignores it
@@ -103,15 +110,16 @@ async def main(client_id: str, tier: str, account_id: str | None) -> None:
     if result.members:
         print(
             "\nNext: scripts/06_contact_profiling.py "
-            f"--client-id {client_id} --account-id {result.account_entity_id} "
+            f"--workspace-id {workspace_id} --account-id {result.account_entity_id} "
             f"--contact-id {result.members[0].contact_entity_id} --tier {tier}"
         )
 
 
 if __name__ == "__main__":
+    clue_obs.setup()
     p = argparse.ArgumentParser(description="M3 committee discovery")
-    p.add_argument("--client-id", default="acme")
+    p.add_argument("--workspace-id", default="acme")
     p.add_argument("--tier", default="high")
     p.add_argument("--account-id", default=None, help="UUID from script 03 (seeds one if omitted)")
     args = p.parse_args()
-    asyncio.run(main(args.client_id, args.tier, args.account_id))
+    asyncio.run(main(args.workspace_id, args.tier, args.account_id))

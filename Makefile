@@ -5,14 +5,14 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
-	db-up db-down migrate migrate-down db-smoke eval eval-verification redis-up redis-down
+	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification redis-up redis-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 install: ## Create the venv and install deps + the package (editable)
-	uv sync
+	uv sync --all-packages
 
 format: ## Auto-format and apply safe lint fixes
 	uv run ruff format .
@@ -36,13 +36,37 @@ check: lint typecheck contracts test ## Run the full local gate (what CI runs)
 # --- database (M0.3) --------------------------------------------------------
 # Postgres + pgvector lifecycle and the reviewed-migration workflow. The DB DSN is read from
 # CLUE_DATABASE_URL (the shared seam), defaulting to the local docker-compose database
-# (postgresql+asyncpg://clue:clue@localhost:5432/clue). See src/clue_research/db/README.md.
+# (postgresql+asyncpg://clue:clue@localhost:5432/clue). See libs/clue-db/clue_db/README.md.
 
 db-up: ## Start local Postgres+pgvector (waits for healthcheck)
 	docker compose up -d --wait db
 
 db-down: ## Stop local Postgres+pgvector and remove its volume
 	docker compose down -v
+
+# Dependency-free schema reset (no psql needed): drops + recreates the `public` schema through
+# clue_db, honouring the same CLUE_DATABASE_URL seam everything else uses.
+define DB_FRESH_PY
+import asyncio
+
+from sqlalchemy import text
+
+from clue_db import database_url, db_lifespan
+
+
+async def main() -> None:
+    async with db_lifespan() as engine, engine.begin() as conn:
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    print(f"public schema dropped and recreated on {database_url()!r}")
+
+
+asyncio.run(main())
+endef
+export DB_FRESH_PY
+
+db-fresh: ## Drop + recreate the public schema (clean slate for a fresh test run; reads CLUE_DATABASE_URL)
+	uv run python -c "$$DB_FRESH_PY"
 
 migrate: ## Apply all migrations up to head
 	uv run alembic upgrade head

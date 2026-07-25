@@ -17,9 +17,8 @@ from decimal import Decimal
 import pytest
 from pydantic import JsonValue, SecretStr
 
-from clue_research.claimstore import ALL_TENANTS, claims_for, register_field
-from clue_research.config import Secrets
-from clue_research.core import (
+from clue_config import Secrets
+from clue_core import (
     AccountEntity,
     Entity,
     EntityType,
@@ -36,8 +35,9 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.obs import ATTR_COST_CENTS, resolve_span
-from clue_research.obs.testing import collect_spans
+from clue_obs.otel import ATTR_COST_CENTS, resolve_span
+from clue_obs.otel.testing import collect_spans
+from clue_research.claimstore import ALL_WORKSPACES, claims_for, register_field
 from clue_research.resolvers import (
     DeterministicResolver,
     HttpEnrichmentBackend,
@@ -102,7 +102,7 @@ def test_returns_typed_tier1_api_claim_with_full_provenance() -> None:
             result = await resolve_field(conn, entity, _field(("clay",)), mode=_MODE, run_id=_RUN)
             assert result.stop_reason is StopReason.CONFIDENT_HIT
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert claim.source_tier == 1
             assert claim.extraction_method is ExtractionMethod.API
@@ -186,7 +186,7 @@ def test_npi_activates_only_when_a_field_tier_plan_names_it() -> None:
             assert hres.stop_reason is StopReason.CONFIDENT_HIT
             assert npi.calls == 1
             (npi_claim,) = await claims_for(
-                conn, entity.entity_id, "healthcare.npi", scope=ALL_TENANTS
+                conn, entity.entity_id, "healthcare.npi", scope=ALL_WORKSPACES
             )
             assert npi_claim.value_json == "1234567890" and npi_claim.source_tier == 1
             # A non-healthcare field's tier_plan does NOT name npi → npi is never invoked for it.
@@ -216,7 +216,7 @@ def test_builtwith_populates_primary_tech_stack() -> None:
                 run_id=new_run_id(),
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.primary_tech_stack", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.primary_tech_stack", scope=ALL_WORKSPACES
             )
             assert claim.value_json == ["snowflake", "dbt"] and claim.source_tier == 1
 
@@ -239,7 +239,7 @@ def test_builtwith_miss_writes_no_fabricated_stack() -> None:
             assert result.stop_reason is StopReason.TIER_EXHAUSTED  # ran, nothing confident
             assert result.claim_refs == ()
             written = await claims_for(
-                conn, entity.entity_id, "core.primary_tech_stack", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.primary_tech_stack", scope=ALL_WORKSPACES
             )
             assert written == []  # nothing fabricated
 
@@ -261,7 +261,7 @@ def test_transient_failure_raises_retryable_and_writes_no_partial_claim() -> Non
                 )
             assert backend.calls == 1
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert written == []  # the raise precedes any write — no guessed/partial claim
 
@@ -281,7 +281,7 @@ def test_cost_recorded_on_claim_and_resolve_span() -> None:
                     conn, entity, _field(("clay",)), mode=_MODE, run_id=new_run_id()
                 )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert claim.cost_cents == Decimal(5)
             assert result.per_tier[0].cost_cents == Decimal(5)
@@ -311,7 +311,7 @@ def test_per_call_cost_attributed_to_first_claim_only() -> None:
                 conn, entity, _field(("clay",)), mode=_MODE, run_id=new_run_id()
             )
             written = await claims_for(
-                conn, entity.entity_id, "core.employee_count", scope=ALL_TENANTS
+                conn, entity.entity_id, "core.employee_count", scope=ALL_WORKSPACES
             )
             assert sorted(c.cost_cents for c in written) == [Decimal(0), Decimal(5)]
             assert result.per_tier[0].cost_cents == Decimal(5)  # the step total = one call's price
@@ -359,7 +359,7 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
                 run_id=new_run_id(),
             )
             (strong_claim,) = await claims_for(
-                conn, strong_contact.entity_id, "core.work_email", scope=ALL_TENANTS
+                conn, strong_contact.entity_id, "core.work_email", scope=ALL_WORKSPACES
             )
             assert strong_claim.entity_type is EntityType.CONTACT
             assert (
@@ -382,7 +382,7 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
                 run_id=new_run_id(),
             )
             (weak_claim,) = await claims_for(
-                conn, weak_contact.entity_id, "core.work_email", scope=ALL_TENANTS
+                conn, weak_contact.entity_id, "core.work_email", scope=ALL_WORKSPACES
             )
             assert weak_claim.identity_binding is IdentityBinding.WEAK  # from apollo's manifest
 
@@ -396,7 +396,10 @@ def test_apollo_funding_object_writes_through_value_schema_end_to_end() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             account = AccountEntity(
-                id=new_entity_id(), canonical_name="Acme", primary_domain="acme.com"
+                id=new_entity_id(),
+                canonical_name="Acme",
+                primary_domain="acme.com",
+                workspace_id="ws-test",
             )
 
             class _Accounts:
@@ -428,7 +431,7 @@ def test_apollo_funding_object_writes_through_value_schema_end_to_end() -> None:
                 run_id=new_run_id(),
             )
             (claim,) = await claims_for(
-                conn, entity.entity_id, "account.recent_funding", scope=ALL_TENANTS
+                conn, entity.entity_id, "account.recent_funding", scope=ALL_WORKSPACES
             )
             assert claim.value_json == {"amount_usd": 50_000_000, "round": "Series B"}
             assert claim.source_tier == 1 and claim.extraction_method is ExtractionMethod.API

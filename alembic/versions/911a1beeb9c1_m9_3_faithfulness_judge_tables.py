@@ -32,7 +32,7 @@ The verdict itself rides the **already-mutable** ``claim.verification_status`` c
 a span-less tier-4 claim can never be flipped to ``verified`` even through the judge (it is
 auto-rejected by the structural pre-check before any LLM call anyway).
 
-``judge_verdict`` mirrors :class:`clue_research.core.enums.JudgeVerdict` (a *core* enum — the
+``judge_verdict`` mirrors :class:`clue_core.enums.JudgeVerdict` (a *core* enum — the
 verdict crosses the M5.1/M8/M11 caller boundary, so it lives in ``core``; the DB↔enum parity test
 is ``test_faithfulness.py::test_judge_verdict_enum_matches_core``). ``downgrade()`` cleanly reverses
 ``upgrade()`` (CI runs up → down → up).
@@ -50,7 +50,7 @@ down_revision: str | None = "b3b636f67bd8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Mirrors clue_research.core.enums.JudgeVerdict (parity-tested in the M9.3 suite).
+# Mirrors clue_core.enums.JudgeVerdict (parity-tested in the M9.3 suite).
 _JUDGE_VERDICT = ("supported", "partial", "unsupported", "contradicted")
 
 

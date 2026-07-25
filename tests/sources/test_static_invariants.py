@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from clue_research.config import redact
+from clue_config import redact
 from clue_research.sources import SEED_MANIFESTS
 
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "clue_research"

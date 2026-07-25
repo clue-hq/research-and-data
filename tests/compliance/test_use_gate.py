@@ -1,6 +1,7 @@
 """M10.3 (appropriateness/use gate) — pure decision tests + one DB test per §M10.3 criterion.
 
-The decision is a pure function of ``(use_class, jurisdiction, client_policy)`` (``decide_use``), so
+The decision is a pure function of ``(use_class, jurisdiction, workspace_policy)``
+(``decide_use``), so
 the bulk runs without a database (in ``make check``). :class:`UseGateImpl.evaluate` is exercised
 against a live Postgres (skips without one, like the M9 / M10.1 suites) because it reads the
 contact's resolved regime via ``current_value(contact.jurisdiction)`` and records the verdict in the
@@ -17,22 +18,9 @@ from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.api.composition import VERIFICATION_GATE_ORDER
-from clue_research.claimstore import insert_claim
-from clue_research.compliance import (
-    DEFAULT_CLIENT_POLICY,
-    ClientPolicy,
-    SensitiveOverride,
-    UseGateImpl,
-    decide_use,
-    load_client_policy,
-)
-from clue_research.compliance.use_gate import (
-    METRIC_USE_GATE_EVALUATIONS,
-    METRIC_USE_GATE_USABLE,
-)
-from clue_research.config import Jurisdiction, Posture, SourceScope, UseDisposition
-from clue_research.core import (
+from clue_api.composition import VERIFICATION_GATE_ORDER
+from clue_config import Jurisdiction, Posture, SourceScope, UseDisposition
+from clue_core import (
     AccountStatus,
     Claim,
     ClaimId,
@@ -51,13 +39,27 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
-from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
-from clue_research.obs import (
+from clue_obs.otel import (
     SPAN_COMPLIANCE_USE_GATE,
     SPAN_VERIFICATION_FAITHFULNESS_JUDGE,
     InMemorySink,
     collect_spans,
 )
+from clue_research.claimstore import insert_claim
+from clue_research.compliance import (
+    DEFAULT_WORKSPACE_POLICY,
+    SensitiveOverride,
+    UseGateImpl,
+    WorkspacePolicy,
+    decide_use,
+    load_workspace_policy,
+)
+from clue_research.compliance.use_gate import (
+    METRIC_USE_GATE_EVALUATIONS,
+    METRIC_USE_GATE_USABLE,
+)
+from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -72,7 +74,7 @@ _SENSITIVE = UseClass.SENSITIVE
 
 
 def test_decide_use_default_policy_matrix() -> None:  # AC1, AC3 (pure halves)
-    p = DEFAULT_CLIENT_POLICY
+    p = DEFAULT_WORKSPACE_POLICY
     assert decide_use(_PRO, Jurisdiction.GDPR, p) == (True, UseReason.ALLOWED)
     assert decide_use(_PERSONAL, Jurisdiction.GDPR, p) == (True, UseReason.ALLOWED)
     # AC2 (pure half): sensitive locked under the default policy, with the typed reason.
@@ -83,7 +85,7 @@ def test_sensitive_hard_floor_overrides_policy() -> None:  # AC2 — floor is in
     # Bypass validation to forge an illegal "sensitive is USABLE" policy (an Option-2 client trying
     # to config-bypass Art. 9). decide_use must STILL lock it — the floor lives in the gate, so no
     # config can make special-category data usable for outreach (Doc D §4).
-    illegal = ClientPolicy.model_construct(
+    illegal = WorkspacePolicy.model_construct(
         posture=Posture.GATHER_BROADLY_GATE_AT_USE,
         allow_map={
             _PRO: UseDisposition.USABLE,
@@ -101,7 +103,7 @@ def test_sensitive_hard_floor_overrides_policy() -> None:  # AC2 — floor is in
 
     # the floor also outranks a per-regime override (the M10.4 "switch down per regime" lever) — the
     # decide_use floor must win even if a sensitive regime_override slips past validation.
-    via_override = ClientPolicy.model_construct(
+    via_override = WorkspacePolicy.model_construct(
         posture=Posture.GATHER_BROADLY_GATE_AT_USE,
         allow_map={
             _PRO: UseDisposition.USABLE,
@@ -119,7 +121,7 @@ def test_sensitive_hard_floor_overrides_policy() -> None:  # AC2 — floor is in
 
 def test_decide_use_disallowed_when_not_usable() -> None:  # AC3 (configurable half)
     # a client policy that locks personal-public → the gate disallows it for the regime.
-    p = ClientPolicy(
+    p = WorkspacePolicy(
         allow_map={
             _PRO: UseDisposition.USABLE,
             _PERSONAL: UseDisposition.STORED_UNUSABLE,
@@ -131,7 +133,7 @@ def test_decide_use_disallowed_when_not_usable() -> None:  # AC3 (configurable h
         UseReason.USE_CLASS_DISALLOWED_FOR_REGIME,
     )
     # NOT_STORED is also not usable (the claim shouldn't exist, but if it does it cannot be used)
-    p2 = ClientPolicy(
+    p2 = WorkspacePolicy(
         allow_map={
             _PRO: UseDisposition.NOT_STORED,
             _PERSONAL: UseDisposition.USABLE,
@@ -150,7 +152,7 @@ def test_decide_use_per_regime_override() -> (
     # personal-public usable everywhere by the base map, but STRICTER in GDPR via a per-regime
     # override — "stricter usability for EU_GDPR than US where configured" (M10.4 relaxation lever,
     # exercised here as a config lookup, never a branch).
-    p = ClientPolicy(
+    p = WorkspacePolicy(
         regime_overrides={Jurisdiction.GDPR: {_PERSONAL: UseDisposition.STORED_UNUSABLE}}
     )
     assert decide_use(_PERSONAL, Jurisdiction.GDPR, p) == (
@@ -163,10 +165,10 @@ def test_decide_use_per_regime_override() -> (
 def test_use_policy_validators() -> None:
     # an incomplete allow-map is rejected (every use-class needs a disposition)
     with pytest.raises(ValidationError):
-        ClientPolicy(allow_map={_PRO: UseDisposition.USABLE})
+        WorkspacePolicy(allow_map={_PRO: UseDisposition.USABLE})
     # sensitive may never be config-marked USABLE (the Art. 9 floor is not config-bypassable)
     with pytest.raises(ValidationError):
-        ClientPolicy(
+        WorkspacePolicy(
             allow_map={
                 _PRO: UseDisposition.USABLE,
                 _PERSONAL: UseDisposition.USABLE,
@@ -175,11 +177,11 @@ def test_use_policy_validators() -> None:
         )
     # ...and the floor is not bypassable per regime either: a sensitive regime_override is rejected
     with pytest.raises(ValidationError):
-        ClientPolicy(regime_overrides={Jurisdiction.GDPR: {_SENSITIVE: UseDisposition.USABLE}})
+        WorkspacePolicy(regime_overrides={Jurisdiction.GDPR: {_SENSITIVE: UseDisposition.USABLE}})
 
 
 def test_use_policy_disposition_for() -> None:
-    p = ClientPolicy(
+    p = WorkspacePolicy(
         regime_overrides={Jurisdiction.GDPR: {_PERSONAL: UseDisposition.STORED_UNUSABLE}}
     )
     assert p.disposition_for(_PERSONAL, Jurisdiction.GDPR) is UseDisposition.STORED_UNUSABLE
@@ -196,7 +198,7 @@ def test_sensitive_override_relaxes_floor_for_its_field() -> (
 ):  # M10.4 — the only floor relaxation
     # a legally-reviewed per-field override is the ONLY sanctioned way a sensitive claim becomes
     # usable; it is scoped to its exact field_key and never relaxes any other field.
-    policy = ClientPolicy(
+    policy = WorkspacePolicy(
         sensitive_overrides=(
             SensitiveOverride(
                 field_key="contact.facet.health_advocacy",
@@ -228,15 +230,15 @@ def test_sensitive_override_requires_reviewed_basis() -> None:
             SensitiveOverride(**kwargs)  # type: ignore[arg-type]
 
 
-def test_client_policy_gather_and_store_helpers() -> None:  # the M8 / M4.6-facing seam
+def test_workspace_policy_gather_and_store_helpers() -> None:  # the M8 / M4.6-facing seam
     # store_sensitive sub-flag: sensitive is gated by it; non-sensitive is storable by default.
-    minimal = ClientPolicy(store_sensitive=False)
+    minimal = WorkspacePolicy(store_sensitive=False)
     assert minimal.should_store(_SENSITIVE) is False
     assert minimal.should_store(_PRO) is True
-    assert ClientPolicy(store_sensitive=True).should_store(_SENSITIVE) is True
+    assert WorkspacePolicy(store_sensitive=True).should_store(_SENSITIVE) is True
     # ...but a NOT_STORED disposition ("not retained at all") is honored for ANY class, not just
     # sensitive — the client's do-not-retain intent must not be silently ignored.
-    not_stored = ClientPolicy(
+    not_stored = WorkspacePolicy(
         allow_map={
             _PRO: UseDisposition.USABLE,
             _PERSONAL: UseDisposition.NOT_STORED,
@@ -246,8 +248,8 @@ def test_client_policy_gather_and_store_helpers() -> None:  # the M8 / M4.6-faci
     assert not_stored.should_store(_PERSONAL) is False
     assert not_stored.should_store(_PRO) is True
     # gather_scope: empty = no narrowing (all sources); a non-empty allow-list restricts.
-    assert ClientPolicy().gathers_source("any_source") is True
-    scoped = ClientPolicy(gather_scope=frozenset({"linkedin", "company_site"}))
+    assert WorkspacePolicy().gathers_source("any_source") is True
+    scoped = WorkspacePolicy(gather_scope=frozenset({"linkedin", "company_site"}))
     assert scoped.gathers_source("linkedin") is True
     assert scoped.gathers_source("data_broker") is False
 
@@ -302,7 +304,7 @@ def test_use_reason_migration_tuple_matches_core() -> None:
 
 def test_allow_map_migration_default_matches_code() -> None:
     # Pure no-DB drift guard (mirrors the M9.4 jsonb-default guard): the migration's hand-written
-    # client_policy.allow_map SQL DEFAULT must equal the Python conservative default, so the two
+    # workspace_policy.allow_map SQL DEFAULT must equal the Python conservative default, so the two
     # cannot diverge (a default-row that omits allow_map relies on the SQL literal).
     import json
     import re
@@ -316,7 +318,7 @@ def test_allow_map_migration_default_matches_code() -> None:
     assert match is not None
     sql_default = json.loads(match.group(1))
     assert sql_default == {
-        uc.value: disp.value for uc, disp in DEFAULT_CLIENT_POLICY.allow_map.items()
+        uc.value: disp.value for uc, disp in DEFAULT_WORKSPACE_POLICY.allow_map.items()
     }
 
 
@@ -357,8 +359,8 @@ _CLIENT = "client-m10-usegate"
 def _gate(
     conn: AsyncConnection,
     *,
-    client_id: str = _CLIENT,
-    policy: ClientPolicy | None = None,
+    workspace_id: str = _CLIENT,
+    policy: WorkspacePolicy | None = None,
     record: bool = True,
     sink: InMemorySink | None = None,
 ) -> UseGateImpl:
@@ -367,8 +369,8 @@ def _gate(
         yield conn
 
     return UseGateImpl(
-        client_id,
-        policy=policy if policy is not None else DEFAULT_CLIENT_POLICY,
+        workspace_id,
+        policy=policy if policy is not None else DEFAULT_WORKSPACE_POLICY,
         conn_factory=factory,
         record_decisions=record,
         sink=sink,
@@ -401,8 +403,13 @@ def _facet_claim(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme GmbH", primary_domain="acme.de", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme GmbH",
+        primary_domain="acme.de",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
@@ -413,7 +420,7 @@ async def _contact(conn: AsyncConnection, account_id: EntityId) -> EntityId:
 
 
 async def _write_jurisdiction(
-    conn: AsyncConnection, contact: EntityId, regime: str, *, client_id: str = _CLIENT
+    conn: AsyncConnection, contact: EntityId, regime: str, *, workspace_id: str = _CLIENT
 ) -> None:
     """Persist a contact.jurisdiction claim (as M10.1 would) so the gate's regime read resolves."""
     claim = Claim(
@@ -432,11 +439,13 @@ async def _write_jurisdiction(
         run_id=new_run_id(),
         research_mode=ResearchMode.CONTACT_PROFILING,
     )
-    await insert_claim(conn, stamp_reuse(claim, tenant_id=client_id))
+    await insert_claim(conn, stamp_reuse(claim, workspace_id=workspace_id))
 
 
-async def _insert_facet(conn: AsyncConnection, claim: Claim, *, client_id: str = _CLIENT) -> Claim:
-    await insert_claim(conn, stamp_reuse(claim, tenant_id=client_id))
+async def _insert_facet(
+    conn: AsyncConnection, claim: Claim, *, workspace_id: str = _CLIENT
+) -> Claim:
+    await insert_claim(conn, stamp_reuse(claim, workspace_id=workspace_id))
     return claim
 
 
@@ -494,10 +503,10 @@ def test_professional_public_usable_allowed() -> None:  # AC1 + AC7 (span)
 
             assert decision.usable_for_outreach is True
             assert decision.reason is UseReason.ALLOWED
-            assert decision.policy_version == DEFAULT_CLIENT_POLICY.version
+            assert decision.policy_version == DEFAULT_WORKSPACE_POLICY.version
             # the verdict is recorded in the side table, decided under the GDPR regime
             rows = await _decision_rows(conn, claim.id)
-            assert rows == [(True, "allowed", "gdpr", DEFAULT_CLIENT_POLICY.version)]
+            assert rows == [(True, "allowed", "gdpr", DEFAULT_WORKSPACE_POLICY.version)]
             # AC7: its own span fired, distinct from the faithfulness-judge span, and CARRIES the
             # required (use_class, regime, policy_version, decision) dimensions. The custom keys are
             # not STANDARD_ATTRIBUTES, so the obs redaction chokepoint stringifies values (bool/int)
@@ -511,8 +520,8 @@ def test_professional_public_usable_allowed() -> None:  # AC1 + AC7 (span)
             assert attrs.get("compliance.use_gate.usable") in (True, "True")
             assert attrs.get("compliance.use_gate.reason") == "allowed"
             assert attrs.get("compliance.use_gate.policy_version") in (
-                DEFAULT_CLIENT_POLICY.version,
-                str(DEFAULT_CLIENT_POLICY.version),
+                DEFAULT_WORKSPACE_POLICY.version,
+                str(DEFAULT_WORKSPACE_POLICY.version),
             )
 
     run_async(_run())
@@ -529,7 +538,7 @@ def test_sensitive_locked_under_every_posture() -> None:  # AC2 — hard floor
 
             # an Option-2 "gather broadly" posture: maximally permissive on non-sensitive —
             # sensitive must STILL be locked (the gate floor, not config).
-            option2 = ClientPolicy(
+            option2 = WorkspacePolicy(
                 posture=Posture.GATHER_BROADLY_GATE_AT_USE,
                 allow_map={
                     _PRO: UseDisposition.USABLE,
@@ -556,7 +565,7 @@ def test_personal_public_configurable() -> None:  # AC3
             # default (Option 1): usable
             assert (await _gate(conn).evaluate(claim)).usable_for_outreach is True
             # config-only change: a policy that locks personal-public for the regime → not usable
-            stricter = ClientPolicy(
+            stricter = WorkspacePolicy(
                 allow_map={
                     _PRO: UseDisposition.USABLE,
                     _PERSONAL: UseDisposition.STORED_UNUSABLE,
@@ -648,7 +657,7 @@ def test_regime_reresolution_refreshes_decision() -> None:  # M10.3×M10.1 — s
             contact = await _contact(conn, account)
             claim = await _insert_facet(conn, _facet_claim(contact, use_class=_PERSONAL))
             # a policy where personal-public is usable everywhere EXCEPT GDPR (per-regime override)
-            policy = ClientPolicy(
+            policy = WorkspacePolicy(
                 regime_overrides={Jurisdiction.GDPR: {_PERSONAL: UseDisposition.STORED_UNUSABLE}}
             )
 
@@ -715,7 +724,7 @@ def test_unknown_regime_fails_closed_to_strict() -> None:  # _resolved_regime br
                         run_id=new_run_id(),
                         research_mode=ResearchMode.CONTACT_PROFILING,
                     ),
-                    tenant_id=_CLIENT,
+                    workspace_id=_CLIENT,
                 ),
             )
             claim = await _insert_facet(conn, _facet_claim(contact, use_class=_PERSONAL))
@@ -802,17 +811,20 @@ def test_evaluate_rejects_non_personal_claims() -> None:
 
 
 @pytest.mark.usefixtures("require_compliance_db")
-def test_load_client_policy_default_and_overlay() -> None:
+def test_load_workspace_policy_default_and_overlay() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # no row → the built-in default
-            assert await load_client_policy(conn, client_id=_CLIENT) == DEFAULT_CLIENT_POLICY
+            assert (
+                await load_workspace_policy(conn, workspace_id=_CLIENT) == DEFAULT_WORKSPACE_POLICY
+            )
 
             # a per-client row with a PARTIAL allow-map override (only personal-public changes) is
             # layered over the default → complete, version recorded, the unspecified entries default
             await conn.execute(
                 text(
-                    "INSERT INTO client_policy (policy_id, client_id, posture, allow_map, version) "
+                    "INSERT INTO workspace_policy "
+                    "(policy_id, workspace_id, posture, allow_map, version) "
                     "VALUES (:pid, :cid, 'conservative_default', "
                     "CAST(:am AS jsonb), 3)"
                 ),
@@ -822,7 +834,7 @@ def test_load_client_policy_default_and_overlay() -> None:
                     "am": '{"personal-public-non-sensitive": "stored_unusable"}',
                 },
             )
-            loaded = await load_client_policy(conn, client_id=_CLIENT)
+            loaded = await load_workspace_policy(conn, workspace_id=_CLIENT)
             assert loaded.version == 3
             assert loaded.allow_map[_PERSONAL] is UseDisposition.STORED_UNUSABLE  # overridden
             assert loaded.allow_map[_PRO] is UseDisposition.USABLE  # default carried through
@@ -832,53 +844,54 @@ def test_load_client_policy_default_and_overlay() -> None:
 
 
 @pytest.mark.usefixtures("require_compliance_db")
-def test_load_client_policy_rejects_sensitive_usable() -> None:
+def test_load_workspace_policy_rejects_sensitive_usable() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # a config row that tries to mark sensitive USABLE fails to load (fail-closed — the
             # Art. 9 floor is not config-bypassable; the CHECK permits the jsonb, the model rejects)
             await conn.execute(
                 text(
-                    "INSERT INTO client_policy (policy_id, client_id, allow_map, version) "
+                    "INSERT INTO workspace_policy (policy_id, workspace_id, allow_map, version) "
                     "VALUES ('p-bad', :cid, CAST(:am AS jsonb), 1)"
                 ),
                 {"cid": _CLIENT, "am": '{"sensitive": "usable"}'},
             )
             with pytest.raises(ValidationError):
-                await load_client_policy(conn, client_id=_CLIENT)
+                await load_workspace_policy(conn, workspace_id=_CLIENT)
 
     run_async(_run())
 
 
 @pytest.mark.usefixtures("require_compliance_db")
-def test_load_client_policy_rejects_sensitive_usable_via_regime_override() -> None:
+def test_load_workspace_policy_rejects_sensitive_usable_via_regime_override() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # the floor is not config-bypassable per regime either: a regime_overrides row marking
             # sensitive USABLE also fails to load (fail-closed at config load, not just at the gate)
             await conn.execute(
                 text(
-                    "INSERT INTO client_policy (policy_id, client_id, regime_overrides, version) "
+                    "INSERT INTO workspace_policy "
+                    "(policy_id, workspace_id, regime_overrides, version) "
                     "VALUES ('p-bad-regime', :cid, CAST(:ro AS jsonb), 1)"
                 ),
                 {"cid": _CLIENT, "ro": '{"gdpr": {"sensitive": "usable"}}'},
             )
             with pytest.raises(ValidationError):
-                await load_client_policy(conn, client_id=_CLIENT)
+                await load_workspace_policy(conn, workspace_id=_CLIENT)
 
     run_async(_run())
 
 
 @pytest.mark.usefixtures("require_compliance_db")
-def test_load_client_policy_reads_posture_columns() -> None:  # M10.4 column round-trip
+def test_load_workspace_policy_reads_posture_columns() -> None:  # M10.4 column round-trip
     async def _run() -> None:
         async with rollback_conn() as conn:
             # an Option-3-shaped row: source-scoped, do-not-store-sensitive, an explicit gather
             # allow-list, and a reviewed sensitive override — all read back by the loader.
             await conn.execute(
                 text(
-                    "INSERT INTO client_policy "
-                    "(policy_id, client_id, posture, source_scope, store_sensitive, "
+                    "INSERT INTO workspace_policy "
+                    "(policy_id, workspace_id, posture, source_scope, store_sensitive, "
                     " gather_scope, sensitive_overrides, version) "
                     "VALUES (:pid, :cid, 'professional_public_only', 'professional_public_only', "
                     " false, CAST(:gs AS jsonb), CAST(:so AS jsonb), 4)"
@@ -893,7 +906,7 @@ def test_load_client_policy_reads_posture_columns() -> None:  # M10.4 column rou
                     ),
                 },
             )
-            loaded = await load_client_policy(conn, client_id=_CLIENT)
+            loaded = await load_workspace_policy(conn, workspace_id=_CLIENT)
             assert loaded.posture is Posture.PROFESSIONAL_PUBLIC_ONLY
             assert loaded.source_scope is SourceScope.PROFESSIONAL_PUBLIC_ONLY
             assert loaded.store_sensitive is False
@@ -920,7 +933,7 @@ def test_sensitive_override_makes_claim_usable_via_gate() -> None:  # AC2 — th
             assert locked.reason is UseReason.SENSITIVE_LOCKED
 
             # ...with a reviewed override for this exact field it clears (the only floor relaxation)
-            policy = ClientPolicy(
+            policy = WorkspacePolicy(
                 sensitive_overrides=(
                     SensitiveOverride(
                         field_key="contact.facet.test_hook",
@@ -937,7 +950,7 @@ def test_sensitive_override_makes_claim_usable_via_gate() -> None:  # AC2 — th
 
 
 @pytest.mark.usefixtures("require_compliance_db")
-def test_load_client_policy_reads_option2_store_sensitive_true() -> (
+def test_load_workspace_policy_reads_option2_store_sensitive_true() -> (
     None
 ):  # AC2 store-bit round-trip
     async def _run() -> None:
@@ -946,13 +959,13 @@ def test_load_client_policy_reads_option2_store_sensitive_true() -> (
             # TRUE case back (the existing round-trip only exercises the false/minimize case).
             await conn.execute(
                 text(
-                    "INSERT INTO client_policy "
-                    "(policy_id, client_id, posture, source_scope, store_sensitive, version) "
+                    "INSERT INTO workspace_policy "
+                    "(policy_id, workspace_id, posture, source_scope, store_sensitive, version) "
                     "VALUES (:pid, :cid, 'gather_broadly_gate_at_use', 'full_sweep', true, 5)"
                 ),
                 {"pid": "p-opt2", "cid": _CLIENT},
             )
-            loaded = await load_client_policy(conn, client_id=_CLIENT)
+            loaded = await load_workspace_policy(conn, workspace_id=_CLIENT)
             assert loaded.posture is Posture.GATHER_BROADLY_GATE_AT_USE
             assert loaded.store_sensitive is True
             assert loaded.should_store(_SENSITIVE) is True  # stored — the gate still locks its use
@@ -962,20 +975,20 @@ def test_load_client_policy_reads_option2_store_sensitive_true() -> (
 
 
 @pytest.mark.usefixtures("require_compliance_db")
-def test_load_client_policy_rejects_malformed_override_entry() -> None:
+def test_load_workspace_policy_rejects_malformed_override_entry() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             # a sensitive_overrides element that is not an object (a bare string) must fail loudly
             # at load, not be silently dropped to an empty register (the Art. 9 register must show).
             await conn.execute(
                 text(
-                    "INSERT INTO client_policy "
-                    "(policy_id, client_id, sensitive_overrides, version) "
+                    "INSERT INTO workspace_policy "
+                    "(policy_id, workspace_id, sensitive_overrides, version) "
                     "VALUES ('p-bad-ovr', :cid, CAST(:so AS jsonb), 1)"
                 ),
                 {"cid": _CLIENT, "so": '["contact.facet.health"]'},
             )
             with pytest.raises(ValidationError):
-                await load_client_policy(conn, client_id=_CLIENT)
+                await load_workspace_policy(conn, workspace_id=_CLIENT)
 
     run_async(_run())

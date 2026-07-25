@@ -56,6 +56,17 @@ issue spec states the exact interface it exposes/consumes.
 | M12 | Value Narrative & Handoff | `layer:narrative-handoff` | M5, M8, M9 | Medium | 3 | [M12](./M12-value-narrative-and-handoff.md) |
 | M13 | Review, Feedback & Observability | `layer:review-observability` | M6, M9, M12 | Medium | 4 | [M13](./M13-review-feedback-observability.md) |
 
+## Harness-era phases (post-M13; harness doc §9 + Doc R)
+
+| Phase | Work | Status | Spec |
+|---|---|---|---|
+| A | Restructure + spine: R0–R2, `workspace_id` rename, `libs/clue-spine`, R3 (api → `platform/api`) | **closed** | [PA](./PA-phase-a-restructure-and-spine.md) |
+| B | Platform infra core: fleet worker (step 0) · storage (step 1) · memory slice 1 (Doc M) · toolbelt/projections (step 2) | **executed** | [PB](./PB-phase-b-platform-infra-core.md) |
+| B4 | Toolbelt + projections/SSE + fleet run-start composition (step 2; `platform/b4-toolbelt-v0`) | **executed** | [PB-B4](./PB-B4-toolbelt-and-projections.md) |
+| B2 | Storage lane: `libs/clue-storage` · `artifact` table + `claim.artifact_key` · evidence snapshots · scrapling scrape backend · DSAR snapshot reach · millicredit groundwork | **executed + integrated** | [PB-B2](./PB-B2-storage.md) |
+| B3 | Scoped-memory slice 1: five-scope memory substrate · two seams · deterministic assembly · lifecycle/DSAR | **executed + integrated** | [PB-B3](./PB-B3-scoped-memory-slice-1.md) |
+| C | Governed agency: Step 4 fan-out (coverage/proposals/ingestion/Stage 0) → journal/recipes → deepagent → dossier | **C0 frozen; C1–C4 integrated; C5 implemented; C6 next** | [PC](./PC-phase-c-agentic-layer.md) · [C0](./PC-C0-step4-contract-freeze.md) · [C1](./PC-C1-coverage-and-goal-judge.md) · [C2](./PC-C2-field-source-proposals.md) · [C3](./PC-C3-ingestion.md) · [C4](./PC-C4-stage0-recipe0.md) · [C5](./PC-C5-run-graph-recipes-executor.md) |
+
 ## Full issue list
 
 **M0 — Foundations & Shared Contracts**
@@ -109,8 +120,8 @@ issue spec states the exact interface it exposes/consumes.
 **M7 — Durable Execution**
 - M7.1 Per-account orchestrator-worker graph (LangGraph + AsyncPostgresSaver; workers return references)
 - M7.2 Bounded recursion knob (aspect/facet sub-workers; per-tier depth & worker caps)
-- M7.3 Campaign-run state machine (phases, checkpointing, pause/resume/adjust)
-- M7.4 Idempotency keys ((account,field,tier) + (campaign_run,phase))
+- M7.3 Project-run state machine (phases, checkpointing, pause/resume/adjust)
+- M7.4 Idempotency keys ((account,field,tier) + (project_run,phase))
 - M7.5 Budget caps & cost-governance engine (per-account, per-run hard stops)
 
 **M8 — Deep Profiling (modes M2/M3/M4)**

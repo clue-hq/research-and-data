@@ -1,0 +1,29 @@
+{
+  "name": "judge_unavailable_parks_proposed",
+  "submission": {
+    "workspace_id": "ws_golden",
+    "scope": {
+      "scope_type": "brand",
+      "scope_id": "brd_golden"
+    },
+    "type": "preference",
+    "trigger": "when writing outreach",
+    "body": "Prefer casual tone with this committee.",
+    "provenance_class": "user_stated"
+  },
+  "candidates": [
+    {
+      "memory_id": "mem_a",
+      "body": "Never use fear-based hooks.",
+      "trigger": "when writing outreach",
+      "status": "active"
+    }
+  ],
+  "judgment": null,
+  "expected": {
+    "kind": "disposition",
+    "verdict": "add",
+    "target_memory_id": null,
+    "park_proposed": true
+  }
+}

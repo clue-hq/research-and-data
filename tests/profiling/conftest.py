@@ -9,7 +9,7 @@ coverage; the worker / admission / field-pack tests use the migrated DB and ``py
 a reachable ``CLUE_DATABASE_URL`` so ``make check`` stays green. The in-process resolver binding is
 cleared around every test (it is module-global). The doubles model the seams a real
 committee/contact run depends on: a grounded :class:`CommitteeSource`, the :class:`LLMGateway`, and
-a facet :class:`~clue_research.core.resolver.Resolver`.
+a facet :class:`~clue_core.resolver.Resolver`.
 """
 
 from __future__ import annotations
@@ -25,8 +25,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import load_core_pack
-from clue_research.core import (
+from clue_core import (
     AccountEntity,
     Claim,
     Completion,
@@ -36,18 +35,22 @@ from clue_research.core import (
     EmbeddingResult,
     Entity,
     EntityId,
+    EntityScope,
     ExtractionMethod,
     FieldDef,
     ICPCreatedFrom,
     ICPSpec,
     IdentityBinding,
     Message,
+    Modality,
     ResearchMode,
+    SourceManifest,
     UseClass,
     contact_claim,
     new_run_id,
 )
-from clue_research.db import db_lifespan
+from clue_db import db_lifespan
+from clue_research.claimstore import load_core_pack
 from clue_research.identity import (
     get_account,
     get_contact,
@@ -57,6 +60,10 @@ from clue_research.identity import (
 from clue_research.profiling.committee import load_committee_pack
 from clue_research.profiling.committee.sources import CommitteePersonCandidate
 from clue_research.profiling.fields import load_deep_profiling_pack
+from clue_research.sources import RegistrySourceManifest, register_source
+
+# Accounts are workspace-local ([B3×research]): every account needs a seeded ``workspace`` row.
+from tests._workspace import DEFAULT_TEST_WORKSPACE, seed_workspace
 
 # Reuse the M0.3 helpers (DRY): the single-loop coroutine runner + the reachable-DB gate.
 from tests.db.conftest import _db_available
@@ -165,11 +172,53 @@ async def seed_packs(conn: AsyncConnection) -> None:
     await load_committee_pack(conn)
 
 
+async def register_facet_source(
+    conn: AsyncConnection, source_key: str = "exa_deep", *, tier: int = 4
+) -> None:
+    """Register the facet ``tier_plan`` source a test binds its fake resolver to.
+
+    M8.4's fill now runs through the shared waterfall engine, which (correctly) SKIPS an
+    unregistered source instead of resolving it — so a bound fake must sit behind a real manifest.
+    ``exa_deep`` is also a committed production seed (v1: BOTH scope, cost 10) on a persistent
+    schema, so the test variant registers at **version 2** — a versioned update inside the test's
+    rolled-back transaction (the rerun-idempotency pattern, cf. the AC-6 gate test) — which also
+    makes the manifest deterministic regardless of suite order. ``tier`` lets the sanctioned
+    lower-tier fixtures bind a genuine tier-3 manifest (the engine enforces claim tier == manifest
+    tier)."""
+    await register_source(
+        conn,
+        RegistrySourceManifest(
+            manifest=SourceManifest(
+                source_key=source_key,
+                modality=Modality.TEXT,
+                entity_scope=EntityScope.CONTACT,
+                yields=("contact.facet",),
+                tier=tier,
+                cost_cents=Decimal(0),
+            ),
+            active=True,
+            version=2,
+        ),
+    )
+
+
 async def insert_test_account(
-    conn: AsyncConnection, *, name: str = "Acme Robotics", domain: str | None = "acme.example"
+    conn: AsyncConnection,
+    *,
+    name: str = "Acme Robotics",
+    domain: str | None = "acme.example",
+    workspace_id: str = DEFAULT_TEST_WORKSPACE,
 ) -> AccountEntity:
-    """Insert a resolved account entity and return its full record (the committee's parent)."""
-    account_id = await insert_account_entity(conn, canonical_name=name, primary_domain=domain)
+    """Insert a resolved, workspace-stamped account entity and return its full record.
+
+    Accounts are workspace-local ([B3×research]); this seeds the ``workspace`` row (idempotent) so
+    the account-entity workspace FK is satisfiable, then stamps ``workspace_id`` on the account —
+    so every committee/profiling suite that creates its account through this helper is fixed
+    centrally (and the admitted contact inherits this workspace)."""
+    await seed_workspace(conn, workspace_id)
+    account_id = await insert_account_entity(
+        conn, canonical_name=name, primary_domain=domain, workspace_id=workspace_id
+    )
     account = await get_account(conn, account_id)
     assert account is not None
     return account
@@ -199,7 +248,7 @@ async def insert_test_contact(
 def icp_spec() -> ICPSpec:
     """A minimal in-memory ICP spec (committee discovery reads org context, not the rubric)."""
     return ICPSpec(
-        client_id="acme",
+        workspace_id="acme",
         icp_key="default",
         created_from=ICPCreatedFrom.SYNTHESIS,
     )
@@ -268,7 +317,7 @@ class FakeGateway:
 
 @dataclass
 class FakeFacetResolver:
-    """A :class:`~clue_research.core.resolver.Resolver` double for M8.4's facet fill: returns tier-4
+    """A :class:`~clue_core.resolver.Resolver` double for M8.4's facet fill: returns tier-4
     facet claims with *placeholder* tags (binding=WEAK, use_class=professional-public) — what a real
     resolver must set just to construct a facet claim — so the test can assert M8.4 *re-tags* them
     with the authoritative per-claim binding + use-class. Bind it via ``sources.bind_resolver`` and
@@ -309,6 +358,7 @@ __all__ = [
     "require_profiling_db",
     "require_db",
     "seed_packs",
+    "register_facet_source",
     "insert_test_account",
     "insert_test_contact",
     "icp_spec",

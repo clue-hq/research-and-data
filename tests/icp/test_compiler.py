@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from clue_core import FieldDef, ICPCreatedFrom, ICPSpec, PassKind
 from clue_research.claimstore import register_field
-from clue_research.core import FieldDef, ICPCreatedFrom, ICPSpec, PassKind
 from clue_research.icp import (
     HEALTHCARE_PRACTICE,
     CompileError,
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.usefixtures("require_icp_db")
 def _spec(**overrides: object) -> ICPSpec:
     """Build an in-memory ICPSpec (the compiler reads it; it need not be persisted)."""
     base: dict[str, object] = {
-        "client_id": "acme",
+        "workspace_id": "acme",
         "icp_key": "default",
         "created_from": ICPCreatedFrom.SYNTHESIS,
     }
@@ -270,7 +270,7 @@ def test_compile_active_icp_reads_the_active_spec() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=("core.employee_count",),
@@ -285,14 +285,14 @@ def test_compile_active_icp_reads_the_active_spec() -> None:
 
 def test_pinned_version_recompiles_identically_after_refetch() -> None:
     """Criterion 1, clause 2: re-fetching the pinned ICP-spec version (the DB serialize→deserialize
-    round-trip) and recompiling yields an identical plan — the reproducibility campaign-run re-entry
+    round-trip) and recompiling yields an identical plan — the reproducibility project-run re-entry
     (M6/M8 'execute exactly what was compiled') depends on."""
 
     async def _run() -> None:
         async with rollback_conn(seed_core=True) as conn:
             await create_icp_spec(
                 conn,
-                client_id="acme",
+                workspace_id="acme",
                 icp_key="default",
                 created_from=ICPCreatedFrom.SYNTHESIS,
                 field_keys=(

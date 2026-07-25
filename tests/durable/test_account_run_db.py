@@ -15,20 +15,20 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from clue_research.claimstore import insert_claim, register_field
-from clue_research.claimstore.tenancy import TenantScope
-from clue_research.core import (
+from clue_core import (
     ExtractionMethod,
     PassKind,
     ResearchMode,
     account_claim,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
     new_run_id,
 )
-from clue_research.core.field import FieldDef
-from clue_research.db import db_lifespan, transaction
+from clue_core.field import FieldDef
+from clue_db import db_lifespan, transaction
+from clue_research.claimstore import insert_claim, register_field
+from clue_research.claimstore.tenancy import WorkspaceScope
 from clue_research.durable import (
     AccountResearchGraph,
     AccountRunStatus,
@@ -98,13 +98,13 @@ def test_account_run_repository_round_trip() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             run_id = new_run_id()
-            campaign_run_id = new_campaign_run_id()
+            project_run_id = new_project_run_id()
             entity_id = new_entity_id()
 
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier="top",
             )
@@ -118,7 +118,7 @@ def test_account_run_repository_round_trip() -> None:
             await ensure_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=campaign_run_id,
+                project_run_id=project_run_id,
                 entity_id=entity_id,
                 tier="ignored-on-conflict",
             )
@@ -163,7 +163,7 @@ def test_account_run_sub_phase_repository_round_trip() -> None:
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 entity_id=new_entity_id(),
                 tier="top",
             )
@@ -198,7 +198,7 @@ def test_db_store_sub_phase_round_trips_through_the_seam() -> None:
                     await insert_account_run(
                         conn,
                         account_run_id=committed_id,
-                        campaign_run_id=new_campaign_run_id(),
+                        project_run_id=new_project_run_id(),
                         entity_id=new_entity_id(),
                         tier="top",
                     )
@@ -234,7 +234,7 @@ def test_compute_gap_fields_detects_missing_and_filled() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             await register_field(conn, _deep_field())
             entity_id = new_entity_id()
-            scope = TenantScope.public_only()
+            scope = WorkspaceScope.public_only()
 
             # No claim yet → the deep field is a gap.
             gaps = await compute_gap_fields(conn, entity_id, scope=scope, field_keys=(_DEEP_FIELD,))
@@ -271,7 +271,7 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
     async def _run() -> None:
         run_id = new_run_id()
         entity_id = new_entity_id()
-        campaign_run_id = new_campaign_run_id()
+        project_run_id = new_project_run_id()
         worker = StubAspectWorker("account", n_claims=2, cost_cents=Decimal("5"))
         registry = WorkerRegistry()
         registry.register(worker)
@@ -286,7 +286,7 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
                     result = await graph.run(
                         entity_id,
                         tier="top",
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         checkpointer=saver,
                         account_run_id=run_id,
                         field_keys=(_DEEP_FIELD,),
@@ -307,7 +307,7 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
                     again = await graph.run(
                         entity_id,
                         tier="top",
-                        campaign_run_id=campaign_run_id,
+                        project_run_id=project_run_id,
                         checkpointer=saver,
                         account_run_id=run_id,
                         field_keys=(_DEEP_FIELD,),
@@ -323,11 +323,18 @@ def test_graph_end_to_end_on_db_store_and_postgres_checkpointer() -> None:
                         text("DELETE FROM field_definition WHERE field_key = :k"),
                         {"k": _DEEP_FIELD},
                     )
-                    for tbl in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
-                        await conn.execute(
-                            text(f"DELETE FROM {tbl} WHERE thread_id = :tid"),
-                            {"tid": str(run_id)},
-                        )
+                    # ``AsyncPostgresSaver.setup()`` created its checkpointer tables at runtime,
+                    # OUTSIDE alembic. Drop them (not just this thread's rows) so a persistent
+                    # schema stays alembic-only afterwards — otherwise a rerun of the suite fails
+                    # tests/db/test_db_migrations.py::test_no_domain_tables_at_m0_head. They are
+                    # cheap runtime state: the next ``postgres_checkpointer()`` recreates them.
+                    for tbl in (
+                        "checkpoint_blobs",
+                        "checkpoint_writes",
+                        "checkpoints",
+                        "checkpoint_migrations",
+                    ):
+                        await conn.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
 
     run_async(_run())
 
@@ -339,7 +346,7 @@ def test_db_store_fail_marks_status() -> None:
             await insert_account_run(
                 conn,
                 account_run_id=run_id,
-                campaign_run_id=new_campaign_run_id(),
+                project_run_id=new_project_run_id(),
                 entity_id=new_entity_id(),
                 tier="top",
             )
@@ -352,7 +359,7 @@ def test_db_store_fail_marks_status() -> None:
                     await insert_account_run(
                         conn,
                         account_run_id=committed_id,
-                        campaign_run_id=new_campaign_run_id(),
+                        project_run_id=new_project_run_id(),
                         entity_id=new_entity_id(),
                         tier="top",
                     )

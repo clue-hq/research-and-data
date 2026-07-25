@@ -8,14 +8,14 @@ from uuid import uuid4
 
 import pytest
 
-from clue_research.core import (
+from clue_core import (
     EntityType,
     ReviewAction,
-    new_campaign_run_id,
     new_claim_id,
     new_entity_id,
+    new_project_run_id,
 )
-from clue_research.core.review import ReviewDispositionEmitter
+from clue_core.review import ReviewDispositionEmitter
 from clue_research.review import (
     ACCOUNT_DISPOSITION_TYPES,
     CLAIM_DISPOSITION_TYPES,
@@ -48,7 +48,7 @@ def test_natural_keys() -> None:
     assert (
         downstream_natural_key(
             origin=DispositionOrigin.CRM_INGEST,
-            client_id="acme",
+            workspace_id="acme",
             external_id="op-7",
             disposition_type=DispositionType.MEETING_BOOKED,
         )
@@ -66,8 +66,8 @@ def test_for_review_action_builds_a_valid_record() -> None:
         entity_type=EntityType.ACCOUNT,
         account_entity_id=account,
         claim_id=claim,
-        campaign_run_id=new_campaign_run_id(),
-        client_id="acme",
+        project_run_id=new_project_run_id(),
+        workspace_id="acme",
         icp_key="seg",
         icp_spec_version=3,
         review_action_id=rid,
@@ -85,7 +85,7 @@ def test_for_downstream_builds_account_level_record() -> None:
     d = FeedbackDisposition.for_downstream(
         disposition_type=DispositionType.ACCOUNT_ACCEPTED,
         account_entity_id=account,
-        client_id="acme",
+        workspace_id="acme",
         external_id="crm-1",
         occurred_at=_NOW,
         icp_key="seg",
@@ -109,8 +109,8 @@ def test_record_validators_reject_malformed_shapes() -> None:
             entity_type=EntityType.ACCOUNT,
             account_entity_id=account,
             claim_id=None,  # type: ignore[arg-type]
-            campaign_run_id=new_campaign_run_id(),
-            client_id="acme",
+            project_run_id=new_project_run_id(),
+            workspace_id="acme",
             icp_key="",
             icp_spec_version=1,
             review_action_id=uuid4(),
@@ -124,8 +124,8 @@ def test_record_validators_reject_malformed_shapes() -> None:
             entity_type=EntityType.ACCOUNT,
             account_entity_id=account,
             claim_id=new_claim_id(),
-            campaign_run_id=new_campaign_run_id(),
-            client_id="acme",
+            project_run_id=new_project_run_id(),
+            workspace_id="acme",
             icp_key="",
             icp_spec_version=1,
             review_action_id=uuid4(),
@@ -138,14 +138,14 @@ def test_downstream_outcome_requires_an_identity_hint_and_account_type() -> None
         DownstreamOutcome(
             external_id="x",
             disposition_type=DispositionType.ACCOUNT_ACCEPTED,
-            client_id="acme",
+            workspace_id="acme",
             occurred_at=_NOW,
         )
     with pytest.raises(ValueError, match="not an account-level outcome"):
         DownstreamOutcome(
             external_id="x",
             disposition_type=DispositionType.CLAIM_APPROVED,
-            client_id="acme",
+            workspace_id="acme",
             occurred_at=_NOW,
             account_entity_id=new_entity_id(),
         )

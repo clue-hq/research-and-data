@@ -23,8 +23,8 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_db import db_lifespan
 from clue_research.claimstore import load_core_pack
-from clue_research.db import db_lifespan
 
 # Reuse the M0.3 single-loop coroutine runner + reachable-DB gate (DRY).
 from tests.db.conftest import _db_available

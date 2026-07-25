@@ -19,23 +19,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.claimstore import (
-    ALL_TENANTS,
-    TenantScope,
-    claims_for,
-    current_value,
-    insert_claim,
-    provenance_index,
-)
-from clue_research.compliance import (
-    DataSubjectRights,
-    DataSubjectRightsImpl,
-    ErasureScope,
-    RetentionSweep,
-    TombstoneReason,
-    build_tombstone,
-)
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     AgeOutCandidate,
     Claim,
@@ -52,7 +36,24 @@ from clue_research.core import (
     UtcDatetime,
     new_run_id,
 )
+from clue_research.claimstore import (
+    ALL_WORKSPACES,
+    WorkspaceScope,
+    claims_for,
+    current_value,
+    insert_claim,
+    provenance_index,
+)
+from clue_research.compliance import (
+    DataSubjectRights,
+    DataSubjectRightsImpl,
+    ErasureScope,
+    RetentionSweep,
+    TombstoneReason,
+    build_tombstone,
+)
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -60,7 +61,7 @@ _CLIENT = "client-dsar"
 _FACET = "contact.facet.test_hook"
 _PRO = UseClass.PROFESSIONAL_PUBLIC
 _SENSITIVE = UseClass.SENSITIVE
-_SCOPE = TenantScope.for_tenant(_CLIENT)
+_SCOPE = WorkspaceScope.for_workspace(_CLIENT)
 
 
 # --- a minimal Freshness stub (the M9.5 engine is injected as the core.Freshness seam) --------
@@ -102,8 +103,8 @@ def test_build_tombstone_facet_is_rejected_and_weak() -> None:
     """A facet tombstone is REJECTED (merge-ineligible), WEAK-bound, HUMAN, tier-1, redacted, and
     inherits the target's field/entity/use_class/tenancy."""
     target = _facet_claim(_eid("aa"), use_class=_PRO)
-    target = target.model_copy(update={"reuse_scope": target.reuse_scope, "tenant_id": _CLIENT})
-    target = stamp_reuse(target, tenant_id=_CLIENT)
+    target = target.model_copy(update={"reuse_scope": target.reuse_scope, "workspace_id": _CLIENT})
+    target = stamp_reuse(target, workspace_id=_CLIENT)
     tomb = build_tombstone(target, run_id=new_run_id())
     assert tomb.verification_status.value == "rejected"
     assert tomb.identity_binding is IdentityBinding.WEAK
@@ -113,7 +114,7 @@ def test_build_tombstone_facet_is_rejected_and_weak() -> None:
     assert tomb.entity_id == target.entity_id
     assert tomb.use_class is _PRO  # copied (facet requires governance provenance)
     assert tomb.value_json == {"__erased__": True}
-    assert tomb.tenant_id == _CLIENT
+    assert tomb.workspace_id == _CLIENT
     assert not tomb.is_promotable  # WEAK contact claim is structurally non-promotable
 
 
@@ -131,7 +132,7 @@ def test_build_tombstone_non_facet_keeps_none_binding() -> None:
             run_id=new_run_id(),
             research_mode=ResearchMode.CONTACT_PROFILING,
         ),
-        tenant_id=_CLIENT,
+        workspace_id=_CLIENT,
     )
     tomb = build_tombstone(target, run_id=new_run_id())
     assert tomb.verification_status.value == "rejected"
@@ -188,7 +189,7 @@ def test_erase_excludes_from_current_value() -> None:  # AC3
             assert _FACET not in await provenance_index(conn, contact, scope=_SCOPE)
             # append-only: the original row still exists (superseded), no destructive delete
             history = await claims_for(
-                conn, contact, _FACET, include_superseded=True, scope=ALL_TENANTS
+                conn, contact, _FACET, include_superseded=True, scope=ALL_WORKSPACES
             )
             assert any(c.id == claim.id for c in history)
             original = next(c for c in history if c.id == claim.id)
@@ -254,7 +255,7 @@ def test_object_blocks_hooks() -> None:  # AC4
                 await conn.execute(
                     text(
                         "SELECT count(*) FROM outreach_objected "
-                        "WHERE contact_entity_id = :c AND tenant_id = :t"
+                        "WHERE contact_entity_id = :c AND workspace_id = :t"
                     ),
                     {"c": str(contact), "t": _CLIENT},
                 )
@@ -311,8 +312,8 @@ def test_sweep_expired_ages_out() -> None:  # AC2
 
 @pytest.mark.usefixtures("require_compliance_db")
 def test_access_exports_claims_and_basis() -> None:  # AC5 (access)
+    from clue_config import Jurisdiction
     from clue_research.compliance import record_lawful_basis
-    from clue_research.config import Jurisdiction
 
     async def _run() -> None:
         async with rollback_conn() as conn:
@@ -321,7 +322,7 @@ def test_access_exports_claims_and_basis() -> None:  # AC5 (access)
             await record_lawful_basis(conn, claim, regime=Jurisdiction.GDPR)
             export = await _rights(conn).access(contact)
             assert export.contact_entity_id == contact
-            assert export.tenant_id == _CLIENT
+            assert export.workspace_id == _CLIENT
             assert any(c.id == claim.id for c in export.claims)
             assert len(export.lawful_bases) == 1
             assert export.lawful_bases[0].claim_id == claim.id
@@ -342,7 +343,7 @@ def test_rectify_supersedes_with_corrected() -> None:  # AC5 (rectify)
             contact = await _contact(conn)
             claim = await _insert_facet(conn, contact, use_class=_PRO)
             corrected = _facet_claim(contact, use_class=_PRO, value="ran the London marathon")
-            corrected = stamp_reuse(corrected, tenant_id=_CLIENT)
+            corrected = stamp_reuse(corrected, workspace_id=_CLIENT)
             new_id = await _rights(conn).rectify(claim.id, corrected)
             cv = await current_value(conn, contact, _FACET, scope=_SCOPE)
             assert cv is not None
@@ -359,16 +360,16 @@ def test_rectify_rejects_cross_controller_claim() -> None:  # controller-scoped,
             contact = await _contact(conn)
             # the target belongs to ANOTHER controller (tenant)
             foreign = _facet_claim(contact, use_class=_PRO)
-            await insert_claim(conn, stamp_reuse(foreign, tenant_id="other-controller"))
+            await insert_claim(conn, stamp_reuse(foreign, workspace_id="other-controller"))
             corrected = stamp_reuse(
                 _facet_claim(contact, use_class=_PRO, value="ran the London marathon"),
-                tenant_id=_CLIENT,
+                workspace_id=_CLIENT,
             )
             with pytest.raises(ValueError, match="not one of this controller"):
                 await _rights(conn).rectify(foreign.id, corrected)
             # the foreign claim is untouched (still live, original value)
             cv = await current_value(
-                conn, contact, _FACET, scope=TenantScope.for_tenant("other-controller")
+                conn, contact, _FACET, scope=WorkspaceScope.for_workspace("other-controller")
             )
             assert cv is not None and cv.value_json == "runs the Berlin marathon"
 
@@ -428,8 +429,13 @@ def _facet_claim(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme GmbH", primary_domain="acme.de", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme GmbH",
+        primary_domain="acme.de",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
@@ -448,7 +454,7 @@ async def _insert_facet(
     value: str = "runs the Berlin marathon",
 ) -> Claim:
     claim = _facet_claim(contact, use_class=use_class, value=value)
-    await insert_claim(conn, stamp_reuse(claim, tenant_id=_CLIENT))
+    await insert_claim(conn, stamp_reuse(claim, workspace_id=_CLIENT))
     return claim
 
 

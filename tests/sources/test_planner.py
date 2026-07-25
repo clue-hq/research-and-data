@@ -15,8 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.adapters import CallableClaimExtractor, run_pipeline
-from clue_research.core import (
+from clue_core import (
     Claim,
     Completion,
     EmbeddingResult,
@@ -37,6 +36,13 @@ from clue_research.core import (
     new_entity_id,
     new_run_id,
 )
+from clue_obs.otel import (
+    ATTR_FIELD_KEY,
+    ATTR_N_SOURCES,
+    SPAN_SOURCE_PLAN,
+    collect_spans,
+)
+from clue_research.adapters import CallableClaimExtractor, run_pipeline
 from clue_research.icp import (
     Pack,
     PackSourceSlot,
@@ -44,12 +50,6 @@ from clue_research.icp import (
     WeightedSource,
     create_icp_spec,
     register_pack_catalog,
-)
-from clue_research.obs import (
-    ATTR_FIELD_KEY,
-    ATTR_N_SOURCES,
-    SPAN_SOURCE_PLAN,
-    collect_spans,
 )
 from clue_research.sources import (
     RegistrySourceManifest,
@@ -132,7 +132,7 @@ async def _testpack(conn: AsyncConnection, *weighted: WeightedSource) -> ICPSpec
     )
     return await create_icp_spec(
         conn,
-        client_id="acme",
+        workspace_id="acme",
         icp_key="seg1",
         created_from=ICPCreatedFrom.SYNTHESIS,
         enabled_packs=("testpack",),

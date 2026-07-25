@@ -16,22 +16,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_research.compliance import (
-    LawfulBasis,
-    derive_lawful_basis,
-    is_third_party_collected,
-    load_lawful_basis,
-    record_lawful_basis,
-    retention_horizon_for,
-    third_party_notice_report,
-)
-from clue_research.config import (
+from clue_config import (
     FreshnessTtls,
     Jurisdiction,
     LawfulBasisDefaults,
     RetentionTtls,
 )
-from clue_research.core import (
+from clue_core import (
     AccountStatus,
     Claim,
     EntityId,
@@ -42,7 +33,17 @@ from clue_research.core import (
     UseClass,
     new_run_id,
 )
+from clue_research.compliance import (
+    LawfulBasis,
+    derive_lawful_basis,
+    is_third_party_collected,
+    load_lawful_basis,
+    record_lawful_basis,
+    retention_horizon_for,
+    third_party_notice_report,
+)
 from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
+from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
 
@@ -263,11 +264,11 @@ def test_third_party_notice_report() -> None:  # AC6
             contact = await _contact(conn)
             claim = await _insert_facet(conn, contact, use_class=_PRO)
             await record_lawful_basis(conn, claim, regime=Jurisdiction.GDPR)
-            report = await third_party_notice_report(conn, tenant_id=_CLIENT)
+            report = await third_party_notice_report(conn, workspace_id=_CLIENT)
             assert report.third_party_claims >= 1
             assert report.third_party_contacts >= 1
             # a different tenant sees none of this controller's third-party claims
-            other = await third_party_notice_report(conn, tenant_id="someone-else")
+            other = await third_party_notice_report(conn, workspace_id="someone-else")
             assert other.third_party_claims == 0
 
 
@@ -281,14 +282,14 @@ def test_third_party_notice_report_excludes_superseded() -> None:  # AC6 — liv
             claim = await _insert_facet(conn, contact, use_class=_PRO)
             await record_lawful_basis(conn, claim, regime=Jurisdiction.GDPR)
             assert (
-                await third_party_notice_report(conn, tenant_id=_CLIENT)
+                await third_party_notice_report(conn, workspace_id=_CLIENT)
             ).third_party_claims == 1
             # supersede the claim (as erasure/rectify would): its lawful_basis_record survives, but
             # the report counts only live claims, so the now-superseded claim drops out
             newer = _make_facet(contact, use_class=_PRO)
-            await supersede_claim(conn, claim.id, stamp_reuse(newer, tenant_id=_CLIENT))
+            await supersede_claim(conn, claim.id, stamp_reuse(newer, workspace_id=_CLIENT))
             assert (
-                await third_party_notice_report(conn, tenant_id=_CLIENT)
+                await third_party_notice_report(conn, workspace_id=_CLIENT)
             ).third_party_claims == 0
 
     run_async(_run())
@@ -334,8 +335,13 @@ def _make_facet(
 
 
 async def _account(conn: AsyncConnection) -> EntityId:
+    await seed_workspace(conn, _CLIENT)
     return await insert_account_entity(
-        conn, canonical_name="Acme GmbH", primary_domain="acme.de", status=AccountStatus.ACTIVE
+        conn,
+        canonical_name="Acme GmbH",
+        primary_domain="acme.de",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_CLIENT,
     )
 
 
@@ -353,5 +359,5 @@ async def _insert_facet(conn: AsyncConnection, contact: EntityId, *, use_class: 
 async def _insert_claim(conn: AsyncConnection, claim: Claim) -> Claim:
     from clue_research.claimstore import insert_claim
 
-    await insert_claim(conn, stamp_reuse(claim, tenant_id=_CLIENT))
+    await insert_claim(conn, stamp_reuse(claim, workspace_id=_CLIENT))
     return claim

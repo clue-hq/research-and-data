@@ -1,14 +1,14 @@
 """M0.2 acceptance: the Resolver protocol accepts a conformer and rejects non-conformers.
 
 The static half (a conforming class type-checks; a class missing `tier` fails the
-type-checker) is asserted inside `clue_research.core.resolver` under `TYPE_CHECKING` and is
+type-checker) is asserted inside `clue_core.resolver` under `TYPE_CHECKING` and is
 enforced by `make typecheck`. Here we assert the runtime/structural half via the
 `@runtime_checkable` protocol.
 """
 
 from __future__ import annotations
 
-from clue_research.core import Claim, Entity, FieldDef, Resolver
+from clue_core import Claim, Entity, FieldDef, Resolver
 
 
 class ConformingResolver:
