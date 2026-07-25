@@ -4,6 +4,8 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
+**Current checkpoint:** C6.0 implemented and verified; C6.1 is next. No C6 migration or production
+runtime exists yet.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -26,7 +28,7 @@ the framework, tool-calling, workspace, resource-version, and replay-safety unkn
 
 | Slice | Purpose | May add migration? | Required checkpoint |
 |---|---|---:|---|
-| C6.0 | Freeze contracts and prove external runtime assumptions | No | architecture/spike tests green |
+| C6.0 | **Complete** — freeze contracts and prove external runtime assumptions | No | architecture/spike tests green |
 | C6.1 | Isolated workspace, virtual backend, resource materialization | Only if artifact metadata needs an additive record; prefer no | isolation battery green |
 | C6.2 | Folder catalogs, profiles, registry, tool-calling model seam | Profile metadata only if proven necessary | exact resource/allowlist/import gates green |
 | C6.3 | Typed turns, seven-layer context, history, receipts | Yes | migration smoke + body-free replay |
@@ -88,6 +90,31 @@ hand-written loop.
 - import contracts remain green;
 - no migration or production routing exists;
 - child spec and threat/replay matrices match the executable evidence.
+
+### C6.0 close-out — 2026-07-26
+
+Implemented:
+
+- strict frozen contracts in `clue_agents.contracts`, injected protocols in `clue_agents.ports`,
+  and trusted `ClueDeepAgentState`;
+- exact `deepagents==0.6.12` and `langchain-openai==1.4.1` pins;
+- `OpenRouterAgentModelProvider` inside the sole `clue_gateway` provider boundary;
+- deterministic real-framework, tool-call, artifact-workspace, and honest-finalize spikes;
+- real async-Postgres failure/resume proof with a newly compiled graph;
+- JSON Schema digest, path/scope/plan/finalize, port-shape, and complete 32-tool authority gates;
+- the binding dependency, replay/authority, and filesystem-threat record in the child spec.
+
+Resolved decisions:
+
+- stock `FilesystemBackend` is compatibility evidence only and is rejected for production;
+- C6.1 supplies a hardened artifact-backed backend and validates relative model paths before the
+  framework converts them to virtual leading-slash form;
+- the model adapter stays in `clue_gateway`; `clue_agents` sees only `BaseChatModel`;
+- normal framework termination is never success without a valid finalization envelope;
+- steering tools remain human-only and seven replay-uncertified tools remain absent until audited.
+
+Exit gate result: **passed**. No Alembic migration, API composition, production workspace,
+executor, or feature routing was added. Proceed to C6.1 only.
 
 ## 4. C6.1 — isolated workspace and resource materializer
 

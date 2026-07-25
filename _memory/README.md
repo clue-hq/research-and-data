@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-0-contract-freeze.md` — C6.0 complete: strict agent/resource/plan/context/
+  delegation/finalization contracts and injected ports; exact deepagents/model dependencies; real
+  fresh-wake, OpenRouter tool-call, async-Postgres resume, artifact-workspace, and honest-finalize
+  spikes; 32-tool replay/authority audit; stock-filesystem rejection; C6.1 handoff.
 - `2026-07-26-phase-c6-planning.md` — binding C6 child spec and cross-session implementation plan:
   real Doc-A deepagent; external per-execution `virtual_mode=True` workspace; relative paths only;
   no application code or execution tools in the runtime workspace; folder-backed prompts, skills,

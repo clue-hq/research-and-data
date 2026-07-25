@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 license = { text = "Proprietary" }
 dependencies = [
     "openai>=1.40",
+    "langchain-openai==1.4.1",
     "clue-core",
     "clue-config",
     "clue-obs",
