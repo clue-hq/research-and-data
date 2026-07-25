@@ -1,6 +1,6 @@
 # Clue-HQ — Platform Agent Runtime & Context Assembly (Doc A)
 
-> **Status: DESIGN RECORD v1.2 (2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
+> **Status: DESIGN RECORD v1.3 (2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
 > what the words "agent," "deepagent," "sub-agent," "skill," "tool," and "worker fleet" mean
 > mechanically, how the platform deepagent is constructed, and how context is assembled for every
 > model call. Extends `clue-hq-harness-architecture-and-requirements.md` (REQ-02, REQ-18–REQ-22)
@@ -33,6 +33,15 @@
 > for stored objects; only paraphrase-in-place-of-original is banned); returns are proportionate
 > to the task, governed by canonicality rather than brevity; and havana is the reference for the
 > *mechanics* of delegation, not a stencil for its *policies*.
+>
+> **v1.3 (2026-07-26) — C6 resource/workspace implementation ruling (founder review).** V1
+> prompts, skills, and profiles are canonical versioned **folder resources**, not database or
+> hosted-hub bodies. Exact bytes and digests are materialized read-only into an external,
+> per-execution agent workspace; the backend is always `virtual_mode=True` and exposes only paths
+> relative to that virtual root. `config_revision` may govern profile/reference promotion
+> metadata, but it does not store prompt/skill bodies. LangSmith/Langfuse prompt hubs are future
+> catalog adapters, outside C6. The runtime workspace contains no application code or executable
+> skill/tool surface.
 
 ---
 
@@ -49,12 +58,14 @@ A typed, precondition-checked, budgeted, idempotent, journaled function over the
 
 ### 1.2 Skill
 
-A **versioned prompt + policy bundle** (config, not code): frontmatter (tool allowlist,
-readiness-spec ref, overlays) + a craft body. Promoted through the `config_revision` ledger,
-pinned by recipes and run journals. A skill *loads into* an agent's context; it is never itself
-an actor. Skills load by **progressive disclosure** (name + description visible; body loaded on
-invocation) — proven in havana (`SkillsMiddleware`; the flat skills-parent-dir lesson is
-inherited: skills live under one parent directory or they silently do not load).
+A **versioned prompt + policy bundle** (resource/config, not code): frontmatter (tool allowlist,
+readiness-spec ref, overlays) + a craft body. In V1 the canonical bytes live in the reviewed
+folder catalog; an exact version + SHA-256 is pinned by recipes and run journals and materialized
+read-only into the execution workspace. `config_revision` may ledger promotion metadata or a
+profile binding, but does not hold the body. A skill *loads into* an agent's context; it is never
+itself an actor. Skills load by **progressive disclosure** (name + description visible; body
+loaded on invocation) — proven in havana (`SkillsMiddleware`; the flat skills-parent-dir lesson
+is inherited: skills live under one parent directory or they silently do not load).
 
 ### 1.3 Worker fleet — the shell is mechanical; the unit inside may not be *(revised 2026-07-17)*
 
