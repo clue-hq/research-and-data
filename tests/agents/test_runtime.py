@@ -6,6 +6,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from langchain.tools import tool
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -43,6 +44,20 @@ class _Models:
     def build(self, **kwargs: Any) -> ScriptedAgentChatModel:
         del kwargs
         return ScriptedAgentChatModel(responses=self._responses)
+
+
+class _CaptureModelInput(BaseCallbackHandler):
+    def __init__(self) -> None:
+        self.messages: list[list[object]] = []
+
+    def on_chat_model_start(
+        self,
+        serialized: dict[str, Any],
+        messages: list[list[object]],
+        **kwargs: Any,
+    ) -> None:
+        del serialized, kwargs
+        self.messages = messages
 
 
 class _Execution(AgentExecutionAdapter):
@@ -155,6 +170,15 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
         manifest=context_manifest(),
         messages=(HumanMessage(content="Do the work."),),
     )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    capture = _CaptureModelInput()
 
     outcome = run_async(
         runtime.run(
@@ -162,13 +186,18 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
             resolved_profile=resolved,  # type: ignore[arg-type]
             context=context,
             backend=None,
-            governed_tools=(),
+            governed_tools=factory.build(),
+            callbacks=(capture,),
         )
     )
 
     assert outcome.status is AgentExecutionStatus.FAILED
     assert outcome.failure_code == "missing_finalize"
     assert outcome.finalization_ref is None
+    system = next(
+        message for message in capture.messages[0] if getattr(message, "type", None) == "system"
+    )
+    assert str(system.content).endswith("## End resolved resource and capability map")
 
 
 def test_real_deepagent_accepts_only_adapter_recovered_durable_finalize() -> None:
@@ -207,6 +236,15 @@ def test_real_deepagent_accepts_only_adapter_recovered_durable_finalize() -> Non
         manifest=context_manifest(),
         messages=(HumanMessage(content="Do and finalize the work."),),
     )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    governed = factory.build()
 
     outcome = run_async(
         runtime.run(
@@ -214,12 +252,88 @@ def test_real_deepagent_accepts_only_adapter_recovered_durable_finalize() -> Non
             resolved_profile=resolved,  # type: ignore[arg-type]
             context=context,
             backend=None,
-            governed_tools=(finalize_turn,),
+            governed_tools=(*governed[:-1], finalize_turn),
         )
     )
 
     assert outcome.status is AgentExecutionStatus.COMPLETED
     assert outcome.finalization_ref == finalization_ref
+
+
+def test_c65_filters_default_general_subagent_and_rejects_fabricated_task_call() -> None:
+    request, resolved = _request()
+    execution = _Execution()
+    finalization_ref = artifact("c65-task-filter-finalization.json")
+
+    @tool(return_direct=True)
+    async def finalize_turn() -> str:
+        """Commit the deterministic test finalization through the injected adapter fake."""
+
+        execution.recovered = {
+            "finalization_status": "awaiting_input",
+            "finalization_ref": finalization_ref,
+        }
+        return finalization_ref.model_dump_json()
+
+    runtime = DeepAgentTurnRuntime(
+        models=_Models(
+            (
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "task",
+                            "args": {
+                                "description": "Try to bypass C6.5 role activation.",
+                                "prompt": "Use unavailable specialist authority.",
+                                "subagent_type": "general-purpose",
+                            },
+                            "id": "fabricated-task-c65",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "finalize_turn",
+                            "args": {},
+                            "id": "finalize-task-filter-c65",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+            )
+        ),
+        execution=execution,
+        max_runtime_s=5,
+    )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    governed = factory.build()
+    outcome = run_async(
+        runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(),
+                messages=(HumanMessage(content="Use a specialist."),),
+            ),
+            backend=None,
+            governed_tools=(*governed[:-1], finalize_turn),
+        )
+    )
+
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert outcome.finalization_ref == finalization_ref
+    assert execution.validated_plans == []
 
 
 def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> None:
@@ -241,9 +355,11 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
                     content="",
                     tool_calls=[
                         {
-                            "name": "compose_handoff",
-                            "args": {"project_run_id": "run-42"},
-                            "id": "compose-handoff-c64",
+                            "name": "synthesize_icps",
+                            "args": {
+                                "client_entity_id": ("00000000-0000-0000-0000-000000000999"),
+                            },
+                            "id": "synthesize-stage0-c65",
                             "type": "tool_call",
                         }
                     ],
@@ -256,7 +372,7 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     )
     context = AssembledAgentContext(
         manifest=context_manifest(),
-        messages=(HumanMessage(content="Compose the handoff."),),
+        messages=(HumanMessage(content="Synthesize the ICP."),),
     )
 
     outcome = run_async(
@@ -272,5 +388,9 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     assert outcome.failure_code == "missing_finalize"
     assert len(execution.validated_plans) == 1
     proposed = execution.validated_plans[0].steps[0]
-    assert proposed.tool.address == "compose_handoff@1"  # type: ignore[union-attr]
-    assert proposed.arguments == {"project_run_id": "run-42"}  # type: ignore[union-attr]
+    assert proposed.tool.address == "synthesize_icps@1"  # type: ignore[union-attr]
+    assert proposed.arguments == {  # type: ignore[union-attr]
+        "client_entity_id": "00000000-0000-0000-0000-000000000999",
+        "kb_version": None,
+        "product_id": None,
+    }

@@ -21,6 +21,9 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "confirm_icp@1",
     "override_stage0_readiness@1",
     "start_confirmed_project_run@1",
+    "propose_field@1",
+    "propose_source@1",
+    "submit_ingestion@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

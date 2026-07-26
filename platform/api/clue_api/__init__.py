@@ -119,6 +119,10 @@ from clue_api.handoff_wiring import (
     build_handoff_service,
     register_handoff_phase_handler,
 )
+from clue_api.head_of_abm_wiring import (
+    HeadOfAbmStage0Runtime,
+    build_head_of_abm_stage0_execution,
+)
 from clue_api.learning_wiring import build_learning_loop
 from clue_api.narrative_wiring import (
     build_client_knowledge_retriever,
@@ -239,6 +243,9 @@ __all__ = [
     "DurableDeepAgentTurnRunner",
     "GovernedAgentToolFactory",
     "ModelFinalizeRequest",
+    # C6.5 Head-of-ABM Stage-0 vertical
+    "HeadOfAbmStage0Runtime",
+    "build_head_of_abm_stage0_execution",
     "load_research_packs",
     "VerificationBindingClassifier",
     "production_binding_classifier",

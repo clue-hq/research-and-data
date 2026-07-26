@@ -4,10 +4,12 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0–C6.4 implemented and verified; C6.5 is next. C6.4 added the
-whole-plan compiler, governed C5 tool bridge, durable delegation lifecycle, real deepagents loop,
-async-Postgres checkpoint factory, model-call receipts, and authoritative honest finalization.
-No Stage-0 ownership route or feature activation exists yet.
+**Current checkpoint:** C6.0–C6.5 implemented and verified; C6.6 is next. C6.5 added the
+production-composable Head-of-ABM Stage-0 vertical over the governed C4/C5 substrate. It promotes
+an additive exact profile/prompt/skill set, exposes only nine replay-certified Stage-0 tools,
+constructs the real deepagent with an exhaustive generated capability map, filters the framework's
+unactivated generic subagent, forwards exact Recipe #0 resource pins through the C5 adapter, and
+requires durable honest finalization. Product routing and canary ownership remain C6.8 work.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -475,6 +477,44 @@ Run direct C4 vs C6 normalized outcome parity plus qualitative evals for URL-onl
 stale-product, contradictory correction, uploads, novel fields/sources, missing floors, override,
 and confirmed start.
 
+### C6.5 implementation record
+
+- `head-of-abm@v2`, its pinned `SYSTEM.md`, and `stage0-interview@v3` are additive immutable
+  resources. Production selection is explicit; the C6.2 v1 resources remain available for
+  historical replay without mutation.
+- The effective Head profile contains exactly nine direct tools: onboarding, recon, interview
+  evidence, readiness, ICP synthesis, field/source proposals, ingestion, and confirmed-run start.
+  Product/ICP confirmation, readiness override, proposal approval, budget/checkpoint authority,
+  post-Stage-0 execution, and specialist delegation are structurally absent.
+- The registry generates one host-free resource/capability map from exact resolved facts. It names
+  all 32 platform tools as available, human-only, replay-blocked, or role/profile unavailable;
+  discloses the bounded framework filesystem/finalize tools; and explicitly names missing shell,
+  execution, network, host, secret, provider, and C6.6 delegation capabilities.
+- Progressive disclosure puts only the Stage-0 skill summary and immutable path in opening
+  context. The full skill is materialized read-only under `.deepagent/skills/...` and opened only
+  when Stage 0 is active.
+- `DeepAgentTurnRuntime` still uses the real `create_deep_agent`. Its exact-surface middleware
+  removes DeepAgents 0.6's default general-purpose `task` tool until C6.6, rejects fabricated or
+  backend-contributed capabilities, and appends the generated resource map after framework prompt
+  middleware so the authoritative map is always the final system-prompt section.
+- `HeadOfAbmStage0Runtime` binds the promoted profile, context, isolated workspace lease, durable
+  turn journal, per-role governed model construction, exact tools, C5 adapter, and finalization
+  authority for one turn. It constructs the model loop with the same execution adapter used by
+  its governed tools; no second or bypass executor exists.
+- Recipe #0 v3 adds replay-certified `propose_field`, `propose_source`, and `submit_ingestion`
+  operations plus proposal/ingestion policy pins without mutating v1/v2. Proposal rows are
+  domain-idempotent by complete scope and immutable payload hash; ingestion is at-least-once with
+  a workspace/content/context durable identity.
+- The agent C5 compiler resolves the same Stage-0 pin provider used by direct Recipe #0, validates
+  pin kinds against the active interaction slot, and forwards exact pin requests into dynamic
+  nodes before invocation. Every domain effect still flows through `RecipeExecutor` and
+  `ToolInvoker`; confirmed Recipe #1 remains reachable only through
+  `start_confirmed_project_run`.
+- Offline tests cover the real framework construction, exact tool filtering, governed descriptor
+  invocation, missing-finalize failure, durable finalize acceptance, all ten qualitative Stage-0
+  fixtures, C4/direct versus Recipe #0 normalized outcome parity, resource-pin parity, human gate
+  absence, and historical C6.4 delegation compatibility.
+
 ## 9. C6.6 — specialist subagents
 
 Implement each profile against a bounded task:
@@ -566,4 +606,4 @@ At the start of every C6 session:
 6. record failures and changed decisions in `_memory/`;
 7. finish with verification evidence and one coherent local commit.
 
-The next implementation session is **C6.5 only**.
+The next implementation session is **C6.6 only**.

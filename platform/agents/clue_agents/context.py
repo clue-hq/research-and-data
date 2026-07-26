@@ -206,31 +206,11 @@ class IdentityLayerSource:
         del history
         if profile != self._resolved.profile:
             raise ValueError("identity source profile differs from the resolved resource snapshot")
-        manifest = self._resolved.resource_manifest
-        resource_map = "\n".join(
-            f"- {item.address} sha256={item.sha256}"
-            for item in (
-                manifest.profile,
-                manifest.prompt,
-                *manifest.skills,
-            )
-        )
-        disclosures = "\n".join(
-            f"- {item.resource.address}: {item.summary} ({item.materialized_path})"
-            for item in self._resolved.skill_disclosures()
-        )
-        body = (
-            f"{self._resolved.prompt_body.rstrip()}\n\n"
-            "Pinned resources:\n"
-            f"{resource_map or '- none'}\n\n"
-            "Available skill summaries (open the pinned file only when needed):\n"
-            f"{disclosures or '- none'}\n"
-        )
         return (
             ContextCandidate(
                 stable_key="identity",
                 ref=request.constitution.resource_manifest_ref,
-                body=body,
+                body=self._resolved.system_prompt,
                 role="system",
                 required=True,
             ),

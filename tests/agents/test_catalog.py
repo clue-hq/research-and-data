@@ -38,11 +38,21 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
     assert [item.ref.address for item in prompts.list()] == [
         "prompt:content-drafter@v1",
         "prompt:head-of-abm@v1",
+        "prompt:head-of-abm@v2",
         "prompt:research-specialist@v1",
         "prompt:reviewer@v1",
     ]
-    assert [item.ref.address for item in skills.list()] == ["skill:stage0-interview@v2"]
-    assert len(profiles.list()) == 4
+    assert [item.ref.address for item in skills.list()] == [
+        "skill:stage0-interview@v2",
+        "skill:stage0-interview@v3",
+    ]
+    assert [item.ref.address for item in profiles.list()] == [
+        "profile:content-drafter@v1",
+        "profile:head-of-abm@v1",
+        "profile:head-of-abm@v2",
+        "profile:research-specialist@v1",
+        "profile:reviewer@v1",
+    ]
     stage0 = skills.get("stage0-interview", "v2")
     assert "Only a human confirms" in stage0.body
     assert "confirm_project_product@1" not in {pin.address for pin in stage0.required_tools}
@@ -62,6 +72,12 @@ def test_stage0_v2_is_additive_and_does_not_mutate_the_used_v1_resource() -> Non
     )
     assert stage0_v2.ref.sha256 == (
         "9ad718c63c913eea88ad1dd566e56a0ace4d8226341ce2072ec9cb06d4959b4f"
+    )
+    stage0_v3 = FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True)).get(
+        "stage0-interview", "v3"
+    )
+    assert stage0_v3.ref.sha256 == (
+        "f9d069be847cfd972316a76c57f234c70c57157d13947efd55a38014abc447b7"
     )
 
 

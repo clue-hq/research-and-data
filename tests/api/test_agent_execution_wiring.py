@@ -117,8 +117,14 @@ class _Journal:
 
 
 class _Executor:
-    def __init__(self, *, allowed: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        *,
+        allowed: tuple[str, ...],
+        dynamic_pin_kinds: tuple[str, ...] = (),
+    ) -> None:
         self.allowed = allowed
+        self.dynamic_pin_kinds = dynamic_pin_kinds
         self.appended: list[dict[str, Any]] = []
         self.effect_count = 0
 
@@ -128,7 +134,7 @@ class _Executor:
             workspace_id=kwargs["workspace_id"],
             slot_key=kwargs["slot_key"],
             tool_allowlist=self.allowed,
-            dynamic_pin_kinds=(),
+            dynamic_pin_kinds=self.dynamic_pin_kinds,
             requirements=(PinRequest(kind="tool", key="read_project", version="1"),),
             max_children=8,
             child_count=0,
@@ -160,6 +166,19 @@ class _Executor:
             version="1",
             references={"object_ref": "project-1"},
             replayed=replayed,
+        )
+
+
+class _PinProvider:
+    async def pins_for(self, step: object, *, ctx: ToolContext) -> tuple[PinRequest, ...]:
+        del step, ctx
+        return (
+            PinRequest(
+                kind="project",
+                key="project-1",
+                version="3",
+                digest="a" * 64,
+            ),
         )
 
 
@@ -219,6 +238,8 @@ def _adapter(
     allowed: tuple[str, ...],
     budget: int = 10_000,
     crash_hook: Any = _no_crash,
+    pin_provider: object | None = None,
+    dynamic_pin_kinds: tuple[str, ...] = (),
 ):
     registry = ToolRegistry()
     registry.register(_Tool(), make_default=True)
@@ -246,7 +267,10 @@ def _adapter(
     )
     artifacts = _Artifacts()
     journal = _Journal()
-    executor = _Executor(allowed=allowed)
+    executor = _Executor(
+        allowed=allowed,
+        dynamic_pin_kinds=dynamic_pin_kinds,
+    )
     adapter = C5AgentExecutionAdapter(
         turn_id=UUID("00000000-0000-0000-0000-000000000645"),
         constitution=trusted,
@@ -264,6 +288,7 @@ def _adapter(
         artifacts=cast(Any, artifacts),
         journal=cast(Any, journal),
         checkpointer_factory=cast(Any, lambda _: None),
+        pin_provider=cast(Any, pin_provider),
         crash_hook=crash_hook,
     )
     return adapter, trusted, pin, executor, journal
@@ -301,6 +326,38 @@ def test_compiler_validates_whole_c5_graph_then_routes_effect_through_dynamic_no
     assert executor.appended[0]["actor"] == "agent"
     assert executor.appended[0]["inputs"] == {"query": "current project"}
     assert len(journal.results) == 1
+
+
+def test_agent_path_resolves_and_forwards_the_same_dynamic_resource_pins_as_recipe0() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        pin_provider=_PinProvider(),
+        dynamic_pin_kinds=("project",),
+    )
+
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "completed"
+    assert executor.appended[0]["pin_requests"] == (
+        PinRequest(
+            kind="project",
+            key="project-1",
+            version="3",
+            digest="a" * 64,
+        ),
+    )
+
+
+def test_agent_path_rejects_resource_pins_outside_the_recipe0_slot_contract() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        pin_provider=_PinProvider(),
+    )
+
+    with pytest.raises(AgentPlanRejected, match="c5_pin_kind_not_allowed"):
+        run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    assert executor.appended == []
 
 
 def test_compiler_rejects_c5_slot_and_budget_bypass_before_any_dynamic_append() -> None:

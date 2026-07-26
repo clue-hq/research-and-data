@@ -1,4 +1,4 @@
-"""C6.0 replay/authority audit over the complete 32-tool C4 registry."""
+"""Current C6 replay/authority audit over the complete 32-tool C4 registry."""
 
 from __future__ import annotations
 
@@ -16,14 +16,16 @@ _HUMAN_ONLY_STEERING = {
     "submit_tier_checkpoint",
 }
 
-_UNCERTIFIED = {
+_REPLAY_BLOCKED = {
     "decide_field_proposal",
     "decide_source_proposal",
-    "propose_field",
-    "propose_source",
     "research_account_gaps",
     "retry_ingestion",
-    "submit_ingestion",
+}
+_C65_CERTIFIED = {
+    "propose_field": ReplayPolicy.DOMAIN_IDEMPOTENT,
+    "propose_source": ReplayPolicy.DOMAIN_IDEMPOTENT,
+    "submit_ingestion": ReplayPolicy.AT_LEAST_ONCE,
 }
 
 
@@ -40,7 +42,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
             assert descriptor.effect_class is not ToolEffectClass.STEERING
 
 
-def test_human_steering_and_uncertified_tools_are_structurally_absent() -> None:
+def test_human_steering_and_replay_blocked_tools_are_structurally_absent() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     descriptors = {item.name: item for item in registry.all_descriptors()}
 
@@ -49,5 +51,17 @@ def test_human_steering_and_uncertified_tools_are_structurally_absent() -> None:
         descriptors[name].effect_class is ToolEffectClass.STEERING for name in _HUMAN_ONLY_STEERING
     )
 
-    assert all(not C6_AGENT_TOOL_AUTHORITY[name] for name in _UNCERTIFIED)
-    assert all(descriptors[name].replay.policy is ReplayPolicy.UNCERTIFIED for name in _UNCERTIFIED)
+    assert all(not C6_AGENT_TOOL_AUTHORITY[name] for name in _REPLAY_BLOCKED)
+    assert all(
+        descriptors[name].replay.policy is ReplayPolicy.UNCERTIFIED for name in _REPLAY_BLOCKED
+    )
+
+
+def test_c65_proposal_and_ingestion_certifications_are_live_and_admitted() -> None:
+    registry = build_toolbelt(storage=None, gateway=None)
+    descriptors = {item.name: item for item in registry.all_descriptors()}
+
+    for name, replay_policy in _C65_CERTIFIED.items():
+        assert C6_AGENT_TOOL_AUTHORITY[name]
+        assert descriptors[name].replay.policy is replay_policy
+        assert descriptors[name].recipe_safe

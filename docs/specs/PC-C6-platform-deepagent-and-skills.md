@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0–C6.4 complete; C6.5 next (2026-07-26)
+**Status:** IN PROGRESS — C6.0–C6.5 complete; C6.6 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -760,7 +760,7 @@ uncertified tool is admitted, or if a steering tool is admitted. The C5 executio
 are not exposed directly to the model: the future `AgentExecutionAdapter` compiles validated plans
 and invokes C5 under trusted authority.
 
-Seven current tools are replay-blocked:
+At the C6.0 checkpoint, seven tools were replay-blocked:
 
 - `propose_field@1`;
 - `decide_field_proposal@1`;
@@ -775,6 +775,15 @@ still part of the intended agent surface, but C6 must first add truthful durable
 contracts. `research_account_gaps@1` must be certified or replaced by an equally governed C5
 operation before C6.7; two competing gap evaluators remain forbidden.
 
+C6.5 closes three entries without rewriting this historical audit:
+
+- `propose_field@1` and `propose_source@1` are domain-idempotent on complete workspace-local
+  scope plus immutable payload hash;
+- `submit_ingestion@1` is at-least-once on workspace plus artifact-content and declared-context
+  hashes, with its external processing boundary declared;
+- the four remaining blocked operations are the two human proposal decisions,
+  `research_account_gaps@1`, and `retry_ingestion@1`. None is present on the Head v2 surface.
+
 ### 7A.6 Initial filesystem threat matrix
 
 | Threat | C6.0 decision/evidence | Production closure |
@@ -788,6 +797,12 @@ operation before C6.7; two competing gap evaluators remain forbidden.
 | symlink, hard link, device, socket, FIFO | impossible in artifact spike | no-follow host checks and type rejection |
 | quota exhaustion | quota fields frozen | atomic per-file/total/count enforcement |
 | resource mutation after pin | exact version and content digests frozen | copy, verify, read-only, manifest-last materialization |
+| concurrent path swap/TOCTOU | not claimed by C6.0 | directory-fd anchored operations and adversarial test |
+| child authority widening | explicit granted paths/roles/budget refs | effective-subset compiler and shared-backend permission view |
+| secret/repository exposure | neither appears in any agent port | dedicated external root validation and negative scans |
+
+The threat matrix does not claim that the disposable in-memory backend is production-ready. It
+defines the acceptance battery the C6.1 backend must satisfy.
 
 ## 7B. C6.2 implementation record
 
@@ -857,14 +872,53 @@ and cannot restore the erased bytes.
 C6.3 intentionally added no runtime authority. C6.4 now supplies the real deepagents loop,
 whole-proposal C5 compiler, exact-descriptor tool wrappers, durable fresh-wake delegation
 lifecycle, async-Postgres checkpointer, model-call receipts, and honest finalization authority.
-It intentionally adds no product route or feature flag; Stage-0 ownership and activation remain
-C6.5/C6.8 concerns.
-| concurrent path swap/TOCTOU | not claimed by C6.0 | directory-fd anchored operations and adversarial test |
-| child authority widening | explicit granted paths/roles/budget refs | effective-subset compiler and shared-backend permission view |
-| secret/repository exposure | neither appears in any agent port | dedicated external root validation and negative scans |
+It intentionally adds no product route or feature flag; C6.5 now supplies Stage-0 composition and
+C6.8 still owns activation and routing.
 
-The threat matrix does not claim that the disposable in-memory backend is production-ready. It
-defines the acceptance battery the C6.1 backend must satisfy.
+## 7D. C6.5 implementation record
+
+C6.5 promotes additive `head-of-abm@v2`, `prompt:head-of-abm@v2`, and
+`skill:stage0-interview@v3` resources. Historical v1 resources are unchanged and remain
+addressable for replay. The production selector chooses the exact version per role; the Head's
+effective direct allowlist is exactly the nine governed Stage-0 operations for onboarding, recon,
+interview evidence, readiness, ICP synthesis, field/source proposals, ingestion, and confirmed
+Recipe #1 start.
+
+The generated resource map is derived from the resolved manifest, skill disclosures, workspace
+policy, model policy, delegation grants, framework contract, and the complete 32-tool registry.
+It explicitly distinguishes available, human-only, replay-blocked, role-unavailable, and
+profile-unavailable operations. Product/ICP confirmation, readiness override, proposal decisions,
+budgets, checkpoints, arbitrary network, host filesystem, secrets, provider SDKs, process/shell
+execution, and specialist delegation are named unavailable and remain structurally absent.
+
+The real `create_deep_agent` construction now installs an exact-surface middleware. DeepAgents
+0.6's default general-purpose `task` capability is removed from every model call until C6.6, and
+fabricated or unexpectedly backend-contributed tools fail closed. Because framework middleware
+appends its own instructions, the generated authoritative resource map is re-appended as the
+final system-prompt section on every model call.
+
+`HeadOfAbmStage0Runtime` composes the resolved Head profile, seven-layer context, C6.1 lease,
+immutable resource materialization, durable turn journal, governed model provider, exact tool
+wrappers, finalization authority, and one execution-bound C5 adapter. The runtime constructs the
+deepagent with that same adapter, preventing a model loop/tool-wrapper executor mismatch.
+
+Recipe #0 v3 additively admits the newly certified proposal and ingestion operations and pins the
+proposal policy, ingestion policy, brand/product/project scope, registries, artifacts, and ICP
+lineage as applicable. The C6 adapter uses the same `Stage0StepPinProvider` as direct Recipe #0,
+validates every resolved pin kind against the active interaction slot before append, and forwards
+the exact requests into C5 dynamic nodes. All effects therefore retain the existing Recipe
+executor, `ToolInvoker`, journal, operation identity, actor fallback, and recovery path.
+
+The Stage-0 skill begins from current product/recon truth, distinguishes current/stale/
+contradicted/missing/assumed values, asks the next motion-material gap instead of enumerating a
+questionnaire, preserves exact statements, and routes claims, memory, project intent, proposals,
+uploads, and unmapped evidence separately. Its sufficiency status is advisory input to
+`evaluate_stage0_readiness`; the deterministic result remains authoritative. The Head cannot
+confirm product/ICP or override readiness, and `start_confirmed_project_run` revalidates those
+durable human decisions plus readiness/override lineage before confirmed Recipe #1 begins.
+
+C6.5 adds no migration, feature flag, public route, or ownership cutover. C6.8 still owns API
+routing, workspace canaries, fallback selection, and operations hardening.
 
 ---
 

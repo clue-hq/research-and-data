@@ -58,6 +58,8 @@ def test_composition_registers_required_adapters_and_resolves_code_resources() -
             "source_profile",
             "readiness_policy",
             "stage0_policy",
+            "proposal_policy",
+            "ingestion_policy",
             "skill",
             "prompt",
             "model_policy",

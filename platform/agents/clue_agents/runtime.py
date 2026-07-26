@@ -8,7 +8,9 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from deepagents import create_deep_agent
+from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
@@ -26,7 +28,85 @@ from clue_agents.ports import (
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
 
-__all__ = ["DeepAgentTurnRuntime"]
+__all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware"]
+
+_FRAMEWORK_TOOL_NAMES = frozenset(
+    {
+        "write_todos",
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "glob",
+        "grep",
+    }
+)
+
+
+def _tool_name(tool: BaseTool | dict[str, Any]) -> str:
+    if isinstance(tool, BaseTool):
+        return tool.name
+    name = tool.get("name")
+    if not isinstance(name, str):
+        function = tool.get("function")
+        name = function.get("name") if isinstance(function, dict) else None
+    if not isinstance(name, str):
+        raise TypeError("agent model tool has no stable name")
+    return name
+
+
+class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
+    """Make framework and platform absence a runtime enforcement mechanism.
+
+    Deep Agents 0.6 installs a general-purpose ``task`` subagent by default. C6.5 has no
+    operational specialist profile yet, so this middleware removes that tool from every model
+    call and rejects a fabricated call. It also fails construction-on-first-call if a backend
+    unexpectedly contributes execution or another undeclared tool.
+    """
+
+    def __init__(self, *, profile: ResolvedAgentProfile) -> None:
+        self._profile = profile
+        self._allowed = frozenset(
+            {
+                *(pin.name for pin in profile.profile.tools),
+                *_FRAMEWORK_TOOL_NAMES,
+                "finalize_turn",
+            }
+        )
+
+    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+        by_name = {_tool_name(tool): tool for tool in request.tools}
+        missing = sorted(self._allowed - set(by_name))
+        if missing:
+            raise RuntimeError(f"resolved agent tools are missing at model call: {missing}")
+        unexpected = sorted(set(by_name) - self._allowed - {"task"})
+        if unexpected:
+            raise RuntimeError(f"undeclared runtime tools were installed: {unexpected}")
+        if "execute" in by_name:
+            raise RuntimeError("agent workspace unexpectedly exposes code execution")
+        base_prompt = request.system_message.text if request.system_message is not None else ""
+        suffix = self._profile.generated_resource_map
+        if base_prompt.rstrip().endswith(suffix):
+            final_prompt = base_prompt
+        else:
+            final_prompt = f"{base_prompt.rstrip()}\n\n{suffix}"
+        filtered = [by_name[name] for name in sorted(self._allowed)]
+        return await handler(
+            request.override(
+                tools=filtered,
+                system_message=SystemMessage(content=final_prompt),
+            )
+        )
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        name = str(request.tool_call.get("name", ""))
+        if name not in self._allowed:
+            return ToolMessage(
+                content=(f"Tool {name!r} is structurally unavailable to this exact agent profile."),
+                tool_call_id=str(request.tool_call.get("id", "unavailable-tool")),
+                status="error",
+            )
+        return await handler(request)
 
 
 def _error_code(exc: BaseException) -> str:
@@ -89,6 +169,7 @@ class DeepAgentTurnRuntime:
                 model=model,
                 tools=list(governed_tools),
                 system_prompt=resolved_profile.prompt_body,
+                middleware=(ExactAgentToolSurfaceMiddleware(profile=resolved_profile),),
                 backend=backend,  # type: ignore[arg-type]
                 checkpointer=checkpointer,
                 state_schema=ClueDeepAgentState,

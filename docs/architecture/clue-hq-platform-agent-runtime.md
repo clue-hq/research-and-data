@@ -1,6 +1,6 @@
 # Clue-HQ — Platform Agent Runtime & Context Assembly (Doc A)
 
-> **Status: DESIGN RECORD v1.3 (2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
+> **Status: DESIGN RECORD v1.4 (2026-07-26 · v1.3 2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
 > what the words "agent," "deepagent," "sub-agent," "skill," "tool," and "worker fleet" mean
 > mechanically, how the platform deepagent is constructed, and how context is assembled for every
 > model call. Extends `clue-hq-harness-architecture-and-requirements.md` (REQ-02, REQ-18–REQ-22)
@@ -42,6 +42,11 @@
 > metadata, but it does not store prompt/skill bodies. LangSmith/Langfuse prompt hubs are future
 > catalog adapters, outside C6. The runtime workspace contains no application code or executable
 > skill/tool surface.
+>
+> **v1.4 (2026-07-26) — C6.5 implemented-state update.** The governed Head-of-ABM Stage-0
+> runtime is built with the real deepagents construction, exact folder resources, isolated
+> workspace backend, C5-only tool execution, per-role model construction, and honest
+> finalization. Product routing/canary activation remains C6.8; specialist subagents remain C6.6.
 
 ---
 
@@ -148,7 +153,7 @@ agent identically.
 
 | Component | Class | Status |
 |---|---|---|
-| Head-of-ABM platform deepagent | **Deepagent** (Part II) | To build — on the havana-proven stack |
+| Head-of-ABM platform deepagent | **Deepagent** (Part II) | C6.5 runtime built for Stage 0; product routing/canary activation remains C6.8 |
 | Design deepagent (havana `lumen_agent`) | **Deepagent** (orchestrator + author + reviewer subagents) | **LIVE** — reference implementation |
 | Research specialist | **Subagent** of the platform deepagent (judgment tasks) + the research **toolbelt** (campaign ops) — O10 split | Toolbelt: build step 2; agent: step 6 (`agent/` in dar-es-salaam) |
 | Campaign & content strategist | **Role of the platform deepagent** (strategy is the main conversation, not a delegation): first the **VP-of-growth hat** — which channel campaigns to run at all, for which account-signal strengths and tiers — then the artifact/content strategy that follows per campaign, with strategy skills | Skills to author |

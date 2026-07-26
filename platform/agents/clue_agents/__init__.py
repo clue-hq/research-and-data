@@ -90,6 +90,7 @@ from clue_agents.ports import (
     WorkspaceEntry,
 )
 from clue_agents.registry import (
+    AgentCapabilityStatus,
     AgentProfileRegistry,
     AgentRegistryProjection,
     AgentToolCatalog,
@@ -99,6 +100,7 @@ from clue_agents.registry import (
     RoleRegistryEntry,
     RoleRegistryStatus,
     SkillDisclosure,
+    ToolCapabilityDisclosure,
 )
 from clue_agents.resources import (
     AgentResourceMaterializer,
@@ -108,7 +110,7 @@ from clue_agents.resources import (
     build_agent_resource_manifest,
     resource_manifest_sha256,
 )
-from clue_agents.runtime import DeepAgentTurnRuntime
+from clue_agents.runtime import DeepAgentTurnRuntime, ExactAgentToolSurfaceMiddleware
 from clue_agents.skills import SkillDescriptor, discover_skills, load_skill
 from clue_agents.state import ClueDeepAgentState
 from clue_agents.turns import (
@@ -161,6 +163,7 @@ __all__ = [
     "AgentPlanRejected",
     "AgentPlanReview",
     "AgentProfile",
+    "AgentCapabilityStatus",
     "AgentProfileRegistry",
     "AgentRegistryProjection",
     "AgentResourceManifest",
@@ -195,6 +198,7 @@ __all__ = [
     "ContextReceiptStore",
     "DeterministicAgentContextAssembler",
     "DeepAgentTurnRuntime",
+    "ExactAgentToolSurfaceMiddleware",
     "DelegationRequest",
     "DelegationResult",
     "DomainObjectRef",
@@ -231,6 +235,7 @@ __all__ = [
     "SkillBundle",
     "SkillDescriptor",
     "SkillDisclosure",
+    "ToolCapabilityDisclosure",
     "SkillResource",
     "AgentReplayUnavailable",
     "ToolPin",
