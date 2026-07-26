@@ -4,9 +4,10 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0–C6.3 implemented and verified; C6.4 is next. The durable turn,
-context, history, replay, and privacy substrate now exists. No agent executor, tool bridge,
-delegation runtime, or feature routing exists yet.
+**Current checkpoint:** C6.0–C6.4 implemented and verified; C6.5 is next. C6.4 added the
+whole-plan compiler, governed C5 tool bridge, durable delegation lifecycle, real deepagents loop,
+async-Postgres checkpoint factory, model-call receipts, and authoritative honest finalization.
+No Stage-0 ownership route or feature activation exists yet.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -425,6 +426,30 @@ Run fault injection across model-call, plan-append, pre-tool, post-domain-commit
 post-tool-complete, child-start, child-complete, artifact-store, finalize-event, and cursor-update
 boundaries.
 
+### C6.4 implementation record
+
+- `clue_agents.execution` owns bounded proposal policy, stable operation identities, authority
+  digests, and reference-only receipts without importing infrastructure.
+- `clue_agents.runtime` constructs the real deepagents graph with exact injected model, isolated
+  backend, governed tools, durable checkpointer, callback receipts, timeout, and round ceilings.
+  Normal framework stop has no success authority.
+- `clue_api.agent_execution_wiring` compiles the entire proposal into C5's graph/binding language,
+  validates it against the live interaction slot before effects, appends accepted tool nodes
+  through `RecipeExecutor`, and therefore invokes only through C5's mandatory `ToolInvoker`.
+- Delegations persist parent authority, narrowed resource/budget/path grants, and `child_started`
+  before fresh wake. Stable child execution identity plus persisted result recovery prevents
+  duplicate child execution after completion.
+- `clue_api.agent_runtime_wiring` exposes only exact effective descriptors and one required
+  `finalize_turn` mechanism. Model-controlled input cannot set trusted identity, operation ids,
+  output snapshots, or timestamps.
+- Finalization verifies all refs and the frozen output snapshot, commits the envelope and terminal
+  turn event atomically, treats exact retry as a no-op, rejects a different retry, and authorizes
+  workspace cleanup only after durable authority.
+- Fault tests cover the C6-owned model, plan-append, post-tool-complete, child-start,
+  child-complete, artifact-store, finalize-event, and cursor-update boundaries. Existing C5
+  executor recovery tests remain authoritative for pre-tool, post-domain-commit, and completion
+  event recovery.
+
 ## 8. C6.5 — Stage-0 Head-of-ABM vertical
 
 Compose the Head-of-ABM with only the Stage-0 tools required by the promoted profile. Use:
@@ -541,4 +566,4 @@ At the start of every C6 session:
 6. record failures and changed decisions in `_memory/`;
 7. finish with verification evidence and one coherent local commit.
 
-The next implementation session is **C6.4 only**.
+The next implementation session is **C6.5 only**.

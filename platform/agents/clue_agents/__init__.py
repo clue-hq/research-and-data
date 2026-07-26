@@ -63,6 +63,18 @@ from clue_agents.contracts import (
     ValidatedPlan,
     WorkspacePolicy,
 )
+from clue_agents.execution import (
+    AgentExecutionStatus,
+    AgentPlanIssue,
+    AgentPlanPolicy,
+    AgentPlanRejected,
+    AgentPlanReview,
+    AgentTurnOutcome,
+    GovernedOperationReceipt,
+    authority_sha256,
+    operation_id_for_plan_node,
+    review_agent_plan,
+)
 from clue_agents.model import ScriptedAgentChatModel
 from clue_agents.ports import (
     AgentArtifactReader,
@@ -96,6 +108,7 @@ from clue_agents.resources import (
     build_agent_resource_manifest,
     resource_manifest_sha256,
 )
+from clue_agents.runtime import DeepAgentTurnRuntime
 from clue_agents.skills import SkillDescriptor, discover_skills, load_skill
 from clue_agents.state import ClueDeepAgentState
 from clue_agents.turns import (
@@ -136,12 +149,17 @@ __all__ = [
     "AgentColdReplayReceipt",
     "AgentContextReplayReceipt",
     "AgentExecutionAdapter",
+    "AgentExecutionStatus",
     "AgentFinalizeEnvelope",
     "AgentHistoryStore",
     "AgentModelProvider",
     "AgentModelCallReceipt",
     "AgentModelCallStatus",
     "AgentPlan",
+    "AgentPlanIssue",
+    "AgentPlanPolicy",
+    "AgentPlanRejected",
+    "AgentPlanReview",
     "AgentProfile",
     "AgentProfileRegistry",
     "AgentRegistryProjection",
@@ -153,6 +171,7 @@ __all__ = [
     "AgentTurnRequest",
     "AgentTurnReceipt",
     "AgentTurnStatus",
+    "AgentTurnOutcome",
     "AgentToolCatalog",
     "AgentToolContract",
     "AgentWorkspaceFactory",
@@ -175,6 +194,7 @@ __all__ = [
     "ContextReceiptRef",
     "ContextReceiptStore",
     "DeterministicAgentContextAssembler",
+    "DeepAgentTurnRuntime",
     "DelegationRequest",
     "DelegationResult",
     "DomainObjectRef",
@@ -185,6 +205,7 @@ __all__ = [
     "FolderSkillCatalog",
     "HistoryLayerSource",
     "HistoryMessageRef",
+    "GovernedOperationReceipt",
     "IdentityLayerSource",
     "LayerBudget",
     "MemoryLayerSource",
@@ -229,7 +250,10 @@ __all__ = [
     "Utf8ByteTokenCounter",
     "WorkspaceProductLayerSource",
     "build_agent_resource_manifest",
+    "authority_sha256",
     "discover_skills",
     "load_skill",
+    "operation_id_for_plan_node",
     "resource_manifest_sha256",
+    "review_agent_plan",
 ]

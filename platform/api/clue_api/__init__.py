@@ -40,6 +40,21 @@ Shipped so far:
 
 from __future__ import annotations
 
+from clue_api.agent_execution_wiring import (
+    AgentExecutionCrashHook,
+    C5AgentExecutionAdapter,
+    DbAgentDelegationRuntime,
+    DbAgentPlanJournal,
+    FreshWakeChildRunner,
+    postgres_agent_checkpointer,
+)
+from clue_api.agent_runtime_wiring import (
+    AgentFinalizationAuthority,
+    DurableAgentModelCallHandler,
+    DurableDeepAgentTurnRunner,
+    GovernedAgentToolFactory,
+    ModelFinalizeRequest,
+)
 from clue_api.backtest_wiring import (
     LabeledDatasetBacktestGate,
     build_backtest_gate,
@@ -212,6 +227,18 @@ from clue_api.verification import (
 )
 
 __all__ = [
+    # C6.4 governed agent plan/runtime/finalization composition
+    "AgentExecutionCrashHook",
+    "C5AgentExecutionAdapter",
+    "DbAgentDelegationRuntime",
+    "DbAgentPlanJournal",
+    "FreshWakeChildRunner",
+    "postgres_agent_checkpointer",
+    "AgentFinalizationAuthority",
+    "DurableAgentModelCallHandler",
+    "DurableDeepAgentTurnRunner",
+    "GovernedAgentToolFactory",
+    "ModelFinalizeRequest",
     "load_research_packs",
     "VerificationBindingClassifier",
     "production_binding_classifier",
