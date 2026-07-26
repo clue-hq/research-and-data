@@ -4,12 +4,12 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0–C6.5 implemented and verified; C6.6 is next. C6.5 added the
-production-composable Head-of-ABM Stage-0 vertical over the governed C4/C5 substrate. It promotes
-an additive exact profile/prompt/skill set, exposes only nine replay-certified Stage-0 tools,
-constructs the real deepagent with an exhaustive generated capability map, filters the framework's
-unactivated generic subagent, forwards exact Recipe #0 resource pins through the C5 adapter, and
-requires durable honest finalization. Product routing and canary ownership remain C6.8 work.
+**Current checkpoint:** C6.0–C6.6 implemented and verified; C6.7 is next. C6.6 adds fresh-wake
+research, content-drafter, and reviewer specialists behind the governed C5 delegation operation.
+It freezes typed task/file/ref transfer, per-role prompts/skills/tools/workspaces/models/time and
+round limits, distinct child executions, empty child history, durable-before-return output
+contracts, human-gate propagation, and parent/child spend rollup. The framework's generic `task`
+tool remains filtered. Product routing and canary ownership remain C6.8 work.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -494,9 +494,10 @@ and confirmed start.
   context. The full skill is materialized read-only under `.deepagent/skills/...` and opened only
   when Stage 0 is active.
 - `DeepAgentTurnRuntime` still uses the real `create_deep_agent`. Its exact-surface middleware
-  removes DeepAgents 0.6's default general-purpose `task` tool until C6.6, rejects fabricated or
-  backend-contributed capabilities, and appends the generated resource map after framework prompt
-  middleware so the authoritative map is always the final system-prompt section.
+  removes DeepAgents 0.6's default general-purpose `task` tool; C6.6 supplies the separately
+  governed `delegate_specialist` operation. It rejects fabricated or backend-contributed
+  capabilities and appends the generated resource map after framework prompt middleware so the
+  authoritative map is always the final system-prompt section.
 - `HeadOfAbmStage0Runtime` binds the promoted profile, context, isolated workspace lease, durable
   turn journal, per-role governed model construction, exact tools, C5 adapter, and finalization
   authority for one turn. It constructs the model loop with the same execution adapter used by
@@ -606,4 +607,4 @@ At the start of every C6 session:
 6. record failures and changed decisions in `_memory/`;
 7. finish with verification evidence and one coherent local commit.
 
-The next implementation session is **C6.6 only**.
+The next implementation session is **C6.7 only**.

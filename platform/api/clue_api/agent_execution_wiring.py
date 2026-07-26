@@ -1582,9 +1582,33 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             child_role=step.role,
             current_depth=0,
         )
-        budget_limit = self._policy.budget_limit_millicents // max(
+        per_plan_limit = self._policy.budget_limit_millicents // max(
             1,
             sum(item.kind == "delegation" for item in plan.operations),
+        )
+        async with self._conn_factory() as conn:
+            already_spent = int(
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT COALESCE(SUM(r.spend_millicents), 0)
+                            FROM agent_delegation d
+                            JOIN agent_delegation_result r ON r.delegation_id=d.id
+                            WHERE d.parent_execution_id=:execution
+                              AND d.workspace_id=:workspace
+                            """
+                        ),
+                        {
+                            "execution": plan.execution_id,
+                            "workspace": self._constitution.workspace_id,
+                        },
+                    )
+                ).scalar_one()
+            )
+        budget_limit = min(
+            per_plan_limit,
+            max(self._policy.budget_limit_millicents - already_spent, 0),
         )
         budget_ref = await self._artifacts.persist_body(
             workspace_id=self._constitution.workspace_id,
@@ -1658,6 +1682,15 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         if hasattr(self, "_finalization_authority"):
             raise RuntimeError("finalization authority is already bound")
         self._finalization_authority = authority
+
+    def bind_delegation_runtime(self, delegation: DbAgentDelegationRuntime) -> None:
+        """Bind C6.6 after the parent lease/request exist, before any plan is validated."""
+
+        if self._delegation is not None:
+            raise RuntimeError("delegation runtime is already bound")
+        if self._validated:
+            raise RuntimeError("delegation runtime must be bound before plan validation")
+        self._delegation = delegation
 
     def checkpointer(
         self,

@@ -1,0 +1,42 @@
+schema_version: "1"
+kind: profile
+name: reviewer
+version: v2
+status: active
+role: reviewer
+prompt:
+  name: reviewer
+  version: v2
+  sha256: 878e561a9dd7009b63f5c2d25739928fad5ee84abacb6ecdbecba3b4343fa728
+skills:
+  - name: artifact-review
+    version: v1
+    sha256: 3d5d9f3694542ef8479da7551c2cfb77a006e0c8054103cc50bed2d3ec2911ac
+tools:
+  - name: compose_handoff
+    version: "1"
+    input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+    output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+model:
+  model_id: openai/gpt-4.1
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 4096
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 4194304
+  max_file_bytes: 1048576
+  max_file_count: 80
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 12
+turn_timeout_s: 90.0
+max_model_rounds: 10

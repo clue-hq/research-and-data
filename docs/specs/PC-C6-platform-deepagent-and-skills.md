@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0–C6.5 complete; C6.6 next (2026-07-26)
+**Status:** IN PROGRESS — C6.0–C6.6 complete; C6.7 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -707,9 +707,10 @@ test. No Alembic state changes.
    supplied a leading slash. Therefore C6.1 must validate relative syntax in the agent-facing file
    tool before framework normalization, then adapt the single virtual slash internally. The public
    C6 workspace port remains relative-only.
-4. A single backend instance is shared with framework subagents. C6 must layer narrowed child
-   path permissions over that shared artifact namespace; sharing bytes must not imply sharing
-   authority.
+4. The framework can share one backend with its built-in subagents, but production C6 does not use
+   that bypass. Governed delegation gives each child a distinct execution workspace and transfers
+   canonical bytes through exact artifact refs into read-only child context; sharing source bytes
+   never implies shared writable authority.
 5. A backend implementing an execution/sandbox protocol would cause the framework to expose code
    execution. The C6 backend must implement file operations only.
 
@@ -884,18 +885,20 @@ effective direct allowlist is exactly the nine governed Stage-0 operations for o
 interview evidence, readiness, ICP synthesis, field/source proposals, ingestion, and confirmed
 Recipe #1 start.
 
-The generated resource map is derived from the resolved manifest, skill disclosures, workspace
-policy, model policy, delegation grants, framework contract, and the complete 32-tool registry.
-It explicitly distinguishes available, human-only, replay-blocked, role-unavailable, and
-profile-unavailable operations. Product/ICP confirmation, readiness override, proposal decisions,
-budgets, checkpoints, arbitrary network, host filesystem, secrets, provider SDKs, process/shell
-execution, and specialist delegation are named unavailable and remain structurally absent.
+The C6.5 generated resource map is derived from the resolved manifest, skill disclosures,
+workspace policy, model policy, delegation grants, framework contract, and the complete 32-tool
+registry. It explicitly distinguishes available, human-only, replay-blocked, role-unavailable,
+and profile-unavailable operations. At that slice, product/ICP confirmation, readiness override,
+proposal decisions, budgets, checkpoints, arbitrary network, host filesystem, secrets, provider
+SDKs, process/shell execution, and specialist delegation were named unavailable and remained
+structurally absent.
 
 The real `create_deep_agent` construction now installs an exact-surface middleware. DeepAgents
-0.6's default general-purpose `task` capability is removed from every model call until C6.6, and
-fabricated or unexpectedly backend-contributed tools fail closed. Because framework middleware
-appends its own instructions, the generated authoritative resource map is re-appended as the
-final system-prompt section on every model call.
+0.6's default general-purpose `task` capability is removed from every model call. C6.6 added the
+separately governed `delegate_specialist` capability instead; fabricated or unexpectedly
+backend-contributed tools still fail closed. Because framework middleware appends its own
+instructions, the generated authoritative resource map is re-appended as the final system-prompt
+section on every model call.
 
 `HeadOfAbmStage0Runtime` composes the resolved Head profile, seven-layer context, C6.1 lease,
 immutable resource materialization, durable turn journal, governed model provider, exact tool
@@ -919,6 +922,40 @@ durable human decisions plus readiness/override lineage before confirmed Recipe 
 
 C6.5 adds no migration, feature flag, public route, or ownership cutover. C6.8 still owns API
 routing, workspace canaries, fallback selection, and operations hardening.
+
+## 7E. C6.6 implementation record
+
+C6.6 promotes additive Head v3 and specialist v2 profiles. The Head keeps C6.5's nine direct
+Stage-0 tools and gains no specialist tool directly; it receives a separate
+`delegate_specialist` capability backed by a validated `PlanDelegationStep`. DeepAgents' generic
+`task` tool remains filtered because it would bypass C5 authority and receipts.
+
+The strict `SpecialistTaskEnvelope` freezes the accepted transfer shape: bounded goal and
+instructions, small source material verbatim, canonical files copied byte-for-byte to
+content-addressed artifacts, typed domain refs, and one fixed role output path. Every child gets a
+distinct execution id, isolated C6.1 workspace, pinned prompt/skill/profile/model, child budget,
+checkpoint namespace, and seven-layer context with an explicitly empty L6 conversation layer.
+
+The three active specialist contracts are:
+
+- research v2 + `research-task@v1`: gap/source strategy and dossier questions;
+  `outputs/research-strategy.md`; four governed research tools; 180 seconds, 16 model rounds;
+- content-drafter v2 + `content-exemplar@v1`: one exemplar only, no claim truth or scaling;
+  `outputs/content-exemplar.md`; `compose_handoff@1`; 120 seconds, 12 rounds;
+- reviewer v2 + `artifact-review@v1`: read-only critique, no edits/promotion/approval;
+  `outputs/review-verdict.md`; `compose_handoff@1`; 90 seconds, 10 rounds.
+
+`FreshWakeSpecialistRunner` creates the child execution before the turn, assembles with empty
+history, materializes exact resources and read-only file grants, constructs a per-role governed
+model and the same C5 adapter used by child tools, requires the role output before completed
+finalization, validates actual spend against the child envelope, and returns only finalization,
+output, domain, and open-gate refs. `DbAgentDelegationRuntime` records the parent request before
+wake, deduplicates retries, and rolls child spend/status back into the parent ledger. Sequential
+delegations receive only the remaining parent budget; children cannot delegate again.
+
+The maintainer-facing source map and safe immutable-version workflow are documented in
+`docs/agents/skill-and-profile-authoring.md`. C6.6 adds no migration, public route, canary, or
+ownership cutover; C6.8 still owns final production routing and recovery/operations composition.
 
 ---
 

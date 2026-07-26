@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-6-specialist-subagents.md` — C6.6 complete: governed fresh-wake research,
+  content-drafter, and reviewer children; exact task/artifact/ref transfer; isolated execution and
+  empty-history context; role-specific resources, tools, budgets, outputs, durable receipts; skill
+  authoring guide; full DB-enabled verification; and C6.7 handoff.
 - `2026-07-26-phase-c6-5-head-of-abm-stage0.md` — C6.5 complete: real Head-of-ABM
   Stage-0 deepagent, additive exact resources, exhaustive unavailable-capability map, nine-tool
   allowlist, progressive Stage-0 skill, C5/Recipe-0 pin parity, replay-certified proposal and

@@ -37,21 +37,32 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
     assert isinstance(profiles, ProfileCatalog)
     assert [item.ref.address for item in prompts.list()] == [
         "prompt:content-drafter@v1",
+        "prompt:content-drafter@v2",
         "prompt:head-of-abm@v1",
         "prompt:head-of-abm@v2",
+        "prompt:head-of-abm@v3",
         "prompt:research-specialist@v1",
+        "prompt:research-specialist@v2",
         "prompt:reviewer@v1",
+        "prompt:reviewer@v2",
     ]
     assert [item.ref.address for item in skills.list()] == [
+        "skill:artifact-review@v1",
+        "skill:content-exemplar@v1",
+        "skill:research-task@v1",
         "skill:stage0-interview@v2",
         "skill:stage0-interview@v3",
     ]
     assert [item.ref.address for item in profiles.list()] == [
         "profile:content-drafter@v1",
+        "profile:content-drafter@v2",
         "profile:head-of-abm@v1",
         "profile:head-of-abm@v2",
+        "profile:head-of-abm@v3",
         "profile:research-specialist@v1",
+        "profile:research-specialist@v2",
         "profile:reviewer@v1",
+        "profile:reviewer@v2",
     ]
     stage0 = skills.get("stage0-interview", "v2")
     assert "Only a human confirms" in stage0.body

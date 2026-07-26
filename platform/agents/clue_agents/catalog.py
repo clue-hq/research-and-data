@@ -149,6 +149,8 @@ class ProfileDefinition(CatalogDocument):
     max_delegation_depth: int = Field(ge=0, le=4)
     max_delegations: int = Field(ge=0, le=32)
     max_plan_nodes: int = Field(ge=1, le=256)
+    turn_timeout_s: float = Field(default=300.0, gt=0, le=1800)
+    max_model_rounds: int = Field(default=24, ge=1, le=128)
 
     @model_validator(mode="after")
     def profile_references_are_coherent(self) -> ProfileDefinition:

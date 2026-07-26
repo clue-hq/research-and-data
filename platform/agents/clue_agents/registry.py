@@ -205,6 +205,11 @@ class ResolvedAgentProfile:
             + ", ".join(pin.address for pin in self.delegation_tool_grants.get(role, ()))
             for role in self.profile.delegation_roles
         )
+        delegation_capability = (
+            "- delegate_specialist: available; validated C5 delegation and fresh child wake"
+            if self.profile.delegation_roles
+            else "- delegate_specialist: unavailable in this profile"
+        )
         return (
             "## Resolved resource and capability map (authoritative; generated)\n\n"
             "Pinned resources:\n"
@@ -221,7 +226,8 @@ class ResolvedAgentProfile:
             "Platform tools not available to this role:\n"
             f"{unavailable or '- none'}\n\n"
             "Explicitly unavailable runtime capabilities:\n"
-            "- task/subagent: unavailable in this profile; specialist activation is C6.6\n"
+            "- framework task/subagent: unavailable; it bypasses governed delegation\n"
+            f"{delegation_capability}\n"
             "- execute/shell/process: unavailable; the backend has no execution protocol\n"
             "- host filesystem/repository/environment/secrets/provider SDKs: unavailable\n"
             "- arbitrary network access: unavailable; external effects require governed tools\n"
@@ -242,7 +248,9 @@ class ResolvedAgentProfile:
             f"timeout_s={self.profile.model.timeout_s}; "
             f"max_retries={self.profile.model.max_retries}; "
             f"max_output_tokens={self.profile.model.max_output_tokens}; "
-            f"temperature={self.profile.model.temperature}\n\n"
+            f"temperature={self.profile.model.temperature}\n"
+            f"- turn_timeout_s={self.profile.turn_timeout_s}; "
+            f"max_model_rounds={self.profile.max_model_rounds}\n\n"
             "## End resolved resource and capability map"
         )
 
@@ -438,6 +446,8 @@ class AgentProfileRegistry:
             max_delegation_depth=definition.max_delegation_depth,
             max_delegations=definition.max_delegations,
             max_plan_nodes=definition.max_plan_nodes,
+            turn_timeout_s=definition.turn_timeout_s,
+            max_model_rounds=definition.max_model_rounds,
         )
         manifest = build_agent_resource_manifest(
             role=profile.role,

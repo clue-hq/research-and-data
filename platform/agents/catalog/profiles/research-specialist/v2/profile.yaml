@@ -1,0 +1,54 @@
+schema_version: "1"
+kind: profile
+name: research-specialist
+version: v2
+status: active
+role: research
+prompt:
+  name: research-specialist
+  version: v2
+  sha256: 2c65b9ce4b52d1f879cda9f5bd01c6d9be28ff8ec83c185840b5ea7a2489884f
+skills:
+  - name: research-task
+    version: v1
+    sha256: ba20f232c66d66de596321c111f108a4c63e8e343bee9c32ae7b87243ba7238a
+tools:
+  - name: profile_contact
+    version: "1"
+    input_schema_sha256: 4973ccc0586a48c43fe4351dd542034eae08880bd39031a8e1779b2f170e2a3f
+    output_schema_sha256: 05910e17071f7c756123ebd4e6bf71593eeae20d48ff6ff9f15808479ffe067a
+  - name: resolve_committee
+    version: "1"
+    input_schema_sha256: 8c32e979c0a7a1a49ea093e19ac0e9536d40b841dad386fb6ff31fa8125a8855
+    output_schema_sha256: 8cbc508a6f14a781949ac413226fe346f7e07a4ffe69519f0226f7c1283beb25
+  - name: run_deep_account
+    version: "1"
+    input_schema_sha256: 846e72bf981e77feba6f8e56e401168982f37b789e91edf96fc23017f5ad3d7f
+    output_schema_sha256: 3038c313bfffccbf676f689f4ad856d026f8a135c7d0ce102c7e623aa6ad1f23
+  - name: run_verification
+    version: "1"
+    input_schema_sha256: a331a001f6b269a9daa97f2d861342d7dfae86a0e75a942ca8f1f4f9d302b0b2
+    output_schema_sha256: d93aeddfdd146ca7bc8dba48b2fcac40415934659c495905255dae3ceb32d91b
+model:
+  model_id: openai/gpt-4.1
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 6144
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 6291456
+  max_file_bytes: 1048576
+  max_file_count: 120
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 24
+turn_timeout_s: 180.0
+max_model_rounds: 16

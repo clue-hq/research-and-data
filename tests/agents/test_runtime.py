@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
@@ -23,10 +25,13 @@ from clue_agents import (
     DelegationResult,
     GovernedOperationReceipt,
     ScriptedAgentChatModel,
+    SpecialistTaskEnvelope,
     ValidatedOperation,
     ValidatedPlan,
+    WorkspaceEntry,
     operation_id_for_plan_node,
 )
+from clue_agents.contracts import PlanDelegationStep
 from clue_agents.ports import AgentExecutionAdapter, ExecutionProgress
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory
@@ -139,6 +144,103 @@ class _Execution(AgentExecutionAdapter):
     async def recover(self, *, execution_id: ExecutionId) -> Mapping[str, object]:
         assert execution_id == EXECUTION_ID
         return self.recovered
+
+
+class _DelegationExecution(_Execution):
+    async def validate_plan(
+        self,
+        *,
+        plan: AgentPlan,
+        constitution: object,
+    ) -> ValidatedPlan:
+        del constitution
+        self.validated_plans.append(plan)
+        step = plan.steps[0]
+        assert isinstance(step, PlanDelegationStep)
+        operation_id = operation_id_for_plan_node(plan.execution_id, step.node_key)
+        operation = ValidatedOperation(
+            node_key=step.node_key,
+            operation_id=operation_id,
+            kind="delegation",
+            address=step.role.value,
+            depends_on=(),
+            parameter_artifact_ref=artifact(f"{operation_id}.json"),
+            parameter_sha256="a" * 64,
+            estimated_cost_millicents=0,
+            authority_sha256="b" * 64,
+        )
+        return ValidatedPlan(
+            plan_id=plan.plan_id,
+            execution_id=plan.execution_id,
+            validated_plan_artifact_ref=artifact(f"{plan.plan_id}.json"),
+            proposal_sha256="c" * 64,
+            resource_manifest_sha256="d" * 64,
+            operations=(operation,),
+            max_parallelism=1,
+            estimated_cost_millicents=0,
+            budget_limit_millicents=0,
+            validated_at=plan.proposed_at,
+        )
+
+    async def execute(self, *, plan: ValidatedPlan) -> AsyncIterator[ExecutionProgress]:
+        operation = plan.operations[0]
+        receipt = GovernedOperationReceipt(
+            node_key=operation.node_key,
+            operation_id=operation.operation_id,
+            kind="delegation",
+            address=operation.address,
+            status=AgentExecutionStatus.COMPLETED,
+            artifact_refs=(artifact("specialist-output.md"),),
+        )
+        self.recovered = {"operation_receipts": (receipt,)}
+        yield ExecutionProgress(
+            execution_id=plan.execution_id,
+            status="completed",
+            completed_node_keys=(operation.node_key,),
+        )
+
+
+class _DelegationArtifacts:
+    def __init__(self) -> None:
+        self.data: dict[str, bytes] = {}
+
+    async def persist_body(
+        self,
+        *,
+        workspace_id: str,
+        data: bytes,
+        media_type: str,
+    ) -> ArtifactRef:
+        digest = hashlib.sha256(data).hexdigest()
+        ref = ArtifactRef(
+            workspace_id=workspace_id,
+            artifact_key=f"{workspace_id}/{digest}",
+            sha256=digest,
+            media_type=media_type,
+            byte_count=len(data),
+        )
+        self.data[ref.artifact_key] = data
+        return ref
+
+    async def read(self, ref: ArtifactRef) -> bytes:
+        return self.data[ref.artifact_key]
+
+
+class _DelegationBackend:
+    async def stat_entry(self, path: str) -> WorkspaceEntry:
+        assert path == "context/account.md"
+        body = b"Canonical account evidence."
+        return WorkspaceEntry(
+            path=path,
+            kind="file",
+            byte_count=len(body),
+            sha256=hashlib.sha256(body).hexdigest(),
+            read_only=True,
+        )
+
+    async def read_text(self, path: str) -> str:
+        assert path == "context/account.md"
+        return "Canonical account evidence."
 
 
 def _request() -> tuple[AgentTurnRequest, object]:
@@ -394,3 +496,82 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
         "kb_version": None,
         "product_id": None,
     }
+
+
+def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake() -> None:
+    request, resolved = _request()
+    execution = _DelegationExecution()
+    artifacts = _DelegationArtifacts()
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, SimpleNamespace(backend=_DelegationBackend())),
+        artifacts=cast(Any, artifacts),
+    )
+    runtime = DeepAgentTurnRuntime(
+        models=_Models(
+            (
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "delegate_specialist",
+                            "args": {
+                                "role": "reviewer",
+                                "goal": "Review the exemplar.",
+                                "instructions": "Check grounding and the slot contract.",
+                                "verbatim_context": ["The human asked for a strict review."],
+                                "canonical_paths": ["context/account.md"],
+                                "domain_refs": [
+                                    {
+                                        "object_type": "account",
+                                        "object_id": "account-42",
+                                        "version": 3,
+                                    }
+                                ],
+                            },
+                            "id": "delegate-review-c66",
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                AIMessage(content="Delegation returned; parent intentionally did not finalize."),
+            )
+        ),
+        execution=execution,
+        max_runtime_s=5,
+    )
+
+    outcome = run_async(
+        runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(),
+                messages=(HumanMessage(content="Review the exemplar."),),
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+    )
+
+    assert outcome.status is AgentExecutionStatus.FAILED
+    assert outcome.failure_code == "missing_finalize"
+    assert len(execution.validated_plans) == 1
+    step = execution.validated_plans[0].steps[0]
+    assert isinstance(step, PlanDelegationStep)
+    assert step.role is AgentRole.REVIEWER
+    assert step.granted_paths == ("context/delegated/00-account.md",)
+    task = SpecialistTaskEnvelope.model_validate_json(
+        artifacts.data[step.task_artifact_ref.artifact_key]
+    )
+    assert task.verbatim_context == ("The human asked for a strict review.",)
+    assert task.file_grants[0].source_path == "context/account.md"
+    assert (
+        task.file_grants[0].artifact_ref.sha256
+        == hashlib.sha256(b"Canonical account evidence.").hexdigest()
+    )
+    assert task.domain_refs[0].workspace_id == request.constitution.workspace_id
+    assert task.required_output_path == "outputs/review-verdict.md"
