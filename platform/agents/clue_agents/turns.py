@@ -85,6 +85,8 @@ class AgentModelCallReceipt(TurnValue):
     answering_model: str | None = None
     status: AgentModelCallStatus
     input_tokens: int = Field(ge=0)
+    cache_read_input_tokens: int = Field(default=0, ge=0)
+    cache_creation_input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(ge=0)
     cost_millicredits: int = Field(ge=0)
     latency_ms: float = Field(ge=0)

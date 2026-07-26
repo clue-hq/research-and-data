@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from clue_agents import AgentExecutionStatus
 from clue_agents.context import (
     ContextAssemblyPolicy,
     ContextCandidate,
@@ -34,6 +35,12 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_core import new_execution_id
+from clue_projections import (
+    agent_progress,
+    agent_telemetry,
+    agent_turn,
+    agent_turns_for_project,
+)
 from clue_storage.protocol import ArtifactNotFound
 from tests._workspace import seed_project
 from tests.agents.conftest import NOW, SHA_B, constitution, domain_ref
@@ -248,6 +255,8 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                 answering_model="openai/gpt-4.1",
                 status=AgentModelCallStatus.COMPLETED,
                 input_tokens=100,
+                cache_read_input_tokens=40,
+                cache_creation_input_tokens=5,
                 output_tokens=20,
                 cost_millicredits=12,
                 latency_ms=25,
@@ -256,6 +265,11 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
             )
             await turns.record_model_call(receipt=model_receipt)
             await turns.record_model_call(receipt=model_receipt)
+            await turns.record_workspace_usage(
+                turn_id=turn_request.turn_id,
+                workspace_id=project.workspace_id,
+                usage=harness.lease.usage_snapshot(),
+            )
             finalization = AgentFinalizeEnvelope(
                 finalization_id=UUID("00000000-0000-0000-0000-000000000642"),
                 execution_id=execution_id,
@@ -268,10 +282,76 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                 workspace_id=project.workspace_id,
                 envelope=finalization,
             )
+
+            turn_view = await agent_turn(
+                workspace_id=project.workspace_id,
+                turn_id=turn_request.turn_id,
+                conn_factory=factory,
+            )
+            assert turn_view is not None
+            assert turn_view.profile_address == "profile:head-of-abm@1.0.0"
+            assert turn_view.workspace_root_id == harness.lease.identity.workspace_root_id
+            assert (
+                await agent_turn(
+                    workspace_id="another-workspace",
+                    turn_id=turn_request.turn_id,
+                    conn_factory=factory,
+                )
+                is None
+            )
+            project_turns = await agent_turns_for_project(
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                conn_factory=factory,
+            )
+            assert tuple(item.turn_id for item in project_turns) == (turn_request.turn_id,)
+            progress = await agent_progress(
+                workspace_id=project.workspace_id,
+                turn_id=turn_request.turn_id,
+                conn_factory=factory,
+            )
+            assert progress is not None
+            assert progress.model_call_count == 1
+            telemetry = await agent_telemetry(
+                workspace_id=project.workspace_id,
+                turn_id=turn_request.turn_id,
+                conn_factory=factory,
+            )
+            assert telemetry is not None
+            assert telemetry.input_tokens == 100
+            assert telemetry.cache_read_input_tokens == 40
+            assert telemetry.cache_creation_input_tokens == 5
+            assert telemetry.cache_read_ratio == pytest.approx(0.4)
+            assert telemetry.workspace_files == 0
             await turns.record_finalization(
                 turn_id=turn_request.turn_id,
                 workspace_id=project.workspace_id,
                 envelope=finalization,
+            )
+            finalization_ref = await artifacts.persist_body(
+                workspace_id=project.workspace_id,
+                data=finalization.model_dump_json(exclude_none=False).encode(),
+                media_type="application/vnd.clue.agent-finalization+json",
+            )
+            await turns.commit_finalization_authority(
+                turn_id=turn_request.turn_id,
+                workspace_id=project.workspace_id,
+                envelope=finalization,
+                envelope_ref=finalization_ref,
+            )
+            committed = await turns.load_committed_outcome(
+                turn_id=turn_request.turn_id,
+                workspace_id=project.workspace_id,
+            )
+            assert committed is not None
+            assert committed.status is AgentExecutionStatus.COMPLETED
+            assert committed.finalization_ref == finalization_ref
+            assert (
+                await turns.load_committed_outcome(
+                    turn_id=turn_request.turn_id,
+                    workspace_id="another-workspace",
+                )
+                is None
             )
 
             replay = DbAgentReplayReader(storage=storage, conn_factory=factory)

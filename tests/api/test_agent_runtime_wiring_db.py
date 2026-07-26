@@ -235,6 +235,10 @@ def test_honest_finalize_recovers_each_storage_and_commit_boundary_without_false
                                     content="Durable answer",
                                     usage_metadata={
                                         "input_tokens": 12,
+                                        "input_token_details": {
+                                            "cache_read": 8,
+                                            "cache_creation": 2,
+                                        },
                                         "output_tokens": 4,
                                         "total_tokens": 16,
                                     },
@@ -251,7 +255,9 @@ def test_honest_finalize_recovers_each_storage_and_commit_boundary_without_false
                     await conn.execute(
                         text(
                             "SELECT sequence, requested_model, answering_model, status, "
-                            "input_tokens, output_tokens FROM agent_model_call WHERE id=:id"
+                            "input_tokens, cache_read_input_tokens, "
+                            "cache_creation_input_tokens, output_tokens "
+                            "FROM agent_model_call WHERE id=:id"
                         ),
                         {"id": model_call_id},
                     )
@@ -265,6 +271,8 @@ def test_honest_finalize_recovers_each_storage_and_commit_boundary_without_false
                 "answering_model": "answering/model",
                 "status": "completed",
                 "input_tokens": 12,
+                "cache_read_input_tokens": 8,
+                "cache_creation_input_tokens": 2,
                 "output_tokens": 4,
             }
             assert (

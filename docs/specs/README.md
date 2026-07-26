@@ -65,7 +65,7 @@ issue spec states the exact interface it exposes/consumes.
 | B4 | Toolbelt + projections/SSE + fleet run-start composition (step 2; `platform/b4-toolbelt-v0`) | **executed** | [PB-B4](./PB-B4-toolbelt-and-projections.md) |
 | B2 | Storage lane: `libs/clue-storage` · `artifact` table + `claim.artifact_key` · evidence snapshots · scrapling scrape backend · DSAR snapshot reach · millicredit groundwork | **executed + integrated** | [PB-B2](./PB-B2-storage.md) |
 | B3 | Scoped-memory slice 1: five-scope memory substrate · two seams · deterministic assembly · lifecycle/DSAR | **executed + integrated** | [PB-B3](./PB-B3-scoped-memory-slice-1.md) |
-| C | Governed agency: Step 4 fan-out (coverage/proposals/ingestion/Stage 0) → journal/recipes → deepagent → dossier | **C0 frozen; C1–C4 integrated; C5 implemented; C6 planned next** | [PC](./PC-phase-c-agentic-layer.md) · [C0](./PC-C0-step4-contract-freeze.md) · [C1](./PC-C1-coverage-and-goal-judge.md) · [C2](./PC-C2-field-source-proposals.md) · [C3](./PC-C3-ingestion.md) · [C4](./PC-C4-stage0-recipe0.md) · [C5](./PC-C5-run-graph-recipes-executor.md) · [C6](./PC-C6-platform-deepagent-and-skills.md) |
+| C | Governed agency: Step 4 fan-out (coverage/proposals/ingestion/Stage 0) → journal/recipes → deepagent → dossier | **C0–C6 implemented; C7 next** | [PC](./PC-phase-c-agentic-layer.md) · [C0](./PC-C0-step4-contract-freeze.md) · [C1](./PC-C1-coverage-and-goal-judge.md) · [C2](./PC-C2-field-source-proposals.md) · [C3](./PC-C3-ingestion.md) · [C4](./PC-C4-stage0-recipe0.md) · [C5](./PC-C5-run-graph-recipes-executor.md) · [C6](./PC-C6-platform-deepagent-and-skills.md) |
 
 ## Full issue list
 

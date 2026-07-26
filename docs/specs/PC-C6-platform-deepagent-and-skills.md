@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0–C6.7 complete; C6.8 next (2026-07-26)
+**Status:** COMPLETE — C6.0–C6.8 implemented and verified (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -1007,6 +1007,51 @@ C6.7 adds the reversible `coverage_evaluator_advice` migration and leaves one Al
 It does not turn on product routing, create a public route, or change canary ownership. C6.8 owns
 the prepared-turn composition at the API root, default-off workspace routing, comparative
 agent-vs-mechanical eval/canary selection, operations telemetry, and final hardening.
+
+## 7G. C6.8 implementation record
+
+C6.8 closes production composition without changing default product behavior.
+`build_agent_platform_components` constructs the exact active profile registry, governed
+OpenRouter model provider, isolated workspace factory, durable artifact/turn/history/replay/
+privacy adapters, and ownership router at the `clue_api` root. The context builder composes the
+single L1–L7 source order and persists the existing body-free context receipt.
+
+The fleet now constructs C6.7's prepared account turn rather than leaving only an injection seam.
+It starts the promoted `account-research-unit@1` revision under deterministic execution/turn
+identities, persists and freezes the stage/readiness/budget/user/resource inputs, builds the
+fresh-wake account context, and injects `GovernedAccountProfiler` into the existing DEEP slot.
+Completed finalization closes and completes the same C5 recipe. Process restart reopens only the
+same normalized execution root and re-verifies every immutable resource/context digest before
+checkpoint resume. A durable deepagent-owned route keeps this runtime composed even if new rollout
+assignment is disabled.
+
+Routing has a hard-off master switch, independent Stage-0/account surface switches, explicit
+workspace allowlist, and a stable workspace-plus-surface percentage cohort. The first claim for a
+`(workspace, surface, subject)` writes an append-only `agent_runtime_route`; later config changes
+cannot move that subject between `legacy` and `deepagent`. `run_owned_agent_surface` enters exactly
+one selected callable. A deepagent failure remains visible and never invokes legacy as a
+post-failure fallback, preventing dual effects.
+
+The authenticated read API now exposes the active registry, project turns, turn status/failure,
+pinned resource/context receipts, artifact refs, delegation ids, progress, telemetry, and route
+ownership. These projections are reference-only and workspace-scoped; they do not read prompt,
+skill, model-message, artifact, or workspace-file bodies.
+
+C6.8 adds cache-read/cache-creation token attribution to model receipts, immutable final workspace
+quota receipts, and a combined telemetry projection for model usage/cost/latency, tool reference
+yield, context size/exclusions, workspace utilization, child spend, and unfinalized failures.
+The fleet runs a non-fatal terminal-workspace retention job. It purges only normalized execution
+identities after a durable terminal event and inspection window, then appends a cleanup receipt;
+`awaiting_input` is explicitly excluded as live resumable state.
+Durable replay artifacts remain; DSAR remains the separate immediate body-erasure and
+no-resurrection path.
+
+The canary comparator fails closed on invisible failure, duplicate effects, terminal/promotable/
+verified regression, and configured cost/round bands. Non-canaried work remains on the current
+mechanical owner because every routing setting defaults off. The operator sequence, alerting,
+recovery, retention, DSAR, and rollback procedure is in
+`docs/runbooks/agent-runtime.md`; the next-slice prerequisite map is in
+`docs/superpowers/plans/2026-07-26-phase-c7-handoff.md`.
 
 ---
 

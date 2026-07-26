@@ -1,6 +1,6 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5 implemented; C6 planned next
+**Status:** ACTIVE — C0–C6 implemented; C7 is the next engineering session
 (2026-07-26)
 
 **Integration branch:** `platform/workspace-restructure`

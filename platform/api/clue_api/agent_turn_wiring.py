@@ -10,7 +10,12 @@ from uuid import UUID, uuid5
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 
-from clue_agents import AgentWorkspaceFactory
+from clue_agents import (
+    AgentExecutionStatus,
+    AgentTurnOutcome,
+    AgentWorkspaceFactory,
+    WorkspaceUsageSnapshot,
+)
 from clue_agents.context import (
     ContextAssemblyReceipt,
     ContextReceiptStore,
@@ -420,6 +425,59 @@ class DbAgentTurnJournal:
                 raise RuntimeError("inserted agent turn vanished")
             return receipt
 
+    async def load_committed_outcome(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+    ) -> AgentTurnOutcome | None:
+        """Return an authoritative terminal outcome without reopening a completed turn.
+
+        This is the cold process-restart path for an API-root runner.  A finalization row alone is
+        not authoritative; only the immutable commit joined to its live artifact may be replayed.
+        Unfinalized failed/abandoned turns deliberately return ``None`` so an explicit retry can
+        resume their durable model checkpoint instead of manufacturing success.
+        """
+
+        async with self._conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT f.execution_id, f.status, f.failure_code,
+                                   c.envelope_artifact_key, c.envelope_sha256,
+                                   a.media_type, a.size_bytes
+                            FROM agent_finalization_commit c
+                            JOIN agent_finalization f ON f.id=c.finalization_id
+                            JOIN artifact a ON a.storage_key=c.envelope_artifact_key
+                            WHERE c.turn_id=:turn AND c.workspace_id=:workspace
+                              AND a.workspace_id=:workspace
+                              AND a.erased_at IS NULL
+                            """
+                        ),
+                        {"turn": turn_id, "workspace": workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return AgentTurnOutcome(
+            turn_id=turn_id,
+            execution_id=ExecutionId(row["execution_id"]),
+            status=AgentExecutionStatus(row["status"]),
+            finalization_ref=ArtifactRef(
+                workspace_id=workspace_id,
+                artifact_key=row["envelope_artifact_key"],
+                sha256=row["envelope_sha256"],
+                media_type=row["media_type"],
+                byte_count=int(row["size_bytes"]),
+            ),
+            failure_code=row["failure_code"],
+        )
+
     async def record_model_call(
         self,
         *,
@@ -432,11 +490,12 @@ class DbAgentTurnJournal:
                 text(
                     "INSERT INTO agent_model_call "
                     "(id, turn_id, execution_id, workspace_id, sequence, requested_model, "
-                    " answering_model, status, input_tokens, output_tokens, cost_millicredits, "
-                    " latency_ms, error_code, started_at, completed_at) "
+                    " answering_model, status, input_tokens, cache_read_input_tokens, "
+                    " cache_creation_input_tokens, output_tokens, cost_millicredits, latency_ms, "
+                    " error_code, started_at, completed_at) "
                     "VALUES (:id, :turn, :execution, :workspace, :sequence, :requested, "
-                    " :answering, :status, :input_tokens, :output_tokens, :cost, :latency, "
-                    " :error, :started, :completed) "
+                    " :answering, :status, :input_tokens, :cache_read, :cache_creation, "
+                    " :output_tokens, :cost, :latency, :error, :started, :completed) "
                     "ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
                 {
@@ -449,6 +508,8 @@ class DbAgentTurnJournal:
                     "answering": receipt.answering_model,
                     "status": receipt.status.value,
                     "input_tokens": receipt.input_tokens,
+                    "cache_read": receipt.cache_read_input_tokens,
+                    "cache_creation": receipt.cache_creation_input_tokens,
                     "output_tokens": receipt.output_tokens,
                     "cost": receipt.cost_millicredits,
                     "latency": receipt.latency_ms,
@@ -461,8 +522,9 @@ class DbAgentTurnJournal:
                 existing = await conn.execute(
                     text(
                         "SELECT turn_id, execution_id, workspace_id, sequence, requested_model, "
-                        "answering_model, status, input_tokens, output_tokens, "
-                        "cost_millicredits, latency_ms, error_code, started_at, completed_at "
+                        "answering_model, status, input_tokens, cache_read_input_tokens, "
+                        "cache_creation_input_tokens, output_tokens, cost_millicredits, "
+                        "latency_ms, error_code, started_at, completed_at "
                         "FROM agent_model_call WHERE id=:id"
                     ),
                     {"id": receipt.model_call_id},
@@ -477,6 +539,8 @@ class DbAgentTurnJournal:
                     row["answering_model"],
                     row["status"],
                     int(row["input_tokens"]),
+                    int(row["cache_read_input_tokens"]),
+                    int(row["cache_creation_input_tokens"]),
                     int(row["output_tokens"]),
                     int(row["cost_millicredits"]),
                     float(row["latency_ms"]),
@@ -493,6 +557,8 @@ class DbAgentTurnJournal:
                     receipt.answering_model,
                     receipt.status.value,
                     receipt.input_tokens,
+                    receipt.cache_read_input_tokens,
+                    receipt.cache_creation_input_tokens,
                     receipt.output_tokens,
                     receipt.cost_millicredits,
                     receipt.latency_ms,
@@ -518,6 +584,72 @@ class DbAgentTurnJournal:
                         ordinal=ordinal,
                         ref=ref,
                     )
+
+    async def record_workspace_usage(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        usage: WorkspaceUsageSnapshot,
+    ) -> None:
+        """Persist the final quota snapshot exactly once without exposing host paths."""
+
+        async with self._conn_factory() as conn:
+            inserted = await conn.execute(
+                text(
+                    "INSERT INTO agent_workspace_usage "
+                    "(turn_id, workspace_id, file_count, total_bytes, output_file_count, "
+                    " output_bytes, max_file_count, max_total_bytes) "
+                    "VALUES (:turn, :workspace, :files, :bytes, :output_files, :output_bytes, "
+                    " :max_files, :max_bytes) ON CONFLICT (turn_id) DO NOTHING RETURNING turn_id"
+                ),
+                {
+                    "turn": turn_id,
+                    "workspace": workspace_id,
+                    "files": usage.file_count,
+                    "bytes": usage.total_bytes,
+                    "output_files": usage.output_file_count,
+                    "output_bytes": usage.output_bytes,
+                    "max_files": usage.max_file_count,
+                    "max_bytes": usage.max_total_bytes,
+                },
+            )
+            if inserted.first() is not None:
+                return
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT workspace_id, file_count, total_bytes, output_file_count, "
+                            "output_bytes, max_file_count, max_total_bytes "
+                            "FROM agent_workspace_usage WHERE turn_id=:turn"
+                        ),
+                        {"turn": turn_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            actual = (
+                row["workspace_id"],
+                int(row["file_count"]),
+                int(row["total_bytes"]),
+                int(row["output_file_count"]),
+                int(row["output_bytes"]),
+                int(row["max_file_count"]),
+                int(row["max_total_bytes"]),
+            )
+            expected = (
+                workspace_id,
+                usage.file_count,
+                usage.total_bytes,
+                usage.output_file_count,
+                usage.output_bytes,
+                usage.max_file_count,
+                usage.max_total_bytes,
+            )
+            if actual != expected:
+                raise ValueError("turn already has a different immutable workspace usage receipt")
 
     async def next_model_call_sequence(self, *, turn_id: UUID) -> int:
         """Return the next durable call ordinal for a sequential agent turn."""

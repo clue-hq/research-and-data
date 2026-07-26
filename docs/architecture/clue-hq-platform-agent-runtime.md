@@ -1,6 +1,6 @@
 # Clue-HQ — Platform Agent Runtime & Context Assembly (Doc A)
 
-> **Status: DESIGN RECORD v1.5 (2026-07-26 · v1.4 2026-07-26 · v1.3 2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
+> **Status: DESIGN RECORD v1.6 (2026-07-26 · v1.5 2026-07-26 · v1.4 2026-07-26 · v1.3 2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
 > what the words "agent," "deepagent," "sub-agent," "skill," "tool," and "worker fleet" mean
 > mechanically, how the platform deepagent is constructed, and how context is assembled for every
 > model call. Extends `clue-hq-harness-architecture-and-requirements.md` (REQ-02, REQ-18–REQ-22)
@@ -57,6 +57,15 @@
 > the sole independent coverage evaluator; agent stop proposals and evaluator advice are
 > append-only and non-authoritative. Default-off routing and comparative canary activation remain
 > C6.8.
+>
+> **v1.6 (2026-07-26) — C6 production activation record.** The API root now composes the
+> governed model, immutable resource registry, isolated workspace, exact L1–L7 context,
+> durable turn/replay/privacy adapters, and single-owner router. Master/surface switches default
+> off; allowlist/percentage assignments are append-only per subject, so failure cannot fall
+> through to a second owner. Authenticated body-free registry/turn/progress/telemetry projections,
+> canary comparison, cache/workspace telemetry, and terminal-workspace cleanup (never live
+> `awaiting_input` state) are production-composable. C6 is complete; the frontend shell remains
+> downstream and C7 owns dossier/derivation/handoff output.
 
 ---
 
@@ -165,14 +174,14 @@ agent identically.
 
 | Component | Class | Status |
 |---|---|---|
-| Head-of-ABM platform deepagent | **Deepagent** (Part II) | C6.5 runtime built for Stage 0; product routing/canary activation remains C6.8 |
+| Head-of-ABM platform deepagent | **Deepagent** (Part II) | **LIVE behind default-off C6.8 ownership routing** |
 | Design deepagent (havana `lumen_agent`) | **Deepagent** (orchestrator + author + reviewer subagents) | **LIVE** — reference implementation |
 | Research specialist | **Subagent** of the platform deepagent (judgment tasks) + the research **toolbelt** (project ops) — O10 split | **LIVE in C6.6** — fresh-wake profile, skill, governed delegation |
 | Campaign & content strategist | **Role of the platform deepagent** (strategy is the main conversation, not a delegation): first the **VP-of-growth hat** — which channel campaigns to run at all, for which account-signal strengths and tiers — then the artifact/content strategy that follows per campaign, with strategy skills | Skills to author |
 | Content drafter (exemplar, one account) | **Subagent** of the platform deepagent | **LIVE in C6.6** — exemplar only |
 | Content scaling (N accounts × artifacts) | **Deterministic workers in the fleet shell** (§1.3; bounded micro-loop, honestly not an agent — Doc S §6) | To build |
 | Pass-A scoring / discovery fan-out | **Deterministic workers in the fleet shell** (scoring is code; rubric is config) | Substrate built |
-| Per-account deep research (Pass B) | **Governed worker agents in the fleet shell** (§1.3): one bounded agent per account, waterfall as its power tool; facet delegation only after measured need | **Built in C6.7**; default-off routing/canary activation remains C6.8 |
+| Per-account deep research (Pass B) | **Governed worker agents in the fleet shell** (§1.3): one bounded agent per account, waterfall as its power tool; facet delegation only after measured need | **LIVE behind default-off C6.8 ownership routing** |
 | Review/QA of scaled artifacts | **Deterministic workers** (gates + judge leaf calls) + M13.1 human surface; a review *subagent* only for exemplar-level critique | Exemplar reviewer **LIVE in C6.6**; scaled QA remains future |
 | Faithfulness/goal/grounding judges | **LLM leaf calls inside engines** (never minds with tools) | M9 built; C1 `GoalJudge` is the sole coverage evaluator owner; grounding judge new |
 | Recipes, waterfalls, scoring, derivation | **Engine** (no LLM in control flow) | Built |

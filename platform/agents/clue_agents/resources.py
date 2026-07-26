@@ -192,3 +192,29 @@ class AgentResourceMaterializer:
         except Exception:
             lease.mark_materialization_failed()
             raise
+
+    def verify_materialized(
+        self,
+        *,
+        lease: AgentWorkspaceLease,
+        snapshot: AgentResourceSnapshot,
+        seed_files: tuple[WorkspaceSeedFile, ...] = (),
+    ) -> None:
+        """Re-verify every immutable byte before a cold process resumes model execution."""
+
+        if not lease.resources_frozen or lease.materialization_failed:
+            raise WorkspaceConflict("only a frozen healthy materialization may be resumed")
+        expected = (
+            *((_resource_path(body.ref), body.ref.sha256) for body in snapshot.bodies),
+            *((seed.path, seed.sha256) for seed in seed_files),
+            (
+                ".deepagent/manifest.json",
+                hashlib.sha256(_canonical_manifest_bytes(snapshot.manifest)).hexdigest(),
+            ),
+        )
+        for path, digest in expected:
+            entry = lease.backend.stat_entry_sync(path)
+            if entry.sha256 != digest or not entry.read_only:
+                raise WorkspaceSecurityError(
+                    "reopened materialization differs from its immutable snapshot"
+                )

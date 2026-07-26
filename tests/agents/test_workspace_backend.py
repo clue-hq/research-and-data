@@ -12,10 +12,12 @@ import pytest
 
 from clue_agents import (
     AgentWorkspaceBackend,
+    AgentWorkspaceFactory,
     AnchoredAgentWorkspaceBackend,
     ArtifactRef,
     WorkspaceConflict,
     WorkspaceQuotaExceeded,
+    WorkspaceRootPolicy,
     WorkspaceSecurityError,
 )
 from clue_core import ExecutionId
@@ -223,6 +225,61 @@ def test_quota_enforces_per_file_total_and_count(tmp_path: Path) -> None:
             count.lease.backend.write_text_sync("work/b.txt", "b")
     finally:
         count.close()
+
+
+def test_workspace_usage_snapshot_reports_outputs_and_policy_ceilings(tmp_path: Path) -> None:
+    harness = make_workspace(
+        tmp_path,
+        active_policy=policy(max_total_bytes=100, max_file_bytes=50, max_file_count=5),
+    )
+    try:
+        harness.lease.backend.write_text_sync("work/notes.md", "work")
+        harness.lease.backend.write_text_sync("outputs/report.md", "report")
+        usage = harness.lease.usage_snapshot()
+        assert usage.file_count == 2
+        assert usage.total_bytes == 10
+        assert usage.output_file_count == 1
+        assert usage.output_bytes == 6
+        assert usage.max_file_count == 5
+        assert usage.max_total_bytes == 100
+    finally:
+        harness.close()
+
+
+def test_factory_securely_reopens_same_frozen_execution_after_process_restart(
+    tmp_path: Path,
+) -> None:
+    active_policy = policy()
+    harness = make_workspace(tmp_path, active_policy=active_policy)
+    identity = harness.lease.identity
+    harness.lease.backend.materialize_bytes("context/account.md", b"account context")
+    harness.lease.backend.freeze_materialized_trees()
+    harness.lease.mark_resources_frozen()
+    harness.factory.close()
+
+    prepared = WorkspaceRootPolicy(
+        configured_root=harness.root,
+        source_root=tmp_path / "source",
+        home_root=tmp_path / "home",
+    ).prepare()
+    reopened_factory = AgentWorkspaceFactory(
+        prepared_root=prepared,
+        artifact_sink=harness.sink,
+    )
+    reopened = reopened_factory.acquire(
+        workspace_id=identity.workspace_id,
+        project_id=identity.project_id,
+        execution_id=identity.execution_id,
+        policy=active_policy,
+    )
+    try:
+        assert reopened.identity.workspace_root_id == identity.workspace_root_id
+        assert reopened.resources_frozen
+        assert reopened.backend.read_text_sync("context/account.md") == "account context"
+        with pytest.raises(WorkspaceSecurityError):
+            reopened.backend.write_text_sync("context/other.md", "blocked")
+    finally:
+        reopened_factory.close()
 
 
 def test_concurrent_same_path_write_has_one_winner_and_no_partial_file(tmp_path: Path) -> None:

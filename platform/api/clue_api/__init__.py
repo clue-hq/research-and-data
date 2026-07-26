@@ -40,6 +40,12 @@ Shipped so far:
 
 from __future__ import annotations
 
+from clue_api.account_research_turn_wiring import (
+    DbCompiledContextCardReader,
+    PreparedAccountResearchTurnRunner,
+    account_research_context_policy,
+    build_account_research_context,
+)
 from clue_api.account_research_wiring import (
     AccountResearchAgentRuntime,
     AccountResearchStepPinProvider,
@@ -47,6 +53,7 @@ from clue_api.account_research_wiring import (
     GovernedAccountProfiler,
     build_account_research_execution,
 )
+from clue_api.agent_cleanup import AgentCleanupResult, AgentWorkspaceCleanupJob
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -55,6 +62,24 @@ from clue_api.agent_execution_wiring import (
     FreshWakeChildRunner,
     postgres_agent_checkpointer,
 )
+from clue_api.agent_platform_wiring import (
+    AgentCanaryAssessment,
+    AgentCanarySample,
+    AgentCanaryThresholds,
+    AgentOwner,
+    AgentOwnershipRouter,
+    AgentPlatformComponents,
+    AgentRouteDecision,
+    AgentRuntimeNotComposed,
+    AgentRuntimeSurface,
+    DbAgentOwnershipRouter,
+    RoutedAccountProfiler,
+    build_agent_context_assembler,
+    build_agent_platform_components,
+    evaluate_agent_canary,
+    run_owned_agent_surface,
+)
+from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
     DurableAgentModelCallHandler,
@@ -210,6 +235,7 @@ from clue_api.run_composition import (
     ComposingRunDriver,
     CompositionUnavailable,
     SpecLoader,
+    build_platform_gateway,
 )
 from clue_api.run_events_wiring import (
     DbRunEventEmitter,
@@ -246,6 +272,25 @@ from clue_api.verification import (
 )
 
 __all__ = [
+    # C6.8 production composition, routing, canaries, and cleanup
+    "AgentCanaryAssessment",
+    "AgentCanarySample",
+    "AgentCanaryThresholds",
+    "AgentCleanupResult",
+    "AgentOwner",
+    "AgentOwnershipRouter",
+    "AgentPlatformComponents",
+    "AgentRouteDecision",
+    "AgentRuntimeNotComposed",
+    "AgentRuntimeSurface",
+    "AgentWorkspaceCleanupJob",
+    "DbAgentOwnershipRouter",
+    "RoutedAccountProfiler",
+    "build_agent_context_assembler",
+    "build_agent_platform_components",
+    "build_agent_profile_registry",
+    "evaluate_agent_canary",
+    "run_owned_agent_surface",
     # C6.4 governed agent plan/runtime/finalization composition
     "AgentExecutionCrashHook",
     "C5AgentExecutionAdapter",
@@ -274,6 +319,10 @@ __all__ = [
     "AccountResearchTurnRunner",
     "GovernedAccountProfiler",
     "build_account_research_execution",
+    "DbCompiledContextCardReader",
+    "PreparedAccountResearchTurnRunner",
+    "account_research_context_policy",
+    "build_account_research_context",
     "load_research_packs",
     "VerificationBindingClassifier",
     "production_binding_classifier",
@@ -388,6 +437,7 @@ __all__ = [
     "ComposedRun",
     "CompositionUnavailable",
     "SpecLoader",
+    "build_platform_gateway",
     "ClientInputProvider",
     # B4 slice 2: the concrete toolbelt over the existing capabilities (toolbelt_wiring)
     "build_toolbelt",

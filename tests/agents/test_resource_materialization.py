@@ -73,7 +73,13 @@ def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
     harness = make_workspace(tmp_path)
     snapshot, seeds = _snapshot()
     try:
-        AgentResourceMaterializer().materialize(
+        materializer = AgentResourceMaterializer()
+        materializer.materialize(
+            lease=harness.lease,
+            snapshot=snapshot,
+            seed_files=seeds,
+        )
+        materializer.verify_materialized(
             lease=harness.lease,
             snapshot=snapshot,
             seed_files=seeds,
@@ -110,6 +116,21 @@ def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
                 ".deepagent/manifest.json",
                 old='"schema_version":"1"',
                 new='"schema_version":"2"',
+            )
+
+        # A cold process never trusts directory modes alone: every expected byte is re-hashed.
+        context_path = harness.execution_path / "context"
+        seed_path = context_path / "project.json"
+        context_path.chmod(0o700)
+        seed_path.chmod(0o600)
+        seed_path.write_text('{"project":"tampered"}')
+        seed_path.chmod(0o400)
+        context_path.chmod(0o500)
+        with pytest.raises(WorkspaceSecurityError, match="immutable snapshot"):
+            materializer.verify_materialized(
+                lease=harness.lease,
+                snapshot=snapshot,
+                seed_files=seeds,
             )
     finally:
         harness.close()

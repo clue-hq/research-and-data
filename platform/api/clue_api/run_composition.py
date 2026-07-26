@@ -54,7 +54,9 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
+from clue_api.agent_platform_wiring import DbAgentOwnershipRouter, RoutedAccountProfiler
 from clue_api.composition import build_pre_spend_gate
+from clue_api.deep import ProfileAccountFn
 from clue_api.deep.composition import (
     DeepPhaseComposition,
     build_deep_phase_handler,
@@ -118,12 +120,13 @@ from clue_research.durable import (
 )
 from clue_research.icp.rubric import rubric_from_slot
 from clue_research.icp.spec import get_icp_version
-from clue_research.profiling import CommitteeSource
+from clue_research.profiling import CommitteeSource, profile_account
 from clue_research.stage0 import ClientInput
 from clue_research.verification import FaithfulnessJudgeImpl
 from clue_storage import StorageBackend
 
 __all__ = [
+    "build_platform_gateway",
     "ComposingRunDriver",
     "ComposedRun",
     "CompositionUnavailable",
@@ -239,7 +242,7 @@ class _MissingClientInputHandler:
         )
 
 
-def _default_gateway(settings: Settings) -> LLMGateway:
+def build_platform_gateway(settings: Settings) -> LLMGateway:
     """The production gateway from settings + secrets.
 
     When the ``OPENROUTER_API_KEY`` secret is absent, :func:`~clue_gateway.build_gateway` would
@@ -270,6 +273,10 @@ def _default_gateway(settings: Settings) -> LLMGateway:
             reason="no OPENROUTER_API_KEY secret; CLUE_GATEWAY_ALLOW_STUB opt-in is set",
         )
     return build_gateway(default_gateway_config(), api_key=api_key)
+
+
+# Backward-compatible test/internal name; production composition uses the public API-root builder.
+_default_gateway = build_platform_gateway
 
 
 class ComposingRunDriver:
@@ -306,12 +313,13 @@ class ComposingRunDriver:
         supervisor_actions: SupervisorActions | None = None,
         execution_journal: DbExecutionJournal | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
+        account_agent_profiler: ProfileAccountFn | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
         self._ledger: IdempotencyStore = ledger if ledger is not None else DbIdempotencyStore()
         self._budget = budget_engine if budget_engine is not None else BudgetEngine()
-        self._gateway = gateway if gateway is not None else _default_gateway(self._settings)
+        self._gateway = gateway if gateway is not None else build_platform_gateway(self._settings)
         self._storage = storage if storage is not None else build_storage_backend(self._settings)
         self._lock_factory: LockFactory = (
             lock_factory if lock_factory is not None else lazy_account_lock_factory()
@@ -324,6 +332,7 @@ class ComposingRunDriver:
         self._supervisor_actions = supervisor_actions
         self._execution_journal = execution_journal
         self._project_execution_router = project_execution_router
+        self._account_agent_profiler = account_agent_profiler
         if (controls is None) != (supervisor_actions is None):
             raise ValueError("controls and supervisor_actions must be supplied together")
         if controls is not None and execution_journal is None:
@@ -519,6 +528,14 @@ class ComposingRunDriver:
             high_tier_resolver=high_tier_resolver,
             pre_spend_gate=pre_spend_gate,
             canary_controller=canary_controller,
+            profile_account_fn=RoutedAccountProfiler(
+                router=DbAgentOwnershipRouter(
+                    settings=self._settings,
+                    conn_factory=self._session_factory,
+                ),
+                legacy=profile_account,
+                deepagent=self._account_agent_profiler,
+            ),
         )
         registry.register(deep.handler)
 

@@ -133,6 +133,13 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         generation = response.generations[0][0]
         message = getattr(generation, "message", None)
         usage = getattr(message, "usage_metadata", None) or {}
+        input_details = usage.get("input_token_details") or {}
+        cache_read_tokens = int(
+            input_details.get("cache_read", input_details.get("cached_tokens", 0))
+        )
+        cache_creation_tokens = int(
+            input_details.get("cache_creation", input_details.get("cache_write", 0))
+        )
         response_metadata = getattr(message, "response_metadata", None) or {}
         llm_output = response.llm_output or {}
         answering_model = str(
@@ -152,6 +159,8 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             status=AgentModelCallStatus.COMPLETED,
             answering_model=answering_model,
             input_tokens=int(usage.get("input_tokens", 0)),
+            cache_read_input_tokens=cache_read_tokens,
+            cache_creation_input_tokens=cache_creation_tokens,
             output_tokens=int(usage.get("output_tokens", 0)),
             output_ref=output_ref,
         )
@@ -181,6 +190,8 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         status: AgentModelCallStatus,
         answering_model: str | None,
         input_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+        cache_creation_input_tokens: int = 0,
         output_tokens: int = 0,
         error_code: str | None = None,
         output_ref: ArtifactRef | None = None,
@@ -196,6 +207,8 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             answering_model=answering_model,
             status=status,
             input_tokens=input_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            cache_creation_input_tokens=cache_creation_input_tokens,
             output_tokens=output_tokens,
             cost_millicredits=0,
             latency_ms=(time.monotonic() - started_clock) * 1000,
@@ -323,11 +336,21 @@ class AgentFinalizationAuthority:
             workspace_id=workspace_id,
         )
         if existing is not None:
+            await self._turns.record_workspace_usage(
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+                usage=self._lease.usage_snapshot(),
+            )
             self._lease.authorize_cleanup(finalization_ref=existing)
             return existing
         expected_outputs = tuple(await self._lease.backend.snapshot_outputs())
         if envelope.output_refs != expected_outputs:
             raise ValueError("finalization outputs differ from the frozen workspace snapshot")
+        await self._turns.record_workspace_usage(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            usage=self._lease.usage_snapshot(),
+        )
         refs = (
             *((envelope.user_message_artifact_ref,) if envelope.user_message_artifact_ref else ()),
             *envelope.output_refs,
