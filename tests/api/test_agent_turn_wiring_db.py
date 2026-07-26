@@ -1,0 +1,334 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Sequence
+from datetime import datetime
+from pathlib import Path
+from uuid import UUID
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+
+from clue_agents.context import (
+    ContextAssemblyPolicy,
+    ContextCandidate,
+    DeterministicAgentContextAssembler,
+    LayerBudget,
+)
+from clue_agents.contracts import (
+    AgentFinalizeEnvelope,
+    AgentProfile,
+    AgentTurnRequest,
+    ArtifactRef,
+    ContextLayer,
+    FinalizeStatus,
+)
+from clue_agents.ports import HistoryMessageRef
+from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
+from clue_api.agent_turn_wiring import (
+    AgentPrivacyService,
+    DbAgentContextReceiptStore,
+    DbAgentHistoryStore,
+    DbAgentReplayReader,
+    DbAgentTurnJournal,
+    DurableAgentArtifactStore,
+)
+from clue_core import new_execution_id
+from clue_storage.protocol import ArtifactNotFound
+from tests._workspace import seed_project
+from tests.agents.conftest import NOW, SHA_B, constitution, domain_ref
+from tests.agents.test_contracts import profile
+from tests.agents.workspace_helpers import make_workspace
+from tests.db.conftest import run_async
+from tests.profiling.conftest import (
+    conn_session_factory,
+    migrated_db,  # noqa: F401 -- exposes the fixture to this test module
+    rollback_conn,
+)
+
+
+@pytest.fixture
+def require_c63_db(request: pytest.FixtureRequest) -> None:
+    if not request.getfixturevalue("migrated_db"):
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+
+class _Storage:
+    def __init__(self) -> None:
+        self.objects: dict[str, tuple[bytes, str]] = {}
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self.objects[key] = (data, media_type)
+
+    async def get(self, key: str) -> bytes:
+        try:
+            return self.objects[key][0]
+        except KeyError as exc:
+            raise ArtifactNotFound(key) from exc
+
+    async def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
+
+    async def exists(self, key: str) -> bool:
+        return key in self.objects
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        del expires_in
+        return key
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, datetime]]:
+        if False:
+            yield "", NOW
+
+
+class _Source:
+    def __init__(self, layer: ContextLayer, ref: ArtifactRef) -> None:
+        self.layer = layer
+        self._ref = ref
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile, history
+        return (
+            ContextCandidate(
+                stable_key=self.layer.value,
+                ref=self._ref
+                if self.layer is ContextLayer.L1_IDENTITY
+                else domain_ref(
+                    self.layer.value,
+                    workspace_id=request.constitution.workspace_id,
+                ),
+                body=f"compiled {self.layer.value}",
+                materialized_path=(
+                    f"context/{self.layer.value}.md"
+                    if self.layer
+                    not in {
+                        ContextLayer.L1_IDENTITY,
+                        ContextLayer.L6_CONVERSATION,
+                    }
+                    else None
+                ),
+            ),
+        )
+
+
+def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
+    tmp_path: Path,
+    require_c63_db: None,
+) -> None:
+    del require_c63_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "ws-c63", name="C6.3 durable turn")
+            execution_id = new_execution_id()
+            await conn.execute(
+                text(
+                    "INSERT INTO execution "
+                    "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                    " pin_manifest_hash) "
+                    "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
+                ),
+                {
+                    "id": execution_id,
+                    "workspace": project.workspace_id,
+                    "project": project.project_id,
+                    "hash": "0" * 64,
+                },
+            )
+            factory = conn_session_factory(conn)
+            storage = _Storage()
+            artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=factory)
+
+            async def put(body: str) -> ArtifactRef:
+                return await artifacts.persist_body(
+                    workspace_id=project.workspace_id,
+                    data=body.encode(),
+                    media_type="text/plain",
+                )
+
+            stage = await put('{"stage":"planning"}')
+            readiness = await put('{"ready":true}')
+            budget = await put('{"remaining":100}')
+            manifest = await put('{"resources":[]}')
+            user_message = await put("Research this person")
+
+            harness = make_workspace(
+                tmp_path,
+                execution_id=execution_id,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+            )
+            runtime_profile = profile()
+            turn_request = AgentTurnRequest(
+                turn_id=UUID("00000000-0000-0000-0000-000000000639"),
+                thread_id="thread-c63",
+                constitution=constitution(
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    execution_id=execution_id,
+                    workspace_root_id=harness.lease.identity.workspace_root_id,
+                    brand_id=project.brand_id,
+                    product_id=None,
+                    stage_snapshot_ref=stage,
+                    readiness_snapshot_ref=readiness,
+                    budget_envelope_ref=budget,
+                    resource_manifest_ref=manifest,
+                    resource_manifest_sha256=SHA_B,
+                    focus_refs=(),
+                ),
+                user_message_artifact_ref=user_message,
+                requested_at=NOW,
+            )
+            turns = DbAgentTurnJournal(conn_factory=factory)
+            created = await turns.create(request=turn_request, profile=runtime_profile)
+            replayed_create = await turns.create(request=turn_request, profile=runtime_profile)
+            assert replayed_create == created
+
+            history = DbAgentHistoryStore(conn_factory=factory)
+            first_message_id = UUID("00000000-0000-0000-0000-000000000640")
+            first = await history.append(
+                message_id=first_message_id,
+                turn_id=turn_request.turn_id,
+                workspace_id=project.workspace_id,
+                thread_id=turn_request.thread_id,
+                role="user",
+                body_ref=user_message,
+            )
+            assert (
+                await history.append(
+                    message_id=first_message_id,
+                    turn_id=turn_request.turn_id,
+                    workspace_id=project.workspace_id,
+                    thread_id=turn_request.thread_id,
+                    role="user",
+                    body_ref=user_message,
+                )
+                == first
+            )
+            assert tuple(
+                await history.load(
+                    workspace_id=project.workspace_id,
+                    thread_id=turn_request.thread_id,
+                )
+            ) == (first,)
+
+            receipt_store = DbAgentContextReceiptStore(conn_factory=factory)
+            assembler = DeterministicAgentContextAssembler(
+                sources=tuple(_Source(layer, manifest) for layer in ContextLayer),
+                policy=ContextAssemblyPolicy(
+                    version="opening-v1",
+                    token_counter_version="utf8-bytes-v1",
+                    budgets=tuple(
+                        LayerBudget(layer=layer, max_tokens=1_000) for layer in ContextLayer
+                    ),
+                ),
+                receipts=receipt_store,
+                clock=lambda: NOW,
+            )
+            assembled = await assembler.assemble(
+                request=turn_request,
+                profile=runtime_profile,
+                history=(first,),
+            )
+            assert len(assembled.manifest.layers) == 7
+
+            model_receipt = AgentModelCallReceipt(
+                model_call_id=UUID("00000000-0000-0000-0000-000000000641"),
+                turn_id=turn_request.turn_id,
+                execution_id=execution_id,
+                workspace_id=project.workspace_id,
+                sequence=1,
+                requested_model="openai/gpt-4.1",
+                answering_model="openai/gpt-4.1",
+                status=AgentModelCallStatus.COMPLETED,
+                input_tokens=100,
+                output_tokens=20,
+                cost_millicredits=12,
+                latency_ms=25,
+                started_at=NOW,
+                completed_at=NOW,
+            )
+            await turns.record_model_call(receipt=model_receipt)
+            await turns.record_model_call(receipt=model_receipt)
+            finalization = AgentFinalizeEnvelope(
+                finalization_id=UUID("00000000-0000-0000-0000-000000000642"),
+                execution_id=execution_id,
+                status=FinalizeStatus.COMPLETED,
+                user_message_artifact_ref=user_message,
+                finalized_at=NOW,
+            )
+            await turns.record_finalization(
+                turn_id=turn_request.turn_id,
+                workspace_id=project.workspace_id,
+                envelope=finalization,
+            )
+            await turns.record_finalization(
+                turn_id=turn_request.turn_id,
+                workspace_id=project.workspace_id,
+                envelope=finalization,
+            )
+
+            replay = DbAgentReplayReader(storage=storage, conn_factory=factory)
+            live = await replay.require_replayable(
+                workspace_id=project.workspace_id,
+                turn_id=turn_request.turn_id,
+            )
+            assert live.context is not None
+            assert live.context.manifest == assembled.manifest
+            assert live.context.policy_version == "opening-v1"
+            assert live.context.layer_token_budgets == (1_000,) * 7
+            assert live.replayable
+            with pytest.raises(KeyError):
+                await replay.inspect(
+                    workspace_id="another-workspace",
+                    turn_id=turn_request.turn_id,
+                )
+
+            savepoint = await conn.begin_nested()
+            try:
+                with pytest.raises(DBAPIError):
+                    await conn.execute(
+                        text("UPDATE agent_thread_message SET role='assistant' WHERE id=:id"),
+                        {"id": first_message_id},
+                    )
+            finally:
+                await savepoint.rollback()
+
+            await artifacts.bind_subject(
+                ref=user_message,
+                subject_entity_id=UUID("00000000-0000-0000-0000-000000000699"),
+                binding_kind="direct",
+            )
+            erased = await AgentPrivacyService(
+                storage=storage,
+                workspaces=harness.factory,
+                conn_factory=factory,
+            ).erase_subject(
+                workspace_id=project.workspace_id,
+                subject_entity_id=UUID("00000000-0000-0000-0000-000000000699"),
+            )
+            assert erased.affected_turn_ids == (turn_request.turn_id,)
+            assert not harness.execution_path.exists()
+            with pytest.raises(ArtifactNotFound):
+                await artifacts.read(user_message)
+            blocked = await replay.inspect(
+                workspace_id=project.workspace_id,
+                turn_id=turn_request.turn_id,
+            )
+            assert not blocked.replayable
+            assert "artifact_erased:user_message" in blocked.blocker_codes
+            with pytest.raises(ValueError, match="cannot be resurrected"):
+                await artifacts.persist_body(
+                    workspace_id=project.workspace_id,
+                    data=b"Research this person",
+                    media_type="text/plain",
+                )
+            harness.close()
+
+    run_async(scenario())

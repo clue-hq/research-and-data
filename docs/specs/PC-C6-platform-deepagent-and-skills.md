@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0–C6.2 complete; C6.3 next (2026-07-26)
+**Status:** IN PROGRESS — C6.0–C6.3 complete; C6.4 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -821,6 +821,41 @@ model supplies exact offline tool/finalization responses.
 
 C6.2 adds no database migration, durable turn, context assembler, agent construction, executor,
 route, or feature flag.
+
+## 7C. C6.3 implementation record
+
+C6.3 adds the first C6 migration, `7e9269ed8a81`, chained from the C5 head. Its normalized
+append-only schema records turn and parent-execution identity; exact profile and resource-manifest
+pins; state events; artifact links, subject bindings, retention, and tombstones; model calls;
+seven-layer context receipts; append-only thread-message refs; finalization envelopes; and privacy
+events. Structural composite keys prevent execution, thread, finalization, context, or artifact
+refs from crossing a workspace. The tables contain ids, versions, hashes, counts, relative paths,
+states, and reason codes only—never prompt, message, card, memory, model-output, or file bodies.
+
+`DeterministicAgentContextAssembler` composes exactly L1–L7 from independent typed providers before
+model spend. It uses stable item ordering, explicit versioned per-layer ceilings, a conservative
+versioned counter, required-authority fail-closed behavior, exact included/excluded refs, immutable
+workspace materializations, and a canonical aggregate digest. L1 exposes the pinned prompt,
+resource map, and skill summaries; L2–L5 consume versioned cards and Doc-M memory through injected
+seams; L6 dereferences append-only history refs; L7 reads the user-message artifact but exposes raw
+attachments only as exact pointers.
+
+The production artifact adapter records the workspace-scoped CAS row before external storage,
+verifies exact metadata and bytes on read, supports explicit subject bindings, and rejects any
+attempt to resurrect tombstoned content. Cold replay reads only receipts and storage existence
+state. It reports the exact profile/resource manifest, policy and token-counter versions,
+per-layer budgets and refs, content hashes, materialized relative paths, and live/erased/purged/
+missing artifact states. It never dereferences a body. Another workspace cannot inspect a turn;
+an erased artifact or tombstoned scoped-memory ref makes replay unavailable.
+
+Agent DSAR handling follows subject indexes rather than scanning bodies. It tombstones and purges
+subject-bound blobs, appends body-free privacy and turn events, closes an affected live backend,
+and removes the isolated execution tree through the anchored/no-follow C6.1 factory. Historical
+receipts remain as audit metadata and cannot be mutated; a retry converges on the same tombstone
+and cannot restore the erased bytes.
+
+C6.3 intentionally adds no deepagent construction, plan compiler, tool invocation, delegation,
+finalization authority, route, or feature flag. Those remain C6.4+.
 | concurrent path swap/TOCTOU | not claimed by C6.0 | directory-fd anchored operations and adversarial test |
 | child authority widening | explicit granted paths/roles/budget refs | effective-subset compiler and shared-backend permission view |
 | secret/repository exposure | neither appears in any agent port | dedicated external root validation and negative scans |

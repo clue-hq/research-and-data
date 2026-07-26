@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
+from typing import Literal
+from uuid import UUID
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -74,9 +76,11 @@ class _HistoryPort:
     async def append(
         self,
         *,
+        message_id: UUID,
+        turn_id: UUID,
         workspace_id: str,
         thread_id: str,
-        role: str,
+        role: Literal["system", "user", "assistant", "tool"],
         body_ref: ArtifactRef,
     ) -> HistoryMessageRef:
         raise NotImplementedError

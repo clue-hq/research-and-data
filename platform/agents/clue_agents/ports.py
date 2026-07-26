@@ -8,14 +8,16 @@ surface.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import Literal, Protocol, runtime_checkable
+from uuid import UUID
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from clue_agents.contracts import (
     AgentConstitution,
@@ -28,17 +30,20 @@ from clue_agents.contracts import (
     DelegationRequest,
     DelegationResult,
     ValidatedPlan,
+    normalize_virtual_path,
 )
 from clue_core import ExecutionId
 
 __all__ = [
     "AgentArtifactSink",
+    "AgentArtifactReader",
     "AgentContextAssembler",
     "AgentExecutionAdapter",
     "AgentHistoryStore",
     "AgentModelProvider",
     "AgentWorkspaceBackend",
     "AssembledAgentContext",
+    "ContextMaterialization",
     "ExecutionProgress",
     "HistoryMessageRef",
     "WorkspaceEntry",
@@ -63,9 +68,41 @@ class WorkspaceEntry(PortValue):
 
 
 class HistoryMessageRef(PortValue):
+    message_id: UUID
+    turn_id: UUID
     sequence: int = Field(ge=1)
-    role: str
+    role: Literal["system", "user", "assistant", "tool"]
     body_ref: ArtifactRef
+
+
+class ContextMaterialization(PortValue):
+    """Ephemeral bytes to freeze into the isolated read-only workspace."""
+
+    path: str
+    data: bytes
+    sha256: str
+    media_type: str
+
+    @field_validator("path")
+    @classmethod
+    def path_is_read_only_and_relative(cls, value: str) -> str:
+        normalized = normalize_virtual_path(value)
+        if not normalized.startswith(("context/", "inputs/")):
+            raise ValueError("context materialization must stay under context/ or inputs/")
+        return normalized
+
+    @field_validator("sha256")
+    @classmethod
+    def sha_is_well_formed(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError("context materialization sha256 is malformed")
+        return value
+
+    @model_validator(mode="after")
+    def bytes_match_digest(self) -> ContextMaterialization:
+        if hashlib.sha256(self.data).hexdigest() != self.sha256:
+            raise ValueError("context materialization bytes differ from its digest")
+        return self
 
 
 class AssembledAgentContext(PortValue):
@@ -73,6 +110,7 @@ class AssembledAgentContext(PortValue):
 
     manifest: ContextBundleManifest
     messages: tuple[BaseMessage, ...]
+    materializations: tuple[ContextMaterialization, ...] = ()
 
 
 class ExecutionProgress(PortValue):
@@ -94,6 +132,13 @@ class AgentArtifactSink(Protocol):
         data: bytes,
         media_type: str,
     ) -> ArtifactRef: ...
+
+
+@runtime_checkable
+class AgentArtifactReader(Protocol):
+    """Read an exact live workspace artifact or fail closed if it is missing/erased."""
+
+    async def read(self, ref: ArtifactRef) -> bytes: ...
 
 
 @runtime_checkable
@@ -146,9 +191,11 @@ class AgentHistoryStore(Protocol):
     async def append(
         self,
         *,
+        message_id: UUID,
+        turn_id: UUID,
         workspace_id: str,
         thread_id: str,
-        role: str,
+        role: Literal["system", "user", "assistant", "tool"],
         body_ref: ArtifactRef,
     ) -> HistoryMessageRef: ...
 

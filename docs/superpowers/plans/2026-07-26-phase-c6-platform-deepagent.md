@@ -4,8 +4,9 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0–C6.2 implemented and verified; C6.3 is next. No C6 migration,
-agent executor, durable turn, or feature routing exists yet.
+**Current checkpoint:** C6.0–C6.3 implemented and verified; C6.4 is next. The durable turn,
+context, history, replay, and privacy substrate now exists. No agent executor, tool bridge,
+delegation runtime, or feature routing exists yet.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -31,7 +32,7 @@ the framework, tool-calling, workspace, resource-version, and replay-safety unkn
 | C6.0 | **Complete** — freeze contracts and prove external runtime assumptions | No | architecture/spike tests green |
 | C6.1 | **Complete** — isolated workspace, virtual backend, resource materialization | No migration added | isolation battery green |
 | C6.2 | **Complete** — folder catalogs, profiles, registry, tool-calling model seam | No migration added | exact resource/allowlist/import gates green |
-| C6.3 | Typed turns, seven-layer context, history, receipts | Yes | migration smoke + body-free replay |
+| C6.3 | **Complete** — typed turns, seven-layer context, history, receipts | Yes | migration smoke + body-free replay green |
 | C6.4 | Plan compiler, governed tools, delegation, finalize | Additive only | crash/authority/replay matrix green |
 | C6.5 | Head-of-ABM Stage-0 vertical | No new domain tables expected | C4 parity + agent-quality eval |
 | C6.6 | Fresh-wake specialist subagents | No new domain tables expected | delegation/authority parity |
@@ -338,6 +339,42 @@ never gathered ad hoc by the model.
 - tombstoned inputs fail closed on replay;
 - context compaction cannot erase the only durable copy.
 
+### C6.3 close-out — 2026-07-26
+
+Implemented:
+
+- one reversible random-hash migration, `7e9269ed8a81`, with a single head and normalized,
+  append-only agent-turn, event, artifact-ref/subject/tombstone, context-bundle/layer/ref,
+  thread-message, model-call, finalization, and privacy-event records;
+- structural execution/workspace/thread/resource/artifact constraints, including parent execution,
+  exact profile and resource-manifest identities, content-addressed artifact checks, and no body
+  columns;
+- deterministic independent L1–L7 providers with canonical ordering, versioned hard budgets,
+  conservative versioned counting, required-authority fail-closed behavior, exact included and
+  excluded refs, read-only materializations, compiled-card versions, and aggregate hashing;
+- append-only, advisory-lock-serialized history by durable artifact ref;
+- a durable workspace-scoped artifact store/reader that records the DB row before the blob,
+  verifies exact bytes/metadata, binds privacy subjects, and refuses tombstone resurrection;
+- body-free cold replay reporting the exact turn/profile/resource manifest, context policy,
+  per-layer budgets, source refs, hashes, artifact states, and blockers without loading bodies;
+- DSAR propagation from explicit artifact and scoped-memory subject bindings to artifact
+  tombstones, physical blob purge, replay failure, and privileged deletion of affected isolated
+  execution workspaces after closing live backends;
+- idempotent turn, context, history, model-call, artifact-ref, and finalization receipt writes.
+
+Boundaries preserved:
+
+- raw attachments are pointers only in opening context;
+- prompt, card, message, memory, model-output, and workspace-output bodies remain in their owning
+  resource/domain/artifact stores;
+- no model loop, plan compiler, governed tool execution, delegation record, finalize authority,
+  route, or feature flag was added.
+
+Exit gate result: **passed**. Cross-workspace reads fail closed; erased refs and scoped-memory
+tombstones block replay; append-only mutation is rejected; a DB-backed cold replay explains exact
+resources and context without reading bodies. The 2,559-test repository suite, Ruff, Mypy, all 24
+import contracts, one-head check, and clean isolated up→down→up migration smoke are green.
+
 ## 7. C6.4 — plan compiler, governed tool bridge, delegation, finalize
 
 ### Tool bridge
@@ -504,4 +541,4 @@ At the start of every C6 session:
 6. record failures and changed decisions in `_memory/`;
 7. finish with verification evidence and one coherent local commit.
 
-The next implementation session is **C6.0 only**.
+The next implementation session is **C6.4 only**.

@@ -1,0 +1,689 @@
+"""Deterministic seven-layer opening context for one governed agent turn.
+
+Bodies in this module are ephemeral. The durable receipt contains only exact source pointers,
+hashes, counts, materialized relative paths and stable exclusion reasons. Context is assembled
+before the first model call; the model never decides what opening authority or data it receives.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Literal, Protocol, runtime_checkable
+from uuid import uuid5
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from clue_agents.contracts import (
+    AgentProfile,
+    AgentTurnRequest,
+    ArtifactRef,
+    ContextBundleManifest,
+    ContextLayer,
+    ContextLayerManifest,
+    DomainObjectRef,
+)
+from clue_agents.ports import (
+    AgentArtifactReader,
+    AssembledAgentContext,
+    ContextMaterialization,
+    HistoryMessageRef,
+)
+from clue_agents.registry import ResolvedAgentProfile
+from clue_core import AssemblyRequest, ContextAssembly, MemoryType, ScopeStack
+
+__all__ = [
+    "CompiledContextCard",
+    "ContextAssemblyPolicy",
+    "ContextAssemblyReceipt",
+    "ContextCandidate",
+    "ContextLayerSource",
+    "ContextReceiptRef",
+    "ContextReceiptStore",
+    "DeterministicAgentContextAssembler",
+    "FocusLayerSource",
+    "HistoryLayerSource",
+    "IdentityLayerSource",
+    "LayerBudget",
+    "MemoryLayerSource",
+    "ProjectLayerSource",
+    "TurnLayerSource",
+    "Utf8ByteTokenCounter",
+    "WorkspaceProductLayerSource",
+]
+
+_ORDER = tuple(ContextLayer)
+
+
+class ContextValue(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+
+class LayerBudget(ContextValue):
+    layer: ContextLayer
+    max_tokens: int = Field(ge=0)
+
+
+class ContextAssemblyPolicy(ContextValue):
+    """Versioned hard budgets; all seven layers must be explicitly governed."""
+
+    version: str = Field(min_length=1)
+    token_counter_version: str = Field(min_length=1)
+    budgets: tuple[LayerBudget, ...]
+
+    @model_validator(mode="after")
+    def exactly_seven_budgets(self) -> ContextAssemblyPolicy:
+        if tuple(item.layer for item in self.budgets) != _ORDER:
+            raise ValueError("context policy must budget L1-L7 in canonical order")
+        return self
+
+    def budget_for(self, layer: ContextLayer) -> int:
+        return next(item.max_tokens for item in self.budgets if item.layer is layer)
+
+
+class ContextCandidate(ContextValue):
+    """One atomic context item. Budgeting includes or excludes the whole item."""
+
+    stable_key: str = Field(min_length=1)
+    ref: ArtifactRef | DomainObjectRef
+    body: str = Field(min_length=1)
+    role: Literal["system", "user", "assistant", "tool"] = "system"
+    materialized_path: str | None = None
+    required: bool = False
+
+
+class ContextReceiptRef(ContextValue):
+    layer: ContextLayer
+    disposition: Literal["included", "excluded"]
+    ordinal: int = Field(ge=0)
+    ref: ArtifactRef | DomainObjectRef
+    content_sha256: str | None = None
+    materialized_path: str | None = None
+    token_count: int | None = Field(default=None, ge=0)
+    exclusion_reason_code: str | None = None
+
+    @model_validator(mode="after")
+    def receipt_shape(self) -> ContextReceiptRef:
+        if self.disposition == "included":
+            if self.content_sha256 is None or self.token_count is None:
+                raise ValueError("included context ref requires hash and token count")
+            if self.exclusion_reason_code is not None:
+                raise ValueError("included context ref cannot carry an exclusion reason")
+        elif (
+            self.content_sha256 is not None
+            or self.materialized_path is not None
+            or self.token_count is not None
+            or self.exclusion_reason_code is None
+        ):
+            raise ValueError("excluded context ref may carry only a stable exclusion reason")
+        return self
+
+
+class ContextAssemblyReceipt(ContextValue):
+    manifest: ContextBundleManifest
+    policy_version: str
+    token_counter_version: str
+    budgets: tuple[LayerBudget, ...]
+    refs: tuple[ContextReceiptRef, ...]
+
+    @model_validator(mode="after")
+    def exactly_seven_budgets(self) -> ContextAssemblyReceipt:
+        if tuple(item.layer for item in self.budgets) != _ORDER:
+            raise ValueError("context receipt must retain all seven effective layer budgets")
+        return self
+
+
+class CompiledContextCard(ContextValue):
+    """A versioned, provenance-addressable card compiled by the owning subsystem."""
+
+    ref: DomainObjectRef
+    body: str
+
+
+@runtime_checkable
+class CompiledContextCardReader(Protocol):
+    async def read(
+        self,
+        *,
+        workspace_id: str,
+        object_type: str,
+        object_id: str,
+    ) -> CompiledContextCard | None: ...
+
+
+@runtime_checkable
+class ContextLayerSource(Protocol):
+    layer: ContextLayer
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]: ...
+
+
+@runtime_checkable
+class ContextReceiptStore(Protocol):
+    async def record(
+        self,
+        *,
+        request: AgentTurnRequest,
+        receipt: ContextAssemblyReceipt,
+    ) -> None: ...
+
+
+class Utf8ByteTokenCounter:
+    """Conservative deterministic counter used until a pinned model tokenizer replaces it.
+
+    One token per UTF-8 byte intentionally over-counts ordinary model tokenization. It is a hard
+    safety ceiling, is dependency-free, and is explicitly versioned in every receipt.
+    """
+
+    version = "utf8-bytes-v1"
+
+    def count(self, text: str) -> int:
+        return len(text.encode("utf-8"))
+
+
+class IdentityLayerSource:
+    layer = ContextLayer.L1_IDENTITY
+
+    def __init__(self, resolved: ResolvedAgentProfile) -> None:
+        self._resolved = resolved
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del history
+        if profile != self._resolved.profile:
+            raise ValueError("identity source profile differs from the resolved resource snapshot")
+        manifest = self._resolved.resource_manifest
+        resource_map = "\n".join(
+            f"- {item.address} sha256={item.sha256}"
+            for item in (
+                manifest.profile,
+                manifest.prompt,
+                *manifest.skills,
+            )
+        )
+        disclosures = "\n".join(
+            f"- {item.resource.address}: {item.summary} ({item.materialized_path})"
+            for item in self._resolved.skill_disclosures()
+        )
+        body = (
+            f"{self._resolved.prompt_body.rstrip()}\n\n"
+            "Pinned resources:\n"
+            f"{resource_map or '- none'}\n\n"
+            "Available skill summaries (open the pinned file only when needed):\n"
+            f"{disclosures or '- none'}\n"
+        )
+        return (
+            ContextCandidate(
+                stable_key="identity",
+                ref=request.constitution.resource_manifest_ref,
+                body=body,
+                role="system",
+                required=True,
+            ),
+        )
+
+
+def _card_path(prefix: str, ref: DomainObjectRef) -> str:
+    suffix = hashlib.sha256(
+        f"{ref.object_type}\0{ref.object_id}\0{ref.version}".encode()
+    ).hexdigest()[:20]
+    return f"context/{prefix}/{ref.object_type}-{suffix}.md"
+
+
+class WorkspaceProductLayerSource:
+    layer = ContextLayer.L2_WORKSPACE_PRODUCT
+
+    def __init__(self, cards: CompiledContextCardReader) -> None:
+        self._cards = cards
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile, history
+        identities = (
+            ("brand", request.constitution.brand_id),
+            ("product", request.constitution.product_id),
+        )
+        result: list[ContextCandidate] = []
+        for object_type, object_id in identities:
+            if object_id is None:
+                continue
+            card = await self._cards.read(
+                workspace_id=request.constitution.workspace_id,
+                object_type=object_type,
+                object_id=object_id,
+            )
+            if card is None:
+                continue
+            result.append(
+                ContextCandidate(
+                    stable_key=f"{object_type}:{object_id}:{card.ref.version}",
+                    ref=card.ref,
+                    body=card.body,
+                    materialized_path=_card_path("workspace-product", card.ref),
+                )
+            )
+        return result
+
+
+class ProjectLayerSource:
+    layer = ContextLayer.L3_PROJECT
+
+    def __init__(
+        self,
+        *,
+        artifacts: AgentArtifactReader,
+        cards: CompiledContextCardReader,
+    ) -> None:
+        self._artifacts = artifacts
+        self._cards = cards
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile, history
+        workspace_id = request.constitution.workspace_id
+        project_id = request.constitution.project_id
+        result: list[ContextCandidate] = []
+        card = await self._cards.read(
+            workspace_id=workspace_id,
+            object_type="project",
+            object_id=project_id,
+        )
+        if card is not None:
+            result.append(
+                ContextCandidate(
+                    stable_key=f"project:{project_id}:{card.ref.version}",
+                    ref=card.ref,
+                    body=card.body,
+                    materialized_path=_card_path("project", card.ref),
+                )
+            )
+        snapshots = (
+            ("stage", request.constitution.stage_snapshot_ref),
+            ("readiness", request.constitution.readiness_snapshot_ref),
+            ("budget", request.constitution.budget_envelope_ref),
+        )
+        for name, ref in snapshots:
+            body = (await self._artifacts.read(ref)).decode("utf-8")
+            result.append(
+                ContextCandidate(
+                    stable_key=f"{name}:{ref.artifact_key}",
+                    ref=ref,
+                    body=body,
+                    materialized_path=f"context/project/{name}.json",
+                    required=True,
+                )
+            )
+        return result
+
+
+class MemoryLayerSource:
+    layer = ContextLayer.L4_MEMORY
+
+    def __init__(
+        self,
+        *,
+        assembly: ContextAssembly,
+        recipe: str,
+        requested_types: tuple[MemoryType, ...],
+    ) -> None:
+        self._assembly = assembly
+        self._recipe = recipe
+        self._requested_types = requested_types
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile, history
+        if not self._requested_types or request.constitution.brand_id is None:
+            return ()
+        bundle = await self._assembly.assemble(
+            AssemblyRequest(
+                scope_stack=ScopeStack(
+                    workspace_id=request.constitution.workspace_id,
+                    brand_id=request.constitution.brand_id,
+                    product_id=request.constitution.product_id,
+                    project_id=request.constitution.project_id,
+                ),
+                recipe=self._recipe,
+                requested_types=self._requested_types,
+            )
+        )
+        if bundle is None:
+            return ()
+        result: list[ContextCandidate] = []
+        for entry in bundle.entries:
+            ref = DomainObjectRef(
+                workspace_id=bundle.workspace_id,
+                object_type="scoped_memory",
+                object_id=entry.memory_id,
+                version=None,
+            )
+            label = entry.label.model_dump_json()
+            result.append(
+                ContextCandidate(
+                    stable_key=f"memory:{entry.memory_id}",
+                    ref=ref,
+                    body=f"Memory label: {label}\n\nAdvisory body:\n{entry.body}",
+                    materialized_path=_card_path("memory", ref),
+                )
+            )
+        return result
+
+
+class FocusLayerSource:
+    layer = ContextLayer.L5_FOCUS
+
+    def __init__(self, cards: CompiledContextCardReader) -> None:
+        self._cards = cards
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile, history
+        refs = (*request.constitution.focus_refs, *request.focus_refs)
+        unique = {(ref.object_type, ref.object_id, ref.version): ref for ref in refs}
+        result: list[ContextCandidate] = []
+        for ref in sorted(
+            unique.values(),
+            key=lambda item: (
+                item.object_type,
+                item.object_id,
+                item.version,
+            ),
+        ):
+            card = await self._cards.read(
+                workspace_id=request.constitution.workspace_id,
+                object_type=ref.object_type,
+                object_id=ref.object_id,
+            )
+            if card is None:
+                continue
+            if card.ref != ref:
+                raise ValueError("focus card version differs from the requested exact reference")
+            result.append(
+                ContextCandidate(
+                    stable_key=f"{ref.object_type}:{ref.object_id}:{ref.version}",
+                    ref=ref,
+                    body=card.body,
+                    materialized_path=_card_path("focus", ref),
+                )
+            )
+        return result
+
+
+class HistoryLayerSource:
+    layer = ContextLayer.L6_CONVERSATION
+
+    def __init__(self, artifacts: AgentArtifactReader) -> None:
+        self._artifacts = artifacts
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile
+        result: list[ContextCandidate] = []
+        for item in sorted(history, key=lambda value: value.sequence):
+            if item.body_ref.workspace_id != request.constitution.workspace_id:
+                raise ValueError("history ref crosses the turn workspace boundary")
+            body = (await self._artifacts.read(item.body_ref)).decode("utf-8")
+            result.append(
+                ContextCandidate(
+                    stable_key=f"{item.sequence:020d}:{item.message_id}",
+                    ref=item.body_ref,
+                    body=body,
+                    role=item.role,
+                )
+            )
+        return result
+
+
+class TurnLayerSource:
+    layer = ContextLayer.L7_TURN
+
+    def __init__(self, artifacts: AgentArtifactReader) -> None:
+        self._artifacts = artifacts
+
+    async def load(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> Sequence[ContextCandidate]:
+        del profile, history
+        body = (await self._artifacts.read(request.user_message_artifact_ref)).decode("utf-8")
+        result = [
+            ContextCandidate(
+                stable_key="000-user-message",
+                ref=request.user_message_artifact_ref,
+                body=body,
+                role="user",
+                materialized_path="inputs/user-message.txt",
+                required=True,
+            )
+        ]
+        # Raw attachment bytes are never opening context. The agent gets only exact pointers and
+        # may later use an authorized tool to inspect an allowed attachment.
+        for index, ref in enumerate(request.attachment_refs):
+            result.append(
+                ContextCandidate(
+                    stable_key=f"{index + 1:03d}-attachment:{ref.artifact_key}",
+                    ref=ref,
+                    body=(
+                        "Attachment reference only: "
+                        f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
+                        f"media_type={ref.media_type} byte_count={ref.byte_count}"
+                    ),
+                    role="user",
+                )
+            )
+        return result
+
+
+def _message(candidate: ContextCandidate) -> BaseMessage:
+    if candidate.role == "system":
+        return SystemMessage(content=candidate.body)
+    if candidate.role == "user":
+        return HumanMessage(content=candidate.body)
+    if candidate.role == "assistant":
+        return AIMessage(content=candidate.body)
+    if candidate.role == "tool":
+        return ToolMessage(content=candidate.body, tool_call_id=f"context-{candidate.stable_key}")
+    raise ValueError(f"unsupported context message role {candidate.role!r}")
+
+
+def _media_type(path: str) -> str:
+    if path.endswith(".json"):
+        return "application/json"
+    if path.endswith((".md", ".markdown")):
+        return "text/markdown"
+    return "text/plain"
+
+
+class DeterministicAgentContextAssembler:
+    """Assemble, budget and receipt exactly one source for each of L1-L7."""
+
+    def __init__(
+        self,
+        *,
+        sources: Sequence[ContextLayerSource],
+        policy: ContextAssemblyPolicy,
+        receipts: ContextReceiptStore,
+        token_counter: Utf8ByteTokenCounter | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        source_map = {source.layer: source for source in sources}
+        if len(source_map) != len(sources) or tuple(sorted(source_map, key=_ORDER.index)) != _ORDER:
+            raise ValueError("context assembler requires exactly one source for every L1-L7 layer")
+        self._sources: Mapping[ContextLayer, ContextLayerSource] = source_map
+        self._policy = policy
+        self._receipts = receipts
+        self._counter = token_counter or Utf8ByteTokenCounter()
+        if self._counter.version != policy.token_counter_version:
+            raise ValueError("token counter version differs from context policy")
+        self._clock = clock
+
+    async def assemble(
+        self,
+        *,
+        request: AgentTurnRequest,
+        profile: AgentProfile,
+        history: Sequence[HistoryMessageRef],
+    ) -> AssembledAgentContext:
+        manifests: list[ContextLayerManifest] = []
+        receipt_refs: list[ContextReceiptRef] = []
+        messages: list[BaseMessage] = []
+        materializations: list[ContextMaterialization] = []
+        seen_paths: set[str] = set()
+
+        for layer in _ORDER:
+            candidates = sorted(
+                await self._sources[layer].load(
+                    request=request,
+                    profile=profile,
+                    history=history,
+                ),
+                key=lambda item: item.stable_key,
+            )
+            if len({item.stable_key for item in candidates}) != len(candidates):
+                raise ValueError(f"{layer.value} emitted duplicate stable context keys")
+            budget = self._policy.budget_for(layer)
+            used = 0
+            included: list[ContextCandidate] = []
+            excluded: list[ContextCandidate] = []
+            hashes: list[str] = []
+            paths: list[str] = []
+            for candidate in candidates:
+                if candidate.ref.workspace_id != request.constitution.workspace_id:
+                    raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
+                count = self._counter.count(candidate.body)
+                if used + count > budget:
+                    if candidate.required:
+                        raise ValueError(
+                            f"required {layer.value} context exceeds its hard layer budget"
+                        )
+                    excluded.append(candidate)
+                    receipt_refs.append(
+                        ContextReceiptRef(
+                            layer=layer,
+                            disposition="excluded",
+                            ordinal=len(excluded) - 1,
+                            ref=candidate.ref,
+                            exclusion_reason_code="layer_budget_exceeded",
+                        )
+                    )
+                    continue
+                digest = hashlib.sha256(candidate.body.encode("utf-8")).hexdigest()
+                if candidate.materialized_path is not None:
+                    if candidate.materialized_path in seen_paths:
+                        raise ValueError("context materialization paths must be bundle-unique")
+                    seen_paths.add(candidate.materialized_path)
+                    paths.append(candidate.materialized_path)
+                    materializations.append(
+                        ContextMaterialization(
+                            path=candidate.materialized_path,
+                            data=candidate.body.encode("utf-8"),
+                            sha256=digest,
+                            media_type=_media_type(candidate.materialized_path),
+                        )
+                    )
+                included.append(candidate)
+                hashes.append(digest)
+                messages.append(_message(candidate))
+                receipt_refs.append(
+                    ContextReceiptRef(
+                        layer=layer,
+                        disposition="included",
+                        ordinal=len(included) - 1,
+                        ref=candidate.ref,
+                        content_sha256=digest,
+                        materialized_path=candidate.materialized_path,
+                        token_count=count,
+                    )
+                )
+                used += count
+            manifests.append(
+                ContextLayerManifest(
+                    layer=layer,
+                    source_refs=tuple(item.ref for item in included),
+                    materialized_paths=tuple(paths),
+                    content_sha256s=tuple(hashes),
+                    token_count=used,
+                    excluded_refs=tuple(item.ref for item in excluded),
+                    exclusion_reason_codes=tuple("layer_budget_exceeded" for _ in excluded),
+                )
+            )
+
+        aggregate_payload = {
+            "schema_version": "1",
+            "execution_id": str(request.constitution.execution_id),
+            "policy_version": self._policy.version,
+            "token_counter_version": self._policy.token_counter_version,
+            "layers": [item.model_dump(mode="json") for item in manifests],
+        }
+        aggregate = hashlib.sha256(
+            json.dumps(
+                aggregate_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        bundle_id = uuid5(request.turn_id, aggregate)
+        manifest = ContextBundleManifest(
+            context_bundle_id=bundle_id,
+            execution_id=request.constitution.execution_id,
+            schema_version="1",
+            layers=tuple(manifests),
+            aggregate_sha256=aggregate,
+            assembled_at=self._clock(),
+        )
+        receipt = ContextAssemblyReceipt(
+            manifest=manifest,
+            policy_version=self._policy.version,
+            token_counter_version=self._policy.token_counter_version,
+            budgets=self._policy.budgets,
+            refs=tuple(receipt_refs),
+        )
+        await self._receipts.record(request=request, receipt=receipt)
+        return AssembledAgentContext(
+            manifest=manifest,
+            messages=tuple(messages),
+            materializations=tuple(materializations),
+        )
