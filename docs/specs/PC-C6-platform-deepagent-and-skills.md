@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0–C6.3 complete; C6.4 next (2026-07-26)
+**Status:** IN PROGRESS — C6.0–C6.4 complete; C6.5 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -854,8 +854,11 @@ and removes the isolated execution tree through the anchored/no-follow C6.1 fact
 receipts remain as audit metadata and cannot be mutated; a retry converges on the same tombstone
 and cannot restore the erased bytes.
 
-C6.3 intentionally adds no deepagent construction, plan compiler, tool invocation, delegation,
-finalization authority, route, or feature flag. Those remain C6.4+.
+C6.3 intentionally added no runtime authority. C6.4 now supplies the real deepagents loop,
+whole-proposal C5 compiler, exact-descriptor tool wrappers, durable fresh-wake delegation
+lifecycle, async-Postgres checkpointer, model-call receipts, and honest finalization authority.
+It intentionally adds no product route or feature flag; Stage-0 ownership and activation remain
+C6.5/C6.8 concerns.
 | concurrent path swap/TOCTOU | not claimed by C6.0 | directory-fd anchored operations and adversarial test |
 | child authority widening | explicit granted paths/roles/budget refs | effective-subset compiler and shared-backend permission view |
 | secret/repository exposure | neither appears in any agent port | dedicated external root validation and negative scans |

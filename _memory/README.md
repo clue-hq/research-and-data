@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-4-governed-agent-runtime.md` — C6.4 complete: whole-proposal C5 compiler,
+  exact governed framework tools, real deepagents loop, async-Postgres checkpoints, artifact-backed
+  model receipts, durable fresh-wake delegation, honest finalization authority, complete crash
+  matrix, full DB-enabled verification, and the C6.5 handoff.
 - `2026-07-26-phase-c6-3-durable-turns-context-replay.md` — C6.3 complete: reversible normalized
   durable turn/context/history/model/finalization receipts, deterministic budgeted L1–L7 context,
   append-only artifact-backed history, body-free cold replay, subject-indexed DSAR and workspace

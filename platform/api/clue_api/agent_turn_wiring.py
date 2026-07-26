@@ -519,6 +519,19 @@ class DbAgentTurnJournal:
                         ref=ref,
                     )
 
+    async def next_model_call_sequence(self, *, turn_id: UUID) -> int:
+        """Return the next durable call ordinal for a sequential agent turn."""
+
+        async with self._conn_factory() as conn:
+            result = await conn.execute(
+                text(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 "
+                    "FROM agent_model_call WHERE turn_id=:turn"
+                ),
+                {"turn": turn_id},
+            )
+            return int(result.scalar_one())
+
     async def record_finalization(
         self,
         *,
@@ -674,6 +687,140 @@ class DbAgentTurnJournal:
                 or int(count_row["domain_count"]) != expected_domain_count
             ):
                 raise ValueError("finalization id already has a different immutable ref set")
+
+    async def commit_finalization_authority(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        envelope: AgentFinalizeEnvelope,
+        envelope_ref: ArtifactRef,
+    ) -> None:
+        """Atomically make a previously recorded envelope authoritative for turn state."""
+
+        if envelope_ref.workspace_id != workspace_id:
+            raise ValueError("finalization envelope artifact crosses the turn workspace")
+        status = {
+            "completed": AgentTurnStatus.COMPLETED,
+            "awaiting_input": AgentTurnStatus.AWAITING_INPUT,
+            "blocked": AgentTurnStatus.AWAITING_INPUT,
+            "failed": AgentTurnStatus.FAILED,
+        }[envelope.status.value]
+        async with self._conn_factory() as conn:
+            inserted = await conn.execute(
+                text(
+                    """
+                    INSERT INTO agent_finalization_commit (
+                        finalization_id, turn_id, execution_id, workspace_id,
+                        envelope_artifact_key, envelope_sha256
+                    )
+                    SELECT :finalization, :turn, :execution, :workspace, :key, :sha
+                    FROM agent_finalization f
+                    WHERE f.id=:finalization AND f.turn_id=:turn
+                      AND f.execution_id=:execution AND f.workspace_id=:workspace
+                    ON CONFLICT (finalization_id) DO NOTHING
+                    RETURNING finalization_id
+                    """
+                ),
+                {
+                    "finalization": envelope.finalization_id,
+                    "turn": turn_id,
+                    "execution": envelope.execution_id,
+                    "workspace": workspace_id,
+                    "key": envelope_ref.artifact_key,
+                    "sha": envelope_ref.sha256,
+                },
+            )
+            if inserted.first() is None:
+                existing = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT turn_id, execution_id, workspace_id, "
+                                "envelope_artifact_key, envelope_sha256 "
+                                "FROM agent_finalization_commit "
+                                "WHERE finalization_id=:finalization"
+                            ),
+                            {"finalization": envelope.finalization_id},
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                if existing is None:
+                    raise ValueError("finalization receipt is absent or outside the turn")
+                if (
+                    existing["turn_id"] != turn_id
+                    or existing["execution_id"] != envelope.execution_id
+                    or existing["workspace_id"] != workspace_id
+                    or existing["envelope_artifact_key"] != envelope_ref.artifact_key
+                    or existing["envelope_sha256"] != envelope_ref.sha256
+                ):
+                    raise ValueError("turn already has a different finalization authority")
+            await _append_turn_event(
+                conn,
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+                status=status,
+                reason_code=envelope.failure_code,
+            )
+
+    async def mark_unfinalized(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        reason_code: str,
+        abandoned: bool,
+    ) -> None:
+        """Make timeout/cancellation/crash visible without manufacturing a finalize record."""
+
+        await self._mark_status(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            status=(AgentTurnStatus.ABANDONED if abandoned else AgentTurnStatus.FAILED),
+            reason_code=reason_code,
+        )
+
+    async def mark_running(self, *, turn_id: UUID, workspace_id: str) -> None:
+        await self._mark_status(
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            status=AgentTurnStatus.RUNNING,
+            reason_code=None,
+        )
+
+    async def _mark_status(
+        self,
+        *,
+        turn_id: UUID,
+        workspace_id: str,
+        status: AgentTurnStatus,
+        reason_code: str | None,
+    ) -> None:
+        async with self._conn_factory() as conn:
+            exists = await conn.execute(
+                text("SELECT 1 FROM agent_turn WHERE id=:turn AND workspace_id=:workspace"),
+                {"turn": turn_id, "workspace": workspace_id},
+            )
+            if exists.first() is None:
+                raise KeyError("agent turn is absent from the requested workspace")
+            committed = await conn.execute(
+                text(
+                    "SELECT 1 FROM agent_finalization_commit "
+                    "WHERE turn_id=:turn AND workspace_id=:workspace"
+                ),
+                {"turn": turn_id, "workspace": workspace_id},
+            )
+            if committed.first() is not None:
+                return
+            await _append_turn_event(
+                conn,
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+                status=status,
+                reason_code=reason_code,
+            )
 
     async def _read_turn(
         self,

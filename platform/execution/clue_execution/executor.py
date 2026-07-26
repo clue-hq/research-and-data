@@ -154,6 +154,22 @@ class InteractionAppend:
 
 
 @dataclass(frozen=True, slots=True)
+class InteractionSlotView:
+    """Read-only policy snapshot used to validate a complete dynamic plan before append."""
+
+    execution_id: ExecutionId
+    workspace_id: str
+    slot_key: str
+    tool_allowlist: tuple[str, ...]
+    dynamic_pin_kinds: tuple[str, ...]
+    requirements: tuple[PinRequest, ...]
+    max_children: int
+    child_count: int
+    max_nodes: int
+    node_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class _Runtime:
     execution_id: ExecutionId
     workspace_id: str
@@ -1265,6 +1281,73 @@ class RecipeExecutor:
             operation_id=operation_id,
             node_key=node_key,
             created=True,
+        )
+
+    async def inspect_interaction_slot(
+        self,
+        *,
+        execution_id: ExecutionId,
+        workspace_id: str,
+        slot_key: str,
+    ) -> InteractionSlotView:
+        """Return the exact C5 ceiling used for fail-before-effect agent plan validation."""
+
+        runtime = await self._load_runtime(execution_id)
+        if runtime.workspace_id != workspace_id:
+            raise ValueError("execution is unknown or outside this workspace")
+        slot = next(
+            (node for node in runtime.definition.graph.nodes if node.node_key == slot_key),
+            None,
+        )
+        if not isinstance(slot, GateNode) or not slot.dynamic_tool_allowlist:
+            raise ExecutionConflict("the requested node is not a dynamic interaction slot")
+        envelope = await self._effective_envelope(runtime)
+        slot_id = execution_node_id(execution_id, slot_key)
+        async with self._conn_factory() as conn:
+            state = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT
+                            EXISTS (
+                                SELECT 1 FROM execution_event
+                                WHERE execution_id = :execution_id
+                                  AND node_id = :slot_id
+                                  AND event_type = 'gate.opened'
+                            ) AS opened,
+                            EXISTS (
+                                SELECT 1 FROM execution_event
+                                WHERE execution_id = :execution_id
+                                  AND node_id = :slot_id
+                                  AND event_type = 'node.completed'
+                            ) AS completed,
+                            (SELECT count(*) FROM execution_node
+                             WHERE execution_id = :execution_id
+                               AND declared_by_node_id = :slot_id) AS child_count,
+                            (SELECT count(*) FROM execution_node
+                             WHERE execution_id = :execution_id) AS node_count
+                        """
+                    ),
+                    {"execution_id": execution_id, "slot_id": slot_id},
+                )
+            ).one()
+        if not bool(state.opened) or bool(state.completed):
+            raise ExecutionConflict("the interaction slot is not accepting input")
+        requirements = (
+            *runtime.definition.compatibility.execution,
+            *runtime.definition.compatibility.nodes.get(slot_key, ()),
+        )
+        return InteractionSlotView(
+            execution_id=execution_id,
+            workspace_id=workspace_id,
+            slot_key=slot_key,
+            tool_allowlist=slot.dynamic_tool_allowlist,
+            dynamic_pin_kinds=slot.dynamic_pin_kinds,
+            requirements=tuple(requirements),
+            max_children=slot.max_children,
+            child_count=int(state.child_count),
+            max_nodes=envelope.max_nodes,
+            node_count=int(state.node_count),
         )
 
     async def invoke_interaction_tool(
