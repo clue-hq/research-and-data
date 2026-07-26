@@ -1,5 +1,10 @@
 # Phase C7 engineering handoff
 
+> **Superseded for execution on 2026-07-27:** the contract freeze and full slice plan now live in
+> [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md) and the
+> [C7 implementation plan](./2026-07-27-phase-c7-research-views.md). This file remains the C6
+> closeout evidence trail.
+
 **From:** C6 platform deepagent and skills
 
 **Next session:** C7.0 contract freeze and prerequisite audit
