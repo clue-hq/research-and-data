@@ -54,6 +54,7 @@ __all__ = [
     "AgentWorkspaceLease",
     "AnchoredAgentWorkspaceBackend",
     "WorkspaceIdentity",
+    "WorkspaceUsageSnapshot",
 ]
 
 _DIRECTORY_MODE: Final = 0o700
@@ -133,6 +134,16 @@ class WorkspaceIdentity:
     retention_class: str
 
 
+@dataclass(frozen=True, slots=True)
+class WorkspaceUsageSnapshot:
+    file_count: int
+    total_bytes: int
+    output_file_count: int
+    output_bytes: int
+    max_file_count: int
+    max_total_bytes: int
+
+
 class AgentWorkspaceLease:
     """Trusted lifecycle handle. Only its backend/opaque identity reach later agent wiring."""
 
@@ -171,6 +182,13 @@ class AgentWorkspaceLease:
             raise WorkspaceConflict("workspace resources cannot be frozen in the current state")
         self._resources_frozen = True
 
+    def restore_resources_frozen(self) -> None:
+        """Restore trusted lifecycle state after reopening an audited execution root."""
+
+        if self._materialization_failed:
+            raise WorkspaceConflict("failed materialization cannot be restored as frozen")
+        self._resources_frozen = True
+
     def mark_materialization_failed(self) -> None:
         if self._resources_frozen:
             raise WorkspaceConflict("a frozen workspace cannot become materialization-failed")
@@ -182,6 +200,9 @@ class AgentWorkspaceLease:
         if not self.backend.outputs_snapshotted:
             raise WorkspaceSecurityError("outputs must be durably snapshotted before cleanup")
         self._cleanup_authorized = True
+
+    def usage_snapshot(self) -> WorkspaceUsageSnapshot:
+        return self.backend.usage_snapshot()
 
 
 class AnchoredAgentWorkspaceBackend(BackendProtocol):
@@ -619,6 +640,44 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
     async def stat_entry(self, path: str) -> WorkspaceEntry:
         return await asyncio.to_thread(self.stat_entry_sync, path)
 
+    def usage_snapshot(self) -> WorkspaceUsageSnapshot:
+        with self._filesystem_lock(exclusive=False):
+            files = self._walk_files()
+            self._validate_current_quota(files)
+            output_sizes = tuple(
+                size for path, size, _mode in files if _is_under(path, ("outputs",))
+            )
+            return WorkspaceUsageSnapshot(
+                file_count=len(files),
+                total_bytes=sum(size for _path, size, _mode in files),
+                output_file_count=len(output_sizes),
+                output_bytes=sum(output_sizes),
+                max_file_count=self._policy.max_file_count,
+                max_total_bytes=self._policy.max_total_bytes,
+            )
+
+    def materialized_trees_frozen(self) -> bool:
+        """Return the all-or-none immutable state of the three trusted materialized trees."""
+
+        with self._filesystem_lock(exclusive=False):
+            modes: list[int] = []
+            for name in _MATERIALIZED_PREFIXES:
+                metadata = os.stat(name, dir_fd=self._root_fd, follow_symlinks=False)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise WorkspaceSecurityError("materialized workspace tree is not a directory")
+                modes.append(stat.S_IMODE(metadata.st_mode))
+            if all(mode == _READ_ONLY_DIRECTORY_MODE for mode in modes):
+                return True
+            if all(mode == _DIRECTORY_MODE for mode in modes):
+                return False
+            raise WorkspaceSecurityError(
+                "materialized workspace trees have a partial immutable state"
+            )
+
+    def require_policy(self, policy: WorkspacePolicy) -> None:
+        if policy != self._policy:
+            raise WorkspaceConflict("reopened workspace policy differs from its original authority")
+
     async def write_text(self, path: str, content: str) -> WorkspaceEntry:
         return await asyncio.to_thread(self.write_text_sync, path, content)
 
@@ -930,6 +989,118 @@ class AgentWorkspaceFactory:
             execution_segment=execution_segment,
         )
 
+    def acquire(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        execution_id: ExecutionId,
+        policy: WorkspacePolicy,
+    ) -> AgentWorkspaceLease:
+        """Create or securely reopen the same execution root for durable crash recovery."""
+
+        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
+        project_segment = validate_workspace_segment(project_id, label="project_id")
+        execution_segment = validate_workspace_segment(str(execution_id), label="execution_id")
+        key = (workspace_segment, project_segment, execution_segment)
+        with self._lock:
+            backend = self._active.get(key)
+        if backend is None:
+            try:
+                return self.create(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    execution_id=execution_id,
+                    policy=policy,
+                )
+            except WorkspaceConflict:
+                backend = self._reopen_backend(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    execution_id=execution_id,
+                    workspace_segment=workspace_segment,
+                    project_segment=project_segment,
+                    execution_segment=execution_segment,
+                    policy=policy,
+                )
+                with self._lock:
+                    self._active[key] = backend
+        backend.require_policy(policy)
+        lease = AgentWorkspaceLease(
+            identity=WorkspaceIdentity(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                execution_id=execution_id,
+                workspace_root_id=backend.workspace_root_id,
+                retention_class=policy.retention_class,
+            ),
+            backend=backend,
+            workspace_segment=workspace_segment,
+            project_segment=project_segment,
+            execution_segment=execution_segment,
+        )
+        if backend.materialized_trees_frozen():
+            lease.restore_resources_frozen()
+        return lease
+
+    def _reopen_backend(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        execution_id: ExecutionId,
+        workspace_segment: str,
+        project_segment: str,
+        execution_segment: str,
+        policy: WorkspacePolicy,
+    ) -> AnchoredAgentWorkspaceBackend:
+        with self._root_lock():
+            workspace_fd = os.open(workspace_segment, _DIR_FLAGS, dir_fd=self._root_fd)
+            try:
+                _validate_private_directory(workspace_fd)
+                project_fd = os.open(project_segment, _DIR_FLAGS, dir_fd=workspace_fd)
+                try:
+                    _validate_private_directory(project_fd)
+                    execution_fd = os.open(execution_segment, _DIR_FLAGS, dir_fd=project_fd)
+                    _validate_private_directory(execution_fd)
+                    entries = set(os.listdir(execution_fd))
+                    if entries != set(_LAYOUT):
+                        os.close(execution_fd)
+                        raise WorkspaceSecurityError(
+                            "reopened execution root has an unexpected top-level layout"
+                        )
+                    for entry in entries:
+                        metadata = os.stat(entry, dir_fd=execution_fd, follow_symlinks=False)
+                        if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(
+                            metadata.st_mode
+                        ) not in {_DIRECTORY_MODE, _READ_ONLY_DIRECTORY_MODE}:
+                            os.close(execution_fd)
+                            raise WorkspaceSecurityError(
+                                "reopened execution root contains an unsafe top-level entry"
+                            )
+                finally:
+                    os.close(project_fd)
+            finally:
+                os.close(workspace_fd)
+        identity = WorkspaceIdentity(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            execution_id=execution_id,
+            workspace_root_id=(
+                "awr_"
+                + hashlib.sha256(
+                    f"{workspace_segment}\0{project_segment}\0{execution_segment}".encode()
+                ).hexdigest()
+            ),
+            retention_class=policy.retention_class,
+        )
+        return AnchoredAgentWorkspaceBackend(
+            execution_fd=execution_fd,
+            identity=identity,
+            policy=policy,
+            artifact_sink=self._artifact_sink,
+        )
+
     @classmethod
     def _remove_tree(cls, parent_fd: int, name: str) -> None:
         try:
@@ -1054,3 +1225,18 @@ class AgentWorkspaceFactory:
             finally:
                 os.close(workspace_fd)
         return True
+
+    def purge_terminal(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        execution_id: ExecutionId,
+    ) -> bool:
+        """Remove a terminal execution root after the caller verifies durable retention policy."""
+
+        return self.erase_for_privacy(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            execution_id=execution_id,
+        )

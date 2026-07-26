@@ -216,19 +216,26 @@ class AccountResearchAgentRuntime:
             raise ValueError("account turn crosses the isolated workspace lease")
         if context.manifest.execution_id != constitution.execution_id:
             raise ValueError("assembled account context belongs to another execution")
+        seed_files = tuple(
+            WorkspaceSeedFile(
+                path=item.path,
+                content=item.data,
+                sha256=item.sha256,
+                media_type=item.media_type,
+            )
+            for item in context.materializations
+        )
         if not lease.resources_frozen:
             self._materializer.materialize(
                 lease=lease,
                 snapshot=resolved.resource_snapshot,
-                seed_files=tuple(
-                    WorkspaceSeedFile(
-                        path=item.path,
-                        content=item.data,
-                        sha256=item.sha256,
-                        media_type=item.media_type,
-                    )
-                    for item in context.materializations
-                ),
+                seed_files=seed_files,
+            )
+        else:
+            self._materializer.verify_materialized(
+                lease=lease,
+                snapshot=resolved.resource_snapshot,
+                seed_files=seed_files,
             )
         await self._turns.create(request=request, profile=resolved.profile)
         execution.bind_finalization_authority(

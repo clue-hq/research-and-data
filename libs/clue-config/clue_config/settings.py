@@ -95,6 +95,29 @@ class Settings(BaseSettings):
     # an absolute path unrelated to both the source worktree and the service user's home. It is
     # intentionally separate from durable artifact storage. Env: ``CLUE_AGENT_WORKSPACE_ROOT``.
     agent_workspace_root: str | None = None
+    # C6.8 production routing is fail-closed and applies only to new durable ownership subjects.
+    # False is a hard off even when an allowlist or percentage is configured.
+    # Env: ``CLUE_AGENT_RUNTIME_ROUTING_ENABLED``.
+    agent_runtime_routing_enabled: bool = False
+    # Independently admit the two production verticals. The master switch still dominates.
+    # Env: ``CLUE_AGENT_STAGE0_ROUTING_ENABLED`` / ``CLUE_AGENT_ACCOUNT_ROUTING_ENABLED``.
+    agent_stage0_routing_enabled: bool = False
+    agent_account_routing_enabled: bool = False
+    # Explicit canary workspace ids and deterministic workspace+surface percentage cohort.
+    # Env: ``CLUE_AGENT_WORKSPACE_ALLOWLIST`` / ``CLUE_AGENT_CANARY_PERCENT``.
+    agent_workspace_allowlist: tuple[str, ...] = ()
+    agent_canary_percent: int = Field(default=0, ge=0, le=100)
+    # Absolute API-root ceiling for one governed account-agent plan. The prepared runner further
+    # clamps this to the account's durable research budget when one exists.
+    # Env: ``CLUE_AGENT_ACCOUNT_PLAN_BUDGET_LIMIT_MILLICENTS``.
+    agent_account_plan_budget_limit_millicents: int = Field(default=1_000_000, ge=0)
+    # Terminal isolated workspaces are retained briefly for operator inspection, then purged by
+    # the C6.8 cleanup job. Zero is allowed for tests/immediate cleanup.
+    # Env: ``CLUE_AGENT_WORKSPACE_RETENTION_S``.
+    agent_workspace_retention_s: float = Field(default=86400.0, ge=0)
+    # Periodic worker cadence. Non-positive disables scheduling without weakening the job itself.
+    # Env: ``CLUE_AGENT_CLEANUP_INTERVAL_S``.
+    agent_cleanup_interval_s: float = 3600.0
 
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:

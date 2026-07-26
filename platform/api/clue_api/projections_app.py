@@ -30,6 +30,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ValidationError
 
 import clue_obs
+from clue_agents import AgentProfileRegistry
 from clue_api.ingestion_tools import (
     build_ingestion_router,
 )
@@ -58,6 +59,11 @@ from clue_projections import (
     MANIFEST_OP_TOOLS,
     PROJECTIONS_SCHEMA_VERSION,
     account_progress,
+    agent_progress,
+    agent_route,
+    agent_telemetry,
+    agent_turn,
+    agent_turns_for_project,
     field_proposals,
     ingestion_status,
     plan_replay,
@@ -167,6 +173,7 @@ def create_projections_router(
     conn_factory: ConnFactory,
     sse_poll_interval_s: float,
     sse_live_tail: bool,
+    agent_registry: AgentProfileRegistry | None = None,
 ) -> APIRouter:
     """Build the projection + tool + SSE :class:`APIRouter` over the injected collaborators. The
     auth/actor seams are the module-level :data:`WorkspaceDep` / :data:`ActorDep` deps (swapped via
@@ -174,6 +181,94 @@ def create_projections_router(
     router = APIRouter()
 
     # -- read projections (clue_projections; MVCC-only) --
+
+    if agent_registry is not None:
+
+        @router.get("/agent/registry")
+        async def get_agent_registry(workspace_id: WorkspaceDep) -> dict[str, Any]:
+            del workspace_id  # auth is required even though the active catalog is process-wide.
+            return {
+                "schema_version": PROJECTIONS_SCHEMA_VERSION,
+                "registry": agent_registry.projection().model_dump(mode="json"),
+            }
+
+    @router.get("/agent/projects/{project_id}/turns")
+    async def get_agent_project_turns(
+        project_id: str,
+        workspace_id: WorkspaceDep,
+    ) -> dict[str, Any]:
+        turns = await agent_turns_for_project(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            conn_factory=conn_factory,
+        )
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "turns": [item.model_dump(mode="json") for item in turns],
+        }
+
+    @router.get("/agent/turns/{turn_id}")
+    async def get_agent_turn(turn_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await agent_turn(
+            workspace_id=workspace_id,
+            turn_id=turn_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such agent turn")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "turn": view.model_dump(mode="json"),
+        }
+
+    @router.get("/agent/turns/{turn_id}/progress")
+    async def get_agent_progress(turn_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await agent_progress(
+            workspace_id=workspace_id,
+            turn_id=turn_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such agent turn")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "progress": view.model_dump(mode="json"),
+        }
+
+    @router.get("/agent/turns/{turn_id}/telemetry")
+    async def get_agent_telemetry(turn_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
+        view = await agent_telemetry(
+            workspace_id=workspace_id,
+            turn_id=turn_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such agent turn")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "telemetry": view.model_dump(mode="json"),
+        }
+
+    @router.get("/agent/routes/{surface_name}/{subject_id}")
+    async def get_agent_route(
+        surface_name: str,
+        subject_id: str,
+        workspace_id: WorkspaceDep,
+    ) -> dict[str, Any]:
+        if surface_name not in {"stage0", "account_research"}:
+            raise HTTPException(status_code=422, detail="unknown agent runtime surface")
+        view = await agent_route(
+            workspace_id=workspace_id,
+            surface=surface_name,
+            subject_id=subject_id,
+            conn_factory=conn_factory,
+        )
+        if view is None:
+            raise HTTPException(status_code=404, detail="no such agent route")
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "route": view.model_dump(mode="json"),
+        }
 
     @router.get("/project_runs/{project_run_id}/overview")
     async def get_overview(project_run_id: UUID, workspace_id: WorkspaceDep) -> dict[str, Any]:
@@ -602,6 +697,7 @@ def create_projections_app(
     sse_poll_interval_s: float = 1.0,
     sse_live_tail: bool = True,
     manage_db_lifespan: bool = True,
+    agent_registry: AgentProfileRegistry | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -641,6 +737,7 @@ def create_projections_app(
             conn_factory=conn_factory,
             sse_poll_interval_s=sse_poll_interval_s,
             sse_live_tail=sse_live_tail,
+            agent_registry=agent_registry,
         )
     )
     if ingestion_storage is not None:

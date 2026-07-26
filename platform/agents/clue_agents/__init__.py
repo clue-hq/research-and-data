@@ -21,6 +21,7 @@ from clue_agents.catalog import (
 )
 from clue_agents.context import (
     CompiledContextCard,
+    CompiledContextCardReader,
     ContextAssemblyPolicy,
     ContextAssemblyReceipt,
     ContextCandidate,
@@ -132,6 +133,7 @@ from clue_agents.workspace import (
     AgentWorkspaceLease,
     AnchoredAgentWorkspaceBackend,
     WorkspaceIdentity,
+    WorkspaceUsageSnapshot,
 )
 from clue_agents.workspace_policy import (
     PreparedWorkspaceRoot,
@@ -188,6 +190,7 @@ __all__ = [
     "CatalogResourcePin",
     "ClueDeepAgentState",
     "CompiledContextCard",
+    "CompiledContextCardReader",
     "ContextAssemblyPolicy",
     "ContextAssemblyReceipt",
     "ContextBundleManifest",
@@ -250,6 +253,7 @@ __all__ = [
     "WorkspaceEntry",
     "WorkspaceError",
     "WorkspaceIdentity",
+    "WorkspaceUsageSnapshot",
     "WorkspacePolicy",
     "WorkspaceQuotaExceeded",
     "WorkspaceRootPolicy",

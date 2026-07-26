@@ -4,14 +4,15 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0–C6.7 implemented and verified; C6.8 is next. C6.7 adds the governed
+**Current checkpoint:** C6.0–C6.8 implemented and verified; C6 is complete. C6.7 added the governed
 per-account research-agent unit, replay-safe `research_account_gaps@2`, and the explicit ruling
 that C1's `GoalJudge` remains the sole independent coverage evaluator. C6.6 adds fresh-wake
 research, content-drafter, and reviewer specialists behind the governed C5 delegation operation.
 It freezes typed task/file/ref transfer, per-role prompts/skills/tools/workspaces/models/time and
 round limits, distinct child executions, empty child history, durable-before-return output
 contracts, human-gate propagation, and parent/child spend rollup. The framework's generic `task`
-tool remains filtered. Product routing and canary ownership remain C6.8 work.
+tool remains filtered. C6.8 added default-off durable ownership routing, production API-root
+composition, read projections, telemetry, cleanup, canary evaluation, and the C7 handoff.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -38,11 +39,11 @@ the framework, tool-calling, workspace, resource-version, and replay-safety unkn
 | C6.1 | **Complete** — isolated workspace, virtual backend, resource materialization | No migration added | isolation battery green |
 | C6.2 | **Complete** — folder catalogs, profiles, registry, tool-calling model seam | No migration added | exact resource/allowlist/import gates green |
 | C6.3 | **Complete** — typed turns, seven-layer context, history, receipts | Yes | migration smoke + body-free replay green |
-| C6.4 | Plan compiler, governed tools, delegation, finalize | Additive only | crash/authority/replay matrix green |
-| C6.5 | Head-of-ABM Stage-0 vertical | No new domain tables expected | C4 parity + agent-quality eval |
-| C6.6 | Fresh-wake specialist subagents | No new domain tables expected | delegation/authority parity |
-| C6.7 | Governed per-account worker agent | Add only if checkpoint ownership requires it | fleet/evaluator/quality parity |
-| C6.8 | Composition, canary, hardening, full close-out | Operational settings only | full repository gate |
+| C6.4 | **Complete** — plan compiler, governed tools, delegation, finalize | Additive only | crash/authority/replay matrix green |
+| C6.5 | **Complete** — Head-of-ABM Stage-0 vertical | No migration added | C4 parity + agent-quality eval |
+| C6.6 | **Complete** — fresh-wake specialist subagents | No migration added | delegation/authority parity |
+| C6.7 | **Complete** — governed per-account worker agent | Yes | fleet/evaluator/quality parity |
+| C6.8 | **Complete** — composition, canary, hardening, close-out | Yes | full repository gate |
 
 Each completed slice receives:
 
@@ -604,6 +605,29 @@ where agency adds no measured value.
   head→base→head smoke, and one-head check;
 - update built-vs-planned docs and write the C7 handoff.
 
+### C6.8 implementation record
+
+- The API root composes active profiles, per-role governed models, isolated workspaces, durable
+  artifact/turn/history/replay/privacy adapters, the exact L1–L7 context assembler, and one
+  durable ownership router.
+- The fleet prepares the real account turn and promoted C5 account-unit recipe under stable
+  identities, injects it into the existing DEEP slot, and securely reopens/re-hashes its frozen
+  workspace on crash recovery. Sticky deepagent-owned routes remain composable after rollout
+  switches are reduced.
+- Master/surface switches default off. Allowlisted and deterministic percentage subjects are
+  claimed once in an immutable route ledger; the selected owner never falls through to the other
+  after a failure.
+- Authenticated body-free registry, turn, project-turn, progress, telemetry, and route projections
+  expose the later shell's backend contract without leaking prompt/skill/artifact bodies or host
+  paths.
+- Model cache tokens and final workspace quota usage are durable. The combined projection reports
+  model/tool/context/workspace/child/finalization signals. Terminal roots are purged after an
+  inspection window by a non-fatal fleet job with append-only receipts; live `awaiting_input`
+  roots are excluded. DSAR remains immediate and stronger.
+- Stage-0/account canary comparison fails closed on invisible failures, duplicate effects,
+  evidence regression, or cost/round overruns. The production runbook and C7 prerequisite handoff
+  are committed with the implementation.
+
 ## 12. Parallelization ruling
 
 Do not parallelize C6.0–C6.4. They freeze or modify shared contracts across the agent package,
@@ -630,4 +654,5 @@ At the start of every C6 session:
 6. record failures and changed decisions in `_memory/`;
 7. finish with verification evidence and one coherent local commit.
 
-The next implementation session is **C6.8 only**.
+The next implementation session is **C7.0 contract freeze and prerequisite audit**, starting from
+`docs/superpowers/plans/2026-07-26-phase-c7-handoff.md`.
