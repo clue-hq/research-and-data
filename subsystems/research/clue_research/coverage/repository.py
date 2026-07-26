@@ -12,6 +12,7 @@ from clue_core import (
     ClaimId,
     CoverageAttemptId,
     CoverageDecisionId,
+    CoverageEvaluatorAdviceId,
     EntityId,
     EntityType,
     ProjectRunId,
@@ -21,7 +22,13 @@ from clue_core import (
     decode_jsonb,
     serialize_value_json,
 )
-from clue_research.coverage.models import CoverageAttempt, CoverageDecision
+from clue_research.coverage.models import (
+    CoverageAttempt,
+    CoverageDecision,
+    CoverageEvaluatorAdvice,
+    EvaluatorProposalKind,
+    GoalJudgeResult,
+)
 
 _ATTEMPT_COLUMNS = (
     "id, workspace_id, run_id, project_run_id, entity_id, entity_type, field_key, tier, "
@@ -31,7 +38,12 @@ _ATTEMPT_COLUMNS = (
 _DECISION_COLUMNS = (
     "id, workspace_id, run_id, project_run_id, entity_id, entity_type, field_key, tier, "
     "round, terminal_status, next_strategy_key, reason_code, reason_detail, attempt_refs_json, "
-    "claim_refs_json, judge_model, judge_prompt_version, created_at"
+    "claim_refs_json, judge_model, judge_prompt_version, evaluator_advice_id, created_at"
+)
+_ADVICE_COLUMNS = (
+    "id, workspace_id, run_id, project_run_id, entity_id, entity_type, tier, round, "
+    "proposal_kind, planned_fields_json, result_json, valid, answering_model, prompt_version, "
+    "cost_cents, non_authoritative, created_at"
 )
 
 
@@ -85,6 +97,36 @@ def _decision(row: Mapping[str, object]) -> CoverageDecision:
             "claim_refs": tuple(
                 ClaimId(UUID(str(value))) for value in (decode_jsonb(raw_claim_refs) or ())
             ),
+            "evaluator_advice_id": (
+                CoverageEvaluatorAdviceId(row["evaluator_advice_id"])  # type: ignore[arg-type]
+                if row["evaluator_advice_id"] is not None
+                else None
+            ),
+        }
+    )
+
+
+def _advice(row: Mapping[str, object]) -> CoverageEvaluatorAdvice:
+    values = dict(row)
+    raw_fields = decode_jsonb(values.pop("planned_fields_json")) or ()
+    raw_result = decode_jsonb(values.pop("result_json"))
+    return CoverageEvaluatorAdvice(
+        **{
+            **values,
+            "id": CoverageEvaluatorAdviceId(row["id"]),  # type: ignore[arg-type]
+            "run_id": RunId(row["run_id"]),  # type: ignore[arg-type]
+            "project_run_id": (
+                ProjectRunId(row["project_run_id"])  # type: ignore[arg-type]
+                if row["project_run_id"] is not None
+                else None
+            ),
+            "entity_id": EntityId(row["entity_id"]),  # type: ignore[arg-type]
+            "entity_type": EntityType(str(row["entity_type"])),
+            "proposal_kind": EvaluatorProposalKind(str(row["proposal_kind"])),
+            "planned_fields": tuple(str(value) for value in raw_fields),
+            "result": GoalJudgeResult.model_validate(raw_result)
+            if raw_result is not None
+            else None,
         }
     )
 
@@ -141,12 +183,14 @@ async def record_decision(conn: AsyncConnection, value: CoverageDecision) -> Cov
                 id, workspace_id, run_id, project_run_id, entity_id, entity_type, field_key, tier,
                 round, terminal_status, next_strategy_key, reason_code, reason_detail,
                 attempt_refs_json, claim_refs_json, judge_model, judge_prompt_version
+                , evaluator_advice_id
             ) VALUES (
                 :id, :workspace_id, :run_id, :project_run_id, :entity_id,
                 CAST(:entity_type AS entity_type), :field_key, :tier, :round,
                 CAST(:terminal_status AS research_terminal_status), :next_strategy_key,
                 :reason_code, :reason_detail, CAST(:attempt_refs_json AS jsonb),
                 CAST(:claim_refs_json AS jsonb), :judge_model, :judge_prompt_version
+                , :evaluator_advice_id
             )
             ON CONFLICT DO NOTHING
             """
@@ -180,6 +224,138 @@ async def record_decision(conn: AsyncConnection, value: CoverageDecision) -> Cov
         .one()
     )
     return _decision(dict(row))
+
+
+async def record_evaluator_advice(
+    conn: AsyncConnection,
+    value: CoverageEvaluatorAdvice,
+) -> CoverageEvaluatorAdvice:
+    """Insert one immutable evaluation boundary and reject identity/payload disagreement."""
+
+    await conn.execute(
+        text(
+            """
+            INSERT INTO coverage_evaluator_advice (
+                id, workspace_id, run_id, project_run_id, entity_id, entity_type, tier, round,
+                proposal_kind, planned_fields_json, result_json, valid, answering_model,
+                prompt_version, cost_cents, non_authoritative
+            ) VALUES (
+                :id, :workspace_id, :run_id, :project_run_id, :entity_id,
+                CAST(:entity_type AS entity_type), :tier, :round, :proposal_kind,
+                CAST(:planned_fields_json AS jsonb), CAST(:result_json AS jsonb), :valid,
+                :answering_model, :prompt_version, :cost_cents, :non_authoritative
+            )
+            ON CONFLICT (run_id, entity_id, tier, round, proposal_kind) DO NOTHING
+            """
+        ),
+        {
+            **value.model_dump(
+                exclude={
+                    "planned_fields",
+                    "result",
+                    "created_at",
+                    "entity_type",
+                    "proposal_kind",
+                }
+            ),
+            "entity_type": value.entity_type.value,
+            "proposal_kind": value.proposal_kind.value,
+            "planned_fields_json": serialize_value_json(list(value.planned_fields)),
+            "result_json": (
+                serialize_value_json(value.result.model_dump(mode="json"))
+                if value.result is not None
+                else None
+            ),
+        },
+    )
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_ADVICE_COLUMNS} FROM coverage_evaluator_advice WHERE "
+                    "run_id=:run_id AND entity_id=:entity_id AND tier=:tier AND round=:round "
+                    "AND proposal_kind=:proposal_kind"
+                ),
+                {
+                    "run_id": value.run_id,
+                    "entity_id": value.entity_id,
+                    "tier": value.tier,
+                    "round": value.round,
+                    "proposal_kind": value.proposal_kind.value,
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+    persisted = _advice(dict(row))
+    comparable = {"created_at"}
+    if persisted.model_dump(exclude=comparable) != value.model_dump(exclude=comparable):
+        raise ValueError("coverage evaluator advice identity already has a different payload")
+    return persisted
+
+
+async def get_evaluator_advice(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    run_id: RunId,
+    entity_id: EntityId,
+    tier: str,
+    round: int,
+    proposal_kind: EvaluatorProposalKind,
+) -> CoverageEvaluatorAdvice | None:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_ADVICE_COLUMNS} FROM coverage_evaluator_advice WHERE "
+                    "workspace_id=:workspace_id AND run_id=:run_id AND entity_id=:entity_id "
+                    "AND tier=:tier AND round=:round AND proposal_kind=:proposal_kind"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "run_id": run_id,
+                    "entity_id": entity_id,
+                    "tier": tier,
+                    "round": round,
+                    "proposal_kind": proposal_kind.value,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return _advice(dict(row)) if row is not None else None
+
+
+async def list_evaluator_advices(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    run_id: RunId,
+    entity_id: EntityId | None = None,
+) -> list[CoverageEvaluatorAdvice]:
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_ADVICE_COLUMNS} FROM coverage_evaluator_advice "
+                    "WHERE workspace_id=:workspace_id AND run_id=:run_id "
+                    "AND (CAST(:entity_id AS uuid) IS NULL OR entity_id=:entity_id) "
+                    "ORDER BY round, proposal_kind, created_at, id"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "run_id": run_id,
+                    "entity_id": entity_id,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [_advice(dict(row)) for row in rows]
 
 
 async def list_attempts(

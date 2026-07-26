@@ -1,0 +1,70 @@
+{
+  "recipe_key": "account-research-unit",
+  "scope_type": "system",
+  "workspace_id": null,
+  "version": 1,
+  "executor_protocol": 1,
+  "parameter_schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "graph": {
+    "nodes": [
+      {
+        "kind": "barrier",
+        "node_key": "account_research_open",
+        "ordinal": 0,
+        "dependencies": [],
+        "requirements": []
+      },
+      {
+        "kind": "gate",
+        "node_key": "account_research_interactions",
+        "ordinal": 1,
+        "dependencies": ["account_research_open"],
+        "authority": "agent",
+        "resume_condition": "input_available",
+        "dynamic_tool_allowlist": ["research_account_gaps@2"],
+        "dynamic_pin_kinds": [
+          "project_run",
+          "account",
+          "field_registry",
+          "source_registry",
+          "coverage_policy"
+        ],
+        "max_children": 32,
+        "requirements": [
+          {"kind": "tool", "key": "research_account_gaps", "version": "2"},
+          {"kind": "coverage_policy", "key": "default", "version": "1"}
+        ]
+      },
+      {
+        "kind": "barrier",
+        "node_key": "account_research_complete",
+        "ordinal": 2,
+        "dependencies": ["account_research_interactions"],
+        "requirements": []
+      }
+    ],
+    "tool_allowlist": ["research_account_gaps@2"],
+    "authority_allowlist": ["agent"],
+    "activity_allowlist": [],
+    "migration_state": "executable"
+  },
+  "compatibility": {
+    "execution": [],
+    "nodes": {
+      "account_research_interactions": [
+        {"kind": "tool", "key": "research_account_gaps", "version": "2"},
+        {"kind": "coverage_policy", "key": "default", "version": "1"}
+      ]
+    }
+  },
+  "requested_memory_types": [],
+  "max_nodes": 40,
+  "max_depth": 2,
+  "max_fanout": 1,
+  "source_execution_id": null,
+  "created_by": "system"
+}

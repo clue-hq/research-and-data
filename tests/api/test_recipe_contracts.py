@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from clue_api.execution_tools import AdvanceProjectPhaseTool, ExecutionControlServices
 from clue_api.recipe_contracts import (
+    ACCOUNT_RESEARCH_TOOL_ADDRESSES,
     RECIPE_0_TOOL_ADDRESSES,
     RECIPE_1_TOOL_ADDRESSES,
     build_replay_safety_audit,
@@ -46,6 +47,7 @@ def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified()
     assert tuple(item.address for item in audit) == standing_recipe_addresses()
     assert set(RECIPE_0_TOOL_ADDRESSES) <= {item.address for item in audit}
     assert set(RECIPE_1_TOOL_ADDRESSES) <= {item.address for item in audit}
+    assert set(ACCOUNT_RESEARCH_TOOL_ADDRESSES) <= {item.address for item in audit}
     assert all(item.replay_policy is not ReplayPolicy.UNCERTIFIED for item in audit)
     assert all(item.durable_identity for item in audit)
     assert all(item.pin_requirements for item in audit)
@@ -61,6 +63,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "import_accounts@1",
         "profile_contact@1",
         "record_interview_answer@1",
+        "research_account_gaps@2",
         "resolve_committee@1",
         "reverse_profile@1",
         "run_deep_account@1",

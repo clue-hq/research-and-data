@@ -150,6 +150,12 @@ class AccountProfileResult(BaseModel):
     # Aspects clustered out of scope by the tier's `max_aspect_workers` cap (M7.2 / Doc C §3, AC6).
     dropped_aspects: tuple[str, ...] = ()
     gap_field_count: int = 0
+    # C6.7 account agents spend inside the governed coverage engine. The outer deep orchestrator
+    # must still anchor the account stage but must not book that spend a second time.
+    cost_already_recorded: bool = False
+    # False means the agent stopped or failed with unresolved engine-owned coverage decisions.
+    # Committee/contact stages must not advance until this becomes true.
+    coverage_terminal: bool = True
 
     @property
     def fields_targeted(self) -> int:

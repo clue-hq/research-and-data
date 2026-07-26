@@ -40,6 +40,19 @@ import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
 
+from sqlalchemy import text
+
+from clue_agents import AgentRole
+from clue_api.account_research_turn_wiring import (
+    DbCompiledContextCardReader,
+    PreparedAccountResearchTurnRunner,
+    build_account_research_context,
+)
+from clue_api.account_research_wiring import AccountResearchAgentRuntime, GovernedAccountProfiler
+from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_api.agent_execution_wiring import DbAgentPlanJournal
+from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.execution_tools import (
     ExecutionControlServices,
     register_execution_control_tools,
@@ -64,12 +77,12 @@ from clue_api.recipe_wiring import (
     build_recipe_pin_registry,
     seed_system_recipes,
 )
-from clue_api.run_composition import ComposingRunDriver
+from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_config import Settings, get_config, load_settings
+from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
 from clue_core import ProjectPhase
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import (
@@ -138,6 +151,68 @@ def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.
     return asyncio.create_task(_orphan_sweep_loop(settings, storage))
 
 
+async def _agent_cleanup_loop(
+    settings: Settings,
+    job: AgentWorkspaceCleanupJob,
+    *,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    while True:
+        await sleep(settings.agent_cleanup_interval_s)
+        try:
+            result = await job.run_once()
+            if result.considered:
+                log.info(
+                    "fleet.agent_cleanup.completed",
+                    considered=result.considered,
+                    removed=result.removed,
+                    already_absent=result.already_absent,
+                )
+        except Exception:  # noqa: BLE001 — cleanup failure must not sink run execution
+            log.warning("fleet.agent_cleanup.error", exc_info=True)
+
+
+def _start_agent_cleanup(
+    settings: Settings,
+    job: AgentWorkspaceCleanupJob | None,
+) -> asyncio.Task[None] | None:
+    if (
+        job is None
+        or settings.agent_cleanup_interval_s <= 0
+        or settings.agent_workspace_root is None
+    ):
+        log.info("fleet.agent_cleanup.disabled")
+        return None
+    return asyncio.create_task(_agent_cleanup_loop(settings, job))
+
+
+async def _account_agent_runtime_required(
+    settings: Settings,
+    *,
+    conn_factory: ConnFactory = transaction,
+) -> bool:
+    """Keep sticky deepagent-owned runs resumable after rollout switches are reduced."""
+
+    configured_cohort = (
+        settings.agent_runtime_routing_enabled
+        and settings.agent_account_routing_enabled
+        and (bool(settings.agent_workspace_allowlist) or settings.agent_canary_percent > 0)
+    )
+    if configured_cohort:
+        return True
+    async with conn_factory() as conn:
+        return bool(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT EXISTS (SELECT 1 FROM agent_runtime_route "
+                        "WHERE surface='account_research' AND owner='deepagent')"
+                    )
+                )
+            ).scalar_one()
+        )
+
+
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
@@ -158,10 +233,11 @@ async def _serve() -> None:
         log.info("fleet.boot.phases", phases=sorted(phase.value for phase in phases))
         task_queue = DbTaskQueue()
         work_queue = DbWorkQueue(task_queue)
+        gateway = build_platform_gateway(settings)
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
-            gateway=None,
+            gateway=gateway,
             queue=task_queue,
             project_execution_router=project_execution_router,
         )
@@ -177,19 +253,6 @@ async def _serve() -> None:
             ),
         )
         deferred_supervisor_actions = DeferredSupervisorActions()
-        # The B4 per-run composer now also binds C5.5's run-local source breaker, account admission,
-        # aggregate supervisor, and deep canary. The deferred action seam is bound to the toolbelt
-        # below before the worker can claim its first task.
-        driver = ComposingRunDriver(
-            settings=settings,
-            storage=storage,
-            lock_factory=build_account_lock_factory(),
-            event_emitter=build_run_event_emitter(),
-            controls=controls,
-            supervisor_actions=deferred_supervisor_actions,
-            execution_journal=journal,
-            project_execution_router=project_execution_router,
-        )
         artifact_store = StorageParameterArtifactStore(storage=storage)
         execution_parameters = StorageExecutionParameterStore(artifact_store)
         tool_invoker = build_tool_invoker(
@@ -218,6 +281,64 @@ async def _serve() -> None:
             tool_invoker=tool_invoker,
             controls=controls,
             max_concurrency=settings.recipe_executor_max_concurrency,
+        )
+        account_agent_profiler = None
+        agent_workspace_factory = None
+        if await _account_agent_runtime_required(settings):
+            agent_components = build_agent_platform_components(
+                settings=settings,
+                secrets=Secrets(),
+                gateway_config=default_gateway_config(),
+                storage=storage,
+                tools=registry,
+            )
+            agent_workspace_factory = agent_components.workspaces
+            account_runtime = AccountResearchAgentRuntime(
+                profiles=agent_components.profiles,
+                models=agent_components.models,
+                turns=agent_components.turns,
+                artifacts=agent_components.artifacts,
+                tools=registry,
+            )
+            account_context = build_account_research_context(
+                resolved_profile=agent_components.profiles.resolve(AgentRole.ACCOUNT_RESEARCH),
+                artifacts=agent_components.artifacts,
+                cards=DbCompiledContextCardReader(),
+            )
+            account_turns = PreparedAccountResearchTurnRunner(
+                settings=settings,
+                runtime=account_runtime,
+                profiles=agent_components.profiles,
+                workspaces=agent_components.workspaces,
+                artifacts=agent_components.artifacts,
+                turns=agent_components.turns,
+                history=agent_components.history,
+                contexts=account_context,
+                tools=registry,
+                tool_invoker=tool_invoker,
+                executor=executor,
+                compatibility=compatibility,
+                plans=DbAgentPlanJournal(),
+                recipes=recipe_reader,
+                starter=starter,
+                parameters=execution_parameters,
+            )
+            account_agent_profiler = GovernedAccountProfiler(turns=account_turns)
+            log.info("fleet.agent_account_runtime.composed")
+
+        # Bind the selected account owner into the existing DEEP slot. With the switches off—or
+        # for non-selected workspaces—the durable router chooses the mechanical profiler.
+        driver = ComposingRunDriver(
+            settings=settings,
+            gateway=gateway,
+            storage=storage,
+            lock_factory=build_account_lock_factory(),
+            event_emitter=build_run_event_emitter(),
+            controls=controls,
+            supervisor_actions=deferred_supervisor_actions,
+            execution_journal=journal,
+            project_execution_router=project_execution_router,
+            account_agent_profiler=account_agent_profiler,
         )
         register_execution_control_tools(
             ExecutionControlServices(
@@ -258,13 +379,33 @@ async def _serve() -> None:
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
+        if agent_workspace_factory is None and settings.agent_workspace_root is not None:
+            agent_workspace_factory = build_agent_workspace_factory(
+                storage=storage,
+                settings=settings,
+            )
+        agent_cleanup = _start_agent_cleanup(
+            settings,
+            (
+                AgentWorkspaceCleanupJob(
+                    settings=settings,
+                    workspaces=agent_workspace_factory,
+                )
+                if agent_workspace_factory is not None
+                else None
+            ),
+        )
         try:
             await run_worker(worker)
         finally:
-            if sweep is not None:
-                sweep.cancel()
+            for background in (sweep, agent_cleanup):
+                if background is None:
+                    continue
+                background.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
-                    await sweep
+                    await background
+            if agent_workspace_factory is not None:
+                agent_workspace_factory.close()
 
 
 def main() -> None:

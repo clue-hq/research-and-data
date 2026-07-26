@@ -40,6 +40,53 @@ Shipped so far:
 
 from __future__ import annotations
 
+from clue_api.account_research_turn_wiring import (
+    DbCompiledContextCardReader,
+    PreparedAccountResearchTurnRunner,
+    account_research_context_policy,
+    build_account_research_context,
+)
+from clue_api.account_research_wiring import (
+    AccountResearchAgentRuntime,
+    AccountResearchStepPinProvider,
+    AccountResearchTurnRunner,
+    GovernedAccountProfiler,
+    build_account_research_execution,
+)
+from clue_api.agent_cleanup import AgentCleanupResult, AgentWorkspaceCleanupJob
+from clue_api.agent_execution_wiring import (
+    AgentExecutionCrashHook,
+    C5AgentExecutionAdapter,
+    DbAgentDelegationRuntime,
+    DbAgentPlanJournal,
+    FreshWakeChildRunner,
+    postgres_agent_checkpointer,
+)
+from clue_api.agent_platform_wiring import (
+    AgentCanaryAssessment,
+    AgentCanarySample,
+    AgentCanaryThresholds,
+    AgentOwner,
+    AgentOwnershipRouter,
+    AgentPlatformComponents,
+    AgentRouteDecision,
+    AgentRuntimeNotComposed,
+    AgentRuntimeSurface,
+    DbAgentOwnershipRouter,
+    RoutedAccountProfiler,
+    build_agent_context_assembler,
+    build_agent_platform_components,
+    evaluate_agent_canary,
+    run_owned_agent_surface,
+)
+from clue_api.agent_registry_wiring import build_agent_profile_registry
+from clue_api.agent_runtime_wiring import (
+    AgentFinalizationAuthority,
+    DurableAgentModelCallHandler,
+    DurableDeepAgentTurnRunner,
+    GovernedAgentToolFactory,
+    ModelFinalizeRequest,
+)
 from clue_api.backtest_wiring import (
     LabeledDatasetBacktestGate,
     build_backtest_gate,
@@ -103,6 +150,10 @@ from clue_api.handoff_wiring import (
     build_handoff_readiness_reader,
     build_handoff_service,
     register_handoff_phase_handler,
+)
+from clue_api.head_of_abm_wiring import (
+    HeadOfAbmStage0Runtime,
+    build_head_of_abm_stage0_execution,
 )
 from clue_api.learning_wiring import build_learning_loop
 from clue_api.narrative_wiring import (
@@ -184,12 +235,21 @@ from clue_api.run_composition import (
     ComposingRunDriver,
     CompositionUnavailable,
     SpecLoader,
+    build_platform_gateway,
 )
 from clue_api.run_events_wiring import (
     DbRunEventEmitter,
     NullRunEventEmitter,
     RunEventEmitter,
     build_run_event_emitter,
+)
+from clue_api.specialist_wiring import (
+    DbSpecialistExecutionJournal,
+    FreshWakeSpecialistRunner,
+    SpecialistExecutionAdapter,
+    SpecialistExecutionFactory,
+    SpecialistSpendReader,
+    SpecialistWorkspaceProvider,
 )
 from clue_api.storage_wiring import (
     DEFAULT_ORPHAN_SWEEP_GRACE,
@@ -212,6 +272,57 @@ from clue_api.verification import (
 )
 
 __all__ = [
+    # C6.8 production composition, routing, canaries, and cleanup
+    "AgentCanaryAssessment",
+    "AgentCanarySample",
+    "AgentCanaryThresholds",
+    "AgentCleanupResult",
+    "AgentOwner",
+    "AgentOwnershipRouter",
+    "AgentPlatformComponents",
+    "AgentRouteDecision",
+    "AgentRuntimeNotComposed",
+    "AgentRuntimeSurface",
+    "AgentWorkspaceCleanupJob",
+    "DbAgentOwnershipRouter",
+    "RoutedAccountProfiler",
+    "build_agent_context_assembler",
+    "build_agent_platform_components",
+    "build_agent_profile_registry",
+    "evaluate_agent_canary",
+    "run_owned_agent_surface",
+    # C6.4 governed agent plan/runtime/finalization composition
+    "AgentExecutionCrashHook",
+    "C5AgentExecutionAdapter",
+    "DbAgentDelegationRuntime",
+    "DbAgentPlanJournal",
+    "FreshWakeChildRunner",
+    "postgres_agent_checkpointer",
+    "AgentFinalizationAuthority",
+    "DurableAgentModelCallHandler",
+    "DurableDeepAgentTurnRunner",
+    "GovernedAgentToolFactory",
+    "ModelFinalizeRequest",
+    # C6.6 fresh-wake specialists
+    "DbSpecialistExecutionJournal",
+    "FreshWakeSpecialistRunner",
+    "SpecialistExecutionAdapter",
+    "SpecialistExecutionFactory",
+    "SpecialistSpendReader",
+    "SpecialistWorkspaceProvider",
+    # C6.5 Head-of-ABM Stage-0 vertical
+    "HeadOfAbmStage0Runtime",
+    "build_head_of_abm_stage0_execution",
+    # C6.7 governed per-account research unit
+    "AccountResearchAgentRuntime",
+    "AccountResearchStepPinProvider",
+    "AccountResearchTurnRunner",
+    "GovernedAccountProfiler",
+    "build_account_research_execution",
+    "DbCompiledContextCardReader",
+    "PreparedAccountResearchTurnRunner",
+    "account_research_context_policy",
+    "build_account_research_context",
     "load_research_packs",
     "VerificationBindingClassifier",
     "production_binding_classifier",
@@ -326,6 +437,7 @@ __all__ = [
     "ComposedRun",
     "CompositionUnavailable",
     "SpecLoader",
+    "build_platform_gateway",
     "ClientInputProvider",
     # B4 slice 2: the concrete toolbelt over the existing capabilities (toolbelt_wiring)
     "build_toolbelt",

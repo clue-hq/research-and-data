@@ -1,7 +1,7 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0 frozen; C1–C4 implemented and integrated; C5 implemented; C6 next
-(2026-07-25)
+**Status:** ACTIVE — C0–C6 implemented; C7 is the next engineering session
+(2026-07-26)
 
 **Integration branch:** `platform/workspace-restructure`
 
@@ -477,11 +477,14 @@ load.
 
 **Goal.** Build the real Head-of-ABM deepagent over the governed substrate.
 
+**Binding child spec:** [`PC-C6 — platform deepagent, isolated workspace, and skills`](./PC-C6-platform-deepagent-and-skills.md).
+
 **Scope:**
 
 - import-contracted `platform/agents` implementation using the Doc-A deepagent shape;
 - orchestrator resource map and minimal per-role tool allowlists;
-- versioned skills through config revision;
+- versioned folder-backed prompts, skills, and profiles with exact resource-manifest pins
+  (`config_revision` may govern reference/profile promotion metadata, not V1 prompt/skill bodies);
 - typed constitution state:
   `workspace_id`, `project_id`, pinned `brand_id`, `product_id`, readiness/stage snapshot,
   budget/profile/focus refs;

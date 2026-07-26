@@ -28,7 +28,12 @@ import pytest
 from httpx import ASGITransport
 from sqlalchemy import text
 
-from clue_api import build_tool_invoker, create_projections_app
+from clue_api import (
+    build_agent_profile_registry,
+    build_tool_invoker,
+    build_toolbelt,
+    create_projections_app,
+)
 from clue_config import load_settings
 from clue_core import (
     ProjectPhase,
@@ -88,9 +93,21 @@ class _MemoryStorage:
         yield
 
 
-def _app(conn, *, registry: ToolRegistry | None = None, sse_live_tail: bool = False):
+def _app(
+    conn,
+    *,
+    registry: ToolRegistry | None = None,
+    sse_live_tail: bool = False,
+    expose_agent_registry: bool = False,
+):
     cf = conn_session_factory(conn)
-    resolved_registry = registry if registry is not None else ToolRegistry()
+    resolved_registry = (
+        registry
+        if registry is not None
+        else (
+            build_toolbelt(storage=None, gateway=None) if expose_agent_registry else ToolRegistry()
+        )
+    )
     settings = _settings()
     return create_projections_app(
         surface=build_surface(conn),
@@ -105,6 +122,9 @@ def _app(conn, *, registry: ToolRegistry | None = None, sse_live_tail: bool = Fa
         conn_factory=cf,
         sse_live_tail=sse_live_tail,
         manage_db_lifespan=False,
+        agent_registry=(
+            build_agent_profile_registry(resolved_registry) if expose_agent_registry else None
+        ),
     )
 
 
@@ -129,6 +149,27 @@ def _frames(body: str) -> list[dict]:
                 frame["data"] = json.loads(value)
         frames.append(frame)
     return frames
+
+
+def test_agent_registry_projection_requires_auth_and_exposes_no_resource_bodies() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            app = _app(conn, expose_agent_registry=True)
+            async with _client(app) as client:
+                unauthenticated = await client.get("/agent/registry")
+                response = await client.get(
+                    "/agent/registry",
+                    headers={"X-Workspace-Id": _WS},
+                )
+            assert unauthenticated.status_code == 401
+            assert response.status_code == 200
+            registry = response.json()["registry"]
+            assert registry["roles"]
+            encoded = json.dumps(registry)
+            assert "prompt_body" not in encoded
+            assert "skill_body" not in encoded
+
+    run_async(_run())
 
 
 async def _mint(client: httpx.AsyncClient, run_id, *, ws: str = _WS) -> str:

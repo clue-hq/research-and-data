@@ -120,6 +120,10 @@ class Stage0StepPinProvider:
     ) -> tuple[PinRequest, ...]:
         body = step.input_refs
         requested: list[PinRequest] = list(step.pin_requests)
+        nested_scope = body.get("scope")
+        declared_context = body.get("declared_context")
+        scope_body = nested_scope if isinstance(nested_scope, dict) else {}
+        ingestion_context = declared_context if isinstance(declared_context, dict) else {}
 
         artifact_pairs: set[tuple[str, str]] = set()
         artifact_key = body.get("artifact_key")
@@ -163,7 +167,7 @@ class Stage0StepPinProvider:
             ("product_id", "product"),
             ("project_id", "project"),
         ):
-            value = body.get(field)
+            value = body.get(field, scope_body.get(field, ingestion_context.get(field)))
             if isinstance(value, str):
                 requested.append(await self._current(kind=kind, key=value, ctx=ctx))
 
@@ -180,6 +184,45 @@ class Stage0StepPinProvider:
                         key="__all_active__",
                         ctx=ctx,
                     ),
+                )
+            )
+
+        if step.tool_name == "propose_field":
+            requested.extend(
+                (
+                    await self._current(
+                        kind="proposal_policy",
+                        key="default",
+                        ctx=ctx,
+                    ),
+                    await self._current(
+                        kind="field_registry",
+                        key="__all_active__",
+                        ctx=ctx,
+                    ),
+                )
+            )
+        elif step.tool_name == "propose_source":
+            requested.extend(
+                (
+                    await self._current(
+                        kind="proposal_policy",
+                        key="default",
+                        ctx=ctx,
+                    ),
+                    await self._current(
+                        kind="source_registry",
+                        key="__all_active__",
+                        ctx=ctx,
+                    ),
+                )
+            )
+        elif step.tool_name == "submit_ingestion":
+            requested.append(
+                await self._current(
+                    kind="ingestion_policy",
+                    key="default",
+                    ctx=ctx,
                 )
             )
 
@@ -257,8 +300,11 @@ class Stage0StepPinProvider:
                 )
             )
 
-        icp_key = body.get("icp_key")
-        icp_version = body.get("icp_version")
+        icp_key = body.get("icp_key", scope_body.get("icp_key"))
+        icp_version = body.get(
+            "icp_version",
+            scope_body.get("icp_spec_version"),
+        )
         if isinstance(icp_key, str) and isinstance(icp_version, int):
             requested.append(
                 await self._exact(

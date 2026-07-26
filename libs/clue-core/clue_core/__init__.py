@@ -17,9 +17,11 @@ from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_core.coverage import (
     CoverageAttemptId,
     CoverageDecisionId,
+    CoverageEvaluatorAdviceId,
     ResearchAttemptOutcome,
     ResearchGapRef,
     ResearchTerminalStatus,
+    coverage_evaluator_advice_id,
     new_coverage_attempt_id,
     new_coverage_decision_id,
 )
@@ -306,8 +308,10 @@ __all__ = [
     "UtcDatetime",
     "CoverageAttemptId",
     "CoverageDecisionId",
+    "CoverageEvaluatorAdviceId",
     "new_coverage_attempt_id",
     "new_coverage_decision_id",
+    "coverage_evaluator_advice_id",
     "ResearchAttemptOutcome",
     "ResearchTerminalStatus",
     "ResearchGapRef",
