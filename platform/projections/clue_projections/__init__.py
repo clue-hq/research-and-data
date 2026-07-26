@@ -21,6 +21,19 @@ The concrete durable-backed readers are built once at the ``clue_api`` root and 
 
 from __future__ import annotations
 
+from clue_projections.agents import (
+    AgentArtifactView,
+    AgentProgressView,
+    AgentRouteView,
+    AgentTelemetryView,
+    AgentTurnSummary,
+    AgentTurnView,
+    agent_progress,
+    agent_route,
+    agent_telemetry,
+    agent_turn,
+    agent_turns_for_project,
+)
 from clue_projections.dtos import (
     PROJECTIONS_SCHEMA_VERSION,
     AccountProgress,
@@ -67,6 +80,18 @@ from clue_projections.stage0 import (
 __all__ = [
     # schema version
     "PROJECTIONS_SCHEMA_VERSION",
+    # C6 agent runtime
+    "AgentArtifactView",
+    "AgentProgressView",
+    "AgentRouteView",
+    "AgentTelemetryView",
+    "AgentTurnSummary",
+    "AgentTurnView",
+    "agent_progress",
+    "agent_route",
+    "agent_telemetry",
+    "agent_turn",
+    "agent_turns_for_project",
     # DTOs
     "RunOverview",
     "AccountProgress",

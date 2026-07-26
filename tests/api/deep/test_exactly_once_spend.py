@@ -12,15 +12,19 @@ concurrent in-flight peers can collectively breach the per-account cap. The DB-b
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from clue_api.deep import deep_account_run_id, deep_step_key
 from clue_config import DeepPhaseConfig
 from clue_core import (
     BudgetVerdict,
+    WorkerStatus,
+    new_claim_id,
     new_entity_id,
     new_project_run_id,
 )
 from clue_research.durable import AccountRunStatus, AccountRunSubPhase, AccountSpec
+from clue_research.profiling import AccountProfileResult
 from tests.api.deep.test_orchestrator import (
     FakeAccountRunIO,
     FakeBudgetEngine,
@@ -66,6 +70,97 @@ def test_each_stage_charges_exactly_once_through_the_spend_seam() -> None:
             assert charge["project_run_id"] == campaign
         # cost = account 5 + committee 3 + 3 contacts × 2 — the sum of the spend steps
         assert result.cost_cents == Decimal("5") + Decimal("3") + Decimal("6")
+
+    run_async(_run())
+
+
+def test_c67_account_agent_spend_is_anchored_but_not_charged_twice() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+    spend = FakeExactlyOnceSpend()
+
+    async def agent_profile(**kwargs: Any) -> AccountProfileResult:
+        run_id = kwargs["run_id"]
+        io.runs[run_id]["cost_cents"] = Decimal("7")
+        return AccountProfileResult(
+            account_entity_id=kwargs["account_entity_id"],
+            tier=kwargs["tier"],
+            run_id=run_id,
+            status=WorkerStatus.OK,
+            claim_refs=(new_claim_id(),),
+            cost_cents=Decimal("7"),
+            cost_already_recorded=True,
+            coverage_terminal=True,
+        )
+
+    orch = _orchestrator(
+        io,
+        agent_profile,
+        make_discover_committee(rec, n_members=0, cost=Decimal(0)),
+        FakeProfileContact(rec),
+        spend=spend,
+    )
+
+    async def _run() -> None:
+        project_run_id = new_project_run_id()
+        entity_id = new_entity_id()
+        result = await orch.run_one(
+            AccountSpec(
+                entity_id=entity_id,
+                tier="top",
+                workspace_id="client-1",
+            ),
+            project_run_id=project_run_id,
+        )
+        account_charge = next(
+            item
+            for item in spend.charges
+            if item["key"]
+            == deep_step_key(deep_account_run_id(project_run_id, entity_id), "account")
+        )
+        assert account_charge["cost_cents"] == Decimal(0)
+        assert result.cost_cents == Decimal("7")
+
+    run_async(_run())
+
+
+def test_c67_nonterminal_agent_coverage_cannot_advance_to_committee() -> None:
+    io = FakeAccountRunIO()
+    rec = Recorder()
+
+    async def incomplete(**kwargs: Any) -> AccountProfileResult:
+        run_id = kwargs["run_id"]
+        io.runs[run_id]["cost_cents"] = Decimal("3")
+        return AccountProfileResult(
+            account_entity_id=kwargs["account_entity_id"],
+            tier=kwargs["tier"],
+            run_id=run_id,
+            status=WorkerStatus.PARTIAL,
+            cost_cents=Decimal("3"),
+            cost_already_recorded=True,
+            coverage_terminal=False,
+        )
+
+    orch = _orchestrator(
+        io,
+        incomplete,
+        make_discover_committee(rec),
+        FakeProfileContact(rec),
+    )
+
+    async def _run() -> None:
+        result = await orch.run_one(
+            AccountSpec(
+                entity_id=new_entity_id(),
+                tier="top",
+                workspace_id="client-1",
+            ),
+            project_run_id=new_project_run_id(),
+        )
+        assert result.sub_phase is None
+        assert result.cost_cents == Decimal("3")
+        assert rec.order == []
+        assert io.saves == []
 
     run_async(_run())
 

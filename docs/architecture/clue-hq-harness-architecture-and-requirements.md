@@ -236,11 +236,13 @@ the engine or a human (the authority boundary, §2.5).
 The design keeps the creative loop open and the failure modes structurally closed.
 
 **Design.** The orchestration plane (§4.3): a deep agent compiles intent into **plan graphs over
-the toolbelt**; **skills are versioned config, not code** — prompt + policy bundles with
+the toolbelt**; **skills are versioned resources/config, not code** — prompt + policy bundles with
 frontmatter (tool allowlist, readiness-spec reference, per-vertical/client overlays) and a prompt
-body, promoted proposed → promoted through the M13.3 `config_revision` ledger and pinned by
-recipes. Plan validation enforces: registry-only nodes, type-checked edges, DAG with declared
-bounded loops only, gate closure (no path externalizes ungated), cost estimation before approval.
+body. Per the 2026-07-26 C6 ruling, V1 canonical bodies live in the reviewed folder catalog and
+are pinned by exact version + digest; `config_revision` may ledger promotion metadata/profile
+bindings but does not store the bodies. Plan validation enforces: registry-only nodes,
+type-checked edges, DAG with declared bounded loops only, gate closure (no path externalizes
+ungated), cost estimation before approval.
 
 **Current state → delta.** `config_revision` ledger exists (M13.3). Delta: the skill loader, the
 `agent/` package (import-contracted: may import the toolbelt façade + projections only; never
@@ -250,7 +252,8 @@ claim-store writes, resolvers, or the gateway directly), plan-graph compiler + v
 
 **Acceptance criteria.**
 - A plan containing an ungated externalizing path is rejected at validation, not at runtime.
-- Skills version through `config_revision`; a run journal records the exact skill versions used.
+- Skills resolve through the versioned folder catalog; a run journal records their exact versions
+  and content digests.
 - Import-linter contracts prove `agent/` cannot reach claim-store writes or provider SDKs.
 - No prompt content can alter fan-out caps, spend ceilings, tiers, or gates (attempted-override
   tests in the eval battery).
@@ -919,11 +922,13 @@ agents the user can inspect, tune, and invoke, with the orchestrator composing t
 is the *legible face of config that already exists*; this requirement is packaging, not new
 authority.
 
-**Design.** A profile is a **composition of existing versioned config kinds** — skills
-(`config_revision`, tool allowlists in frontmatter), budget envelopes, quality-mode mappings,
+**Design.** A profile is a **composition of versioned resource/config kinds** — folder-backed
+skills (tool allowlists in frontmatter), budget envelopes, quality-mode mappings,
 memory-access policy (Doc M), gate/approval postures — bound together by one small new
 `agent_profile` config kind, versioned and promoted through the same propose → promote ledger as
-everything else. **Autonomy posture is a projection over gate policy (decided 2026-07-11):** a
+everything else. In V1 that ledger kind records the promoted folder-resource address, digest, and
+policy bindings; it does not store the profile, prompt, or skill body. **Autonomy posture is a
+projection over gate policy (decided 2026-07-11):** a
 profile chooses among postures the policy table already allows per gate; an "auto" posture can
 never auto-approve a gate policy marks human-required (personal-data field classes, tier-≤2
 source promotion, spend beyond envelope, a recipe-required tier checkpoint). The registry and
@@ -1162,11 +1167,12 @@ surface — one adapter, no new logic.
   Head-of-ABM supervisor consumes the same toolbelt schema): compiles conversational intent into
   plan graphs over the toolbelt; requests context bundles; never freestyles context or writes
   state directly.
-- **Skills as versioned config**: prompt + policy bundles (frontmatter: tool allowlist,
-  readiness-spec ref, per-vertical/per-client overlays; body: craft — e.g. the Stage-0
+- **Skills as versioned folder resources/config**: prompt + policy bundles (frontmatter: tool
+  allowlist, readiness-spec ref, per-vertical/per-client overlays; body: craft — e.g. the Stage-0
   interviewing skill: lead with what you already inferred, ask only gaps, confirm rather than
-  interrogate, offer trust-light seeds early). Proposed → promoted via `config_revision`; pinned
-  by recipes; overlays resolve per client/industry.
+  interrogate, offer trust-light seeds early). V1 resolves exact reviewed folder versions and
+  digests; `config_revision` may promote reference metadata/profile bindings; recipes pin the
+  exact resource manifest; overlays resolve per client/industry.
 - **Goal-judge loop** (REQ-04): per-account, at round boundaries; verdict is a typed gap set;
   deterministic stop conditions; strategy escalation per round.
 - **Run supervisor** (REQ-10 layer 4): aggregate monitors + periodic LLM triage; bounded journaled
@@ -1195,7 +1201,7 @@ the repo's Alembic conventions (hash revision ids; one head; reversible).
 | Readiness spec | versioned config: per-gate coverage/confidence floors (`icp_synthesis`, `discovery_spend`, `deep_spend`) + override records | REQ-08 |
 | `client_interview` source + `volunteered_statement` | conversation-modality source manifest; unmapped statements with promotion paths | REQ-08 |
 | **Scoped memory** (supersedes `client_memory`) | Five-scope (workspace/brand/product/campaign/account) preference/learning substrate behind two seams; `memory` + `memory_claim_ref` tables; provenance-graded born-trust; caps + eviction as versioned config; tenant-private fail-closed; references claims, never duplicates them (facts → CKB; the two species never mix). **See Doc M** (`clue-hq-scoped-memory-and-context-assembly.md`) — authoritative for the design | REQ-08, Doc M |
-| Skill registry | versioned skill bundles through `config_revision`; overlays | REQ-02 |
+| Skill catalog | versioned folder-backed skill bundles + digests; optional ledgered reference metadata; overlays | REQ-02 |
 | Run-graph journal + recipes | node = tool invocation + params + pinned versions; recipe = parameterized pinned graph + compatibility declaration | REQ-12 |
 | `artifact` table + StorageBackend | content-addressed blobs; DSAR hook | REQ-07 |
 | Credit ledger (millicredits) | integer ledger with holds over the USD cost ledger; pricing config maps cost → credits | A7 |

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from typing import NewType
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,6 +17,9 @@ from clue_core.primitives import EntityId, ProjectRunId, RunId
 
 CoverageAttemptId = NewType("CoverageAttemptId", UUID)
 CoverageDecisionId = NewType("CoverageDecisionId", UUID)
+CoverageEvaluatorAdviceId = NewType("CoverageEvaluatorAdviceId", UUID)
+
+_COVERAGE_EVALUATOR_ADVICE_NAMESPACE = UUID("3bb28fe2-1151-5f89-a044-d81cc3265f5c")
 
 
 def new_coverage_attempt_id() -> CoverageAttemptId:
@@ -25,6 +28,24 @@ def new_coverage_attempt_id() -> CoverageAttemptId:
 
 def new_coverage_decision_id() -> CoverageDecisionId:
     return CoverageDecisionId(uuid4())
+
+
+def coverage_evaluator_advice_id(
+    *,
+    run_id: RunId,
+    entity_id: EntityId,
+    tier: str,
+    round: int,
+    proposal_kind: str,
+) -> CoverageEvaluatorAdviceId:
+    """Derive the append-only evaluator row identity from its complete logical boundary."""
+
+    return CoverageEvaluatorAdviceId(
+        uuid5(
+            _COVERAGE_EVALUATOR_ADVICE_NAMESPACE,
+            f"{run_id}:{entity_id}:{tier}:{round}:{proposal_kind}",
+        )
+    )
 
 
 class ResearchAttemptOutcome(StrEnum):
@@ -59,9 +80,11 @@ class ResearchGapRef(BaseModel):
 __all__ = [
     "CoverageAttemptId",
     "CoverageDecisionId",
+    "CoverageEvaluatorAdviceId",
     "ResearchAttemptOutcome",
     "ResearchTerminalStatus",
     "ResearchGapRef",
     "new_coverage_attempt_id",
     "new_coverage_decision_id",
+    "coverage_evaluator_advice_id",
 ]

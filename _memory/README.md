@@ -27,6 +27,44 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-8-production-closeout.md` — C6.8 and C6 complete: prepared account
+  turn composed in the existing DEEP slot; immutable one-owner routing; default-off flags;
+  body-free read API; cache/context/workspace/delegation/finalization telemetry; secure cold
+  workspace resume; retention cleanup; canary comparator; full operational runbook, verification,
+  and C7.0 handoff.
+- `2026-07-26-phase-c6-7-account-research-agent.md` — C6.7 complete: governed per-account
+  deepagent inside the existing fleet slot; one replay-safe C5 gap-research operation; sole C1
+  evaluator ownership with append-only non-authoritative advice; terminal-coverage finalization
+  guard; no double spend; full DB-enabled verification; and C6.8 handoff.
+- `2026-07-26-phase-c6-6-specialist-subagents.md` — C6.6 complete: governed fresh-wake research,
+  content-drafter, and reviewer children; exact task/artifact/ref transfer; isolated execution and
+  empty-history context; role-specific resources, tools, budgets, outputs, durable receipts; skill
+  authoring guide; full DB-enabled verification; and C6.7 handoff.
+- `2026-07-26-phase-c6-5-head-of-abm-stage0.md` — C6.5 complete: real Head-of-ABM
+  Stage-0 deepagent, additive exact resources, exhaustive unavailable-capability map, nine-tool
+  allowlist, progressive Stage-0 skill, C5/Recipe-0 pin parity, replay-certified proposal and
+  ingestion paths, human readiness/confirmation authority, full verification, and C6.6 handoff.
+- `2026-07-26-phase-c6-4-governed-agent-runtime.md` — C6.4 complete: whole-proposal C5 compiler,
+  exact governed framework tools, real deepagents loop, async-Postgres checkpoints, artifact-backed
+  model receipts, durable fresh-wake delegation, honest finalization authority, complete crash
+  matrix, full DB-enabled verification, and the C6.5 handoff.
+- `2026-07-26-phase-c6-3-durable-turns-context-replay.md` — C6.3 complete: reversible normalized
+  durable turn/context/history/model/finalization receipts, deterministic budgeted L1–L7 context,
+  append-only artifact-backed history, body-free cold replay, subject-indexed DSAR and workspace
+  purge, no-resurrection tombstones, full DB-enabled verification, and the C6.4 handoff.
+- `2026-07-26-phase-c6-2-catalogs-profiles-model.md` — C6.2 complete: immutable V1 folder
+  resources, strict provider-neutral catalogs, four active role profiles plus planned
+  account-research, exact effective/delegated tool authority, progressive skill disclosure,
+  governed OpenRouter tool-calling/fallback/streaming attribution, deterministic model fake,
+  full verification, and the C6.3 handoff.
+- `2026-07-26-phase-c6-0-contract-freeze.md` — C6.0 complete: strict agent/resource/plan/context/
+  delegation/finalization contracts and injected ports; exact deepagents/model dependencies; real
+  fresh-wake, OpenRouter tool-call, async-Postgres resume, artifact-workspace, and honest-finalize
+  spikes; 32-tool replay/authority audit; stock-filesystem rejection; C6.1 handoff.
+- `2026-07-26-phase-c6-planning.md` — binding C6 child spec and cross-session implementation plan:
+  real Doc-A deepagent; external per-execution `virtual_mode=True` workspace; relative paths only;
+  no application code or execution tools in the runtime workspace; folder-backed prompts, skills,
+  and profiles; C5 durability; C1 evaluator ownership; C6.0–C6.8 sequencing and gates.
 - `2026-07-25-phase-c5-6-recipe1-cutover.md` — C5.6 and C5 complete: promoted executable Recipe #1
   phase graph, lineage-validated Stage-0 pre-satisfaction, feature-gated new-run routing with
   legacy fallback, retryable external waits, full historical views, canonical parity fingerprints,

@@ -21,6 +21,9 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "confirm_icp@1",
     "override_stage0_readiness@1",
     "start_confirmed_project_run@1",
+    "propose_field@1",
+    "propose_source@1",
+    "submit_ingestion@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
@@ -45,6 +48,8 @@ RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
     "adjust_budget@1",
 )
 
+ACCOUNT_RESEARCH_TOOL_ADDRESSES: tuple[str, ...] = ("research_account_gaps@2",)
+
 
 def _split_address(address: str) -> tuple[str, str]:
     name, separator, version = address.rpartition("@")
@@ -68,7 +73,13 @@ class ReplayAuditEntry:
 
 
 def standing_recipe_addresses() -> tuple[str, ...]:
-    return tuple(sorted(set(RECIPE_0_TOOL_ADDRESSES) | set(RECIPE_1_TOOL_ADDRESSES)))
+    return tuple(
+        sorted(
+            set(RECIPE_0_TOOL_ADDRESSES)
+            | set(RECIPE_1_TOOL_ADDRESSES)
+            | set(ACCOUNT_RESEARCH_TOOL_ADDRESSES)
+        )
+    )
 
 
 def build_replay_safety_audit(registry: ToolRegistry) -> tuple[ReplayAuditEntry, ...]:
@@ -94,6 +105,7 @@ def build_replay_safety_audit(registry: ToolRegistry) -> tuple[ReplayAuditEntry,
             for recipe, addresses in (
                 ("recipe0@1", RECIPE_0_TOOL_ADDRESSES),
                 ("recipe1@1", RECIPE_1_TOOL_ADDRESSES),
+                ("account-research-unit@1", ACCOUNT_RESEARCH_TOOL_ADDRESSES),
             )
             if address in addresses
         )
@@ -119,6 +131,7 @@ def build_replay_safety_audit(registry: ToolRegistry) -> tuple[ReplayAuditEntry,
 __all__ = [
     "RECIPE_0_TOOL_ADDRESSES",
     "RECIPE_1_TOOL_ADDRESSES",
+    "ACCOUNT_RESEARCH_TOOL_ADDRESSES",
     "ReplayAuditEntry",
     "build_replay_safety_audit",
     "standing_recipe_addresses",

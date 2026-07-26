@@ -33,7 +33,17 @@ from clue_research.proposals import (
     scope_exists,
     source_yields_personal_data,
 )
-from clue_toolbelt import PreconditionFailure, Tool, ToolContext, ToolInput, ToolResult
+from clue_toolbelt import (
+    JournalParameterPolicy,
+    PreconditionFailure,
+    ReplayPolicy,
+    ReplaySafety,
+    Tool,
+    ToolContext,
+    ToolEffectClass,
+    ToolInput,
+    ToolResult,
+)
 
 
 class ProposalScopeInput(BaseModel):
@@ -109,6 +119,15 @@ class ProposeFieldTool(_ProposalTool):
     name = "propose_field"
     input_model = ProposeFieldInput
     output_model = FieldProposalOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "workspace + complete proposal scope + field key + immutable payload hash"
+        ),
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("scope", "proposed_by_ref"))
+    pin_requirements = ("proposal_policy", "brand", "field_registry")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
@@ -195,6 +214,15 @@ class ProposeSourceTool(_ProposalTool):
     name = "propose_source"
     input_model = ProposeSourceInput
     output_model = SourceProposalOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "workspace + complete proposal scope + source key + immutable payload hash"
+        ),
+    )
+    effect_class = ToolEffectClass.WRITE
+    parameter_policy = JournalParameterPolicy(safe_display_fields=("scope", "proposed_by_ref"))
+    pin_requirements = ("proposal_policy", "brand", "source_registry")
 
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext

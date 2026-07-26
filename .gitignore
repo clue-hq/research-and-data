@@ -16,6 +16,7 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+.firecrawl/
 
 # Editors / OS
 .DS_Store

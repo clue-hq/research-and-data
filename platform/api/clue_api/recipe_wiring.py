@@ -14,6 +14,9 @@ from sqlalchemy import text
 import clue_execution
 from clue_agents import discover_skills
 from clue_config import DEFAULT_STAGE0_POLICY, Config, Stage0Policy, get_config
+from clue_config.coverage import DEFAULT_RESEARCH_LOOP_POLICY
+from clue_config.ingestion import DEFAULT_INGESTION_POLICY
+from clue_config.proposals import DEFAULT_PROPOSAL_POLICY
 from clue_db import ConnFactory, transaction
 from clue_execution import (
     CallablePinResolver,
@@ -37,8 +40,10 @@ STAGE0_POLICY_VERSION = "1"
 SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v1.json",
     "recipe0-stage0-v2.json",
+    "recipe0-stage0-v3.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
+    "account-research-unit-v1.json",
 )
 
 
@@ -313,6 +318,35 @@ def build_recipe_pin_registry(
         return _observation(version="1", payload=dict(row))
 
     registry.register(CallablePinResolver(kind="project_run", loader=project_run))
+
+    async def account(
+        request: PinRequest,
+        context: CompatibilityContext,
+    ) -> ResourceObservation | None:
+        try:
+            UUID(request.key)
+        except ValueError:
+            return None
+        async with conn_factory() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT id, workspace_id, canonical_name, canonical_domain, merged_into
+                            FROM account_entity
+                            WHERE id = CAST(:key AS uuid) AND workspace_id = :workspace_id
+                            """
+                        ),
+                        {"key": request.key, "workspace_id": context.workspace_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return None if row is None else _observation(version="1", payload=dict(row))
+
+    registry.register(CallablePinResolver(kind="account", loader=account))
 
     async def supervisor_policy(
         request: PinRequest,
@@ -863,6 +897,39 @@ def build_recipe_pin_registry(
                 key="default",
                 version=STAGE0_POLICY_VERSION,
                 payload=stage0_policy,
+            ),
+        ),
+    )
+    _register_static_catalog(
+        registry,
+        kind="proposal_policy",
+        resources=(
+            VersionedPinResource(
+                key="default",
+                version="1",
+                payload=DEFAULT_PROPOSAL_POLICY,
+            ),
+        ),
+    )
+    _register_static_catalog(
+        registry,
+        kind="ingestion_policy",
+        resources=(
+            VersionedPinResource(
+                key="default",
+                version="1",
+                payload=DEFAULT_INGESTION_POLICY,
+            ),
+        ),
+    )
+    _register_static_catalog(
+        registry,
+        kind="coverage_policy",
+        resources=(
+            VersionedPinResource(
+                key="default",
+                version="1",
+                payload=DEFAULT_RESEARCH_LOOP_POLICY,
             ),
         ),
     )

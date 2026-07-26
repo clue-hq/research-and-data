@@ -11,6 +11,7 @@ from clue_core import LLMGateway, Message, Role
 from clue_research.coverage.models import GoalJudgeCall, GoalJudgeResult
 
 PROMPT_VERSION = "c1.goal-judge.v2"
+COVERAGE_EVALUATOR_OWNER = "c1.engine.goal_judge"
 
 
 def _messages(payload: dict[str, object]) -> list[Message]:
@@ -63,6 +64,7 @@ class GoalJudge:
         current_round_attempts: Sequence[dict[str, object]],
         remaining_budget_cents: str | None,
         hard_round_cap: int,
+        agent_stop_proposal: bool = False,
     ) -> GoalJudgeCall:
         completion = self._gateway.complete(
             model=self._model,
@@ -76,6 +78,7 @@ class GoalJudge:
                     "current_round_attempts": list(current_round_attempts),
                     "remaining_budget_cents": remaining_budget_cents,
                     "hard_round_cap": hard_round_cap,
+                    "agent_stop_proposal": agent_stop_proposal,
                 }
             ),
             max_tokens=1200,
@@ -103,4 +106,4 @@ class GoalJudge:
         )
 
 
-__all__ = ["GoalJudge", "PROMPT_VERSION"]
+__all__ = ["COVERAGE_EVALUATOR_OWNER", "GoalJudge", "PROMPT_VERSION"]

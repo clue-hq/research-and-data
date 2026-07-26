@@ -109,6 +109,20 @@ class ResearchAccountGapsOutput(ToolOutput):
     terminal: bool
 
 
+class EvaluatorAdviceOutput(ToolOutput):
+    evaluator_advice_id: str
+    valid: bool
+    proposal_kind: str
+    sufficient_for_goal: bool | None
+    recommendations: list[str]
+    warning_codes: list[str]
+
+
+class ResearchAccountGapsV2Output(ResearchAccountGapsOutput):
+    evaluator_advice: EvaluatorAdviceOutput
+    stop_proposal: bool
+
+
 class FieldProposalOutput(ToolOutput):
     field_proposal_id: str
     field_key: str

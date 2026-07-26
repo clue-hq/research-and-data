@@ -1,6 +1,6 @@
 # Clue-HQ — Platform Agent Runtime & Context Assembly (Doc A)
 
-> **Status: DESIGN RECORD v1.2 (2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
+> **Status: DESIGN RECORD v1.6 (2026-07-26 · v1.5 2026-07-26 · v1.4 2026-07-26 · v1.3 2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
 > what the words "agent," "deepagent," "sub-agent," "skill," "tool," and "worker fleet" mean
 > mechanically, how the platform deepagent is constructed, and how context is assembled for every
 > model call. Extends `clue-hq-harness-architecture-and-requirements.md` (REQ-02, REQ-18–REQ-22)
@@ -33,6 +33,39 @@
 > for stored objects; only paraphrase-in-place-of-original is banned); returns are proportionate
 > to the task, governed by canonicality rather than brevity; and havana is the reference for the
 > *mechanics* of delegation, not a stencil for its *policies*.
+>
+> **v1.3 (2026-07-26) — C6 resource/workspace implementation ruling (founder review).** V1
+> prompts, skills, and profiles are canonical versioned **folder resources**, not database or
+> hosted-hub bodies. Exact bytes and digests are materialized read-only into an external,
+> per-execution agent workspace; the backend is always `virtual_mode=True` and exposes only paths
+> relative to that virtual root. `config_revision` may govern profile/reference promotion
+> metadata, but it does not store prompt/skill bodies. LangSmith/Langfuse prompt hubs are future
+> catalog adapters, outside C6. The runtime workspace contains no application code or executable
+> skill/tool surface.
+>
+> **v1.4 (2026-07-26) — C6.6 implemented-state update.** The governed Head-of-ABM Stage-0
+> runtime is built with the real deepagents construction, exact folder resources, isolated
+> workspace backend, C5-only tool execution, per-role model construction, and honest
+> finalization. Fresh-wake research, content-drafter, and reviewer specialists are active behind
+> governed delegation with typed task/file/ref transfer and durable reference-only returns.
+> Product routing/canary activation remains C6.8.
+>
+> **v1.5 (2026-07-26) — C6.7 account-agent and evaluator-ownership ruling.** The governed
+> per-account agent is built as the unit inside the existing fleet slot, with one replay-safe
+> C5-backed gap-research tool and no facet delegation in v1. The fleet shell, evidence path, and
+> deterministic coverage terminalization remain authoritative. C1's engine-owned `GoalJudge` is
+> the sole independent coverage evaluator; agent stop proposals and evaluator advice are
+> append-only and non-authoritative. Default-off routing and comparative canary activation remain
+> C6.8.
+>
+> **v1.6 (2026-07-26) — C6 production activation record.** The API root now composes the
+> governed model, immutable resource registry, isolated workspace, exact L1–L7 context,
+> durable turn/replay/privacy adapters, and single-owner router. Master/surface switches default
+> off; allowlist/percentage assignments are append-only per subject, so failure cannot fall
+> through to a second owner. Authenticated body-free registry/turn/progress/telemetry projections,
+> canary comparison, cache/workspace telemetry, and terminal-workspace cleanup (never live
+> `awaiting_input` state) are production-composable. C6 is complete; the frontend shell remains
+> downstream and C7 owns dossier/derivation/handoff output.
 
 ---
 
@@ -49,12 +82,16 @@ A typed, precondition-checked, budgeted, idempotent, journaled function over the
 
 ### 1.2 Skill
 
-A **versioned prompt + policy bundle** (config, not code): frontmatter (tool allowlist,
-readiness-spec ref, overlays) + a craft body. Promoted through the `config_revision` ledger,
-pinned by recipes and run journals. A skill *loads into* an agent's context; it is never itself
-an actor. Skills load by **progressive disclosure** (name + description visible; body loaded on
-invocation) — proven in havana (`SkillsMiddleware`; the flat skills-parent-dir lesson is
-inherited: skills live under one parent directory or they silently do not load).
+A **versioned prompt + policy bundle** (resource/config, not code): frontmatter (tool allowlist,
+readiness-spec ref, overlays) + a craft body. In V1 the canonical bytes live in the reviewed
+folder catalog; an exact version + SHA-256 is pinned by recipes and run journals and materialized
+read-only into the execution workspace. `config_revision` may ledger promotion metadata or a
+profile binding, but does not hold the body. A skill *loads into* an agent's context; it is never
+itself an actor. Skills load by **progressive disclosure** (name + description visible; body
+loaded on invocation) — proven in havana (`SkillsMiddleware`; the flat skills-parent-dir lesson
+is inherited: skills live under one parent directory or they silently do not load).
+The current resource paths and immutable version-change workflow are maintained in
+[`docs/agents/skill-and-profile-authoring.md`](../agents/skill-and-profile-authoring.md).
 
 ### 1.3 Worker fleet — the shell is mechanical; the unit inside may not be *(revised 2026-07-17)*
 
@@ -137,16 +174,16 @@ agent identically.
 
 | Component | Class | Status |
 |---|---|---|
-| Head-of-ABM platform deepagent | **Deepagent** (Part II) | To build — on the havana-proven stack |
+| Head-of-ABM platform deepagent | **Deepagent** (Part II) | **LIVE behind default-off C6.8 ownership routing** |
 | Design deepagent (havana `lumen_agent`) | **Deepagent** (orchestrator + author + reviewer subagents) | **LIVE** — reference implementation |
-| Research specialist | **Subagent** of the platform deepagent (judgment tasks) + the research **toolbelt** (campaign ops) — O10 split | Toolbelt: build step 2; agent: step 6 (`agent/` in dar-es-salaam) |
+| Research specialist | **Subagent** of the platform deepagent (judgment tasks) + the research **toolbelt** (project ops) — O10 split | **LIVE in C6.6** — fresh-wake profile, skill, governed delegation |
 | Campaign & content strategist | **Role of the platform deepagent** (strategy is the main conversation, not a delegation): first the **VP-of-growth hat** — which channel campaigns to run at all, for which account-signal strengths and tiers — then the artifact/content strategy that follows per campaign, with strategy skills | Skills to author |
-| Content drafter (exemplar, one account) | **Subagent** of the platform deepagent | To build |
+| Content drafter (exemplar, one account) | **Subagent** of the platform deepagent | **LIVE in C6.6** — exemplar only |
 | Content scaling (N accounts × artifacts) | **Deterministic workers in the fleet shell** (§1.3; bounded micro-loop, honestly not an agent — Doc S §6) | To build |
 | Pass-A scoring / discovery fan-out | **Deterministic workers in the fleet shell** (scoring is code; rubric is config) | Substrate built |
-| Per-account deep research (Pass B) | **Governed worker agents in the fleet shell** (§1.3): one bounded agent per account, capped facet sub-agents, waterfall as its power tool | Shell: M8A + step-0 worker built; agentic unit: to build with step 6 |
-| Review/QA of scaled artifacts | **Deterministic workers** (gates + judge leaf calls) + M13.1 human surface; a review *subagent* only for exemplar-level critique | To build |
-| Faithfulness/goal/grounding judges | **LLM leaf calls inside engines** (never minds with tools) | M9 built; grounding judge new |
+| Per-account deep research (Pass B) | **Governed worker agents in the fleet shell** (§1.3): one bounded agent per account, waterfall as its power tool; facet delegation only after measured need | **LIVE behind default-off C6.8 ownership routing** |
+| Review/QA of scaled artifacts | **Deterministic workers** (gates + judge leaf calls) + M13.1 human surface; a review *subagent* only for exemplar-level critique | Exemplar reviewer **LIVE in C6.6**; scaled QA remains future |
+| Faithfulness/goal/grounding judges | **LLM leaf calls inside engines** (never minds with tools) | M9 built; C1 `GoalJudge` is the sole coverage evaluator owner; grounding judge new |
 | Recipes, waterfalls, scoring, derivation | **Engine** (no LLM in control flow) | Built |
 
 ## Part II — The platform deepagent (Head-of-ABM)
@@ -173,7 +210,7 @@ CONTEXT ASSEMBLER (engine code, deterministic — Part III)
   │
   ▼
 ORCHESTRATOR mind (Head-of-ABM system prompt, resource map, toolbelt allowlist)
-  plans; converses; invokes tools; delegates via task():
+  plans; converses; invokes tools; delegates via governed delegate_specialist:
     ├── research subagent      (fresh; gap-chasing, source judgment, dossier questions)
     ├── content-drafter subagent (fresh; exemplar drafting against the content schema)
     ├── review subagent        (fresh; critique of exemplars — never edits)
@@ -193,7 +230,10 @@ surface identically whether reached directly or inside a delegation (REQ-19).
 ### 2.3 Subagent contract *(revised 2026-07-18)*
 
 Per REQ-19, plus the havana-proven mechanics: subagents wake amnesiac; continuity lives in typed
-state and the shared filesystem, never in a subagent's memory.
+state, exact artifact refs, and immutable file copies, never in a subagent's memory. Each platform
+child has a distinct execution workspace; an original granted from the parent is copied
+byte-for-byte through the artifact store and materialized read-only at a receipt-backed child path.
+This preserves canonical bytes without sharing writable authority or host paths.
 
 **Context transfer is the orchestrator's judgment, within one ban.** The orchestrator equips a
 subagent with a well-written task prompt (goal, constraints) plus whatever context the task

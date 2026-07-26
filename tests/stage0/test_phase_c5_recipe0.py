@@ -186,10 +186,10 @@ async def _recipe_runner(
         lifecycle=lifecycle,
         definitions=definitions,
     )
-    recipe0_v2 = next(
+    recipe0_v3 = next(
         revision
         for definition, revision in zip(definitions, revisions, strict=True)
-        if definition.recipe_key == "recipe0-stage0" and definition.version == 2
+        if definition.recipe_key == "recipe0-stage0" and definition.version == 3
     )
     artifact_store = StorageParameterArtifactStore(
         storage=storage,
@@ -209,7 +209,7 @@ async def _recipe_runner(
     )
     started = await starter.start(
         workspace_id=workspace_id,
-        recipe_revision_id=recipe0_v2.recipe_revision_id,
+        recipe_revision_id=recipe0_v3.recipe_revision_id,
         parameters={},
         parameter_artifact_key=artifact_key,
         parameter_manifest_hash=digest,
