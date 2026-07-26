@@ -26,6 +26,7 @@ from clue_agents.contracts import (
     PlanToolStep,
     ResourceKind,
     SkillBundle,
+    SpecialistTaskEnvelope,
     ToolPin,
     ValidatedOperation,
     ValidatedPlan,
@@ -285,6 +286,26 @@ def test_delegation_contract_is_fresh_scoped_and_reference_only() -> None:
         )
 
 
+def test_specialist_task_preserves_verbatim_refs_and_output_scope() -> None:
+    value = SpecialistTaskEnvelope(
+        role=AgentRole.REVIEWER,
+        goal="Review the canonical exemplar.",
+        instructions="Do not edit or paraphrase it.",
+        verbatim_context=("The human requested a strict evidence review.",),
+        domain_refs=(domain_ref("account-1"),),
+        required_output_path="outputs/review-verdict.md",
+    )
+
+    assert value.verbatim_context == ("The human requested a strict evidence review.",)
+    with pytest.raises(ValidationError, match="below outputs"):
+        SpecialistTaskEnvelope(
+            role=AgentRole.REVIEWER,
+            goal=value.goal,
+            instructions=value.instructions,
+            required_output_path="work/review.md",
+        )
+
+
 def test_context_manifest_requires_exact_ordered_l1_through_l7() -> None:
     valid = context_manifest()
     assert tuple(layer.layer for layer in valid.layers) == tuple(ContextLayer)
@@ -321,6 +342,7 @@ _FROZEN_CONTRACT_TYPES = (
     ValidatedPlan,
     DelegationRequest,
     DelegationResult,
+    SpecialistTaskEnvelope,
     ContextBundleManifest,
     AgentFinalizeEnvelope,
 )
@@ -337,7 +359,7 @@ def test_frozen_contract_json_schema_digests() -> None:
 
     actual = {model.__name__: _schema_digest(model) for model in _FROZEN_CONTRACT_TYPES}
     assert actual == {
-        "AgentProfile": "30ea90d77ca95751adb6acc020059b206bb96ef1ca6c1580ff58cc880d4e5f4b",
+        "AgentProfile": "cb23c46fe9a2fa643ddfc816b95be2f09353e92c680bd634e929c5ab4b15580c",
         "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
         "AgentConstitution": ("b3fa6888af9a1a7d427877a426943b2c959944edcf8c4203bfbd1720887de1a5"),
         "AgentTurnRequest": ("fd8dc5c626099b24442aefa3f71eb5ba2c715cb565f60e5fef41c670991f4ebb"),
@@ -345,6 +367,9 @@ def test_frozen_contract_json_schema_digests() -> None:
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
         "DelegationRequest": ("421ad5b96a036115f492c687bab8d8fc46dafd57991b80ce0718a8bfa3f65be3"),
         "DelegationResult": ("956ec6033fa560ba7704031a0df4b5aa3aa98ebbb0702bc137018ab3adafb36c"),
+        "SpecialistTaskEnvelope": (
+            "57396348bc7f3d8f7616c38bb8ea3203cd939879cf4a56af4f6b0a46be45b113"
+        ),
         "ContextBundleManifest": (
             "1d2f8ce14873a9413ac525d022a48de1fc72c9061bc28130ce0c12da3344a488"
         ),

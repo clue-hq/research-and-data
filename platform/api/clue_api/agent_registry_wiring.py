@@ -26,14 +26,14 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v2",
-    AgentRole.RESEARCH: "v1",
-    AgentRole.CONTENT_DRAFTER: "v1",
-    AgentRole.REVIEWER: "v1",
+    AgentRole.HEAD_OF_ABM: "v3",
+    AgentRole.RESEARCH: "v2",
+    AgentRole.CONTENT_DRAFTER: "v2",
+    AgentRole.REVIEWER: "v2",
 }
 
 
-# C6.5 live authority. Empty means structurally absent from every current model surface.
+# C6.6 live authority. Empty means structurally absent from every current model surface.
 # Account-research remains a planned C6.7 role; its reviewed authority is recorded now but no
 # active profile is created early.
 C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {

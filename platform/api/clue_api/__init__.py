@@ -210,6 +210,14 @@ from clue_api.run_events_wiring import (
     RunEventEmitter,
     build_run_event_emitter,
 )
+from clue_api.specialist_wiring import (
+    DbSpecialistExecutionJournal,
+    FreshWakeSpecialistRunner,
+    SpecialistExecutionAdapter,
+    SpecialistExecutionFactory,
+    SpecialistSpendReader,
+    SpecialistWorkspaceProvider,
+)
 from clue_api.storage_wiring import (
     DEFAULT_ORPHAN_SWEEP_GRACE,
     SnapshotBindingPhaseHandler,
@@ -243,6 +251,13 @@ __all__ = [
     "DurableDeepAgentTurnRunner",
     "GovernedAgentToolFactory",
     "ModelFinalizeRequest",
+    # C6.6 fresh-wake specialists
+    "DbSpecialistExecutionJournal",
+    "FreshWakeSpecialistRunner",
+    "SpecialistExecutionAdapter",
+    "SpecialistExecutionFactory",
+    "SpecialistSpendReader",
+    "SpecialistWorkspaceProvider",
     # C6.5 Head-of-ABM Stage-0 vertical
     "HeadOfAbmStage0Runtime",
     "build_head_of_abm_stage0_execution",

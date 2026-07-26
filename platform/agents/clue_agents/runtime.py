@@ -58,10 +58,11 @@ def _tool_name(tool: BaseTool | dict[str, Any]) -> str:
 class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
     """Make framework and platform absence a runtime enforcement mechanism.
 
-    Deep Agents 0.6 installs a general-purpose ``task`` subagent by default. C6.5 has no
-    operational specialist profile yet, so this middleware removes that tool from every model
-    call and rejects a fabricated call. It also fails construction-on-first-call if a backend
-    unexpectedly contributes execution or another undeclared tool.
+    Deep Agents 0.6 installs a general-purpose ``task`` subagent by default. The platform never
+    exposes that bypass: C6.6 delegation uses ``delegate_specialist``, whose implementation
+    compiles a durable C5 delegation operation before any child wakes. This middleware also fails
+    construction-on-first-call if a backend unexpectedly contributes execution or another
+    undeclared tool.
     """
 
     def __init__(self, *, profile: ResolvedAgentProfile) -> None:
@@ -71,6 +72,7 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
                 *(pin.name for pin in profile.profile.tools),
                 *_FRAMEWORK_TOOL_NAMES,
                 "finalize_turn",
+                *(("delegate_specialist",) if profile.profile.delegation_roles else ()),
             }
         )
 

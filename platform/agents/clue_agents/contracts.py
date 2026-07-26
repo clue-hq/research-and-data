@@ -43,6 +43,7 @@ __all__ = [
     "ContextBundleManifest",
     "ContextLayer",
     "ContextLayerManifest",
+    "DelegatedFileGrant",
     "DelegationRequest",
     "DelegationResult",
     "DomainObjectRef",
@@ -53,6 +54,7 @@ __all__ = [
     "PlanToolStep",
     "ResourceKind",
     "SkillBundle",
+    "SpecialistTaskEnvelope",
     "ToolPin",
     "ValidatedOperation",
     "ValidatedPlan",
@@ -345,6 +347,8 @@ class AgentProfile(FrozenContract):
     max_delegation_depth: int = Field(ge=0, le=4)
     max_delegations: int = Field(ge=0, le=32)
     max_plan_nodes: int = Field(ge=1, le=256)
+    turn_timeout_s: float = Field(default=300.0, gt=0, le=1800)
+    max_model_rounds: int = Field(default=24, ge=1, le=128)
 
     @model_validator(mode="after")
     def profile_is_internally_coherent(self) -> AgentProfile:
@@ -699,6 +703,77 @@ class DelegationResult(FrozenContract):
             raise ValueError("delegation output refs must share the finalization workspace")
         if any(item.workspace_id != workspace_id for item in self.domain_refs):
             raise ValueError("delegation domain refs must share the finalization workspace")
+        return self
+
+
+class DelegatedFileGrant(FrozenContract):
+    """One exact parent file copied by value into a child's read-only context."""
+
+    source_path: str
+    materialized_path: str
+    artifact_ref: ArtifactRef
+
+    @field_validator("source_path")
+    @classmethod
+    def source_is_relative(cls, value: str) -> str:
+        return normalize_virtual_path(value)
+
+    @field_validator("materialized_path")
+    @classmethod
+    def materialization_is_read_only(cls, value: str) -> str:
+        normalized = normalize_virtual_path(value)
+        if not normalized.startswith("context/delegated/"):
+            raise ValueError("delegated files must materialize below context/delegated/")
+        return normalized
+
+
+class SpecialistTaskEnvelope(FrozenContract):
+    """Typed, immutable fresh-wake task body for a C6.6 specialist.
+
+    Small inputs are preserved verbatim. Canonical files are copied to artifacts and described by
+    exact path/digest refs. Domain state remains a typed ref. A child never receives a prose
+    paraphrase in place of an available original.
+    """
+
+    schema_version: Literal["1"] = "1"
+    role: Literal[AgentRole.RESEARCH, AgentRole.CONTENT_DRAFTER, AgentRole.REVIEWER]
+    goal: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_048)]
+    instructions: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=8_192),
+    ]
+    verbatim_context: tuple[
+        Annotated[str, StringConstraints(min_length=1, max_length=16_384)], ...
+    ] = ()
+    file_grants: tuple[DelegatedFileGrant, ...] = ()
+    domain_refs: tuple[DomainObjectRef, ...] = ()
+    required_output_path: str
+
+    @field_validator("required_output_path")
+    @classmethod
+    def output_is_role_scoped(cls, value: str) -> str:
+        normalized = normalize_virtual_path(value)
+        if not normalized.startswith("outputs/"):
+            raise ValueError("specialist output must be written below outputs/")
+        return normalized
+
+    @model_validator(mode="after")
+    def refs_and_grants_are_scoped_and_unique(self) -> SpecialistTaskEnvelope:
+        workspace_ids = {
+            *(item.artifact_ref.workspace_id for item in self.file_grants),
+            *(item.workspace_id for item in self.domain_refs),
+        }
+        if len(workspace_ids) > 1:
+            raise ValueError("specialist task refs must share one workspace")
+        _unique((item.source_path for item in self.file_grants), label="delegated source paths")
+        _unique(
+            (item.materialized_path for item in self.file_grants),
+            label="delegated materialized paths",
+        )
+        _unique(
+            (f"{item.object_type}:{item.object_id}:{item.version}" for item in self.domain_refs),
+            label="specialist domain refs",
+        )
         return self
 
 

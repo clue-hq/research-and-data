@@ -9,7 +9,8 @@ import re
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, cast
+from pathlib import PurePosixPath
+from typing import Any, Literal, cast
 from uuid import UUID, uuid5
 
 from langchain.tools import ToolRuntime
@@ -17,23 +18,26 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from langchain_core.tools import BaseTool, StructuredTool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import text
 
 from clue_agents import (
     AgentFinalizeEnvelope,
     AgentPlan,
+    AgentRole,
     AgentTurnOutcome,
     AgentTurnRequest,
     ArtifactRef,
     AssembledAgentContext,
     DeepAgentTurnRuntime,
+    DelegatedFileGrant,
     DomainObjectRef,
     FinalizeStatus,
     GovernedOperationReceipt,
     ResolvedAgentProfile,
+    SpecialistTaskEnvelope,
 )
-from clue_agents.contracts import PlanToolStep
+from clue_agents.contracts import PlanDelegationStep, PlanToolStep, normalize_virtual_path
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
@@ -51,6 +55,7 @@ __all__ = [
     "AgentFinalizationAuthority",
     "DurableAgentModelCallHandler",
     "DurableDeepAgentTurnRunner",
+    "DelegateSpecialistRequest",
     "GovernedAgentToolFactory",
     "ModelFinalizeRequest",
 ]
@@ -206,7 +211,10 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
 
 
 class _ModelInput(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+    # Tool arguments arrive as JSON, so arrays must validate into immutable tuples. Authority
+    # fields remain forbidden or injected; accepting JSON representation is not authority
+    # coercion.
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=False)
 
 
 class ModelFinalizeRequest(_ModelInput):
@@ -223,6 +231,39 @@ class ModelFinalizeRequest(_ModelInput):
         pattern=r"^[a-z0-9_.-]+$",
         max_length=128,
     )
+
+
+class ModelDomainRef(_ModelInput):
+    """Model-selected identity only; trusted workspace scope is injected."""
+
+    object_type: str = Field(min_length=1, max_length=128)
+    object_id: str = Field(min_length=1, max_length=255)
+    version: int | None = Field(default=None, ge=1)
+
+
+class DelegateSpecialistRequest(_ModelInput):
+    """Small typed proposal accepted by the governed specialist delegation tool."""
+
+    role: Literal["research", "content_drafter", "reviewer"]
+    goal: str = Field(min_length=1, max_length=2_048)
+    instructions: str = Field(min_length=1, max_length=8_192)
+    verbatim_context: tuple[str, ...] = Field(default=(), max_length=16)
+    canonical_paths: tuple[str, ...] = Field(default=(), max_length=32)
+    domain_refs: tuple[ModelDomainRef, ...] = Field(default=(), max_length=64)
+
+    @field_validator("canonical_paths")
+    @classmethod
+    def paths_are_relative_and_unique(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(normalize_virtual_path(value) for value in values)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("canonical delegation paths must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def bounded_verbatim_context(self) -> DelegateSpecialistRequest:
+        if any(not item or len(item) > 16_384 for item in self.verbatim_context):
+            raise ValueError("verbatim context items must contain 1..16384 characters")
+        return self
 
 
 def _with_trusted_runtime(
@@ -388,6 +429,7 @@ class GovernedAgentToolFactory:
         execution: C5AgentExecutionAdapter,
         lease: AgentWorkspaceLease,
         artifacts: DurableAgentArtifactStore,
+        required_output_path: str | None = None,
     ) -> None:
         self._request = request
         self._resolved_profile = resolved_profile
@@ -395,13 +437,17 @@ class GovernedAgentToolFactory:
         self._execution = execution
         self._lease = lease
         self._artifacts = artifacts
+        self._required_output_path = required_output_path
 
     def build(self) -> tuple[BaseTool, ...]:
         tools = tuple(
             self._governed_tool(pin.name, pin.version)
             for pin in self._resolved_profile.profile.tools
         )
-        return (*tools, self._finalize_tool())
+        delegation = (
+            (self._delegation_tool(),) if self._resolved_profile.profile.delegation_roles else ()
+        )
+        return (*tools, *delegation, self._finalize_tool())
 
     def _governed_tool(self, name: str, version: str) -> BaseTool:
         descriptor = self._registry.descriptor(name, version)
@@ -479,10 +525,165 @@ class GovernedAgentToolFactory:
             ),
         )
 
+    def _delegation_tool(self) -> BaseTool:
+        output_paths = {
+            AgentRole.RESEARCH: "outputs/research-strategy.md",
+            AgentRole.CONTENT_DRAFTER: "outputs/content-exemplar.md",
+            AgentRole.REVIEWER: "outputs/review-verdict.md",
+        }
+
+        async def delegate_specialist(runtime: ToolRuntime, **kwargs: Any) -> str:
+            model_input = DelegateSpecialistRequest.model_validate(kwargs)
+            role = AgentRole(model_input.role)
+            if role not in self._resolved_profile.profile.delegation_roles:
+                raise ValueError(f"role {role.value!r} is absent from delegated authority")
+            workspace_id = self._request.constitution.workspace_id
+            file_grants: list[DelegatedFileGrant] = []
+            for ordinal, source_path in enumerate(model_input.canonical_paths):
+                entry = await self._lease.backend.stat_entry(source_path)
+                if entry.kind != "file" or entry.sha256 is None:
+                    raise ValueError(f"canonical delegation path {source_path!r} is not a file")
+                body = (await self._lease.backend.read_text(source_path)).encode()
+                suffix = PurePosixPath(source_path).suffix
+                if suffix not in self._resolved_profile.profile.workspace.allowed_extensions:
+                    raise ValueError(
+                        f"canonical delegation path {source_path!r} has a forbidden extension"
+                    )
+                ref = await self._artifacts.persist_body(
+                    workspace_id=workspace_id,
+                    data=body,
+                    media_type=(
+                        "application/json"
+                        if suffix == ".json"
+                        else "application/yaml"
+                        if suffix in {".yaml", ".yml"}
+                        else "text/markdown"
+                        if suffix == ".md"
+                        else "text/plain"
+                    ),
+                )
+                if ref.sha256 != entry.sha256:
+                    raise RuntimeError("canonical file changed while delegation was being frozen")
+                child_path = f"context/delegated/{ordinal:02d}-{PurePosixPath(source_path).name}"
+                file_grants.append(
+                    DelegatedFileGrant(
+                        source_path=source_path,
+                        materialized_path=child_path,
+                        artifact_ref=ref,
+                    )
+                )
+            domain_refs = tuple(
+                DomainObjectRef(
+                    workspace_id=workspace_id,
+                    object_type=item.object_type,
+                    object_id=item.object_id,
+                    version=item.version,
+                )
+                for item in model_input.domain_refs
+            )
+            specialist_role = cast(
+                Literal[
+                    AgentRole.RESEARCH,
+                    AgentRole.CONTENT_DRAFTER,
+                    AgentRole.REVIEWER,
+                ],
+                role,
+            )
+            task = SpecialistTaskEnvelope(
+                role=specialist_role,
+                goal=model_input.goal,
+                instructions=model_input.instructions,
+                verbatim_context=model_input.verbatim_context,
+                file_grants=tuple(file_grants),
+                domain_refs=domain_refs,
+                required_output_path=output_paths[specialist_role],
+            )
+            task_ref = await self._artifacts.persist_body(
+                workspace_id=workspace_id,
+                data=task.model_dump_json(exclude_none=False).encode(),
+                media_type="application/vnd.clue.specialist-task+json",
+            )
+            tool_call_id = str(runtime.tool_call_id)
+            call_digest = hashlib.sha256(tool_call_id.encode()).hexdigest()[:24]
+            node_key = f"delegate_{role.value}_{call_digest}"
+            plan_id = uuid5(
+                _DIRECT_PLAN_NAMESPACE,
+                f"{self._request.constitution.execution_id}:{node_key}",
+            )
+            plan = AgentPlan(
+                plan_id=plan_id,
+                execution_id=self._request.constitution.execution_id,
+                role=self._request.constitution.role,
+                goal_ref=self._request.user_message_artifact_ref,
+                steps=(
+                    PlanDelegationStep(
+                        node_key=node_key,
+                        role=role,
+                        task_artifact_ref=task_ref,
+                        granted_paths=tuple(item.materialized_path for item in file_grants),
+                        domain_refs=domain_refs,
+                        purpose=(f"Fresh-wake governed {role.value} specialist task."),
+                    ),
+                ),
+                proposed_at=self._request.requested_at,
+            )
+            validated = await self._execution.validate_plan(
+                plan=plan,
+                constitution=self._request.constitution,
+            )
+            final_progress = None
+            async for progress in self._execution.execute(plan=validated):
+                final_progress = progress
+            if final_progress is None or final_progress.status != "completed":
+                raise RuntimeError(f"governed {role.value} delegation failed")
+            recovered = await self._execution.recover(
+                execution_id=self._request.constitution.execution_id
+            )
+            receipts_value = recovered.get("operation_receipts", ())
+            if not isinstance(receipts_value, Sequence):
+                raise RuntimeError("operation receipts are malformed")
+            receipt = next(
+                (
+                    item
+                    for item in receipts_value
+                    if isinstance(item, GovernedOperationReceipt)
+                    and item.operation_id == validated.operations[0].operation_id
+                ),
+                None,
+            )
+            if receipt is None:
+                raise RuntimeError("completed delegation has no durable receipt")
+            return receipt.model_dump_json(exclude_none=True)
+
+        delegate_specialist.__name__ = "delegate_specialist"
+        delegate_specialist.__doc__ = (
+            "Wake one governed specialist from an exact task, verbatim small context, immutable "
+            "canonical-file copies, and typed domain refs. The child has no parent chat history, "
+            "must durably write its role-specific output, and returns references only."
+        )
+        return StructuredTool.from_function(
+            coroutine=delegate_specialist,
+            name="delegate_specialist",
+            description=delegate_specialist.__doc__,
+            args_schema=_with_trusted_runtime(
+                DelegateSpecialistRequest,
+                name="DelegateSpecialistRequestRuntime",
+            ),
+        )
+
     def _finalize_tool(self) -> BaseTool:
         async def finalize_turn(runtime: ToolRuntime, **kwargs: Any) -> str:
             del runtime
             model_input = ModelFinalizeRequest.model_validate(kwargs)
+            if (
+                model_input.status is FinalizeStatus.COMPLETED
+                and self._required_output_path is not None
+            ):
+                entry = await self._lease.backend.stat_entry(self._required_output_path)
+                if entry.kind != "file" or entry.byte_count == 0:
+                    raise ValueError(
+                        "completed specialist turn requires its non-empty role output file"
+                    )
             workspace_id = self._request.constitution.workspace_id
             final_message_ref = (
                 await self._artifacts.persist_body(

@@ -19,7 +19,9 @@ from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
     CheckpointerFactory,
+    DbAgentDelegationRuntime,
     DbAgentPlanJournal,
+    FreshWakeChildRunner,
 )
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
@@ -109,6 +111,7 @@ class HeadOfAbmStage0Runtime:
         turns: DbAgentTurnJournal,
         artifacts: DurableAgentArtifactStore,
         tools: ToolRegistry,
+        child_runner: FreshWakeChildRunner,
         materializer: AgentResourceMaterializer | None = None,
         max_runtime_s: float = 300.0,
         max_rounds: int = 24,
@@ -120,6 +123,7 @@ class HeadOfAbmStage0Runtime:
         self._turns = turns
         self._artifacts = artifacts
         self._tools = tools
+        self._child_runner = child_runner
         self._materializer = materializer or AgentResourceMaterializer()
         self._max_runtime_s = max_runtime_s
         self._max_rounds = max_rounds
@@ -166,6 +170,14 @@ class HeadOfAbmStage0Runtime:
                 ),
             )
         await self._turns.create(request=request, profile=resolved.profile)
+        execution.bind_delegation_runtime(
+            DbAgentDelegationRuntime(
+                registry=self._profiles,
+                child_runner=self._child_runner,
+                conn_factory=self._conn_factory,
+                crash_hook=self._crash_hook,
+            )
+        )
         finalization = AgentFinalizationAuthority(
             lease=lease,
             artifacts=self._artifacts,

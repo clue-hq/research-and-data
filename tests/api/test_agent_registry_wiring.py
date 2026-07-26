@@ -40,12 +40,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        AgentRole.HEAD_OF_ABM: "97a733d62a7808ed4c19a6762e31e1ce6dcf12b2d00ac4b74945af55d8524294",
-        AgentRole.RESEARCH: "8cec89e9cb14b542a398c9bb269edaac694b89f01f280a2904f452aab0c83d72",
+        AgentRole.HEAD_OF_ABM: "e20d06dd425c96294b3408face6bd141317c461e07c43d3c24d206ee03a3a08a",
+        AgentRole.RESEARCH: "273a3c50019587bacf76dcc235c8e0f152a65fe615f3bc312906a064d921bba8",
         AgentRole.CONTENT_DRAFTER: (
-            "b18a15731fe2b494f6ece1ca0a39fbc22464eabc2d966e6d84229cc5f637facd"
+            "f1249b6e22ac2f4040d640270e6f2eec19ad898315e1e0308ff749221cbafb61"
         ),
-        AgentRole.REVIEWER: "d1564ba5a8ae37a7704d7ccb2c080767236b81bb7979eecf1027fafd92681c32",
+        AgentRole.REVIEWER: "83b78489beb635cf68f2f5e60825fd739c28a091c99493b2a71b5e6e33d50241",
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
@@ -103,7 +103,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["confirm_icp@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["override_stage0_readiness@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["research_account_gaps@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
-    assert "task/subagent: unavailable" in head.generated_resource_map
+    assert "framework task/subagent: unavailable" in head.generated_resource_map
+    assert "delegate_specialist: available" in head.generated_resource_map
     assert "execute/shell/process: unavailable" in head.generated_resource_map
     assert "/Users/" not in head.generated_resource_map
     assert head.system_prompt.endswith("## End resolved resource and capability map")
@@ -122,6 +123,50 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert "Ask one compact question" in body
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
+
+
+@pytest.mark.parametrize(
+    ("role", "skill_address", "required_output", "timeout", "rounds"),
+    (
+        (
+            AgentRole.RESEARCH,
+            "skill:research-task@v1",
+            "outputs/research-strategy.md",
+            180.0,
+            16,
+        ),
+        (
+            AgentRole.CONTENT_DRAFTER,
+            "skill:content-exemplar@v1",
+            "outputs/content-exemplar.md",
+            120.0,
+            12,
+        ),
+        (
+            AgentRole.REVIEWER,
+            "skill:artifact-review@v1",
+            "outputs/review-verdict.md",
+            90.0,
+            10,
+        ),
+    ),
+)
+def test_c66_specialists_freeze_skill_output_budget_and_no_child_delegation(
+    registry: AgentProfileRegistry,
+    role: AgentRole,
+    skill_address: str,
+    required_output: str,
+    timeout: float,
+    rounds: int,
+) -> None:
+    resolved = registry.resolve(role)
+
+    assert [item.resource.address for item in resolved.skill_disclosures()] == [skill_address]
+    assert required_output in resolved.open_skill(skill_address)
+    assert resolved.profile.turn_timeout_s == timeout
+    assert resolved.profile.max_model_rounds == rounds
+    assert resolved.profile.delegation_roles == ()
+    assert "delegate_specialist: unavailable" in resolved.generated_resource_map
 
 
 @pytest.mark.parametrize(
@@ -151,18 +196,24 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
     assert required_guidance in body
 
 
-def test_stage0_head_has_no_specialist_delegation_before_c66(
+def test_head_delegates_only_to_c66_specialists_with_narrowed_authority(
     registry: AgentProfileRegistry,
 ) -> None:
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    assert head.profile.delegation_roles == ()
-    assert head.delegation_tool_grants == {}
-    with pytest.raises(AgentCatalogError, match="not delegated"):
-        registry.resolve_delegation(
+    assert head.profile.delegation_roles == (
+        AgentRole.RESEARCH,
+        AgentRole.CONTENT_DRAFTER,
+        AgentRole.REVIEWER,
+    )
+    for role in head.profile.delegation_roles:
+        child = registry.resolve_delegation(
             parent=head,
-            child_role=AgentRole.RESEARCH,
+            child_role=role,
             current_depth=0,
         )
+        assert child.profile.role is role
+        assert child.profile.delegation_roles == ()
+        assert set(child.profile.tools) <= set(head.delegation_tool_grants[role])
 
 
 def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
@@ -213,7 +264,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v2/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v3/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
