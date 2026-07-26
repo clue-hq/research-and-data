@@ -1,6 +1,7 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0–C6 implemented; C7 is the next engineering session
+**Status:** ACTIVE — C0–C6 implemented; C7 contract/plan frozen on
+`platform/c7-research-views`, implementation next
 (2026-07-26)
 
 **Integration branch:** `platform/workspace-restructure`
@@ -513,16 +514,21 @@ load.
 contracts that shell consumes; the product surface remains downstream unless a child spec
 explicitly brings it into scope.
 
-### C7 — dossier + derivation views (Step 7)
+### C7 — structured research views + derivations (Step 7)
 
-**Goal.** Produce readable, regenerable research output without turning rendered prose into a
-second truth store.
+**Goal.** Produce readable, regenerable account/contact research views without turning rendered
+prose into a second truth store. Per the founder's 2026-07-27 clarification, “dossier” is the
+logical structured research-view contract, not a canonical Markdown/HTML/file body.
+
+**Binding child spec:** [PC-C7](./PC-C7-research-views-derivations-and-handoff.md).
+**Detailed implementation plan:**
+[2026-07-27 Phase C7 research views](../superpowers/plans/2026-07-27-phase-c7-research-views.md).
 
 **Scope:**
 
 - `claim_derivation` edges and entailment judge mode;
-- `compose_dossier` tool;
-- dossier/block projection with provenance;
+- `compose_dossier` compatibility tool returning a structured research-view receipt;
+- account/contact research-view and nine-block reference projections with provenance;
 - coverage-and-gaps appendix from C1;
 - re-check tool over snapshots + verification;
 - production `HandoffCommitteeReader` and real narrative emit;
@@ -532,7 +538,7 @@ second truth store.
 
 - every sentence is a claim or a derived claim with visible supports;
 - superseded supports stale/exclude dependent derivations until re-judged;
-- fixture dossiers render losslessly;
+- fixture account/contact research views and nine-block adapters resolve losslessly;
 - the HANDOFF gap marker disappears only when real narrative emission is proven;
 - erased personal content is absent from dossier, rationale, snapshots, and projections.
 

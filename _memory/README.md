@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-27-phase-c7-planning.md` — C7 planning checkpoint on
+  `platform/c7-research-views`: founder-ratified dossier-as-structured-research-view ruling,
+  account/contact frontend contract, derivation/entailment and reference-only snapshot decisions,
+  C8 prerequisite placement, C7.0–C7.8 slices, verification gates, and next implementation entry.
 - `2026-07-26-phase-c6-8-production-closeout.md` — C6.8 and C6 complete: prepared account
   turn composed in the existing DEEP slot; immutable one-owner routing; default-off flags;
   body-free read API; cache/context/workspace/delegation/finalization telemetry; secure cold

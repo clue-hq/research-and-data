@@ -336,6 +336,13 @@ All three parts are new.
 **Requirement.** Research output must include a well-synthesized, readable dossier for the user —
 not raw claim rows — including *inferences*: what the facts mean, as experts would read them.
 
+**2026-07-27 presentation ruling (binding for C7).** “Dossier” names the structured, provenance-
+resolving research view displayed in ordinary account/contact product pages. It is not a canonical
+Markdown/HTML/file body. The frontend renders typed sections/items and evidence actions. A saved
+version is a reference-only composition receipt; an optional document renderer is downstream and
+non-authoritative. The nine-block vocabulary remains a compatibility/consumer adapter over the
+same statement references.
+
 **Rationale.** Founder requirement #3. The claim store is the substrate; humans review documents.
 The co-founder's fixtures (Eagle Physicians) set the calibration bar for what "good" reads like.
 
@@ -345,11 +352,11 @@ The co-founder's fixtures (Eagle Physicians) set the calibration bar for what "g
   judge gains an **entailment mode** (is the derived statement entailed by its supports?);
   confidence propagates conservatively from supports (default: min of supports, policy-tunable).
   Derived claims obey every promotion rule ordinary claims do.
-- **`compose_dossier` tool** renders a cited, *regenerable* view over claims: markdown/HTML with a
-  provenance index, plus (REQ-16) the treaty's nine-block projection shaped by a per-brand
-  DossierSchema. Sections cover the account profile, signals/evidence per product slot, committee
-  cards (with binding/audit chips), positioning narrative, feasibility notes, and the REQ-04
-  coverage & gaps appendix.
+- **`compose_dossier` tool** composes a cited, *regenerable*, structured account/contact research
+  view with a provenance index and (REQ-16) the treaty's nine-block reference projection. It
+  returns a reference-only receipt rather than a canonical Markdown/HTML body. Sections cover the
+  account profile, signals/evidence per product slot, committee cards (with binding/audit chips),
+  positioning narrative, feasibility notes, and the REQ-04 coverage & gaps appendix.
 - **Dossier ownership (decided):** owned here as a view over claims — "verified meaning" — with
   artifact-shaped content remaining downstream (D1 intact). Dossier "versions" are snapshots of
   the projection; refresh diffs map to claim supersede/merge underneath.
@@ -1353,7 +1360,7 @@ integration; REQ-20's parity traceability matrix is a standing exit check as Gro
 | O8 | Exact millicredit pricing map (USD → mc, margins) | Ledger built value-agnostic; pricing config versioned |
 | O9 | Which agent-profile fields are user-editable in V1 (vs admin/policy-locked) | Skills overlay choice, autonomy within policy, budget caps, model tier |
 | O10 | Delegation granularity default (supervisor → sub-agent vs supervisor → toolbelt, per capability) | Campaign ops via toolbelt; judgment/strategy tasks agent-to-agent; recorded per profile |
-| O11 | **Dossier as the research-presentation format** (block-action posture is decided; the *document shape* is not). **Standing flag: notify the founder before any upstream implementation binds to the dossier document shape specifically** — downstream consumers read claims/narrative/block projections, not rendered dossiers (Doc S O-S1) | Dossier + block projection as designed; consumers insulated |
+| O11 | **Research presentation contract. Resolved for the backend on 2026-07-27:** dossier = structured account/contact research view + provenance/evidence actions; saved versions are reference-only receipts; no upstream consumer binds to a canonical rendered document. Exact frontend layout and any optional downstream renderer remain open. | Structured research view + nine-block reference adapter; consumers insulated from rendered documents |
 | O12 | Review posture for scaled artifacts (canary + flagged tail vs full-table review) | Canary + flagged tail; gates trusted for the green tail (Doc S §6) |
 
 ### 11. Pre-mortem (failure modes and standing guards)
