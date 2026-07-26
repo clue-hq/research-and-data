@@ -22,6 +22,7 @@ from clue_agents.contracts import (
     DomainObjectRef,
     FinalizeStatus,
     ModelPolicy,
+    ResourceKind,
     SkillBundle,
     ToolPin,
     ValidatedOperation,
@@ -29,16 +30,42 @@ from clue_agents.contracts import (
     WorkspacePolicy,
 )
 from clue_agents.ports import (
+    AgentArtifactSink,
     AgentContextAssembler,
     AgentExecutionAdapter,
     AgentHistoryStore,
     AgentModelProvider,
     AgentWorkspaceBackend,
+    WorkspaceEntry,
+)
+from clue_agents.resources import (
+    AgentResourceMaterializer,
+    AgentResourceSnapshot,
+    ResourceBody,
+    WorkspaceSeedFile,
+    build_agent_resource_manifest,
+    resource_manifest_sha256,
 )
 from clue_agents.skills import SkillDescriptor, discover_skills, load_skill
 from clue_agents.state import ClueDeepAgentState
+from clue_agents.workspace import (
+    AgentWorkspaceFactory,
+    AgentWorkspaceLease,
+    AnchoredAgentWorkspaceBackend,
+    WorkspaceIdentity,
+)
+from clue_agents.workspace_policy import (
+    PreparedWorkspaceRoot,
+    WorkspaceConfigurationError,
+    WorkspaceConflict,
+    WorkspaceError,
+    WorkspaceQuotaExceeded,
+    WorkspaceRootPolicy,
+    WorkspaceSecurityError,
+)
 
 __all__ = [
+    "AgentArtifactSink",
     "AgentConstitution",
     "AgentContextAssembler",
     "AgentExecutionAdapter",
@@ -48,10 +75,15 @@ __all__ = [
     "AgentPlan",
     "AgentProfile",
     "AgentResourceManifest",
+    "AgentResourceMaterializer",
     "AgentResourceRef",
+    "AgentResourceSnapshot",
     "AgentRole",
     "AgentTurnRequest",
+    "AgentWorkspaceFactory",
     "AgentWorkspaceBackend",
+    "AgentWorkspaceLease",
+    "AnchoredAgentWorkspaceBackend",
     "ArtifactRef",
     "ClueDeepAgentState",
     "ContextBundleManifest",
@@ -62,12 +94,26 @@ __all__ = [
     "DomainObjectRef",
     "FinalizeStatus",
     "ModelPolicy",
+    "PreparedWorkspaceRoot",
+    "ResourceBody",
+    "ResourceKind",
     "SkillBundle",
     "SkillDescriptor",
     "ToolPin",
     "ValidatedOperation",
     "ValidatedPlan",
+    "WorkspaceConfigurationError",
+    "WorkspaceConflict",
+    "WorkspaceEntry",
+    "WorkspaceError",
+    "WorkspaceIdentity",
     "WorkspacePolicy",
+    "WorkspaceQuotaExceeded",
+    "WorkspaceRootPolicy",
+    "WorkspaceSecurityError",
+    "WorkspaceSeedFile",
+    "build_agent_resource_manifest",
     "discover_skills",
     "load_skill",
+    "resource_manifest_sha256",
 ]

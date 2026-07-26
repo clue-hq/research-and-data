@@ -86,6 +86,17 @@ ReasonCode = Annotated[
 ]
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+_CONFUSABLE_SEPARATORS = frozenset(
+    {
+        "\u2044",  # fraction slash
+        "\u2215",  # division slash
+        "\u29f5",  # reverse solidus operator
+        "\u29f8",  # big solidus
+        "\ufe68",  # small reverse solidus
+        "\uff0f",  # fullwidth solidus
+        "\uff3c",  # fullwidth reverse solidus
+    }
+)
 _SOURCE_EXTENSIONS = {
     ".bash",
     ".c",
@@ -136,6 +147,8 @@ def normalize_virtual_path(value: str) -> str:
         raise ValueError("virtual path must be a non-empty string")
     if _CONTROL_CHARS.search(value):
         raise ValueError("virtual path must not contain control characters")
+    if any(character in value for character in _CONFUSABLE_SEPARATORS):
+        raise ValueError("virtual path must not contain Unicode separator confusables")
     if value.startswith("/") or value.startswith("\\"):
         raise ValueError("virtual path must be relative to the workspace root")
     if "\\" in value:

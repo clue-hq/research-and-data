@@ -4,8 +4,8 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0 implemented and verified; C6.1 is next. No C6 migration or production
-runtime exists yet.
+**Current checkpoint:** C6.0 and C6.1 implemented and verified; C6.2 is next. No C6 migration,
+agent executor, or feature routing exists yet.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -29,7 +29,7 @@ the framework, tool-calling, workspace, resource-version, and replay-safety unkn
 | Slice | Purpose | May add migration? | Required checkpoint |
 |---|---|---:|---|
 | C6.0 | **Complete** — freeze contracts and prove external runtime assumptions | No | architecture/spike tests green |
-| C6.1 | Isolated workspace, virtual backend, resource materialization | Only if artifact metadata needs an additive record; prefer no | isolation battery green |
+| C6.1 | **Complete** — isolated workspace, virtual backend, resource materialization | No migration added | isolation battery green |
 | C6.2 | Folder catalogs, profiles, registry, tool-calling model seam | Profile metadata only if proven necessary | exact resource/allowlist/import gates green |
 | C6.3 | Typed turns, seven-layer context, history, receipts | Yes | migration smoke + body-free replay |
 | C6.4 | Plan compiler, governed tools, delegation, finalize | Additive only | crash/authority/replay matrix green |
@@ -171,6 +171,47 @@ Cover absolute paths, `..`, repeated separators, backslashes, control characters
 confusables, symlink swaps, file replacement races, cross-execution ids, hard-link attempts,
 oversized files, too many files, executable extensions/bits, read-only mutation, repository reads,
 secret/env reads, and cleanup-before-finalization.
+
+### C6.1 close-out — 2026-07-26
+
+Implemented:
+
+- `CLUE_AGENT_WORKSPACE_ROOT` composition with a dedicated-root policy that rejects source/home
+  ancestors and descendants, links and dot components, permissive modes, wrong types, and
+  unexpected scope entries;
+- one-shot `<workspace>/<project>/<execution>` creation with validated ASCII identity segments,
+  opaque agent root ids, mode `0700` directories, and no host paths in the agent-facing surface;
+- a real Deep Agents `BackendProtocol` implementation with `virtual_mode=True`, relative
+  list/read/stat/write/edit/glob/grep/upload/download support, prefix and data-extension authority,
+  and no execute/shell/process/environment/package surface;
+- descriptor-anchored `O_NOFOLLOW` traversal, regular/private/non-executable/single-link checks,
+  process and filesystem locking, atomic no-replace writes, atomic compare-and-swap edits, crash
+  residue rejection, and per-file/total/count quotas;
+- exact resource snapshot validation and byte-copy materialization beneath `.deepagent/`, plus
+  immutable context/input seeds, canonical manifest-last write, digest verification, and frozen
+  `0500`/`0400` trees before a lease becomes model-ready;
+- single-flight output freezing and workspace-scoped content-addressed `StorageBackend` handoff;
+  cleanup remains impossible until outputs are snapshotted and a same-workspace durable
+  finalization ref authorizes retention cleanup.
+
+The folder catalog schemas/loaders and real role resources remain C6.2 work. C6.1 deliberately
+implemented their exact immutable snapshot/materialization consumer without pre-empting that
+catalog ownership. No migration, agent construction, executor, route, or feature flag was added.
+
+Verification:
+
+- C6.1/root/resource/API adversarial suite: 49 passed;
+- all agent tests: 67 passed, 1 skipped;
+- Ruff format/lint over the repository excluding unrelated untracked `.claude/` and `.codex/`
+  copies: green across 820 files;
+- mypy: 401 source files, green;
+- import-linter: 24 contracts kept, 0 broken;
+- repository pytest: 1,461 passed, 1,070 skipped;
+- `git diff --check`: green.
+
+The literal `make check` remains obstructed only by the preserved untracked `.claude/` and
+`.codex/` structural-humanizer CLI copies (16 `T201` findings). Its source-controlled equivalent
+was run explicitly and passed.
 
 ## 5. C6.2 — catalogs, profiles, registry, and model seam
 

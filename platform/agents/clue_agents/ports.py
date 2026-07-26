@@ -32,6 +32,7 @@ from clue_agents.contracts import (
 from clue_core import ExecutionId
 
 __all__ = [
+    "AgentArtifactSink",
     "AgentContextAssembler",
     "AgentExecutionAdapter",
     "AgentHistoryStore",
@@ -82,6 +83,20 @@ class ExecutionProgress(PortValue):
 
 
 @runtime_checkable
+class AgentArtifactSink(Protocol):
+    """Persist one finalized workspace file without exposing a storage implementation."""
+
+    async def persist(
+        self,
+        *,
+        workspace_id: str,
+        logical_path: str,
+        data: bytes,
+        media_type: str,
+    ) -> ArtifactRef: ...
+
+
+@runtime_checkable
 class AgentModelProvider(Protocol):
     """Build a provider-neutral LangChain tool-calling model behind the gateway boundary."""
 
@@ -114,6 +129,8 @@ class AgentWorkspaceBackend(Protocol):
     async def list_entries(self, prefix: str = "") -> Sequence[WorkspaceEntry]: ...
 
     async def read_text(self, path: str) -> str: ...
+
+    async def stat_entry(self, path: str) -> WorkspaceEntry: ...
 
     async def write_text(self, path: str, content: str) -> WorkspaceEntry: ...
 
