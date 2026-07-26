@@ -63,7 +63,10 @@ from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.composition import build_pre_spend_gate
-from clue_api.coverage_tools import build_research_account_gaps_tool
+from clue_api.coverage_tools import (
+    build_research_account_gaps_tool,
+    build_research_account_gaps_v2_tool,
+)
 from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
@@ -1688,6 +1691,15 @@ def build_toolbelt(
             lock_factory=locks,
         ),
         make_default=True,
+    )
+    registry.register(
+        build_research_account_gaps_v2_tool(
+            gateway=gateway,
+            conn_factory=conn_factory,
+            pre_spend_gate=gate,
+            lock_factory=locks,
+        ),
+        make_default=False,
     )
     registry.register(ProposeFieldTool(), make_default=True)
     registry.register(

@@ -21,6 +21,7 @@ from clue_toolbelt import ToolEffectClass, ToolRegistry, UnknownTool
 __all__ = [
     "C6_ACTIVE_PROFILE_VERSIONS",
     "C6_AGENT_TOOL_AUTHORITY",
+    "c6_roles_for_tool",
     "ToolRegistryAgentCatalog",
     "build_agent_profile_registry",
 ]
@@ -30,12 +31,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     AgentRole.RESEARCH: "v2",
     AgentRole.CONTENT_DRAFTER: "v2",
     AgentRole.REVIEWER: "v2",
+    AgentRole.ACCOUNT_RESEARCH: "v1",
 }
 
 
-# C6.6 live authority. Empty means structurally absent from every current model surface.
-# Account-research remains a planned C6.7 role; its reviewed authority is recorded now but no
-# active profile is created early.
+# C6.7 live authority. Empty means structurally absent from every current model surface.
 C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "adjust_budget": (),
     "compose_handoff": (
@@ -52,17 +52,17 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "import_accounts": (),
     "override_stage0_readiness": (),
     "pause_run": (),
-    "profile_contact": (AgentRole.RESEARCH, AgentRole.ACCOUNT_RESEARCH),
+    "profile_contact": (AgentRole.RESEARCH,),
     "propose_field": (AgentRole.HEAD_OF_ABM,),
     "propose_source": (AgentRole.HEAD_OF_ABM,),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
-    "research_account_gaps": (),
-    "resolve_committee": (AgentRole.RESEARCH, AgentRole.ACCOUNT_RESEARCH),
+    "research_account_gaps": (AgentRole.ACCOUNT_RESEARCH,),
+    "resolve_committee": (AgentRole.RESEARCH,),
     "resume_run": (),
     "retry_ingestion": (),
     "reverse_profile": (),
-    "run_deep_account": (AgentRole.RESEARCH, AgentRole.ACCOUNT_RESEARCH),
-    "run_verification": (AgentRole.RESEARCH, AgentRole.ACCOUNT_RESEARCH),
+    "run_deep_account": (AgentRole.RESEARCH,),
+    "run_verification": (AgentRole.RESEARCH,),
     "score_accounts": (),
     "start_confirmed_project_run": (AgentRole.HEAD_OF_ABM,),
     "start_project_run": (),
@@ -92,12 +92,32 @@ _RESERVED_REASON: dict[str, str] = {
     "discover_accounts": "post_stage0_not_admitted",
     "estimate_project": "post_stage0_not_admitted",
     "import_accounts": "post_stage0_not_admitted",
-    "research_account_gaps": "reserved_for_c6_7_single_evaluator",
     "retry_ingestion": "replay_not_certified",
     "reverse_profile": "superseded_by_governed_stage0_recon",
     "score_accounts": "post_stage0_not_admitted",
     "start_project_run": "legacy_unconfirmed_entry_forbidden",
 }
+
+
+def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
+    """Resolve authority by exact address where versions have different safety proofs."""
+
+    if name == "research_account_gaps":
+        return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
+    return C6_AGENT_TOOL_AUTHORITY.get(name, ())
+
+
+def c6_roles_for_tool(address: str) -> tuple[AgentRole, ...]:
+    name, separator, _version = address.partition("@")
+    if not separator:
+        raise ValueError("C6 tool authority requires an exact name@version address")
+    return _roles_for(address, name)
+
+
+def _unavailable_reason(address: str, name: str) -> str | None:
+    if address == "research_account_gaps@1":
+        return "replaced_by_replay_safe_v2"
+    return _RESERVED_REASON.get(name)
 
 
 class ToolRegistryAgentCatalog(AgentToolCatalog):
@@ -122,11 +142,11 @@ class ToolRegistryAgentCatalog(AgentToolCatalog):
             recipe_safe=descriptor.recipe_safe,
             steering=descriptor.effect_class is ToolEffectClass.STEERING,
             effect_class=descriptor.effect_class.value,
-            admitted_roles=C6_AGENT_TOOL_AUTHORITY.get(descriptor.name, ()),
+            admitted_roles=_roles_for(descriptor.address, descriptor.name),
             unavailable_reason_code=(
                 "human_authority"
                 if descriptor.name in _HUMAN_ONLY_TOOLS
-                else _RESERVED_REASON.get(descriptor.name)
+                else _unavailable_reason(descriptor.address, descriptor.name)
             ),
         )
 
@@ -146,8 +166,8 @@ def build_agent_profile_registry(
             f"extra={extra}"
         )
     admitted_addresses: set[str] = set()
-    for name, roles in C6_AGENT_TOOL_AUTHORITY.items():
-        descriptor = tool_registry.descriptor(name)
+    for descriptor in tool_registry.all_descriptors():
+        roles = _roles_for(descriptor.address, descriptor.name)
         if roles:
             if not descriptor.recipe_safe:
                 raise AgentCatalogError(
@@ -176,9 +196,7 @@ def build_agent_profile_registry(
                     output_schema_sha256=descriptor.output_schema_sha256,
                 )
             )
-            for descriptor in (
-                tool_registry.descriptor(name) for name in sorted(C6_AGENT_TOOL_AUTHORITY)
-            )
+            for descriptor in tool_registry.all_descriptors()
         ),
     )
     for role in (
@@ -186,11 +204,12 @@ def build_agent_profile_registry(
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
+        AgentRole.ACCOUNT_RESEARCH,
     ):
         expected = {
-            f"{name}@{tool_registry.descriptor(name).version}"
-            for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
-            if role in roles
+            descriptor.address
+            for descriptor in tool_registry.all_descriptors()
+            if role in _roles_for(descriptor.address, descriptor.name)
         }
         actual = {pin.address for pin in resolved.resolve(role).profile.tools}
         if actual != expected:

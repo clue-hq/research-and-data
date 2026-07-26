@@ -1,6 +1,6 @@
 # Clue-HQ — Platform Agent Runtime & Context Assembly (Doc A)
 
-> **Status: DESIGN RECORD v1.4 (2026-07-26 · v1.3 2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
+> **Status: DESIGN RECORD v1.5 (2026-07-26 · v1.4 2026-07-26 · v1.3 2026-07-26 · v1.2 2026-07-18 · v1.1 2026-07-17 · v1.0 2026-07-16).** Authoritative for the platform's *agentic schema*:
 > what the words "agent," "deepagent," "sub-agent," "skill," "tool," and "worker fleet" mean
 > mechanically, how the platform deepagent is constructed, and how context is assembled for every
 > model call. Extends `clue-hq-harness-architecture-and-requirements.md` (REQ-02, REQ-18–REQ-22)
@@ -49,6 +49,14 @@
 > finalization. Fresh-wake research, content-drafter, and reviewer specialists are active behind
 > governed delegation with typed task/file/ref transfer and durable reference-only returns.
 > Product routing/canary activation remains C6.8.
+>
+> **v1.5 (2026-07-26) — C6.7 account-agent and evaluator-ownership ruling.** The governed
+> per-account agent is built as the unit inside the existing fleet slot, with one replay-safe
+> C5-backed gap-research tool and no facet delegation in v1. The fleet shell, evidence path, and
+> deterministic coverage terminalization remain authoritative. C1's engine-owned `GoalJudge` is
+> the sole independent coverage evaluator; agent stop proposals and evaluator advice are
+> append-only and non-authoritative. Default-off routing and comparative canary activation remain
+> C6.8.
 
 ---
 
@@ -164,9 +172,9 @@ agent identically.
 | Content drafter (exemplar, one account) | **Subagent** of the platform deepagent | **LIVE in C6.6** — exemplar only |
 | Content scaling (N accounts × artifacts) | **Deterministic workers in the fleet shell** (§1.3; bounded micro-loop, honestly not an agent — Doc S §6) | To build |
 | Pass-A scoring / discovery fan-out | **Deterministic workers in the fleet shell** (scoring is code; rubric is config) | Substrate built |
-| Per-account deep research (Pass B) | **Governed worker agents in the fleet shell** (§1.3): one bounded agent per account, capped facet sub-agents, waterfall as its power tool | Shell: M8A + step-0 worker built; agentic unit: to build with step 6 |
+| Per-account deep research (Pass B) | **Governed worker agents in the fleet shell** (§1.3): one bounded agent per account, waterfall as its power tool; facet delegation only after measured need | **Built in C6.7**; default-off routing/canary activation remains C6.8 |
 | Review/QA of scaled artifacts | **Deterministic workers** (gates + judge leaf calls) + M13.1 human surface; a review *subagent* only for exemplar-level critique | Exemplar reviewer **LIVE in C6.6**; scaled QA remains future |
-| Faithfulness/goal/grounding judges | **LLM leaf calls inside engines** (never minds with tools) | M9 built; grounding judge new |
+| Faithfulness/goal/grounding judges | **LLM leaf calls inside engines** (never minds with tools) | M9 built; C1 `GoalJudge` is the sole coverage evaluator owner; grounding judge new |
 | Recipes, waterfalls, scoring, derivation | **Engine** (no LLM in control flow) | Built |
 
 ## Part II — The platform deepagent (Head-of-ABM)

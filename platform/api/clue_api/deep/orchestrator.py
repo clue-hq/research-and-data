@@ -326,19 +326,38 @@ class AccountDeepOrchestrator:
                     cost_cents=cost,
                     sub_phase=done,
                 )
+            if not account_result.coverage_terminal:
+                # C6.7 may honestly stop or fail with partial claim refs, but only engine-authored
+                # terminal coverage can advance the account boundary. Spend was already recorded
+                # by the governed coverage engine and is reloaded for an accurate failed/partial
+                # manifest; a retry resumes the same plan and ledger.
+                refreshed = await self._io.load(run_id)
+                return AccountDeepResult(
+                    account_run_id=run_id,
+                    entity_id=spec.entity_id,
+                    tier=spec.tier,
+                    account=account_result,
+                    cost_cents=refreshed.cost_cents,
+                    sub_phase=done,
+                )
             # The account/resonance claims already committed in ``profile_account``'s own
             # transactions (it opens its own sessions). Record its charge + a ledger anchor and fold
             # the references + marker in ONE transaction (M8A.4): the account-axis *claim-write*
             # atomicity stays the M7 graph's domain, but its cost now flows through ``record`` (the
             # single ``cost_cents`` writer) and the ledger guards a double-record on resume.
             async with self._session_factory() as conn:
+                anchored_result = (
+                    account_result.model_copy(update={"cost_cents": Decimal(0)})
+                    if account_result.cost_already_recorded
+                    else account_result
+                )
                 _, info = await self._spend.run_step(
                     conn,
                     key=deep_step_key(run_id, "account"),
                     project_run_id=project_run_id,
                     account_run_id=run_id,
                     entity_id=spec.entity_id,
-                    work=already_done(account_result),
+                    work=already_done(anchored_result),
                 )
                 refs["account"] = list(info.claim_ids)
                 await self._io.fold(
@@ -348,7 +367,9 @@ class AccountDeepOrchestrator:
                     status=AccountRunStatus.RUNNING,
                     sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
                 )
-            if not info.replayed:
+            if account_result.cost_already_recorded:
+                cost = (await self._io.load(run_id)).cost_cents
+            elif not info.replayed:
                 cost += info.cost_cents
             done = AccountRunSubPhase.ACCOUNT_PROFILED
 

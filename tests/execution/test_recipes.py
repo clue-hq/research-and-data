@@ -126,8 +126,8 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                 )
             ).mappings()
             assert {row["event_type"]: row["count"] for row in events} == {
-                "promoted": 5,
-                "proposed": 5,
+                "promoted": 6,
+                "proposed": 6,
                 "superseded": 3,
             }
 
@@ -136,6 +136,28 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                 await repository.propose(mismatch)
 
     run_async(scenario())
+
+
+def test_c67_account_unit_is_a_one_tool_bounded_system_recipe() -> None:
+    definitions = load_system_recipe_definitions()
+    account = next(item for item in definitions if item.recipe_key == "account-research-unit")
+    slot = next(
+        node for node in account.graph.nodes if node.node_key == "account_research_interactions"
+    )
+
+    assert isinstance(slot, GateNode)
+    assert account.version == 1
+    assert account.graph.tool_allowlist == ("research_account_gaps@2",)
+    assert slot.dynamic_tool_allowlist == ("research_account_gaps@2",)
+    assert set(slot.dynamic_pin_kinds) == {
+        "project_run",
+        "account",
+        "field_registry",
+        "source_registry",
+        "coverage_policy",
+    }
+    assert slot.max_children == 32
+    assert account.max_fanout == 1
 
 
 def test_recipe0_v3_is_the_only_promoted_executable_stage0_revision() -> None:

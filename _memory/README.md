@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-7-account-research-agent.md` — C6.7 complete: governed per-account
+  deepagent inside the existing fleet slot; one replay-safe C5 gap-research operation; sole C1
+  evaluator ownership with append-only non-authoritative advice; terminal-coverage finalization
+  guard; no double spend; full DB-enabled verification; and C6.8 handoff.
 - `2026-07-26-phase-c6-6-specialist-subagents.md` — C6.6 complete: governed fresh-wake research,
   content-drafter, and reviewer children; exact task/artifact/ref transfer; isolated execution and
   empty-history context; role-specific resources, tools, budgets, outputs, durable receipts; skill

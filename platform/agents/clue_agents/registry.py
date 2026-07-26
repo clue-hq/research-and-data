@@ -53,6 +53,7 @@ _REQUIRED_ACTIVE_ROLES = frozenset(
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
+        AgentRole.ACCOUNT_RESEARCH,
     }
 )
 
@@ -337,8 +338,6 @@ class AgentProfileRegistry:
             raise AgentCatalogError(
                 f"required active roles have no profile: {sorted(role.value for role in missing)}"
             )
-        if AgentRole.ACCOUNT_RESEARCH in active:
-            raise AgentCatalogError("account-research profile is reserved for C6.7")
         self._active_resources = active
         self._resolved = {
             role: self._resolve_resource(resource)

@@ -40,6 +40,13 @@ Shipped so far:
 
 from __future__ import annotations
 
+from clue_api.account_research_wiring import (
+    AccountResearchAgentRuntime,
+    AccountResearchStepPinProvider,
+    AccountResearchTurnRunner,
+    GovernedAccountProfiler,
+    build_account_research_execution,
+)
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -261,6 +268,12 @@ __all__ = [
     # C6.5 Head-of-ABM Stage-0 vertical
     "HeadOfAbmStage0Runtime",
     "build_head_of_abm_stage0_execution",
+    # C6.7 governed per-account research unit
+    "AccountResearchAgentRuntime",
+    "AccountResearchStepPinProvider",
+    "AccountResearchTurnRunner",
+    "GovernedAccountProfiler",
+    "build_account_research_execution",
     "load_research_packs",
     "VerificationBindingClassifier",
     "production_binding_classifier",

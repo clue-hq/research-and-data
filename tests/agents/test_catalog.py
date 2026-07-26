@@ -36,6 +36,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
     assert isinstance(skills, SkillCatalog)
     assert isinstance(profiles, ProfileCatalog)
     assert [item.ref.address for item in prompts.list()] == [
+        "prompt:account-research@v1",
         "prompt:content-drafter@v1",
         "prompt:content-drafter@v2",
         "prompt:head-of-abm@v1",
@@ -47,6 +48,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "prompt:reviewer@v2",
     ]
     assert [item.ref.address for item in skills.list()] == [
+        "skill:account-gap-research@v1",
         "skill:artifact-review@v1",
         "skill:content-exemplar@v1",
         "skill:research-task@v1",
@@ -54,6 +56,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v3",
     ]
     assert [item.ref.address for item in profiles.list()] == [
+        "profile:account-research@v1",
         "profile:content-drafter@v1",
         "profile:content-drafter@v2",
         "profile:head-of-abm@v1",

@@ -509,7 +509,14 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    assert len(registry) == 32
+    assert len(registry.names()) == 32
+    assert len(registry) == 33
+    assert {
+        item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
+    } == {
+        "research_account_gaps@1",
+        "research_account_gaps@2",
+    }
 
 
 def test_duplicate_tool_registration_is_impossible_by_construction() -> None:

@@ -62,7 +62,7 @@ from clue_core import (
     new_run_id,
     parse_cost_cents,
 )
-from clue_db import database_url, transaction
+from clue_db import ConnFactory, database_url, transaction
 from clue_obs.otel import (
     ATTR_ENTITY_ID,
     ATTR_PROJECT_RUN_ID,
@@ -178,8 +178,14 @@ class DbAccountRunStore:
     ``recursion_policy`` (M7.2) makes the plan record the per-tier facet-recursion depth allowance;
     the runtime ``SpawnGuard`` enforces the same policy."""
 
-    def __init__(self, recursion_policy: RecursionPolicy | None = None) -> None:
+    def __init__(
+        self,
+        recursion_policy: RecursionPolicy | None = None,
+        *,
+        conn_factory: ConnFactory = transaction,
+    ) -> None:
         self._recursion_policy = recursion_policy
+        self._conn_factory = conn_factory
 
     async def begin(
         self,
@@ -198,7 +204,7 @@ class DbAccountRunStore:
             if workspace_id is not None
             else WorkspaceScope.public_only()
         )
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await ensure_account_run(
                 conn,
                 account_run_id=account_run_id,
@@ -224,7 +230,7 @@ class DbAccountRunStore:
         cost_cents: CostCents,
         status: AccountRunStatus,
     ) -> None:
-        async with transaction() as conn:
+        async with self._conn_factory() as conn:
             await save_references(
                 conn,
                 account_run_id,
