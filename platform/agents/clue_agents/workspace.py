@@ -796,10 +796,14 @@ class AgentWorkspaceFactory:
         self._artifact_sink = artifact_sink
         self._lock = threading.RLock()
         self._closed = False
+        self._active: dict[tuple[str, str, str], AnchoredAgentWorkspaceBackend] = {}
 
     def close(self) -> None:
         with self._lock:
             if not self._closed:
+                for backend in tuple(self._active.values()):
+                    backend.close()
+                self._active.clear()
                 os.close(self._root_fd)
                 self._closed = True
 
@@ -916,6 +920,8 @@ class AgentWorkspaceFactory:
             policy=policy,
             artifact_sink=self._artifact_sink,
         )
+        with self._lock:
+            self._active[(workspace_segment, project_segment, execution_segment)] = backend
         return AgentWorkspaceLease(
             identity=identity,
             backend=backend,
@@ -951,6 +957,11 @@ class AgentWorkspaceFactory:
 
     def _delete_execution(self, lease: AgentWorkspaceLease) -> None:
         lease.backend.close()
+        with self._lock:
+            self._active.pop(
+                (lease._workspace_segment, lease._project_segment, lease._execution_segment),
+                None,
+            )
         with self._root_lock():
             workspace_fd = os.open(lease._workspace_segment, _DIR_FLAGS, dir_fd=self._root_fd)
             try:
@@ -987,3 +998,59 @@ class AgentWorkspaceFactory:
                 "only a pre-model materialization failure may be discarded without finalization"
             )
         self._delete_execution(lease)
+
+    def erase_for_privacy(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        execution_id: ExecutionId,
+    ) -> bool:
+        """Privileged, idempotent DSAR deletion of an execution workspace.
+
+        Unlike ordinary cleanup this does not require a finalization receipt: retaining
+        materialized personal data after an erasure request would be the unsafe outcome. Any
+        live backend held by this process is closed first so it cannot continue writing through
+        an unlinked directory descriptor. Returns whether the execution directory existed.
+        """
+
+        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
+        project_segment = validate_workspace_segment(project_id, label="project_id")
+        execution_segment = validate_workspace_segment(str(execution_id), label="execution_id")
+        key = (workspace_segment, project_segment, execution_segment)
+        with self._lock:
+            active = self._active.pop(key, None)
+            if active is not None:
+                active.close()
+
+        with self._root_lock():
+            try:
+                workspace_fd = os.open(workspace_segment, _DIR_FLAGS, dir_fd=self._root_fd)
+            except FileNotFoundError:
+                return False
+            try:
+                try:
+                    project_fd = os.open(project_segment, _DIR_FLAGS, dir_fd=workspace_fd)
+                except FileNotFoundError:
+                    return False
+                try:
+                    try:
+                        os.stat(execution_segment, dir_fd=project_fd, follow_symlinks=False)
+                    except FileNotFoundError:
+                        return False
+                    self._remove_tree(project_fd, execution_segment)
+                    try:
+                        os.rmdir(project_segment, dir_fd=workspace_fd)
+                    except OSError as exc:
+                        if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                            raise
+                finally:
+                    os.close(project_fd)
+                try:
+                    os.rmdir(workspace_segment, dir_fd=self._root_fd)
+                except OSError as exc:
+                    if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                        raise
+            finally:
+                os.close(workspace_fd)
+        return True

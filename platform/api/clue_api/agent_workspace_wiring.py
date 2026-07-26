@@ -11,6 +11,7 @@ from clue_agents import (
     WorkspaceRootPolicy,
 )
 from clue_agents.contracts import normalize_virtual_path
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_config import Settings, load_settings
 from clue_storage import StorageBackend, artifact_key, content_address
 
@@ -76,5 +77,5 @@ def build_agent_workspace_factory(
     ).prepare()
     return AgentWorkspaceFactory(
         prepared_root=prepared,
-        artifact_sink=StorageAgentArtifactSink(storage),
+        artifact_sink=DurableAgentArtifactStore(storage=storage),
     )

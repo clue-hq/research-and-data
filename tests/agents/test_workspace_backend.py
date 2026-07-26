@@ -167,6 +167,30 @@ def test_symlinks_hardlinks_and_special_entries_fail_closed(tmp_path: Path) -> N
         harness.close()
 
 
+def test_privacy_erasure_closes_live_backend_and_removes_materialized_tree(
+    tmp_path: Path,
+) -> None:
+    harness = make_workspace(tmp_path)
+    backend = harness.lease.backend
+    backend.materialize_bytes("context/contact.md", b"personal context")
+    try:
+        assert harness.factory.erase_for_privacy(
+            workspace_id=harness.lease.identity.workspace_id,
+            project_id=harness.lease.identity.project_id,
+            execution_id=harness.lease.identity.execution_id,
+        )
+        assert not harness.execution_path.exists()
+        with pytest.raises(WorkspaceSecurityError, match="closed"):
+            backend.read_text_sync("context/contact.md")
+        assert not harness.factory.erase_for_privacy(
+            workspace_id=harness.lease.identity.workspace_id,
+            project_id=harness.lease.identity.project_id,
+            execution_id=harness.lease.identity.execution_id,
+        )
+    finally:
+        harness.close()
+
+
 def test_quota_enforces_per_file_total_and_count(tmp_path: Path) -> None:
     per_file = make_workspace(
         tmp_path / "per-file",
