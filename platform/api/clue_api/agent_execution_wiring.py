@@ -46,6 +46,7 @@ from clue_agents import (
 from clue_agents.contracts import PlanDelegationStep, PlanToolStep
 from clue_agents.ports import ExecutionProgress
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_core import ExecutionId
 from clue_db import ConnFactory, database_url, transaction
 from clue_execution import (
@@ -54,16 +55,18 @@ from clue_execution import (
     GraphIssue,
     InteractionSlotView,
     ParameterBinding,
+    PinRequest,
     RecipeExecutor,
     RecipeGraph,
     ToolNode,
     validate_graph,
 )
-from clue_toolbelt import ToolInvoker, ToolRegistry, ToolResult
+from clue_toolbelt import ToolContext, ToolInvoker, ToolRegistry, ToolResult
 
 __all__ = [
     "AgentExecutionCrashHook",
     "C5AgentExecutionAdapter",
+    "CheckpointerFactory",
     "DbAgentDelegationRuntime",
     "DbAgentPlanJournal",
     "FreshWakeChildRunner",
@@ -1082,6 +1085,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         artifacts: DurableAgentArtifactStore,
         journal: DbAgentPlanJournal,
         checkpointer_factory: CheckpointerFactory,
+        pin_provider: StepPinProvider | None = None,
         delegation: DbAgentDelegationRuntime | None = None,
         crash_hook: AgentExecutionCrashHook = _DEFAULT_CRASH_HOOK,
         conn_factory: ConnFactory = transaction,
@@ -1097,11 +1101,13 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         self._artifacts = artifacts
         self._journal = journal
         self._checkpointer_factory = checkpointer_factory
+        self._pin_provider = pin_provider
         self._delegation = delegation
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
         self._validated: dict[UUID, ValidatedPlan] = {}
         self._proposals: dict[UUID, AgentPlan] = {}
+        self._pin_requests: dict[UUID, dict[str, tuple[PinRequest, ...]]] = {}
 
     async def validate_plan(
         self,
@@ -1217,6 +1223,73 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                     maximum_fanout=review.maximum_fanout,
                 )
             )
+
+        resolved_pin_requests: dict[str, tuple[PinRequest, ...]] = {}
+        if self._pin_provider is not None:
+            for step in plan.steps:
+                if not isinstance(step, PlanToolStep):
+                    continue
+                operation_id = operation_id_for_plan_node(
+                    constitution.execution_id,
+                    step.node_key,
+                )
+                try:
+                    pins = await self._pin_provider.pins_for(
+                        RecipeStep(
+                            step_id=step.node_key,
+                            tool_name=step.tool.name,
+                            tool_version=step.tool.version,
+                            input_refs=step.arguments,
+                            depends_on=step.depends_on,
+                        ),
+                        ctx=ToolContext(
+                            workspace_id=constitution.workspace_id,
+                            actor="agent",
+                            conn_factory=self._conn_factory,
+                            operation_id=operation_id,
+                            execution_id=constitution.execution_id,
+                            execution_node_key=step.node_key,
+                        ),
+                    )
+                except Exception as exc:
+                    from clue_agents import AgentPlanIssue, AgentPlanReview
+
+                    raise AgentPlanRejected(
+                        AgentPlanReview(
+                            proposal_sha256=review.proposal_sha256,
+                            issues=(
+                                AgentPlanIssue(
+                                    code="pin_resolution_failed",
+                                    location=f"plan.steps.{step.node_key}",
+                                    message=str(exc),
+                                ),
+                            ),
+                            dependency_depth=review.dependency_depth,
+                            maximum_fanout=review.maximum_fanout,
+                        )
+                    ) from exc
+                invalid_kinds = sorted({pin.kind for pin in pins} - set(slot.dynamic_pin_kinds))
+                if invalid_kinds:
+                    from clue_agents import AgentPlanIssue, AgentPlanReview
+
+                    raise AgentPlanRejected(
+                        AgentPlanReview(
+                            proposal_sha256=review.proposal_sha256,
+                            issues=(
+                                AgentPlanIssue(
+                                    code="c5_pin_kind_not_allowed",
+                                    location=f"plan.steps.{step.node_key}",
+                                    message=(
+                                        "resolved pins exceed the active interaction slot: "
+                                        f"{invalid_kinds}"
+                                    ),
+                                ),
+                            ),
+                            dependency_depth=review.dependency_depth,
+                            maximum_fanout=review.maximum_fanout,
+                        )
+                    )
+                resolved_pin_requests[step.node_key] = pins
 
         proposal_ref = await self._artifacts.persist_body(
             workspace_id=constitution.workspace_id,
@@ -1338,6 +1411,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         )
         self._validated[plan.plan_id] = validated
         self._proposals[plan.plan_id] = plan
+        self._pin_requests[plan.plan_id] = resolved_pin_requests
         return validated
 
     async def execute(self, *, plan: ValidatedPlan) -> AsyncIterator[ExecutionProgress]:
@@ -1448,6 +1522,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             inputs=cast(dict[str, JsonValue], inputs_value),
             actor="agent",
             dependencies=tool_dependencies,
+            pin_requests=self._pin_requests.get(plan.plan_id, {}).get(
+                operation.node_key,
+                (),
+            ),
         )
         result = await self._executor.invoke_interaction_tool(
             append,

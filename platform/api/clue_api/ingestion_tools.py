@@ -29,11 +29,16 @@ from clue_research.ingestion import (
 from clue_storage import SnapshotSink, StorageBackend, flush_snapshots, get_artifact
 from clue_toolbelt import (
     Actor,
+    ExternalReplayBoundary,
     IdempotencyConflict,
+    JournalParameterPolicy,
     PreconditionFailed,
     PreconditionFailure,
+    ReplayPolicy,
+    ReplaySafety,
     Tool,
     ToolContext,
+    ToolEffectClass,
     ToolInput,
     ToolInvoker,
     ToolResult,
@@ -85,6 +90,16 @@ class SubmitIngestionTool(Tool):
     version = "1"
     input_model = SubmitIngestionInput
     output_model = IngestionSubmitOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.AT_LEAST_ONCE,
+        durable_identity=("workspace + artifact content hash + declared material-context hash"),
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("artifact_key", "declared_context")
+    )
+    pin_requirements = ("artifact_input", "ingestion_policy", "brand")
 
     def __init__(self, engine: IngestionEngine | None) -> None:
         self._engine = engine

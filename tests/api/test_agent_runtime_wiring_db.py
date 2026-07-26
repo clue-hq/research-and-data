@@ -13,11 +13,15 @@ from sqlalchemy import text
 
 from clue_agents import (
     AgentFinalizeEnvelope,
+    AgentProfileRegistry,
     AgentRole,
     AgentTurnRequest,
     DelegationRequest,
     DelegationResult,
     FinalizeStatus,
+    FolderProfileCatalog,
+    FolderPromptCatalog,
+    FolderSkillCatalog,
     ValidatedOperation,
     ValidatedPlan,
     operation_id_for_plan_node,
@@ -26,7 +30,11 @@ from clue_api.agent_execution_wiring import (
     DbAgentDelegationRuntime,
     DbAgentPlanJournal,
 )
-from clue_api.agent_registry_wiring import build_agent_profile_registry
+from clue_api.agent_registry_wiring import (
+    C6_ACTIVE_PROFILE_VERSIONS,
+    ToolRegistryAgentCatalog,
+    build_agent_profile_registry,
+)
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
     DurableAgentModelCallHandler,
@@ -94,6 +102,26 @@ class _CrashOnce:
 
 async def _no_crash(point: str, **kwargs: Any) -> None:
     del point, kwargs
+
+
+def _c64_delegating_registry() -> AgentProfileRegistry:
+    """Resolve the frozen C6.4 Head v1 authority for its delegation regression test."""
+
+    toolbelt = build_toolbelt(storage=None, gateway=None)
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
+    return AgentProfileRegistry(
+        prompts=FolderPromptCatalog((root / "prompts").resolve(strict=True)),
+        skills=FolderSkillCatalog((root / "skills").resolve(strict=True)),
+        profiles=FolderProfileCatalog((root / "profiles").resolve(strict=True)),
+        tools=ToolRegistryAgentCatalog(toolbelt),
+        engine_tool_ceiling=frozenset(
+            toolbelt.descriptor(name).address for name in toolbelt.names()
+        ),
+        selected_profile_versions={
+            **C6_ACTIVE_PROFILE_VERSIONS,
+            AgentRole.HEAD_OF_ABM: "v1",
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -356,7 +384,7 @@ def test_delegation_is_durable_before_fresh_child_wake_and_rolls_up_reference_re
             factory = conn_session_factory(conn)
             storage = _Storage()
             artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=factory)
-            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            registry = _c64_delegating_registry()
             parent_profile = registry.resolve(AgentRole.HEAD_OF_ABM)
             child_profile = registry.resolve_delegation(
                 parent=parent_profile,

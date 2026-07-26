@@ -34,6 +34,7 @@ from clue_agents.resources import (
 )
 
 __all__ = [
+    "AgentCapabilityStatus",
     "AgentProfileRegistry",
     "AgentRegistryProjection",
     "AgentToolCatalog",
@@ -43,6 +44,7 @@ __all__ = [
     "RoleRegistryEntry",
     "RoleRegistryStatus",
     "SkillDisclosure",
+    "ToolCapabilityDisclosure",
 ]
 
 _REQUIRED_ACTIVE_ROLES = frozenset(
@@ -61,6 +63,9 @@ class AgentToolContract:
     recipe_safe: bool
     steering: bool
     available: bool = True
+    effect_class: str = "unknown"
+    admitted_roles: tuple[AgentRole, ...] = ()
+    unavailable_reason_code: str | None = None
 
 
 @runtime_checkable
@@ -77,6 +82,22 @@ class ProjectionValue(BaseModel):
 class RoleRegistryStatus(StrEnum):
     ACTIVE = "active"
     PLANNED = "planned"
+
+
+class AgentCapabilityStatus(StrEnum):
+    AVAILABLE = "available"
+    HUMAN_ONLY = "human_only"
+    REPLAY_BLOCKED = "replay_blocked"
+    ROLE_UNAVAILABLE = "role_unavailable"
+    PROFILE_UNAVAILABLE = "profile_unavailable"
+    RETIRED_OR_MISSING = "retired_or_missing"
+
+
+class ToolCapabilityDisclosure(ProjectionValue):
+    address: str
+    effect_class: str
+    status: AgentCapabilityStatus
+    reason_code: str
 
 
 class SkillDisclosure(ProjectionValue):
@@ -100,6 +121,7 @@ class ProfileProjection(ProjectionValue):
     delegation_roles: tuple[AgentRole, ...]
     delegation_tool_addresses: dict[AgentRole, tuple[str, ...]]
     workspace: WorkspacePolicy
+    capabilities: tuple[ToolCapabilityDisclosure, ...]
 
 
 class RoleRegistryEntry(ProjectionValue):
@@ -123,6 +145,7 @@ class ResolvedAgentProfile:
     memory_policy: str
     skills: tuple[SkillResource, ...]
     delegation_tool_grants: Mapping[AgentRole, tuple[ToolPin, ...]]
+    capabilities: tuple[ToolCapabilityDisclosure, ...] = ()
 
     @property
     def resource_map(self) -> tuple[AgentResourceRef, ...]:
@@ -153,6 +176,80 @@ class ResolvedAgentProfile:
                 return skill.body
         raise AgentCatalogError(f"skill {address!r} is not disclosed by this profile")
 
+    @property
+    def generated_resource_map(self) -> str:
+        """Render the exhaustive, host-free map from resolved facts only."""
+
+        manifest = self.resource_manifest
+        resources = "\n".join(
+            f"- {item.address} sha256={item.sha256}"
+            for item in (manifest.profile, manifest.prompt, *manifest.skills)
+        )
+        skills = "\n".join(
+            f"- {item.resource.address}: {item.summary}; open={item.materialized_path}"
+            for item in self.skill_disclosures()
+        )
+        available = "\n".join(
+            f"- {item.address} effect={item.effect_class}"
+            for item in self.capabilities
+            if item.status is AgentCapabilityStatus.AVAILABLE
+        )
+        unavailable = "\n".join(
+            f"- {item.address} status={item.status.value} reason={item.reason_code}"
+            for item in self.capabilities
+            if item.status is not AgentCapabilityStatus.AVAILABLE
+        )
+        workspace = self.profile.workspace
+        delegations = "\n".join(
+            f"- {role.value}: "
+            + ", ".join(pin.address for pin in self.delegation_tool_grants.get(role, ()))
+            for role in self.profile.delegation_roles
+        )
+        return (
+            "## Resolved resource and capability map (authoritative; generated)\n\n"
+            "Pinned resources:\n"
+            f"{resources or '- none'}\n\n"
+            "Progressively disclosed skills:\n"
+            f"{skills or '- none'}\n\n"
+            "Governed platform tools available to this role:\n"
+            f"{available or '- none'}\n\n"
+            "Framework tools available:\n"
+            "- write_todos: ephemeral turn planning only\n"
+            "- ls, read_file, glob, grep: relative reads inside authorized virtual prefixes\n"
+            "- write_file, edit_file: relative writes inside authorized virtual prefixes\n"
+            "- finalize_turn: required durable terminal action\n\n"
+            "Platform tools not available to this role:\n"
+            f"{unavailable or '- none'}\n\n"
+            "Explicitly unavailable runtime capabilities:\n"
+            "- task/subagent: unavailable in this profile; specialist activation is C6.6\n"
+            "- execute/shell/process: unavailable; the backend has no execution protocol\n"
+            "- host filesystem/repository/environment/secrets/provider SDKs: unavailable\n"
+            "- arbitrary network access: unavailable; external effects require governed tools\n"
+            "- human confirmation, override, budget, and checkpoint authority: unavailable\n\n"
+            "Workspace:\n"
+            "- virtual_mode=true; every model path is relative to the virtual root\n"
+            f"- readable_prefixes={','.join(workspace.readable_prefixes)}\n"
+            f"- writable_prefixes={','.join(workspace.writable_prefixes)}\n"
+            f"- allowed_extensions={','.join(workspace.allowed_extensions)}\n"
+            f"- max_total_bytes={workspace.max_total_bytes}; "
+            f"max_file_bytes={workspace.max_file_bytes}; "
+            f"max_file_count={workspace.max_file_count}\n"
+            f"- retention_class={workspace.retention_class}\n\n"
+            "Delegation:\n"
+            f"{delegations or '- none'}\n\n"
+            "Model policy:\n"
+            f"- model_id={self.profile.model.model_id}; "
+            f"timeout_s={self.profile.model.timeout_s}; "
+            f"max_retries={self.profile.model.max_retries}; "
+            f"max_output_tokens={self.profile.model.max_output_tokens}; "
+            f"temperature={self.profile.model.temperature}\n\n"
+            "## End resolved resource and capability map"
+        )
+
+    @property
+    def system_prompt(self) -> str:
+        return f"{self.prompt_body.rstrip()}\n\n{self.generated_resource_map}"
+
     def projection(self) -> ProfileProjection:
         return ProfileProjection(
             role=self.profile.role,
@@ -173,6 +270,7 @@ class ResolvedAgentProfile:
                 )
             },
             workspace=self.profile.workspace,
+            capabilities=self.capabilities,
         )
 
 
@@ -187,22 +285,45 @@ class AgentProfileRegistry:
         profiles: ProfileCatalog,
         tools: AgentToolCatalog,
         engine_tool_ceiling: frozenset[str],
+        selected_profile_versions: Mapping[AgentRole, str] | None = None,
+        tool_inventory: Sequence[AgentToolContract] = (),
     ) -> None:
         self._prompts = prompts
         self._skills = skills
         self._profiles = profiles
         self._tools = tools
         self._engine_tool_ceiling = engine_tool_ceiling
+        inventory_by_address = {item.pin.address: item for item in tool_inventory}
+        if len(inventory_by_address) != len(tool_inventory):
+            raise AgentCatalogError("tool capability inventory contains duplicate addresses")
+        self._tool_inventory = tuple(
+            inventory_by_address[address] for address in sorted(inventory_by_address)
+        )
         active: dict[AgentRole, ProfileResource] = {}
-        for resource in profiles.list():
-            definition = resource.definition
-            if definition.status is ProfileStatus.RETIRED:
-                continue
-            if definition.role in active:
-                raise AgentCatalogError(
-                    f"role {definition.role.value!r} has multiple active profiles"
-                )
-            active[definition.role] = resource
+        if selected_profile_versions is None:
+            for resource in profiles.list():
+                definition = resource.definition
+                if definition.status is ProfileStatus.RETIRED:
+                    continue
+                if definition.role in active:
+                    raise AgentCatalogError(
+                        f"role {definition.role.value!r} has multiple active profiles"
+                    )
+                active[definition.role] = resource
+        else:
+            for role, version in selected_profile_versions.items():
+                candidates = [
+                    resource
+                    for resource in profiles.list()
+                    if resource.definition.role is role
+                    and resource.definition.version == version
+                    and resource.definition.status is ProfileStatus.ACTIVE
+                ]
+                if len(candidates) != 1:
+                    raise AgentCatalogError(
+                        f"selected profile {role.value!r}@{version} is not uniquely active"
+                    )
+                active[role] = candidates[0]
         missing = _REQUIRED_ACTIVE_ROLES - set(active)
         if missing:
             raise AgentCatalogError(
@@ -334,6 +455,10 @@ class AgentProfileRegistry:
             ),
         )
         snapshot = AgentResourceSnapshot(manifest=manifest, bodies=resources)
+        capabilities = self._capabilities_for(
+            role=profile.role,
+            effective_addresses={pin.address for pin in profile.tools},
+        )
         return ResolvedAgentProfile(
             profile=profile,
             profile_ref=resource.ref,
@@ -343,7 +468,45 @@ class AgentProfileRegistry:
             memory_policy=definition.memory_policy,
             skills=tuple(effective_skills),
             delegation_tool_grants=grants,
+            capabilities=capabilities,
         )
+
+    def _capabilities_for(
+        self,
+        *,
+        role: AgentRole,
+        effective_addresses: set[str],
+    ) -> tuple[ToolCapabilityDisclosure, ...]:
+        disclosures: list[ToolCapabilityDisclosure] = []
+        for contract in self._tool_inventory:
+            address = contract.pin.address
+            if address in effective_addresses:
+                status = AgentCapabilityStatus.AVAILABLE
+                reason = "effective_profile_tool"
+            elif not contract.available:
+                status = AgentCapabilityStatus.RETIRED_OR_MISSING
+                reason = contract.unavailable_reason_code or "tool_unavailable"
+            elif contract.steering or contract.unavailable_reason_code == "human_authority":
+                status = AgentCapabilityStatus.HUMAN_ONLY
+                reason = contract.unavailable_reason_code or "human_steering_authority"
+            elif not contract.recipe_safe:
+                status = AgentCapabilityStatus.REPLAY_BLOCKED
+                reason = contract.unavailable_reason_code or "replay_not_certified"
+            elif role not in contract.admitted_roles:
+                status = AgentCapabilityStatus.ROLE_UNAVAILABLE
+                reason = contract.unavailable_reason_code or "not_admitted_for_role"
+            else:
+                status = AgentCapabilityStatus.PROFILE_UNAVAILABLE
+                reason = contract.unavailable_reason_code or "absent_from_effective_profile"
+            disclosures.append(
+                ToolCapabilityDisclosure(
+                    address=address,
+                    effect_class=contract.effect_class,
+                    status=status,
+                    reason_code=reason,
+                )
+            )
+        return tuple(disclosures)
 
     def _validate_delegation_targets(self) -> None:
         for resolved in self._resolved.values():
