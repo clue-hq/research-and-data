@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     storage_s3_endpoint_url: str | None = None
     storage_s3_region: str | None = None
 
+    # --- platform deepagent workspace (C6.1) -----------------------------------------------
+    # Dedicated host root for ephemeral agent execution trees. Production composition requires
+    # an absolute path unrelated to both the source worktree and the service user's home. It is
+    # intentionally separate from durable artifact storage. Env: ``CLUE_AGENT_WORKSPACE_ROOT``.
+    agent_workspace_root: str | None = None
+
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
     # ``firecrawl`` (the paid API, default) or ``scrapling`` (local, credit-free). Read only by

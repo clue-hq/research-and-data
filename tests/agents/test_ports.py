@@ -54,6 +54,9 @@ class _WorkspacePort:
     async def read_text(self, path: str) -> str:
         raise NotImplementedError
 
+    async def stat_entry(self, path: str) -> WorkspaceEntry:
+        raise NotImplementedError
+
     async def write_text(self, path: str, content: str) -> WorkspaceEntry:
         raise NotImplementedError
 

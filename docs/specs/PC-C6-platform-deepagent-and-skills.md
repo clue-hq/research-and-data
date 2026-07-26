@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0 contract freeze and dependency spikes complete (2026-07-26)
+**Status:** IN PROGRESS — C6.0 and C6.1 complete; C6.2 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -517,14 +517,16 @@ the workspace and model contracts are accepted before durable schema work.
 
 ### C6.1 — isolated virtual workspace and immutable materialization
 
-- production `AgentWorkspaceFactory` and relative-path backend;
-- root validation, no-follow operations, quotas, permissions, atomic writes, and retention hooks;
-- folder catalogs and immutable resource materialization;
-- durable-output handoff to `StorageBackend`;
-- isolation/adversarial tests.
+- **Complete (2026-07-26):** production `AgentWorkspaceFactory` and relative-path backend;
+- **Complete:** root validation, no-follow operations, quotas, permissions, atomic writes, and
+  retention hooks;
+- **Complete:** immutable materialization of exact folder-resource snapshots. The physical V1
+  catalogs/loaders themselves remain correctly owned by C6.2;
+- **Complete:** durable-output handoff to `StorageBackend`;
+- **Complete:** isolation/adversarial tests.
 
 **Gate:** traversal, symlink, absolute-path, cross-execution, repository, code/materialization,
-resource-mutation, quota, and virtual-mode tests all fail closed.
+resource-mutation, quota, and virtual-mode tests all fail closed. **Passed.**
 
 ### C6.2 — profiles, skills, role registry, and model seam
 
