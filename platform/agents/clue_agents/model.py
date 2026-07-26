@@ -1,4 +1,8 @@
-"""Provider-neutral deterministic agent-model test adapter."""
+"""Provider-neutral deterministic agent-model test adapter.
+
+Holds :class:`ScriptedAgentChatModel` — a fake ``BaseChatModel`` that replays canned
+``AIMessage`` responses so agent runtime tests never need a live LLM.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +21,17 @@ __all__ = ["ScriptedAgentChatModel"]
 
 
 class ScriptedAgentChatModel(BaseChatModel):
-    """Return an exact sequence of AI messages without network access or hidden behavior."""
+    """Deterministic fake chat model for agent/runtime tests (not used in production).
+
+    Stands in for a live provider (e.g. OpenRouter) so the deepagent loop can be exercised
+    without network calls or model nondeterminism. Callers pass the exact ``AIMessage``
+    sequence they want the "LLM" to emit — including any ``tool_calls`` — and each
+    ``invoke`` / ``ainvoke`` returns the next message in order.
+
+    ``bind_tools`` is a no-op for tool *selection*: production code still calls it when
+    building the agent, so this stub accepts the call to keep the construction path
+    identical, but the scripted messages already carry the tool calls to execute.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -44,8 +58,12 @@ class ScriptedAgentChatModel(BaseChatModel):
         tool_choice: str | None = None,
         **kwargs: Any,
     ) -> Runnable[Any, AIMessage]:
-        # The scripted response already contains the exact desired tool call. Binding is retained
-        # in runnable kwargs so framework construction follows the production model shape.
+        """Accept tool binding so agent construction matches production; ignore schemas.
+
+        Real models use the bound schemas to decide tool calls. Here the next scripted
+        ``AIMessage`` already contains the desired ``tool_calls``, so we only record that
+        binding happened (for identifying params / runnable config).
+        """
         return self.bind(
             scripted_bound_tool_count=len(tools),
             scripted_tool_choice=tool_choice,
