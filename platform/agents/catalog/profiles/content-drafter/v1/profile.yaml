@@ -1,0 +1,37 @@
+schema_version: "1"
+kind: profile
+name: content-drafter
+version: v1
+status: active
+role: content_drafter
+prompt:
+  name: content-drafter
+  version: v1
+  sha256: 5c677d34ca98d7bbcb6b983dff0759cff9109ea9958b22f634e874bea0baa26b
+skills: []
+tools:
+  - name: compose_handoff
+    version: "1"
+    input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+    output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+model:
+  model_id: openai/gpt-4.1
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 8192
+  temperature: 0.2
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 6291456
+  max_file_bytes: 1048576
+  max_file_count: 120
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 32

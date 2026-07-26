@@ -19,6 +19,8 @@ from __future__ import annotations
 import time
 from decimal import Decimal
 
+from opentelemetry.trace import Span
+
 from clue_core.gateway import Completion, EmbeddingResult, LLMGateway, Message, TokenUsage
 from clue_obs import get_logger
 from clue_obs.otel import (
@@ -49,10 +51,15 @@ class TracingGateway:
             started = time.perf_counter()
             completion = self._inner.complete(model=model, messages=messages, **opts)
             duration_ms = (time.perf_counter() - started) * 1000.0
-            apply_attributes(
-                span, _result_attrs(completion.model, completion.usage, completion.cost_cents)
+            record_model_call(
+                span=span,
+                call_kind="completion",
+                requested_model=model,
+                served_model=completion.model,
+                usage=completion.usage,
+                cost_cents=completion.cost_cents,
+                duration_ms=duration_ms,
             )
-            _emit_usage("completion", model, completion.model, completion.usage, duration_ms)
             return completion
 
     def embed(self, *, model: str, inputs: list[str]) -> EmbeddingResult:
@@ -60,21 +67,36 @@ class TracingGateway:
             started = time.perf_counter()
             result = self._inner.embed(model=model, inputs=inputs)
             duration_ms = (time.perf_counter() - started) * 1000.0
-            apply_attributes(span, _result_attrs(result.model, result.usage, result.cost_cents))
-            _emit_usage("embedding", model, result.model, result.usage, duration_ms)
+            record_model_call(
+                span=span,
+                call_kind="embedding",
+                requested_model=model,
+                served_model=result.model,
+                usage=result.usage,
+                cost_cents=result.cost_cents,
+                duration_ms=duration_ms,
+            )
             return result
 
 
-def _emit_usage(
-    call_kind: str, requested_model: str, served_model: str, usage: TokenUsage, duration_ms: float
+def record_model_call(
+    *,
+    span: Span,
+    call_kind: str,
+    requested_model: str,
+    served_model: str,
+    usage: TokenUsage,
+    cost_cents: Decimal,
+    duration_ms: float,
 ) -> None:
-    """Emit the ``model_call_usage`` event for one gateway call (Doc R §4 / Doc A §1.3).
+    """Record one direct or agentic call through the shared model-observability seam.
 
     ``served_model`` is the id that actually answered — it may differ from ``requested_model``
     under the configured fallback. Cached-prefill share is deliberately absent:
     :class:`~clue_core.gateway.TokenUsage` carries no cached-token count today; add a
     ``cached_prompt_tokens`` field to the event when the gateway types expose one.
     """
+    apply_attributes(span, _result_attrs(served_model, usage, cost_cents))
     _log.info(
         EVENT_MODEL_CALL_USAGE,
         call_kind=call_kind,
@@ -83,6 +105,7 @@ def _emit_usage(
         prompt_tokens=usage.prompt_tokens,
         completion_tokens=usage.completion_tokens,
         total_tokens=usage.total_tokens,
+        cost_cents=cost_cents,
         duration_ms=round(duration_ms, 3),
     )
 

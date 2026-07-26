@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0 and C6.1 complete; C6.2 next (2026-07-26)
+**Status:** IN PROGRESS — C6.0–C6.2 complete; C6.3 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -530,15 +530,15 @@ resource-mutation, quota, and virtual-mode tests all fail closed. **Passed.**
 
 ### C6.2 — profiles, skills, role registry, and model seam
 
-- strict folder schemas and version/digest resolution;
-- Head-of-ABM plus research/content/review profiles;
-- effective per-role tool allowlists and resource map;
-- progressive skill disclosure;
-- provider-neutral tool-calling model seam and deterministic test adapter;
-- import-contract tightening.
+- **Complete (2026-07-26):** strict folder schemas and version/digest resolution;
+- **Complete:** Head-of-ABM plus research/content/review profiles;
+- **Complete:** effective per-role tool allowlists and resource map;
+- **Complete:** progressive skill disclosure;
+- **Complete:** provider-neutral tool-calling model seam and deterministic test adapter;
+- **Complete:** import-contract tightening.
 
 **Gate:** exact resources reproduce one aggregate digest; unavailable tools are structurally
-absent; `clue_agents` has no forbidden provider/domain imports.
+absent; `clue_agents` has no forbidden provider/domain imports. **Passed.**
 
 ### C6.3 — agent turns, context, history, and durable receipts
 
@@ -788,6 +788,39 @@ operation before C6.7; two competing gap evaluators remain forbidden.
 | symlink, hard link, device, socket, FIFO | impossible in artifact spike | no-follow host checks and type rejection |
 | quota exhaustion | quota fields frozen | atomic per-file/total/count enforcement |
 | resource mutation after pin | exact version and content digests frozen | copy, verify, read-only, manifest-last materialization |
+
+## 7B. C6.2 implementation record
+
+The canonical V1 catalog now contains exact prompt resources for Head-of-ABM, research, content,
+and review; an additive `stage0-interview@v2` skill; and one active profile for each initial role.
+The previously used flat Stage-0 V1 file remains byte-for-byte unchanged. `account_research` is
+projected as planned and cannot resolve until C6.7 activates an audited profile.
+
+`FolderPromptCatalog`, `FolderSkillCatalog`, and `FolderProfileCatalog` eagerly reject mutable
+aliases, malformed or extra metadata, wrong filenames, extra files, links, executable resources,
+invalid UTF-8, folder/header disagreement, and wrong expected digests. Their consumers depend on
+the corresponding catalog protocols rather than folder paths.
+
+`AgentProfileRegistry` resolves prompt/skill hashes and exact live tool schema hashes before use.
+It intersects direct tools with the engine ceiling, intersects delegated child tools and workspace
+policy with the parent grant, omits skills whose required tools are no longer effective, derives
+the immutable resource map/manifest from resolved facts, and exposes body-free, host-free
+descriptors. Skill bodies open only after selection by a disclosed exact address.
+
+The reviewed tool-authority table is now production composition data rather than a test-only
+fixture. Human steering and replay-uncertified operations are absent. Delegation grants are
+separate from the Head's direct allowlist, so permission to delegate research does not grant the
+Head direct research tools.
+
+The live model seam is a standard LangChain `BaseChatModel` built in `clue_gateway` through
+OpenRouter and injected through `AgentModelProvider`. It preserves standard tool calling,
+synchronous, asynchronous, and streaming execution; identifies both requested and actually
+answering models across fallback; accounts for token usage and configured cost; enforces gateway
+timeout/retry ceilings; and emits the shared model-call trace/event. A scripted provider-neutral
+model supplies exact offline tool/finalization responses.
+
+C6.2 adds no database migration, durable turn, context assembler, agent construction, executor,
+route, or feature flag.
 | concurrent path swap/TOCTOU | not claimed by C6.0 | directory-fd anchored operations and adversarial test |
 | child authority widening | explicit granted paths/roles/budget refs | effective-subset compiler and shared-backend permission view |
 | secret/repository exposure | neither appears in any agent port | dedicated external root validation and negative scans |

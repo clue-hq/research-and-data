@@ -4,6 +4,21 @@ C6.0 freezes framework-neutral value types and injected ports.  Production runti
 workspace materialization, durable records, and routing intentionally land in later C6 slices.
 """
 
+from clue_agents.catalog import (
+    AgentCatalogError,
+    CatalogResourcePin,
+    FolderProfileCatalog,
+    FolderPromptCatalog,
+    FolderSkillCatalog,
+    ProfileCatalog,
+    ProfileDefinition,
+    ProfileResource,
+    ProfileStatus,
+    PromptCatalog,
+    PromptResource,
+    SkillCatalog,
+    SkillResource,
+)
 from clue_agents.contracts import (
     AgentConstitution,
     AgentFinalizeEnvelope,
@@ -29,6 +44,7 @@ from clue_agents.contracts import (
     ValidatedPlan,
     WorkspacePolicy,
 )
+from clue_agents.model import ScriptedAgentChatModel
 from clue_agents.ports import (
     AgentArtifactSink,
     AgentContextAssembler,
@@ -37,6 +53,17 @@ from clue_agents.ports import (
     AgentModelProvider,
     AgentWorkspaceBackend,
     WorkspaceEntry,
+)
+from clue_agents.registry import (
+    AgentProfileRegistry,
+    AgentRegistryProjection,
+    AgentToolCatalog,
+    AgentToolContract,
+    ProfileProjection,
+    ResolvedAgentProfile,
+    RoleRegistryEntry,
+    RoleRegistryStatus,
+    SkillDisclosure,
 )
 from clue_agents.resources import (
     AgentResourceMaterializer,
@@ -66,6 +93,7 @@ from clue_agents.workspace_policy import (
 
 __all__ = [
     "AgentArtifactSink",
+    "AgentCatalogError",
     "AgentConstitution",
     "AgentContextAssembler",
     "AgentExecutionAdapter",
@@ -74,17 +102,22 @@ __all__ = [
     "AgentModelProvider",
     "AgentPlan",
     "AgentProfile",
+    "AgentProfileRegistry",
+    "AgentRegistryProjection",
     "AgentResourceManifest",
     "AgentResourceMaterializer",
     "AgentResourceRef",
     "AgentResourceSnapshot",
     "AgentRole",
     "AgentTurnRequest",
+    "AgentToolCatalog",
+    "AgentToolContract",
     "AgentWorkspaceFactory",
     "AgentWorkspaceBackend",
     "AgentWorkspaceLease",
     "AnchoredAgentWorkspaceBackend",
     "ArtifactRef",
+    "CatalogResourcePin",
     "ClueDeepAgentState",
     "ContextBundleManifest",
     "ContextLayer",
@@ -93,12 +126,29 @@ __all__ = [
     "DelegationResult",
     "DomainObjectRef",
     "FinalizeStatus",
+    "FolderProfileCatalog",
+    "FolderPromptCatalog",
+    "FolderSkillCatalog",
     "ModelPolicy",
     "PreparedWorkspaceRoot",
+    "ProfileCatalog",
+    "ProfileDefinition",
+    "ProfileProjection",
+    "ProfileResource",
+    "ProfileStatus",
+    "PromptCatalog",
+    "PromptResource",
     "ResourceBody",
     "ResourceKind",
+    "ResolvedAgentProfile",
+    "RoleRegistryEntry",
+    "RoleRegistryStatus",
+    "ScriptedAgentChatModel",
+    "SkillCatalog",
     "SkillBundle",
     "SkillDescriptor",
+    "SkillDisclosure",
+    "SkillResource",
     "ToolPin",
     "ValidatedOperation",
     "ValidatedPlan",

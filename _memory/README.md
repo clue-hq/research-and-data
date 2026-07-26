@@ -27,6 +27,11 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-26-phase-c6-2-catalogs-profiles-model.md` — C6.2 complete: immutable V1 folder
+  resources, strict provider-neutral catalogs, four active role profiles plus planned
+  account-research, exact effective/delegated tool authority, progressive skill disclosure,
+  governed OpenRouter tool-calling/fallback/streaming attribution, deterministic model fake,
+  full verification, and the C6.3 handoff.
 - `2026-07-26-phase-c6-0-contract-freeze.md` — C6.0 complete: strict agent/resource/plan/context/
   delegation/finalization contracts and injected ports; exact deepagents/model dependencies; real
   fresh-wake, OpenRouter tool-call, async-Postgres resume, artifact-workspace, and honest-finalize
