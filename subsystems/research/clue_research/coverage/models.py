@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +13,7 @@ from clue_core import (
     CostCents,
     CoverageAttemptId,
     CoverageDecisionId,
+    CoverageEvaluatorAdviceId,
     EntityId,
     EntityType,
     ProjectRunId,
@@ -66,6 +68,7 @@ class CoverageDecision(BaseModel):
     claim_refs: tuple[ClaimId, ...] = ()
     judge_model: str | None = None
     judge_prompt_version: str | None = None
+    evaluator_advice_id: CoverageEvaluatorAdviceId | None = None
     created_at: UtcDatetime | None = None
 
 
@@ -110,6 +113,13 @@ class GoalJudgeWarning(StrEnum):
     EVALUATOR_UNCERTAIN = "evaluator_uncertain"
 
 
+class EvaluatorProposalKind(StrEnum):
+    """The boundary the sole C1 evaluator was asked to challenge."""
+
+    ROUND_BOUNDARY = "round_boundary"
+    AGENT_STOP_PROPOSAL = "agent_stop_proposal"
+
+
 class GoalJudgeAssessment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -137,6 +147,36 @@ class GoalJudgeCall(BaseModel):
     valid: bool = True
 
 
+class CoverageEvaluatorAdvice(BaseModel):
+    """Append-only typed advice with an explicit, enforced lack of terminal authority."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: CoverageEvaluatorAdviceId
+    workspace_id: str
+    run_id: RunId
+    project_run_id: ProjectRunId | None = None
+    entity_id: EntityId
+    entity_type: EntityType
+    tier: str
+    round: int = Field(ge=1)
+    proposal_kind: EvaluatorProposalKind
+    planned_fields: tuple[FieldKey, ...]
+    result: GoalJudgeResult | None = None
+    valid: bool
+    answering_model: str
+    prompt_version: str
+    cost_cents: CostCents = Decimal(0)
+    non_authoritative: Literal[True] = True
+    created_at: UtcDatetime | None = None
+
+    @property
+    def proposed_stop_supported(self) -> bool:
+        """A projection-only signal; it never mutates coverage state."""
+
+        return bool(self.result is not None and self.result.sufficient_for_goal)
+
+
 class RoundResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -144,6 +184,11 @@ class RoundResult(BaseModel):
     attempt_ids: tuple[CoverageAttemptId, ...] = ()
     decision_ids: tuple[CoverageDecisionId, ...] = ()
     claim_refs: tuple[ClaimId, ...] = ()
+    evaluator_advice_id: CoverageEvaluatorAdviceId | None = None
+    evaluator_valid: bool | None = None
+    evaluator_sufficient_for_goal: bool | None = None
+    evaluator_recommendations: tuple[GoalJudgeRecommendation, ...] = ()
+    evaluator_warnings: tuple[GoalJudgeWarning, ...] = ()
     remaining_gap_count: int = 0
     terminal: bool = False
     replayed: bool = False

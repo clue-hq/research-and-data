@@ -10,13 +10,14 @@ from clue_core import (
     ClaimId,
     CostCents,
     CoverageAttemptId,
+    CoverageEvaluatorAdviceId,
     EntityId,
     ProjectRunId,
     ResearchTerminalStatus,
     RunId,
 )
 from clue_db import ConnFactory
-from clue_research.coverage import list_attempts, list_decisions
+from clue_research.coverage import list_attempts, list_decisions, list_evaluator_advices
 
 
 class ResearchCoverageField(BaseModel):
@@ -62,6 +63,32 @@ class ResearchAttemptHistory(BaseModel):
     entity_id: EntityId
     field_key: str
     attempts: tuple[ResearchAttemptHistoryItem, ...]
+
+
+class ResearchEvaluatorAdviceItem(BaseModel):
+    """Body-free, explicitly non-authoritative evaluator projection."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    evaluator_advice_id: CoverageEvaluatorAdviceId
+    round: int
+    proposal_kind: str
+    planned_fields: tuple[str, ...]
+    valid: bool
+    answering_model: str
+    prompt_version: str
+    sufficient_for_goal: bool | None
+    recommendations: tuple[str, ...]
+    warning_codes: tuple[str, ...]
+    non_authoritative: bool
+
+
+class ResearchEvaluatorAdviceHistory(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: RunId
+    entity_id: EntityId
+    items: tuple[ResearchEvaluatorAdviceItem, ...]
 
 
 async def research_coverage(
@@ -149,11 +176,66 @@ async def research_attempt_history(
     )
 
 
+async def research_evaluator_advice_history(
+    *,
+    conn_factory: ConnFactory,
+    workspace_id: str,
+    run_id: RunId,
+    entity_id: EntityId,
+) -> ResearchEvaluatorAdviceHistory | None:
+    async with conn_factory() as conn:
+        advices = await list_evaluator_advices(
+            conn,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            entity_id=entity_id,
+        )
+    if not advices:
+        return None
+    return ResearchEvaluatorAdviceHistory(
+        run_id=run_id,
+        entity_id=entity_id,
+        items=tuple(
+            ResearchEvaluatorAdviceItem(
+                evaluator_advice_id=item.id,
+                round=item.round,
+                proposal_kind=item.proposal_kind.value,
+                planned_fields=item.planned_fields,
+                valid=item.valid,
+                answering_model=item.answering_model,
+                prompt_version=item.prompt_version,
+                sufficient_for_goal=(
+                    item.result.sufficient_for_goal if item.result is not None else None
+                ),
+                recommendations=(
+                    tuple(value.recommendation.value for value in item.result.assessments)
+                    if item.result is not None
+                    else ()
+                ),
+                warning_codes=(
+                    tuple(
+                        warning.value
+                        for value in item.result.assessments
+                        for warning in value.warning_codes
+                    )
+                    if item.result is not None
+                    else ()
+                ),
+                non_authoritative=item.non_authoritative,
+            )
+            for item in advices
+        ),
+    )
+
+
 __all__ = [
     "ResearchCoverageField",
     "ResearchCoverage",
     "ResearchAttemptHistoryItem",
     "ResearchAttemptHistory",
+    "ResearchEvaluatorAdviceItem",
+    "ResearchEvaluatorAdviceHistory",
     "research_coverage",
     "research_attempt_history",
+    "research_evaluator_advice_history",
 ]

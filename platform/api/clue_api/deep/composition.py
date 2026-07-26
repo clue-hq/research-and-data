@@ -66,7 +66,7 @@ from clue_api.deep.handler import (
     DeepPhaseHandler,
     HighTierResolver,
 )
-from clue_api.deep.orchestrator import AccountDeepOrchestrator
+from clue_api.deep.orchestrator import AccountDeepOrchestrator, ProfileAccountFn
 from clue_api.deep.run_io import DbAccountRunIO
 from clue_api.deep.spend import DbExactlyOnceSpend
 from clue_api.locks import lazy_account_lock_factory
@@ -306,6 +306,7 @@ def build_deep_phase_handler(
     lock_factory: LockFactory | None | _LazyLockDefault = _LAZY_LOCK_DEFAULT,
     scheduler: DeepAccountScheduler | None = None,
     canary_controller: DeepCanaryController | None = None,
+    profile_account_fn: ProfileAccountFn | None = None,
 ) -> DeepPhaseComposition:
     """Construct the fully-wired DEEP phase for one campaign's ICP and return the bundle (M8A.6).
 
@@ -353,7 +354,7 @@ def build_deep_phase_handler(
     # Bind the layered-config seam onto the live account + contact callables so an injected
     # (test/Stage-0) overlay store reaches the deep workers; ``None`` leaves them on the process
     # default store (the production config source — staged-flow §2 "policy is data").
-    account_fn = (
+    account_fn = profile_account_fn or (
         functools.partial(profile_account, config_store=config_store)
         if config_store is not None
         else profile_account

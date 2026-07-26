@@ -46,29 +46,36 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
             "f1249b6e22ac2f4040d640270e6f2eec19ad898315e1e0308ff749221cbafb61"
         ),
         AgentRole.REVIEWER: "83b78489beb635cf68f2f5e60825fd739c28a091c99493b2a71b5e6e33d50241",
+        AgentRole.ACCOUNT_RESEARCH: (
+            "bdf6e1eb1fd86ae4a028dad89f08fa4dcf3477080499558c1896ac98f8c18a5f"
+        ),
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
-        expected_tools = {
-            f"{name}@{toolbelt.descriptor(name).version}"
-            for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
-            if role in roles
-        }
+        expected_tools = (
+            {"research_account_gaps@2"}
+            if role is AgentRole.ACCOUNT_RESEARCH
+            else {
+                f"{name}@{toolbelt.descriptor(name).version}"
+                for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
+                if role in roles
+            }
+        )
         assert {pin.address for pin in resolved.profile.tools} == expected_tools
         assert resolved.resource_manifest.aggregate_sha256 == digest
         assert all(body.ref in resolved.resource_map for body in resolved.resource_snapshot.bodies)
 
 
-def test_registry_projection_is_body_free_host_free_and_marks_future_role_planned(
+def test_registry_projection_is_body_free_host_free_and_marks_account_role_active(
     registry: AgentProfileRegistry,
 ) -> None:
     projection = registry.projection()
     payload = json.dumps(projection.model_dump(mode="json"), sort_keys=True)
     entries = {entry.role: entry for entry in projection.roles}
 
-    assert entries[AgentRole.ACCOUNT_RESEARCH].status is RoleRegistryStatus.PLANNED
-    assert entries[AgentRole.ACCOUNT_RESEARCH].profile is None
+    assert entries[AgentRole.ACCOUNT_RESEARCH].status is RoleRegistryStatus.ACTIVE
+    assert entries[AgentRole.ACCOUNT_RESEARCH].profile is not None
     assert entries[AgentRole.HEAD_OF_ABM].status is RoleRegistryStatus.ACTIVE
     assert "You are the platform Head of ABM" not in payload
     assert "Ask from the current readiness gaps" not in payload
@@ -87,7 +94,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         if item.status is AgentCapabilityStatus.AVAILABLE
     }
 
-    assert len(by_address) == 32
+    assert len(by_address) == 33
     assert available == {
         "evaluate_stage0_readiness@1",
         "propose_field@1",
@@ -103,6 +110,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["confirm_icp@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["override_stage0_readiness@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["research_account_gaps@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
+    assert by_address["research_account_gaps@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert "framework task/subagent: unavailable" in head.generated_resource_map
     assert "delegate_specialist: available" in head.generated_resource_map
     assert "execute/shell/process: unavailable" in head.generated_resource_map
@@ -167,6 +175,23 @@ def test_c66_specialists_freeze_skill_output_budget_and_no_child_delegation(
     assert resolved.profile.max_model_rounds == rounds
     assert resolved.profile.delegation_roles == ()
     assert "delegate_specialist: unavailable" in resolved.generated_resource_map
+
+
+def test_c67_account_profile_has_one_replay_safe_tool_and_no_self_evaluator_or_delegation(
+    registry: AgentProfileRegistry,
+) -> None:
+    resolved = registry.resolve(AgentRole.ACCOUNT_RESEARCH)
+
+    assert [item.address for item in resolved.profile.tools] == ["research_account_gaps@2"]
+    assert [item.resource.address for item in resolved.skill_disclosures()] == [
+        "skill:account-gap-research@v1"
+    ]
+    assert resolved.profile.delegation_roles == ()
+    assert resolved.profile.max_delegations == 0
+    assert "The independent C1 evaluator is not you" in resolved.prompt_body
+    skill = resolved.open_skill("skill:account-gap-research@v1")
+    assert "creates no attempt or terminal decision" in skill
+    assert "GoalJudge" not in resolved.generated_resource_map
 
 
 @pytest.mark.parametrize(

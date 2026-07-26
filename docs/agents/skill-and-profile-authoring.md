@@ -21,6 +21,7 @@ Never edit a runtime workspace to change agent behavior.
 | Research specialist | `prompts/research-specialist/v2/SYSTEM.md` | `skills/research-task/v1/SKILL.md` | `profiles/research-specialist/v2/profile.yaml` |
 | Content drafter | `prompts/content-drafter/v2/SYSTEM.md` | `skills/content-exemplar/v1/SKILL.md` | `profiles/content-drafter/v2/profile.yaml` |
 | Reviewer | `prompts/reviewer/v2/SYSTEM.md` | `skills/artifact-review/v1/SKILL.md` | `profiles/reviewer/v2/profile.yaml` |
+| Account research worker | `prompts/account-research/v1/SYSTEM.md` | `skills/account-gap-research/v1/SKILL.md` | `profiles/account-research/v1/profile.yaml` |
 
 The active version selector is
 `platform/api/clue_api/agent_registry_wiring.py::C6_ACTIVE_PROFILE_VERSIONS`. Historical versions
@@ -116,6 +117,8 @@ removed by the profile, engine ceiling, or delegated parent grant.
 - Governed tool and delegation wrappers: `platform/api/clue_api/agent_runtime_wiring.py`
 - Durable parent/child delegation lifecycle: `platform/api/clue_api/agent_execution_wiring.py`
 - Fresh-wake specialist construction: `platform/api/clue_api/specialist_wiring.py`
+- Per-account research-agent construction and fleet substitution:
+  `platform/api/clue_api/account_research_wiring.py`
 
 Future prompt-hub support must implement the existing catalog protocols and return the same exact,
 immutable resource descriptors. It must not change consumers or make a mutable remote alias the

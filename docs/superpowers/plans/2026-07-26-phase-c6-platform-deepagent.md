@@ -4,7 +4,9 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0–C6.6 implemented and verified; C6.7 is next. C6.6 adds fresh-wake
+**Current checkpoint:** C6.0–C6.7 implemented and verified; C6.8 is next. C6.7 adds the governed
+per-account research-agent unit, replay-safe `research_account_gaps@2`, and the explicit ruling
+that C1's `GoalJudge` remains the sole independent coverage evaluator. C6.6 adds fresh-wake
 research, content-drafter, and reviewer specialists behind the governed C5 delegation operation.
 It freezes typed task/file/ref transfer, per-role prompts/skills/tools/workspaces/models/time and
 round limits, distinct child executions, empty child history, durable-before-return output
@@ -565,6 +567,27 @@ Compare governed-agent vs current mechanical-unit outcomes on coverage, promotab
 verification, cost bands, rounds, terminal gaps, and failure recovery. Do not cut over a tier
 where agency adds no measured value.
 
+### C6.7 implementation record
+
+- An active immutable `account-research@v1` role now uses the real C6 deepagent runtime with one
+  progressively disclosed skill, one exact tool (`research_account_gaps@2`), no direct provider
+  access, and no delegation in v1.
+- `GovernedAccountProfiler` substitutes only the existing `ProfileAccountFn` inside an admitted
+  fleet slot. The mechanical scheduler, account plan, leases/fencing, budget envelope,
+  waterfall, claim path, verification, committee/contact continuation, controls, and recovery
+  remain the owning shell.
+- `account-research-unit@v1` is a standing internal C5 recipe with one-child fan-out and exact
+  project/account/registry/coverage pins. Explicit round plus operation identity makes model
+  retries converge, while the external boundary remains truthfully at-least-once.
+- `c1.engine.goal_judge` is frozen as the sole evaluator owner. Advice is stored append-only and
+  non-authoritatively; an agent stop proposal creates neither attempts nor terminal decisions,
+  and malformed advice cannot stop research.
+- The account finalization guard accepts `completed` only after every initially planned field has
+  an engine-authored terminal decision. Partial/failed turns cannot advance later deep stages,
+  and C1-booked spend is zero-anchored rather than charged twice by the outer orchestrator.
+- C6.8 retains the default-off product-routing decision and must compare this unit against the
+  mechanical baseline before enabling a tier/workspace cohort.
+
 ## 11. C6.8 — integration and close-out
 
 - build C6 production composition in `clue_api`;
@@ -607,4 +630,4 @@ At the start of every C6 session:
 6. record failures and changed decisions in `_memory/`;
 7. finish with verification evidence and one coherent local commit.
 
-The next implementation session is **C6.7 only**.
+The next implementation session is **C6.8 only**.

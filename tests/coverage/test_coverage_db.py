@@ -27,14 +27,17 @@ from clue_core import (
 from clue_projections.research_coverage import (
     research_attempt_history,
     research_coverage,
+    research_evaluator_advice_history,
 )
 from clue_research.coverage import (
     CoverageAttempt,
     CoverageController,
     CoverageDecision,
+    EvaluatorProposalKind,
     GoalJudge,
     list_attempts,
     list_decisions,
+    list_evaluator_advices,
     record_attempt,
     record_decision,
 )
@@ -292,6 +295,145 @@ def test_valid_propose_stop_advice_cannot_create_a_terminal_decision(
             assert decisions[0].terminal_status is None
             assert decisions[0].next_strategy_key == "official_site_exact"
             assert decisions[0].reason_code == "retry_permitted_evaluator_questions_value"
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("payload", ["not-json", "valid-stop"])
+def test_agent_stop_proposal_is_typed_append_only_advice_and_never_terminal(
+    require_profiling_db: None,
+    payload: str,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id = await seed_workspace(conn, f"ws_c67_stop_{uuid4().hex[:8]}")
+            run_id = RunId(uuid4())
+            entity = Entity(entity_id=EntityId(uuid4()), entity_type=EntityType.ACCOUNT)
+            field = FieldDef(
+                field_key="account.recent_funding",
+                value_type="object",
+                tier_plan=(),
+                pass_kind=PassKind.DEEP,
+            )
+            stop_payload = {
+                "assessments": [
+                    {
+                        "field_key": field.field_key,
+                        "meaningful_gap_remaining": False,
+                        "recommendation": "propose_stop",
+                        "warning_codes": ["goal_appears_satisfied"],
+                        "rationale": "No further useful evidence appears likely.",
+                    }
+                ],
+                "sufficient_for_goal": True,
+            }
+            gateway_text = json.dumps(stop_payload) if payload == "valid-stop" else payload
+            controller = CoverageController(
+                judge=GoalJudge(_EvaluatorGateway(gateway_text), model="judge/test")
+            )
+            advice = await controller.assess_stop_proposal(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                project_run_id=None,
+                entity=entity,
+                tier="high",
+                field_defs=(field,),
+                requested_round=1,
+            )
+            replay = await controller.assess_stop_proposal(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                project_run_id=None,
+                entity=entity,
+                tier="high",
+                field_defs=(field,),
+                requested_round=1,
+            )
+            assert replay.id == advice.id
+            assert advice.proposal_kind is EvaluatorProposalKind.AGENT_STOP_PROPOSAL
+            assert advice.non_authoritative is True
+            assert advice.valid is (payload == "valid-stop")
+            assert await list_attempts(conn, workspace_id=workspace_id, run_id=run_id) == []
+            assert await list_decisions(conn, workspace_id=workspace_id, run_id=run_id) == []
+            rows = await list_evaluator_advices(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                entity_id=entity.entity_id,
+            )
+            assert [item.id for item in rows] == [advice.id]
+            with pytest.raises(DBAPIError):
+                await conn.execute(
+                    text(
+                        "UPDATE coverage_evaluator_advice SET non_authoritative=false WHERE id=:id"
+                    ),
+                    {"id": advice.id},
+                )
+
+    run_async(scenario())
+
+
+def test_explicit_round_replays_exact_coverage_and_evaluator_boundary(
+    require_profiling_db: None,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id = await seed_workspace(conn, f"ws_c67_replay_{uuid4().hex[:8]}")
+            run_id = RunId(uuid4())
+            entity = Entity(entity_id=EntityId(uuid4()), entity_type=EntityType.ACCOUNT)
+            field = FieldDef(
+                field_key="account.recent_funding",
+                value_type="object",
+                tier_plan=(),
+                pass_kind=PassKind.DEEP,
+            )
+            controller = CoverageController()
+            first = await controller.run_round(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                project_run_id=None,
+                entity=entity,
+                tier="high",
+                field_defs=(field,),
+                requested_round=1,
+            )
+            replay = await controller.run_round(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                project_run_id=None,
+                entity=entity,
+                tier="high",
+                field_defs=(field,),
+                requested_round=1,
+            )
+            assert replay.replayed is True
+            assert replay.attempt_ids == first.attempt_ids
+            assert replay.decision_ids == first.decision_ids
+            assert replay.evaluator_advice_id == first.evaluator_advice_id
+            assert (
+                len(
+                    await list_evaluator_advices(
+                        conn,
+                        workspace_id=workspace_id,
+                        run_id=run_id,
+                        entity_id=entity.entity_id,
+                    )
+                )
+                == 1
+            )
+            history = await research_evaluator_advice_history(
+                conn_factory=conn_session_factory(conn),
+                workspace_id=workspace_id,
+                run_id=run_id,
+                entity_id=entity.entity_id,
+            )
+            assert history is not None
+            assert history.items[0].non_authoritative is True
+            assert "rationale" not in history.model_dump_json()
 
     run_async(scenario())
 

@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
@@ -233,6 +233,9 @@ class ModelFinalizeRequest(_ModelInput):
     )
 
 
+CompletionGuard = Callable[[ModelFinalizeRequest], Awaitable[None]]
+
+
 class ModelDomainRef(_ModelInput):
     """Model-selected identity only; trusted workspace scope is injected."""
 
@@ -430,6 +433,7 @@ class GovernedAgentToolFactory:
         lease: AgentWorkspaceLease,
         artifacts: DurableAgentArtifactStore,
         required_output_path: str | None = None,
+        completion_guard: CompletionGuard | None = None,
     ) -> None:
         self._request = request
         self._resolved_profile = resolved_profile
@@ -438,6 +442,7 @@ class GovernedAgentToolFactory:
         self._lease = lease
         self._artifacts = artifacts
         self._required_output_path = required_output_path
+        self._completion_guard = completion_guard
 
     def build(self) -> tuple[BaseTool, ...]:
         tools = tuple(
@@ -684,6 +689,11 @@ class GovernedAgentToolFactory:
                     raise ValueError(
                         "completed specialist turn requires its non-empty role output file"
                     )
+            if (
+                model_input.status is FinalizeStatus.COMPLETED
+                and self._completion_guard is not None
+            ):
+                await self._completion_guard(model_input)
             workspace_id = self._request.constitution.workspace_id
             final_message_ref = (
                 await self._artifacts.persist_body(

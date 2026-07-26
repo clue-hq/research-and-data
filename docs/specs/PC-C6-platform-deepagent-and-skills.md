@@ -1,6 +1,6 @@
 # C6 — platform deepagent, isolated workspace, and skills
 
-**Status:** IN PROGRESS — C6.0–C6.6 complete; C6.7 next (2026-07-26)
+**Status:** IN PROGRESS — C6.0–C6.7 complete; C6.8 next (2026-07-26)
 **Layer:** Phase C / harness build step 6
 **Depends on:** C1–C5 complete; C4 governed Stage 0; C5 durable execution
 **Branch:** `platform/c6-deepagent-runtime`
@@ -956,6 +956,57 @@ delegations receive only the remaining parent budget; children cannot delegate a
 The maintainer-facing source map and safe immutable-version workflow are documented in
 `docs/agents/skill-and-profile-authoring.md`. C6.6 adds no migration, public route, canary, or
 ownership cutover; C6.8 still owns final production routing and recovery/operations composition.
+
+## 7F. C6.7 implementation record
+
+C6.7 promotes the immutable `account-research@v1` profile and prompt plus the progressively
+disclosed `account-gap-research@v1` skill. The role has exactly one model-visible domain
+capability: replay-certified `research_account_gaps@2`. It cannot call a resolver, provider,
+claim store, verification function, committee/contact operation, another agent, or an evaluator
+directly. V1 deliberately grants no facet delegation: bounded field-subset selection plus the
+governed waterfall provides the required decomposition without creating another shared-envelope
+mind before an eval demonstrates that it adds value.
+
+`GovernedAccountProfiler` is a `ProfileAccountFn` replacement inside the existing
+`AccountDeepOrchestrator`, not a second fleet. It reuses the durable account plan, tier-priority
+fleet, leases/fencing, account envelope, pre-spend gate, source waterfall, claim/provenance and
+verification paths, committee/contact stages, coverage ledger, canary/control surfaces, and
+recovery semantics. `build_deep_phase_handler` accepts the replacement as an injected seam; its
+default remains the existing mechanical profiler until C6.8 selects the account-agent path by
+workspace/canary policy.
+
+The internal `account-research-unit@v1` standing recipe admits only
+`research_account_gaps@2`, with one-child fan-out, the `account_research_interactions` gate, and
+exact project-run, account, field-registry, source-registry, and coverage-policy pins. Each tool
+call carries an explicit round and operation id. The C5 invocation receipt handles same-operation
+replay; the C1 attempt/decision/advice identities converge domain state. The external resolver and
+evaluator boundary is honestly declared at-least-once. Already-terminal, unplanned, skipped, and
+stale-round requests fail before new research spend.
+
+The final evaluator ownership decision is explicit and closed:
+
+- `c1.engine.goal_judge` is the sole independent coverage evaluator and
+  `build_c1_coverage_evaluator` is its one production construction site;
+- the account agent may choose a planned gap subset, an engine-admitted strategy hint, or propose
+  stopping, but it may not assess coverage sufficiency or author terminal state;
+- every round-boundary or stop-proposal assessment is an append-only
+  `coverage_evaluator_advice` record linked from decisions where applicable and marked
+  `non_authoritative=true`;
+- a stop proposal creates no attempt and no coverage decision; malformed advice is recorded
+  invalid and cannot terminate a field;
+- only C1 engine decisions can satisfy the account completion guard. A failed, blocked, or
+  prematurely completed model turn cannot advance committee/contact work.
+
+The account runtime uses the same real deepagent construction, per-role governed model,
+seven-layer context contract, isolated C6.1 workspace, immutable resources, C5 plan compiler,
+exact tool wrappers, checkpointer, durable turn receipts, and honest finalization authority as
+the Head and specialists. Coverage spend is booked by the C1 controller and the outer account
+stage writes only a zero-cost anchor, preventing a double charge on success or restart.
+
+C6.7 adds the reversible `coverage_evaluator_advice` migration and leaves one Alembic head.
+It does not turn on product routing, create a public route, or change canary ownership. C6.8 owns
+the prepared-turn composition at the API root, default-off workspace routing, comparative
+agent-vs-mechanical eval/canary selection, operations telemetry, and final hardening.
 
 ---
 

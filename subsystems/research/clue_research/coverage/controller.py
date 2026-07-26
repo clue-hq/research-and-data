@@ -25,6 +25,7 @@ from clue_core import (
     RunId,
     SourceGate,
     SourceManifest,
+    coverage_evaluator_advice_id,
     new_coverage_attempt_id,
     new_coverage_decision_id,
 )
@@ -34,16 +35,20 @@ from clue_research.coverage.judge import GoalJudge
 from clue_research.coverage.models import (
     CoverageAttempt,
     CoverageDecision,
+    CoverageEvaluatorAdvice,
+    EvaluatorProposalKind,
     GoalJudgeCall,
     GoalJudgeRecommendation,
     ResearchStrategy,
     RoundResult,
 )
 from clue_research.coverage.repository import (
+    get_evaluator_advice,
     list_attempts,
     list_decisions,
     record_attempt,
     record_decision,
+    record_evaluator_advice,
 )
 from clue_research.sources import (
     StepOutcome,
@@ -119,6 +124,7 @@ class CoverageController:
         quality_mode: str | None = None,
         claim_tagger: ClaimTagger | None = None,
         remaining_budget_cents: Decimal | None = None,
+        requested_round: int | None = None,
     ) -> RoundResult:
         fields = field_defs[: self._policy.max_gap_fields_per_round]
         if not fields:
@@ -133,19 +139,39 @@ class CoverageController:
         previous_decisions = await list_decisions(
             conn, workspace_id=workspace_id, run_id=run_id, entity_id=entity.entity_id
         )
-        round_number = max((item.round for item in previous_attempts), default=0) + 1
+        latest_round = max((item.round for item in previous_attempts), default=0)
+        round_number = requested_round if requested_round is not None else latest_round + 1
+        if round_number < 1:
+            raise CoveragePolicyError("requested round must be positive")
         completed = [item for item in previous_attempts if item.round == round_number]
         if completed:
             decisions = [item for item in previous_decisions if item.round == round_number]
-            return RoundResult(
+            advice = await get_evaluator_advice(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                entity_id=entity.entity_id,
+                tier=tier,
                 round=round_number,
-                attempt_ids=tuple(item.id for item in completed),
-                decision_ids=tuple(item.id for item in decisions),
-                claim_refs=tuple(ref for item in completed for ref in item.claim_refs),
-                remaining_gap_count=sum(item.terminal_status is None for item in decisions),
-                terminal=bool(decisions)
-                and all(item.terminal_status is not None for item in decisions),
-                replayed=True,
+                proposal_kind=EvaluatorProposalKind.ROUND_BOUNDARY,
+            )
+            return _attach_advice(
+                RoundResult(
+                    round=round_number,
+                    attempt_ids=tuple(item.id for item in completed),
+                    decision_ids=tuple(item.id for item in decisions),
+                    claim_refs=tuple(ref for item in completed for ref in item.claim_refs),
+                    remaining_gap_count=sum(item.terminal_status is None for item in decisions),
+                    terminal=bool(decisions)
+                    and all(item.terminal_status is not None for item in decisions),
+                    replayed=True,
+                ),
+                advice,
+            )
+        if requested_round is not None and requested_round != latest_round + 1:
+            raise CoveragePolicyError(
+                f"requested round {requested_round} is not the next durable round "
+                f"{latest_round + 1}"
             )
 
         terminal_fields = {
@@ -250,6 +276,32 @@ class CoverageController:
                 entity_id=entity.entity_id,
                 account_run_id=run_id,
             )
+        advice = await record_evaluator_advice(
+            conn,
+            CoverageEvaluatorAdvice(
+                id=coverage_evaluator_advice_id(
+                    run_id=run_id,
+                    entity_id=entity.entity_id,
+                    tier=tier,
+                    round=round_number,
+                    proposal_kind=EvaluatorProposalKind.ROUND_BOUNDARY.value,
+                ),
+                workspace_id=workspace_id,
+                run_id=run_id,
+                project_run_id=project_run_id,
+                entity_id=entity.entity_id,
+                entity_type=entity.entity_type,
+                tier=tier,
+                round=round_number,
+                proposal_kind=EvaluatorProposalKind.ROUND_BOUNDARY,
+                planned_fields=tuple(field.field_key for field in active),
+                result=judge_call.result,
+                valid=judge_call.valid,
+                answering_model=judge_call.answering_model,
+                prompt_version=judge_call.prompt_version,
+                cost_cents=judge_call.cost_cents,
+            ),
+        )
         judge_share = (
             judge_call.cost_cents / Decimal(len(provisional)) if provisional else Decimal(0)
         )
@@ -312,16 +364,147 @@ class CoverageController:
                         claim_refs=attempt.claim_refs,
                         judge_model=judge_call.answering_model,
                         judge_prompt_version=judge_call.prompt_version,
+                        evaluator_advice_id=advice.id,
                     ),
                 )
             )
-        return RoundResult(
-            round=round_number,
-            attempt_ids=tuple(item.id for item in attempts),
-            decision_ids=tuple(item.id for item in final_decisions),
-            claim_refs=tuple(ref for item in attempts for ref in item.claim_refs),
-            remaining_gap_count=sum(item.terminal_status is None for item in final_decisions),
-            terminal=all(item.terminal_status is not None for item in final_decisions),
+        return _attach_advice(
+            RoundResult(
+                round=round_number,
+                attempt_ids=tuple(item.id for item in attempts),
+                decision_ids=tuple(item.id for item in final_decisions),
+                claim_refs=tuple(ref for item in attempts for ref in item.claim_refs),
+                remaining_gap_count=sum(item.terminal_status is None for item in final_decisions),
+                terminal=all(item.terminal_status is not None for item in final_decisions),
+            ),
+            advice,
+        )
+
+    async def assess_stop_proposal(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        run_id: RunId,
+        project_run_id: ProjectRunId | None,
+        entity: Entity,
+        tier: str,
+        field_defs: tuple[FieldDef, ...],
+        requested_round: int,
+        remaining_budget_cents: Decimal | None = None,
+    ) -> CoverageEvaluatorAdvice:
+        """Challenge an agent stop proposal without creating attempts or terminal decisions."""
+
+        if requested_round < 1:
+            raise CoveragePolicyError("requested round must be positive")
+        existing = await get_evaluator_advice(
+            conn,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            entity_id=entity.entity_id,
+            tier=tier,
+            round=requested_round,
+            proposal_kind=EvaluatorProposalKind.AGENT_STOP_PROPOSAL,
+        )
+        if existing is not None:
+            return existing
+        prior = await list_attempts(
+            conn,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            entity_id=entity.entity_id,
+        )
+        latest_round = max((item.round for item in prior), default=0)
+        if requested_round != latest_round + 1:
+            raise CoveragePolicyError(
+                f"stop proposal round {requested_round} is not the next durable round "
+                f"{latest_round + 1}"
+            )
+        fields = field_defs[: self._policy.max_gap_fields_per_round]
+        if not fields:
+            raise CoveragePolicyError("a stop proposal must name at least one unresolved field")
+        terminal_fields = {
+            item.field_key
+            for item in await list_decisions(
+                conn,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                entity_id=entity.entity_id,
+            )
+            if item.terminal_status is not None
+        }
+        active = tuple(field for field in fields if field.field_key not in terminal_fields)
+        if not active:
+            raise CoveragePolicyError("a stop proposal cannot target only terminal fields")
+        if self._judge is None:
+            call = GoalJudgeCall(
+                result=None,
+                answering_model="unavailable",
+                prompt_version="unavailable",
+                valid=False,
+            )
+        else:
+            call = self._judge.judge(
+                planned_fields=[field.field_key for field in active],
+                current_claim_refs={
+                    field.field_key: [
+                        str(ref)
+                        for attempt in prior
+                        if attempt.field_key == field.field_key
+                        for ref in attempt.claim_refs
+                    ]
+                    for field in active
+                },
+                prior_attempts=[
+                    {
+                        "attempt_id": str(item.id),
+                        "field_key": item.field_key,
+                        "round": item.round,
+                        "strategy_key": item.strategy_key,
+                        "outcome": item.outcome.value,
+                    }
+                    for item in prior
+                ],
+                current_round_attempts=[],
+                remaining_budget_cents=(
+                    str(remaining_budget_cents) if remaining_budget_cents is not None else None
+                ),
+                hard_round_cap=self._policy.max_rounds_for(tier),
+                agent_stop_proposal=True,
+            )
+        if call.cost_cents > 0 and self._budget is not None and project_run_id is not None:
+            await self._budget.record(
+                cost_cents=call.cost_cents,
+                scope=BudgetScope.ACCOUNT,
+                project_run_id=project_run_id,
+                entity_id=entity.entity_id,
+                account_run_id=run_id,
+            )
+        return await record_evaluator_advice(
+            conn,
+            CoverageEvaluatorAdvice(
+                id=coverage_evaluator_advice_id(
+                    run_id=run_id,
+                    entity_id=entity.entity_id,
+                    tier=tier,
+                    round=requested_round,
+                    proposal_kind=EvaluatorProposalKind.AGENT_STOP_PROPOSAL.value,
+                ),
+                workspace_id=workspace_id,
+                run_id=run_id,
+                project_run_id=project_run_id,
+                entity_id=entity.entity_id,
+                entity_type=entity.entity_type,
+                tier=tier,
+                round=requested_round,
+                proposal_kind=EvaluatorProposalKind.AGENT_STOP_PROPOSAL,
+                planned_fields=tuple(field.field_key for field in active),
+                result=call.result,
+                valid=call.valid,
+                answering_model=call.answering_model,
+                prompt_version=call.prompt_version,
+                cost_cents=call.cost_cents,
+            ),
         )
 
     async def _planned_field(
@@ -535,3 +718,25 @@ def _attempt_detail(outcome: ResearchAttemptOutcome) -> str:
         ResearchAttemptOutcome.BUDGET_STOP: "Budget policy stopped the strategy before spend.",
         ResearchAttemptOutcome.FAILED: "The strategy failed safely.",
     }[outcome]
+
+
+def _attach_advice(
+    result: RoundResult,
+    advice: CoverageEvaluatorAdvice | None,
+) -> RoundResult:
+    if advice is None:
+        return result
+    assessments = advice.result.assessments if advice.result is not None else ()
+    return result.model_copy(
+        update={
+            "evaluator_advice_id": advice.id,
+            "evaluator_valid": advice.valid,
+            "evaluator_sufficient_for_goal": (
+                advice.result.sufficient_for_goal if advice.result is not None else None
+            ),
+            "evaluator_recommendations": tuple(item.recommendation for item in assessments),
+            "evaluator_warnings": tuple(
+                warning for item in assessments for warning in item.warning_codes
+            ),
+        }
+    )
