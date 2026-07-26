@@ -4,8 +4,8 @@
 **Branch:** `platform/c6-deepagent-runtime`
 **Base checkpoint:** `f25e9b5` (`feat(execution): adopt Recipe 1 with reproducible run views`)
 **Binding child spec:** [PC-C6](../../specs/PC-C6-platform-deepagent-and-skills.md)
-**Current checkpoint:** C6.0 and C6.1 implemented and verified; C6.2 is next. No C6 migration,
-agent executor, or feature routing exists yet.
+**Current checkpoint:** C6.0–C6.2 implemented and verified; C6.3 is next. No C6 migration,
+agent executor, durable turn, or feature routing exists yet.
 
 This plan is the cross-session execution record for C6. Complete and verify one slice before
 starting the next. Do not begin database migration or production executor work until C6.0 closes
@@ -30,7 +30,7 @@ the framework, tool-calling, workspace, resource-version, and replay-safety unkn
 |---|---|---:|---|
 | C6.0 | **Complete** — freeze contracts and prove external runtime assumptions | No | architecture/spike tests green |
 | C6.1 | **Complete** — isolated workspace, virtual backend, resource materialization | No migration added | isolation battery green |
-| C6.2 | Folder catalogs, profiles, registry, tool-calling model seam | Profile metadata only if proven necessary | exact resource/allowlist/import gates green |
+| C6.2 | **Complete** — folder catalogs, profiles, registry, tool-calling model seam | No migration added | exact resource/allowlist/import gates green |
 | C6.3 | Typed turns, seven-layer context, history, receipts | Yes | migration smoke + body-free replay |
 | C6.4 | Plan compiler, governed tools, delegation, finalize | Additive only | crash/authority/replay matrix green |
 | C6.5 | Head-of-ABM Stage-0 vertical | No new domain tables expected | C4 parity + agent-quality eval |
@@ -260,6 +260,39 @@ protocol so a future remote provider can supply the same descriptors without cha
 Tighten the `clue_agents` import contract to forbid `clue_execution`, `clue_storage`, and other
 runtime/domain packages in addition to existing forbidden modules. All concrete dependencies are
 injected as narrow protocols.
+
+### C6.2 close-out — 2026-07-26
+
+Implemented:
+
+- immutable folder resources for four V1 roles and the additive Stage-0 interview V2 skill;
+- strict, eager prompt/skill/profile catalogs behind provider-neutral protocols, with exact
+  version, schema, file-shape, UTF-8, mode, link, digest, and folder-identity validation;
+- reviewed active-role resolution, exact live tool-schema pins, engine ceilings, separate
+  delegation grants, parent/child tool and workspace intersection, stable aggregate manifests,
+  body-free/host-free projections, and a planned account-research registry entry;
+- progressive skill disclosure: profile projections expose bounded metadata and an exact
+  materialized path, while the body opens only by a disclosed immutable address;
+- a deterministic scripted `BaseChatModel` and a production OpenRouter model provider preserving
+  standard tool calls, sync/async and streaming behavior, primary/fallback identity, token usage,
+  configured cost, timeout/retry ceilings, and the shared model-call trace/event surface;
+- production composition at `clue_api`, while `clue_agents` remains independent of gateway,
+  provider, storage, execution, fleet, research, memory, and content implementations.
+
+Resolved decisions:
+
+- the used C4 flat Stage-0 V1 bytes remain frozen; C6 owns a semantically migrated V2 resource;
+- direct parent tools and delegated child grants are distinct authority envelopes, so the Head
+  does not receive specialist tools merely because it may delegate them;
+- `account_research` remains registry-visible but planned until C6.7, with no prematurely active
+  profile;
+- human steering and all seven replay-uncertified tools remain structurally absent;
+- folder catalogs are the V1 provider only; registry consumers depend on catalog protocols so a
+  later prompt hub can replace the provider without changing runtime contracts.
+
+No database migration, turn/history store, context assembler, deepagent construction, executor,
+route, or feature flag was added. C6.3 may now add durable turns and seven-layer context against
+these exact resource/profile/model contracts.
 
 ## 6. C6.3 — durable turns and seven-layer context
 
