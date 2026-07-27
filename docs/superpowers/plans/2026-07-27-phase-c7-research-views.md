@@ -136,6 +136,8 @@ allocates separate worktrees and reserves shared files.
 
 ## 6. C7.0 — contract freeze and executable fixture map
 
+**Status:** COMPLETE — implemented and verified 2026-07-27.
+
 ### Goal
 
 Turn the binding child spec into exact implementation types and fixtures before migration or tool

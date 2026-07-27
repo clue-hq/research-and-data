@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "synthetic_contact_frontend_v1",
+  "sanitized": true,
+  "view_kind": "contact",
+  "subject_fixture_id": "contact_fixture_001",
+  "parent_account_fixture_id": "account_fixture_001",
+  "sections": [
+    {
+      "kind": "identity",
+      "owner_species": "identity",
+      "block_kind": null,
+      "required_elements": [
+        "canonical_contact_ref",
+        "parent_account_ref",
+        "current_role_ref",
+        "public_profile_ref",
+        "deletion_or_restriction_state"
+      ]
+    },
+    {
+      "kind": "research_status",
+      "owner_species": "execution",
+      "block_kind": null,
+      "required_elements": [
+        "run_status_ref",
+        "last_researched_at_ref"
+      ]
+    },
+    {
+      "kind": "committee",
+      "owner_species": "committee",
+      "block_kind": "committee_member",
+      "required_elements": [
+        "persona_ref",
+        "committee_role_ref",
+        "influence_ref",
+        "contact_class_ref"
+      ]
+    },
+    {
+      "kind": "summary",
+      "owner_species": "claim_derivation",
+      "block_kind": "executive_summary",
+      "required_elements": [
+        "professional_overview_statement",
+        "provenance_ref"
+      ]
+    },
+    {
+      "kind": "professional_signals",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "role_signal_statement",
+        "persona_relevance_statement"
+      ]
+    },
+    {
+      "kind": "evidence",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "evidence_backed_statement",
+        "evidence_action_descriptor",
+        "freshness_state"
+      ]
+    },
+    {
+      "kind": "quotes",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "public_quote_statement",
+        "identity_binding"
+      ]
+    },
+    {
+      "kind": "background",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "display_decision",
+        "outreach_decision",
+        "explicit_unknown_state"
+      ]
+    },
+    {
+      "kind": "career",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "verified_career_statement"
+      ]
+    },
+    {
+      "kind": "education",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "verified_or_unknown_education"
+      ]
+    },
+    {
+      "kind": "publications",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "verified_or_unknown_publications"
+      ]
+    },
+    {
+      "kind": "awards",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "verified_or_unknown_awards"
+      ]
+    },
+    {
+      "kind": "personalization",
+      "owner_species": "claim_derivation",
+      "block_kind": "personalization",
+      "required_elements": [
+        "strong_identity_binding",
+        "allowed_outreach_decision",
+        "non_sensitive_use_class",
+        "selection_reason_code"
+      ]
+    },
+    {
+      "kind": "coverage_gaps",
+      "owner_species": "coverage",
+      "block_kind": "coverage_gap",
+      "required_elements": [
+        "coverage_summary_ref",
+        "terminal_gap_ref"
+      ]
+    }
+  ],
+  "forbidden_authoritative_fields": [
+    "rendered_markdown",
+    "rendered_html",
+    "document_body",
+    "medical_personalization",
+    "weak_binding_personalization",
+    "storage_key",
+    "permanent_signed_url"
+  ]
+}
