@@ -88,6 +88,13 @@ def run_migrations(database_path: Path) -> None:
         # Per-document advanced opt-out (0/1): when set, the editor skips the
         # handoff-absolute freeze seams so agent auto-layout stays live.
         ensure_column(connection, "documents", "layout_managed_editing", "INTEGER")
+        # Website mode: a document is either a Rust engine 'scene' or a 'web'
+        # WebDoc payload (both live in current_scene_json). The column lets
+        # reads branch on kind without sniffing the blob; scene is the default
+        # so every pre-existing row keeps its meaning.
+        ensure_column(
+            connection, "documents", "doc_kind", "TEXT NOT NULL DEFAULT 'scene'"
+        )
         # Bulk print controls: the resolved export profile a batch runs with
         # (NULL = format-default artifacts, the pre-profile behavior).
         ensure_column(connection, "instance_batches", "export_profile_json", "TEXT")
@@ -147,12 +154,22 @@ class Repository:
         brand_kit: Optional[JsonObject] = None,
         effective_brand_source: Optional[str] = None,
         effective_brand_mode: Optional[JsonObject] = None,
+        doc_kind: str = "scene",
     ) -> JsonObject:
         now = utc_now()
-        document_id = scene["meta"]["id"]
-        title = scene["meta"]["title"]
-        status = scene_status(scene)
-        brand_ref = scene["meta"].get("brand_kit")
+        # A WebDoc carries id/title at the top level and has no `meta` wrapper;
+        # a scene carries them under `meta`. Both blobs still land in
+        # current_scene_json (column reuse) — doc_kind is the discriminant.
+        if doc_kind == "web":
+            document_id = scene["id"]
+            title = scene["title"]
+            status = "draft"
+            brand_ref = (scene.get("theme") or {}).get("brand_kit")
+        else:
+            document_id = scene["meta"]["id"]
+            title = scene["meta"]["title"]
+            status = scene_status(scene)
+            brand_ref = scene["meta"].get("brand_kit")
         effective_source = effective_brand_source
         effective_id = brand_ref["id"] if brand_ref else None
         effective_version = brand_ref["version"] if brand_ref else None
@@ -164,17 +181,18 @@ class Repository:
         self.connection.execute(
             """
             INSERT INTO documents (
-              id, title, status, current_scene_json, current_version,
+              id, title, status, doc_kind, current_scene_json, current_version,
               effective_brand_kit_source, effective_brand_kit_id,
               effective_brand_kit_version, effective_brand_mode_json,
               brand_kit_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
                 title,
                 status,
+                doc_kind,
                 encode(scene),
                 effective_source,
                 effective_id,
@@ -1403,6 +1421,7 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "id": row["id"],
         "title": row["title"],
         "status": row["status"],
+        "doc_kind": row["doc_kind"] if "doc_kind" in columns else "scene",
         "current_version": row["current_version"],
         "scene": decode(row["current_scene_json"]),
         "effective_brand_kit_source": row["effective_brand_kit_source"],

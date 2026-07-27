@@ -373,6 +373,86 @@ class CoreClient:
         response = self._run({"action": "build_info"})
         return response["build_info"]
 
+    # Website mode (WebDoc): the helper owns the whole web pipeline — mint,
+    # validate, HTML ingest, operation apply, and render. Each method is a
+    # thin passthrough of the raw helper response (web_doc / html /
+    # inverse_operations / diagnostics live under their own keys); callers
+    # read what they need.
+    def web_new_doc(
+        self,
+        document_id: str,
+        title: str,
+        brand_kit_ref: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "web_new_doc",
+                "document_id": document_id,
+                "title": title,
+                "brand_kit_ref": brand_kit_ref,
+            }
+        )
+
+    def web_validate(
+        self,
+        doc: JsonObject,
+        brand_kit: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        return self._run(
+            {"action": "web_validate", "doc": doc, "brand_kit": brand_kit}
+        )
+
+    def web_ingest_html(
+        self,
+        doc: JsonObject,
+        page_id: str,
+        html: str,
+        custom_css: Optional[str] = None,
+        brand_kit: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "web_ingest_html",
+                "doc": doc,
+                "page_id": page_id,
+                "html": html,
+                "custom_css": custom_css,
+                "brand_kit": brand_kit,
+            }
+        )
+
+    def web_apply_ops(
+        self,
+        doc: JsonObject,
+        operations: List[JsonObject],
+    ) -> JsonObject:
+        return self._run(
+            {"action": "web_apply_ops", "doc": doc, "operations": operations}
+        )
+
+    def web_render(
+        self,
+        doc: JsonObject,
+        page_id: str,
+        mode: str = "editor",
+        asset_base_url: Optional[str] = None,
+        tailwind_runtime_src: Optional[str] = None,
+        bridge_script: Optional[str] = None,
+        brand_kit: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        return self._run(
+            {
+                "action": "web_render",
+                "doc": doc,
+                "page_id": page_id,
+                "mode": mode,
+                "asset_base_url": asset_base_url,
+                "tailwind_runtime_src": tailwind_runtime_src,
+                "bridge_script": bridge_script,
+                "brand_kit": brand_kit,
+            }
+        )
+
     # Every shaping action the helper accepts library fonts for. The spec is
     # injected HERE, at the single helper gateway, rather than threaded
     # through each call site: a forgotten site would silently shape library

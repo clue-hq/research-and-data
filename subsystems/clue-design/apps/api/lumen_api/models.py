@@ -20,6 +20,12 @@ class CreateDocumentRequest(BaseModel):
     medium: Optional[Any] = None
     scene: Optional[JsonObject] = None
     brand_kit: Optional[JsonObject] = None
+    # Website mode: "scene" (default, Rust engine scene) or "web" (WebDoc).
+    doc_kind: str = "scene"
+    # Web-only: the Brand Kit reference ({"id": str, "version": int}) the
+    # helper compiles into the new WebDoc's theme. Stored verbatim; not
+    # validated against the kits table in P0.
+    brand_kit_ref: Optional[JsonObject] = None
 
 
 class ReplaceSceneRequest(BaseModel):

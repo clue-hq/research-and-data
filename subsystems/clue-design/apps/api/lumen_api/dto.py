@@ -9,11 +9,16 @@ DTO_SCHEMA_VERSION = 1
 
 
 def document_summary(document: JsonObject) -> JsonObject:
+    # A WebDoc has no `meta` wrapper, so it can't share the scene reader —
+    # branch on the stored kind rather than sniffing the payload.
+    if document.get("doc_kind") == "web":
+        return web_document_summary(document)
     scene = document["scene"]
     return {
         "id": document["id"],
         "title": document["title"],
         "status": document["status"],
+        "doc_kind": document.get("doc_kind", "scene"),
         "current_version": document["current_version"],
         "artifact_type": scene.get("meta", {}).get("artifact_type"),
         "medium": scene.get("meta", {}).get("medium"),
@@ -25,6 +30,31 @@ def document_summary(document: JsonObject) -> JsonObject:
             "mode": document.get("effective_brand_mode"),
         },
         "counts": scene_counts(scene),
+        "created_at": document["created_at"],
+        "updated_at": document["updated_at"],
+    }
+
+
+def web_document_summary(document: JsonObject) -> JsonObject:
+    web_doc = document["scene"]
+    theme = web_doc.get("theme") or {}
+    return {
+        "id": document["id"],
+        "title": document["title"],
+        "status": document["status"],
+        "doc_kind": "web",
+        "current_version": document["current_version"],
+        # Constants — a WebDoc carries no meta.artifact_type/medium.
+        "artifact_type": "website",
+        "medium": "web",
+        "brand_kit": theme.get("brand_kit"),
+        "effective_brand_kit": {
+            "source": document.get("effective_brand_kit_source"),
+            "id": document.get("effective_brand_kit_id"),
+            "version": document.get("effective_brand_kit_version"),
+            "mode": document.get("effective_brand_mode"),
+        },
+        "counts": web_doc_counts(web_doc),
         "created_at": document["created_at"],
         "updated_at": document["updated_at"],
     }
@@ -436,6 +466,20 @@ def scene_counts(scene: JsonObject) -> JsonObject:
         "slots": len(scene.get("slots", {})),
         "assets": len(scene.get("assets", {})),
         "export_profiles": len(scene.get("export_profiles", [])),
+    }
+
+
+def web_doc_counts(web_doc: JsonObject) -> JsonObject:
+    # A WebDoc's pages are a list (each with its own node arena); it has no
+    # slots or export_profiles. Same key set as scene_counts so consumers of
+    # `counts` never special-case the kind.
+    pages = web_doc.get("pages", [])
+    return {
+        "pages": len(pages),
+        "nodes": sum(len(page.get("nodes", {})) for page in pages),
+        "slots": 0,
+        "assets": len(web_doc.get("assets", {})),
+        "export_profiles": 0,
     }
 
 

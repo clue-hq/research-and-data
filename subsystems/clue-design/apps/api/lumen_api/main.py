@@ -931,8 +931,35 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def create_document(
         payload: CreateDocumentRequest, repo: Repository = Depends(repository)
     ) -> JsonObject:
+        if payload.doc_kind not in ("scene", "web"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "document.kind_unsupported",
+                    "message": (
+                        f"unsupported doc_kind {payload.doc_kind!r}; "
+                        "expected 'scene' or 'web'"
+                    ),
+                },
+            )
         document_id = payload.document_id or new_id("doc")
         try:
+            if payload.doc_kind == "web":
+                result = app.state.core.web_new_doc(
+                    document_id, payload.title, payload.brand_kit_ref
+                )
+                document = repo.create_document(result["web_doc"], doc_kind="web")
+                log_event(
+                    api_logger,
+                    logging.INFO,
+                    "document_created",
+                    document_id=document["id"],
+                    title=document["title"],
+                    version=document["current_version"],
+                    doc_kind="web",
+                    has_brand_kit=payload.brand_kit_ref is not None,
+                )
+                return document_created_dto(document)
             if payload.scene is None:
                 scene = app.state.core.new_scene(
                     document_id,
@@ -973,6 +1000,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 document_id=document["id"],
                 title=document["title"],
                 version=document["current_version"],
+                doc_kind="scene",
                 has_brand_kit=payload.brand_kit is not None,
             )
             return document_created_dto(document)
@@ -994,6 +1022,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         """2e: per-document standing instructions for the agent. Stored on the
         document (they survive reloads) and sent by the editor with every
         turn; an empty/blank body clears them."""
+        require_scene_document(require_document(repo, document_id))
         instructions = (payload.instructions or "").strip() or None
         document = repo.set_agent_instructions(document_id, instructions)
         return {
@@ -1012,6 +1041,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         the editor skips both freeze seams (Accept and first gesture) so agent
         auto-layout stays live. Forward-only — enabling never un-freezes
         containers that are already Free."""
+        require_scene_document(require_document(repo, document_id))
         document = repo.set_layout_managed_editing(document_id, payload.enabled)
         return {
             "schema_version": 1,
@@ -1026,6 +1056,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "replace the current scene")
         try:
             validation = app.state.core.validate_scene(payload.scene)
@@ -1075,6 +1106,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 detail={"code": "operations.empty", "message": "operations cannot be empty"},
             )
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "apply operations")
         require_base_version(document, payload.base_version)
         try:
@@ -1180,6 +1212,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     def perform_undo_step(repo: Repository, document_id: str) -> JsonObject:
         """Apply one document-level undo as a new appended envelope."""
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "undo")
         undo_stack = list(document.get("undo_stack") or [])
         if not undo_stack:
@@ -1256,6 +1289,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "redo")
         redo_stack = list(document.get("redo_stack") or [])
         if not redo_stack:
@@ -1314,6 +1348,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "revert")
         envelopes = repo.list_envelopes(document_id, newest_first=False)
         anchor = next(
@@ -1388,6 +1423,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "apply structured edit")
         require_base_version(document, payload.base_version)
         try:
@@ -1467,7 +1503,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         payload: CreateSnapshotRequest,
         repo: Repository = Depends(repository),
     ) -> JsonObject:
-        require_document(repo, document_id)
+        require_scene_document(require_document(repo, document_id))
         snapshot = repo.create_snapshot(
             document_id, payload.snapshot_id or new_id("snap"), payload.reason
         )
@@ -1496,6 +1532,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "preflight the current scene")
         try:
             source, brand_kit = choose_effective_brand(app.state.core, repo, document, payload)
@@ -1822,6 +1859,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         profile = resolve_document_export_profile(document["scene"], payload)
         export_format = profile.get("format") or payload.format
 
@@ -2007,6 +2045,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "attach a Brand Kit")
         record = repo.require_brand_kit(payload.brand_kit_id, payload.version)
         brand_kit = record["brand_kit"]
@@ -2049,6 +2088,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         brand_kit = resolve_document_governance_brand(repo, document, payload)
         try:
             result = app.state.core.validate_scene_brand_governance(
@@ -2076,6 +2116,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         require_draft_document(document, "finalize the document")
         source_snapshot_id = payload.snapshot_id
         scene = document["scene"]
@@ -3361,6 +3402,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         scene = document["scene"]
         return {
             "document": {
@@ -3383,6 +3425,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> List[JsonObject]:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         return slot_summary(document["scene"])
 
     @app.get("/documents/{document_id}/geometry")
@@ -3390,6 +3433,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document_id: str, repo: Repository = Depends(repository)
     ) -> JsonObject:
         document = require_document(repo, document_id)
+        require_scene_document(document)
         scene = document["scene"]
         return {
             "document_id": document_id,
@@ -3435,6 +3479,26 @@ def not_found_detail(error: NotFoundError) -> JsonObject:
         "message": str(error),
         "resource_id": error.resource_id,
     }
+
+
+def require_scene_document(document: JsonObject) -> None:
+    """Gate the Rust scene-engine endpoints to scene documents.
+
+    A 'web' (WebDoc) document reuses the same storage but is driven by the
+    web pipeline, not the scene engine — every scene mutation/read below
+    would misinterpret its payload, so reject it up front with 409."""
+    kind = document.get("doc_kind", "scene")
+    if kind != "scene":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "document.kind_unsupported",
+                "message": (
+                    f"document {document['id']} is a {kind!r} document; this "
+                    "endpoint operates only on scene documents"
+                ),
+            },
+        )
 
 
 def require_draft_document(document: JsonObject, action: str) -> None:
