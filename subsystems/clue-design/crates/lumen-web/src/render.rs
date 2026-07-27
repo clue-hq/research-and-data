@@ -109,7 +109,10 @@ pub fn render_page(
     }
     html.push_str(&format!("<style>\n{}\n</style>\n", theme.base_css));
     if !doc.custom_css.trim().is_empty() {
-        html.push_str(&format!("<style>\n{}\n</style>\n", doc.custom_css));
+        html.push_str(&format!(
+            "<style>\n{}\n</style>\n",
+            css_style_safe(&doc.custom_css)
+        ));
     }
     html.push_str("</head>\n<body>\n");
     html.push_str(&body);
@@ -279,6 +282,30 @@ fn render_node(
     }
 }
 
+/// Defense in depth for the one raw-text slot in the document: validation
+/// rejects `</style` in custom_css, but the renderer must be safe even
+/// against a payload that bypassed it — `\3c` is the CSS escape for `<`,
+/// inert as CSS and unable to terminate the element.
+fn css_style_safe(css: &str) -> String {
+    let lower = css.to_ascii_lowercase();
+    let needle = "</style";
+    if !lower.contains(needle) {
+        return css.to_owned();
+    }
+    let mut out = String::with_capacity(css.len() + 16);
+    let mut last = 0;
+    let mut cursor = 0;
+    while let Some(found) = lower[cursor..].find(needle) {
+        let at = cursor + found;
+        out.push_str(&css[last..at]);
+        out.push_str("\\3c /style");
+        last = at + needle.len();
+        cursor = last;
+    }
+    out.push_str(&css[last..]);
+    out
+}
+
 fn asset_src(record: &lumen_core::AssetRecord, asset_base_url: &str) -> Option<String> {
     if let Some(digest) = &record.media.digest {
         let base = asset_base_url.trim_end_matches('/');
@@ -384,6 +411,29 @@ mod tests {
         .expect("render");
         assert!(output.html.contains("<title>A &lt;B&gt; &amp; C</title>"));
         assert!(output.html.contains("Hello <strong>world</strong>"));
+    }
+
+    #[test]
+    fn custom_css_cannot_terminate_its_style_element() {
+        let (mut doc, theme) = fixture();
+        doc.custom_css = ".x{color:red}</StYle><script>alert(1)</script>".to_owned();
+        let output = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("render");
+        assert!(!output.html.to_ascii_lowercase().contains("</style><script"));
+        assert!(output.html.contains("\\3c /style"));
+        // The payload stays inert raw text INSIDE the style element: the
+        // number of real </style> closers must equal the number of <style>
+        // openers (the injection added no element boundary).
+        let lower = output.html.to_ascii_lowercase();
+        assert_eq!(
+            lower.matches("<style").count(),
+            lower.matches("</style").count(),
+        );
     }
 
     #[test]

@@ -8,9 +8,11 @@
 
 use crate::doc::{WebDoc, WebNode, WebNodeKind, WebThemeRef};
 use crate::inline::sanitize_inline;
-use lumen_core::{AssetId, AssetRecord, NodeId, PageId};
+use crate::util::href_is_allowed;
+use crate::validate::validate_web_doc;
+use lumen_core::{AssetId, AssetRecord, Diagnostic, DiagnosticSeverity, NodeId, PageId};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -18,6 +20,8 @@ use std::fmt;
 pub struct WebOpError {
     pub code: &'static str,
     pub message: String,
+    /// Populated by the checked apply when validation rejects the batch.
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl WebOpError {
@@ -25,6 +29,7 @@ impl WebOpError {
         Self {
             code,
             message: message.into(),
+            diagnostics: Vec::new(),
         }
     }
 }
@@ -117,6 +122,73 @@ pub fn apply_operations(
     Ok(inverses)
 }
 
+/// Apply a batch atomically AND require the resulting document to validate:
+/// any Error diagnostic rejects the whole batch (the scene engine's checked
+/// apply, mirrored). Returns the inverse batch plus surviving non-error
+/// diagnostics.
+pub fn apply_operations_checked(
+    doc: &mut WebDoc,
+    operations: &[WebOperation],
+) -> Result<(Vec<WebOperation>, Vec<Diagnostic>), WebOpError> {
+    let mut draft = doc.clone();
+    let mut inverses = Vec::with_capacity(operations.len());
+    for operation in operations {
+        inverses.push(apply_operation_in_place(&mut draft, operation)?);
+    }
+    let diagnostics = validate_web_doc(&draft);
+    if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    {
+        let summary = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+            .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+            .unwrap_or_default();
+        let mut error = WebOpError::new(
+            "op.validation_failed",
+            format!("batch would leave the document invalid ({summary})"),
+        );
+        error.diagnostics = diagnostics;
+        return Err(error);
+    }
+    inverses.reverse();
+    *doc = draft;
+    Ok((inverses, diagnostics))
+}
+
+/// Ops are a write path exactly like ingestion: content-bearing props are
+/// canonicalized on the way in, so stored inline markup is always sanitized
+/// and hrefs always scheme-checked — no matter which surface authored the op.
+fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> {
+    match kind {
+        WebNodeKind::Text { content, .. } => {
+            *content = sanitize_inline(content).html;
+        }
+        WebNodeKind::Button { label, href, .. } => {
+            *label = sanitize_inline(label).html;
+            if !href_is_allowed(href) {
+                return Err(WebOpError::new(
+                    "op.href_invalid",
+                    format!("button href is not allowed: {href}"),
+                ));
+            }
+        }
+        WebNodeKind::Image {
+            href: Some(href), ..
+        } => {
+            if !href_is_allowed(href) {
+                return Err(WebOpError::new(
+                    "op.href_invalid",
+                    format!("image href is not allowed: {href}"),
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn apply_operation_in_place(
     doc: &mut WebDoc,
     operation: &WebOperation,
@@ -169,8 +241,47 @@ fn apply_operation_in_place(
                     format!("root `{root}` is not among the inserted nodes"),
                 ));
             }
+            // Subtree integrity: children must resolve inside the subtree
+            // itself (pointing at existing page nodes would give them two
+            // parents), and every non-root inserted node needs exactly one.
+            let mut child_counts: BTreeMap<NodeId, usize> = BTreeMap::new();
             for node in nodes {
-                page.nodes.insert(node.id.clone(), node.clone());
+                for child in &node.children {
+                    if !incoming.contains(child) {
+                        return Err(WebOpError::new(
+                            "op.subtree_invalid",
+                            format!(
+                                "inserted node `{}` lists child `{child}` outside the subtree",
+                                node.id
+                            ),
+                        ));
+                    }
+                    *child_counts.entry(child.clone()).or_default() += 1;
+                }
+            }
+            for node in nodes {
+                let count = child_counts.get(&node.id).copied().unwrap_or(0);
+                if node.id == *root {
+                    if count != 0 {
+                        return Err(WebOpError::new(
+                            "op.subtree_invalid",
+                            format!("subtree root `{root}` may not also appear as a child"),
+                        ));
+                    }
+                } else if count != 1 {
+                    return Err(WebOpError::new(
+                        "op.subtree_invalid",
+                        format!(
+                            "inserted node `{}` has {count} parents (expected exactly 1)",
+                            node.id
+                        ),
+                    ));
+                }
+            }
+            for node in nodes {
+                let mut node = node.clone();
+                canonicalize_incoming_kind(&mut node.kind)?;
+                page.nodes.insert(node.id.clone(), node);
             }
             let parent_node = page.nodes.get_mut(parent).expect("parent checked");
             parent_node.children.insert(*index, root.clone());
@@ -317,7 +428,9 @@ fn apply_operation_in_place(
                     ),
                 ));
             }
-            let previous = std::mem::replace(&mut node.kind, props.clone());
+            let mut incoming = props.clone();
+            canonicalize_incoming_kind(&mut incoming)?;
+            let previous = std::mem::replace(&mut node.kind, incoming);
             Ok(WebOperation::SetNodeProps {
                 page_id: page_id.clone(),
                 id: id.clone(),
@@ -628,6 +741,155 @@ mod tests {
             }],
         );
         assert_eq!(result.unwrap_err().code, "op.kind_mismatch");
+    }
+
+    #[test]
+    fn insert_node_sanitizes_content_and_checks_subtree() {
+        let mut doc = fixture();
+        // Unsanitized content is canonicalized on the way in.
+        let dirty = WebNode {
+            id: NodeId::from("dirty"),
+            kind: WebNodeKind::Text {
+                variant: TextVariant::Body,
+                content: "<script>alert(1)</script>Safe <strong>copy</strong>".to_owned(),
+            },
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 0,
+                nodes: vec![dirty],
+                root: NodeId::from("dirty"),
+            }],
+        )
+        .expect("apply");
+        let page = doc.page(&page_id()).unwrap();
+        let WebNodeKind::Text { content, .. } = &page.node(&NodeId::from("dirty")).unwrap().kind
+        else {
+            panic!("text node");
+        };
+        assert_eq!(content, "Safe <strong>copy</strong>");
+
+        // A child reference outside the subtree is rejected.
+        let mut orphaning = WebNode::branch(NodeId::from("bad_box"), WebNodeKind::Container, "");
+        orphaning.children = vec![NodeId::from("headline")];
+        let result = apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 0,
+                nodes: vec![orphaning],
+                root: NodeId::from("bad_box"),
+            }],
+        );
+        assert_eq!(result.unwrap_err().code, "op.subtree_invalid");
+    }
+
+    #[test]
+    fn set_node_props_sanitizes_and_rejects_bad_href() {
+        let mut doc = fixture();
+        apply_operations(
+            &mut doc,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("headline"),
+                props: WebNodeKind::Text {
+                    variant: TextVariant::H1,
+                    content: "Hi <div onclick=\"x()\">there</div>".to_owned(),
+                },
+            }],
+        )
+        .expect("apply");
+        let page = doc.page(&page_id()).unwrap();
+        let WebNodeKind::Text { content, .. } =
+            &page.node(&NodeId::from("headline")).unwrap().kind
+        else {
+            panic!("text node");
+        };
+        assert_eq!(content, "Hi there");
+
+        let button = WebNode {
+            id: NodeId::from("cta"),
+            kind: WebNodeKind::Button {
+                label: "Go".to_owned(),
+                href: "https://example.com".to_owned(),
+                variant: crate::doc::ButtonVariant::Primary,
+                new_tab: false,
+            },
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 0,
+                nodes: vec![button],
+                root: NodeId::from("cta"),
+            }],
+        )
+        .expect("insert button");
+        let result = apply_operations(
+            &mut doc,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("cta"),
+                props: WebNodeKind::Button {
+                    label: "Go".to_owned(),
+                    href: "javascript:alert(1)".to_owned(),
+                    variant: crate::doc::ButtonVariant::Primary,
+                    new_tab: false,
+                },
+            }],
+        );
+        assert_eq!(result.unwrap_err().code, "op.href_invalid");
+    }
+
+    #[test]
+    fn checked_apply_rejects_structurally_invalid_result() {
+        let base = fixture();
+        // A Text node directly under the page root violates the
+        // sections-only invariant (LUMW0011): plain apply allows it,
+        // checked apply must reject and leave the doc untouched.
+        let stray = WebNode {
+            id: NodeId::from("stray"),
+            kind: WebNodeKind::Text {
+                variant: TextVariant::Body,
+                content: "x".to_owned(),
+            },
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        let batch = [WebOperation::InsertNode {
+            page_id: page_id(),
+            parent: NodeId::from("root"),
+            index: 0,
+            nodes: vec![stray],
+            root: NodeId::from("stray"),
+        }];
+        let mut doc = base.clone();
+        assert!(apply_operations(&mut doc, &batch).is_ok());
+
+        let mut doc = base.clone();
+        let error = apply_operations_checked(&mut doc, &batch).unwrap_err();
+        assert_eq!(error.code, "op.validation_failed");
+        assert!(error
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0011"));
+        assert_eq!(doc, base, "rejected batch must not mutate");
     }
 
     #[test]

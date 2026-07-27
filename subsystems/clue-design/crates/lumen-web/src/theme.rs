@@ -130,9 +130,23 @@ pub fn compile_web_theme(
         }
     }
 
-    // Per-document overrides win last.
+    // Per-document overrides win last. Values are constrained to a plain
+    // CSS-color charset: token values are embedded into <style> payloads, so
+    // anything richer is a markup-injection vector, not a color.
     for (name, value) in &theme_ref.overrides {
-        tokens.insert(sanitize_token_name(name), value.clone());
+        if css_color_value_ok(value) {
+            tokens.insert(sanitize_token_name(name), value.clone());
+        } else {
+            diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Web,
+                    "LUMW0304",
+                    format!("theme override `{name}` is not a plain color value; ignored"),
+                    None,
+                )
+                .with_hint("Overrides must be CSS colors like #14B8A6 or oklch(0.7 0.1 200)."),
+            );
+        }
     }
 
     // Typography ramp.
@@ -216,13 +230,26 @@ fn semantic_fallback(web_name: &str, resolved: &BTreeMap<String, String>) -> Str
     }
 }
 
+/// Token values land verbatim inside <style> payloads; restrict them to a
+/// plain color-value charset so no color path can smuggle markup or extra
+/// declarations (`;`, `}`, `<` are all excluded).
+fn css_color_value_ok(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty()
+        && trimmed.len() <= 128
+        && trimmed.chars().all(|ch| {
+            ch.is_ascii_alphanumeric()
+                || matches!(ch, '#' | '%' | '.' | ',' | ' ' | '(' | ')' | '-' | '/' | '+')
+        })
+}
+
 fn resolve_color(kit: &BrandKit, name: &str, depth: usize) -> Option<String> {
     if depth > ALIAS_DEPTH_CAP {
         return None;
     }
     let token = kit.tokens.colors.get(name)?;
     match &token.value.default {
-        ColorTokenValue::Hex { value } => Some(value.clone()),
+        ColorTokenValue::Hex { value } => Some(value.clone()).filter(|v| css_color_value_ok(v)),
         ColorTokenValue::Oklch { l, c, h, alpha } => Some(if (*alpha - 1.0).abs() < f64::EPSILON {
             format!("oklch({l} {c} {h})")
         } else {
@@ -537,6 +564,25 @@ mod tests {
         let (theme, _) =
             compile_web_theme(None, &theme_ref, &WebThemeOptions::default());
         assert_eq!(theme.tokens.get("primary").unwrap(), "#123456");
+    }
+
+    #[test]
+    fn non_color_override_values_are_ignored_with_warning() {
+        let mut theme_ref = WebThemeRef::default();
+        theme_ref.overrides.insert(
+            "primary".to_owned(),
+            "red;}</style><script>alert(1)</script>".to_owned(),
+        );
+        let (theme, diagnostics) =
+            compile_web_theme(None, &theme_ref, &WebThemeOptions::default());
+        assert_ne!(
+            theme.tokens.get("primary").unwrap(),
+            "red;}</style><script>alert(1)</script>"
+        );
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0304"));
+        assert!(!theme.theme_block.contains("<script"));
     }
 
     #[test]

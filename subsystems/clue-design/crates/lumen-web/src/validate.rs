@@ -56,15 +56,15 @@ pub fn validate_web_doc(doc: &WebDoc) -> Vec<Diagnostic> {
     }
 
     let css = doc.custom_css.to_ascii_lowercase();
-    if css.contains("@import") || css.contains("javascript:") {
+    if css.contains("@import") || css.contains("javascript:") || css.contains("</style") {
         diagnostics.push(
             Diagnostic::error(
                 Phase::Web,
                 "LUMW0013",
-                "custom_css may not contain @import or javascript: URLs",
+                "custom_css may not contain @import, javascript: URLs, or a </style sequence",
                 None,
             )
-            .with_hint("Inline the styles directly; external stylesheets are not part of the document."),
+            .with_hint("Inline plain CSS only; the renderer additionally escapes </style as defense in depth."),
         );
     }
 
@@ -184,7 +184,7 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
     // Reference + content checks.
     for node in page.nodes.values() {
         match &node.kind {
-            WebNodeKind::Image { asset_id, .. } => {
+            WebNodeKind::Image { asset_id, href, .. } => {
                 if !doc.assets.contains_key(asset_id) {
                     diagnostics.push(Diagnostic::error(
                         Phase::Web,
@@ -192,6 +192,16 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                         format!("image `{}` references unknown asset `{asset_id}`", node.id),
                         Some(DiagnosticSubject::Node(node.id.clone())),
                     ));
+                }
+                if let Some(href) = href {
+                    if !href_is_allowed(href) {
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0016",
+                            format!("image `{}` href is not allowed: {href}", node.id),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
                 }
             }
             WebNodeKind::Icon { icon } => {
@@ -311,5 +321,43 @@ mod tests {
         assert!(validate_web_doc(&doc)
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0013"));
+    }
+
+    #[test]
+    fn custom_css_style_escape_is_rejected() {
+        let mut doc = clean_doc();
+        doc.custom_css = "x{}</StYle><script>alert(1)</script>".to_owned();
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0013"));
+    }
+
+    #[test]
+    fn image_script_scheme_href_is_rejected() {
+        let mut doc = clean_doc();
+        let page = doc.pages.get_mut(0).unwrap();
+        let hero = lumen_core::NodeId::from("hero");
+        page.nodes.get_mut(&hero).unwrap().children.push(lumen_core::NodeId::from("img_x"));
+        page.nodes.insert(
+            lumen_core::NodeId::from("img_x"),
+            WebNode {
+                id: lumen_core::NodeId::from("img_x"),
+                kind: WebNodeKind::Image {
+                    asset_id: lumen_core::AssetId::from("missing"),
+                    alt: String::new(),
+                    href: Some("javascript:alert(1)".to_owned()),
+                    new_tab: false,
+                },
+                classes: String::new(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+        let codes: Vec<String> = validate_web_doc(&doc)
+            .iter()
+            .map(|diagnostic| diagnostic.code.clone())
+            .collect();
+        assert!(codes.contains(&"LUMW0016".to_owned()), "{codes:?}");
     }
 }

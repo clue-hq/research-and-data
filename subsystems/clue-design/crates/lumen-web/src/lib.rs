@@ -31,7 +31,7 @@ pub use doc::{
     WEB_SCHEMA_VERSION,
 };
 pub use ingest::{ingest_html_into_page, IngestOutcome};
-pub use ops::{apply_operations, WebOpError, WebOperation};
+pub use ops::{apply_operations, apply_operations_checked, WebOpError, WebOperation};
 pub use render::{render_page, RenderMode, RenderOptions, RenderOutput};
 pub use theme::{compile_web_theme, WebTheme, WebThemeOptions};
 pub use validate::validate_web_doc;

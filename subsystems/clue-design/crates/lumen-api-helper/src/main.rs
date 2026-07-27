@@ -2237,16 +2237,25 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 .map(serde_json::from_value)
                 .collect::<Result<_, _>>()
                 .map_err(|error| core_error("helper.web_operations", error.to_string()))?;
-            let inverses = lumen_web::apply_operations(&mut doc, &operations)
-                .map_err(|error| core_error(error.code, error.message))?;
-            let count = operations.len();
-            Ok(ok_web(
-                Some(&doc),
-                None,
-                Some(&inverses),
-                Some(count),
-                lumen_web::validate_web_doc(&doc),
-            ))
+            // Checked apply: a batch that would leave the document invalid is
+            // rejected outright (ok:false + the validation diagnostics) — the
+            // mutated doc is never returned, so callers cannot persist it.
+            match lumen_web::apply_operations_checked(&mut doc, &operations) {
+                Ok((inverses, diagnostics)) => {
+                    let count = operations.len();
+                    Ok(ok_web(
+                        Some(&doc),
+                        None,
+                        Some(&inverses),
+                        Some(count),
+                        diagnostics,
+                    ))
+                }
+                Err(error) => Ok(error_response(
+                    core_error(error.code, error.message.clone()),
+                    error.diagnostics,
+                )),
+            }
         }
         CoreRequest::WebRender {
             doc,
