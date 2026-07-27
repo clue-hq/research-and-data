@@ -513,6 +513,10 @@ def test_reference_only_outputs_forbid_body_fields() -> None:
         operation_id=new_operation_id(),
         old_snapshot_id=receipt.snapshot_id,
         new_snapshot_id=new_research_view_snapshot_id(),
+        old_source_state_sha256=_HASH_A,
+        new_source_state_sha256=_HASH_B,
+        old_composition_sha256=_HASH_A,
+        new_composition_sha256=_HASH_B,
         fetch_ref="research-view-change:fixture",
     )
 
