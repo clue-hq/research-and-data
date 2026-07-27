@@ -412,6 +412,8 @@ Commit: `feat(c7): add governed claim derivations and entailment`
 
 ## 9. C7.3 — account and contact research-view composition
 
+**Status:** COMPLETE — implemented and verified 2026-07-27.
+
 ### Goal
 
 Create deterministic live views matching the frontend's information needs without building a
