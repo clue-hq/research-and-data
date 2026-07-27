@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-27-phase-c7-2-derivation-entailment.md` — C7.2 complete: derived claim flavor,
+  append-only ordered support graph and entailment ledger, strict no-rationale judge, conservative
+  API-root promotion, bounded live dependency invalidation, transitive DSAR reachability,
+  migration/full-suite verification, and the exact C7.3 handoff.
 - `2026-07-27-phase-c7-1-prerequisite-hardening.md` — C7.1 complete: shared equality
   consumer parity, fail-closed retention-aware live selection, one-way faithfulness-rationale
   DSAR redaction, evidence-access authorization/service seams, product-exact score claims, optional

@@ -69,7 +69,6 @@ from clue_core import (
     FieldClass,
     Freshness,
     IdentityBinding,
-    ResearchMode,
     RunId,
     UseClass,
     UtcDatetime,
@@ -90,6 +89,9 @@ from clue_obs.otel import (
 )
 from clue_research.claimstore import (
     ALL_WORKSPACES,
+    WorkspaceScope,
+    affected_derivations,
+    claims_by_ids,
     claims_for,
     supersede_claim,
     supersede_claims,
@@ -233,12 +235,13 @@ def build_tombstone(target: Claim, *, run_id: RunId) -> Claim:
         extraction_method=ExtractionMethod.HUMAN,  # PF-5 — existing enum value, no parity change
         confidence=0.0,
         run_id=run_id,
-        research_mode=ResearchMode.CONTACT_PROFILING,
+        research_mode=target.research_mode,
         verification_status=VerificationStatus.REJECTED,  # never wins the merge (_is_eligible)
         identity_binding=IdentityBinding.WEAK if is_facet else target.identity_binding,
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
         workspace_id=target.workspace_id,
+        product_id=target.product_id,
     )
 
 
@@ -602,9 +605,22 @@ class DataSubjectRightsImpl:
     ) -> tuple[list[ClaimId], int]:
         tombstoned: list[ClaimId] = []
         already = 0
+        # A derived value may repeat personal material from one of this contact's claims while
+        # targeting an account or another registered field. Reachability therefore follows the
+        # immutable support graph transitively before any target is superseded. C7.2 forbids a
+        # public derivation from depending on private support, so every reachable dependent belongs
+        # to this same controller and can be loaded through its private scope.
+        dependent_ids = await affected_derivations(conn, [target.id for target in targets])
+        dependents = await claims_by_ids(
+            conn,
+            dependent_ids,
+            scope=WorkspaceScope.private_for_workspace(self._workspace_id),
+        )
+        expanded: dict[ClaimId, Claim] = {target.id: target for target in targets}
+        expanded.update(dependents)
         # Stable-sorted by artifact ref so two concurrent erasures acquire the artifact row
         # locks in the same order (no lock-order deadlock across shared snapshots).
-        for target in sorted(targets, key=lambda c: c.artifact_key or ""):
+        for target in sorted(expanded.values(), key=lambda c: (c.artifact_key or "", str(c.id))):
             workspace_id = target.workspace_id or self._workspace_id
             tombstone_id = await _apply_tombstone(
                 conn,

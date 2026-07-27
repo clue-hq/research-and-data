@@ -90,23 +90,27 @@ class IdentityBinding(StrEnum):
 
 
 class ClaimFlavor(StrEnum):
-    """The two structurally different kinds of provenance one substrate carries (staged-flow §9).
+    """The structurally different kinds of provenance one claim substrate carries.
 
     * ``DISCOVERY`` — *discovery-provenance* (modes M1/M3): where an entity was found and why it
       matched (the existence-gate evidence). Carries a :class:`DiscoveryProvenance` envelope; it is
       admission evidence, not a field value, so the merge view (M1.2) never treats it as truth.
     * ``FIELD_CLAIM`` — *field-claim provenance* (modes M2/M4): a value + span + tier (plus
-      ``identity_binding`` + ``use_class`` for contacts). The default flavor."""
+      ``identity_binding`` + ``use_class`` for contacts). The default flavor.
+    * ``DERIVED`` — a C7 interpretation supported by an immutable ordered set of other claims.
+      Its evidence lives in ``claim_derivation`` edges and an entailment verdict, never in a
+      fabricated external URL/evidence span. It is excluded from factual ``current_value``."""
 
     DISCOVERY = "discovery"
     FIELD_CLAIM = "field_claim"
+    DERIVED = "derived"
 
 
 class ResearchStatementKind(StrEnum):
     """Whether a C7 research-view statement is a direct fact or a supported inference.
 
-    This is a presentation/read-contract taxonomy. ``DERIVED`` does not add a claim flavor or
-    database enum in C7.0; the immutable claim-store representation lands in C7.2.
+    This is the presentation/read-contract taxonomy corresponding to direct field claims and C7
+    derived claims.
     """
 
     DIRECT = "direct"

@@ -1,6 +1,6 @@
 # C7 — structured research views, derivations, and production handoff
 
-**Status:** ACTIVE — C7.0 contract/fixture freeze complete; C7.1 prerequisite hardening next
+**Status:** ACTIVE — C7.0–C7.2 complete; C7.3 structured view composition next
 **Layer:** Phase C / harness build step 7
 **Depends on:** C1–C6 complete; M9 verification; M10 governance; M12 narrative/handoff
 **Branch:** `platform/c7-research-views`

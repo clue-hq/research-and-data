@@ -203,9 +203,9 @@ async def insert_claim(
       :func:`~clue_research.claimstore.registry.check_claim_writable`. *Discovery* claims carry
       admission evidence, not a typed field value, so they skip this check. Pass
       ``validate_field=False`` for low-level tests that exercise the table directly.
-    * **structural promotability** — a ``verified`` claim that is not promotable (tier-4 with no
-      span, or a weak-binding contact claim) is refused early with a clear message; the DB CHECK is
-      the backstop.
+    * **structural promotability** — a ``verified`` claim that is not promotable (a direct tier-4
+      claim with no span, or a weak-binding contact claim) is refused early with a clear message;
+      C7 derived claims instead prove support lineage in their deferred DB constraint.
     """
     if validate_field and claim.claim_flavor is not ClaimFlavor.DISCOVERY:
         await check_claim_writable(
@@ -217,7 +217,8 @@ async def insert_claim(
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
             "cannot insert a 'verified' claim that is not promotable "
-            "(tier-4 without evidence_span, or weak-binding contact claim) — substrate §1/§6"
+            "(direct tier-4 without evidence_span, or weak-binding contact claim) — "
+            "substrate §1/§6"
         )
     result = await conn.execute(_INSERT_SQL, _insert_params(claim))
     return ClaimId(result.scalar_one())

@@ -54,6 +54,18 @@ from clue_research.verification.corroboration import (
     independent_source_count,
     values_agree,
 )
+from clue_research.verification.entailment import (
+    DEFAULT_ENTAILMENT_POLICY,
+    ENTAILMENT_PROMPT_VERSION,
+    ENTAILMENT_PROMPTS,
+    EntailmentJudgeImpl,
+    EntailmentPolicy,
+    build_entailment_messages,
+    insert_entailment_verdict,
+    load_cached_entailment,
+    load_entailment_by_operation,
+    parse_entailment_response,
+)
 from clue_research.verification.eval_harness import (
     METRIC_EVAL_MECHANISM_RECALL,
     METRIC_EVAL_REGRESSIONS,
@@ -160,6 +172,17 @@ __all__ = [
     "needs_re_retrieval",
     "PROMPT_VERSION",
     "PROMPTS",
+    # C7.2 — derived-claim entailment mode
+    "EntailmentJudgeImpl",
+    "EntailmentPolicy",
+    "DEFAULT_ENTAILMENT_POLICY",
+    "ENTAILMENT_PROMPT_VERSION",
+    "ENTAILMENT_PROMPTS",
+    "build_entailment_messages",
+    "parse_entailment_response",
+    "load_cached_entailment",
+    "load_entailment_by_operation",
+    "insert_entailment_verdict",
     # M9.4 — identity-binding gate
     "IdentityBindingGateImpl",
     "BindingPolicy",

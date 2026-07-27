@@ -23,6 +23,7 @@ from clue_core import (
     AccountStatus,
     AgeOutCandidate,
     Claim,
+    ClaimFlavor,
     ClaimId,
     EntityId,
     EntityType,
@@ -32,13 +33,18 @@ from clue_core import (
     IdentityBinding,
     ReResearchCandidate,
     ResearchMode,
+    ReuseScope,
     Staleness,
     UseClass,
     UtcDatetime,
+    VerificationStatus,
+    new_operation_id,
     new_run_id,
 )
 from clue_research.claimstore import (
     ALL_WORKSPACES,
+    DerivationDependencyResolver,
+    DerivationDependencyState,
     WorkspaceScope,
     claims_by_ids,
     claims_for,
@@ -440,6 +446,114 @@ def test_dsar_erases_faithfulness_rationale_body_but_retains_audit_metadata() ->
                 )
             ).scalar_one()
             assert sentinel not in raw
+
+    run_async(_run())
+
+
+def test_dsar_reaches_cross_subject_derivations_through_support_edges() -> None:
+    """An account inference copied from a contact signal is erased through reverse lineage."""
+
+    async def _run() -> None:
+        sentinel = "SENTINEL-C7-DERIVED-JANA-PRIVATE"
+        async with rollback_conn() as conn:
+            account = await _account(conn)
+            contact = await insert_contact_entity(
+                conn,
+                account_entity_id=account,
+                full_name="Jana Doe",
+                status=AccountStatus.ACTIVE,
+            )
+            support = stamp_reuse(
+                _facet_claim(
+                    contact,
+                    use_class=_PRO,
+                    value="shared a private-to-this-controller professional signal",
+                ).model_copy(update={"verification_status": VerificationStatus.VERIFIED}),
+                workspace_id=_CLIENT,
+            )
+            await insert_claim(conn, support)
+            derived = Claim(
+                entity_id=account,
+                entity_type=EntityType.ACCOUNT,
+                field_key="account.recent_funding",
+                value_json={"amount_usd": 1, "round": sentinel},
+                source_tier=4,
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                confidence=0.75,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                claim_flavor=ClaimFlavor.DERIVED,
+                verification_status=VerificationStatus.VERIFIED,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=_CLIENT,
+            )
+            await insert_claim(conn, derived)
+            operation_id = new_operation_id()
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO claim_derivation
+                        (workspace_id, derived_claim_id, supporting_claim_id, support_role,
+                         ordinal, operation_id)
+                    VALUES
+                        (:workspace, :derived, :support, 'account_signal', 0, :operation)
+                    """
+                ),
+                {
+                    "workspace": _CLIENT,
+                    "derived": derived.id,
+                    "support": support.id,
+                    "operation": operation_id,
+                },
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entailment_verdict
+                        (workspace_id, derived_claim_id, support_set_sha256, verdict, confidence,
+                         reason_codes, requested_model, answering_model, prompt_version,
+                         policy_version, trace_ref, operation_id)
+                    VALUES
+                        (:workspace, :derived, :support_hash, 'supported', 0.8,
+                         ARRAY['entailed'::entailment_reason_code], 'judge', 'judge', 'v1',
+                         1, 'trace-c7-dsar', :operation)
+                    """
+                ),
+                {
+                    "workspace": _CLIENT,
+                    "derived": derived.id,
+                    "support_hash": "d" * 64,
+                    "operation": operation_id,
+                },
+            )
+            await conn.execute(text("SET CONSTRAINTS derived_claim_has_lineage IMMEDIATE"))
+
+            erased = await _rights(conn).erase(contact)
+            assert len(erased.tombstoned_claim_ids) == 2
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT erased_claim_id FROM dsar_tombstone "
+                        "WHERE contact_entity_id = :contact"
+                    ),
+                    {"contact": contact},
+                )
+            ).scalars()
+            assert set(rows) == {support.id, derived.id}
+
+            visible = await claims_by_ids(
+                conn,
+                [support.id, derived.id],
+                scope=WorkspaceScope.for_workspace(_CLIENT),
+            )
+            assert visible == {}
+            assert sentinel not in str(visible)
+            resolution = await DerivationDependencyResolver().resolve(
+                conn,
+                derived.id,
+                scope=WorkspaceScope.for_workspace(_CLIENT),
+            )
+            assert resolution.state is DerivationDependencyState.REDACTED
 
     run_async(_run())
 

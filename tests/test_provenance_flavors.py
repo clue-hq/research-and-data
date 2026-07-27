@@ -1,8 +1,9 @@
-"""M1.4 (ENG-123) — the two provenance flavors at the model layer (no DB).
+"""Claim provenance flavors at the model layer (M1.4 + C7.2, no DB).
 
 Covers the ``Claim`` flavor coherence rules and the constructors: discovery-provenance requires a
 discovery mode + a matching envelope; a field claim must not carry discovery-provenance; a contact
-*field* claim requires identity_binding + use_class while a contact *discovery* claim does not.
+personal direct or derived claim requires identity_binding + use_class while a contact *discovery*
+claim does not. C7.2 derived claims use support lineage rather than an external URL/span.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from clue_core import (
     ResearchMode,
     UseClass,
     account_claim,
+    can_be_promoted,
     contact_claim,
     contact_field_claim,
     discovery_claim,
@@ -182,3 +184,82 @@ def test_non_personal_contact_fact_claim_needs_no_governance() -> None:
     )
     assert fact.identity_binding is None
     assert fact.use_class is None
+
+
+def test_derived_claim_uses_support_lineage_not_external_evidence() -> None:
+    derived = Claim(
+        entity_id=_ENTITY,
+        entity_type=EntityType.ACCOUNT,
+        field_key="account.recent_funding",
+        value_json="funding creates a near-term transformation window",
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=0.7,
+        run_id=_RUN,
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        claim_flavor=ClaimFlavor.DERIVED,
+    )
+    assert derived.source_url is None
+    assert derived.evidence_span is None
+    assert can_be_promoted(derived)
+
+
+def test_derived_contact_facet_is_born_governed() -> None:
+    with pytest.raises(ValueError, match="require both identity_binding"):
+        Claim(
+            entity_id=_ENTITY,
+            entity_type=EntityType.CONTACT,
+            field_key="contact.facet.recent_post",
+            value_json="derived personal interpretation",
+            source_tier=4,
+            extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+            confidence=0.7,
+            run_id=_RUN,
+            research_mode=ResearchMode.CONTACT_PROFILING,
+            claim_flavor=ClaimFlavor.DERIVED,
+        )
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"source_url": "https://invented.invalid"}, "support edges"),
+        ({"evidence_span": "copied support"}, "support edges"),
+        (
+            {
+                "source_tier": 2,
+                "extraction_method": ExtractionMethod.SCRAPE,
+            },
+            "tier-4/model-authored",
+        ),
+        (
+            {
+                "discovery_provenance": DiscoveryProvenance(
+                    entity_id=_ENTITY,
+                    found_via="x",
+                    matched_signal="y",
+                    discovery_confidence=0.5,
+                    run_id=_RUN,
+                    research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                )
+            },
+            "non-discovery",
+        ),
+    ],
+)
+def test_derived_claim_rejects_other_provenance(override: dict[str, object], message: str) -> None:
+    values: dict[str, object] = {
+        "entity_id": _ENTITY,
+        "entity_type": EntityType.ACCOUNT,
+        "field_key": "account.recent_funding",
+        "value_json": "derived",
+        "source_tier": 4,
+        "extraction_method": ExtractionMethod.LLM_SYNTHESIS,
+        "confidence": 0.7,
+        "run_id": _RUN,
+        "research_mode": ResearchMode.ACCOUNT_PROFILING,
+        "claim_flavor": ClaimFlavor.DERIVED,
+    }
+    values.update(override)
+    with pytest.raises(ValueError, match=message):
+        Claim.model_validate(values)
