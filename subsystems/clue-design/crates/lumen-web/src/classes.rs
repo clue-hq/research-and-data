@@ -257,6 +257,15 @@ fn lint_color_suffix(
     if prefix == "bg-" && (suffix.starts_with("linear-to") || suffix.starts_with("gradient-to")) {
         return;
     }
+    // Gradient stop positions (from-10%, via-30%, to-90%) are positions,
+    // not colors.
+    if matches!(prefix, "from-" | "via-" | "to-")
+        && suffix.strip_suffix('%').is_some_and(|stop| {
+            !stop.is_empty() && stop.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    {
+        return;
+    }
     if non_color_allow.contains(&suffix) {
         return;
     }
@@ -480,6 +489,12 @@ mod tests {
     #[test]
     fn non_color_arbitrary_values_pass() {
         assert!(run("max-w-[72rem] w-[42%] leading-[1.06]").is_empty());
+    }
+
+    #[test]
+    fn gradient_stop_positions_pass() {
+        assert!(run("from-primary from-10% via-30% to-dark to-90%").is_empty());
+        assert_eq!(run("from-10x")[0].code, "LUMW0212");
     }
 
     #[test]

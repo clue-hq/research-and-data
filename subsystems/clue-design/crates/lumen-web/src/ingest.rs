@@ -296,6 +296,40 @@ impl<'a> IngestState<'a> {
                     "Event handlers are not part of the vocabulary; interactivity comes from the platform.",
                     None,
                 );
+                continue;
+            }
+            // Nothing outside the vocabulary is ever dropped silently: an
+            // ignored attribute (style= especially) would otherwise change
+            // the page invisibly and starve the author-retry loop of signal.
+            let known = matches!(
+                key.as_str(),
+                "id" | "class"
+                    | "href"
+                    | "target"
+                    | "alt"
+                    | "src"
+                    | "data-name"
+                    | "data-variant"
+                    | "data-button"
+                    | "data-icon"
+                    | "data-asset"
+                    | "data-href"
+                    | "data-new-tab"
+            );
+            if !known {
+                let hint = if key == "style" {
+                    "Inline style attributes are not supported; express styling as utility \
+                     classes (page-level effects belong in custom_css)."
+                } else {
+                    "Recognized attributes: id class href target alt data-variant data-button \
+                     data-icon data-asset data-href data-new-tab data-name."
+                };
+                self.warning(
+                    "LUMW0132",
+                    format!("attribute `{key}` on <{name}> is not in the vocabulary; ignored"),
+                    hint,
+                    None,
+                );
             }
         }
         if name == "script" || name == "style" {
@@ -957,6 +991,23 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0107"));
+    }
+
+    #[test]
+    fn unknown_attributes_warn_instead_of_vanishing() {
+        let outcome = ingest_html(
+            r#"<section id="s"><p style="color:red" data-mystery="1">x</p></section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors());
+        let warnings: Vec<&str> = outcome
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "LUMW0132")
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect();
+        assert_eq!(warnings.len(), 2, "{:#?}", outcome.diagnostics);
+        assert!(warnings.iter().any(|message| message.contains("`style`")));
     }
 
     #[test]
