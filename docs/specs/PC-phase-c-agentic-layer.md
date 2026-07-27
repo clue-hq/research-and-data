@@ -1,7 +1,7 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0–C6 implemented; C7 contract/plan frozen on
-`platform/c7-research-views`, implementation next
+**Status:** ACTIVE — C0–C6 implemented; C7.0 contract/fixture freeze complete on
+`platform/c7-research-views`, C7.1 next
 (2026-07-26)
 
 **Integration branch:** `platform/workspace-restructure`

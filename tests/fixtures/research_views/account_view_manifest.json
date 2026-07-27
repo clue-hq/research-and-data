@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "synthetic_account_frontend_v1",
+  "sanitized": true,
+  "view_kind": "account",
+  "subject_fixture_id": "account_fixture_001",
+  "sections": [
+    {
+      "kind": "identity",
+      "owner_species": "identity",
+      "block_kind": null,
+      "required_elements": [
+        "canonical_name_ref",
+        "primary_domain_ref",
+        "industry_ref",
+        "location_ref",
+        "employee_range_ref"
+      ]
+    },
+    {
+      "kind": "research_status",
+      "owner_species": "execution",
+      "block_kind": null,
+      "required_elements": [
+        "run_status_ref",
+        "last_researched_at_ref"
+      ]
+    },
+    {
+      "kind": "summary",
+      "owner_species": "claim_derivation",
+      "block_kind": "executive_summary",
+      "required_elements": [
+        "direct_or_derived_statement",
+        "provenance_ref"
+      ]
+    },
+    {
+      "kind": "about",
+      "owner_species": "claim_derivation",
+      "block_kind": "company_profile",
+      "required_elements": [
+        "verified_profile_statements",
+        "unknown_state"
+      ]
+    },
+    {
+      "kind": "fit",
+      "owner_species": "score",
+      "block_kind": "fit_assessment",
+      "required_elements": [
+        "overall_fit_ref",
+        "positive_criterion_ref",
+        "negative_criterion_ref",
+        "unknown_criterion_ref",
+        "evidence_claim_ids"
+      ]
+    },
+    {
+      "kind": "insights",
+      "owner_species": "claim_derivation",
+      "block_kind": "signal",
+      "required_elements": [
+        "verified_signal_statement",
+        "derived_insight_supports",
+        "evidence_action_descriptor"
+      ]
+    },
+    {
+      "kind": "committee",
+      "owner_species": "committee",
+      "block_kind": "committee_member",
+      "required_elements": [
+        "contact_entity_ref",
+        "persona_ref",
+        "committee_role_ref",
+        "contact_class_ref"
+      ]
+    },
+    {
+      "kind": "activity",
+      "owner_species": "activity",
+      "block_kind": null,
+      "required_elements": [
+        "subject_locked_activity_ref"
+      ]
+    },
+    {
+      "kind": "coverage_gaps",
+      "owner_species": "coverage",
+      "block_kind": "coverage_gap",
+      "required_elements": [
+        "coverage_summary_ref",
+        "terminal_gap_ref",
+        "block_reason_code"
+      ]
+    }
+  ],
+  "forbidden_authoritative_fields": [
+    "rendered_markdown",
+    "rendered_html",
+    "document_body",
+    "storage_key",
+    "permanent_signed_url"
+  ]
+}
