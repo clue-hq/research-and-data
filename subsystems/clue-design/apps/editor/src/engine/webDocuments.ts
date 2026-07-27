@@ -96,7 +96,7 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
  * server mints the id and seeds an empty WebDoc; the gate stashes the brief and
  * routes to /web/{id}. */
 export async function createWebDocument(
-  { apiBaseUrl, fetchImpl = fetch }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
   input: CreateWebDocumentInput
 ): Promise<CreatedWebDocument> {
   const body: Record<string, unknown> = {
@@ -131,7 +131,7 @@ export async function createWebDocument(
  * WebDoc JSON for web documents; `docKind` lets the shell reject a scene
  * document opened at a /web URL. */
 export async function fetchWebDocument(
-  { apiBaseUrl, fetchImpl = fetch }: WebDocumentOptions,
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
   documentId: string
 ): Promise<LoadedWebDocument> {
   const response = await fetchImpl(
