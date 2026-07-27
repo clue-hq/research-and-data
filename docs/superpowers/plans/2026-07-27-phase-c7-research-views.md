@@ -648,6 +648,8 @@ Commit: `feat(c7): add reference-only snapshots and scoped evidence access`
 
 ## 11. C7.5 — additive re-check and refresh
 
+**Status:** COMPLETE — implemented and verified 2026-07-28.
+
 ### Goal
 
 Let users refresh a stored view safely without introducing a second verifier or overwriting
@@ -720,6 +722,38 @@ Propagate claim/derivation changes to section ids using reverse reference indexe
 ### Checkpoint
 
 Commit: `feat(c7): add governed research-view recheck`
+
+### Implementation closeout (2026-07-28)
+
+- Added the closed `ResearchViewRecheckRequest` contract. Section selectors are enum-bound,
+  unique, and canonicalized; unknown inputs remain forbidden, so callers cannot pass verification
+  thresholds, prompts/models, source expansion, quality flags, values, or evidence-link TTLs.
+- Added append-only change-report, normalized change-item, requested-operation, section-staleness,
+  and body-free event-outbox tables in migration `9df19defc755`. Reports persist old/new snapshot
+  and source/composition hashes, statement/item ids, operation ids, reason codes, and fetch refs
+  only.
+- Added `ResearchViewRecheckService`: it scope-checks and live-resolves the old C7.4 receipt,
+  narrows work to the optional section set, requests research only through an injected governed
+  operation seam, composes a new superseding reference receipt, classifies unchanged/added/
+  removed/stale/restricted references, and atomically appends the report and canonical events.
+- Crash recovery uses deterministic child research, snapshot, report, staleness, and event ids.
+  A crash after the research request, after the snapshot, or before report commit replays one
+  logical result without duplicate spend, snapshots, reports, operations, or events. C7.4 snapshot
+  replay was tightened so an operation id cannot change its `supersedes_snapshot_id`.
+- Added reverse-reference staleness propagation over direct claim and derivation-support indexes.
+  It emits `research_view.section_stale` references without synchronously rebuilding a view in an
+  unrelated claim-write transaction.
+- Added the replay-certified `recheck_research_view@1` tool and API-root
+  `ToolInvokerResearchOperationRequester`. The requester delegates to the existing
+  `run_deep_account@1` journal/admission/budget/pre-spend boundary with a stable child operation;
+  it selects no resolver, model, prompt, threshold, quality mode, or policy. Central registry and
+  HTTP activation remain intentionally assigned to the C7.7 serving cutover.
+- Verification passed: 18 focused snapshot/re-check tests; 43 focused C7/architecture tests with
+  two environment skips; clean full repository suite (2,689 passed, 24 skipped); Mypy across 431
+  source files; all 24 dependency contracts; Ruff across 877 tracked Python files; one Alembic
+  head; clean isolated upgrade → downgrade → upgrade; and full offline migration SQL generation.
+  A repeated suite against an already-used database correctly failed because repository tests
+  persist migration/tool fixtures; recreating the disposable database produced the clean pass.
 
 ---
 

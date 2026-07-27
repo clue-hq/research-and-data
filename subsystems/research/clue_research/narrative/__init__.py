@@ -103,6 +103,14 @@ from clue_research.narrative.readiness import (
     InMemoryHandoffReadinessReader,
     RunReadiness,
 )
+from clue_research.narrative.research_view_recheck import (
+    GovernedResearchOperationRequest,
+    GovernedResearchOperationRequester,
+    ResearchViewRecheckConflict,
+    ResearchViewRecheckService,
+    ResearchViewRecheckUnavailable,
+    ResearchViewSectionStalenessService,
+)
 from clue_research.narrative.research_view_snapshots import (
     ResearchViewSnapshotCommand,
     ResearchViewSnapshotConflict,
@@ -204,6 +212,13 @@ __all__ = [
     "ResearchViewSnapshotService",
     "SnapshotReachabilityReader",
     "reference_composition_sha256",
+    # C7.5 additive re-check and reverse-reference staleness
+    "GovernedResearchOperationRequest",
+    "GovernedResearchOperationRequester",
+    "ResearchViewRecheckConflict",
+    "ResearchViewRecheckUnavailable",
+    "ResearchViewRecheckService",
+    "ResearchViewSectionStalenessService",
     # policy-as-data (M12.1 AC8)
     "PositioningPolicy",
     "DEFAULT_POSITIONING_POLICY",

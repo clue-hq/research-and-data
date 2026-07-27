@@ -246,7 +246,7 @@ def test_snapshot_is_atomic_idempotent_body_free_and_replayed_live() -> None:
             await _seed_scope(conn, view)
             service = ResearchViewSnapshotService(
                 composer,
-                _Reachability(view),  # type: ignore[arg-type]
+                _Reachability(view),
                 conn_factory=lambda: _fixed(conn),
             )
             operation_id = new_operation_id()
@@ -457,7 +457,7 @@ def test_evidence_access_requires_exact_scope_and_returns_only_opaque_capability
             )
             snapshot_service = ResearchViewSnapshotService(
                 _Composer(view),
-                _Reachability(view),  # type: ignore[arg-type]
+                _Reachability(view),
                 conn_factory=lambda: _fixed(conn),
             )
             await snapshot_service.compose_and_save(

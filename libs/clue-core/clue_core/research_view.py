@@ -22,6 +22,7 @@ from pydantic import (
     Field,
     JsonValue,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -711,6 +712,38 @@ class ResearchViewReceipt(BaseModel):
     fetch_ref: OpaqueReferenceToken
 
 
+class ResearchViewRecheckRequest(BaseModel):
+    """Closed, operation-idempotent input for an additive snapshot re-check.
+
+    Callers can narrow the report to known section kinds and request the existing governed
+    research operation. They cannot supply policy thresholds, prompts, models, values, sources,
+    or evidence-link lifetimes.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    operation_id: OperationId
+    workspace_id: ReferenceToken
+    project_id: ReferenceToken
+    subject_entity_id: EntityId
+    snapshot_id: ResearchViewSnapshotId
+    section_kinds: tuple[ResearchSectionKind, ...] = ()
+    request_research: bool = False
+
+    @field_validator("section_kinds", mode="before")
+    @classmethod
+    def _canonicalize_section_selector(cls, value: object) -> object:
+        if isinstance(value, (list, tuple)):
+            return tuple(sorted(value, key=str))
+        return value
+
+    @model_validator(mode="after")
+    def _section_selector_is_unique(self) -> ResearchViewRecheckRequest:
+        if len(self.section_kinds) != len(set(self.section_kinds)):
+            raise ValueError("section_kinds must be unique")
+        return self
+
+
 class ResearchViewRef(BaseModel):
     """Reference-only output for effect-free research-view lookup tools."""
 
@@ -735,10 +768,16 @@ class ResearchViewChangeReportRef(BaseModel):
     operation_id: OperationId
     old_snapshot_id: ResearchViewSnapshotId
     new_snapshot_id: ResearchViewSnapshotId
+    old_source_state_sha256: Sha256Hex
+    new_source_state_sha256: Sha256Hex
+    old_composition_sha256: Sha256Hex
+    new_composition_sha256: Sha256Hex
+    unchanged_statement_ids: tuple[ResearchStatementId, ...] = ()
     added_statement_ids: tuple[ResearchStatementId, ...] = ()
     removed_statement_ids: tuple[ResearchStatementId, ...] = ()
     stale_statement_ids: tuple[ResearchStatementId, ...] = ()
     restricted_statement_ids: tuple[ResearchStatementId, ...] = ()
+    requested_operation_ids: tuple[OperationId, ...] = ()
     reason_codes: tuple[ReasonCode, ...] = ()
     fetch_ref: OpaqueReferenceToken
 

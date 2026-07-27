@@ -232,6 +232,8 @@ class ResearchViewSnapshotService:
                 workspace_id=command.request.workspace_id,
                 operation_id=command.operation_id,
             )
+            if existing is not None:
+                await _require_matching_supersession(conn, existing.snapshot_id, command)
         if existing is not None:
             _require_matching_request(existing, command.request)
             return existing
@@ -317,6 +319,7 @@ class ResearchViewSnapshotService:
                 if receipt is None:  # pragma: no cover - defensive against a broken transaction
                     raise RuntimeError("snapshot idempotency conflict did not resolve a receipt")
                 _require_matching_request(receipt, command.request)
+                await _require_matching_supersession(conn, receipt.snapshot_id, command)
                 return receipt
 
             await _write_sections(conn, snapshot_id=snapshot_id, view=view)
@@ -395,6 +398,21 @@ class ResearchViewSnapshotService:
         current = await self._composer.compose(plan.request)
         _require_matching_view(current, plan.request)
         return _replay_saved_references(current, plan, snapshot_id=snapshot_id)
+
+    async def receipt(
+        self,
+        *,
+        workspace_id: str,
+        snapshot_id: ResearchViewSnapshotId,
+    ) -> ResearchViewReceipt | None:
+        """Load one body-free receipt under its exact workspace scope."""
+
+        async with self._conn_factory() as conn:
+            return await _receipt_for_snapshot(
+                conn,
+                workspace_id=workspace_id,
+                snapshot_id=snapshot_id,
+            )
 
 
 async def _write_sections(
@@ -617,6 +635,62 @@ async def _receipt_for_operation(
         )
     ).first()
     return _receipt_from_row(row) if row is not None else None
+
+
+async def _receipt_for_snapshot(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    snapshot_id: ResearchViewSnapshotId,
+) -> ResearchViewReceipt | None:
+    row = (
+        await conn.execute(
+            text(
+                """
+                SELECT snapshot_id, view_id, workspace_id, project_id, project_run_id,
+                       subject_entity_id, subject_entity_type, subject_entity_version,
+                       parent_account_entity_id, product_id, schema_version,
+                       source_state_sha256, composition_sha256, created_at
+                FROM research_view_snapshot
+                WHERE workspace_id = :workspace_id AND snapshot_id = :snapshot_id
+                """
+            ),
+            {"workspace_id": workspace_id, "snapshot_id": str(snapshot_id)},
+        )
+    ).first()
+    return _receipt_from_row(row) if row is not None else None
+
+
+async def _require_matching_supersession(
+    conn: AsyncConnection,
+    snapshot_id: ResearchViewSnapshotId,
+    command: ResearchViewSnapshotCommand,
+) -> None:
+    stored = (
+        await conn.execute(
+            text(
+                """
+                SELECT supersedes_snapshot_id
+                FROM research_view_snapshot
+                WHERE snapshot_id = :snapshot_id
+                  AND workspace_id = :workspace_id
+                """
+            ),
+            {
+                "snapshot_id": str(snapshot_id),
+                "workspace_id": command.request.workspace_id,
+            },
+        )
+    ).scalar_one()
+    expected = (
+        UUID(str(command.supersedes_snapshot_id))
+        if command.supersedes_snapshot_id is not None
+        else None
+    )
+    if stored != expected:
+        raise ResearchViewSnapshotConflict(
+            "operation_id was already used with a different superseded snapshot"
+        )
 
 
 def _receipt_from_row(row: Row[Any]) -> ResearchViewReceipt:
