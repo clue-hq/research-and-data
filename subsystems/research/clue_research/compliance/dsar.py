@@ -371,6 +371,42 @@ async def _purge_marked(
         )
 
 
+async def _purge_legacy_handoff_payloads(
+    conn: AsyncConnection,
+    *,
+    contact_entity_id: EntityId,
+    workspace_id: str,
+) -> None:
+    """Remove copied M12.2 bodies reachable from a subject while retaining row identity.
+
+    C7.4 receipts need no special erasure mutation because they contain references only and replay
+    under current claim/policy state. ``account_handoff`` predates that contract and copied
+    personal values into JSONB, so its exact subject index is the bounded compatibility bridge.
+    """
+
+    await conn.execute(
+        text(
+            """
+            UPDATE account_handoff h
+            SET payload = NULL,
+                legacy_payload_purged_at = COALESCE(legacy_payload_purged_at, now())
+            WHERE h.workspace_id = :workspace_id
+              AND h.payload IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM account_handoff_subject s
+                  WHERE s.account_handoff_id = h.id
+                    AND s.subject_entity_id = :contact_entity_id
+              )
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_entity_id": str(contact_entity_id),
+        },
+    )
+
+
 # --- the data-subject rights service (controller-scoped) --------------------
 
 
@@ -507,6 +543,11 @@ class DataSubjectRightsImpl:
                     run_id=run_id,
                     erased_keys=erased_keys,
                 )
+                await _purge_legacy_handoff_payloads(
+                    conn,
+                    contact_entity_id=contact_entity_id,
+                    workspace_id=self._workspace_id,
+                )
             # Phase 2 — the physical blob deletes, only now that the tombstones committed.
             await _purge_marked(
                 self._conn_factory,
@@ -568,6 +609,11 @@ class DataSubjectRightsImpl:
                     scope_desc="contact.facet.*",
                     run_id=run_id,
                     erased_keys=erased_keys,
+                )
+                await _purge_legacy_handoff_payloads(
+                    conn,
+                    contact_entity_id=contact_entity_id,
+                    workspace_id=self._workspace_id,
                 )
             await _purge_marked(
                 self._conn_factory,

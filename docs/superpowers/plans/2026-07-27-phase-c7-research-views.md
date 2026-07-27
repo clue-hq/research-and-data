@@ -525,6 +525,8 @@ Commit: `feat(c7): compose structured account and contact research views`
 
 ## 10. C7.4 — reference-only snapshots and evidence actions
 
+**Status:** COMPLETE — implemented and verified 2026-07-28.
+
 ### Goal
 
 Support “versions” and evidence click-through without copying research bodies or weakening access
@@ -610,6 +612,37 @@ subject-indexed erasure before any C7 closeout claim.
 ### Checkpoint
 
 Commit: `feat(c7): add reference-only snapshots and scoped evidence access`
+
+### Implementation closeout (2026-07-28)
+
+- Added append-only `research_view_snapshot` receipts with ordered section/item/support/action
+  references, exact scope pins, source/composition hashes, reachable-subject rows, idempotent
+  operation identity, and workspace-safe supersession. Snapshot tables contain no claim values,
+  evidence spans, source bodies, rationales, rendered bodies, locators, or signed URLs.
+- Added deterministic snapshot creation and live resolution. Resolution intersects the saved
+  reference set with a fresh C7.3 composition, re-reads current claim/tombstone state, and emits
+  unavailable, redacted, restricted, or stale state instead of reconstructing historical text.
+- Added the API-root evidence-access service as the only C7 presign consumer. It validates the
+  exact workspace/project/snapshot/action/statement/claim/subject relation, applies current
+  authorization and retention/erasure state, caps artifact previews at 300 seconds, returns opaque
+  capabilities, and writes body-free access audits.
+- Kept `account_handoff.payload` as a bounded compatibility store because the C7.6 production
+  committee handoff and C7.7 serving cutover have not happened. New C7 snapshots never write body
+  copies. Existing handoff rows now have an optional snapshot pointer, a subject index backfilled
+  from account/committee/provenance references, and a one-way payload purge marker.
+- Live-reader inventory: `narrative.handoff_store` is the central legacy payload decoder used by
+  `HandoffService`, the HTTP surface, and the toolbelt; `review.disposition_store` has one isolated
+  direct SQL read for legacy ICP/provenance context. C7.6/C7.7 must move those callers to reference
+  receipts before stopping the legacy writer and removing payload decoding.
+- DSAR and objection handling purge any indexed legacy handoff payload that can reach the erased
+  subject. Legacy writes refuse any account, committee member, or provenance-reachable claim
+  subject already tombstoned, closing the erased-subject resurrection path during compatibility.
+- Verification passed: targeted snapshot/evidence/DSAR/legacy suites, the full DB-enabled pytest
+  suite, Mypy across 429 source files, scoped Ruff, one-head Alembic validation, clean isolated
+  upgrade → downgrade → upgrade, and a manual pre-C7.4 legacy-row backfill check. The umbrella
+  `make check` formatter passed; its lint stage also scans unrelated untracked `.claude/` and
+  `.codex/` scripts and stopped on their pre-existing `T201` findings, while all C7.4 changed files
+  pass Ruff.
 
 ---
 

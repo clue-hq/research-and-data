@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-28-phase-c7-4-reference-snapshots-evidence-access.md` — C7.4 complete: append-only
+  body-free snapshot receipts, current-policy live resolution, exact-scope evidence actions,
+  legacy handoff subject indexing/purge/no-resurrection, full isolated verification, and the
+  bounded C7.6/C7.7 payload cutover.
 - `2026-07-27-phase-c7-3-research-view-composition.md` — C7.3 complete: injected owner
   seams, deterministic account/contact composition, nine-block reference adapter, adversarial
   state coverage, isolated full-suite verification, and the exact C7.4 handoff.
