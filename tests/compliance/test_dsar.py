@@ -214,6 +214,89 @@ def test_erase_excludes_from_current_value() -> None:  # AC3
 
 
 @pytest.mark.usefixtures("require_compliance_db")
+def test_erase_purges_legacy_handoff_body_via_reachable_subject_index() -> None:
+    """C7.4 DSAR sentinel: old copied dossier bodies are purged; receipts need no body rewrite."""
+
+    sentinel = "C7_LEGACY_HANDOFF_PERSONAL_SENTINEL_38ce2b"
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            contact = await _contact(conn)
+            await _insert_facet(conn, contact, use_class=_PRO, value=sentinel)
+            account_id = (
+                await conn.execute(
+                    text("SELECT account_entity_id FROM contact_entity WHERE id = :contact_id"),
+                    {"contact_id": str(contact)},
+                )
+            ).scalar_one()
+            handoff_id = (
+                await conn.execute(
+                    text(
+                        """
+                        INSERT INTO account_handoff (
+                            workspace_id, account_entity_id, icp_spec_version, icp_key,
+                            assembled_at, payload
+                        ) VALUES (
+                            :workspace_id, :account_entity_id, 1, '', now(),
+                                jsonb_build_object('personal_copy', CAST(:sentinel AS text))
+                        )
+                        RETURNING id
+                        """
+                    ),
+                    {
+                        "workspace_id": _CLIENT,
+                        "account_entity_id": str(account_id),
+                        "sentinel": sentinel,
+                    },
+                )
+            ).scalar_one()
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO account_handoff_subject (
+                        account_handoff_id, subject_entity_id, subject_entity_type,
+                        parent_account_entity_id, relation
+                    ) VALUES (
+                        :handoff_id, :contact_id, 'contact', :account_id, 'committee_member'
+                    )
+                    """
+                ),
+                {
+                    "handoff_id": str(handoff_id),
+                    "contact_id": str(contact),
+                    "account_id": str(account_id),
+                },
+            )
+
+            await _rights(conn).erase(contact)
+
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT payload, legacy_payload_purged_at "
+                        "FROM account_handoff WHERE id = :handoff_id"
+                    ),
+                    {"handoff_id": str(handoff_id)},
+                )
+            ).one()
+            assert row[0] is None
+            assert row[1] is not None
+            serialized = (
+                await conn.execute(
+                    text(
+                        "SELECT concat_ws(' ', coalesce(payload::text, ''), "
+                        "coalesce(research_view_snapshot_id::text, '')) "
+                        "FROM account_handoff WHERE id = :handoff_id"
+                    ),
+                    {"handoff_id": str(handoff_id)},
+                )
+            ).scalar_one()
+            assert sentinel not in serialized
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
 def test_erase_is_idempotent() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:

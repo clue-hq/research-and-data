@@ -54,6 +54,7 @@ from clue_research.narrative.handoff_seams import (
     InMemoryHandoffCommitteeReader,
 )
 from clue_research.narrative.handoff_store import (
+    LegacyHandoffErasedSubjectError,
     list_handoffs_for_run,
     read_handoff,
     write_handoff,
@@ -101,6 +102,13 @@ from clue_research.narrative.readiness import (
     HandoffReadinessReader,
     InMemoryHandoffReadinessReader,
     RunReadiness,
+)
+from clue_research.narrative.research_view_snapshots import (
+    ResearchViewSnapshotCommand,
+    ResearchViewSnapshotConflict,
+    ResearchViewSnapshotService,
+    SnapshotReachabilityReader,
+    reference_composition_sha256,
 )
 from clue_research.narrative.research_views import (
     ACCOUNT_SECTION_ORDER,
@@ -190,6 +198,12 @@ __all__ = [
     "ResearchBlockProjection",
     "NineBlockResearchProjection",
     "project_nine_blocks",
+    # C7.4 reference-only saved research views
+    "ResearchViewSnapshotCommand",
+    "ResearchViewSnapshotConflict",
+    "ResearchViewSnapshotService",
+    "SnapshotReachabilityReader",
+    "reference_composition_sha256",
     # policy-as-data (M12.1 AC8)
     "PositioningPolicy",
     "DEFAULT_POSITIONING_POLICY",
@@ -247,6 +261,7 @@ __all__ = [
     "InMemoryHandoffCommitteeReader",
     # the account_handoff materialization (M12.2)
     "write_handoff",
+    "LegacyHandoffErasedSubjectError",
     "read_handoff",
     "list_handoffs_for_run",
     # verification health (M12.3 — the trust posture that travels with the output)
