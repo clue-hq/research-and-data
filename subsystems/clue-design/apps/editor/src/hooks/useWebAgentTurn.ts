@@ -1,0 +1,246 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { startWebTurn } from "@/engine/webDocuments";
+
+/**
+ * The website-mode turn hook — a lean cousin of the scene editor's
+ * `useAgentTurn`. Website turns are one-shot and server-durable: POST the
+ * prompt, then follow the run's Server-Sent Events for progress until a `done`
+ * envelope. There is no Accept/Reject preview here (the server applies the turn
+ * and the shell re-renders), so this hook only owns the run's lifecycle.
+ *
+ * State machine: idle → running → done | error. Exactly one run at a time.
+ * The component passes an `onDone` callback (it captures the envelope's status
+ * to distinguish an applied turn from a failed one, and to trigger the render
+ * refetch). Browser APIs are wrapped, never stored bare
+ * (docs/frontend-practices.md rule 8): `startWebTurn` wraps `fetch`, and the
+ * EventSource is built through an injectable factory (default = native, tests
+ * pass a fake since jsdom has no EventSource).
+ */
+
+const MAX_EVENTS = 200;
+
+/** One streamed progress event (contract 2, event name "progress"). */
+export interface WebRunEvent {
+  seq: number;
+  type: string;
+  data: Record<string, unknown>;
+  created_at?: string;
+}
+
+/** The terminal result envelope (contract 2, event name "done"). */
+export interface WebTurnDoneEnvelope {
+  status: "applied" | "failed";
+  summary?: string;
+  doc_kind?: string;
+  [key: string]: unknown;
+}
+
+export type WebTurnPhase = "idle" | "running" | "done" | "error";
+
+/** The minimal EventSource surface this hook depends on — injectable so jsdom
+ * tests (no global EventSource) drive the stream with a fake, and so the
+ * browser API is never stored bare. */
+export interface WebEventSourceLike {
+  addEventListener(type: string, listener: (event: { data: string }) => void): void;
+  close(): void;
+  onerror: ((event: unknown) => void) | null;
+}
+
+export type WebEventSourceFactory = (url: string) => WebEventSourceLike;
+
+function defaultEventSourceFactory(url: string): WebEventSourceLike {
+  if (typeof EventSource === "undefined") {
+    throw new Error("EventSource is unavailable in this environment.");
+  }
+  return new EventSource(url) as unknown as WebEventSourceLike;
+}
+
+export interface UseWebAgentTurnOptions {
+  documentId: string;
+  /** Invoked once with the terminal envelope on `done` — the component reads
+   * `status` (applied vs failed) and kicks the render/meta refetch. */
+  onDone?: (envelope: WebTurnDoneEnvelope) => void;
+  /** Override the API base (default: read at call time from editorConfig). */
+  apiBaseUrl?: string;
+  /** Injectable for tests; defaults to the real POST wrapper. */
+  startTurn?: typeof startWebTurn;
+  /** Injectable for tests; defaults to native EventSource. */
+  eventSourceFactory?: WebEventSourceFactory;
+}
+
+export interface WebAgentTurn {
+  phase: WebTurnPhase;
+  events: WebRunEvent[];
+  summary: string | null;
+  error: string | null;
+  start: (prompt: string, model?: string | null) => void;
+}
+
+/** Coerce a parsed progress payload into a WebRunEvent, tolerating missing
+ * fields — a malformed event should never break the stream. */
+function toRunEvent(raw: unknown): WebRunEvent | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Partial<WebRunEvent>;
+  return {
+    seq: typeof record.seq === "number" ? record.seq : 0,
+    type: typeof record.type === "string" ? record.type : "progress",
+    data:
+      record.data && typeof record.data === "object"
+        ? (record.data as Record<string, unknown>)
+        : {},
+    created_at: typeof record.created_at === "string" ? record.created_at : undefined
+  };
+}
+
+export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
+  const {
+    documentId,
+    onDone,
+    apiBaseUrl,
+    startTurn = startWebTurn,
+    eventSourceFactory = defaultEventSourceFactory
+  } = options;
+
+  const [phase, setPhase] = useState<WebTurnPhase>("idle");
+  const [events, setEvents] = useState<WebRunEvent[]>([]);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const sourceRef = useRef<WebEventSourceLike | null>(null);
+  // The current run reached a terminal state (done or error) — later stream
+  // callbacks (notably a benign post-`done` onerror) short-circuit on this.
+  const settledRef = useRef(false);
+  const runningRef = useRef(false);
+  const mountedRef = useRef(true);
+  // Keep the latest onDone without re-arming `start` every render.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  const closeSource = useCallback(() => {
+    if (sourceRef.current) {
+      sourceRef.current.close();
+      sourceRef.current = null;
+    }
+  }, []);
+
+  // Never leak an EventSource across unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      closeSource();
+    };
+  }, [closeSource]);
+
+  const start = useCallback(
+    (prompt: string, model?: string | null) => {
+      const trimmed = prompt.trim();
+      if (!trimmed || runningRef.current) {
+        return;
+      }
+      runningRef.current = true;
+      settledRef.current = false;
+      closeSource();
+      setEvents([]);
+      setSummary(null);
+      setError(null);
+      setPhase("running");
+
+      const settleError = (message: string) => {
+        if (settledRef.current) {
+          return;
+        }
+        settledRef.current = true;
+        runningRef.current = false;
+        closeSource();
+        if (!mountedRef.current) {
+          return;
+        }
+        setError(message);
+        setPhase("error");
+      };
+
+      const base = apiBaseUrl ?? editorApiBaseUrl();
+      void startTurn({ apiBaseUrl: base }, documentId, trimmed, model ?? null)
+        .then(({ runId }) => {
+          if (!mountedRef.current || settledRef.current) {
+            return;
+          }
+          let source: WebEventSourceLike;
+          try {
+            source = eventSourceFactory(
+              new URL(`/agent/runs/${encodeURIComponent(runId)}/events`, base).toString()
+            );
+          } catch (cause) {
+            settleError(
+              cause instanceof Error ? cause.message : "Could not open the event stream."
+            );
+            return;
+          }
+          sourceRef.current = source;
+
+          source.addEventListener("progress", (event) => {
+            const parsed = (() => {
+              try {
+                return toRunEvent(JSON.parse(event.data));
+              } catch {
+                // Malformed payload — skip rather than break the stream.
+                return null;
+              }
+            })();
+            if (!parsed || !mountedRef.current) {
+              return;
+            }
+            setEvents((current) => {
+              const next = [...current, parsed];
+              return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next;
+            });
+          });
+
+          source.addEventListener("done", (event) => {
+            if (settledRef.current) {
+              return;
+            }
+            settledRef.current = true;
+            runningRef.current = false;
+            let envelope: WebTurnDoneEnvelope;
+            try {
+              envelope = JSON.parse(event.data) as WebTurnDoneEnvelope;
+            } catch {
+              envelope = {
+                status: "failed",
+                summary: "The turn finished with an unreadable result."
+              };
+            }
+            closeSource();
+            if (mountedRef.current) {
+              setSummary(typeof envelope.summary === "string" ? envelope.summary : null);
+              setPhase("done");
+            }
+            onDoneRef.current?.(envelope);
+          });
+
+          source.onerror = () => {
+            // The server closes the stream right after `done`; the resulting
+            // error is benign once the run has settled.
+            if (settledRef.current) {
+              return;
+            }
+            settleError("Lost connection to the website agent.");
+          };
+        })
+        .catch((cause: unknown) => {
+          settleError(
+            cause instanceof Error ? cause.message : "The website turn could not be started."
+          );
+        });
+    },
+    [apiBaseUrl, closeSource, documentId, eventSourceFactory, startTurn]
+  );
+
+  return { phase, events, summary, error, start };
+}

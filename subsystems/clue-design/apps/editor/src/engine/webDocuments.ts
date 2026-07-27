@@ -159,6 +159,92 @@ export async function fetchWebDocument(
   };
 }
 
+export interface StartedWebTurn {
+  runId: string;
+}
+
+/** Kick off a website-mode agent turn (`POST /documents/{id}/web/turns`). The
+ * server mints a run id and starts executing async; the caller then subscribes
+ * to `GET /agent/runs/{runId}/events` for progress. A 409 (wrong doc kind)
+ * surfaces its `detail.code` through the shared error reader. */
+export async function startWebTurn(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  prompt: string,
+  model?: string | null
+): Promise<StartedWebTurn> {
+  const body: Record<string, unknown> = { prompt };
+  if (model != null) {
+    body.model = model;
+  }
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/turns`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Website turn failed to start (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { run_id?: unknown };
+  const runId = payload.run_id;
+  if (typeof runId !== "string" || runId.length === 0) {
+    throw new Error("Website turn returned no run id.");
+  }
+  return { runId };
+}
+
+/** One diagnostic returned alongside a web render (opaque to the shell — passed
+ * through for callers that want to surface them). */
+export interface WebRenderResult {
+  html: string;
+  diagnostics: unknown[];
+}
+
+/** Fetch the rendered HTML for a web document
+ * (`GET /documents/{id}/web/render?mode=editor&runtime_src=…`). The `html` is a
+ * full document intended for a sandboxed `srcdoc` iframe; `runtimeSrc` is the
+ * URL the rendered page loads the Tailwind browser runtime from (relative URLs
+ * resolve against the parent origin inside a srcdoc iframe). */
+export async function fetchWebRenderHtml(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  runtimeSrc: string
+): Promise<WebRenderResult> {
+  const url = new URL(`/documents/${encodeURIComponent(documentId)}/web/render`, apiBaseUrl);
+  url.searchParams.set("mode", "editor");
+  url.searchParams.set("runtime_src", runtimeSrc);
+  const response = await fetchImpl(url);
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Website render failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { html?: unknown; diagnostics?: unknown };
+  return {
+    html: typeof payload.html === "string" ? payload.html : "",
+    diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics : []
+  };
+}
+
+/** True when a web document has any authored content — a page with at least one
+ * non-root node. A freshly-created (empty) document has no pages, or pages whose
+ * `nodes` map is empty; either way this is false and the shell shows the empty
+ * state / auto-sends a queued brief. */
+export function webDocumentHasContent(webDoc: WebDoc | null): boolean {
+  if (!webDoc || !Array.isArray(webDoc.pages)) {
+    return false;
+  }
+  return webDoc.pages.some((page) => {
+    const nodes = page.nodes;
+    return Boolean(nodes && typeof nodes === "object" && Object.keys(nodes).length > 0);
+  });
+}
+
 /** The sessionStorage key the gate stashes a brief under (read once by the web
  * shell). One key per document so parallel tabs never cross briefs. */
 export function webPromptStorageKey(documentId: string): string {
