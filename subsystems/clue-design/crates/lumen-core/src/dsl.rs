@@ -2923,13 +2923,14 @@ fn parse_medium(source: &str, line_number: usize, column: usize) -> Result<Mediu
         "email" => Ok(Medium::Email),
         "direct_mail" => Ok(Medium::DirectMail),
         "ad" => Ok(Medium::Ad),
+        "web" => Ok(Medium::Web),
         other => Err(error_diag(
             line_number,
             column,
             other.len().max(1),
             "LUMD0211",
             format!("unknown medium {other}"),
-            "Use medium(print|digital|email|direct_mail|ad).",
+            "Use medium(print|digital|email|direct_mail|ad|web).",
         )),
     }
 }

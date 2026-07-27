@@ -473,6 +473,7 @@ fn phase_name(phase: &Phase) -> &'static str {
         Phase::Dsl => "dsl",
         Phase::Layout => "layout",
         Phase::Export => "export",
+        Phase::Web => "web",
     }
 }
 

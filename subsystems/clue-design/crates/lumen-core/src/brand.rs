@@ -4723,9 +4723,10 @@ fn token_options_for_governance(scene: &Scene) -> TokenResolutionOptions {
 fn brand_medium_for_scene_medium_for_governance(medium: &crate::scene::Medium) -> &'static str {
     match medium {
         crate::scene::Medium::Print | crate::scene::Medium::DirectMail => "print",
-        crate::scene::Medium::Digital | crate::scene::Medium::Email | crate::scene::Medium::Ad => {
-            "digital"
-        }
+        crate::scene::Medium::Digital
+        | crate::scene::Medium::Email
+        | crate::scene::Medium::Ad
+        | crate::scene::Medium::Web => "digital",
     }
 }
 

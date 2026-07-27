@@ -1,0 +1,11 @@
+[package]
+name = "lumen-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lumen-core = { path = "../lumen-core" }
+serde.workspace = true
+serde_json.workspace = true
+quick-xml = "0.37"

@@ -163,6 +163,7 @@ pub enum Medium {
     Email,
     DirectMail,
     Ad,
+    Web,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

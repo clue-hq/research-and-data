@@ -19,6 +19,7 @@ pub enum Phase {
     Dsl,
     Layout,
     Export,
+    Web,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -942,6 +942,7 @@ dependencies = [
  "lumen-export",
  "lumen-skia",
  "lumen-wasm",
+ "lumen-web",
  "serde",
  "serde_json",
  "sha2",
@@ -1005,6 +1006,16 @@ dependencies = [
  "serde_json",
  "sha2",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lumen-web"
+version = "0.1.0"
+dependencies = [
+ "lumen-core",
+ "quick-xml",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

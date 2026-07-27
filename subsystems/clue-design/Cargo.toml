@@ -8,6 +8,7 @@ members = [
   "crates/lumen-agent",
   "crates/lumen-skia",
   "crates/lumen-wasm",
+  "crates/lumen-web",
 ]
 
 [workspace.package]

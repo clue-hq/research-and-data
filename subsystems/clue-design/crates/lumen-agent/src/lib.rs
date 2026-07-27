@@ -1692,6 +1692,7 @@ fn phase_name(phase: &lumen_core::Phase) -> &'static str {
         lumen_core::Phase::Dsl => "dsl",
         lumen_core::Phase::Layout => "layout",
         lumen_core::Phase::Export => "export",
+        lumen_core::Phase::Web => "web",
     }
 }
 

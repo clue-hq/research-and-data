@@ -370,6 +370,43 @@ enum CoreRequest {
         export_profile: Option<Value>,
     },
     BuildInfo,
+    WebNewDoc {
+        document_id: String,
+        title: String,
+        #[serde(default)]
+        brand_kit_ref: Option<Value>,
+    },
+    WebValidate {
+        doc: Value,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
+    WebIngestHtml {
+        doc: Value,
+        page_id: String,
+        html: String,
+        #[serde(default)]
+        custom_css: Option<String>,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
+    WebApplyOps {
+        doc: Value,
+        operations: Vec<Value>,
+    },
+    WebRender {
+        doc: Value,
+        page_id: String,
+        mode: String,
+        #[serde(default)]
+        asset_base_url: Option<String>,
+        #[serde(default)]
+        tailwind_runtime_src: Option<String>,
+        #[serde(default)]
+        bridge_script: Option<String>,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -407,6 +444,12 @@ struct CoreResponse {
     asset: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     instance: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_doc: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inverse_operations: Option<Value>,
     build_info: Option<Value>,
 }
 
@@ -455,6 +498,9 @@ fn main() {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 },
             };
@@ -496,6 +542,9 @@ fn main() {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             }
         }
@@ -532,6 +581,11 @@ impl CoreRequest {
             CoreRequest::ValidateBindingSet { .. } => "validate_binding_set",
             CoreRequest::DeriveInstance { .. } => "derive_instance",
             CoreRequest::BuildInfo => "build_info",
+            CoreRequest::WebNewDoc { .. } => "web_new_doc",
+            CoreRequest::WebValidate { .. } => "web_validate",
+            CoreRequest::WebIngestHtml { .. } => "web_ingest_html",
+            CoreRequest::WebApplyOps { .. } => "web_apply_ops",
+            CoreRequest::WebRender { .. } => "web_render",
         }
     }
 }
@@ -638,6 +692,31 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "export_formats": export_formats,
         }),
         CoreRequest::BuildInfo => json!({}),
+        CoreRequest::WebNewDoc { brand_kit_ref, .. } => json!({
+            "has_brand_kit_ref": brand_kit_ref.is_some(),
+        }),
+        CoreRequest::WebValidate { brand_kit, .. } => json!({
+            "has_brand_kit": brand_kit.is_some(),
+        }),
+        CoreRequest::WebIngestHtml {
+            html,
+            custom_css,
+            brand_kit,
+            ..
+        } => json!({
+            "html_bytes": html.len(),
+            "has_custom_css": custom_css.is_some(),
+            "has_brand_kit": brand_kit.is_some(),
+        }),
+        CoreRequest::WebApplyOps { operations, .. } => json!({
+            "operation_count": operations.len(),
+        }),
+        CoreRequest::WebRender {
+            mode, brand_kit, ..
+        } => json!({
+            "mode": mode,
+            "has_brand_kit": brand_kit.is_some(),
+        }),
     }
 }
 
@@ -721,6 +800,9 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         export: None,
         asset: None,
         instance: None,
+        web_doc: None,
+        html: None,
+        inverse_operations: None,
         build_info: None,
     }
 }
@@ -842,6 +924,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
             }
@@ -866,6 +951,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             });
             let batch = match batch {
@@ -914,6 +1002,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -941,6 +1032,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
             }
@@ -990,6 +1084,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1039,6 +1136,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1117,6 +1217,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: Some(to_value(result)?),
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1137,6 +1240,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
             }
@@ -1288,6 +1394,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "byte_length": stored.byte_length,
                 })),
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1467,6 +1576,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
             }
@@ -1493,6 +1605,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1524,6 +1639,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1554,6 +1672,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         export: None,
                         asset: None,
                         instance: None,
+                        web_doc: None,
+                        html: None,
+                        inverse_operations: None,
                         build_info: None,
                     })
                 }
@@ -1578,6 +1699,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
                     build_info: None,
                 }),
             }
@@ -1619,6 +1743,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1643,6 +1770,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1672,6 +1802,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1698,6 +1831,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1739,6 +1875,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -1769,6 +1908,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "template_revision_id": binding.template_revision_id,
                     "valid": ok,
                 })),
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -2005,6 +2147,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "artifacts": artifacts,
                     "export_skipped": export_skipped,
                 })),
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
                 build_info: None,
             })
         }
@@ -2029,11 +2174,189 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             export: None,
             asset: None,
             instance: None,
+            web_doc: None,
+            html: None,
+            inverse_operations: None,
             build_info: Some(json!({
                 "schema_version": lumen_core::SCHEMA_VERSION,
                 "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
             })),
         }),
+        CoreRequest::WebNewDoc {
+            document_id,
+            title,
+            brand_kit_ref,
+        } => {
+            let brand_kit_ref = brand_kit_ref
+                .map(serde_json::from_value::<lumen_core::BrandKitRef>)
+                .transpose()
+                .map_err(|error| core_error("helper.brand_kit_ref", error.to_string()))?;
+            let doc = lumen_web::WebDoc::new(document_id, title, brand_kit_ref);
+            Ok(ok_web(Some(&doc), None, None, None, Vec::new()))
+        }
+        CoreRequest::WebValidate { doc, brand_kit } => {
+            let doc = parse_web_doc(doc)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit)?;
+            diagnostics.extend(lumen_web::validate_web_doc(&doc));
+            diagnostics.extend(lint_web_doc_classes(&doc, &theme));
+            Ok(ok_web(Some(&doc), None, None, None, diagnostics))
+        }
+        CoreRequest::WebIngestHtml {
+            doc,
+            page_id,
+            html,
+            custom_css,
+            brand_kit,
+        } => {
+            let mut doc = parse_web_doc(doc)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let outcome = lumen_web::ingest_html_into_page(
+                &mut doc,
+                &lumen_core::PageId::from(page_id),
+                &html,
+                &theme,
+            );
+            let installed = if outcome.has_errors() {
+                None
+            } else {
+                if let Some(css) = custom_css {
+                    doc.custom_css = css;
+                }
+                Some(outcome.nodes.len())
+            };
+            diagnostics.extend(outcome.diagnostics);
+            if installed.is_some() {
+                diagnostics.extend(lumen_web::validate_web_doc(&doc));
+            }
+            Ok(ok_web(Some(&doc), None, None, installed, diagnostics))
+        }
+        CoreRequest::WebApplyOps { doc, operations } => {
+            let mut doc = parse_web_doc(doc)?;
+            let operations: Vec<lumen_web::WebOperation> = operations
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<_, _>>()
+                .map_err(|error| core_error("helper.web_operations", error.to_string()))?;
+            let inverses = lumen_web::apply_operations(&mut doc, &operations)
+                .map_err(|error| core_error(error.code, error.message))?;
+            let count = operations.len();
+            Ok(ok_web(
+                Some(&doc),
+                None,
+                Some(&inverses),
+                Some(count),
+                lumen_web::validate_web_doc(&doc),
+            ))
+        }
+        CoreRequest::WebRender {
+            doc,
+            page_id,
+            mode,
+            asset_base_url,
+            tailwind_runtime_src,
+            bridge_script,
+            brand_kit,
+        } => {
+            let doc = parse_web_doc(doc)?;
+            let (theme, theme_diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let mode = match mode.as_str() {
+                "editor" => lumen_web::RenderMode::Editor,
+                "delivery" => lumen_web::RenderMode::Delivery,
+                other => {
+                    return Err(core_error(
+                        "helper.web_render_mode",
+                        format!("unknown render mode `{other}` (editor|delivery)"),
+                    ))
+                }
+            };
+            let options = lumen_web::RenderOptions {
+                mode,
+                asset_base_url: asset_base_url.unwrap_or_else(|| "/asset-store".to_owned()),
+                tailwind_runtime_src,
+                bridge_script,
+            };
+            let output = lumen_web::render_page(
+                &doc,
+                &lumen_core::PageId::from(page_id),
+                &theme,
+                &options,
+            )
+            .map_err(|diagnostics| {
+                let detail = diagnostics
+                    .first()
+                    .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+                    .unwrap_or_else(|| "render failed".to_owned());
+                core_error("web.render", detail)
+            })?;
+            let mut diagnostics = theme_diagnostics;
+            diagnostics.extend(output.diagnostics);
+            Ok(ok_web(None, Some(output.html), None, None, diagnostics))
+        }
+    }
+}
+
+fn parse_web_doc(value: Value) -> Result<lumen_web::WebDoc, CoreError> {
+    serde_json::from_value(value).map_err(|error| core_error("helper.web_doc", error.to_string()))
+}
+
+/// Compile the web theme from the provided kit JSON (or the platform default
+/// when absent) against the document's theme ref (overrides).
+fn web_theme_for(
+    doc: &lumen_web::WebDoc,
+    brand_kit: Option<Value>,
+) -> Result<(lumen_web::WebTheme, Vec<Diagnostic>), CoreError> {
+    let kit = brand_kit.map(parse_brand_kit).transpose()?;
+    Ok(lumen_web::compile_web_theme(
+        kit.as_ref(),
+        &doc.theme,
+        &lumen_web::WebThemeOptions::default(),
+    ))
+}
+
+fn lint_web_doc_classes(doc: &lumen_web::WebDoc, theme: &lumen_web::WebTheme) -> Vec<Diagnostic> {
+    let context = lumen_web::ClassLintContext {
+        color_tokens: &theme.tokens,
+    };
+    doc.pages
+        .iter()
+        .flat_map(|page| {
+            page.nodes.values().flat_map(|node| {
+                lumen_web::lint_classes(&node.classes, Some(&node.id), &context)
+            })
+        })
+        .collect()
+}
+
+fn ok_web(
+    doc: Option<&lumen_web::WebDoc>,
+    html: Option<String>,
+    inverse_operations: Option<&[lumen_web::WebOperation]>,
+    applied_operations: Option<usize>,
+    diagnostics: Vec<Diagnostic>,
+) -> CoreResponse {
+    CoreResponse {
+        ok: true,
+        scene: None,
+        diagnostics,
+        error: None,
+        applied_operations,
+        preflight: None,
+        brand_kit: None,
+        brand_summary: None,
+        brand_generation: None,
+        brand_compatibility: None,
+        geometry: None,
+        operations: None,
+        edit: None,
+        dsl: None,
+        export: None,
+        asset: None,
+        instance: None,
+        web_doc: doc.map(|doc| to_value(doc).expect("web doc should serialize")),
+        html,
+        inverse_operations: inverse_operations
+            .map(|inverses| to_value(inverses).expect("web operations should serialize")),
+        build_info: None,
     }
 }
 
@@ -2264,6 +2587,9 @@ fn ok_scene(
         export: None,
         asset: None,
         instance: None,
+        web_doc: None,
+        html: None,
+        inverse_operations: None,
         build_info: None,
     }
 }
