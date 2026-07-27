@@ -27,6 +27,7 @@ from pydantic import (
 
 from clue_core.claim import Claim
 from clue_core.enums import (
+    ClaimFlavor,
     DisplayDecision,
     DossierBlockKind,
     EntailmentReasonCode,
@@ -766,6 +767,8 @@ class EntailmentJudgeRequest(BaseModel):
 
     @model_validator(mode="after")
     def _request_is_target_locked(self) -> EntailmentJudgeRequest:
+        if self.derived_claim.claim_flavor is not ClaimFlavor.DERIVED:
+            raise ValueError("entailment requires claim_flavor=derived")
         if (
             self.derived_claim.entity_id != self.target.entity_id
             or self.derived_claim.entity_type is not self.target.entity_type
@@ -773,6 +776,8 @@ class EntailmentJudgeRequest(BaseModel):
             raise ValueError("derived claim must target the exact research subject")
         if not self.supports:
             raise ValueError("entailment requires at least one support")
+        if not any(support.required for support in self.supports):
+            raise ValueError("entailment requires at least one required support")
         ordinals = tuple(support.ordinal for support in self.supports)
         if ordinals != tuple(range(len(self.supports))):
             raise ValueError("entailment supports require contiguous ordinals from zero")
@@ -801,11 +806,28 @@ class EntailmentJudgeResult(BaseModel):
     def _result_has_a_bounded_reason(self) -> EntailmentJudgeResult:
         if not self.reason_codes:
             raise ValueError("entailment result requires at least one bounded reason code")
-        if (
-            self.verdict is EntailmentVerdictKind.SUPPORTED
-            and EntailmentReasonCode.ENTAILED not in self.reason_codes
+        if len(self.reason_codes) > 8:
+            raise ValueError("entailment result permits at most eight bounded reason codes")
+        if len(self.reason_codes) != len(set(self.reason_codes)):
+            raise ValueError("entailment reason codes must be unique")
+        if self.verdict is EntailmentVerdictKind.SUPPORTED and self.reason_codes != (
+            EntailmentReasonCode.ENTAILED,
         ):
-            raise ValueError("a supported verdict requires the entailed reason code")
+            raise ValueError("a supported verdict requires only the entailed reason code")
+        if (
+            self.verdict is EntailmentVerdictKind.UNSUPPORTED
+            and EntailmentReasonCode.ENTAILED in self.reason_codes
+        ):
+            raise ValueError("an unsupported verdict cannot carry the entailed reason code")
+        if (
+            self.verdict is EntailmentVerdictKind.UNSUPPORTED
+            and EntailmentReasonCode.MODEL_ERROR in self.reason_codes
+        ):
+            raise ValueError("an unsupported verdict cannot carry the model_error reason code")
+        if self.verdict is EntailmentVerdictKind.ERROR and self.reason_codes != (
+            EntailmentReasonCode.MODEL_ERROR,
+        ):
+            raise ValueError("an error verdict requires only the model_error reason code")
         return self
 
 

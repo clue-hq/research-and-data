@@ -63,6 +63,7 @@ SPAN_MERGE_CURRENT_VALUE = "merge.current_value"
 SPAN_VERIFICATION_PRE_SPEND_GATE = "verification.pre_spend_gate"
 SPAN_VERIFICATION_CORROBORATION = "verification.corroboration"
 SPAN_VERIFICATION_FAITHFULNESS_JUDGE = "verification.faithfulness_judge"
+SPAN_VERIFICATION_DERIVATION_ENTAILMENT = "verification.derivation_entailment"
 SPAN_VERIFICATION_IDENTITY_BINDING = "verification.identity_binding"
 SPAN_VERIFICATION_FRESHNESS = "verification.freshness"
 

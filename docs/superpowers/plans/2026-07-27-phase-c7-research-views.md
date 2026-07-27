@@ -300,6 +300,8 @@ Commit: `fix(c7): close research-view prerequisite gaps`
 
 ## 8. C7.2 — derivation and entailment substrate
 
+**Status:** COMPLETE — implemented and verified 2026-07-27.
+
 ### Goal
 
 Represent expert interpretation as immutable claims supported by other claims and judged for

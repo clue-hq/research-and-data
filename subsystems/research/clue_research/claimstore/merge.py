@@ -128,7 +128,7 @@ def _is_eligible(claim: Claim, policy: MergePolicy) -> bool:
     """Whether a claim may *win* the merge (be emitted as current truth)."""
     # Discovery-provenance claims record where/why an entity was admitted — admission evidence, not
     # a field value — so they are never the "current truth" of a field (staged-flow §9).
-    if claim.claim_flavor is ClaimFlavor.DISCOVERY:
+    if claim.claim_flavor is not ClaimFlavor.FIELD_CLAIM:
         return False
     if policy.exclude_rejected and claim.verification_status is VerificationStatus.REJECTED:
         return False
