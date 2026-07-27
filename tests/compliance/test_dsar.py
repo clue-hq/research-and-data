@@ -12,7 +12,7 @@ from __future__ import annotations
 import importlib.util
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -28,6 +28,7 @@ from clue_core import (
     EntityType,
     ExtractionMethod,
     FieldKey,
+    FreshnessState,
     IdentityBinding,
     ReResearchCandidate,
     ResearchMode,
@@ -39,8 +40,10 @@ from clue_core import (
 from clue_research.claimstore import (
     ALL_WORKSPACES,
     WorkspaceScope,
+    claims_by_ids,
     claims_for,
     current_value,
+    current_values,
     insert_claim,
     provenance_index,
 )
@@ -306,6 +309,137 @@ def test_sweep_expired_ages_out() -> None:  # AC2
             assert _FACET not in await provenance_index(conn, contact, scope=_SCOPE)
             audit = await _tombstone_rows(conn, claim.id)
             assert audit == [TombstoneReason.RETENTION_EXPIRY.value]
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
+def test_known_retention_expiry_is_fail_closed_before_sweep() -> None:
+    """C7.1: list/detail and dependency reads exclude a recorded expiry immediately.
+
+    The durable sweep may run later; the selector must not re-expose the value in that interval.
+    """
+
+    async def _run() -> None:
+        from clue_config import Jurisdiction
+        from clue_research.compliance import record_lawful_basis
+
+        async with rollback_conn() as conn:
+            contact = await _contact(conn)
+            claim = await _insert_facet(conn, contact, use_class=_PRO)
+            await record_lawful_basis(conn, claim, regime=Jurisdiction.GDPR)
+            await conn.execute(
+                text(
+                    "UPDATE lawful_basis_record "
+                    "SET retention_until = :expired WHERE claim_id = :claim_id"
+                ),
+                {
+                    "expired": datetime.now(UTC) - timedelta(seconds=1),
+                    "claim_id": str(claim.id),
+                },
+            )
+
+            # Detail and list use the same retention-aware selector and agree before a tombstone
+            # exists. The missing batch key is the honest list representation.
+            assert await current_value(conn, contact, _FACET, scope=_SCOPE) is None
+            assert await current_values(conn, [contact], [_FACET], scope=_SCOPE) == {}
+
+            # The live-by-id reader is the future derivation dependency input: an expired support
+            # resolves as missing/invalid, while explicit audit mode retains append-only history.
+            assert await claims_by_ids(conn, [claim.id], scope=_SCOPE) == {}
+            audit = await claims_by_ids(
+                conn,
+                [claim.id],
+                scope=_SCOPE,
+                include_superseded=True,
+            )
+            assert audit[claim.id].value_json == "runs the Berlin marathon"
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
+def test_stale_nonexpired_personal_claim_remains_explicitly_stale() -> None:
+    """Freshness staleness remains distinct from retention expiry."""
+
+    async def _run() -> None:
+        from clue_config import Jurisdiction
+        from clue_research.compliance import record_lawful_basis
+
+        async with rollback_conn() as conn:
+            contact = await _contact(conn)
+            stale_claim = _facet_claim(contact, use_class=_PRO).model_copy(
+                update={"observed_at": datetime.now(UTC) - timedelta(days=100)}
+            )
+            stale_claim = stamp_reuse(stale_claim, workspace_id=_CLIENT)
+            await insert_claim(conn, stale_claim)
+            await record_lawful_basis(conn, stale_claim, regime=Jurisdiction.GDPR)
+
+            result = await current_value(conn, contact, _FACET, scope=_SCOPE)
+            assert result is not None
+            assert result.provenance.claim_id == stale_claim.id
+            assert result.freshness_state is FreshnessState.STALE
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
+def test_dsar_erases_faithfulness_rationale_body_but_retains_audit_metadata() -> None:
+    """C7.1 sentinel: personal rationale text disappears from raw and serialized DSAR outputs."""
+
+    sentinel = "C7_PERSONAL_SENTINEL_7d090678"
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            contact = await _contact(conn)
+            claim = await _insert_facet(conn, contact, use_class=_PRO)
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO faithfulness_verdict
+                        (claim_id, verdict, score, rationale, judge_model, answering_model,
+                         prompt_version, cost_cents)
+                    VALUES
+                        (:claim_id, 'supported', 0.99, :rationale, 'judge-requested',
+                         'judge-answered', 'c7-test-v1', 0)
+                    """
+                ),
+                {"claim_id": str(claim.id), "rationale": sentinel},
+            )
+
+            await _rights(conn).erase(contact)
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT rationale, rationale_redacted_at, rationale_redaction_reason, "
+                        "verdict, judge_model, answering_model, prompt_version "
+                        "FROM faithfulness_verdict WHERE claim_id = :claim_id"
+                    ),
+                    {"claim_id": str(claim.id)},
+                )
+            ).one()
+            assert row[0] is None
+            assert row[1] is not None
+            assert row[2] == TombstoneReason.ERASURE.value
+            assert tuple(row[3:]) == (
+                "supported",
+                "judge-requested",
+                "judge-answered",
+                "c7-test-v1",
+            )
+
+            serialized = (await _rights(conn).access(contact)).model_dump_json()
+            assert sentinel not in serialized
+            raw = (
+                await conn.execute(
+                    text(
+                        "SELECT coalesce(rationale, '') "
+                        "FROM faithfulness_verdict WHERE claim_id = :claim_id"
+                    ),
+                    {"claim_id": str(claim.id)},
+                )
+            ).scalar_one()
+            assert sentinel not in raw
 
     run_async(_run())
 

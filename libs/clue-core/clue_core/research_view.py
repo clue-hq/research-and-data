@@ -192,6 +192,89 @@ class EvidenceActionDescriptor(BaseModel):
         return self
 
 
+class EvidenceAccessRequest(BaseModel):
+    """One actor's request to resolve an evidence action under current policy.
+
+    This carries only identity and authorization inputs. In particular it cannot carry a source
+    URL, storage key, signed URL, or caller-selected expiry.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: ReferenceToken
+    project_id: ReferenceToken
+    actor_id: ReferenceToken
+    subject_entity_id: EntityId
+    statement_id: ResearchStatementId
+    claim_id: ClaimId
+    action_id: UUID
+    desired_action: EvidenceActionKind
+
+    @model_validator(mode="after")
+    def _request_is_for_an_actionable_kind(self) -> EvidenceAccessRequest:
+        if self.desired_action in {
+            EvidenceActionKind.UNAVAILABLE,
+            EvidenceActionKind.REDACTED,
+        }:
+            raise ValueError("unavailable/redacted are outcomes, not requested evidence actions")
+        return self
+
+
+class EvidenceAccessDecision(BaseModel):
+    """Bounded authorization verdict; reason codes replace free-form policy explanations."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    allowed: bool
+    action_kind: EvidenceActionKind
+    claim_id: ClaimId
+    reason_codes: tuple[ReasonCode, ...]
+
+    @model_validator(mode="after")
+    def _decision_is_bounded_and_coherent(self) -> EvidenceAccessDecision:
+        if not self.reason_codes:
+            raise ValueError("evidence authorization requires at least one reason code")
+        denied_kind = self.action_kind in {
+            EvidenceActionKind.UNAVAILABLE,
+            EvidenceActionKind.REDACTED,
+        }
+        if self.allowed == denied_kind:
+            raise ValueError("allowed evidence decisions require an actionable kind")
+        return self
+
+
+class EvidenceAccessResult(BaseModel):
+    """Authorized request-time access capability.
+
+    ``access_ref`` is an opaque, server-handled capability (for example, a redirect endpoint
+    reference). The service implementation may mint a short-lived storage preview behind that
+    endpoint, but a signed URL or storage key never crosses this contract.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    action_kind: EvidenceActionKind
+    claim_id: ClaimId
+    access_ref: OpaqueReferenceToken | None = None
+    provider_label: ReferenceToken | None = None
+    media_type: ReferenceToken | None = None
+    reason_codes: tuple[ReasonCode, ...]
+
+    @model_validator(mode="after")
+    def _result_exposes_only_authorized_capabilities(self) -> EvidenceAccessResult:
+        unavailable = self.action_kind in {
+            EvidenceActionKind.UNAVAILABLE,
+            EvidenceActionKind.REDACTED,
+        }
+        if unavailable and self.access_ref is not None:
+            raise ValueError("unavailable/redacted evidence cannot carry an access_ref")
+        if not unavailable and self.access_ref is None:
+            raise ValueError("authorized evidence requires an opaque access_ref")
+        if not self.reason_codes:
+            raise ValueError("evidence access result requires at least one reason code")
+        return self
+
+
 class ResearchSupportRef(BaseModel):
     """One ordered claim edge supporting a derived statement."""
 
@@ -291,8 +374,11 @@ class ResearchOwnedReference(BaseModel):
     def _reference_preserves_owner(self) -> ResearchOwnedReference:
         if self.data_species is ResearchDataSpecies.CLAIM_DERIVATION:
             raise ValueError("claim/derivation values must use ResearchStatement")
-        if self.data_species is ResearchDataSpecies.SCORE and not self.evidence_claim_ids:
-            raise ValueError("a score reference requires evidence_claim_ids")
+        if self.data_species is ResearchDataSpecies.SCORE:
+            if not self.evidence_claim_ids:
+                raise ValueError("a score reference requires evidence_claim_ids")
+            if self.product_id is None:
+                raise ValueError("a fit/score reference requires exact product_id")
         return self
 
 
@@ -747,6 +833,20 @@ class ResearchViewSnapshotReader(Protocol):
         workspace_id: str,
         snapshot_id: ResearchViewSnapshotId,
     ) -> ResearchView | None: ...
+
+
+@runtime_checkable
+class EvidenceAccessAuthorizer(Protocol):
+    """Current-policy authorization seam for one exact evidence action."""
+
+    async def authorize(self, request: EvidenceAccessRequest) -> EvidenceAccessDecision: ...
+
+
+@runtime_checkable
+class EvidenceAccessService(Protocol):
+    """API-root evidence resolver; the only C7 layer permitted to reach storage presigning."""
+
+    async def request_access(self, request: EvidenceAccessRequest) -> EvidenceAccessResult: ...
 
 
 @runtime_checkable
