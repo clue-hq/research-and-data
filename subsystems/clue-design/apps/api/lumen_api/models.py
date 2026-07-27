@@ -142,6 +142,16 @@ class AgentTurnPreviewRequest(BaseModel):
     previous_turn_outcome: Optional[str] = None
 
 
+class WebTurnRequest(BaseModel):
+    """A website-mode agent turn: the user's brief plus an optional model
+    override. Mirrors AgentTurnPreviewRequest's model field, but a WebDoc turn
+    carries no scene/targets/references — the working document is loaded from
+    storage by id."""
+
+    prompt: str
+    model: Optional[str] = None
+
+
 class SetAgentInstructionsRequest(BaseModel):
     instructions: Optional[str] = None
 

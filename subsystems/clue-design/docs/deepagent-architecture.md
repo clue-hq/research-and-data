@@ -839,3 +839,58 @@ brisker than moda's cadence — a taste knob (REVEAL_CADENCE_MS/cap), not a
 correctness item. Gates: runtime 479 · api 311 · editor streaming suites
 78/78 + tsc/lint clean; full-suite editor failures byte-identical to the
 known environmental baseline.
+
+## Website mode — the WebDoc turn (P1, 2026-07-28)
+
+A website turn runs the SAME three-role deepagent shape as a scene turn, but the
+artifact is a WebDoc (tree-canonical HTML document), so it has its own substrate,
+harness, and endpoints. This section is the binding ledger for the web turn's
+tools and skills — extend it whenever they change.
+
+**Roles + tools (`lumen_agent.harness_web.create_web_deepagent`).** Per-role
+models are built through the SAME shared `_instrument`/`_fresh_model` helpers
+(extracted to module scope in `harness.py`) — three instances, never deduped,
+same OpenRouter gateway. Same materialized `/.deepagent/skills` source, same
+read-only filesystem permissions, same recursion_limit 200 + honest-finalize
+guarantee.
+- **orchestrator** — tools: `view`, `render_web_preview`, `finalize_web_run`.
+  Directs; delegates authoring; renders + looks; decides when the page ships.
+- **lumen-web-author** subagent — tools: `view`, `author_web_page`, `asset`.
+  Prompt `build_web_author_prompt(brand_card, theme_token_names)`; the token
+  vocabulary is the eight semantic web tokens plus the kit's sanitized color
+  keys (`web_theme_token_names`, mirroring the Rust theme compiler).
+- **lumen-web-reviewer** subagent — tools: `view`. `ToolStrategy(VisualCritique)`
+  (same reason as the scene reviewer). Checklist = the review-website skill.
+
+**Substrate (`lumen_agent.tools.web_substrate.LumenWebTools`).** Tools are plain
+methods returning JSON strings (errors via the shared `_tool_error` envelope);
+the core helper is reached through the same `_CoreHelperProxy`; every call is
+traced to `trace.jsonl` and pushed to the event_sink via a simplified `record`.
+- `author_web_page(html, custom_css?)` → `web_ingest_html`; any error-severity
+  diagnostic ⇒ `{status: rejected}` and the working doc is NOT replaced.
+- `asset(action, …)` → `generate_image` (T2I model, deterministic stub fallback)
+  or `use_brand_asset` (from the kit manifest), each upserted via
+  `web_apply_ops` `{kind: upsert_asset, record}`. Registration only — placement
+  is markup (`<img data-asset=…>`).
+- `render_web_preview()` → `web_render` (editor mode) with the vendored Tailwind
+  runtime inlined before `</head>`, then Playwright (sync API — the turn worker
+  is a plain thread) full-page screenshots at 1440/768/375 into `iter_<n>/`.
+- `view("preview:<width>"|"doc"|"brand")` → image/text content blocks (stale
+  preview ⇒ refusal, mirroring the scene view staleness contract).
+- `finalize_web_run(outcome, summary)` → writes `final.json` + `final_web_doc.json`.
+
+**Skills + recipe.** `create-website` (authoring contract) and `review-website`
+(reviewer checklist) materialize automatically from
+`knowledge_docs/skills/`; the landing-page grammar is
+`knowledge_docs/knowledge/web/landing-page.md`.
+
+**API endpoints (`apps/api/lumen_api/main.py`).**
+- `POST /documents/{id}/web/turns` `{prompt, model?}` — 409 on a non-web doc;
+  starts a daemon worker (test seam `app.state.web_turn_runner`) that runs the
+  turn and, on an `applied` result, OWNS the persist via
+  `Repository.update_web_document` (replace the stored WebDoc + append an
+  invertible `replace_web_doc` envelope — no scene-specific asset/undo pieces).
+  Returns `{run_id, status: running}`; progress + terminal `result`/`error`
+  events stream over the shared `/agent/runs/{id}/events` SSE.
+- `GET /documents/{id}/web/render?mode=editor|delivery&runtime_src=` — renders
+  the stored WebDoc; assets resolve against the request origin's `/asset-store`.

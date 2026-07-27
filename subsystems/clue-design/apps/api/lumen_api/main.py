@@ -57,6 +57,7 @@ from .dto import (
 )
 from .models import (
     AgentTurnPreviewRequest,
+    WebTurnRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
     AttachBrandKitRequest,
@@ -188,6 +189,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     )
     app.state.core = CoreClient()
     app.state.agent_turn_runner = None
+    # Website-mode turn test seam: a callable (document, prompt, model, root) ->
+    # envelope that replaces the real run_web_agent_turn in tests. None = live.
+    app.state.web_turn_runner = None
     if migrate:
         run_migrations(app.state.database_path)
 
@@ -1852,6 +1856,127 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             },
         )
 
+    @app.post("/documents/{document_id}/web/turns")
+    def start_web_turn(
+        document_id: str,
+        payload: WebTurnRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        # Async website-mode turn: mirror start_agent_turn's worker shape, but
+        # the web worker OWNS the persist — on an applied result it replaces the
+        # stored WebDoc through update_web_document (the scene path defers the
+        # write to a separate Accept). Gate to web docs up front.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        run_id = f"run_{uuid4().hex}"
+        repo.create_run(run_id, document_id)
+        root = repo_root()
+        database_path = app.state.database_path
+        override = app.state.web_turn_runner
+        prompt = payload.prompt
+        model = payload.model
+
+        def worker() -> None:
+            store = Repository(connect(database_path))
+            try:
+
+                def sink(event_type: str, data: JsonObject) -> None:
+                    try:
+                        store.append_run_event(run_id, event_type, data)
+                    except Exception:
+                        pass
+
+                try:
+                    doc = store.require_document(document_id)
+                    if override is not None:
+                        response = override(doc, prompt, model, root)
+                    else:
+                        response = run_web_agent_turn(
+                            doc, prompt, model, root, event_sink=sink
+                        )
+                    status = (
+                        "failed"
+                        if response.get("status") in ("failed", "error")
+                        else "succeeded"
+                    )
+                    if response.get("status") == "applied":
+                        prior = doc["scene"]
+                        store.update_web_document(
+                            document_id,
+                            response["web_doc"],
+                            intent=prompt[:120],
+                            checkpoint_label="Website turn",
+                            operations=[{"kind": "replace_web_doc"}],
+                            inverse_operations=[
+                                {"kind": "replace_web_doc", "web_doc": prior}
+                            ],
+                        )
+                    store.set_run_result(
+                        run_id, status, {**response, "doc_kind": "web"}
+                    )
+                    store.append_run_event(
+                        run_id, "result", {"status": response.get("status")}
+                    )
+                except Exception as error:  # pragma: no cover - defensive
+                    failed = failed_agent_turn_response(
+                        "agent_runtime.failed",
+                        "Website turn crashed before returning a result.",
+                        str(error),
+                    )
+                    store.set_run_result(
+                        run_id, "failed", {**failed, "doc_kind": "web"}
+                    )
+                    store.append_run_event(run_id, "error", {"message": str(error)})
+            finally:
+                store.connection.close()
+
+        threading.Thread(
+            target=worker, name=f"web-turn-{run_id}", daemon=True
+        ).start()
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_turn_started",
+            run_id=run_id,
+            document_id=document_id,
+        )
+        return {"schema_version": 1, "run_id": run_id, "status": "running"}
+
+    @app.get("/documents/{document_id}/web/render")
+    def render_web_document(
+        document_id: str,
+        request: Request,
+        mode: str = "editor",
+        runtime_src: Optional[str] = None,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        # Render the stored WebDoc to HTML for the editor iframe (editor mode,
+        # instrumented) or a delivery snapshot. Assets resolve against this
+        # request's own origin so a preview works regardless of deploy host.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        web_doc = document["scene"]
+        brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
+            web_doc, database_path=app.state.database_path
+        )
+        asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"
+        try:
+            response = app.state.core.web_render(
+                web_doc,
+                "home",
+                mode=mode,
+                asset_base_url=asset_base_url,
+                tailwind_runtime_src=runtime_src,
+                brand_kit=brand_kit,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        return {
+            "schema_version": 1,
+            "html": response.get("html"),
+            "diagnostics": response.get("diagnostics", []),
+        }
+
     @app.post("/documents/{document_id}/export")
     def export_document(
         document_id: str,
@@ -3501,6 +3626,26 @@ def require_scene_document(document: JsonObject) -> None:
         )
 
 
+def require_web_document(document: JsonObject) -> None:
+    """Gate the website-mode endpoints to WebDoc documents.
+
+    The mirror of require_scene_document: a scene (or any non-web) document
+    reuses the same storage but is driven by the Rust scene engine, so the web
+    render/turn endpoints would misinterpret its payload — reject it with 409."""
+    kind = document.get("doc_kind", "scene")
+    if kind != "web":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "document.kind_unsupported",
+                "message": (
+                    f"document {document['id']} is a {kind!r} document; this "
+                    "endpoint operates only on web documents"
+                ),
+            },
+        )
+
+
 def require_draft_document(document: JsonObject, action: str) -> None:
     if is_finalized_document(document):
         raise HTTPException(
@@ -4485,6 +4630,82 @@ def run_agent_turn_preview(
     return agent_response_from_trace(payload_result, tools.trace_dir, tools.scene)
 
 
+def run_web_agent_turn(
+    document: JsonObject,
+    prompt: str,
+    model: Optional[str],
+    root: Path,
+    event_sink=None,
+) -> JsonObject:
+    """Run one website-mode turn against a WebDoc document. Mirrors
+    run_agent_turn_preview's config assembly (env config + model override +
+    pinned asset store + by-value brand kit) but drives the web harness and
+    returns the web turn envelope. Never raises: any failure folds into a
+    failed envelope so the worker records it cleanly."""
+    ensure_agent_runtime_path(root)
+    try:
+        from lumen_agent.config import AgentRuntimeConfig
+        from lumen_agent.harness_web import run_deepagent_web_turn
+    except Exception as error:
+        return failed_agent_turn_response(
+            "agent_runtime.unavailable",
+            "Agent runtime dependencies are not available to the API process.",
+            str(error),
+        )
+
+    web_doc = document["scene"]
+    try:
+        config = AgentRuntimeConfig.from_env(root)
+        if model:
+            config = replace(config, model=model)
+        if config.asset_store_root is None:
+            # Generated imagery must land in (and export from) the API's store,
+            # exactly as the scene path pins it.
+            config = replace(config, asset_store_root=api_asset_store_root())
+        brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
+            resolve_web_turn_brand_kit(web_doc)
+        )
+        if brand_kit is not None:
+            config = replace(
+                config,
+                brand_kit=brand_kit,
+                brand_kit_source=brand_kit_source,
+                brand_kit_assets=brand_kit_assets,
+                brand_fonts=brand_fonts,
+            )
+        # Mandatory-multimodal (the reviewer attaches screenshots): fail loud
+        # before authoring if the configured model is text-only.
+        from lumen_agent.llm import assert_model_supports_image_input
+
+        assert_model_supports_image_input(
+            config.model,
+            base_url=config.agent_base_url,
+            api_key=config.agent_api_key,
+        )
+        result = run_deepagent_web_turn(
+            prompt=prompt,
+            config=config,
+            initial_web_doc=web_doc,
+            event_sink=event_sink,
+        )
+    except Exception as error:
+        return failed_agent_turn_response(
+            "agent_runtime.failed",
+            "Agent runtime failed before returning a result.",
+            str(error),
+        )
+
+    return {
+        "schema_version": 1,
+        "status": result.get("status"),
+        "outcome": result.get("outcome"),
+        "summary": result.get("summary"),
+        "web_doc": result.get("web_doc"),
+        "preview_paths": result.get("preview_paths", []),
+        "doc_kind": "web",
+    }
+
+
 def sse_frame(seq: int, event: str, data: Any) -> str:
     """One Server-Sent Events frame. `id:` carries the monotonic run-event
     seq so the browser's EventSource replays from it via Last-Event-ID."""
@@ -4531,6 +4752,45 @@ def resolve_agent_turn_brand_kit(
     database_path = settings.lumen_api_database_path
     try:
         connection = connect(database_path)
+    except Exception:
+        return None, None, None, None
+    try:
+        repo = Repository(connection)
+        record = repo.require_brand_kit(str(ref["id"]), ref.get("version"))
+        brand_kit = record["brand_kit"]
+        manifest = brand_kit_asset_manifest(repo, connection, brand_kit)
+        font_spec = brand_kit_font_spec(repo, brand_kit, str(api_asset_store_root()))
+        return brand_kit, "document", manifest, font_spec
+    except Exception:
+        return None, None, None, None
+    finally:
+        connection.close()
+
+
+def resolve_web_turn_brand_kit(
+    web_doc: JsonObject, database_path: Optional[Path] = None
+) -> Tuple[
+    Optional[JsonObject], Optional[str], Optional[JsonObject], Optional[JsonObject]
+]:
+    """The Brand Kit a WebDoc references, loaded from the kit library so it can
+    ride the runtime config BY VALUE (the runtime never reads the API database)
+    — plus the kit-asset manifest and font spec, exactly like
+    resolve_agent_turn_brand_kit. The only difference is WHERE the ref lives: a
+    WebDoc carries it at ["theme"]["brand_kit"] (no scene `meta` wrapper).
+
+    Resolution failures never fail the turn: no ref, an unknown kit id, or an
+    unreadable database all return (None, None, None, None) and the pipeline
+    falls back to the platform default kit — the same silent-fallback contract
+    the scene path has. `database_path` defaults to the process-global API DB
+    (mirrors the scene resolver); callers holding the request-scoped DB (the
+    render endpoint) pass it so tests resolve against their own temp DB."""
+    theme = web_doc.get("theme") if isinstance(web_doc, dict) else None
+    ref = theme.get("brand_kit") if isinstance(theme, dict) else None
+    if not isinstance(ref, dict) or not ref.get("id"):
+        return None, None, None, None
+    path = database_path or settings.lumen_api_database_path
+    try:
+        connection = connect(path)
     except Exception:
         return None, None, None, None
     try:

@@ -620,6 +620,88 @@ class Repository:
             self.register_scene_assets(scene, commit=False)
         return self.require_document(document_id)
 
+    def update_web_document(
+        self,
+        document_id: str,
+        web_doc: JsonObject,
+        *,
+        intent: Optional[str],
+        checkpoint_label: Optional[str],
+        operations: List[JsonObject],
+        inverse_operations: Optional[List[JsonObject]],
+        actor_kind: str = "agent",
+        source: str = "agent",
+    ) -> JsonObject:
+        """Persist a website-mode turn's result: replace the stored WebDoc and
+        append an invertible edit envelope through the SAME machinery a scene
+        write uses (append_envelope + append_operations + a monotonic
+        next_*_sequence), so the web history shares the documents/edit_envelopes
+        tables and stays replayable later.
+
+        Deliberately NOT reused from update_document_state (a WebDoc is not a
+        scene, so the scene-specific pieces are unsafe or meaningless here):
+        - register_scene_assets — a WebDoc's `assets` map is a different shape
+          (keyed AssetRecords, no scene node graph); its bytes already live in
+          the shared asset store, so there is nothing to promote.
+        - undo_stack/redo_stack — those columns model the scene engine's
+          batch-id undo stacks; web undo/redo will ride the envelope's
+          inverse_operations (stored below), not the scene stacks.
+        - effective-brand columns — a web turn does not recompute an effective
+          scene brand; the theme ref on the WebDoc is the source of truth.
+
+        The forward op is the marker `[{"kind":"replace_web_doc"}]` (the new doc
+        is the row's current_scene_json); the inverse carries the PRIOR doc so a
+        future undo is a pure whole-document swap.
+        """
+        now = utc_now()
+        with self.connection:
+            document = self.require_document(document_id)
+            base_revision = document["current_version"]
+            version = base_revision + 1
+            batch_id = new_batch_id()
+            envelope = {
+                "batch_id": batch_id,
+                "base_revision": base_revision,
+                "intent": intent,
+                "checkpoint_label": checkpoint_label,
+                "operations": operations,
+                "inverse_operations": inverse_operations,
+            }
+            self.connection.execute(
+                """
+                UPDATE documents
+                SET title = ?, current_scene_json = ?, current_version = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    web_doc["title"],
+                    encode(web_doc),
+                    version,
+                    now,
+                    document_id,
+                ),
+            )
+            self.append_envelope(
+                document_id,
+                envelope,
+                source,
+                actor_kind,
+                None,
+                commit=False,
+            )
+            self.append_operations(
+                document_id,
+                operations,
+                source,
+                actor_kind,
+                None,
+                [],
+                batch_id=batch_id,
+                commit=False,
+            )
+        return self.require_document(document_id)
+
     def append_operations(
         self,
         document_id: str,

@@ -41,6 +41,47 @@ logger = get_logger("lumen_agent.harness")
 # --- assembly (§5) ----------------------------------------------------------
 
 
+def _fresh_model(runtime_config: AgentRuntimeConfig, model_id: str):
+    """Build ONE role model instance bound to the OpenRouter gateway.
+
+    Extracted to module scope (was a closure in create_design_deepagent) so the
+    website-mode harness (harness_web) builds its three role minds through the
+    exact same constructor. The `from .llm import init_model` stays LAZY so the
+    per-role-models test's monkeypatch of `lumen_agent.llm.init_model` is
+    honored (it patches the module attribute this local import re-reads).
+    """
+    from .llm import init_model
+
+    return init_model(
+        model_id,
+        base_url=runtime_config.agent_base_url,
+        api_key=runtime_config.agent_api_key,
+        reasoning=runtime_config.agent_reasoning,
+        max_tokens=runtime_config.agent_max_tokens,
+        provider_sort=runtime_config.agent_provider_sort,
+        timeout_s=runtime_config.agent_llm_timeout_s,
+    )
+
+
+def _instrument(runtime_config: AgentRuntimeConfig, tools, model_id: str, role: str):
+    """A role model with per-role usage + trace capture attached IN PLACE.
+
+    Capture is best-effort — a wiring or callback failure never blocks assembly
+    or breaks a run. attach_* mutates the model in place and returns the SAME
+    BaseChatModel object, so per-role attribution rides that instance's own
+    instance-level callbacks (three instances = three roles; never deduped).
+    `tools` only needs a `record(...)` method, so both LumenDesignTools and
+    LumenWebTools work here.
+    """
+    from .trace_callbacks import attach_trace_callback
+    from .usage_capture import attach_usage_capture
+
+    model = _fresh_model(runtime_config, model_id)
+    attach_usage_capture(model, tools, role=role)
+    attach_trace_callback(model, role=role)
+    return model
+
+
 def _filesystem_permissions():
     """READ-ONLY on the materialized skills + knowledge trees; read-write on the
     run workspace.
@@ -114,7 +155,7 @@ def create_design_deepagent(
     # escape), and the subclass forgives stale host-absolute/legacy path forms.
     backend = AgentWorkspaceBackend(root_dir=str(runtime_config.workspace_root))
 
-    from .llm import assert_all_role_models_support_image_input, init_model
+    from .llm import assert_all_role_models_support_image_input
 
     # D10(c): every distinct configured role model must accept image input — the
     # loop is mandatory-multimodal for all three minds. Covering it HERE (not at
@@ -146,35 +187,14 @@ def create_design_deepagent(
     # point onward and forfeits that ~95% saving (probe-proven 2026-07-12).
     # When pruning history (L5) or batching reviewer image views (L2) land,
     # prune by APPENDING a summary — never by mutating history already sent.
-    # `provider_sort` (below) pins one replica so this cache is actually reused.
-    def _fresh_model(model_id: str):
-        return init_model(
-            model_id,
-            base_url=runtime_config.agent_base_url,
-            api_key=runtime_config.agent_api_key,
-            reasoning=runtime_config.agent_reasoning,
-            max_tokens=runtime_config.agent_max_tokens,
-            provider_sort=runtime_config.agent_provider_sort,
-            timeout_s=runtime_config.agent_llm_timeout_s,
-        )
-
-    from .trace_callbacks import attach_trace_callback
-    from .usage_capture import attach_usage_capture
-
-    # Capture is best-effort — a wiring or callback failure never blocks assembly
-    # or breaks a run (see usage_capture.attach_usage_capture). attach_* mutates
-    # the model in place and returns the SAME BaseChatModel object. The trace
-    # callback (L3) rides the identical instance-level attachment so each role's
-    # generations emit a role-tagged message-trace stream to logs/run.jsonl.
-    def _instrument(model_id: str, role: str):
-        model = _fresh_model(model_id)
-        attach_usage_capture(model, tools, role=role)
-        attach_trace_callback(model, role=role)
-        return model
-
-    orchestrator_model = _instrument(runtime_config.orchestrator_model, "orchestrator")
-    author_model = _instrument(runtime_config.author_model, "author")
-    reviewer_model = _instrument(runtime_config.reviewer_model, "reviewer")
+    # `provider_sort` pins one replica so this cache is actually reused. The
+    # per-role constructor/instrumentation now lives at module scope
+    # (_fresh_model/_instrument) so the website-mode harness shares it verbatim.
+    orchestrator_model = _instrument(
+        runtime_config, tools, runtime_config.orchestrator_model, "orchestrator"
+    )
+    author_model = _instrument(runtime_config, tools, runtime_config.author_model, "author")
+    reviewer_model = _instrument(runtime_config, tools, runtime_config.reviewer_model, "reviewer")
 
     view = make_view_tool(tools)
     render_preview = make_render_preview_tool(tools)

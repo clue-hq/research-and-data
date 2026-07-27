@@ -13,6 +13,7 @@ __pycache__/
 !apps/editor/.env.development
 .lumen-runs/
 .deepagent-workspace/
+.firecrawl/
 apps/api/*.sqlite3
 apps/editor/public/canvaskit/
 apps/editor/public/fonts/
