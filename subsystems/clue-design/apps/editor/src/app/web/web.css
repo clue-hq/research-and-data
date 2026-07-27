@@ -1,0 +1,111 @@
+/* Website-mode editor shell (/web/[id]) — empty P0 frame. Layout-only additions
+ * over brand.css; every value is a token from tokens.css — NO literal colors, NO
+ * shadows; hairlines + tone carry depth (design/DESIGN.md §1, §6). Prefixed
+ * `.web-`. */
+
+.web-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- top bar (DESIGN.md §8.1) -------------------------------------------- */
+.web-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: 56px;
+  padding: 0 var(--space-lg);
+  border-bottom: 1px solid var(--border-default);
+}
+.web-topbar-title {
+  font-weight: 700;
+  font-size: var(--text-body-lg);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.web-topbar-spacer { flex: 1; }
+.web-back-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: var(--text-body-size);
+  transition: color var(--duration) var(--ease-out);
+}
+.web-back-link:hover { color: var(--text-primary); }
+
+/* the "Website · beta" mark — a quiet status pill, not the accent (DESIGN.md §8.5) */
+.web-beta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg-chip);
+  color: var(--text-muted);
+}
+
+/* --- main frame ---------------------------------------------------------- */
+.web-main {
+  flex: 1;
+  display: flex;
+  padding: var(--space-lg);
+}
+.web-canvas-frame {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-3xl) var(--space-lg);
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card-01);
+}
+.web-empty-title { color: var(--text-primary); margin: 0; }
+.web-empty-hint { color: var(--text-muted); margin: 0; max-width: 44ch; }
+
+/* queued-brief card — the stashed prompt, surfaced until generation consumes it */
+.web-brief-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: 100%;
+  max-width: 520px;
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  text-align: left;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+}
+.web-brief-label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.web-brief-body { margin: 0; color: var(--text-body); line-height: 1.5; white-space: pre-wrap; }
+
+/* --- load / wrong-kind states ------------------------------------------- */
+.web-notice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-3xl) var(--space-lg);
+  text-align: center;
+}
+.web-notice p { margin: 0; color: var(--text-muted); max-width: 48ch; }
+.web-notice .status-pill { margin-bottom: var(--space-xs); }
