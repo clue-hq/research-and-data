@@ -311,6 +311,7 @@ class ScoringPhaseHandler:
                         workspace_id=ctx.workspace_id,
                         icp_key=ctx.icp_key,
                         icp_version=ctx.icp_version,
+                        product_id=spec.product_id,
                         budget_envelope=ctx.budget_cap_cents,
                         thresholds=self._thresholds,
                         pre_spend_gate=self._pre_spend_gate,

@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-27-phase-c7-1-prerequisite-hardening.md` — C7.1 complete: shared equality
+  consumer parity, fail-closed retention-aware live selection, one-way faithfulness-rationale
+  DSAR redaction, evidence-access authorization/service seams, product-exact score claims, optional
+  registered contact class, isolated-DB migration smoke, and the exact C7.2 handoff.
 - `2026-07-27-phase-c7-0-contract-fixtures.md` — C7.0 complete: frozen account/contact
   research-view contracts and protocols, executable source-species/nine-block ownership map,
   sanitized frontend/adversarial fixture manifests, fail-closed contract tests, full tracked-scope

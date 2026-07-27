@@ -44,20 +44,21 @@ async def write_icp_scoped_claim(
 ) -> tuple[ClaimId, bool]:
     """Persist a stamped score-family ``claim`` idempotently + ICP-scoped → ``(claim_id, written)``.
 
-    Idempotency on the deterministic ``run_id``: an existing live claim for this run is reused
-    (``written=False`` — no new row, no double-charge). A live claim from a *different* run of the
-    **same ICP** is **superseded** so the merged truth keeps one live winner per ICP (append-only
-    history preserved); a claim from a *different* ICP is left untouched (D5). The caller supplies
-    the already-``stamp_reuse``-stamped ``claim`` and the read ``scope``; this owns only the
-    read → replay-check → supersede-by-icp-key → insert sequence (the shared protocol)."""
+    Idempotency on the deterministic ``run_id`` and exact ``product_id``: an existing live claim
+    for that pair is reused (``written=False`` — no new row, no double-charge). A live claim from a
+    *different* run of the same ``(ICP, product)`` is **superseded** so the merged truth keeps one
+    live winner for that scope (append-only history preserved). A claim from another ICP or product
+    is left untouched (D5 / C7.1 per-product fit). The caller supplies the already-
+    ``stamp_reuse``-stamped ``claim`` and the read ``scope``; this owns only the read →
+    replay-check → scoped supersede → insert sequence (the shared protocol)."""
     existing = await claims_for(conn, claim.entity_id, claim.field_key, scope=scope)
     for prior in existing:
-        if prior.run_id == run_id:
+        if prior.run_id == run_id and prior.product_id == claim.product_id:
             return prior.id, False
-    # `existing` is collected_at-desc; supersede the latest live claim for THIS ICP (a re-write
-    # replaces its predecessor), leaving any other ICP's claim for this entity intact.
+    # `existing` is collected_at-desc; supersede the latest live claim for THIS ICP + product
+    # (a re-write replaces its predecessor), leaving another ICP/product claim intact.
     for prior in existing:
-        if claim_icp_key(prior) == icp_key:
+        if claim_icp_key(prior) == icp_key and prior.product_id == claim.product_id:
             return await supersede_claim(conn, prior.id, claim), True
     return await insert_claim(conn, claim), True
 

@@ -19,6 +19,11 @@ from clue_core import (
     EntailmentReasonCode,
     EntailmentVerdictKind,
     EntityType,
+    EvidenceAccessAuthorizer,
+    EvidenceAccessDecision,
+    EvidenceAccessRequest,
+    EvidenceAccessResult,
+    EvidenceAccessService,
     EvidenceActionDescriptor,
     EvidenceActionKind,
     FreshnessState,
@@ -305,6 +310,78 @@ def test_product_scoped_statement_must_match_a_product_scoped_view() -> None:
         _account_view(subject=subject, statement=statement, product_id="product-b")
     with pytest.raises(ValidationError, match="must match the view product_id"):
         _account_view(subject=subject, statement=statement, product_id=None)
+
+
+def test_score_reference_requires_exact_product_and_evidence() -> None:
+    subject = _account_subject()
+    evidence_id = new_claim_id()
+    with pytest.raises(ValidationError, match="requires exact product_id"):
+        ResearchOwnedReference(
+            item_id="score:fit",
+            subject=subject,
+            data_species=ResearchDataSpecies.SCORE,
+            relation=ResearchReferenceRelation.SUBJECT,
+            owner_ref="score:fit:v1",
+            evidence_claim_ids=(evidence_id,),
+        )
+    score = ResearchOwnedReference(
+        item_id="score:fit",
+        subject=subject,
+        data_species=ResearchDataSpecies.SCORE,
+        relation=ResearchReferenceRelation.SUBJECT,
+        owner_ref="score:fit:v1",
+        product_id="product-a",
+        evidence_claim_ids=(evidence_id,),
+    )
+    assert score.product_id == "product-a"
+    assert score.evidence_claim_ids == (evidence_id,)
+
+
+def test_evidence_access_contracts_are_opaque_and_protocol_bound() -> None:
+    request = EvidenceAccessRequest(
+        workspace_id="workspace-a",
+        project_id="project-a",
+        actor_id="actor-a",
+        subject_entity_id=new_entity_id(),
+        statement_id=new_research_statement_id(),
+        claim_id=new_claim_id(),
+        action_id=UUID("00000000-0000-0000-0000-000000000299"),
+        desired_action=EvidenceActionKind.REQUEST_ARTIFACT_PREVIEW,
+    )
+    decision = EvidenceAccessDecision(
+        allowed=True,
+        action_kind=request.desired_action,
+        claim_id=request.claim_id,
+        reason_codes=("authorized",),
+    )
+    result = EvidenceAccessResult(
+        action_kind=request.desired_action,
+        claim_id=request.claim_id,
+        access_ref="evidence-access:grant-1",
+        reason_codes=("authorized",),
+    )
+    assert decision.allowed
+    assert result.access_ref == "evidence-access:grant-1"
+    with pytest.raises(ValidationError, match="never a URL"):
+        EvidenceAccessResult(
+            action_kind=request.desired_action,
+            claim_id=request.claim_id,
+            access_ref="https://storage.example/signed",
+            reason_codes=("authorized",),
+        )
+
+    class Authorizer:
+        async def authorize(self, value: EvidenceAccessRequest) -> EvidenceAccessDecision:
+            assert value == request
+            return decision
+
+    class Service:
+        async def request_access(self, value: EvidenceAccessRequest) -> EvidenceAccessResult:
+            assert value == request
+            return result
+
+    assert isinstance(Authorizer(), EvidenceAccessAuthorizer)
+    assert isinstance(Service(), EvidenceAccessService)
 
 
 def test_view_requires_exact_statement_subject_and_complete_provenance() -> None:

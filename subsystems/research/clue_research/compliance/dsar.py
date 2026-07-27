@@ -295,6 +295,28 @@ async def _apply_tombstone(
         # Already tombstoned (UNIQUE conflict, incl. a concurrent winner): no claim row is written,
         # so there is no orphan; report it as already-tombstoned (the caller's count stays honest).
         return None
+    # A faithfulness rationale may repeat attacker-controlled evidence or personal claim text.
+    # Preserve the bounded verdict/model/prompt/cost audit, but erase that free-form body in the
+    # same transaction as the claim tombstone. Reachability is the existing
+    # faithfulness_verdict.claim_id -> claim.entity_id relation; no subject/body copy is added.
+    # COALESCE keeps this one-way and idempotent if a future caller reaches an already-redacted row.
+    await conn.execute(
+        text(
+            """
+            UPDATE faithfulness_verdict
+            SET rationale = NULL,
+                rationale_redacted_at = COALESCE(rationale_redacted_at, now()),
+                rationale_redaction_reason =
+                    COALESCE(rationale_redaction_reason, :redaction_reason)
+            WHERE claim_id = :claim_id
+              AND rationale IS NOT NULL
+            """
+        ),
+        {
+            "claim_id": str(target.id),
+            "redaction_reason": reason.value,
+        },
+    )
     # validate_field=False: the redaction sentinel is intentionally not a valid field value (the
     # tombstone is REJECTED, so it never wins the merge regardless). This is one of the sanctioned
     # compliance redaction callers documented on claimstore.supersede_claim.
