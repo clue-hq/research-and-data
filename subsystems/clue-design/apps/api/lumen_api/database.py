@@ -11,6 +11,12 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 JsonObject = Dict[str, Any]
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
+# Website-mode undo depth: the newest N batch ids are retained on the undo
+# stack; older entries fall off (their envelopes stay in the log for history,
+# they are just no longer one-click undoable). Matches the editor's expectation
+# of a bounded undo history.
+WEB_UNDO_STACK_CAP = 50
+
 
 class NotFoundError(KeyError):
     def __init__(self, resource_type: str, resource_id: str) -> None:
@@ -631,27 +637,42 @@ class Repository:
         inverse_operations: Optional[List[JsonObject]],
         actor_kind: str = "agent",
         source: str = "agent",
+        push_undo: bool = True,
+        reverts_batch_id: Optional[str] = None,
+        reapplies_batch_id: Optional[str] = None,
     ) -> JsonObject:
-        """Persist a website-mode turn's result: replace the stored WebDoc and
-        append an invertible edit envelope through the SAME machinery a scene
-        write uses (append_envelope + append_operations + a monotonic
-        next_*_sequence), so the web history shares the documents/edit_envelopes
-        tables and stays replayable later.
+        """Persist a website-mode write: replace the stored WebDoc and append an
+        invertible edit envelope through the SAME machinery a scene write uses
+        (append_envelope + append_operations + a monotonic next_*_sequence), so
+        the web history shares the documents/edit_envelopes tables and stays
+        replayable later.
+
+        Undo bookkeeping mirrors the scene stacks (documents.undo_stack_json /
+        redo_stack_json), which for web docs are the authoritative source of the
+        active undo/redo path — nothing is derived from envelope ordering:
+        - a normal write (`push_undo=True`, no reverts/reapplies) pushes the new
+          batch_id onto the undo stack (capped at WEB_UNDO_STACK_CAP, oldest
+          dropped) and clears the redo stack.
+        - `reverts_batch_id` (an undo step) removes the reverted batch from the
+          undo stack and pushes it onto the redo stack; the revert envelope
+          itself is NOT stacked (undoing an undo is redo).
+        - `reapplies_batch_id` (a redo step) removes it from the redo stack and
+          pushes it back onto the undo stack.
+        - `push_undo=False` writes without touching either stack.
 
         Deliberately NOT reused from update_document_state (a WebDoc is not a
         scene, so the scene-specific pieces are unsafe or meaningless here):
         - register_scene_assets — a WebDoc's `assets` map is a different shape
           (keyed AssetRecords, no scene node graph); its bytes already live in
           the shared asset store, so there is nothing to promote.
-        - undo_stack/redo_stack — those columns model the scene engine's
-          batch-id undo stacks; web undo/redo will ride the envelope's
-          inverse_operations (stored below), not the scene stacks.
         - effective-brand columns — a web turn does not recompute an effective
           scene brand; the theme ref on the WebDoc is the source of truth.
 
-        The forward op is the marker `[{"kind":"replace_web_doc"}]` (the new doc
-        is the row's current_scene_json); the inverse carries the PRIOR doc so a
-        future undo is a pure whole-document swap.
+        For a manual edit the forward op is a real WebOperation batch with the
+        helper's inverse_operations; for an agent turn the forward op is the
+        marker `[{"kind":"replace_web_doc"}]` (the new doc is the row's
+        current_scene_json) and the inverse carries the PRIOR doc so a future
+        undo is a pure whole-document swap.
         """
         now = utc_now()
         with self.connection:
@@ -659,6 +680,21 @@ class Repository:
             base_revision = document["current_version"]
             version = base_revision + 1
             batch_id = new_batch_id()
+            undo_stack = list(document.get("undo_stack") or [])
+            redo_stack = list(document.get("redo_stack") or [])
+            if reverts_batch_id:
+                if reverts_batch_id in undo_stack:
+                    undo_stack.remove(reverts_batch_id)
+                redo_stack.append(reverts_batch_id)
+            elif reapplies_batch_id:
+                if reapplies_batch_id in redo_stack:
+                    redo_stack.remove(reapplies_batch_id)
+                undo_stack.append(reapplies_batch_id)
+            elif push_undo:
+                undo_stack.append(batch_id)
+                if len(undo_stack) > WEB_UNDO_STACK_CAP:
+                    undo_stack = undo_stack[-WEB_UNDO_STACK_CAP:]
+                redo_stack = []
             envelope = {
                 "batch_id": batch_id,
                 "base_revision": base_revision,
@@ -666,18 +702,22 @@ class Repository:
                 "checkpoint_label": checkpoint_label,
                 "operations": operations,
                 "inverse_operations": inverse_operations,
+                "reverts_batch_id": reverts_batch_id,
+                "reapplies_batch_id": reapplies_batch_id,
             }
             self.connection.execute(
                 """
                 UPDATE documents
                 SET title = ?, current_scene_json = ?, current_version = ?,
-                    updated_at = ?
+                    undo_stack_json = ?, redo_stack_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
                     web_doc["title"],
                     encode(web_doc),
                     version,
+                    encode(undo_stack),
+                    encode(redo_stack),
                     now,
                     document_id,
                 ),

@@ -425,9 +425,14 @@ class CoreClient:
         self,
         doc: JsonObject,
         operations: List[JsonObject],
+        raise_on_error: bool = True,
     ) -> JsonObject:
+        # The manual-edit path passes raise_on_error=False so a checked-apply
+        # rejection (ok:false + diagnostics) comes back as a plain response the
+        # endpoint maps to a 422, rather than a raised CoreError.
         return self._run(
-            {"action": "web_apply_ops", "doc": doc, "operations": operations}
+            {"action": "web_apply_ops", "doc": doc, "operations": operations},
+            raise_on_error=raise_on_error,
         )
 
     def web_render(
@@ -439,6 +444,7 @@ class CoreClient:
         tailwind_runtime_src: Optional[str] = None,
         bridge_script: Optional[str] = None,
         brand_kit: Optional[JsonObject] = None,
+        font_face_css: Optional[str] = None,
     ) -> JsonObject:
         return self._run(
             {
@@ -450,6 +456,7 @@ class CoreClient:
                 "tailwind_runtime_src": tailwind_runtime_src,
                 "bridge_script": bridge_script,
                 "brand_kit": brand_kit,
+                "font_face_css": font_face_css,
             }
         )
 

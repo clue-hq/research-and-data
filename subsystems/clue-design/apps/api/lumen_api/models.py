@@ -157,6 +157,17 @@ class WebTurnRequest(BaseModel):
     target_node_ids: Optional[List[str]] = None
 
 
+class WebOperationsRequest(BaseModel):
+    """A manual website-mode edit: a batch of typed WebOperations applied to the
+    stored WebDoc through the checked-apply helper. `base_version` gates on the
+    optimistic-concurrency contract the scene /operations endpoint uses; `intent`
+    labels the resulting edit envelope."""
+
+    operations: List[JsonObject] = Field(default_factory=list)
+    base_version: Optional[int] = None
+    intent: Optional[str] = None
+
+
 class SetAgentInstructionsRequest(BaseModel):
     instructions: Optional[str] = None
 

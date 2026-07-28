@@ -59,6 +59,7 @@ from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
+    WebOperationsRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
     AttachBrandKitRequest,
@@ -1977,8 +1978,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         document = require_document(repo, document_id)
         require_web_document(document)
         web_doc = document["scene"]
-        brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
+        brand_kit, _source, _assets, brand_fonts = resolve_web_turn_brand_kit(
             web_doc, database_path=app.state.database_path
+        )
+        # Kit @font-face: emit rules that point the browser at the kit's stored
+        # faces (served from this request's own /asset-store origin) so the
+        # editor preview renders in the brand's real fonts, not the fallback.
+        font_face_css = build_web_font_face_css(
+            brand_fonts, str(request.base_url).rstrip("/")
         )
         bridge_script = None
         if bridge:
@@ -2007,6 +2014,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 tailwind_runtime_src=runtime_src,
                 bridge_script=bridge_script,
                 brand_kit=brand_kit,
+                font_face_css=font_face_css,
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -2014,6 +2022,308 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "html": response.get("html"),
             "diagnostics": response.get("diagnostics", []),
+        }
+
+    @app.post("/documents/{document_id}/web/operations")
+    def apply_web_operations(
+        document_id: str,
+        payload: WebOperationsRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        # Manual website-mode edit: run the batch through the checked-apply
+        # helper (a batch that would leave the doc invalid is rejected with
+        # ok:false + diagnostics — the mutated doc is never returned) and, on
+        # success, persist the new doc + its inverse as an undoable envelope.
+        if not payload.operations:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_operations.empty",
+                    "message": "operations cannot be empty",
+                },
+            )
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        require_draft_document(document, "apply operations")
+        require_base_version(document, payload.base_version)
+        web_doc = document["scene"]
+        try:
+            result = app.state.core.web_apply_ops(
+                web_doc, payload.operations, raise_on_error=False
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = result.get("diagnostics", []) or []
+        if not result.get("ok"):
+            error = result.get("error") or {}
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_operations.invalid",
+                    "message": error.get("message")
+                    or "the operation batch would leave the document invalid",
+                    "diagnostics": diagnostics,
+                },
+            )
+        updated = repo.update_web_document(
+            document_id,
+            result["web_doc"],
+            intent=payload.intent or "Manual edit",
+            checkpoint_label="Manual edit",
+            operations=payload.operations,
+            inverse_operations=result.get("inverse_operations"),
+            actor_kind="editor",
+            source="editor",
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_operation_batch_applied",
+            document_id=document_id,
+            operation_count=len(payload.operations),
+            applied_operations=result.get("applied_operations", 0),
+            version=updated["current_version"],
+            **diagnostic_summary(diagnostics),
+        )
+        return {
+            "schema_version": 1,
+            "document": {
+                "id": updated["id"],
+                "current_version": updated["current_version"],
+                "doc_kind": updated.get("doc_kind", "web"),
+            },
+            "diagnostics": diagnostics,
+        }
+
+    def _apply_web_undo_step(
+        repo: Repository, document: JsonObject, target: JsonObject
+    ) -> JsonObject:
+        """Compute the pre-undo → reverted WebDoc for one undo, handling both
+        envelope shapes: a whole-document `replace_web_doc` marker (agent turns)
+        swaps in the inverse's carried doc directly; a real WebOperation batch
+        replays its inverse_operations through the checked-apply helper. Returns
+        {web_doc, inverse_operations} where inverse_operations is the forward op
+        set that a future redo re-applies (a replace_web_doc carrying the
+        pre-undo doc, or the envelope's own forward operations)."""
+        current_doc = document["scene"]
+        inverse_ops = target["inverse_operations"]
+        if _is_replace_web_doc(inverse_ops):
+            # Agent-turn envelope: the inverse carries the prior whole doc, so
+            # the undo is a whole-document swap. The revert envelope records the
+            # restored doc as its forward op and the pre-undo doc as its inverse
+            # (so redo can reinstall doc-after-B via this envelope's inverse).
+            restored = inverse_ops[0]["web_doc"]
+            return {
+                "web_doc": restored,
+                "operations": [{"kind": "replace_web_doc", "web_doc": restored}],
+                "inverse_operations": [
+                    {"kind": "replace_web_doc", "web_doc": current_doc}
+                ],
+            }
+        try:
+            result = app.state.core.web_apply_ops(
+                current_doc, inverse_ops, raise_on_error=False
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        if not result.get("ok"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "web_history.not_invertible",
+                    "message": (
+                        f"inverse of batch {target['batch_id']} could not be "
+                        "applied cleanly and blocks undo"
+                    ),
+                    "diagnostics": result.get("diagnostics", []) or [],
+                },
+            )
+        # The revert envelope applied the inverse ops; a redo of THIS revert
+        # would re-apply the original batch's forward operations.
+        return {
+            "web_doc": result["web_doc"],
+            "operations": inverse_ops,
+            "inverse_operations": target["operations"],
+        }
+
+    @app.post("/documents/{document_id}/web/undo")
+    def undo_web_document(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        require_draft_document(document, "undo")
+        undo_stack = list(document.get("undo_stack") or [])
+        if not undo_stack:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "undo.empty",
+                    "message": "no undoable batches in document history",
+                },
+            )
+        target = repo.require_envelope(document_id, undo_stack[-1])
+        if target["inverse_operations"] is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "undo.not_invertible",
+                    "message": (
+                        f"batch {target['batch_id']} ({target['intent'] or 'unknown'}) "
+                        "is not invertible and blocks undo"
+                    ),
+                    "batch_id": target["batch_id"],
+                },
+            )
+        step = _apply_web_undo_step(repo, document, target)
+        updated = repo.update_web_document(
+            document_id,
+            step["web_doc"],
+            intent=f"undo:{target['intent'] or target['batch_id']}",
+            checkpoint_label="Undo",
+            operations=step["operations"],
+            inverse_operations=step["inverse_operations"],
+            actor_kind="system",
+            source="system",
+            reverts_batch_id=target["batch_id"],
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_undo_applied",
+            document_id=document_id,
+            reverted_batch_id=target["batch_id"],
+            version=updated["current_version"],
+        )
+        return {
+            "schema_version": 1,
+            "document": {
+                "id": updated["id"],
+                "current_version": updated["current_version"],
+            },
+            "undone_batch_id": target["batch_id"],
+        }
+
+    @app.post("/documents/{document_id}/web/redo")
+    def redo_web_document(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        require_draft_document(document, "redo")
+        redo_stack = list(document.get("redo_stack") or [])
+        if not redo_stack:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "redo.empty",
+                    "message": "no redoable batches in document history",
+                },
+            )
+        target = repo.require_envelope(document_id, redo_stack[-1])
+        current_doc = document["scene"]
+        forward_ops = target["operations"]
+        if _has_replace_web_doc_kind(forward_ops):
+            # Agent-turn redo: the batch's forward op is a bare replace_web_doc
+            # MARKER (no doc payload — web_apply_ops does not understand it), so
+            # reinstall the doc it originally installed as a whole-document swap.
+            # A marker carries no doc; the doc lives in the revert envelope's
+            # inverse_operations (written when this batch was undone). A full
+            # replace_web_doc that already carries its doc is used directly.
+            restored = _replace_web_doc_payload(forward_ops)
+            if restored is None:
+                reverting = _web_revert_envelope_for(
+                    repo, document_id, target["batch_id"]
+                )
+                restored = _replace_web_doc_payload(reverting["inverse_operations"])
+            if restored is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "redo.not_reapplicable",
+                        "message": (
+                            f"batch {target['batch_id']} cannot be re-applied; its "
+                            "forward document snapshot is unavailable"
+                        ),
+                    },
+                )
+            new_doc = restored
+            inverse_ops = [{"kind": "replace_web_doc", "web_doc": current_doc}]
+        else:
+            try:
+                result = app.state.core.web_apply_ops(
+                    current_doc, forward_ops, raise_on_error=False
+                )
+            except CoreError as error:
+                raise core_http_error(error) from error
+            if not result.get("ok"):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "redo.not_reapplicable",
+                        "message": (
+                            f"batch {target['batch_id']} could not be re-applied "
+                            "cleanly"
+                        ),
+                        "diagnostics": result.get("diagnostics", []) or [],
+                    },
+                )
+            new_doc = result["web_doc"]
+            inverse_ops = result.get("inverse_operations")
+        updated = repo.update_web_document(
+            document_id,
+            new_doc,
+            intent=f"redo:{target['intent'] or target['batch_id']}",
+            checkpoint_label="Redo",
+            operations=forward_ops,
+            inverse_operations=inverse_ops,
+            actor_kind="system",
+            source="system",
+            reapplies_batch_id=target["batch_id"],
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_redo_applied",
+            document_id=document_id,
+            reapplied_batch_id=target["batch_id"],
+            version=updated["current_version"],
+        )
+        return {
+            "schema_version": 1,
+            "document": {
+                "id": updated["id"],
+                "current_version": updated["current_version"],
+            },
+            "reapplied_batch_id": target["batch_id"],
+        }
+
+    @app.get("/documents/{document_id}/web/theme")
+    def get_web_theme(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        # The compiled theme's inspector surface: the resolved token map +
+        # families the editor's Appearance panel reads. Diagnostics are the
+        # error-severity ones only — a sanity surface, not the full lint.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        web_doc = document["scene"]
+        brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
+            web_doc, database_path=app.state.database_path
+        )
+        try:
+            response = app.state.core.web_validate(web_doc, brand_kit)
+        except CoreError as error:
+            raise core_http_error(error) from error
+        diagnostics = [
+            diagnostic
+            for diagnostic in response.get("diagnostics", []) or []
+            if diagnostic.get("severity") == "error"
+        ]
+        return {
+            "schema_version": 1,
+            "theme": response.get("web_theme"),
+            "diagnostics": diagnostics,
         }
 
     @app.post("/documents/{document_id}/export")
@@ -4787,6 +5097,14 @@ def run_web_agent_turn(
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
             )
+            # TODO(web-fonts runtime seam): the runtime substrate
+            # (lumen_agent.harness_web.run_deepagent_web_turn) calls web_render
+            # itself for its in-loop previews and does NOT yet thread a
+            # font_face_css built from `brand_fonts`, so those previews shape in
+            # the fallback stack while the API render endpoint shows the real
+            # kit faces. Threading build_web_font_face_css through
+            # AgentRuntimeConfig → the runtime's web_render call is out of scope
+            # here (apps/agent_runtime is off-limits for this change).
         # Mandatory-multimodal (the reviewer attaches screenshots): fail loud
         # before authoring if the configured model is text-only.
         from lumen_agent.llm import assert_model_supports_image_input
@@ -4879,6 +5197,118 @@ def resolve_agent_turn_brand_kit(
         return None, None, None, None
     finally:
         connection.close()
+
+
+def _is_replace_web_doc(operations: Any) -> bool:
+    """True when `operations` is exactly one replace_web_doc marker carrying a
+    whole web_doc payload — the shape agent-turn envelopes use (a marker the
+    checked-apply helper does NOT understand). Manual-edit batches are real
+    typed WebOperations and never match, so undo/redo can branch on this to
+    swap the whole doc directly instead of replaying ops."""
+    return (
+        isinstance(operations, list)
+        and len(operations) == 1
+        and isinstance(operations[0], dict)
+        and operations[0].get("kind") == "replace_web_doc"
+        and isinstance(operations[0].get("web_doc"), dict)
+    )
+
+
+def _has_replace_web_doc_kind(operations: Any) -> bool:
+    """True when `operations` is a single replace_web_doc entry, WHETHER OR NOT
+    it carries a web_doc payload. Agent-turn forward ops are a bare marker
+    (`[{"kind":"replace_web_doc"}]`) while inverses carry the doc; redo branches
+    on the kind and sources the doc separately when it is a marker."""
+    return (
+        isinstance(operations, list)
+        and len(operations) == 1
+        and isinstance(operations[0], dict)
+        and operations[0].get("kind") == "replace_web_doc"
+    )
+
+
+def _replace_web_doc_payload(operations: Any) -> Optional[JsonObject]:
+    if _is_replace_web_doc(operations):
+        return operations[0]["web_doc"]
+    return None
+
+
+def _web_revert_envelope_for(
+    repo: Repository, document_id: str, batch_id: str
+) -> JsonObject:
+    """The most recent revert envelope that undid `batch_id`. Its
+    inverse_operations carries the whole doc that batch installed — which an
+    agent-turn redo reinstalls, because the batch's own forward op is only a
+    replace_web_doc marker without a doc payload."""
+    for envelope in repo.list_envelopes(document_id, newest_first=True):
+        if envelope.get("reverts_batch_id") == batch_id:
+            return envelope
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "redo.not_reapplicable",
+            "message": (
+                f"batch {batch_id} cannot be re-applied; no revert record holds "
+                "its forward document snapshot"
+            ),
+        },
+    )
+
+
+def build_web_font_face_css(
+    brand_fonts: Optional[JsonObject], request_base_url: str
+) -> Optional[str]:
+    """@font-face CSS that points the browser at the kit's stored font faces so
+    the web render displays the brand's real fonts, not the fallback stack.
+
+    Input is the kit font spec resolve_web_turn_brand_kit returns —
+    ``{store_root, faces: [{digest, family}]}`` — whose faces resolve to
+    content-addressed asset-store bytes served at ``{base}/asset-store/{digest}``
+    (the same digest route the canvas/export paths use).
+
+    Honest limitation: that spec (brand_kit_font_spec) carries only the face
+    digest + declared family, NOT per-face weight/style — those are dropped when
+    the K3 spec is built. So every face is emitted as a normal-weight rule; a
+    genuine multi-weight kit collapses to whichever face the browser resolves.
+    Emitting correct font-weight/style needs the spec enriched at its source
+    (brand_kit_font_spec, shared with the scene shaping path) — left as a
+    follow-up so this change stays inside the web path. Returns None when there
+    is nothing resolvable to emit."""
+    if not isinstance(brand_fonts, dict):
+        return None
+    faces = brand_fonts.get("faces")
+    if not isinstance(faces, list):
+        return None
+    base = request_base_url.rstrip("/")
+    rules: List[str] = []
+    seen: set[Tuple[str, str]] = set()
+    for face in faces:
+        if not isinstance(face, dict):
+            continue
+        digest = face.get("digest")
+        family = face.get("family")
+        if not (isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
+            continue
+        if not (isinstance(family, str) and family.strip()):
+            continue
+        key = (family, digest)
+        if key in seen:
+            continue
+        seen.add(key)
+        url = f"{base}/asset-store/{digest}"
+        # json.dumps supplies CSS-safe double-quoted strings for both the family
+        # name and the URL, so a crafted family/digest cannot break out of the
+        # rule (digest is already hex-gated above).
+        rules.append(
+            "@font-face{"
+            f"font-family:{json.dumps(family)};"
+            "font-style:normal;font-weight:400;font-display:swap;"
+            f"src:url({json.dumps(url)});"
+            "}"
+        )
+    if not rules:
+        return None
+    return "\n".join(rules)
 
 
 def resolve_web_turn_brand_kit(
