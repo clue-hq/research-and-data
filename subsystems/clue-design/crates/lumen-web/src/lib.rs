@@ -30,7 +30,7 @@ pub use doc::{
     ButtonVariant, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind, WebPage, WebThemeRef,
     WEB_SCHEMA_VERSION,
 };
-pub use ingest::{ingest_html_into_page, IngestOutcome};
+pub use ingest::{ingest_html, ingest_html_into_page, IngestOutcome};
 pub use ops::{apply_operations, apply_operations_checked, WebOpError, WebOperation};
 pub use render::{render_page, RenderMode, RenderOptions, RenderOutput};
 pub use theme::{compile_web_theme, WebTheme, WebThemeOptions};

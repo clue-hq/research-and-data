@@ -59,6 +59,13 @@ No blocking issue from the review checklist at any of the three widths; the
 page follows the recipe's hard rules (no invented facts, real links only,
 one primary CTA destination); zero ingestion errors outstanding.
 
+SCOPED TURNS
+When the brief carries a TURN TARGET (the user selected an element in the
+editor), this is an edit of THAT section, not a rebuild: brief the author to
+use `author_web_subtree` on the named section, judge the re-render against
+the same ship bar, and leave every other section byte-identical unless the
+user's words clearly require otherwise.
+
 DISCIPLINE
 - Never skip looking at the pixels yourself; the screenshots are the truth,
   the markup is not.
@@ -95,6 +102,12 @@ WORKING RULES
 - The theme base layer already carries the brand type ramp and button
   styles; write classes only for layout, spacing, and token-referencing
   color deviations.
+- Scoped edits: when the director names a target section, use
+  `author_web_subtree(node_id, html)` with the COMPLETE replacement markup
+  for that one section (`<section id="...">...</section>` — keep the same
+  id). It splices only that section; the rest of the page is untouched.
+  `author_web_page` remains the whole-page tool; never use it for a scoped
+  fix.
 - Copy is yours too: concrete, scannable, no invented facts, no emojis,
   no em-dashes.
 

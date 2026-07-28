@@ -453,6 +453,24 @@ class CoreClient:
             }
         )
 
+    def web_ingest_fragment(
+        self,
+        doc: JsonObject,
+        html: str,
+        brand_kit: Optional[JsonObject] = None,
+    ) -> JsonObject:
+        """Parse a constrained-HTML fragment against `doc` WITHOUT mutating it.
+        Returns `web_fragment: {nodes, roots}` + diagnostics so callers can
+        compose surgical RemoveNode/InsertNode batches (scoped edit turns)."""
+        return self._run(
+            {
+                "action": "web_ingest_fragment",
+                "doc": doc,
+                "html": html,
+                "brand_kit": brand_kit,
+            }
+        )
+
     # Every shaping action the helper accepts library fonts for. The spec is
     # injected HERE, at the single helper gateway, rather than threaded
     # through each call site: a forgotten site would silently shape library

@@ -407,6 +407,15 @@ enum CoreRequest {
         #[serde(default)]
         brand_kit: Option<Value>,
     },
+    /// Parse a constrained-HTML fragment against `doc` WITHOUT mutating it:
+    /// returns the would-be nodes + roots so callers can compose surgical
+    /// RemoveNode/InsertNode batches (scoped edit turns).
+    WebIngestFragment {
+        doc: Value,
+        html: String,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -450,6 +459,8 @@ struct CoreResponse {
     html: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     inverse_operations: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_fragment: Option<Value>,
     build_info: Option<Value>,
 }
 
@@ -501,6 +512,7 @@ fn main() {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 },
             };
@@ -545,6 +557,7 @@ fn main() {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             }
         }
@@ -586,6 +599,7 @@ impl CoreRequest {
             CoreRequest::WebIngestHtml { .. } => "web_ingest_html",
             CoreRequest::WebApplyOps { .. } => "web_apply_ops",
             CoreRequest::WebRender { .. } => "web_render",
+            CoreRequest::WebIngestFragment { .. } => "web_ingest_fragment",
         }
     }
 }
@@ -717,6 +731,10 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "mode": mode,
             "has_brand_kit": brand_kit.is_some(),
         }),
+        CoreRequest::WebIngestFragment { html, brand_kit, .. } => json!({
+            "html_bytes": html.len(),
+            "has_brand_kit": brand_kit.is_some(),
+        }),
     }
 }
 
@@ -803,6 +821,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         web_doc: None,
         html: None,
         inverse_operations: None,
+        web_fragment: None,
         build_info: None,
     }
 }
@@ -927,6 +946,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
             }
@@ -954,6 +974,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             });
             let batch = match batch {
@@ -1005,6 +1026,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1035,6 +1057,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
             }
@@ -1087,6 +1110,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1139,6 +1163,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1220,6 +1245,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1243,6 +1269,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
             }
@@ -1397,6 +1424,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1579,6 +1607,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
             }
@@ -1608,6 +1637,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1642,6 +1672,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1675,6 +1706,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         web_doc: None,
                         html: None,
                         inverse_operations: None,
+                        web_fragment: None,
                         build_info: None,
                     })
                 }
@@ -1702,6 +1734,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     web_doc: None,
                     html: None,
                     inverse_operations: None,
+                    web_fragment: None,
                     build_info: None,
                 }),
             }
@@ -1746,6 +1779,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1773,6 +1807,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1805,6 +1840,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1834,6 +1870,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1878,6 +1915,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -1911,6 +1949,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -2150,6 +2189,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 web_doc: None,
                 html: None,
                 inverse_operations: None,
+                web_fragment: None,
                 build_info: None,
             })
         }
@@ -2177,6 +2217,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             web_doc: None,
             html: None,
             inverse_operations: None,
+            web_fragment: None,
             build_info: Some(json!({
                 "schema_version": lumen_core::SCHEMA_VERSION,
                 "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
@@ -2301,6 +2342,46 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             diagnostics.extend(output.diagnostics);
             Ok(ok_web(None, Some(output.html), None, None, diagnostics))
         }
+        CoreRequest::WebIngestFragment {
+            doc,
+            html,
+            brand_kit,
+        } => {
+            let doc = parse_web_doc(doc)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let outcome = lumen_web::ingest_html(&html, &theme);
+            // Same asset-reference discipline as the page ingest: a fragment
+            // referencing unknown assets must fail loudly, not splice blind.
+            for node in &outcome.nodes {
+                if let lumen_web::WebNodeKind::Image { asset_id, .. } = &node.kind {
+                    if !doc.assets.contains_key(asset_id) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                lumen_core::Phase::Web,
+                                "LUMW0120",
+                                format!(
+                                    "image node `{}` references unknown asset `{asset_id}`",
+                                    node.id
+                                ),
+                                Some(lumen_core::DiagnosticSubject::Node(node.id.clone())),
+                            )
+                            .with_hint(
+                                "Generate or import the asset first, then reference its id \
+                                 via data-asset.",
+                            ),
+                        );
+                    }
+                }
+            }
+            diagnostics.extend(outcome.diagnostics.clone());
+            let fragment = json!({
+                "nodes": to_value(&outcome.nodes)?,
+                "roots": to_value(&outcome.roots)?,
+            });
+            let mut response = ok_web(None, None, None, None, diagnostics);
+            response.web_fragment = Some(fragment);
+            Ok(response)
+        }
     }
 }
 
@@ -2365,6 +2446,7 @@ fn ok_web(
         html,
         inverse_operations: inverse_operations
             .map(|inverses| to_value(inverses).expect("web operations should serialize")),
+        web_fragment: None,
         build_info: None,
     }
 }
@@ -2599,6 +2681,7 @@ fn ok_scene(
         web_doc: None,
         html: None,
         inverse_operations: None,
+        web_fragment: None,
         build_info: None,
     }
 }
