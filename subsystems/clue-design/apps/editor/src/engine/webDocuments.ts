@@ -171,11 +171,15 @@ export async function startWebTurn(
   { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
   documentId: string,
   prompt: string,
-  model?: string | null
+  model?: string | null,
+  targetNodeIds?: string[]
 ): Promise<StartedWebTurn> {
   const body: Record<string, unknown> = { prompt };
   if (model != null) {
     body.model = model;
+  }
+  if (targetNodeIds && targetNodeIds.length > 0) {
+    body.target_node_ids = targetNodeIds;
   }
   const response = await fetchImpl(
     new URL(`/documents/${encodeURIComponent(documentId)}/web/turns`, apiBaseUrl),
@@ -209,15 +213,24 @@ export interface WebRenderResult {
  * (`GET /documents/{id}/web/render?mode=editor&runtime_src=…`). The `html` is a
  * full document intended for a sandboxed `srcdoc` iframe; `runtimeSrc` is the
  * URL the rendered page loads the Tailwind browser runtime from (relative URLs
- * resolve against the parent origin inside a srcdoc iframe). */
+ * resolve against the parent origin inside a srcdoc iframe).
+ *
+ * Pass `bridge: { nonce }` (editor mode only) to have the server inject the
+ * selection bridge into the document — it draws hover/selection outlines,
+ * blocks navigation, and posts nonce-tagged selection events to the parent. */
 export async function fetchWebRenderHtml(
   { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
   documentId: string,
-  runtimeSrc: string
+  runtimeSrc: string,
+  bridge?: { nonce?: string }
 ): Promise<WebRenderResult> {
   const url = new URL(`/documents/${encodeURIComponent(documentId)}/web/render`, apiBaseUrl);
   url.searchParams.set("mode", "editor");
   url.searchParams.set("runtime_src", runtimeSrc);
+  if (bridge?.nonce) {
+    url.searchParams.set("bridge", "1");
+    url.searchParams.set("nonce", bridge.nonce);
+  }
   const response = await fetchImpl(url);
   if (!response.ok) {
     throw new Error(

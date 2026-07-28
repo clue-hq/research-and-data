@@ -287,10 +287,16 @@
 .web-composer {
   flex: none;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-xs);
   padding: var(--space-md);
   border-top: 1px solid var(--border-default);
+}
+.web-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
 }
 .web-composer textarea {
   flex: 1;
@@ -300,3 +306,72 @@
   line-height: 1.4;
 }
 .web-composer .btn { flex: none; }
+
+/* the selection context chip — a mono `</>` glyph + node label + text excerpt,
+ * sitting above the input. Reuses the chip vocabulary (pill + card tone). */
+.web-context-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-chip);
+  font-size: var(--text-body-sm);
+  min-width: 0;
+}
+.web-context-glyph {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--accent);
+}
+.web-context-chip-label {
+  flex: none;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.web-context-chip-excerpt {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.web-context-chip-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-body-lg);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration) var(--ease-out), color var(--duration) var(--ease-out);
+}
+.web-context-chip-clear:hover {
+  background: var(--ink-10);
+  color: var(--text-primary);
+}
+
+/* the same `</>` context, echoed as a quiet prefix inside the user bubble */
+.web-msg-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: var(--space-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-20);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--text-on-ink);
+  vertical-align: baseline;
+}
+.web-msg-context .web-context-glyph { color: var(--text-on-ink); }

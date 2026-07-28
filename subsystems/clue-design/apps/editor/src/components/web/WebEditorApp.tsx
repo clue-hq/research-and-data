@@ -16,6 +16,8 @@ import {
   type WebRunEvent,
   type WebTurnDoneEnvelope
 } from "@/hooks/useWebAgentTurn";
+import { useWebBridgeSelection } from "@/hooks/useWebBridgeSelection";
+import { selectionChipLabel } from "@/engine/webBridge";
 
 /**
  * The website-mode editor shell: loads the web document, drives agent turns
@@ -49,10 +51,17 @@ const WIDTH_CHIPS: { mode: WidthMode; label: string }[] = [
   { mode: "375", label: "375" }
 ];
 
+/** The selection context a turn was sent with (the active chip), surfaced as a
+ * small prefix on the user message bubble. */
+interface TurnContext {
+  nodeId: string;
+}
+
 /** One completed turn in the chat transcript. */
 interface TurnRecord {
   id: string;
   prompt: string;
+  context: TurnContext | null;
   activity: string[];
   summary: string | null;
   status: "applied" | "failed";
@@ -62,6 +71,7 @@ interface TurnRecord {
 interface PendingTurn {
   id: string;
   prompt: string;
+  context: TurnContext | null;
 }
 
 type RenderStatus = "idle" | "loading" | "ready" | "error";
@@ -70,6 +80,16 @@ let messageSeq = 0;
 function nextMessageId(): string {
   messageSeq += 1;
   return `web-msg-${messageSeq}`;
+}
+
+/** The selected node's text, collapsed to one line and clipped for the chip's
+ * muted excerpt. */
+const CHIP_EXCERPT_MAX = 40;
+function chipExcerpt(text: string): string {
+  const collapsed = text.trim().replace(/\s+/g, " ");
+  return collapsed.length > CHIP_EXCERPT_MAX
+    ? `${collapsed.slice(0, CHIP_EXCERPT_MAX - 1)}…`
+    : collapsed;
 }
 
 /** Known web progress event types → human copy. Unknown types are prettified
@@ -137,6 +157,18 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const [renderStatus, setRenderStatus] = useState<RenderStatus>("idle");
   const [renderError, setRenderError] = useState<string | null>(null);
 
+  // The live preview iframe and the per-render bridge nonce. A fresh nonce is
+  // minted for every render fetch and validated on every inbound bridge message
+  // (useWebBridgeSelection); a message tagged with a prior render's nonce is
+  // dropped. The ref lets the selection listener read the current nonce without
+  // re-arming on each fetch.
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const nonceRef = useRef<string>("");
+  const { selection, clearSelection, resetSelection } = useWebBridgeSelection({
+    iframeRef,
+    nonceRef
+  });
+
   const document = state.kind === "ready" ? state.document : null;
   const hasContent = webDocumentHasContent(document?.webDoc ?? null);
 
@@ -152,6 +184,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       const record: TurnRecord = {
         id: settled.id,
         prompt: settled.prompt,
+        context: settled.context,
         activity: condenseEvents(eventsRef.current),
         summary,
         status
@@ -180,6 +213,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     const record: TurnRecord = {
       id: settled.id,
       prompt: settled.prompt,
+      context: settled.context,
       activity: condenseEvents(eventsRef.current),
       summary: turn.error,
       status: "failed"
@@ -225,9 +259,16 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       return;
     }
     let cancelled = false;
+    // The DOM is about to be rebuilt: rotate the bridge nonce (invalidating any
+    // in-flight message from the old render) and drop the stale selection.
+    const nonce = crypto.randomUUID();
+    nonceRef.current = nonce;
+    resetSelection();
     setRenderStatus("loading");
     setRenderError(null);
-    fetchWebRenderHtml({ apiBaseUrl: editorApiBaseUrl() }, documentId, TAILWIND_RUNTIME_SRC)
+    fetchWebRenderHtml({ apiBaseUrl: editorApiBaseUrl() }, documentId, TAILWIND_RUNTIME_SRC, {
+      nonce
+    })
       .then((result) => {
         if (cancelled) return;
         setRenderHtml(result.html);
@@ -243,7 +284,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     return () => {
       cancelled = true;
     };
-  }, [documentId, shouldRender, reloadNonce]);
+  }, [documentId, shouldRender, reloadNonce, resetSelection]);
 
   const startTurn = useCallback(
     (prompt: string) => {
@@ -251,11 +292,15 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       if (!trimmed || isRunning) {
         return;
       }
-      setPending({ id: nextMessageId(), prompt: trimmed });
+      // Snapshot the active chip so the turn targets it and the bubble records
+      // the context, even though the chip itself persists after send.
+      const context: TurnContext | null = selection ? { nodeId: selection.nodeId } : null;
+      const targetNodeIds = selection ? [selection.nodeId] : undefined;
+      setPending({ id: nextMessageId(), prompt: trimmed, context });
       setComposer("");
-      turn.start(trimmed);
+      turn.start(trimmed, null, targetNodeIds);
     },
-    [isRunning, turn]
+    [isRunning, turn, selection]
   );
 
   // Queued-brief handoff (runs once, after the first successful load): auto-send
@@ -305,6 +350,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
               style={holderStyle}
             >
               <iframe
+                ref={iframeRef}
                 className="web-preview-frame"
                 sandbox="allow-scripts"
                 srcDoc={renderHtml}
@@ -413,7 +459,17 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
 
               {history.map((record) => (
                 <React.Fragment key={record.id}>
-                  <div className="web-msg is-user">{record.prompt}</div>
+                  <div className="web-msg is-user">
+                    {record.context ? (
+                      <span className="web-msg-context">
+                        <span className="web-context-glyph" aria-hidden="true">
+                          &lt;/&gt;
+                        </span>
+                        {record.context.nodeId}
+                      </span>
+                    ) : null}
+                    {record.prompt}
+                  </div>
                   {record.activity.length > 0 ? (
                     <ul className="web-activity">
                       {record.activity.map((label, index) => (
@@ -435,7 +491,17 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
 
               {pending ? (
                 <>
-                  <div className="web-msg is-user">{pending.prompt}</div>
+                  <div className="web-msg is-user">
+                    {pending.context ? (
+                      <span className="web-msg-context">
+                        <span className="web-context-glyph" aria-hidden="true">
+                          &lt;/&gt;
+                        </span>
+                        {pending.context.nodeId}
+                      </span>
+                    ) : null}
+                    {pending.prompt}
+                  </div>
                   {liveActivity.length > 0 ? (
                     <ul className="web-activity is-live">
                       {liveActivity.map((label, index) => (
@@ -448,22 +514,43 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
             </div>
 
             <form className="web-composer" onSubmit={onComposerSubmit}>
-              <textarea
-                value={composer}
-                onChange={(event) => setComposer(event.target.value)}
-                onKeyDown={onComposerKeyDown}
-                placeholder={isRunning ? "The agent is working…" : "Describe a change…"}
-                rows={1}
-                disabled={isRunning}
-                aria-label="Message the website agent"
-              />
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={isRunning || composer.trim().length === 0}
-              >
-                Send
-              </button>
+              {selection ? (
+                <div className="web-context-chip">
+                  <span className="web-context-glyph" aria-hidden="true">
+                    &lt;/&gt;
+                  </span>
+                  <span className="web-context-chip-label">{selectionChipLabel(selection)}</span>
+                  {selection.text ? (
+                    <span className="web-context-chip-excerpt">{chipExcerpt(selection.text)}</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="web-context-chip-clear"
+                    onClick={clearSelection}
+                    aria-label="Clear selected element"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              <div className="web-composer-row">
+                <textarea
+                  value={composer}
+                  onChange={(event) => setComposer(event.target.value)}
+                  onKeyDown={onComposerKeyDown}
+                  placeholder={isRunning ? "The agent is working…" : "Describe a change…"}
+                  rows={1}
+                  disabled={isRunning}
+                  aria-label="Message the website agent"
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isRunning || composer.trim().length === 0}
+                >
+                  Send
+                </button>
+              </div>
             </form>
           </aside>
         </main>
