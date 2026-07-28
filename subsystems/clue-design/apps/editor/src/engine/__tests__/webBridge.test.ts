@@ -5,6 +5,8 @@ import {
   selectionKindLabel,
   validateBridgeMessage,
   webBridgeClearMessage,
+  webBridgeComponentPreviewMessage,
+  webBridgeSelectNodeMessage,
   type WebSelection
 } from "../webBridge";
 
@@ -200,6 +202,30 @@ describe("webBridgeClearMessage", () => {
       channel: "lumen-web-bridge",
       nonce: NONCE,
       type: "clear"
+    });
+  });
+});
+
+describe("webBridgeComponentPreviewMessage", () => {
+  it("carries the channel, nonce, node id, and open/close action", () => {
+    expect(webBridgeComponentPreviewMessage(NONCE, "dlg-1", "open")).toEqual({
+      channel: "lumen-web-bridge",
+      nonce: NONCE,
+      type: "component-preview",
+      nodeId: "dlg-1",
+      action: "open"
+    });
+    expect(webBridgeComponentPreviewMessage(NONCE, "dlg-1", "close").action).toBe("close");
+  });
+});
+
+describe("webBridgeSelectNodeMessage", () => {
+  it("carries the channel, nonce, node id, and select-node type", () => {
+    expect(webBridgeSelectNodeMessage(NONCE, "dlg-1")).toEqual({
+      channel: "lumen-web-bridge",
+      nonce: NONCE,
+      type: "select-node",
+      nodeId: "dlg-1"
     });
   });
 });

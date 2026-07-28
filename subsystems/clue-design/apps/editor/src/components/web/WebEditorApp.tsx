@@ -8,6 +8,7 @@ import {
   fetchWebDocument,
   fetchWebRenderHtml,
   fetchWebTheme,
+  listDialogComponents,
   setTextOp,
   webDocumentHasContent,
   webPromptStorageKey,
@@ -24,7 +25,7 @@ import {
 import { useWebBridgeSelection } from "@/hooks/useWebBridgeSelection";
 import { useWebManualEdits } from "@/hooks/useWebManualEdits";
 import { WebInspectorPanel } from "@/components/web/WebInspectorPanel";
-import { selectionChipLabel } from "@/engine/webBridge";
+import { selectionChipLabel, type WebSelection } from "@/engine/webBridge";
 
 /**
  * The website-mode editor shell: loads the web document, drives agent turns
@@ -245,19 +246,30 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     [webDoc, defaultPage, manualEdits]
   );
 
-  const { selection, clearSelection, resetSelection } = useWebBridgeSelection({
-    iframeRef,
-    nonceRef,
-    onTextCommit: handleTextCommit
-  });
+  // Mirror an inbound bridge selection into the persisted inspector id: a node
+  // selection sets it; an explicit clear (click-off / Escape inside the iframe)
+  // empties it. This runs ONLY on real `select` messages — a render rebuild
+  // calls resetSelection (not onSelect), so the inspector stays on its stable
+  // node id across a manual-edit reload.
+  const handleBridgeSelect = useCallback((next: WebSelection | null) => {
+    setActiveNodeId(next ? next.nodeId : null);
+  }, []);
 
-  // Mirror the bridge's live selection into the persisted inspector id (only
-  // when non-null, so the reload's local reset doesn't clear it).
-  useEffect(() => {
-    if (selection) {
-      setActiveNodeId(selection.nodeId);
-    }
-  }, [selection]);
+  const { selection, clearSelection, resetSelection, previewComponent, selectNode } =
+    useWebBridgeSelection({
+      iframeRef,
+      nonceRef,
+      onTextCommit: handleTextCommit,
+      onSelect: handleBridgeSelect
+    });
+
+  // Clicking the gray canvas region AROUND the iframe (never the rail/topbar,
+  // and iframe-internal clicks stay in the frame) clears the selection and tells
+  // the frame to drop its highlight.
+  const clearFromBackdrop = useCallback(() => {
+    setActiveNodeId(null);
+    clearSelection();
+  }, [clearSelection]);
 
   // After a reload, drop the inspector selection if the node no longer exists.
   useEffect(() => {
@@ -269,6 +281,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const located = findWebNode(webDoc, activeNodeId);
   const inspectorNode = located?.node ?? null;
   const inspectorPageId = located?.pageId ?? defaultPage;
+  const dialogs = React.useMemo(() => listDialogComponents(webDoc), [webDoc]);
 
   // Keep the latest run events readable inside the hook's onDone callback (which
   // fires before the next render), so a settled turn's activity is captured.
@@ -616,7 +629,12 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
         </div>
       ) : (
         <main className="web-workspace">
-          <section className="web-canvas-region">{renderCanvas()}</section>
+          {/* Clicks that land on the canvas region backdrop (padding around the
+              iframe — never the frame's own content, which is isolated) clear the
+              selection. */}
+          <section className="web-canvas-region" onClick={clearFromBackdrop}>
+            {renderCanvas()}
+          </section>
 
           <aside className="web-chat" aria-label="Website chat">
             <div className="web-rail-head" role="tablist" aria-label="Rail mode">
@@ -646,6 +664,9 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                   node={inspectorNode}
                   pageId={inspectorPageId}
                   theme={theme}
+                  dialogs={dialogs}
+                  previewComponent={previewComponent}
+                  selectNode={selectNode}
                   applyOps={manualEdits.applyOps}
                   busy={manualEdits.busy}
                   note={manualEdits.note}

@@ -143,3 +143,36 @@ export function webBridgeClearMessage(nonce: string): {
 } {
   return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "clear" };
 }
+
+/** The `component-preview` message posted INTO the iframe to open/close a
+ * `<dialog>` component node (the inspector's Preview open / Close preview).
+ * Same nonce-tagging as {@link webBridgeClearMessage}. */
+export function webBridgeComponentPreviewMessage(
+  nonce: string,
+  nodeId: string,
+  action: "open" | "close"
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "component-preview";
+  nodeId: string;
+  action: "open" | "close";
+} {
+  return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "component-preview", nodeId, action };
+}
+
+/** The `select-node` message posted INTO the iframe to select a node
+ * programmatically (the button command form's "Select dialog" affordance). The
+ * frame echoes the normal `select` message back, which repopulates the
+ * inspector. Same nonce-tagging as {@link webBridgeClearMessage}. */
+export function webBridgeSelectNodeMessage(
+  nonce: string,
+  nodeId: string
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "select-node";
+  nodeId: string;
+} {
+  return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "select-node", nodeId };
+}

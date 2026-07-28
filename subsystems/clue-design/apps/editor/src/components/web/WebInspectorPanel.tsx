@@ -1,8 +1,12 @@
 import React, { useState } from "react";
 
 import {
+  buildWebButtonProps,
   setNodeClassesOp,
   setNodePropsOp,
+  webNodeButtonAction,
+  type WebButtonAction,
+  type WebDialogOption,
   type WebNode,
   type WebNodeProps,
   type WebOperation,
@@ -40,6 +44,13 @@ interface WebInspectorPanelProps {
   /** The page the node lives in — the `page_id` every op carries. */
   pageId: string;
   theme: WebTheme | null;
+  /** Every dialog component in the document — the button command form's target
+   * list. */
+  dialogs: WebDialogOption[];
+  /** Open/close a dialog component in the preview (component card preview). */
+  previewComponent: (nodeId: string, action: "open" | "close") => void;
+  /** Select a node in the preview (button command form's "Select dialog"). */
+  selectNode: (nodeId: string) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
   /** Info note (409 reload) and inline error (422 diagnostic), surfaced in the
@@ -61,6 +72,9 @@ export function WebInspectorPanel({
   node,
   pageId,
   theme,
+  dialogs,
+  previewComponent,
+  selectNode,
   applyOps,
   busy,
   note,
@@ -101,6 +115,9 @@ export function WebInspectorPanel({
         node={node}
         pageId={pageId}
         theme={theme}
+        dialogs={dialogs}
+        previewComponent={previewComponent}
+        selectNode={selectNode}
         applyOps={applyOps}
         busy={busy}
       />
@@ -112,11 +129,23 @@ interface BodyProps {
   node: WebNode;
   pageId: string;
   theme: WebTheme | null;
+  dialogs: WebDialogOption[];
+  previewComponent: (nodeId: string, action: "open" | "close") => void;
+  selectNode: (nodeId: string) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
 }
 
-function WebInspectorBody({ node, pageId, theme, applyOps, busy }: BodyProps): React.ReactElement {
+function WebInspectorBody({
+  node,
+  pageId,
+  theme,
+  dialogs,
+  previewComponent,
+  selectNode,
+  applyOps,
+  busy
+}: BodyProps): React.ReactElement {
   const applyClasses = (facet: ClassFacet, value: string | null, intent: string) => {
     applyOps([setNodeClassesOp(pageId, node.id, facet.set(node.classes, value))], intent);
   };
@@ -130,7 +159,21 @@ function WebInspectorBody({ node, pageId, theme, applyOps, busy }: BodyProps): R
         <TextCard node={node} theme={theme} busy={busy} applyClasses={applyClasses} applyProps={applyProps} />
       ) : null}
       {node.kind === "button" ? (
-        <ButtonCard node={node} busy={busy} applyProps={applyProps} />
+        <ButtonCard
+          node={node}
+          busy={busy}
+          dialogs={dialogs}
+          selectNode={selectNode}
+          applyProps={applyProps}
+        />
+      ) : null}
+      {node.kind === "component" ? (
+        <ComponentCard
+          node={node}
+          busy={busy}
+          previewComponent={previewComponent}
+          applyProps={applyProps}
+        />
       ) : null}
       {(node.kind === "container" || node.kind === "section") ? (
         <ContainerCard node={node} busy={busy} applyClasses={applyClasses} />
@@ -344,31 +387,79 @@ function AlignGlyph({ value }: { value: string }): React.ReactElement {
   );
 }
 
+const BUTTON_ACTIONS: { value: WebButtonAction; label: string }[] = [
+  { value: "link", label: "Link" },
+  { value: "show_modal", label: "Open dialog" },
+  { value: "close", label: "Close dialog" }
+];
+
+/** The display label for a dialog target — its node id plus authored name. */
+function dialogOptionLabel(dialog: WebDialogOption): string {
+  return dialog.name ? `${dialog.id} · ${dialog.name}` : dialog.id;
+}
+
 function ButtonCard({
   node,
   busy,
+  dialogs,
+  selectNode,
   applyProps
 }: {
   node: WebNode;
   busy: boolean;
+  dialogs: WebDialogOption[];
+  selectNode: (nodeId: string) => void;
   applyProps: (props: WebNodeProps, intent: string) => void;
 }): React.ReactElement {
   const label = node.label ?? "";
   const variant = node.variant ?? "primary";
-  const [href, setHref] = useState(node.href ?? "");
   const newTab = node.new_tab ?? false;
+  const [href, setHref] = useState(node.href ?? "");
+  // Action + target are local so the UI can switch to a dialog action and show
+  // its empty state even before a target exists to commit against.
+  const [action, setAction] = useState<WebButtonAction>(webNodeButtonAction(node));
+  const [target, setTarget] = useState<string>(node.command_target ?? dialogs[0]?.id ?? "");
 
-  const commit = (patch: Partial<{ href: string; variant: string; newTab: boolean }>, intent: string) => {
+  // Build the whole-props payload from the current fields, overriding one at a
+  // time. A dialog action with no target can't form a valid command — skip the
+  // commit (the empty state explains why).
+  const commit = (
+    over: Partial<{
+      action: WebButtonAction;
+      target: string;
+      variant: string;
+      href: string;
+      newTab: boolean;
+    }>,
+    intent: string
+  ) => {
+    const nextAction = over.action ?? action;
+    const nextTarget = over.target ?? target;
+    if (nextAction !== "link" && !nextTarget) {
+      return;
+    }
     applyProps(
-      {
-        kind: "button",
+      buildWebButtonProps({
+        action: nextAction,
         label,
-        href: patch.href ?? href,
-        variant: patch.variant ?? variant,
-        new_tab: patch.newTab ?? newTab
-      },
+        variant: over.variant ?? variant,
+        href: over.href ?? href,
+        new_tab: over.newTab ?? newTab,
+        command_target: nextTarget
+      }),
       intent
     );
+  };
+
+  const onActionChange = (next: WebButtonAction) => {
+    setAction(next);
+    if (next === "link") {
+      commit({ action: "link" }, "button_action");
+      return;
+    }
+    const nextTarget = target || dialogs[0]?.id || "";
+    setTarget(nextTarget);
+    commit({ action: next, target: nextTarget }, "button_action");
   };
 
   return (
@@ -380,16 +471,262 @@ function ButtonCard({
         disabled={busy}
         onChange={(next) => commit({ variant: next }, "button_variant")}
       />
+      <PropSelect
+        label="Action"
+        value={action}
+        options={BUTTON_ACTIONS.map((choice) => choice.value)}
+        disabled={busy}
+        onChange={(next) => onActionChange(next as WebButtonAction)}
+      />
+
+      {action === "link" ? (
+        <>
+          <label className="field web-insp-field">
+            <span className="field-label">Link (href)</span>
+            <input
+              type="text"
+              value={href}
+              disabled={busy}
+              onChange={(event) => setHref(event.target.value)}
+              onBlur={() => {
+                if (href !== (node.href ?? "")) {
+                  commit({ href }, "button_href");
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+              }}
+              placeholder="https://…"
+            />
+          </label>
+          <label className="web-insp-checkbox">
+            <input
+              type="checkbox"
+              checked={newTab}
+              disabled={busy}
+              onChange={(event) => commit({ newTab: event.target.checked }, "button_new_tab")}
+            />
+            Open in a new tab
+          </label>
+        </>
+      ) : dialogs.length === 0 ? (
+        <p className="web-insp-hint">No dialogs in this page yet</p>
+      ) : (
+        <>
+          <label className="field web-insp-field">
+            <span className="field-label">Dialog</span>
+            <select
+              value={target}
+              disabled={busy}
+              onChange={(event) => {
+                setTarget(event.target.value);
+                commit({ target: event.target.value }, "button_command_target");
+              }}
+            >
+              {dialogs.map((dialog) => (
+                <option key={dialog.id} value={dialog.id}>
+                  {dialogOptionLabel(dialog)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={busy || !target}
+            onClick={() => {
+              if (target) {
+                selectNode(target);
+              }
+            }}
+          >
+            Select dialog
+          </button>
+        </>
+      )}
+    </Card>
+  );
+}
+
+const MARQUEE_DIRECTIONS = ["left", "right"];
+const MARQUEE_SPEED_MIN = 5;
+const MARQUEE_SPEED_MAX = 120;
+
+function clampMarqueeSpeed(value: number): number {
+  if (Number.isNaN(value)) {
+    return MARQUEE_SPEED_MIN;
+  }
+  return Math.min(MARQUEE_SPEED_MAX, Math.max(MARQUEE_SPEED_MIN, value));
+}
+
+const COMPONENT_TITLES: Record<string, string> = {
+  dialog: "Dialog",
+  accordion: "Accordion",
+  marquee: "Marquee"
+};
+
+function ComponentCard({
+  node,
+  busy,
+  previewComponent,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  previewComponent: (nodeId: string, action: "open" | "close") => void;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const component = node.component ?? "";
+  const title = COMPONENT_TITLES[component] ?? "Component";
+
+  if (component === "dialog") {
+    return (
+      <DialogComponentCard
+        node={node}
+        busy={busy}
+        title={title}
+        previewComponent={previewComponent}
+        applyProps={applyProps}
+      />
+    );
+  }
+  if (component === "accordion") {
+    return <AccordionComponentCard node={node} busy={busy} title={title} applyProps={applyProps} />;
+  }
+  if (component === "marquee") {
+    return <MarqueeComponentCard node={node} busy={busy} title={title} applyProps={applyProps} />;
+  }
+  return (
+    <Card title={title}>
+      <p className="web-insp-hint">This component has no editable properties.</p>
+    </Card>
+  );
+}
+
+function DialogComponentCard({
+  node,
+  busy,
+  title,
+  previewComponent,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  title: string;
+  previewComponent: (nodeId: string, action: "open" | "close") => void;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const [ariaLabel, setAriaLabel] = useState(node.aria_label ?? "");
+  const commitAriaLabel = () => {
+    if (ariaLabel === (node.aria_label ?? "")) {
+      return;
+    }
+    const trimmed = ariaLabel.trim();
+    applyProps(
+      trimmed
+        ? { kind: "component", component: "dialog", aria_label: trimmed }
+        : { kind: "component", component: "dialog" },
+      "component_aria_label"
+    );
+  };
+  return (
+    <Card title={title}>
       <label className="field web-insp-field">
-        <span className="field-label">Link (href)</span>
+        <span className="field-label">ARIA label</span>
         <input
           type="text"
-          value={href}
+          value={ariaLabel}
           disabled={busy}
-          onChange={(event) => setHref(event.target.value)}
+          onChange={(event) => setAriaLabel(event.target.value)}
+          onBlur={commitAriaLabel}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="Describe the dialog (optional)"
+        />
+      </label>
+      <div className="web-insp-field">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={busy}
+          onClick={() => previewComponent(node.id, "open")}
+        >
+          Preview open
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          disabled={busy}
+          onClick={() => previewComponent(node.id, "close")}
+        >
+          Close preview
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function AccordionComponentCard({
+  node,
+  busy,
+  title,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  title: string;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const singleOpen = node.single_open ?? false;
+  const [defaultOpen, setDefaultOpen] = useState(
+    typeof node.default_open === "number" ? String(node.default_open) : ""
+  );
+
+  const commit = (over: Partial<{ singleOpen: boolean; defaultOpen: string }>, intent: string) => {
+    const nextDefault = over.defaultOpen ?? defaultOpen;
+    const parsed = nextDefault.trim() === "" ? null : Number.parseInt(nextDefault, 10);
+    applyProps(
+      parsed != null && !Number.isNaN(parsed)
+        ? {
+            kind: "component",
+            component: "accordion",
+            single_open: over.singleOpen ?? singleOpen,
+            default_open: parsed
+          }
+        : { kind: "component", component: "accordion", single_open: over.singleOpen ?? singleOpen },
+      intent
+    );
+  };
+
+  return (
+    <Card title={title}>
+      <label className="web-insp-checkbox">
+        <input
+          type="checkbox"
+          checked={singleOpen}
+          disabled={busy}
+          onChange={(event) => commit({ singleOpen: event.target.checked }, "accordion_single_open")}
+        />
+        Only one panel open at a time
+      </label>
+      <label className="field web-insp-field">
+        <span className="field-label">Default open panel</span>
+        <input
+          type="number"
+          min={0}
+          value={defaultOpen}
+          disabled={busy}
+          onChange={(event) => setDefaultOpen(event.target.value)}
           onBlur={() => {
-            if (href !== (node.href ?? "")) {
-              commit({ href }, "button_href");
+            const current =
+              typeof node.default_open === "number" ? String(node.default_open) : "";
+            if (defaultOpen !== current) {
+              commit({ defaultOpen }, "accordion_default_open");
             }
           }}
           onKeyDown={(event) => {
@@ -397,17 +734,85 @@ function ButtonCard({
               event.currentTarget.blur();
             }
           }}
-          placeholder="https://…"
+          placeholder="None"
         />
       </label>
+    </Card>
+  );
+}
+
+function MarqueeComponentCard({
+  node,
+  busy,
+  title,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  title: string;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const speed = typeof node.speed_s === "number" ? node.speed_s : MARQUEE_SPEED_MIN;
+  const direction: "left" | "right" = node.direction === "right" ? "right" : "left";
+  const pauseOnHover = node.pause_on_hover ?? false;
+  const [speedDraft, setSpeedDraft] = useState(String(speed));
+
+  const commit = (
+    over: Partial<{ speed: number; direction: "left" | "right"; pauseOnHover: boolean }>,
+    intent: string
+  ) => {
+    applyProps(
+      {
+        kind: "component",
+        component: "marquee",
+        speed_s: over.speed ?? speed,
+        direction: over.direction ?? direction,
+        pause_on_hover: over.pauseOnHover ?? pauseOnHover
+      },
+      intent
+    );
+  };
+
+  return (
+    <Card title={title}>
+      <label className="field web-insp-field">
+        <span className="field-label">Speed (seconds)</span>
+        <input
+          type="number"
+          min={MARQUEE_SPEED_MIN}
+          max={MARQUEE_SPEED_MAX}
+          value={speedDraft}
+          disabled={busy}
+          onChange={(event) => setSpeedDraft(event.target.value)}
+          onBlur={() => {
+            const clamped = clampMarqueeSpeed(Number.parseFloat(speedDraft));
+            setSpeedDraft(String(clamped));
+            if (clamped !== speed) {
+              commit({ speed: clamped }, "marquee_speed");
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </label>
+      <PropSelect
+        label="Direction"
+        value={direction}
+        options={MARQUEE_DIRECTIONS}
+        disabled={busy}
+        onChange={(next) => commit({ direction: next as "left" | "right" }, "marquee_direction")}
+      />
       <label className="web-insp-checkbox">
         <input
           type="checkbox"
-          checked={newTab}
+          checked={pauseOnHover}
           disabled={busy}
-          onChange={(event) => commit({ newTab: event.target.checked }, "button_new_tab")}
+          onChange={(event) => commit({ pauseOnHover: event.target.checked }, "marquee_pause_on_hover")}
         />
-        Open in a new tab
+        Pause on hover
       </label>
     </Card>
   );

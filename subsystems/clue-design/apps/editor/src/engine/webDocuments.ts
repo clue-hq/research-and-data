@@ -43,10 +43,12 @@ export interface WebNode {
   // text
   variant?: string;
   content?: string;
-  // button
+  // button — link form (href/new_tab) OR command form (command/command_target)
   label?: string;
   href?: string | null;
   new_tab?: boolean;
+  command?: string;
+  command_target?: string | null;
   // image
   asset_id?: string;
   alt?: string;
@@ -57,6 +59,14 @@ export interface WebNode {
   icon?: string;
   // embed
   html?: string;
+  // component (branch: dialog/accordion/marquee)
+  component?: string;
+  aria_label?: string;
+  single_open?: boolean;
+  default_open?: number;
+  speed_s?: number;
+  direction?: string;
+  pause_on_hover?: boolean;
 }
 
 /** One web page in a {@link WebDoc}: identity/route plus the flattened node
@@ -312,16 +322,126 @@ export function webPromptStorageKey(documentId: string): string {
 
 /** The whole-props payload for a `set_node_props` op — the FULL kind object,
  * carrying the same `kind` discriminant as the node it targets (a props edit
- * may not change kind). The inspector only builds text/button/image; the rest
- * exist for completeness. */
+ * may not change kind). A button is a union: the legacy link form (href/new_tab)
+ * or the command form (an invoker button that opens/closes a dialog). A
+ * component is a branch node (dialog/accordion/marquee). */
+export type WebButtonLinkProps = {
+  kind: "button";
+  label: string;
+  variant: string;
+  href: string;
+  new_tab: boolean;
+};
+export type WebButtonCommandProps = {
+  kind: "button";
+  label: string;
+  variant: string;
+  command: "show_modal" | "close";
+  command_target: string;
+};
+export type WebButtonProps = WebButtonLinkProps | WebButtonCommandProps;
+
+export type WebComponentProps =
+  | { kind: "component"; component: "dialog"; aria_label?: string }
+  | { kind: "component"; component: "accordion"; single_open: boolean; default_open?: number }
+  | {
+      kind: "component";
+      component: "marquee";
+      speed_s: number;
+      direction: "left" | "right";
+      pause_on_hover: boolean;
+    };
+
 export type WebNodeProps =
   | { kind: "text"; variant: string; content: string }
-  | { kind: "button"; label: string; href: string; variant: string; new_tab: boolean }
+  | WebButtonProps
   | { kind: "image"; asset_id: string; alt: string; href?: string | null; new_tab: boolean }
   | { kind: "section"; tag: string; anchor_id?: string | null }
   | { kind: "container" }
   | { kind: "icon"; icon: string }
-  | { kind: "embed"; html: string };
+  | { kind: "embed"; html: string }
+  | WebComponentProps;
+
+/** The three actions a button can take — the inspector's "Action" control. */
+export type WebButtonAction = "link" | "show_modal" | "close";
+
+/** Read a button node's current action off its flattened props. A `command`
+ * of `show_modal`/`close` is the command form; anything else is the link form.
+ * (Type guard for code that would otherwise read `node.href` blindly — a
+ * command button carries no href.) */
+export function webNodeButtonAction(node: WebNode): WebButtonAction {
+  if (node.command === "show_modal") {
+    return "show_modal";
+  }
+  if (node.command === "close") {
+    return "close";
+  }
+  return "link";
+}
+
+/** True when this props object is the command (invoker) form of a button. */
+export function isWebButtonCommandProps(props: WebButtonProps): props is WebButtonCommandProps {
+  return "command" in props;
+}
+
+/** Build a whole-props button payload for the given action, preserving
+ * label + variant across a link↔command switch. The link form reads href +
+ * new_tab; the command form reads command_target. This is the single place the
+ * inspector shapes a button props edit, so link↔command round-trips are total
+ * and testable. */
+export function buildWebButtonProps(params: {
+  action: WebButtonAction;
+  label: string;
+  variant: string;
+  href: string;
+  new_tab: boolean;
+  command_target: string;
+}): WebButtonProps {
+  if (params.action === "link") {
+    return {
+      kind: "button",
+      label: params.label,
+      variant: params.variant,
+      href: params.href,
+      new_tab: params.new_tab
+    };
+  }
+  return {
+    kind: "button",
+    label: params.label,
+    variant: params.variant,
+    command: params.action,
+    command_target: params.command_target
+  };
+}
+
+/** A dialog component the button command form can target (its node id, plus the
+ * authored name when set). */
+export interface WebDialogOption {
+  id: string;
+  name?: string;
+}
+
+/** Every dialog component across the document, in page + node-map order — the
+ * target list the button command form's select offers. */
+export function listDialogComponents(webDoc: WebDoc | null): WebDialogOption[] {
+  if (!webDoc || !Array.isArray(webDoc.pages)) {
+    return [];
+  }
+  const dialogs: WebDialogOption[] = [];
+  for (const page of webDoc.pages) {
+    const nodes = page.nodes;
+    if (!nodes || typeof nodes !== "object") {
+      continue;
+    }
+    for (const node of Object.values(nodes)) {
+      if (node.kind === "component" && node.component === "dialog") {
+        dialogs.push(node.name ? { id: node.id, name: node.name } : { id: node.id });
+      }
+    }
+  }
+  return dialogs;
+}
 
 /** A single manual-edit operation (serde snake_case, discriminated by `kind`).
  * v1 exposes the three the inspector + contenteditable commit path emit. */

@@ -1,13 +1,17 @@
 """Bridge for the website-mode editor iframe (v1).
 
 The renderer's editor mode injects this script into the srcdoc document. It
-does four things and nothing else: hover/selection outlines over
+does the following and nothing else: hover/selection outlines over
 `data-node-id` elements, click-to-select posted to the parent shell,
-suppression of link navigation inside the canvas, and (v1) dblclick
-contenteditable text editing on Text nodes — commit posts
+suppression of link navigation AND invoker-command buttons inside the canvas,
+(v1) dblclick contenteditable text editing on Text nodes — commit posts
 `{type:"text-commit", nodeId, html}` and the SERVER canonicalizes the HTML
 through the SetText sanitizer, so the bridge payload is never trusted as
-markup. Security posture:
+markup — and two parent-driven inbound actions: component preview
+(`{type:"component-preview", nodeId, action:"open"|"close"}` opens/closes a
+`<dialog>` node) and programmatic selection (`{type:"select-node", nodeId}`
+selects a node as if the user had clicked it, echoing the normal `select`
+message back). Security posture:
 
 - The iframe runs with `sandbox="allow-scripts"` (NO allow-same-origin), so
   its origin is the literal string "null"; it cannot read the parent, only
@@ -100,6 +104,11 @@ _BRIDGE_V0_TEMPLATE = """
       var anchor =
         event.target && event.target.closest ? event.target.closest("a") : null;
       if (anchor) event.preventDefault();
+      var cmdBtn =
+        event.target && event.target.closest
+          ? event.target.closest("button[commandfor]")
+          : null;
+      if (cmdBtn) event.preventDefault();
       // Clicks inside the element being edited belong to the caret, not to
       // selection; clicking anywhere else blurs (committing) first.
       if (editing && editing.contains(event.target)) return;
@@ -180,6 +189,21 @@ _BRIDGE_V0_TEMPLATE = """
     if (data.type === "clear" && selected) {
       selected.classList.remove("lumen-selected");
       selected = null;
+    }
+    if (data.type === "component-preview") {
+      var el = document.querySelector(
+        '[data-node-id="' + CSS.escape(String(data.nodeId || "")) + '"]'
+      );
+      if (el && el.tagName === "DIALOG") {
+        if (data.action === "open" && !el.open) el.showModal();
+        if (data.action === "close" && el.open) el.close();
+      }
+    }
+    if (data.type === "select-node") {
+      var target = document.querySelector(
+        '[data-node-id="' + CSS.escape(String(data.nodeId || "")) + '"]'
+      );
+      if (target) setSelected(target);
     }
   });
 

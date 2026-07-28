@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import {
   validateBridgeMessage,
   webBridgeClearMessage,
+  webBridgeComponentPreviewMessage,
+  webBridgeSelectNodeMessage,
   type WebSelection
 } from "@/engine/webBridge";
 
@@ -30,6 +32,13 @@ export interface WebBridgeSelection {
   /** Drop the selection locally only — used when a new render is fetched and
    * the frame's DOM (and any highlight) is rebuilt from scratch. */
   resetSelection: () => void;
+  /** Open/close a `<dialog>` component node in the preview (inspector preview
+   * buttons). No-op until the frame + nonce are live. */
+  previewComponent: (nodeId: string, action: "open" | "close") => void;
+  /** Select a node programmatically — the frame echoes the normal `select`
+   * message back, repopulating the inspector (button command form's "Select
+   * dialog"). No-op until the frame + nonce are live. */
+  selectNode: (nodeId: string) => void;
 }
 
 export function useWebBridgeSelection(params: {
@@ -39,8 +48,14 @@ export function useWebBridgeSelection(params: {
    * a `set_text` op with `html`. Kept in a ref so a changing callback never
    * re-arms the listener. */
   onTextCommit?: (nodeId: string, html: string) => void;
+  /** Invoked on every inbound `select` message (including a null clear), so the
+   * shell can mirror the selection into its persisted inspector id — and, on a
+   * null, empty the inspector. NOT called by `resetSelection` (a render rebuild
+   * keeps the inspector on the same stable node id). Kept in a ref so a
+   * changing callback never re-arms the listener. */
+  onSelect?: (selection: WebSelection | null) => void;
 }): WebBridgeSelection {
-  const { iframeRef, nonceRef, onTextCommit } = params;
+  const { iframeRef, nonceRef, onTextCommit, onSelect } = params;
   const [selection, setSelection] = useState<WebSelection | null>(null);
 
   // While a text node is in contenteditable, the frame keeps posting `select`
@@ -48,6 +63,8 @@ export function useWebBridgeSelection(params: {
   const editingRef = useRef(false);
   const onTextCommitRef = useRef(onTextCommit);
   onTextCommitRef.current = onTextCommit;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -64,6 +81,7 @@ export function useWebBridgeSelection(params: {
           return;
         }
         setSelection(message.selection);
+        onSelectRef.current?.(message.selection);
         return;
       }
       if (message.type === "edit-start") {
@@ -93,5 +111,27 @@ export function useWebBridgeSelection(params: {
     setSelection(null);
   }, []);
 
-  return { selection, clearSelection, resetSelection };
+  const previewComponent = useCallback(
+    (nodeId: string, action: "open" | "close") => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce) {
+        win.postMessage(webBridgeComponentPreviewMessage(nonce, nodeId, action), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
+  const selectNode = useCallback(
+    (nodeId: string) => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce) {
+        win.postMessage(webBridgeSelectNodeMessage(nonce, nodeId), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
+  return { selection, clearSelection, resetSelection, previewComponent, selectNode };
 }
