@@ -199,6 +199,41 @@ def test_web_turn_applied_replaces_doc_and_writes_envelope(client: TestClient) -
     assert envelope["inverse_operations"][0]["web_doc"]["title"] == "My site"
 
 
+def test_web_turn_threads_target_node_ids_to_runner(client: TestClient) -> None:
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content_doc)
+
+    received: dict = {}
+
+    # The scoped-turn stub takes the extra positional arg the seam passes when
+    # the request carries target_node_ids (backward compatible with the 4-arg
+    # stubs the other cases use).
+    def stub(doc, prompt, model, root, target_node_ids):
+        received["target_node_ids"] = target_node_ids
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Scoped the hero.",
+            "web_doc": doc["scene"],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Tighten the hero", "target_node_ids": ["hero"]},
+    )
+    assert response.status_code == 200, response.text
+    run_id = response.json()["run_id"]
+
+    run = wait_for_run(client, run_id)
+    assert run["status"] == "succeeded"
+    assert received["target_node_ids"] == ["hero"]
+
+
 def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
     document = create_web_document(client)
     before = client.get(f"/documents/{document['id']}").json()

@@ -324,6 +324,315 @@ class LumenWebTools:
             indent=2,
         )
 
+    def author_web_subtree(self, node_id: str, html: str) -> str:
+        """Scoped edit: replace ONE top-level section with new markup.
+
+        v0 scoped edits operate at SECTION granularity — a section is a direct
+        child of the page root ("root"). `node_id` is resolved to its enclosing
+        section: if it already IS a root child that is the target; otherwise
+        this walks up the parent chain (parent = the node whose `children`
+        contain it) until it reaches a root child. An id that is not in the page
+        (or resolves to no enclosing section, e.g. the root itself) is a
+        `web_subtree.unknown_node` error listing the section ids.
+
+        `html` is the COMPLETE replacement markup for that one section — a
+        `<section id="...">...</section>` (keep the SAME id to preserve the
+        section's identity across the edit). Flow:
+
+        1. `web_ingest_fragment` parses the markup WITHOUT mutating the doc. Any
+           error-severity diagnostic → {"status": "rejected", diagnostics} (doc
+           untouched), mirroring `author_web_page`.
+        2. Every fragment root must be a top-level section (the page grammar
+           allows only sections at the top level). A non-section root →
+           `web_subtree.not_a_section`. Engine reality: the ingester reports a
+           non-section top-level element as an error (LUMW0102) and voids the
+           fragment, so that specific code is surfaced as `not_a_section` (with
+           a wrap hint) rather than a generic rejection.
+        3. Compose ONE checked batch — `remove_node` of the old section followed
+           by an `insert_node` per fragment root at the old section's index.
+           Same-id replacement is legal precisely because the remove precedes
+           the insert in a single sequentially-applied batch.
+        4. `web_apply_ops` (checked). A rejected batch never replaces the doc;
+           on success the working doc is replaced and the section id + new roots
+           are returned.
+        """
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) or {}
+        root_children = list(root.get("children") or [])
+
+        target_section = self._enclosing_section(node_id, nodes, root_children)
+        if target_section is None:
+            return self._tool_error(
+                "web_subtree.unknown_node",
+                f"node id {node_id!r} does not resolve to a section in the page.",
+                section_ids=root_children,
+            )
+
+        # 1) Ingest the fragment WITHOUT mutating the doc.
+        try:
+            response = self.core.web_ingest_fragment(
+                self.web_doc, html, brand_kit=self.config.brand_kit
+            )
+        except CoreError as error:
+            self.record(
+                "author",
+                "web_subtree_rejected",
+                input_summary=f"{node_id}->{target_section}: {html[:160]}",
+                output_summary=error.message,
+                diagnostics=list(error.diagnostics or []),
+            )
+            return self._tool_error(
+                "web_subtree.helper_error",
+                error.message,
+                diagnostics=list(error.diagnostics or []),
+            )
+
+        diagnostics = response.get("diagnostics") or []
+        errors = [
+            d for d in diagnostics if isinstance(d, dict) and d.get("severity") == "error"
+        ]
+        fragment = response.get("web_fragment") or {}
+        frag_nodes = fragment.get("nodes") or []
+        frag_roots = fragment.get("roots") or []
+        frag_by_id = {
+            n.get("id"): n for n in frag_nodes if isinstance(n, dict) and n.get("id")
+        }
+
+        # 2) Every fragment root must be a top-level section. A top-level
+        #    non-section is reported by the ingester as LUMW0102 (and voids the
+        #    fragment), so that code — or any surviving non-section root — is a
+        #    targeted not_a_section error, distinct from a generic lint reject.
+        non_section_roots = [
+            r for r in frag_roots if (frag_by_id.get(r) or {}).get("kind") != "section"
+        ]
+        structural = bool(non_section_roots) or any(
+            isinstance(d, dict) and d.get("code") == "LUMW0102" for d in errors
+        )
+        if structural:
+            self.record(
+                "author",
+                "web_subtree_rejected",
+                input_summary=f"{node_id}->{target_section}",
+                output_summary="replacement markup is not a top-level section",
+                diagnostics=diagnostics,
+            )
+            return self._tool_error(
+                "web_subtree.not_a_section",
+                "a scoped edit's replacement markup must be one or more top-level "
+                "sections; wrap it in <section id=\"...\">...</section> (keep the "
+                "target section's id).",
+                offending_roots=non_section_roots,
+                diagnostics=diagnostics,
+            )
+
+        # Any other error-severity diagnostic → the fragment is unusable; store
+        # nothing (mirrors author_web_page's reject contract).
+        if errors:
+            self.record(
+                "author",
+                "web_subtree_rejected",
+                input_summary=f"{node_id}->{target_section}",
+                output_summary=f"{len(errors)} error diagnostic(s); section not changed",
+                diagnostics=diagnostics,
+            )
+            return json.dumps(
+                {"status": "rejected", "diagnostics": diagnostics}, indent=2
+            )
+
+        if not frag_roots:
+            # A clean parse that produced no sections (e.g. empty markup): there
+            # is nothing to splice — same remedy as a non-section root.
+            return self._tool_error(
+                "web_subtree.not_a_section",
+                "the replacement markup produced no top-level section; provide a "
+                "<section id=\"...\">...</section>.",
+                diagnostics=diagnostics,
+            )
+
+        # The fragment is a FRESH ingest, so its auto-minted ids (box_1, txt_2,
+        # …) can collide with surviving sections' ids. The remove frees the
+        # target section's own subtree ids (so a same-id replacement — the
+        # section id and any deliberately re-used descendant ids — stays put),
+        # but ids colliding with any SURVIVING node must be renamed or the
+        # insert fails with op.id_taken.
+        removed_ids = self._subtree_ids(nodes, target_section)
+        surviving_ids = set(nodes.keys()) - removed_ids
+        frag_nodes, frag_roots = self._dedupe_fragment_ids(
+            frag_nodes, frag_roots, surviving_ids
+        )
+        frag_by_id = {
+            n.get("id"): n for n in frag_nodes if isinstance(n, dict) and n.get("id")
+        }
+
+        # 3) Compose ONE batch: remove the old section, then insert each
+        #    fragment root at the old section's position. Same-id replacement is
+        #    legal because the remove precedes the insert in the single batch.
+        old_index = root_children.index(target_section)
+        batch: List[JsonObject] = [
+            {"kind": "remove_node", "page_id": self.page_id, "id": target_section}
+        ]
+        for offset, frag_root in enumerate(frag_roots):
+            subtree = self._fragment_subtree(frag_root, frag_nodes, frag_by_id)
+            batch.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "index": old_index + offset,
+                    "nodes": subtree,
+                    "root": frag_root,
+                }
+            )
+
+        # 4) Checked apply. A rejected batch (invalid doc) never replaces the doc.
+        try:
+            applied = self.core.web_apply_ops(self.web_doc, batch)
+        except CoreError as error:
+            self.record(
+                "author",
+                "web_subtree_rejected",
+                input_summary=f"{node_id}->{target_section}",
+                output_summary=error.message,
+                diagnostics=list(error.diagnostics or []),
+            )
+            return json.dumps(
+                {"status": "rejected", "diagnostics": list(error.diagnostics or [])},
+                indent=2,
+            )
+        if not applied.get("ok"):
+            return json.dumps(
+                {"status": "rejected", "diagnostics": applied.get("diagnostics") or []},
+                indent=2,
+            )
+
+        self.web_doc = applied["web_doc"]
+        self._doc_version += 1
+        warnings = [
+            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
+        ]
+        self.record(
+            "author",
+            "web_subtree_authored",
+            input_summary=f"{node_id}->{target_section}",
+            output_summary=f"replaced section {target_section} with {frag_roots}",
+            diagnostics=warnings,
+            payload={"section": target_section, "replaced_with": frag_roots},
+            sink_extra={"section": target_section},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "section": target_section,
+                "roots": frag_roots,
+                "warnings": warnings,
+            },
+            indent=2,
+        )
+
+    def _enclosing_section(
+        self, node_id: str, nodes: JsonObject, root_children: List[str]
+    ) -> Optional[str]:
+        """Resolve `node_id` to the top-level section (root child) that
+        contains it, or None if it is not in the page / has no enclosing
+        section. A root child resolves to itself; a descendant walks up the
+        parent chain until a root child is reached."""
+        if node_id not in nodes:
+            return None
+        root_child_set = set(root_children)
+        if node_id in root_child_set:
+            return node_id
+        parent_of: Dict[str, str] = {}
+        for nid, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            for child in node.get("children") or []:
+                parent_of[child] = nid
+        current = node_id
+        seen = set()
+        while current in parent_of and current not in seen:
+            seen.add(current)
+            current = parent_of[current]
+            if current in root_child_set:
+                return current
+        return None
+
+    def _subtree_ids(self, nodes: JsonObject, root: str) -> set:
+        """The id of `root` plus all its descendants in the page node map."""
+        ids = set()
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            node = nodes.get(current)
+            if not isinstance(node, dict) or current in ids:
+                continue
+            ids.add(current)
+            stack.extend(node.get("children") or [])
+        return ids
+
+    def _dedupe_fragment_ids(
+        self,
+        frag_nodes: List[JsonObject],
+        frag_roots: List[str],
+        reserved: set,
+    ) -> tuple[List[JsonObject], List[str]]:
+        """Rename fragment node ids that collide with `reserved` (doc ids that
+        SURVIVE the splice) to fresh unique ids, rewriting `children` and the
+        roots list. Ids NOT in `reserved` are kept — including the target
+        section's own id and any descendant ids the author deliberately reused,
+        since the remove frees them."""
+        used = set(reserved) | {
+            n.get("id") for n in frag_nodes if isinstance(n, dict)
+        }
+        rename: Dict[str, str] = {}
+        for node in frag_nodes:
+            if not isinstance(node, dict):
+                continue
+            nid = node.get("id")
+            if nid in reserved:
+                counter = 1
+                candidate = f"{nid}_r{counter}"
+                while candidate in used:
+                    counter += 1
+                    candidate = f"{nid}_r{counter}"
+                used.add(candidate)
+                rename[nid] = candidate
+        if not rename:
+            return frag_nodes, frag_roots
+        remapped: List[JsonObject] = []
+        for node in frag_nodes:
+            if not isinstance(node, dict):
+                remapped.append(node)
+                continue
+            clone = dict(node)
+            if clone.get("id") in rename:
+                clone["id"] = rename[clone["id"]]
+            if clone.get("children"):
+                clone["children"] = [rename.get(c, c) for c in clone["children"]]
+            remapped.append(clone)
+        new_roots = [rename.get(r, r) for r in frag_roots]
+        return remapped, new_roots
+
+    def _fragment_subtree(
+        self, root: str, frag_nodes: List[JsonObject], frag_by_id: JsonObject
+    ) -> List[JsonObject]:
+        """The fragment nodes belonging to `root`'s subtree, in the fragment's
+        own order (children before parents). The single-root common case
+        returns every fragment node; a multi-root fragment is partitioned by
+        walking each root's children."""
+        ids = set()
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            if current in ids or current not in frag_by_id:
+                continue
+            ids.add(current)
+            stack.extend(frag_by_id[current].get("children") or [])
+        return [
+            n for n in frag_nodes if isinstance(n, dict) and n.get("id") in ids
+        ]
+
     def asset(
         self,
         action: str,

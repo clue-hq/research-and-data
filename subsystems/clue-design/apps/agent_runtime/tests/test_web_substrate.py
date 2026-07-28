@@ -131,3 +131,142 @@ def test_author_web_page_rejects_raw_hex(tmp_path: Path):
     # Nothing stored: the working doc and version are untouched.
     assert tools._doc_version == before
     assert not (tools._home_page().get("nodes") or {}).get("s")
+
+
+# --- author_web_subtree (scoped edits) against the real helper --------------
+
+TWO_SECTION_HTML = """
+<section id="alpha" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-24 flex flex-col gap-6">
+    <h1 data-variant="display" id="alpha_title">Alpha heading</h1>
+    <p class="text-muted" id="alpha_body">Alpha body copy.</p>
+  </div>
+</section>
+<section id="beta" class="bg-card">
+  <div class="mx-auto max-w-[1200px] px-6 py-24 flex flex-col gap-6">
+    <h2 data-variant="h2">Beta heading</h2>
+    <p class="text-muted">Beta body copy.</p>
+  </div>
+</section>
+"""
+
+BETA_REPLACEMENT = """
+<section id="beta" class="bg-dark">
+  <div class="mx-auto max-w-[1200px] px-6 py-24 flex flex-col gap-6">
+    <h2 data-variant="h2" class="text-inverse">Beta reworked</h2>
+    <p class="text-inverse">A different beta story.</p>
+  </div>
+</section>
+"""
+
+ALPHA_REPLACEMENT = """
+<section id="alpha" class="bg-muted">
+  <div class="mx-auto max-w-[1200px] px-6 py-24 flex flex-col gap-6">
+    <h1 data-variant="display">Alpha reworked</h1>
+  </div>
+</section>
+"""
+
+
+def _subtree(nodes: dict, root: str) -> dict:
+    """Deep-copied {id: node} of `root` and all its descendants."""
+    out: dict = {}
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        node = nodes.get(current)
+        if not isinstance(node, dict):
+            continue
+        out[current] = json.loads(json.dumps(node))
+        stack.extend(node.get("children") or [])
+    return out
+
+
+def _seed_two_sections(tmp_path: Path) -> LumenWebTools:
+    tools = _tools(tmp_path)
+    result = json.loads(tools.author_web_page(TWO_SECTION_HTML))
+    assert result["status"] == "ok", result
+    page = tools._home_page()
+    root = (page.get("nodes") or {}).get(page.get("root")) or {}
+    assert list(root.get("children") or []) == ["alpha", "beta"]
+    return tools
+
+
+def test_author_web_subtree_replaces_only_target_section(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    nodes_before = (tools._home_page().get("nodes") or {})
+    alpha_before = _subtree(nodes_before, "alpha")
+    beta_before = _subtree(nodes_before, "beta")
+    version_before = tools._doc_version
+
+    result = json.loads(tools.author_web_subtree("beta", BETA_REPLACEMENT))
+    assert result["status"] == "ok", result
+    assert result["section"] == "beta"
+    assert result["roots"] == ["beta"]
+    assert tools._doc_version == version_before + 1
+
+    page = tools._home_page()
+    nodes_after = page.get("nodes") or {}
+    root = nodes_after.get(page.get("root")) or {}
+    # Section order and length preserved.
+    assert list(root.get("children") or []) == ["alpha", "beta"]
+    # Section 1 (alpha) is byte-identical; only section 2 (beta) changed.
+    assert _subtree(nodes_after, "alpha") == alpha_before
+    assert _subtree(nodes_after, "beta") != beta_before
+    # The new beta copy is present.
+    assert any(
+        "Beta reworked" in (node.get("content") or "")
+        for node in nodes_after.values()
+    )
+
+
+def test_author_web_subtree_resolves_child_to_section(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    nodes = tools._home_page().get("nodes") or {}
+    # Any real descendant of alpha (not alpha itself) must resolve to "alpha".
+    child_ids = [i for i in _subtree(nodes, "alpha") if i != "alpha"]
+    assert child_ids, "alpha has descendants"
+    result = json.loads(tools.author_web_subtree(child_ids[0], ALPHA_REPLACEMENT))
+    assert result["status"] == "ok", result
+    assert result["section"] == "alpha"
+
+
+def test_author_web_subtree_rejects_lint_violation(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    version_before = tools._doc_version
+    beta_before = _subtree(tools._home_page().get("nodes") or {}, "beta")
+    # A raw hex color inside a valid section is a hard lint error → rejected.
+    result = json.loads(
+        tools.author_web_subtree(
+            "beta",
+            '<section id="beta"><div class="bg-[#ff0000]"><p>x</p></div></section>',
+        )
+    )
+    assert result["status"] == "rejected", result
+    assert any(d.get("severity") == "error" for d in result["diagnostics"])
+    # Doc untouched.
+    assert tools._doc_version == version_before
+    assert _subtree(tools._home_page().get("nodes") or {}, "beta") == beta_before
+
+
+def test_author_web_subtree_requires_section_root(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    version_before = tools._doc_version
+    # A top-level non-section replacement → not_a_section.
+    result = json.loads(
+        tools.author_web_subtree(
+            "beta", '<div id="beta" class="bg-dark"><p>x</p></div>'
+        )
+    )
+    assert result["status"] == "error", result
+    assert result["error_code"] == "web_subtree.not_a_section"
+    assert tools._doc_version == version_before
+
+
+def test_author_web_subtree_unknown_node(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    result = json.loads(tools.author_web_subtree("nope", BETA_REPLACEMENT))
+    assert result["status"] == "error", result
+    assert result["error_code"] == "web_subtree.unknown_node"
+    # The error lists the real section ids to guide the caller.
+    assert set(result["section_ids"]) == {"alpha", "beta"}

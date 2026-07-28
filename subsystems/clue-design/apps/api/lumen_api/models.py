@@ -150,6 +150,11 @@ class WebTurnRequest(BaseModel):
 
     prompt: str
     model: Optional[str] = None
+    # Scoped edit turns: the node ids the user selected in the editor. When
+    # present, the turn is scoped to the enclosing section(s) of those nodes
+    # (the orchestrator reacts to a "TURN TARGET" line appended to the brief).
+    # Absent/None → an ordinary whole-page turn.
+    target_node_ids: Optional[List[str]] = None
 
 
 class SetAgentInstructionsRequest(BaseModel):

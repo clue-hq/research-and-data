@@ -55,6 +55,7 @@ from .dto import (
     scene_replaced_dto,
     snapshot_summary,
 )
+from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
@@ -1875,6 +1876,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         override = app.state.web_turn_runner
         prompt = payload.prompt
         model = payload.model
+        target_node_ids = payload.target_node_ids
 
         def worker() -> None:
             store = Repository(connect(database_path))
@@ -1889,10 +1891,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 try:
                     doc = store.require_document(document_id)
                     if override is not None:
-                        response = override(doc, prompt, model, root)
+                        # Backward-compatible seam: existing stubs take four
+                        # positional args; only pass the scoped-target ids when
+                        # the request carried them (a five-arg stub).
+                        if target_node_ids:
+                            response = override(
+                                doc, prompt, model, root, target_node_ids
+                            )
+                        else:
+                            response = override(doc, prompt, model, root)
                     else:
                         response = run_web_agent_turn(
-                            doc, prompt, model, root, event_sink=sink
+                            doc,
+                            prompt,
+                            model,
+                            root,
+                            event_sink=sink,
+                            target_node_ids=target_node_ids,
                         )
                     status = (
                         "failed"
@@ -1948,17 +1963,40 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         request: Request,
         mode: str = "editor",
         runtime_src: Optional[str] = None,
+        bridge: int = 0,
+        nonce: Optional[str] = None,
         repo: Repository = Depends(repository),
     ) -> JsonObject:
         # Render the stored WebDoc to HTML for the editor iframe (editor mode,
         # instrumented) or a delivery snapshot. Assets resolve against this
         # request's own origin so a preview works regardless of deploy host.
+        # `bridge=1&nonce=...` additionally injects the selection bridge (v0):
+        # the nonce is minted by the shell per render and validated against a
+        # strict charset so the interpolation can never become script
+        # injection; the bridge only makes sense in editor mode.
         document = require_document(repo, document_id)
         require_web_document(document)
         web_doc = document["scene"]
         brand_kit, _source, _assets, _fonts = resolve_web_turn_brand_kit(
             web_doc, database_path=app.state.database_path
         )
+        bridge_script = None
+        if bridge:
+            if mode != "editor":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "web_render.bridge_mode",
+                        "message": "the selection bridge is editor-mode only",
+                    },
+                )
+            try:
+                bridge_script = render_bridge_script(nonce or "")
+            except ValueError as error:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "web_render.bad_nonce", "message": str(error)},
+                ) from error
         asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"
         try:
             response = app.state.core.web_render(
@@ -1967,6 +2005,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 mode=mode,
                 asset_base_url=asset_base_url,
                 tailwind_runtime_src=runtime_src,
+                bridge_script=bridge_script,
                 brand_kit=brand_kit,
             )
         except CoreError as error:
@@ -4630,18 +4669,91 @@ def run_agent_turn_preview(
     return agent_response_from_trace(payload_result, tools.trace_dir, tools.scene)
 
 
+def _web_node_label(node: JsonObject) -> Optional[str]:
+    """A cheap human label for a WebDoc node: its data-name, else its text/
+    button copy (inline markup stripped), truncated. None when nothing cheap
+    is available."""
+    for key in ("name", "content", "label"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            text = re.sub(r"<[^>]+>", "", value).strip()
+            if text:
+                return text[:40]
+    return None
+
+
+def _describe_web_turn_targets(
+    web_doc: JsonObject, target_node_ids: List[str]
+) -> str:
+    """Build the TURN TARGET brief addendum for a scoped edit turn: one line
+    per selected node, naming the node, its kind, and the enclosing section the
+    turn should be scoped to. A selection that no longer exists in the page
+    yields a line telling the agent to fall back to its own judgment."""
+    page = None
+    for candidate in web_doc.get("pages") or []:
+        if isinstance(candidate, dict) and candidate.get("id") == "home":
+            page = candidate
+            break
+    nodes = (page or {}).get("nodes") or {}
+    root_id = (page or {}).get("root")
+    root = nodes.get(root_id) or {}
+    root_child_set = set(root.get("children") or [])
+    parent_of: Dict[str, str] = {}
+    for nid, node in nodes.items():
+        if isinstance(node, dict):
+            for child in node.get("children") or []:
+                parent_of[child] = nid
+
+    lines: List[str] = []
+    for target in target_node_ids:
+        node = nodes.get(target)
+        if not isinstance(node, dict):
+            lines.append(
+                f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
+                "longer exists in the page — use your own judgment about what to edit."
+            )
+            continue
+        section: Optional[str] = None
+        if target in root_child_set:
+            section = target
+        else:
+            current = target
+            seen: set[str] = set()
+            while current in parent_of and current not in seen:
+                seen.add(current)
+                current = parent_of[current]
+                if current in root_child_set:
+                    section = current
+                    break
+        kind = node.get("kind") or "node"
+        label = _web_node_label(node)
+        descriptor = f'{kind} "{label}"' if label else str(kind)
+        section_str = f"`{section}`" if section else "the page"
+        lines.append(
+            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}) inside "
+            f"section {section_str}. Scope this turn to that section unless the "
+            "brief clearly requires more."
+        )
+    return "".join(lines)
+
+
 def run_web_agent_turn(
     document: JsonObject,
     prompt: str,
     model: Optional[str],
     root: Path,
     event_sink=None,
+    target_node_ids: Optional[List[str]] = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
     pinned asset store + by-value brand kit) but drives the web harness and
     returns the web turn envelope. Never raises: any failure folds into a
-    failed envelope so the worker records it cleanly."""
+    failed envelope so the worker records it cleanly.
+
+    `target_node_ids` (a scoped edit turn): each selected node is resolved to
+    its enclosing section in Python and appended to the brief as a TURN TARGET
+    line so the orchestrator scopes the turn to that section."""
     ensure_agent_runtime_path(root)
     try:
         from lumen_agent.config import AgentRuntimeConfig
@@ -4654,6 +4766,8 @@ def run_web_agent_turn(
         )
 
     web_doc = document["scene"]
+    if target_node_ids:
+        prompt = prompt + _describe_web_turn_targets(web_doc, target_node_ids)
     try:
         config = AgentRuntimeConfig.from_env(root)
         if model:

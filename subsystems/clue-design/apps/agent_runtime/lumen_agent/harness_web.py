@@ -129,7 +129,12 @@ def create_web_deepagent(
                 brand_card=tools.brand_card_text, theme_token_names=theme_token_names
             ),
             "model": author_model,
-            "tools": [view, tools.author_web_page, tools.asset],
+            "tools": [
+                view,
+                tools.author_web_page,
+                tools.author_web_subtree,
+                tools.asset,
+            ],
             "skills": workspace_skills,
         },
         {
