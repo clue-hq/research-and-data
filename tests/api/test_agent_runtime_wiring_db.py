@@ -120,6 +120,9 @@ def _c64_delegating_registry() -> AgentProfileRegistry:
         selected_profile_versions={
             **C6_ACTIVE_PROFILE_VERSIONS,
             AgentRole.HEAD_OF_ABM: "v1",
+            AgentRole.RESEARCH: "v1",
+            AgentRole.CONTENT_DRAFTER: "v1",
+            AgentRole.REVIEWER: "v1",
         },
     )
 

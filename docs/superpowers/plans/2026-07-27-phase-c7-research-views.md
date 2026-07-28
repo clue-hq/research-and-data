@@ -848,6 +848,8 @@ Commit: `feat(c7): cut production committee research into handoff`
 
 ## 13. C7.7 — tools, API, projections, events, and compatibility
 
+**Status:** COMPLETE — implemented and verified 2026-07-28.
+
 ### Goal
 
 Expose the completed C7 capability to the product and governed agent surfaces.
@@ -945,6 +947,51 @@ to change that external source; the repository contract remains authoritative fo
 ### Checkpoint
 
 Commit: `feat(c7): expose research views through tools and API`
+
+### Implementation closeout (2026-07-28)
+
+- Registered the exact `compose_dossier@1`, `get_research_view@1`, and
+  `recheck_research_view@1` contracts through the central toolbelt. The compatibility compose name
+  creates only a structured C7 receipt; get is effect-free and reference-only; compose/re-check
+  use exact operation-idempotent replay. All three fail closed when the serving collaborators are
+  absent and authorize the exact workspace/project/run/product/subject scope before invocation.
+- Added the C7 routes to the existing projections application: account/contact live views, saved
+  receipt resolution, compose, re-check, evidence actions, and body-free project status. Detail
+  reads carry the stable schema version, full-view ETag/source-state hash, deterministic section
+  pagination, typed unavailable/redacted states, and not-found semantics for cross-tenant,
+  wrong-shape, merged, or absent subjects. Mutations require `Idempotency-Key` and invoke the same
+  journaled tools rather than a route-local write path.
+- Added the list-safe research-view status projection with latest receipt/hash, stale-section
+  count, coverage availability/count, and latest re-check state. It contains no claim values,
+  evidence spans, source locators, or rendered body.
+- Centralized C7 event publication by projecting the body-free `research_view_event` outbox into
+  the existing durable run-event/SSE substrate in the same transaction. Canonical
+  `research_view.updated`, `research_view.section_stale`, and
+  `research_view.recheck_completed` events carry only scope, ids, reason codes, and fetch refs.
+  The retained `dossier.updated` and `dossier.section.stale` aliases are emitted from the same
+  source event id, so SSE resume cannot observe a second fact.
+- Routed legacy account/contact `/dossier` reads and legacy compose to the canonical handlers.
+  They return identical payloads, ids, hashes, authorization, and replay results, with deprecation
+  and successor metadata. C7.7 creates no dossier document table, alternate receipt, rendered
+  body, permanent URL, or second event writer.
+- Added new live C6 profile versions containing only the additional `get_research_view@1`
+  authority; every prior profile version and manifest remains immutable for cold resume. Compose
+  and re-check retain no model authority; the effect-free tool returns a fetch ref and hashes only.
+  New Head delegation grants and manifest pins were published atomically, while the frozen C6.4
+  delegation regression remains pinned to its internally consistent v1 profile family.
+- Integration coverage exercises account and contact canonical/legacy parity, wrong subject shape,
+  tenant hiding, exact tool replay, pagination/hash stability, snapshot resolution, status
+  projection, typed evidence unavailability, C6 reference-only access, downstream nine-block
+  reference consumption, canonical/alias event identity, SSE `Last-Event-ID` resume, and body
+  leakage sentinels.
+- The older M12 `account_handoff.payload` remains the previously documented bounded legacy
+  contract; no C7.7 path writes or reads it. C7.8 retains the explicit serialized-payload/DSAR
+  sentinel and final disposition gate rather than silently changing the M12 serve contract inside
+  this product-surface slice.
+- Verification passed: 34 focused C7.7/registry/authority tests; clean full DB-enabled suite
+  (2,698 passed, 24 skipped); Mypy across 434 source files; all 24 dependency contracts; Ruff
+  format/check across 887 tracked/C7 Python files; one Alembic head; clean isolated
+  head → base → head; full offline migration SQL generation; and `git diff --check`.
 
 ---
 

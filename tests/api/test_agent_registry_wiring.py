@@ -40,28 +40,28 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        AgentRole.HEAD_OF_ABM: "e20d06dd425c96294b3408face6bd141317c461e07c43d3c24d206ee03a3a08a",
-        AgentRole.RESEARCH: "273a3c50019587bacf76dcc235c8e0f152a65fe615f3bc312906a064d921bba8",
+        AgentRole.HEAD_OF_ABM: "c02590daa7b000a2c64e389cbf3cfd4af48e90acdff3248cca5cbb654762d6fd",
+        AgentRole.RESEARCH: "b2e2aba5b7c25795a3c337c7ce01b3486fa3070634ad7ce050c9114007c6d0ea",
         AgentRole.CONTENT_DRAFTER: (
-            "f1249b6e22ac2f4040d640270e6f2eec19ad898315e1e0308ff749221cbafb61"
+            "14ffe6c4cf091cfd2efca8bf65a721c64af1b43ecfb08198dad67904dde794dd"
         ),
-        AgentRole.REVIEWER: "83b78489beb635cf68f2f5e60825fd739c28a091c99493b2a71b5e6e33d50241",
+        AgentRole.REVIEWER: "1ae8a797285aaea321e9675a59ad0bfc2fd2497aff30300968ab38a438c1ecbc",
         AgentRole.ACCOUNT_RESEARCH: (
-            "bdf6e1eb1fd86ae4a028dad89f08fa4dcf3477080499558c1896ac98f8c18a5f"
+            "05497a3e86d87ec59086ba0f44bab50d0a353f26d011926564c6f60795958e2b"
         ),
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
-        expected_tools = (
-            {"research_account_gaps@2"}
-            if role is AgentRole.ACCOUNT_RESEARCH
-            else {
-                f"{name}@{toolbelt.descriptor(name).version}"
-                for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
-                if role in roles
-            }
-        )
+        expected_tools = {
+            (
+                "research_account_gaps@2"
+                if name == "research_account_gaps"
+                else f"{name}@{toolbelt.descriptor(name).version}"
+            )
+            for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
+            if role in roles
+        }
         assert {pin.address for pin in resolved.profile.tools} == expected_tools
         assert resolved.resource_manifest.aggregate_sha256 == digest
         assert all(body.ref in resolved.resource_map for body in resolved.resource_snapshot.bodies)
@@ -94,9 +94,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         if item.status is AgentCapabilityStatus.AVAILABLE
     }
 
-    assert len(by_address) == 33
+    assert len(by_address) == 36
     assert available == {
         "evaluate_stage0_readiness@1",
+        "get_research_view@1",
         "propose_field@1",
         "propose_source@1",
         "record_interview_answer@1",
@@ -177,12 +178,15 @@ def test_c66_specialists_freeze_skill_output_budget_and_no_child_delegation(
     assert "delegate_specialist: unavailable" in resolved.generated_resource_map
 
 
-def test_c67_account_profile_has_one_replay_safe_tool_and_no_self_evaluator_or_delegation(
+def test_c67_account_profile_has_read_plus_one_write_tool_and_no_self_evaluator_or_delegation(
     registry: AgentProfileRegistry,
 ) -> None:
     resolved = registry.resolve(AgentRole.ACCOUNT_RESEARCH)
 
-    assert [item.address for item in resolved.profile.tools] == ["research_account_gaps@2"]
+    assert [item.address for item in resolved.profile.tools] == [
+        "get_research_view@1",
+        "research_account_gaps@2",
+    ]
     assert [item.resource.address for item in resolved.skill_disclosures()] == [
         "skill:account-gap-research@v1"
     ]

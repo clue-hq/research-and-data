@@ -40,13 +40,20 @@ from clue_api.ingestion_tools import (
 from clue_api.ingestion_tools import (
     header_workspace_resolver as ingestion_header_workspace_resolver,
 )
+from clue_api.research_view_api import (
+    build_research_view_router,
+    research_actor_resolver,
+    research_workspace_resolver,
+)
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_config import Settings, load_settings
 from clue_core import (
     EntityId,
+    EvidenceAccessService,
     ProjectRunId,
     ReadinessDecisionId,
     ReconRunId,
+    ResearchViewComposer,
     RunId,
     new_operation_id,
     operation_id_from_key,
@@ -80,6 +87,7 @@ from clue_projections import (
 )
 from clue_research.durable import list_run_events
 from clue_research.durable.project_run import get_project_run
+from clue_research.narrative import ResearchViewSnapshotService
 from clue_research.review import ObservabilitySurface
 from clue_storage import StorageBackend
 from clue_toolbelt import (
@@ -698,6 +706,9 @@ def create_projections_app(
     sse_live_tail: bool = True,
     manage_db_lifespan: bool = True,
     agent_registry: AgentProfileRegistry | None = None,
+    research_view_composer: ResearchViewComposer | None = None,
+    research_view_snapshots: ResearchViewSnapshotService | None = None,
+    research_view_evidence_access: EvidenceAccessService | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -726,9 +737,11 @@ def create_projections_app(
     if workspace_resolver is not None:
         app.dependency_overrides[header_workspace_resolver] = workspace_resolver
         app.dependency_overrides[ingestion_header_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[research_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver
+        app.dependency_overrides[research_actor_resolver] = actor_resolver
     app.include_router(
         create_projections_router(
             surface=surface,
@@ -745,6 +758,28 @@ def create_projections_app(
             build_ingestion_router(
                 tool_invoker=tool_invoker,
                 storage=ingestion_storage,
+                conn_factory=conn_factory,
+            )
+        )
+    research_components = (
+        research_view_composer,
+        research_view_snapshots,
+        research_view_evidence_access,
+    )
+    if any(component is not None for component in research_components):
+        if not all(component is not None for component in research_components):
+            raise ValueError(
+                "research-view serving requires composer, snapshot service, and evidence access"
+            )
+        assert research_view_composer is not None
+        assert research_view_snapshots is not None
+        assert research_view_evidence_access is not None
+        app.include_router(
+            build_research_view_router(
+                composer=research_view_composer,
+                snapshots=research_view_snapshots,
+                evidence_access=research_view_evidence_access,
+                tool_invoker=tool_invoker,
                 conn_factory=conn_factory,
             )
         )

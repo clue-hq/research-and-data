@@ -110,6 +110,7 @@ from clue_research.narrative.research_view_recheck import (
     ResearchViewRecheckService,
     ResearchViewRecheckUnavailable,
     ResearchViewSectionStalenessService,
+    append_research_view_event,
 )
 from clue_research.narrative.research_view_snapshots import (
     ResearchViewSnapshotCommand,
@@ -219,6 +220,7 @@ __all__ = [
     "ResearchViewRecheckUnavailable",
     "ResearchViewRecheckService",
     "ResearchViewSectionStalenessService",
+    "append_research_view_event",
     # policy-as-data (M12.1 AC8)
     "PositioningPolicy",
     "DEFAULT_POSITIONING_POLICY",

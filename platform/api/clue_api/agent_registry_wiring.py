@@ -27,11 +27,11 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v3",
-    AgentRole.RESEARCH: "v2",
-    AgentRole.CONTENT_DRAFTER: "v2",
-    AgentRole.REVIEWER: "v2",
-    AgentRole.ACCOUNT_RESEARCH: "v1",
+    AgentRole.HEAD_OF_ABM: "v4",
+    AgentRole.RESEARCH: "v3",
+    AgentRole.CONTENT_DRAFTER: "v3",
+    AgentRole.REVIEWER: "v3",
+    AgentRole.ACCOUNT_RESEARCH: "v2",
 }
 
 
@@ -42,6 +42,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
     ),
+    "compose_dossier": (),
     "confirm_icp": (),
     "confirm_project_product": (),
     "decide_field_proposal": (),
@@ -49,6 +50,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "discover_accounts": (),
     "estimate_project": (),
     "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
+    "get_research_view": (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.RESEARCH,
+        AgentRole.CONTENT_DRAFTER,
+        AgentRole.REVIEWER,
+        AgentRole.ACCOUNT_RESEARCH,
+    ),
     "import_accounts": (),
     "override_stage0_readiness": (),
     "pause_run": (),
@@ -56,6 +64,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "propose_field": (AgentRole.HEAD_OF_ABM,),
     "propose_source": (AgentRole.HEAD_OF_ABM,),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
+    "recheck_research_view": (),
     "research_account_gaps": (AgentRole.ACCOUNT_RESEARCH,),
     "resolve_committee": (AgentRole.RESEARCH,),
     "resume_run": (),

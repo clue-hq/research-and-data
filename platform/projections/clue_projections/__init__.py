@@ -67,6 +67,11 @@ from clue_projections.research_coverage import (
     research_attempt_history,
     research_coverage,
 )
+from clue_projections.research_views import (
+    ResearchViewStatus,
+    ResearchViewStatusPage,
+    research_view_statuses,
+)
 from clue_projections.run_views import account_progress, run_overview, run_readiness
 from clue_projections.stage0 import (
     ReconBriefView,
@@ -118,6 +123,9 @@ __all__ = [
     "ResearchAttemptHistory",
     "ResearchAttemptHistoryItem",
     "research_coverage",
+    "ResearchViewStatus",
+    "ResearchViewStatusPage",
+    "research_view_statuses",
     "research_attempt_history",
     # Phase C2 proposals
     "ProposalScopeCard",

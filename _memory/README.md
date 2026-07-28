@@ -27,6 +27,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-28-phase-c7-7-product-serving.md` — C7.7 complete: exact reference-only tools,
+  account/contact and legacy-alias HTTP surfaces, body-free status projections, transactional
+  canonical/SSE event aggregation, live C6 fetch authority, clean full verification, and C7.8
+  adversarial/DSAR/performance closeout.
 - `2026-07-28-phase-c7-6-production-committee-handoff.md` — C7.6 complete: one run/product-bound
   governed contact resolver, production C7/M12 adapters, exact product lineage, real
   retention-wrapped materialize/outbox HANDOFF, run-keyed composition isolation, adversarial
