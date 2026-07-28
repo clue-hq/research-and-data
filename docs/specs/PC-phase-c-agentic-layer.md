@@ -1,8 +1,8 @@
 # Phase C — governed agency: Step 4 through Step 7
 
-**Status:** ACTIVE — C0–C6 implemented; C7.0 contract/fixture freeze complete on
-`platform/c7-research-views`, C7.1 next
-(2026-07-26)
+**Status:** ACTIVE — C0–C7 implemented and verified. C7 closed on
+`platform/c7-research-views`; only C8's pre-multi-worker hard fencing for legacy project-run
+writes remains (2026-07-28).
 
 **Integration branch:** `platform/workspace-restructure`
 
@@ -87,18 +87,11 @@ The platform now has:
 
 ### 2.2 What is still absent
 
-- no generic run-graph journal or recipe executor;
-- no durable Recipe-#0 execution beyond C4's narrow in-memory topological seam;
-- C5.0 now supplies an exact-version tool registry, typed graph-output descriptors, stable
-  operation ids, and a standing Recipe-#0/#1 replay audit; the append-only execution journal and
-  execution-lifetime invocation replay are still absent until C5.1;
-- no run supervisor, account-quarantine enforcement, or run-local source circuit breaker;
-- no platform deepagent, research subagent, or governed per-account worker agent;
-- no production `HandoffCommitteeReader`;
-- no `compose_dossier` / derivation projection.
-
-Phase C must not describe any item in this list as already built merely because its substrate or a
-test fake exists.
+C5's journal/recipes/executor/supervisor, C6's platform deepagent, and C7's production structured
+research views and handoff are implemented. The only remaining Phase-C cross-cutting item is hard
+fencing on the legacy project-run/research-domain write path before multi-worker production
+deployment. C5 graph execution already carries generation fences; this residual must extend the
+same protection to the older fleet path rather than invent another execution model.
 
 ---
 
@@ -516,6 +509,11 @@ explicitly brings it into scope.
 
 ### C7 — structured research views + derivations (Step 7)
 
+**Implementation state:** complete. C7.0–C7.8 shipped the frozen contracts, prerequisite
+hardening, derivation/entailment substrate, deterministic account/contact composition,
+reference-only snapshots and evidence capabilities, governed re-check, production committee
+handoff, product serving/legacy aliases, and the adversarial/DSAR/performance closeout.
+
 **Goal.** Produce readable, regenerable account/contact research views without turning rendered
 prose into a second truth store. Per the founder's 2026-07-27 clarification, “dossier” is the
 logical structured research-view contract, not a canonical Markdown/HTML/file body.
@@ -547,17 +545,17 @@ logical structured research-view contract, not a canonical Markdown/HTML/file bo
 These are not an independent “miscellaneous” worktree. Each item lands before the slice that
 depends on it:
 
-| Item | Must land before |
+| Item | Disposition |
 |---|---|
-| All claim-producing spend paths audited through `PreSpendGate.check` + integration/lint guard | C1/C2 external spend |
-| Per-claim identity-binding classification stamped before immutable claim insert | C1/C2 contact-claim loops |
-| Merge conflict equality uses field `equality_mode` consistently | C7 conflict/dossier consumption |
-| Retention-expired claims cannot win current-value merge | C7 handoff/dossier |
-| DSAR redacts/deletes personal text in `faithfulness_verdict.rationale` | C7 DSAR-clean claim |
-| Production `HandoffCommitteeReader` | C7 real handoff |
-| Presign scope policy | Any evidence-serving consumer |
-| Hard lease fence tokens | Multi-worker production deployment |
-| Per-product fit + contact-class additions | M12-adjacent/C7 integration as specified |
+| All claim-producing spend paths audited through `PreSpendGate.check` + integration/lint guard | Closed before the dependent C1–C4 paths |
+| Per-claim identity-binding classification stamped before immutable claim insert | Closed on contact-claim composition paths |
+| Merge conflict equality uses field `equality_mode` consistently | Closed and jointly tested in C7.1 |
+| Retention-expired claims cannot win current-value merge | Closed and fail-closed tested in C7.1 |
+| DSAR redacts personal text in `faithfulness_verdict.rationale` | Closed with one-way redaction and sentinel proof in C7.1/C7.8 |
+| Production `HandoffCommitteeReader` | Closed with real materialization/outbox proof in C7.6 |
+| Presign scope policy | Closed behind the sole authorized evidence service in C7.4 |
+| Hard lease fence tokens on the legacy project-run/research write path | **Remaining; required before multi-worker production deployment** |
+| Per-product fit + contact-class additions | Closed through explicit product scope and negative tests in C7.3/C7.6 |
 
 Every child spec must list the C8 item it consumes and the test proving closure.
 

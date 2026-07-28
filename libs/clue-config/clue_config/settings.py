@@ -119,6 +119,24 @@ class Settings(BaseSettings):
     # Env: ``CLUE_AGENT_CLEANUP_INTERVAL_S``.
     agent_cleanup_interval_s: float = 3600.0
 
+    # --- C7 structured research-view activation -------------------------------------------
+    # Each externally reachable capability is independently default-off. Deployments can canary
+    # read-only projection first, then enable mutations/evidence, cut production handoff over, and
+    # expose the deprecated dossier aliases last. Rollback disables routes/handlers only; the
+    # append-only receipts, snapshots, and history remain inert and readable after reactivation.
+    # Env: ``CLUE_C7_RESEARCH_VIEW_READ_ENABLED``.
+    c7_research_view_read_enabled: bool = False
+    # Env: ``CLUE_C7_SNAPSHOT_COMPOSE_ENABLED``.
+    c7_snapshot_compose_enabled: bool = False
+    # Env: ``CLUE_C7_EVIDENCE_ACTIONS_ENABLED``.
+    c7_evidence_actions_enabled: bool = False
+    # Env: ``CLUE_C7_RECHECK_ENABLED``.
+    c7_recheck_enabled: bool = False
+    # Env: ``CLUE_C7_PRODUCTION_HANDOFF_ENABLED``.
+    c7_production_handoff_enabled: bool = False
+    # Env: ``CLUE_C7_LEGACY_DOSSIER_ALIAS_ENABLED``.
+    c7_legacy_dossier_alias_enabled: bool = False
+
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:
     # ``firecrawl`` (the paid API, default) or ``scrapling`` (local, credit-free). Read only by

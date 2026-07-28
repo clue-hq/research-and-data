@@ -527,27 +527,29 @@ class ComposingRunDriver:
         )
         registry.register(verification)
 
-        # HANDOFF — the C7.6 production committee reader is bound to this exact project run and
-        # product. The real M12 handler materialises before it writes the outbox event; the
-        # retention/objection wrapper remains outside it so every personal read is post-tombstone.
-        contact_eligibility = build_contact_eligibility_resolver(
-            project_run_id=row.id,
-            product_id=row.product_id,
-            conn_factory=self._session_factory,
-        )
-        committee_reader = build_production_handoff_committee_reader(contact_eligibility)
-        real_handoff = build_handoff_phase_handler(
-            assembler=build_handoff_assembler(committee_reader=committee_reader),
-            conn_factory=self._session_factory,
-            product_id=row.product_id,
-        )
-        handoff = build_retention_sweeping_handoff_handler(
-            inner=real_handoff,
-            account_resolver=high_tier_resolver,
-            session_factory=self._session_factory,
-            storage=self._storage,
-        )
-        registry.register(handoff)
+        # HANDOFF — a separate default-off cutover. When disabled there is no HANDOFF handler:
+        # the state machine fails closed at dispatch and cannot write a fake success marker. Once
+        # enabled, the C7.6 reader is bound to this exact project run and product, and the
+        # retention/objection wrapper remains outside the real materialising handler.
+        if self._settings.c7_production_handoff_enabled:
+            contact_eligibility = build_contact_eligibility_resolver(
+                project_run_id=row.id,
+                product_id=row.product_id,
+                conn_factory=self._session_factory,
+            )
+            committee_reader = build_production_handoff_committee_reader(contact_eligibility)
+            real_handoff = build_handoff_phase_handler(
+                assembler=build_handoff_assembler(committee_reader=committee_reader),
+                conn_factory=self._session_factory,
+                product_id=row.product_id,
+            )
+            handoff = build_retention_sweeping_handoff_handler(
+                inner=real_handoff,
+                account_resolver=high_tier_resolver,
+                session_factory=self._session_factory,
+                storage=self._storage,
+            )
+            registry.register(handoff)
 
         run = ProjectRun(
             store=self._store,
@@ -565,7 +567,7 @@ class ComposingRunDriver:
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
             committee_sources=committee_sources,
-            handoff_narrative_emit=True,
+            handoff_narrative_emit=self._settings.c7_production_handoff_enabled,
         )
         if committee_sources == 0:
             # Zero committee sources ⇒ DEEP resolves no buying committee ⇒ required output #3 (the

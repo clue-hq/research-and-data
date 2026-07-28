@@ -12,7 +12,7 @@ from httpx import ASGITransport
 from sqlalchemy import text
 
 from clue_api import build_tool_invoker, build_toolbelt, create_projections_app
-from clue_config import load_settings
+from clue_config import Settings, load_settings
 from clue_core import (
     EvidenceAccessRequest,
     EvidenceAccessResult,
@@ -89,6 +89,17 @@ def _client(app) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://c7")
 
 
+def _c7_settings() -> Settings:
+    return load_settings(
+        c7_research_view_read_enabled=True,
+        c7_snapshot_compose_enabled=True,
+        c7_evidence_actions_enabled=True,
+        c7_recheck_enabled=True,
+        c7_legacy_dossier_alias_enabled=True,
+        _env_file=None,
+    )
+
+
 def test_c7_serving_is_scoped_replay_safe_body_free_and_alias_exact() -> None:
     async def scenario() -> None:
         view, request, _fixture_composer, _candidates = await _compose_account_fixture()
@@ -116,6 +127,7 @@ def test_c7_serving_is_scoped_replay_safe_body_free_and_alias_exact() -> None:
         )
         registry = build_toolbelt(
             storage=None,
+            settings=_c7_settings(),
             gateway=None,
             conn_factory=cf,
             research_view_composer=composer,
@@ -127,13 +139,13 @@ def test_c7_serving_is_scoped_replay_safe_body_free_and_alias_exact() -> None:
             registry=registry,
             idempotency_store=DbIdempotencyStore(conn_factory=cf),
             storage=storage,
-            settings=load_settings(_env_file=None),
+            settings=_c7_settings(),
             conn_factory=cf,
         )
         app = create_projections_app(
             surface=build_surface(conn),
             tool_invoker=invoker,
-            settings=load_settings(_env_file=None),
+            settings=_c7_settings(),
             conn_factory=cf,
             manage_db_lifespan=False,
             sse_live_tail=False,
@@ -426,6 +438,7 @@ def test_contact_live_and_legacy_routes_share_scope_payload_and_hash() -> None:
             )
             registry = build_toolbelt(
                 storage=None,
+                settings=_c7_settings(),
                 gateway=None,
                 conn_factory=cf,
                 research_view_composer=composer,
@@ -441,10 +454,10 @@ def test_contact_live_and_legacy_routes_share_scope_payload_and_hash() -> None:
                     registry=registry,
                     idempotency_store=DbIdempotencyStore(conn_factory=cf),
                     storage=_MemoryStorage(),
-                    settings=load_settings(_env_file=None),
+                    settings=_c7_settings(),
                     conn_factory=cf,
                 ),
-                settings=load_settings(_env_file=None),
+                settings=_c7_settings(),
                 conn_factory=cf,
                 manage_db_lifespan=False,
                 sse_live_tail=False,

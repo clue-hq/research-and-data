@@ -1743,6 +1743,9 @@ def build_toolbelt(
         composer=research_view_composer,
         snapshots=research_view_snapshots,
         recheck=research_view_recheck,
+        read_enabled=resolved_settings.c7_research_view_read_enabled,
+        snapshot_compose_enabled=resolved_settings.c7_snapshot_compose_enabled,
+        recheck_enabled=resolved_settings.c7_recheck_enabled,
     ):
         registry.register(tool, make_default=True)
     return registry

@@ -5,6 +5,7 @@
 **Base:** completed C6 head `7755bea`
 **Binding child spec:** [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md)
 **Parent scope:** [PC §C7–C8](../../specs/PC-phase-c-agentic-layer.md)
+**Status:** COMPLETE — C7.0–C7.8 implemented and verified on 2026-07-28
 
 ## 1. Purpose
 
@@ -1000,6 +1001,11 @@ Commit: `feat(c7): expose research views through tools and API`
 ### Goal
 
 Prove the whole story, remove temporary paths, and leave an exact C8 handoff.
+
+**Outcome:** complete. The adversarial and extended-DSAR manifests are executable, derivation
+reads are breadth-batched and capped, unsafe body caches are forbidden, six independent
+default-off activation flags are wired, repository gates are green, and C8 retains only the
+legacy-write hard-fence residual required before multi-worker production deployment.
 
 ### C7.8a Adversarial fixture suite
 

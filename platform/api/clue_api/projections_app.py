@@ -781,6 +781,7 @@ def create_projections_app(
                 evidence_access=research_view_evidence_access,
                 tool_invoker=tool_invoker,
                 conn_factory=conn_factory,
+                settings=resolved,
             )
         )
     return app
