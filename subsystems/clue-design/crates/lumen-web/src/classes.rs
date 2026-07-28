@@ -18,7 +18,7 @@ pub struct ClassLintContext<'a> {
     pub color_tokens: &'a BTreeMap<String, String>,
 }
 
-const ALLOWED_VARIANT_PREFIXES: &[&str] = &["sm", "md", "lg", "xl", "hover", "focus"];
+const ALLOWED_VARIANT_PREFIXES: &[&str] = &["md", "lg", "hover", "focus"];
 
 const COLOR_BUILTINS: &[&str] = &["white", "black", "transparent", "current", "inherit"];
 
@@ -28,6 +28,21 @@ const TAILWIND_PALETTES: &[&str] = &[
     "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow", "lime",
     "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
     "pink", "rose",
+];
+
+/// Tailwind v3 names that silently do nothing in v4. Mutiny TEACHES this
+/// list because their pipeline cannot enforce it; ours can — a dead class
+/// is invisible drift, so it is an error with the rename, not a warning.
+/// Entries ending in `-` are prefixes (the suffix carries over verbatim).
+const DEAD_UTILITIES: &[(&str, &str)] = &[
+    ("flex-shrink-", "shrink-"),
+    ("flex-shrink", "shrink"),
+    ("flex-grow-", "grow-"),
+    ("flex-grow", "grow"),
+    ("blur-0", "blur-none"),
+    ("overflow-ellipsis", "text-ellipsis"),
+    ("decoration-slice", "box-decoration-slice"),
+    ("decoration-clone", "box-decoration-clone"),
 ];
 
 /// Color-capable utility namespaces with their known non-color suffixes.
@@ -63,7 +78,7 @@ const COLOR_PREFIXES: &[(&str, &[&str])] = &[
     ("stroke-", &["0", "1", "2", "none"]),
     ("decoration-", &[
         "0", "1", "2", "4", "8", "auto", "solid", "double", "dotted", "dashed", "wavy",
-        "from-font", "slice", "clone",
+        "from-font",
     ]),
     ("outline-", &["0", "1", "2", "4", "8", "none", "dashed", "dotted", "double", "offset-0",
         "offset-1", "offset-2", "offset-4", "offset-8"]),
@@ -114,6 +129,7 @@ const KNOWN_UTILITIES: &[&str] = &[
     "object-", "cursor-", "select-", "pointer-events-", "resize", "resize-",
     "sr-only", "not-sr-only", "appearance-", "will-change-", "columns-", "break-inside-",
     "break-before-", "break-after-", "line-clamp-",
+    "box-decoration-slice", "box-decoration-clone", "box-border", "box-content",
 ];
 
 pub fn lint_classes(
@@ -153,6 +169,22 @@ fn lint_class_token(
             );
             return;
         }
+        if *prefix == "sm" || *prefix == "xl" {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0203",
+                    format!("`{token}`: the {prefix}: breakpoint is not part of the authoring grammar"),
+                    subject(node),
+                )
+                .with_hint(
+                    "Never author a breakpoint the review loop does not look at: 375px is the \
+                     base layer, 768px is md:, 1440px is covered by lg:. Rewrite sm: styles into \
+                     the base layer and xl: styles into lg:.",
+                ),
+            );
+            return;
+        }
         if !ALLOWED_VARIANT_PREFIXES.contains(prefix) {
             diagnostics.push(
                 Diagnostic::error(
@@ -161,7 +193,7 @@ fn lint_class_token(
                     format!("`{token}`: unknown variant prefix `{prefix}:`"),
                     subject(node),
                 )
-                .with_hint("Allowed prefixes: sm: md: lg: xl: hover: focus:"),
+                .with_hint("Allowed prefixes: md: lg: hover: focus:"),
             );
             return;
         }
@@ -170,6 +202,33 @@ fn lint_class_token(
     let base = base.strip_prefix('-').unwrap_or(base);
     if base.is_empty() {
         return;
+    }
+
+    // Tailwind v3 names that silently no-op in v4: a hard error with the
+    // rename, so dead classes never masquerade as applied styling.
+    for (dead, replacement) in DEAD_UTILITIES {
+        let hit = if dead.ends_with('-') {
+            base.starts_with(dead) && base.len() > dead.len()
+        } else {
+            base == *dead
+        };
+        if hit {
+            let named_replacement = if dead.ends_with('-') {
+                format!("{replacement}{}", &base[dead.len()..])
+            } else {
+                (*replacement).to_owned()
+            };
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0221",
+                    format!("`{token}`: `{dead}` is a Tailwind v3 name that does nothing in v4"),
+                    subject(node),
+                )
+                .with_hint(format!("Use `{named_replacement}`.")),
+            );
+            return;
+        }
     }
 
     // Arbitrary values: allowed unless a color lands in a color namespace.
@@ -477,7 +536,71 @@ mod tests {
     #[test]
     fn dark_prefix_rejected_unknown_prefix_rejected() {
         assert_eq!(run("dark:bg-primary")[0].code, "LUMW0201");
-        assert_eq!(run("2xl:flex")[0].code, "LUMW0202");
+        let unknown = run("2xl:flex");
+        assert_eq!(unknown[0].code, "LUMW0202");
+        assert_eq!(
+            unknown[0].hint.as_deref(),
+            Some("Allowed prefixes: md: lg: hover: focus:")
+        );
+    }
+
+    #[test]
+    fn dead_utilities_error_with_rename() {
+        for (input, replacement) in [
+            ("flex-shrink-0", "shrink-0"),
+            ("flex-shrink", "shrink"),
+            ("flex-grow-0", "grow-0"),
+            ("flex-grow", "grow"),
+            ("blur-0", "blur-none"),
+            ("overflow-ellipsis", "text-ellipsis"),
+            ("decoration-slice", "box-decoration-slice"),
+            ("decoration-clone", "box-decoration-clone"),
+        ] {
+            let diagnostics = run(input);
+            assert_eq!(diagnostics.len(), 1, "for `{input}`: {diagnostics:?}");
+            assert_eq!(diagnostics[0].code, "LUMW0221", "for `{input}`");
+            assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Error);
+            assert!(
+                diagnostics[0]
+                    .hint
+                    .as_ref()
+                    .unwrap()
+                    .contains(replacement),
+                "for `{input}`: hint {:?} missing `{replacement}`",
+                diagnostics[0].hint
+            );
+        }
+    }
+
+    #[test]
+    fn dead_utility_prefix_splices_suffix() {
+        let diagnostics = run("flex-shrink-0");
+        assert_eq!(diagnostics[0].code, "LUMW0221");
+        assert_eq!(diagnostics[0].hint.as_deref(), Some("Use `shrink-0`."));
+    }
+
+    #[test]
+    fn correct_v4_names_are_clean() {
+        assert!(run("box-decoration-slice box-border shrink-0 grow blur-none").is_empty());
+    }
+
+    #[test]
+    fn dropped_breakpoints_get_review_loop_error() {
+        for token in ["sm:flex", "xl:grid"] {
+            let diagnostics = run(token);
+            assert_eq!(diagnostics.len(), 1, "for `{token}`: {diagnostics:?}");
+            assert_eq!(diagnostics[0].code, "LUMW0203", "for `{token}`");
+            assert!(diagnostics[0]
+                .hint
+                .as_ref()
+                .unwrap()
+                .contains("the review loop does not look at"));
+        }
+    }
+
+    #[test]
+    fn supported_breakpoints_and_variants_pass() {
+        assert!(run("md:grid lg:flex hover:bg-primary/15 focus:outline").is_empty());
     }
 
     #[test]

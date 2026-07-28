@@ -52,7 +52,7 @@ const LANDING_PAGE: &str = r##"
     <p data-variant="overline" class="text-primary">AI medical scribe</p>
     <h1 data-variant="display" class="max-w-[820px]">Documentation that writes itself, so you can <span class="text-primary">focus on care</span></h1>
     <p class="text-muted max-w-[640px]">Insight Health captures every visit and drafts compliant notes before the patient leaves the room.</p>
-    <div class="flex flex-col sm:flex-row gap-4">
+    <div class="flex flex-col md:flex-row gap-4">
       <a data-button="primary" href="https://insighthealth.ai/demo">Book a demo</a>
       <a data-button="outline" href="#features">Explore features</a>
     </div>
