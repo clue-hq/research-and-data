@@ -5,8 +5,8 @@
 use lumen_core::{DiagnosticSeverity, NodeId, PageId};
 use lumen_web::{
     apply_operations, compile_web_theme, ingest_html_into_page, render_page, validate_web_doc,
-    RenderOptions, WebDoc, WebNodeKind, WebOperation, WebTheme, WebThemeOptions,
-    WebThemeRef,
+    ButtonAction, ButtonCommand, ButtonVariant, RenderOptions, WebDoc, WebNodeKind, WebOperation,
+    WebTheme, WebThemeOptions, WebThemeRef,
 };
 
 fn theme() -> WebTheme {
@@ -223,6 +223,101 @@ fn violations_surface_precise_diagnostics_and_block_ingest() {
     assert!(hex_diag.hint.as_ref().unwrap().contains("Nearest theme token"));
     // And the document was never touched.
     assert_eq!(doc, before);
+}
+
+/// Tier-2 platform components end to end: a marquee logo strip, an FAQ
+/// accordion, a dialog holding copy + a link button, and a command CTA — all
+/// through ingest → validate → op-rewire → render (both modes) → undo.
+const TIER2_PAGE: &str = r##"
+<section id="cta_band" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-16 flex flex-col items-center gap-4">
+    <a data-button="primary" data-command="show-modal" data-target="dlg_book">Book a call</a>
+    <a id="secondary_cta" data-button="outline" href="https://insighthealth.ai/contact">Contact sales</a>
+    <div data-component="dialog" id="dlg_book" data-aria-label="Book a call" class="max-w-[480px]">
+      <h3>Pick a time</h3>
+      <p class="text-muted">We will confirm within one business day.</p>
+      <a data-button="primary" href="https://insighthealth.ai/schedule">Confirm slot</a>
+    </div>
+  </div>
+</section>
+<section id="logos" class="bg-card">
+  <div data-component="marquee" id="logo_strip" data-speed="25" class="py-8">
+    <img data-asset="logo_a" alt="Acme" class="h-8">
+  </div>
+</section>
+<section id="faq" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 flex flex-col gap-8">
+    <h2>Questions</h2>
+    <div data-component="accordion" id="faq_acc" data-single-open="true" data-default-open="0">
+      <div class="border-b border-border"><h3>Is my data secure?</h3><p data-variant="small" class="text-muted">PHI stays inside your compliance boundary.</p></div>
+      <div class="border-b border-border"><h3>How is it priced?</h3><p data-variant="small" class="text-muted">Per clinician, billed monthly.</p></div>
+    </div>
+  </div>
+</section>
+"##;
+
+#[test]
+fn tier2_components_round_trip_and_rewire() {
+    let theme = theme();
+    let mut doc = WebDoc::new("doc_web_3", "Insight Health — Tier 2", None);
+    seed_asset(&mut doc, "logo_a", "cafef00d02");
+    let page_id = PageId::from("home");
+
+    // 1. Ingest clean.
+    let outcome = ingest_html_into_page(&mut doc, &page_id, TIER2_PAGE, &theme);
+    assert!(!outcome.has_errors(), "ingest: {:#?}", outcome.diagnostics);
+
+    // 2. Validate: no errors (the command CTA targets a real dialog; accordion
+    //    items are well-formed; nothing nests).
+    assert!(
+        validate_web_doc(&doc)
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+        "validation: {:#?}",
+        validate_web_doc(&doc)
+    );
+
+    // 3. Rewire the second (Href) CTA into a Command trigger for the dialog.
+    let before_rewire = doc.clone();
+    let inverses = apply_operations(
+        &mut doc,
+        &[WebOperation::SetNodeProps {
+            page_id: page_id.clone(),
+            id: NodeId::from("secondary_cta"),
+            props: WebNodeKind::Button {
+                label: "Contact sales".to_owned(),
+                variant: ButtonVariant::Outline,
+                action: ButtonAction::Command {
+                    command: ButtonCommand::ShowModal,
+                    command_target: NodeId::from("dlg_book"),
+                },
+            },
+        }],
+    )
+    .expect("rewire href → command");
+
+    // 4. Both render targets carry the invoker wiring for the rewired button.
+    let mut editor_options = RenderOptions::editor("/asset-store");
+    editor_options.tailwind_runtime_src = Some("/vendor/tailwind.js".to_owned());
+    let editor = render_page(&doc, &page_id, &theme, &editor_options).expect("editor render");
+    assert!(editor.html.contains(
+        "<button type=\"button\" data-btn=\"outline\" commandfor=\"dlg_book\" command=\"show-modal\" data-node-id=\"secondary_cta\""
+    ));
+    // The runtime is inlined even in delivery, and the marquee clone is present.
+    let delivery = render_page(&doc, &page_id, &theme, &RenderOptions::delivery("/asset-store"))
+        .expect("delivery render");
+    assert!(delivery.html.contains(
+        "<button type=\"button\" data-btn=\"outline\" commandfor=\"dlg_book\" command=\"show-modal\">Contact sales</button>"
+    ));
+    assert!(delivery.html.contains("<dialog id=\"dlg_book\" data-lumen-dialog=\"true\""));
+    assert!(delivery.html.contains("__lumenRuntimeV1"));
+    assert!(delivery.html.contains("lumen-platform v1"));
+    assert!(delivery.html.contains("class=\"lumen-marquee-track\" aria-hidden=\"true\""));
+    assert!(delivery.html.contains("<details data-lumen-acc-item=\"true\""));
+
+    // 5. Inverse restores the pre-rewire document exactly.
+    apply_operations(&mut doc, &inverses).expect("undo rewire");
+    assert_eq!(doc, before_rewire, "inverse restores the Href CTA exactly");
 }
 
 fn find_display_text(doc: &WebDoc, page_id: &PageId) -> NodeId {

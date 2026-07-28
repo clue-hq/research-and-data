@@ -84,11 +84,14 @@ pub enum WebNodeKind {
     },
     Button {
         label: String,
-        href: String,
         #[serde(default)]
         variant: ButtonVariant,
-        #[serde(default)]
-        new_tab: bool,
+        #[serde(flatten)]
+        action: ButtonAction,
+    },
+    Component {
+        #[serde(flatten)]
+        spec: ComponentSpec,
     },
     Image {
         asset_id: AssetId,
@@ -216,6 +219,101 @@ impl ButtonVariant {
     }
 }
 
+/// Untagged + flattened: legacy button JSON ({href, new_tab}) deserializes
+/// as Href with zero migration; Command carries the invoker wiring
+/// ({command, command_target}). Command is listed first so a payload with
+/// both shapes' fields resolves to the typed trigger, but ingest rejects
+/// that ambiguity before it can be authored.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ButtonAction {
+    Command {
+        command: ButtonCommand,
+        command_target: NodeId,
+    },
+    Href {
+        href: String,
+        #[serde(default)]
+        new_tab: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonCommand {
+    ShowModal,
+    Close,
+}
+
+impl ButtonCommand {
+    /// The HTML invoker `command` attribute value (kebab, not the JSON form).
+    pub fn as_html_attr(&self) -> &'static str {
+        match self {
+            ButtonCommand::ShowModal => "show-modal",
+            ButtonCommand::Close => "close",
+        }
+    }
+
+    pub fn parse_html_attr(value: &str) -> Option<Self> {
+        match value {
+            "show-modal" => Some(ButtonCommand::ShowModal),
+            "close" => Some(ButtonCommand::Close),
+            _ => None,
+        }
+    }
+}
+
+/// Tier-2 platform components. Children are ordinary nodes; behavior comes
+/// from native HTML + the ONE versioned platform runtime, never authored JS.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "component", rename_all = "snake_case")]
+pub enum ComponentSpec {
+    Dialog {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        aria_label: Option<String>,
+    },
+    Accordion {
+        #[serde(default)]
+        single_open: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default_open: Option<u32>,
+    },
+    Marquee {
+        #[serde(default = "default_marquee_speed")]
+        speed_s: u16,
+        #[serde(default)]
+        direction: MarqueeDirection,
+        #[serde(default = "default_true")]
+        pause_on_hover: bool,
+    },
+}
+
+fn default_marquee_speed() -> u16 {
+    30
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl ComponentSpec {
+    pub fn component_name(&self) -> &'static str {
+        match self {
+            ComponentSpec::Dialog { .. } => "dialog",
+            ComponentSpec::Accordion { .. } => "accordion",
+            ComponentSpec::Marquee { .. } => "marquee",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarqueeDirection {
+    #[default]
+    Left,
+    Right,
+}
+
 impl WebNodeKind {
     pub fn kind_name(&self) -> &'static str {
         match self {
@@ -223,15 +321,20 @@ impl WebNodeKind {
             WebNodeKind::Container => "container",
             WebNodeKind::Text { .. } => "text",
             WebNodeKind::Button { .. } => "button",
+            WebNodeKind::Component { .. } => "component",
             WebNodeKind::Image { .. } => "image",
             WebNodeKind::Icon { .. } => "icon",
             WebNodeKind::Embed { .. } => "embed",
         }
     }
 
-    /// Only Section and Container may hold children.
+    /// Section, Container, and Component may hold children (a Component's
+    /// children are ordinary nodes; its behavior is the platform runtime's).
     pub fn is_branch(&self) -> bool {
-        matches!(self, WebNodeKind::Section { .. } | WebNodeKind::Container)
+        matches!(
+            self,
+            WebNodeKind::Section { .. } | WebNodeKind::Container | WebNodeKind::Component { .. }
+        )
     }
 }
 
@@ -350,6 +453,90 @@ mod tests {
         assert_eq!(value["classes"], "text-dark");
         let back: WebNode = serde_json::from_value(value).expect("deserialize");
         assert_eq!(back, node);
+    }
+
+    #[test]
+    fn legacy_button_json_deserializes_as_href() {
+        let json = r#"{"kind":"button","label":"Go","href":"https://x.com","variant":"primary","new_tab":false}"#;
+        let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
+        let WebNodeKind::Button { action, .. } = &kind else {
+            panic!("button node");
+        };
+        assert!(matches!(action, ButtonAction::Href { href, .. } if href == "https://x.com"));
+        let back = serde_json::to_string(&kind).expect("serialize");
+        assert!(back.contains("\"href\""), "{back}");
+    }
+
+    #[test]
+    fn command_button_round_trips() {
+        let json = r#"{"kind":"button","label":"Go","variant":"primary","command":"show_modal","command_target":"dlg_1"}"#;
+        let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
+        let WebNodeKind::Button { action, .. } = &kind else {
+            panic!("button node");
+        };
+        assert!(matches!(
+            action,
+            ButtonAction::Command { command: ButtonCommand::ShowModal, command_target }
+                if command_target.as_str() == "dlg_1"
+        ));
+        let value = serde_json::to_value(&kind).expect("serialize");
+        assert_eq!(value["command"], "show_modal");
+        assert_eq!(value["command_target"], "dlg_1");
+        let back: WebNodeKind = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn button_command_html_attrs() {
+        assert_eq!(ButtonCommand::ShowModal.as_html_attr(), "show-modal");
+        assert_eq!(ButtonCommand::Close.as_html_attr(), "close");
+        assert_eq!(
+            ButtonCommand::parse_html_attr("show-modal"),
+            Some(ButtonCommand::ShowModal)
+        );
+        assert_eq!(ButtonCommand::parse_html_attr("close"), Some(ButtonCommand::Close));
+        assert_eq!(ButtonCommand::parse_html_attr("show_modal"), None);
+    }
+
+    #[test]
+    fn component_node_round_trips() {
+        let node = WebNode {
+            id: NodeId::from("dlg_book"),
+            kind: WebNodeKind::Component {
+                spec: ComponentSpec::Dialog {
+                    aria_label: Some("Book a call".to_owned()),
+                },
+            },
+            classes: "max-w-[480px]".to_owned(),
+            children: vec![NodeId::from("txt_1")],
+            name: None,
+            slot_key: None,
+        };
+        let value = serde_json::to_value(&node).expect("serialize");
+        assert_eq!(value["kind"], "component");
+        assert_eq!(value["component"], "dialog");
+        assert_eq!(value["aria_label"], "Book a call");
+        assert_eq!(value["classes"], "max-w-[480px]");
+        assert_eq!(value["children"][0], "txt_1");
+        let back: WebNode = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(back, node);
+        assert!(node.kind.is_branch());
+        assert_eq!(node.kind.kind_name(), "component");
+    }
+
+    #[test]
+    fn marquee_defaults_fill_in() {
+        let json = r#"{"kind":"component","component":"marquee"}"#;
+        let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Marquee { speed_s, direction, pause_on_hover },
+        } = kind
+        else {
+            panic!("marquee component");
+        };
+        assert_eq!(speed_s, 30);
+        assert_eq!(direction, MarqueeDirection::Left);
+        assert!(pause_on_hover);
     }
 
     #[test]

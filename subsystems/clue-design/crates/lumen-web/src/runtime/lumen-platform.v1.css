@@ -1,0 +1,27 @@
+/* lumen-platform v1 — base styles for platform components. Versioned with
+   the runtime; included only when the page uses a Component node. */
+dialog[data-lumen-dialog] {
+  position: relative; border: none; border-radius: 16px; padding: 0;
+  width: 100%; max-width: min(560px, calc(100vw - 2rem));
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.25);
+}
+dialog[data-lumen-dialog]::backdrop { background: rgb(0 0 0 / 0.5); }
+.lumen-dialog-close {
+  position: absolute; top: 0.75rem; right: 0.75rem; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border: none; border-radius: 9999px;
+  background: transparent; color: inherit; font-size: 1.25rem;
+  line-height: 1; cursor: pointer;
+}
+.lumen-dialog-close:hover { background: rgb(0 0 0 / 0.08); }
+details[data-lumen-acc-item] > summary { cursor: pointer; list-style: none; }
+details[data-lumen-acc-item] > summary::-webkit-details-marker { display: none; }
+.lumen-marquee { overflow: hidden; display: flex; }
+.lumen-marquee-track {
+  display: flex; flex: none; min-width: 100%;
+  animation: lumen-marquee var(--lumen-marquee-duration, 30s) linear infinite;
+}
+.lumen-marquee[data-direction="right"] .lumen-marquee-track { animation-direction: reverse; }
+.lumen-marquee[data-pause-on-hover="true"]:hover .lumen-marquee-track { animation-play-state: paused; }
+@keyframes lumen-marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { .lumen-marquee-track { animation: none; } }

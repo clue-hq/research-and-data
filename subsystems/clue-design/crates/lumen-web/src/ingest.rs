@@ -10,7 +10,8 @@
 
 use crate::classes::{lint_classes, ClassLintContext};
 use crate::doc::{
-    ButtonVariant, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind, MAX_TREE_DEPTH,
+    ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec, MarqueeDirection, SectionTag,
+    TextVariant, WebDoc, WebNode, WebNodeKind, MAX_TREE_DEPTH,
 };
 use crate::inline::sanitize_inline;
 use crate::theme::WebTheme;
@@ -63,9 +64,8 @@ enum PendingLeaf {
     },
     Button {
         id: NodeId,
-        href: String,
+        action: ButtonAction,
         variant: ButtonVariant,
-        new_tab: bool,
         classes: String,
         name: Option<String>,
     },
@@ -315,6 +315,15 @@ impl<'a> IngestState<'a> {
                     | "data-asset"
                     | "data-href"
                     | "data-new-tab"
+                    | "data-component"
+                    | "data-command"
+                    | "data-target"
+                    | "data-aria-label"
+                    | "data-single-open"
+                    | "data-default-open"
+                    | "data-speed"
+                    | "data-direction"
+                    | "data-pause-on-hover"
             );
             if !known {
                 let hint = if key == "style" {
@@ -322,7 +331,10 @@ impl<'a> IngestState<'a> {
                      classes (page-level effects belong in custom_css)."
                 } else {
                     "Recognized attributes: id class href target alt data-variant data-button \
-                     data-icon data-asset data-href data-new-tab data-name."
+                     data-icon data-asset data-href data-new-tab data-name, plus the Tier-2 \
+                     component/command data-* attributes (data-component data-command data-target \
+                     data-aria-label data-single-open data-default-open data-speed data-direction \
+                     data-pause-on-hover)."
                 };
                 self.warning(
                     "LUMW0132",
@@ -397,6 +409,28 @@ impl<'a> IngestState<'a> {
                 }
             }
             "div" => {
+                // A div carrying data-component is a Tier-2 platform component
+                // branch; its children parse as ordinary nodes inside it.
+                if let Some(component_value) = attrs_get(&attrs, "data-component") {
+                    let id = self.mint_id("cmp", attrs_get(&attrs, "id").as_deref());
+                    let Some(spec) = self.parse_component(&component_value, &attrs, &id) else {
+                        return;
+                    };
+                    let node = WebNode {
+                        id: id.clone(),
+                        kind: WebNodeKind::Component { spec },
+                        classes: self.take_classes(&attrs, &id),
+                        children: Vec::new(),
+                        name: attrs_get(&attrs, "data-name"),
+                        slot_key: None,
+                    };
+                    if is_empty {
+                        self.finish_node(node);
+                    } else {
+                        self.branch_stack.push(BranchFrame { node, tag_name: name });
+                    }
+                    return;
+                }
                 let id = self.mint_id("box", attrs_get(&attrs, "id").as_deref());
                 let node = WebNode {
                     id: id.clone(),
@@ -502,23 +536,65 @@ impl<'a> IngestState<'a> {
                     }
                 };
                 let id = self.mint_id("btn", attrs_get(&attrs, "id").as_deref());
-                let href = attrs_get(&attrs, "href").unwrap_or_default();
-                if href.trim().is_empty() {
-                    self.error(
-                        "LUMW0107",
-                        format!("button `{id}` has no href"),
-                        "Every CTA needs a real target; fetch the site rather than guessing paths.",
-                        Some(&id),
-                    );
-                } else if !href_is_allowed(&href) {
-                    self.error(
-                        "LUMW0108",
-                        format!("button `{id}` href has a disallowed scheme: {href}"),
-                        "Allowed: https:// http:// mailto: tel: #anchor /path.",
-                        Some(&id),
-                    );
-                }
-                let new_tab = attrs_get(&attrs, "target").as_deref() == Some("_blank");
+                let href_raw = attrs_get(&attrs, "href");
+                // A button is a link (href) OR a command trigger, never both.
+                let action = if let Some(command_value) = attrs_get(&attrs, "data-command") {
+                    let has_href = href_raw
+                        .as_ref()
+                        .map(|href| !href.trim().is_empty())
+                        .unwrap_or(false);
+                    if has_href {
+                        self.error(
+                            "LUMW0127",
+                            format!("button `{id}` has both href and data-command"),
+                            "A button is a link (href) or a trigger (data-command + data-target), never both.",
+                            Some(&id),
+                        );
+                        return;
+                    }
+                    let Some(command) = ButtonCommand::parse_html_attr(command_value.trim()) else {
+                        self.error(
+                            "LUMW0125",
+                            format!("unknown command `{command_value}`"),
+                            "Valid commands: show-modal close.",
+                            Some(&id),
+                        );
+                        return;
+                    };
+                    let target = attrs_get(&attrs, "data-target").unwrap_or_default();
+                    if target.trim().is_empty() {
+                        self.error(
+                            "LUMW0126",
+                            format!("command button `{id}` has no data-target"),
+                            "Point data-target at the id of a dialog component.",
+                            Some(&id),
+                        );
+                        return;
+                    }
+                    ButtonAction::Command {
+                        command,
+                        command_target: NodeId::from(target.trim()),
+                    }
+                } else {
+                    let href = href_raw.unwrap_or_default();
+                    if href.trim().is_empty() {
+                        self.error(
+                            "LUMW0107",
+                            format!("button `{id}` has no href"),
+                            "Every CTA needs a real target; fetch the site rather than guessing paths.",
+                            Some(&id),
+                        );
+                    } else if !href_is_allowed(&href) {
+                        self.error(
+                            "LUMW0108",
+                            format!("button `{id}` href has a disallowed scheme: {href}"),
+                            "Allowed: https:// http:// mailto: tel: #anchor /path.",
+                            Some(&id),
+                        );
+                    }
+                    let new_tab = attrs_get(&attrs, "target").as_deref() == Some("_blank");
+                    ButtonAction::Href { href, new_tab }
+                };
                 let classes = self.take_classes(&attrs, &id);
                 let node_name = attrs_get(&attrs, "data-name");
                 if is_empty {
@@ -526,9 +602,8 @@ impl<'a> IngestState<'a> {
                         id,
                         kind: WebNodeKind::Button {
                             label: String::new(),
-                            href,
                             variant,
-                            new_tab,
+                            action,
                         },
                         classes,
                         children: Vec::new(),
@@ -542,9 +617,8 @@ impl<'a> IngestState<'a> {
                         nested_depth: 0,
                         pending: PendingLeaf::Button {
                             id,
-                            href,
+                            action,
                             variant,
-                            new_tab,
                             classes,
                             name: node_name,
                         },
@@ -690,6 +764,118 @@ impl<'a> IngestState<'a> {
         });
     }
 
+    /// Parse a `data-component` value into a typed spec, warning-and-defaulting
+    /// on bad prop values (LUMW0124) and erroring on an unknown component name
+    /// (LUMW0123 → None, which aborts this element).
+    fn parse_component(
+        &mut self,
+        value: &str,
+        attrs: &[(String, String)],
+        id: &NodeId,
+    ) -> Option<ComponentSpec> {
+        match value.trim() {
+            "dialog" => Some(ComponentSpec::Dialog {
+                aria_label: attrs_get(attrs, "data-aria-label"),
+            }),
+            "accordion" => {
+                let single_open = self.component_bool(attrs, "data-single-open", false, id);
+                let default_open = match attrs_get(attrs, "data-default-open") {
+                    Some(raw) => match raw.trim().parse::<u32>() {
+                        Ok(index) => Some(index),
+                        Err(_) => {
+                            self.warning(
+                                "LUMW0124",
+                                format!("invalid value for `data-default-open` on component `{id}`: {raw}"),
+                                "data-default-open is a 0-based item index (a non-negative integer).",
+                                Some(id),
+                            );
+                            None
+                        }
+                    },
+                    None => None,
+                };
+                Some(ComponentSpec::Accordion {
+                    single_open,
+                    default_open,
+                })
+            }
+            "marquee" => {
+                let speed_s = match attrs_get(attrs, "data-speed") {
+                    Some(raw) => match raw.trim().parse::<u16>() {
+                        Ok(seconds) if (5..=120).contains(&seconds) => seconds,
+                        _ => {
+                            self.warning(
+                                "LUMW0124",
+                                format!("invalid value for `data-speed` on component `{id}`: {raw}"),
+                                "data-speed is seconds in 5..=120; using the default 30.",
+                                Some(id),
+                            );
+                            30
+                        }
+                    },
+                    None => 30,
+                };
+                let direction = match attrs_get(attrs, "data-direction") {
+                    Some(raw) => match raw.trim() {
+                        "left" => MarqueeDirection::Left,
+                        "right" => MarqueeDirection::Right,
+                        _ => {
+                            self.warning(
+                                "LUMW0124",
+                                format!("invalid value for `data-direction` on component `{id}`: {raw}"),
+                                "data-direction is left or right; using left.",
+                                Some(id),
+                            );
+                            MarqueeDirection::Left
+                        }
+                    },
+                    None => MarqueeDirection::Left,
+                };
+                let pause_on_hover = self.component_bool(attrs, "data-pause-on-hover", true, id);
+                Some(ComponentSpec::Marquee {
+                    speed_s,
+                    direction,
+                    pause_on_hover,
+                })
+            }
+            other => {
+                self.error(
+                    "LUMW0123",
+                    format!("unknown component `{other}`"),
+                    "Valid components: dialog accordion marquee.",
+                    Some(id),
+                );
+                None
+            }
+        }
+    }
+
+    /// A `"true"`/`"false"` component data-attr, warn-and-default on anything else.
+    fn component_bool(
+        &mut self,
+        attrs: &[(String, String)],
+        key: &str,
+        default: bool,
+        id: &NodeId,
+    ) -> bool {
+        match attrs_get(attrs, key) {
+            Some(raw) => match raw.trim() {
+                "true" => true,
+                "false" => false,
+                _ => {
+                    self.warning(
+                        "LUMW0124",
+                        format!("invalid value for `{key}` on component `{id}`: {raw}"),
+                        "Expected \"true\" or \"false\".",
+                        Some(id),
+                    );
+                    default
+                }
+            },
+            None => default,
+        }
+    }
+
     fn on_end(&mut self, name: &str, pos_before: usize) {
         if name == ROOT_WRAPPER {
             return;
@@ -744,14 +930,13 @@ impl<'a> IngestState<'a> {
                         slot_key: None,
                     });
                 }
-                PendingLeaf::Button { id, href, variant, new_tab, classes, name } => {
+                PendingLeaf::Button { id, action, variant, classes, name } => {
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Button {
                             label: sanitized.html,
-                            href,
                             variant,
-                            new_tab,
+                            action,
                         },
                         classes,
                         children: Vec::new(),
@@ -1047,6 +1232,135 @@ mod tests {
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0120"));
         assert_eq!(doc, before);
+    }
+
+    #[test]
+    fn dialog_component_with_props_and_children_parses() {
+        let outcome = ingest_html(
+            r#"<section id="s">
+                 <div data-component="dialog" id="dlg_book" data-aria-label="Book a call" class="max-w-[480px]">
+                   <p>Pick a time.</p>
+                 </div>
+               </section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let dialog = outcome
+            .nodes
+            .iter()
+            .find(|node| node.id.as_str() == "dlg_book")
+            .expect("dialog node");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Dialog { aria_label },
+        } = &dialog.kind
+        else {
+            panic!("dialog component");
+        };
+        assert_eq!(aria_label.as_deref(), Some("Book a call"));
+        assert_eq!(dialog.children.len(), 1);
+    }
+
+    #[test]
+    fn unknown_component_errors() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-component="carousel"></div></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0123"));
+    }
+
+    #[test]
+    fn command_button_parses_to_command_action() {
+        let outcome = ingest_html(
+            r#"<section id="s">
+                 <a data-button="primary" data-command="show-modal" data-target="dlg_book">Book a call</a>
+                 <div data-component="dialog" id="dlg_book"></div>
+               </section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let button = outcome
+            .nodes
+            .iter()
+            .find(|node| matches!(&node.kind, WebNodeKind::Button { .. }))
+            .expect("button");
+        let WebNodeKind::Button { action, .. } = &button.kind else {
+            panic!("button");
+        };
+        assert!(matches!(
+            action,
+            ButtonAction::Command { command: ButtonCommand::ShowModal, command_target }
+                if command_target.as_str() == "dlg_book"
+        ));
+    }
+
+    #[test]
+    fn command_button_missing_target_errors() {
+        let outcome = ingest_html(
+            r#"<section id="s"><a data-button="primary" data-command="show-modal">Open</a></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0126"));
+    }
+
+    #[test]
+    fn button_with_href_and_command_conflicts() {
+        let outcome = ingest_html(
+            r#"<section id="s"><a data-button="primary" href="https://x.com" data-command="show-modal" data-target="dlg">Open</a></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0127"));
+    }
+
+    #[test]
+    fn command_button_unknown_command_errors() {
+        let outcome = ingest_html(
+            r#"<section id="s"><a data-button="primary" data-command="explode" data-target="dlg">Open</a></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0125"));
+        // The link-path "no href" error must not fire for command buttons.
+        assert!(!outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0107"));
+    }
+
+    #[test]
+    fn marquee_speed_out_of_range_warns_and_defaults() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-component="marquee" data-speed="999"><p>logo</p></div></section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0124"));
+        let marquee = outcome
+            .nodes
+            .iter()
+            .find(|node| matches!(&node.kind, WebNodeKind::Component { .. }))
+            .expect("marquee");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Marquee { speed_s, .. },
+        } = &marquee.kind
+        else {
+            panic!("marquee");
+        };
+        assert_eq!(*speed_s, 30);
     }
 
     #[test]

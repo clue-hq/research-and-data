@@ -5,7 +5,7 @@
 //! references, allowed hrefs, canonical inline content, and a custom_css
 //! escape hatch that cannot smuggle imports or script schemes.
 
-use crate::doc::{WebDoc, WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION};
+use crate::doc::{ButtonAction, ComponentSpec, WebDoc, WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION};
 use crate::inline::sanitize_inline;
 use crate::util::href_is_allowed;
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
@@ -214,14 +214,91 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     ));
                 }
             }
-            WebNodeKind::Button { href, .. } => {
-                if !href_is_allowed(href) {
-                    diagnostics.push(Diagnostic::error(
-                        Phase::Web,
-                        "LUMW0016",
-                        format!("button `{}` href is not allowed: {href}", node.id),
-                        Some(DiagnosticSubject::Node(node.id.clone())),
-                    ));
+            WebNodeKind::Button { action, .. } => match action {
+                ButtonAction::Href { href, .. } => {
+                    if !href_is_allowed(href) {
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0016",
+                            format!("button `{}` href is not allowed: {href}", node.id),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                }
+                ButtonAction::Command { command_target, .. } => {
+                    let targets_dialog = page.nodes.get(command_target).is_some_and(|target| {
+                        matches!(
+                            &target.kind,
+                            WebNodeKind::Component {
+                                spec: ComponentSpec::Dialog { .. }
+                            }
+                        )
+                    });
+                    if !targets_dialog {
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0018",
+                            format!(
+                                "button `{}` command targets `{command_target}` which is missing/not a dialog",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                }
+            },
+            WebNodeKind::Component {
+                spec: ComponentSpec::Accordion { .. },
+            } => {
+                for child_id in &node.children {
+                    let is_item = page.nodes.get(child_id).is_some_and(|child| {
+                        matches!(child.kind, WebNodeKind::Container) && child.children.len() >= 2
+                    });
+                    if !is_item {
+                        diagnostics.push(Diagnostic::warning(
+                            Phase::Web,
+                            "LUMW0019",
+                            format!(
+                                "accordion `{}` item `{child_id}` is not a container with a summary and content; it renders unfolded",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(child_id.clone())),
+                        ));
+                    }
+                }
+            }
+            WebNodeKind::Component {
+                spec: ComponentSpec::Dialog { .. },
+            } => {
+                // Warn on a dialog reachable inside another dialog: nesting the
+                // top layer is rarely intended.
+                let mut stack: Vec<NodeId> = node.children.clone();
+                let mut seen: BTreeSet<NodeId> = BTreeSet::new();
+                while let Some(current) = stack.pop() {
+                    if !seen.insert(current.clone()) {
+                        continue;
+                    }
+                    if let Some(descendant) = page.nodes.get(&current) {
+                        if matches!(
+                            &descendant.kind,
+                            WebNodeKind::Component {
+                                spec: ComponentSpec::Dialog { .. }
+                            }
+                        ) {
+                            diagnostics.push(Diagnostic::warning(
+                                Phase::Web,
+                                "LUMW0020",
+                                format!(
+                                    "dialog `{}` nests dialog `{current}`; top-layer stacking is rarely intended",
+                                    node.id
+                                ),
+                                Some(DiagnosticSubject::Node(current.clone())),
+                            ));
+                        }
+                        for child in &descendant.children {
+                            stack.push(child.clone());
+                        }
+                    }
                 }
             }
             WebNodeKind::Text { content, .. } => {
@@ -330,6 +407,63 @@ mod tests {
         assert!(validate_web_doc(&doc)
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0013"));
+    }
+
+    fn ingest_doc(html: &str) -> WebDoc {
+        let (theme, _) =
+            compile_web_theme(None, &WebThemeRef::default(), &WebThemeOptions::default());
+        let mut doc = WebDoc::new("d1", "Site", None);
+        let outcome = ingest_html_into_page(&mut doc, &PageId::from("home"), html, &theme);
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        doc
+    }
+
+    #[test]
+    fn command_button_target_must_be_a_dialog() {
+        let doc = ingest_doc(
+            r#"<section id="s"><a data-button="primary" data-command="show-modal" data-target="ghost">Open</a></section>"#,
+        );
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0018"));
+    }
+
+    #[test]
+    fn accordion_item_shape_warns() {
+        let doc = ingest_doc(
+            r#"<section id="s"><div data-component="accordion" id="faq"><p>lonely</p></div></section>"#,
+        );
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0019"));
+    }
+
+    #[test]
+    fn nested_dialog_warns() {
+        let doc = ingest_doc(
+            r#"<section id="s"><div data-component="dialog" id="d1"><div data-component="dialog" id="d2"><p>x</p></div></div></section>"#,
+        );
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0020"));
+    }
+
+    #[test]
+    fn all_three_components_validate_clean() {
+        let doc = ingest_doc(
+            r#"<section id="s">
+                 <a data-button="primary" data-command="show-modal" data-target="dlg_1">Open</a>
+                 <div data-component="dialog" id="dlg_1"><p>hi</p></div>
+                 <div data-component="accordion" id="faq" data-single-open="true" data-default-open="0">
+                   <div><h3>Q1</h3><p>A1</p></div>
+                   <div><h3>Q2</h3><p>A2</p></div>
+                 </div>
+                 <div data-component="marquee" id="strip"><p>logo</p></div>
+               </section>"#,
+        );
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
     }
 
     #[test]

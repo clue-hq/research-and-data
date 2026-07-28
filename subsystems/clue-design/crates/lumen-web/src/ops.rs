@@ -6,7 +6,7 @@
 //! Batches apply against a draft and commit atomically: a failing op leaves
 //! the document untouched.
 
-use crate::doc::{WebDoc, WebNode, WebNodeKind, WebThemeRef};
+use crate::doc::{ButtonAction, WebDoc, WebNode, WebNodeKind, WebThemeRef};
 use crate::inline::sanitize_inline;
 use crate::util::href_is_allowed;
 use crate::validate::validate_web_doc;
@@ -165,13 +165,16 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
         WebNodeKind::Text { content, .. } => {
             *content = sanitize_inline(content).html;
         }
-        WebNodeKind::Button { label, href, .. } => {
+        WebNodeKind::Button { label, action, .. } => {
             *label = sanitize_inline(label).html;
-            if !href_is_allowed(href) {
-                return Err(WebOpError::new(
-                    "op.href_invalid",
-                    format!("button href is not allowed: {href}"),
-                ));
+            // Command buttons carry no href; only the Href action is scheme-checked.
+            if let ButtonAction::Href { href, .. } = action {
+                if !href_is_allowed(href) {
+                    return Err(WebOpError::new(
+                        "op.href_invalid",
+                        format!("button href is not allowed: {href}"),
+                    ));
+                }
             }
         }
         WebNodeKind::Image {
@@ -819,9 +822,11 @@ mod tests {
             id: NodeId::from("cta"),
             kind: WebNodeKind::Button {
                 label: "Go".to_owned(),
-                href: "https://example.com".to_owned(),
                 variant: crate::doc::ButtonVariant::Primary,
-                new_tab: false,
+                action: ButtonAction::Href {
+                    href: "https://example.com".to_owned(),
+                    new_tab: false,
+                },
             },
             classes: String::new(),
             children: Vec::new(),
@@ -846,13 +851,109 @@ mod tests {
                 id: NodeId::from("cta"),
                 props: WebNodeKind::Button {
                     label: "Go".to_owned(),
-                    href: "javascript:alert(1)".to_owned(),
                     variant: crate::doc::ButtonVariant::Primary,
-                    new_tab: false,
+                    action: ButtonAction::Href {
+                        href: "javascript:alert(1)".to_owned(),
+                        new_tab: false,
+                    },
                 },
             }],
         );
         assert_eq!(result.unwrap_err().code, "op.href_invalid");
+    }
+
+    #[test]
+    fn href_to_command_rewire_and_inverse_restores() {
+        // A Href→Command rewire (and back) is legal: SetNodeProps checks
+        // kind_name only, and both actions live on the same Button kind.
+        let mut doc = fixture();
+        let cta = WebNode {
+            id: NodeId::from("cta"),
+            kind: WebNodeKind::Button {
+                label: "Book".to_owned(),
+                variant: crate::doc::ButtonVariant::Primary,
+                action: ButtonAction::Href {
+                    href: "https://example.com".to_owned(),
+                    new_tab: false,
+                },
+            },
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 0,
+                nodes: vec![cta],
+                root: NodeId::from("cta"),
+            }],
+        )
+        .expect("insert button");
+        let before = doc.clone();
+        let inverses = apply_operations(
+            &mut doc,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("cta"),
+                props: WebNodeKind::Button {
+                    label: "Book".to_owned(),
+                    variant: crate::doc::ButtonVariant::Primary,
+                    action: ButtonAction::Command {
+                        command: crate::doc::ButtonCommand::ShowModal,
+                        command_target: NodeId::from("dlg_1"),
+                    },
+                },
+            }],
+        )
+        .expect("rewire to command");
+        let WebNodeKind::Button { action, .. } =
+            &doc.page(&page_id()).unwrap().node(&NodeId::from("cta")).unwrap().kind
+        else {
+            panic!("button node");
+        };
+        assert!(matches!(action, ButtonAction::Command { .. }));
+        apply_operations(&mut doc, &inverses).expect("inverse");
+        assert_eq!(doc, before, "inverse restores the Href action exactly");
+    }
+
+    #[test]
+    fn command_button_inserts_cleanly() {
+        let mut doc = fixture();
+        let cta = WebNode {
+            id: NodeId::from("trigger"),
+            kind: WebNodeKind::Button {
+                label: "Open".to_owned(),
+                variant: crate::doc::ButtonVariant::Primary,
+                action: ButtonAction::Command {
+                    command: crate::doc::ButtonCommand::ShowModal,
+                    command_target: NodeId::from("dlg_1"),
+                },
+            },
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        apply_operations(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 0,
+                nodes: vec![cta],
+                root: NodeId::from("trigger"),
+            }],
+        )
+        .expect("insert command button");
+        assert!(doc
+            .page(&page_id())
+            .unwrap()
+            .node(&NodeId::from("trigger"))
+            .is_some());
     }
 
     #[test]

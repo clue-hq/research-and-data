@@ -8,7 +8,8 @@
 //! / `data-btn` attributes appear in both modes: they are the theme base
 //! layer's styling hooks, not instrumentation.
 
-use crate::doc::{WebDoc, WebNodeKind};
+use crate::doc::{ButtonAction, ComponentSpec, MarqueeDirection, WebDoc, WebNodeKind};
+use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS};
 use crate::theme::WebTheme;
 use crate::util::{escape_attr, escape_text};
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, PageId, Phase};
@@ -56,6 +57,39 @@ pub struct RenderOutput {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Any Component node reachable from the page root (gates PLATFORM_CSS).
+pub fn page_uses_components(doc: &WebDoc, page_id: &PageId) -> bool {
+    let Some(page) = doc.page(page_id) else {
+        return false;
+    };
+    page.reachable_ids().iter().any(|id| {
+        matches!(
+            page.node(id).map(|node| &node.kind),
+            Some(WebNodeKind::Component { .. })
+        )
+    })
+}
+
+/// Any Command-action Button OR any Dialog component reachable — the two
+/// features whose behavior needs the platform interaction runtime.
+pub fn page_needs_runtime(doc: &WebDoc, page_id: &PageId) -> bool {
+    let Some(page) = doc.page(page_id) else {
+        return false;
+    };
+    page.reachable_ids()
+        .iter()
+        .any(|id| match page.node(id).map(|node| &node.kind) {
+            Some(WebNodeKind::Button {
+                action: ButtonAction::Command { .. },
+                ..
+            }) => true,
+            Some(WebNodeKind::Component {
+                spec: ComponentSpec::Dialog { .. },
+            }) => true,
+            _ => false,
+        })
+}
+
 pub fn render_page(
     doc: &WebDoc,
     page_id: &PageId,
@@ -82,10 +116,12 @@ pub fn render_page(
     let mut diagnostics = Vec::new();
     let mut body = String::new();
     for child in &root.children {
-        render_node(doc, page_id, child, theme, options, &mut body, &mut diagnostics);
+        render_node(doc, page_id, child, theme, options, &mut body, &mut diagnostics, false);
     }
 
     let editor = options.mode == RenderMode::Editor;
+    let uses_components = page_uses_components(doc, page_id);
+    let needs_runtime = page_needs_runtime(doc, page_id);
     let mut html = String::with_capacity(body.len() + theme.base_css.len() + 2048);
     html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
     html.push_str("<meta charset=\"utf-8\">\n");
@@ -108,11 +144,22 @@ pub fn render_page(
         }
     }
     html.push_str(&format!("<style>\n{}\n</style>\n", theme.base_css));
+    // Platform component base styles, versioned with the runtime; emitted in
+    // both modes only when the page actually uses a Component node.
+    if uses_components {
+        html.push_str(&format!("<style>\n{PLATFORM_CSS}\n</style>\n"));
+    }
     if !doc.custom_css.trim().is_empty() {
         html.push_str(&format!(
             "<style>\n{}\n</style>\n",
             css_style_safe(&doc.custom_css)
         ));
+    }
+    // The ONE platform interaction runtime — the delivery guarantee's single
+    // script exception, inlined in both modes only when a command button or
+    // dialog needs it. Never any agent-authored code.
+    if needs_runtime {
+        html.push_str(&format!("<script>/* lumen-runtime v1 */ {PLATFORM_RUNTIME_JS}</script>\n"));
     }
     html.push_str("</head>\n<body>\n");
     html.push_str(&body);
@@ -126,6 +173,7 @@ pub fn render_page(
     Ok(RenderOutput { html, diagnostics })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_node(
     doc: &WebDoc,
     page_id: &PageId,
@@ -134,6 +182,9 @@ fn render_node(
     options: &RenderOptions,
     out: &mut String,
     diagnostics: &mut Vec<Diagnostic>,
+    // The marquee's aria-hidden clone renders with node ids suppressed so the
+    // bridge's selection hooks are never duplicated in the DOM.
+    suppress_node_ids: bool,
 ) {
     let page = doc.page(page_id).expect("page checked by render_page");
     let Some(node) = page.node(node_id) else {
@@ -147,7 +198,7 @@ fn render_node(
     };
     let editor = options.mode == RenderMode::Editor;
     let node_attr = |out: &mut String| {
-        if editor {
+        if editor && !suppress_node_ids {
             out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(node.id.as_str())));
         }
     };
@@ -168,7 +219,7 @@ fn render_node(
             class_attr(out);
             out.push('>');
             for child in &node.children {
-                render_node(doc, page_id, child, theme, options, out, diagnostics);
+                render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
             }
             out.push_str(&format!("</{tag}>"));
         }
@@ -178,7 +229,7 @@ fn render_node(
             class_attr(out);
             out.push('>');
             for child in &node.children {
-                render_node(doc, page_id, child, theme, options, out, diagnostics);
+                render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
             }
             out.push_str("</div>");
         }
@@ -196,22 +247,130 @@ fn render_node(
         }
         WebNodeKind::Button {
             label,
-            href,
             variant,
-            new_tab,
-        } => {
-            out.push_str("<a");
-            out.push_str(&format!(" data-btn=\"{}\"", variant.as_str()));
-            out.push_str(&format!(" href=\"{}\"", escape_attr(href)));
-            if *new_tab {
-                out.push_str(" target=\"_blank\" rel=\"noopener noreferrer\"");
+            action,
+        } => match action {
+            ButtonAction::Href { href, new_tab } => {
+                out.push_str("<a");
+                out.push_str(&format!(" data-btn=\"{}\"", variant.as_str()));
+                out.push_str(&format!(" href=\"{}\"", escape_attr(href)));
+                if *new_tab {
+                    out.push_str(" target=\"_blank\" rel=\"noopener noreferrer\"");
+                }
+                node_attr(out);
+                class_attr(out);
+                out.push('>');
+                out.push_str(label);
+                out.push_str("</a>");
             }
-            node_attr(out);
-            class_attr(out);
-            out.push('>');
-            out.push_str(label);
-            out.push_str("</a>");
-        }
+            ButtonAction::Command {
+                command,
+                command_target,
+            } => {
+                out.push_str("<button type=\"button\"");
+                out.push_str(&format!(" data-btn=\"{}\"", variant.as_str()));
+                out.push_str(&format!(
+                    " commandfor=\"{}\"",
+                    escape_attr(command_target.as_str())
+                ));
+                out.push_str(&format!(" command=\"{}\"", command.as_html_attr()));
+                node_attr(out);
+                class_attr(out);
+                out.push('>');
+                out.push_str(label);
+                out.push_str("</button>");
+            }
+        },
+        WebNodeKind::Component { spec } => match spec {
+            ComponentSpec::Dialog { aria_label } => {
+                out.push_str(&format!(
+                    "<dialog id=\"{}\" data-lumen-dialog=\"true\"",
+                    escape_attr(node.id.as_str())
+                ));
+                if let Some(label) = aria_label {
+                    out.push_str(&format!(" aria-label=\"{}\"", escape_attr(label)));
+                }
+                node_attr(out);
+                class_attr(out);
+                out.push('>');
+                // Platform-owned close control: render-supplied, not a node
+                // (so it carries no data-node-id and is never selectable).
+                out.push_str(&format!(
+                    "<button type=\"button\" class=\"lumen-dialog-close\" commandfor=\"{}\" command=\"close\" aria-label=\"Close\">&#215;</button>",
+                    escape_attr(node.id.as_str())
+                ));
+                for child in &node.children {
+                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                }
+                out.push_str("</dialog>");
+            }
+            ComponentSpec::Accordion {
+                single_open,
+                default_open,
+            } => {
+                out.push_str("<div");
+                node_attr(out);
+                class_attr(out);
+                out.push('>');
+                for (index, child_id) in node.children.iter().enumerate() {
+                    render_accordion_item(
+                        doc,
+                        page_id,
+                        child_id,
+                        theme,
+                        options,
+                        out,
+                        diagnostics,
+                        suppress_node_ids,
+                        node.id.as_str(),
+                        *single_open,
+                        *default_open == Some(index as u32),
+                    );
+                }
+                out.push_str("</div>");
+            }
+            ComponentSpec::Marquee {
+                speed_s,
+                direction,
+                pause_on_hover,
+            } => {
+                // The element needs BOTH the platform class and node.classes.
+                out.push_str("<div class=\"lumen-marquee");
+                if !node.classes.trim().is_empty() {
+                    out.push(' ');
+                    out.push_str(&escape_attr(node.classes.trim()));
+                }
+                out.push('"');
+                out.push_str(&format!(
+                    " data-direction=\"{}\"",
+                    match direction {
+                        MarqueeDirection::Left => "left",
+                        MarqueeDirection::Right => "right",
+                    }
+                ));
+                out.push_str(&format!(
+                    " data-pause-on-hover=\"{}\"",
+                    if *pause_on_hover { "true" } else { "false" }
+                ));
+                // Platform-generated style from a validated u16 — strictly formatted.
+                out.push_str(&format!(" style=\"--lumen-marquee-duration:{speed_s}s\""));
+                node_attr(out);
+                out.push('>');
+                out.push_str("<div class=\"lumen-marquee-track\">");
+                for child in &node.children {
+                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                }
+                out.push_str("</div>");
+                // The aria-hidden clone repeats the content for a seamless loop;
+                // its subtree renders with node ids suppressed.
+                out.push_str("<div class=\"lumen-marquee-track\" aria-hidden=\"true\">");
+                for child in &node.children {
+                    render_node(doc, page_id, child, theme, options, out, diagnostics, true);
+                }
+                out.push_str("</div>");
+                out.push_str("</div>");
+            }
+        },
         WebNodeKind::Image {
             asset_id,
             alt,
@@ -280,6 +439,58 @@ fn render_node(
             out.push_str("></iframe>");
         }
     }
+}
+
+/// Render one accordion child. A Container with >=2 children becomes a native
+/// `<details>` (first child = summary, rest = panel); anything else renders
+/// normally (validation warns it will show unfolded).
+#[allow(clippy::too_many_arguments)]
+fn render_accordion_item(
+    doc: &WebDoc,
+    page_id: &PageId,
+    child_id: &NodeId,
+    theme: &WebTheme,
+    options: &RenderOptions,
+    out: &mut String,
+    diagnostics: &mut Vec<Diagnostic>,
+    suppress_node_ids: bool,
+    accordion_id: &str,
+    single_open: bool,
+    is_default_open: bool,
+) {
+    let page = doc.page(page_id).expect("page checked by render_page");
+    let item_shape = page
+        .node(child_id)
+        .map(|child| matches!(child.kind, WebNodeKind::Container) && child.children.len() >= 2)
+        .unwrap_or(false);
+    if !item_shape {
+        render_node(doc, page_id, child_id, theme, options, out, diagnostics, suppress_node_ids);
+        return;
+    }
+    let child = page.node(child_id).expect("checked present");
+    let editor = options.mode == RenderMode::Editor;
+    out.push_str("<details data-lumen-acc-item=\"true\"");
+    if single_open {
+        // Shared name = exclusive open group (native single-open accordion).
+        out.push_str(&format!(" name=\"{}\"", escape_attr(accordion_id)));
+    }
+    if is_default_open {
+        out.push_str(" open");
+    }
+    if editor && !suppress_node_ids {
+        out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(child.id.as_str())));
+    }
+    if !child.classes.trim().is_empty() {
+        out.push_str(&format!(" class=\"{}\"", escape_attr(child.classes.trim())));
+    }
+    out.push('>');
+    out.push_str("<summary>");
+    render_node(doc, page_id, &child.children[0], theme, options, out, diagnostics, suppress_node_ids);
+    out.push_str("</summary>");
+    for grandchild in &child.children[1..] {
+        render_node(doc, page_id, grandchild, theme, options, out, diagnostics, suppress_node_ids);
+    }
+    out.push_str("</details>");
 }
 
 /// Defense in depth for the one raw-text slot in the document: validation
@@ -390,6 +601,8 @@ mod tests {
         assert!(!output.html.contains("data-node-id"));
         assert!(!output.html.contains("<script"));
         assert!(!output.html.contains("text/tailwindcss"));
+        // A component-free page pulls in neither the platform CSS nor runtime.
+        assert!(!output.html.contains("lumen-platform"));
         // Semantic styling hooks stay.
         assert!(output.html.contains("data-tv=\"display\""));
         assert!(output.html.contains("data-btn=\"primary\""));
@@ -434,6 +647,109 @@ mod tests {
             lower.matches("<style").count(),
             lower.matches("</style").count(),
         );
+    }
+
+    fn component_fixture(html: &str) -> (WebDoc, WebTheme) {
+        let (theme, _) =
+            compile_web_theme(None, &WebThemeRef::default(), &WebThemeOptions::default());
+        let mut doc = WebDoc::new("d1", "Components", None);
+        let outcome = ingest_html_into_page(&mut doc, &PageId::from("home"), html, &theme);
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        (doc, theme)
+    }
+
+    #[test]
+    fn dialog_and_command_button_markup_and_runtime() {
+        let (doc, theme) = component_fixture(
+            r#"<section id="s">
+                 <a data-button="primary" data-command="show-modal" data-target="dlg_book">Book</a>
+                 <div data-component="dialog" id="dlg_book" data-aria-label="Booking">
+                   <p>Pick a time.</p>
+                 </div>
+               </section>"#,
+        );
+        let output = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("render");
+        // Dialog markup.
+        assert!(output.html.contains("<dialog id=\"dlg_book\" data-lumen-dialog=\"true\""));
+        assert!(output.html.contains("aria-label=\"Booking\""));
+        assert!(output.html.contains(
+            "class=\"lumen-dialog-close\" commandfor=\"dlg_book\" command=\"close\""
+        ));
+        // Command button markup.
+        assert!(output.html.contains("<button type=\"button\""));
+        assert!(output.html.contains("commandfor=\"dlg_book\""));
+        assert!(output.html.contains("command=\"show-modal\""));
+        // Exactly one script (the runtime) even in delivery, and the CSS.
+        assert_eq!(output.html.matches("<script").count(), 1);
+        assert!(output.html.contains("__lumenRuntimeV1"));
+        assert!(output.html.contains("lumen-platform v1"));
+    }
+
+    #[test]
+    fn accordion_details_structure() {
+        let (doc, theme) = component_fixture(
+            r#"<section id="s">
+                 <div data-component="accordion" id="faq" data-single-open="true" data-default-open="1">
+                   <div><h3>Q1</h3><p>A1</p></div>
+                   <div><h3>Q2</h3><p>A2</p></div>
+                 </div>
+               </section>"#,
+        );
+        let output = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("render");
+        assert_eq!(output.html.matches("<details data-lumen-acc-item=\"true\"").count(), 2);
+        assert!(output.html.contains("<summary>"));
+        // single_open ⇒ shared name; default_open=1 ⇒ the second item is open.
+        assert_eq!(output.html.matches("name=\"faq\"").count(), 2);
+        assert_eq!(output.html.matches(" open>").count(), 1);
+        // Accordion alone needs the CSS but no runtime script.
+        assert!(output.html.contains("lumen-platform v1"));
+        assert!(!output.html.contains("<script"));
+    }
+
+    #[test]
+    fn marquee_two_tracks_and_suppressed_clone() {
+        let (doc, theme) = component_fixture(
+            r#"<section id="s">
+                 <div data-component="marquee" id="strip" data-speed="20" data-direction="right" class="py-4">
+                   <p id="logo_txt">logo</p>
+                 </div>
+               </section>"#,
+        );
+        // Delivery: two tracks, aria-hidden clone, duration var, merged class.
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("render");
+        assert_eq!(delivery.html.matches("class=\"lumen-marquee-track").count(), 2);
+        assert!(delivery.html.contains("class=\"lumen-marquee-track\" aria-hidden=\"true\""));
+        assert!(delivery.html.contains("--lumen-marquee-duration:20s"));
+        assert!(delivery.html.contains("class=\"lumen-marquee py-4\""));
+        assert!(delivery.html.contains("data-direction=\"right\""));
+        // Marquee alone: CSS but no runtime.
+        assert!(delivery.html.contains("lumen-platform v1"));
+        assert!(!delivery.html.contains("<script"));
+
+        // Editor: the aria-hidden clone must not repeat the bridge hook.
+        let mut editor_options = RenderOptions::editor("/asset-store");
+        editor_options.tailwind_runtime_src = Some("/tw.js".to_owned());
+        let editor = render_page(&doc, &PageId::from("home"), &theme, &editor_options)
+            .expect("render editor");
+        assert_eq!(editor.html.matches("data-node-id=\"logo_txt\"").count(), 1);
     }
 
     #[test]
