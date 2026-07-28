@@ -362,6 +362,7 @@ async def emit_ready_handoffs(
     workspace_id: str,
     assembled_at: UtcDatetime,
     coverage_confidence: UnitInterval | None = None,
+    product_id: str | None = None,
     sink: MetricSink | None = None,
 ) -> EmitReport:
     """Assemble + materialise + emit a durable ``handoff_event`` for every account in
@@ -411,6 +412,7 @@ async def emit_ready_handoffs(
                 tier=acc.tier,
                 assembled_at=assembled_at,
                 coverage_confidence=coverage_confidence,
+                product_id=product_id,
             )
             processed += 1
             if was_new:
@@ -439,6 +441,7 @@ async def _assemble_materialise_emit(
     tier: str | None,
     assembled_at: UtcDatetime,
     coverage_confidence: UnitInterval | None,
+    product_id: str | None,
 ) -> tuple[HandoffEvent, bool]:
     """Assemble + materialise one account's handoff and write its outbox row in one transaction;
     return the :class:`HandoffEvent` and whether it was newly emitted (the push fires after
@@ -462,6 +465,7 @@ async def _assemble_materialise_emit(
             icp_key=icp_key,
             project_run_id=project_run_id,
             coverage_confidence=coverage_confidence,
+            product_id=product_id,
         )
         await write_handoff(conn, assembled, workspace_id=workspace_id, icp_key=icp_key, tier=tier)
         was_new = await emit_handoff_event(conn, event)

@@ -1,6 +1,6 @@
 # C7 — structured research views, derivations, and production handoff
 
-**Status:** ACTIVE — C7.0–C7.5 complete; C7.6 production committee reader and handoff next
+**Status:** ACTIVE — C7.0–C7.6 complete; C7.7 product integration surface next
 **Layer:** Phase C / harness build step 7
 **Depends on:** C1–C6 complete; M9 verification; M10 governance; M12 narrative/handoff
 **Branch:** `platform/c7-research-views`

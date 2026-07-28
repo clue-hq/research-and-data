@@ -88,6 +88,7 @@ from clue_research.narrative.positioner import (
     COVERAGE_NO_CLIENT_KNOWLEDGE,
 )
 from clue_research.verification import FaithfulnessJudgeImpl
+from clue_spine import create_brand, create_product
 from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
@@ -332,6 +333,13 @@ def test_produces_one_verified_narrative_per_persona() -> None:
         async with rollback_conn() as conn:
             workspace_id, run_id = "tenant-a", new_run_id()
             account = await _account(conn)
+            brand = await create_brand(conn, workspace_id=workspace_id, name="Acme")
+            product = await create_product(
+                conn,
+                brand_id=brand.brand_id,
+                workspace_id=workspace_id,
+                name="Product A",
+            )
             client_entity = new_entity_id()
             await _write_fact(
                 conn,
@@ -359,6 +367,7 @@ def test_produces_one_verified_narrative_per_persona() -> None:
                 workspace_id=workspace_id,
                 client_entity_id=client_entity,
                 run_id=run_id,
+                product_id=product.product_id,
             )
 
             assert len(result.narratives) == 1
@@ -376,6 +385,8 @@ def test_produces_one_verified_narrative_per_persona() -> None:
             assert claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
             assert claim.evidence_span  # non-empty (AC1)
             assert claim.value_json["argument"].startswith("Acme can cut")  # type: ignore[index]
+            assert claim.value_json["product_id"] == product.product_id  # type: ignore[index]
+            assert claim.product_id == product.product_id
             assert claim.verification_status is VerificationStatus.VERIFIED  # judge promoted (AC2)
 
             support = await read_claim_support(conn, ref.claim_id)

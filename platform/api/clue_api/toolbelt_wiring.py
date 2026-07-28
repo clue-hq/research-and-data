@@ -48,7 +48,8 @@ warn-and-proceed placeholder is retired.
 
 Preconditions read through ``ctx.conn_factory``; a malformed id resolves to the same not-found
 refusal (never a raw traceback). The ``compose_handoff`` result surfaces the slice-1
-``narrative_emit_skipped`` gap flag from the run's HANDOFF checkpoint payload, so a gap-completed
+legacy ``narrative_emit_skipped`` gap flag from a pre-C7.6 HANDOFF checkpoint payload, so a
+historical gap-completed
 run is distinguishable from a truly-handed-off one (spec §2 amendment / slice-1 review #10).
 """
 

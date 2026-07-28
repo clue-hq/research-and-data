@@ -9,8 +9,8 @@ SIGTERM/SIGINT → graceful drain). Structured logging via :func:`clue_obs.setup
 
 **The B4 composing driver drives whole runs.** The worker never *composes* phase handlers inside a
 run — it drives the injected ``RunDriver``. Since PB-B4 slice 1 that driver is the
-:class:`~clue_api.run_composition.ComposingRunDriver`: it composes a **per-``(workspace_id, icp_key,
-icp_version)``** phase registry (LRU-cached) on each run's first advance — every phase of the
+:class:`~clue_api.run_composition.ComposingRunDriver`: it composes a **per-project-run** phase
+registry (LRU-cached) on each run's first advance — every phase of the
 sequence, including the campaign-scoped DEEP/VERIFICATION (each holds one ``ICPSpec``) that could
 not live in the single process-default registry (two ICPs would collide on the DEEP slot). The
 process-wide-composable boot handlers (REVIEW) are re-folded into every per-run registry. So the
@@ -25,9 +25,9 @@ degenerate no-composer deployment). Two honest limits remain:
   ``outcome=error``** (``ProjectRun.advance`` raises ``NoPhaseHandlerRegistered``; the worker
   records the task FAILED). That is the *correct* fail-loud behavior — a misconfigured deployment
   should not silently drop runs.
-* **HANDOFF emits no narrative** and **REVERSE_PROFILING needs a client-input provider** — two
-  documented gaps the composer surfaces loudly (no production ``HandoffCommitteeReader``; the
-  ``[M5×M7]`` client-input threading). See :mod:`clue_api.run_composition`.
+* **REVERSE_PROFILING needs a client-input provider** — the remaining documented composition gap.
+  C7.6 closed the HANDOFF gap: the per-run composer now binds the production governed committee
+  reader and the real materialise-then-outbox M12 handler. See :mod:`clue_api.run_composition`.
 
 This entrypoint also runs the B2 **orphan-blob sweep** on ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``
 as a background task alongside the worker (started with it, cancelled on drain) — the orphan leg the
