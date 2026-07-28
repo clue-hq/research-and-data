@@ -48,6 +48,23 @@ Judge interactive states from pixels with the same discipline as widths:
 13. **Wiring** — every command button targets a dialog that exists (a
     LUMW0018 diagnostic is a blocking issue, same as a broken link).
 
+## Brand expression — the anchor check
+
+You receive the director's **brand anchor** (2–3 creative-director words,
+e.g. "clinical calm precision"). Your job is structural, not vibes:
+
+- Point at ONE concrete element in the pixels that would only make sense
+  for THIS characterization — a composition choice, a type move, an image
+  treatment. If you cannot, report the advisory issue **"brand expression
+  generic"** and name the band that most needs the anchor.
+- Squint-test heuristics, at 1440: does one element clearly dominate each
+  band (hierarchy)? does the weight balance left/right feel deliberate? do
+  edges align to a consistent grid? are there 1–2 intentional color
+  moments rather than accent spread everywhere?
+- Trace the contrast chain: body text on band background, button label on
+  button fill, **logo on its band** (a dark logo on a dark band is a
+  blocking miss — no class fixes it), muted text still ≥ readable.
+
 ## Verdict discipline
 
 - **Blocking** (must-fix): overflow/clipping, unreadable contrast, broken or

@@ -7,8 +7,17 @@ description: Author a complete branded website page in the constrained-HTML wire
 
 You author **one complete page per call** to `author_web_page(html, custom_css?)`.
 The markup is parsed into a typed tree; **any error rejects the whole batch and
-nothing is stored** — you then fix the markup and resend the FULL page, not a
-fragment. Warnings do not block, but read them: they name real losses.
+nothing is stored** — you then repair with `patch_web_page` (see Repairing
+below), not by re-drafting. Warnings do not block, but they are work: resolve
+each one or explicitly justify it in your report — never carry one silently.
+
+## Author once, at structural altitude
+
+The tool call IS the artifact. Plan the page as structure — "hero, proof
+strip, three feature panels, how-it-works, FAQ, CTA band" — and produce the
+build call as soon as the structure is decided. Never draft the page's prose
+or markup in your reasoning and then transcribe it into the call: that doubles
+the cost and the two copies drift. Copy is written once, inside the markup.
 
 ## The vocabulary (everything else is rejected)
 
@@ -45,13 +54,62 @@ Tailwind palettes (`text-slate-900`, `bg-red-500`) are hard errors.
   bg-primary/10 from-primary to-dark text-inverse`.
 - Opacity via slash: `bg-primary/15` (integer 0–100).
 - Gradients: `bg-linear-to-br from-primary to-dark`, stops like `from-10%` ok.
-- Allowed prefixes: `sm: md: lg: xl: hover: focus:` — no `dark:`.
+- Allowed prefixes: `md: lg: hover: focus:` — no `dark:`, and no `sm:`/`xl:`:
+  never author a breakpoint the review loop does not look at (375 is the
+  base layer, 768 is `md:`, 1440 is covered by `lg:`).
 - Non-color arbitrary values are fine: `max-w-[1180px] leading-[1.06]`.
 
 **The theme already styles the type ramp and buttons.** An `<h1>` lands with
 the brand's display face, size, and weight with **zero classes**; a
 `data-button="primary"` is already the brand CTA. Add classes only for
 *deviations*: color accents, spacing, width caps, alignment.
+
+## Design guidance
+
+Your design training carries most of this; these blocks fill in what is
+specific to our editor, brands, and formats.
+
+1. **Build against the brand anchor.** The director names the brand in 2–3
+   creative-director words (from the brand card) — build every section
+   against it. Kill test: if swapping the logo would let a section fit any
+   company's site, the anchor isn't showing. The reviewer will be asked to
+   point at one element that could ONLY belong to this characterization.
+2. **Anti-slop.** Decorative geometry — blobs, orbs, gradient meshes,
+   scattered shapes — ONLY when the brand's real presence uses it.
+   Scattered decorative shapes are the clearest AI-slop tell. The default
+   fallback is restraint: negative space, bigger type, one typographic
+   anchor per band.
+3. **Composable primitives.** When no imagery fits, compose the CONTENT from
+   the vocabulary: a dashboard scaffold, a stat wall, a terminal card, a
+   chat exchange — built from containers, text, and utilities. Apply one
+   primitive as a system across the page, never one-of-each. Placeholder
+   tokens are for photographic substrates only; never a placeholder logo
+   grid.
+4. **Imagery posture.** Read it from the brief and brand card: text-forward
+   brands get fewer, quieter images. When the posture says text-only, OMIT
+   the imagery section rather than decorate it.
+5. **Copy-fit budgets.** Sibling headings within one line of each other at
+   desktop; card copy in a 3-column grid within ~25% length variance; 2–3
+   sentences max in a narrow column. **Rewrite the copy before styling
+   around it** — long copy is a copy problem, not a layout problem.
+6. **Composition menu.** Name the layout of each band before building:
+   centered statement, asymmetric split, editorial stack, proof strip,
+   comparison block, full-bleed hero. Repeat a composition by design where
+   the content is symmetric; vary it where the content varies. Two adjacent
+   identical grids read as templated.
+7. **Micro-spacing is intent.** Captions sit a reading-gap from their
+   subject; sum the header's logo + links + CTA widths BEFORE building (a
+   wrapping nav reads broken); spotlight padding scales with its type size;
+   editorial elements breathe.
+8. **Logo discipline.** Always an explicit height class, uniform per context
+   (nav, trust strip, footer). A dark logo on a dark band is invisible — no
+   class fixes it; pick the right asset variant. Two accidental-centering
+   footguns: `text-center` on a plain parent centers nothing structural;
+   `items-center` on a flex parent needs `self-start` on children that must
+   not stretch or center.
+9. **Fake data is flagged data.** Illustrative pricing, stats, or comparison
+   rows must be named for verification in the finalize summary — same
+   honesty rule as real links and real endpoints.
 
 ## Page structure and rhythm
 
@@ -138,11 +196,35 @@ facts, statistics, customers, or testimonials (see the landing-page recipe in
 `knowledge_docs/knowledge/web/landing-page.md` — read it before authoring a
 landing page).
 
-## Repairing from diagnostics
+## Repairing from diagnostics — patch first
 
 Errors void the batch — the stored page is unchanged until your markup is
-clean. Each diagnostic carries a code, the offending node id, and a hint;
-fix ALL of them, then resend the complete page. Common ones:
+clean. Each diagnostic carries a code, the offending node id, and a hint.
+
+**The default repair is `patch_web_page(patches)`**, not a resend: submit
+targeted `{old_string, new_string, replace_all?}` patches against your
+rejected markup and it re-ingests as the same atomic batch. Fix ALL the
+diagnostics in ONE patch call (a rejection lists every error — patching one
+at a time wastes rounds). `old_string` must match exactly and be unique
+(or set `replace_all`). Re-send the complete page via `author_web_page`
+only when the fix is structural — reordering sections, rewriting a band —
+not for classes, copy, attributes, or ids.
+
+## Patterns that will fail (measured from live runs)
+
+| WRONG | CORRECT | Why |
+|---|---|---|
+| `text-secondary`, `bg-brand` assumed | only the tokens in THEME TOKENS / your brand card | 153 live rejections came from two invented names (`secondary`, `brand`) — the token set is per-kit; when the lint's hint lists the real tokens, use one, don't retry the invented name |
+| `web_ops` against a guessed id (`n1`, `hero-2`) | `view("doc")` first; use ids from it | 50 live rejections were ops on ids that don't exist |
+| `<a href="…">See more</a>` at block level | `<a data-button="link" href="…">See more</a>`, or the link inside a `<p>` | bare block-level `<a>` is outside the vocabulary (20 rejections) |
+| copy dropped between tags | every word inside `<p>`/`<h1>`–`<h4>`/`<span>` | loose text is an error, not autowrapped (20 rejections) |
+| `set_text` on a section/button/component | `set_text` on the Text NODE inside it (view the doc for its id) | 15 rejections targeted non-text nodes |
+| `<img data-asset="hero">` before generating | `asset` tool first → use the RETURNED id | referencing unknown assets voids the batch (10 rejections) |
+| image inside `flex flex-col` stretching full-width | `self-start` (or an explicit `w-…`) on the image | flex stretch distorts imagery on mobile |
+| icon with no size class | explicit `size-5`/`size-6` + a color token | unsized icons render at unpredictable glyph sizes |
+| centering an inline image with `text-center` on a `div` | make the parent `flex justify-center`, or `mx-auto` on the image | block images ignore text alignment |
+
+Common diagnostic codes:
 
 | Code | Meaning | Fix |
 |---|---|---|
@@ -153,6 +235,8 @@ fix ALL of them, then resend the complete page. Common ones:
 | LUMW0110/0111 | external or missing image ref | generate/import → `data-asset` |
 | LUMW0117 | loose text between elements | wrap copy in `<p>`/headings |
 | LUMW0210/0211/0212 | raw hex / stock palette / unknown color | use a theme token (hint names the nearest) |
+| LUMW0203 | `sm:`/`xl:` breakpoint | base layer covers 375, `md:` covers 768, `lg:` covers 1440 |
+| LUMW0221 | dead Tailwind v3 name (`flex-shrink-*`, `overflow-ellipsis`, …) | the hint names the v4 rename (`shrink-*`, `text-ellipsis`) |
 | LUMW0123 | unknown component name | valid: `dialog accordion marquee` |
 | LUMW0125/0126 | unknown command / trigger without target | `data-command="show-modal\|close"` + `data-target="<dialog id>"` |
 | LUMW0127 | button has both href and data-command | pick one: link or trigger |

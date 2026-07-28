@@ -275,6 +275,204 @@ def test_author_web_subtree_unknown_node(tmp_path: Path):
     assert set(result["section_ids"]) == {"alpha", "beta"}
 
 
+# --- patch_web_page (repair a rejected submission) against the real helper ---
+
+# A page whose ONLY error is a raw hex color class — rejected by author_web_page,
+# then repairable by swapping the hex for a semantic token.
+REJECTED_PAGE_HTML = (
+    '<section id="s"><div class="bg-[#ff0000]"><p>x</p></div></section>'
+)
+
+
+def test_patch_web_page_repairs_rejected_page(tmp_path: Path):
+    tools = _tools(tmp_path)
+    rejected = json.loads(tools.author_web_page(REJECTED_PAGE_HTML))
+    assert rejected["status"] == "rejected", rejected
+    # The rejected submission is now pending, carrying the SUBMITTED html.
+    assert tools._last_rejected_authoring is not None
+    assert tools._last_rejected_authoring["tool"] == "author_web_page"
+    assert tools._last_rejected_authoring["html"] == REJECTED_PAGE_HTML
+    version_before = tools._doc_version
+
+    # A patch swapping the raw hex for a semantic token → the resubmission is
+    # ACCEPTED, the doc is updated, and the pending rejection is cleared.
+    result = json.loads(
+        tools.patch_web_page(
+            json.dumps([{"old_string": "bg-[#ff0000]", "new_string": "bg-primary"}])
+        )
+    )
+    assert result["status"] == "ok", result
+    assert result["repaired_via"] == "patch"
+    assert result["patches_applied"] == 1
+    assert tools._doc_version == version_before + 1
+    assert tools._last_rejected_authoring is None
+    # The section is really installed now.
+    assert (tools._home_page().get("nodes") or {}).get("s")
+
+
+def test_patch_web_page_no_pending_on_fresh_substrate(tmp_path: Path):
+    tools = _tools(tmp_path)
+    result = json.loads(
+        tools.patch_web_page(json.dumps([{"old_string": "a", "new_string": "b"}]))
+    )
+    assert result["status"] == "error", result
+    assert result["error_code"] == "patch.no_pending"
+
+
+def test_patch_web_page_no_pending_after_successful_author(tmp_path: Path):
+    tools = _tools(tmp_path)
+    # A rejection leaves a pending submission…
+    assert json.loads(tools.author_web_page(REJECTED_PAGE_HTML))["status"] == "rejected"
+    assert tools._last_rejected_authoring is not None
+    # …but a subsequent SUCCESSFUL author clears the stale pending.
+    assert json.loads(tools.author_web_page(SAMPLE_HTML))["status"] == "ok"
+    assert tools._last_rejected_authoring is None
+    result = json.loads(
+        tools.patch_web_page(json.dumps([{"old_string": "a", "new_string": "b"}]))
+    )
+    assert result["status"] == "error", result
+    assert result["error_code"] == "patch.no_pending"
+
+
+def test_patch_web_page_not_found(tmp_path: Path):
+    tools = _tools(tmp_path)
+    json.loads(tools.author_web_page(REJECTED_PAGE_HTML))
+    result = json.loads(
+        tools.patch_web_page(
+            json.dumps([{"old_string": "not-present-anywhere", "new_string": "x"}])
+        )
+    )
+    assert result["status"] == "error", result
+    assert result["error_code"] == "patch.not_found"
+    assert "patch 0" in result["message"]
+    # The stored submission is untouched by a failed patch.
+    assert tools._last_rejected_authoring["html"] == REJECTED_PAGE_HTML
+
+
+def test_patch_web_page_ambiguous_then_replace_all(tmp_path: Path):
+    tools = _tools(tmp_path)
+    # Two identical raw-hex classes: a bare patch matches both → ambiguous.
+    html = (
+        '<section id="s">'
+        '<div class="bg-[#ff0000]"><p>a</p></div>'
+        '<div class="bg-[#ff0000]"><p>b</p></div>'
+        "</section>"
+    )
+    assert json.loads(tools.author_web_page(html))["status"] == "rejected"
+    ambiguous = json.loads(
+        tools.patch_web_page(
+            json.dumps([{"old_string": "bg-[#ff0000]", "new_string": "bg-primary"}])
+        )
+    )
+    assert ambiguous["status"] == "error", ambiguous
+    assert ambiguous["error_code"] == "patch.ambiguous"
+    assert "occurs 2 times" in ambiguous["message"]
+    # Stored submission unchanged after the ambiguous rejection.
+    assert tools._last_rejected_authoring["html"] == html
+    # A follow-up corrected patch (replace_all) still works from the same state.
+    fixed = json.loads(
+        tools.patch_web_page(
+            json.dumps(
+                [
+                    {
+                        "old_string": "bg-[#ff0000]",
+                        "new_string": "bg-primary",
+                        "replace_all": True,
+                    }
+                ]
+            )
+        )
+    )
+    assert fixed["status"] == "ok", fixed
+    assert fixed["repaired_via"] == "patch"
+    assert tools._last_rejected_authoring is None
+
+
+def test_patch_web_page_bad_input_variants(tmp_path: Path):
+    tools = _tools(tmp_path)
+    json.loads(tools.author_web_page(REJECTED_PAGE_HTML))
+
+    def err(patches_json: str) -> dict:
+        return json.loads(tools.patch_web_page(patches_json))
+
+    # Not a JSON array.
+    assert err("{not json")["error_code"] == "patch.bad_input"
+    # A JSON object, not an array.
+    assert err(json.dumps({"old_string": "a", "new_string": "b"}))["error_code"] == "patch.bad_input"
+    # Empty array.
+    assert err(json.dumps([]))["error_code"] == "patch.bad_input"
+    # Entry not an object.
+    assert err(json.dumps(["nope"]))["error_code"] == "patch.bad_input"
+    # Missing / non-string new_string.
+    assert err(json.dumps([{"old_string": "a"}]))["error_code"] == "patch.bad_input"
+    assert err(json.dumps([{"old_string": "a", "new_string": 3}]))["error_code"] == "patch.bad_input"
+    # Empty old_string.
+    assert err(json.dumps([{"old_string": "", "new_string": "b"}]))["error_code"] == "patch.bad_input"
+    # old_string == new_string (no-op).
+    assert err(json.dumps([{"old_string": "a", "new_string": "a"}]))["error_code"] == "patch.bad_input"
+    # A failed validation never touches the doc or the stored submission.
+    assert tools._doc_version == 0
+    assert tools._last_rejected_authoring["html"] == REJECTED_PAGE_HTML
+
+
+def test_patch_web_page_two_rounds(tmp_path: Path):
+    tools = _tools(tmp_path)
+    assert json.loads(tools.author_web_page(REJECTED_PAGE_HTML))["status"] == "rejected"
+
+    # Round 1: the patch fixes the first hex but INTRODUCES a second raw hex →
+    # still rejected, and the stored html is updated to the patched version.
+    round1 = json.loads(
+        tools.patch_web_page(
+            json.dumps([{"old_string": "bg-[#ff0000]", "new_string": "bg-[#00ff00]"}])
+        )
+    )
+    assert round1["status"] == "rejected", round1
+    assert tools._last_rejected_authoring is not None
+    assert "bg-[#00ff00]" in tools._last_rejected_authoring["html"]
+    assert "bg-[#ff0000]" not in tools._last_rejected_authoring["html"]
+
+    # Round 2: a patch against the UPDATED stored html fixes the remaining hex.
+    round2 = json.loads(
+        tools.patch_web_page(
+            json.dumps([{"old_string": "bg-[#00ff00]", "new_string": "bg-primary"}])
+        )
+    )
+    assert round2["status"] == "ok", round2
+    assert round2["repaired_via"] == "patch"
+    assert tools._last_rejected_authoring is None
+    assert (tools._home_page().get("nodes") or {}).get("s")
+
+
+def test_patch_web_page_repairs_rejected_subtree(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    # A scoped edit on "beta" with a raw hex → rejected, pending as a subtree.
+    rejected = json.loads(
+        tools.author_web_subtree(
+            "beta",
+            '<section id="beta"><div class="bg-[#ff0000]"><p>x</p></div></section>',
+        )
+    )
+    assert rejected["status"] == "rejected", rejected
+    assert tools._last_rejected_authoring["tool"] == "author_web_subtree"
+    assert tools._last_rejected_authoring["node_id"] == "beta"
+    version_before = tools._doc_version
+
+    result = json.loads(
+        tools.patch_web_page(
+            json.dumps([{"old_string": "bg-[#ff0000]", "new_string": "bg-primary"}])
+        )
+    )
+    assert result["status"] == "ok", result
+    assert result["section"] == "beta"
+    assert result["repaired_via"] == "patch"
+    assert tools._doc_version == version_before + 1
+    assert tools._last_rejected_authoring is None
+    # The alpha section is still present; beta was replaced in place.
+    page = tools._home_page()
+    root = (page.get("nodes") or {}).get(page.get("root")) or {}
+    assert list(root.get("children") or []) == ["alpha", "beta"]
+
+
 # --- web_ops (surgical repair batch) against the real helper -----------------
 
 

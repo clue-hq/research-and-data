@@ -235,6 +235,14 @@ class LumenWebTools:
         self._doc_version = 0
         self._preview_doc_version: Optional[int] = None
 
+        # The last REJECTED authoring submission (author_web_page /
+        # author_web_subtree), so patch_web_page can repair the markup with
+        # targeted string patches and resubmit it as the same atomic batch
+        # instead of the model re-sending the whole document. Set on any ingest
+        # rejection (with the SUBMITTED html), cleared on ANY successful
+        # authoring write (page, subtree, or a successful patch).
+        self._last_rejected_authoring: Optional[JsonObject] = None
+
         # Compact brand card (None without an attached kit) + its text form for
         # the prompts and view("brand").
         self.brand_card: Optional[JsonObject] = build_brand_card(
@@ -345,36 +353,116 @@ class LumenWebTools:
         On any error-severity diagnostic NOTHING is stored — fix every
         diagnostic (each carries a code, node id, and hint) and resend the
         complete page. On success the working document is replaced and the
-        installed node count is returned."""
+        installed node count is returned.
+
+        Prefer `patch_web_page` to repair a rejected submission with targeted
+        string patches instead of re-sending the whole page."""
+        submission: JsonObject = {
+            "tool": "author_web_page",
+            "html": html,
+            "custom_css": custom_css or None,
+            "node_id": None,
+        }
+        return self._submit_authoring(submission, origin="author")
+
+    # --- shared authoring submit path (author + patch resubmit) -------------
+
+    def _submit_authoring(
+        self,
+        submission: JsonObject,
+        origin: str,
+        patch_count: Optional[int] = None,
+    ) -> str:
+        """The single submit-and-record core both an original author call and a
+        patched resubmission go through. `origin` is "author" (the tool was
+        called directly) or "patch" (patch_web_page repaired a rejected
+        submission). Dispatches to the page or subtree ingest path by
+        `submission["tool"]`; each path stores `_last_rejected_authoring` (with
+        the submitted html) on rejection and clears it on success, so the two
+        origins share EXACTLY the same events, doc-version bookkeeping, and
+        success/rejection handling."""
+        if submission["tool"] == "author_web_page":
+            return self._submit_page(submission, origin, patch_count)
+        return self._submit_subtree(submission, origin, patch_count)
+
+    def _authored_event(self, origin: str, tool: str) -> str:
+        if origin == "patch":
+            return "web_page_patched"
+        return "web_page_authored" if tool == "author_web_page" else "web_subtree_authored"
+
+    def _rejected_event(self, origin: str, tool: str) -> str:
+        if origin == "patch":
+            return "web_page_patch_rejected"
+        return "web_page_rejected" if tool == "author_web_page" else "web_subtree_rejected"
+
+    def _authoring_input_summary(
+        self, origin: str, patch_count: Optional[int], author_default: str
+    ) -> str:
+        """The record input_summary: "{n} patch(es)" for a patch resubmission,
+        else the tool's own default (the submitted html / node summary)."""
+        if origin == "patch":
+            return f"{patch_count} patch(es)"
+        return author_default
+
+    def _store_rejection(self, submission: JsonObject, diagnostics: List[JsonObject]) -> None:
+        """Remember the rejected submission (with its SUBMITTED html) so
+        patch_web_page can repair and resubmit it."""
+        self._last_rejected_authoring = {
+            "tool": submission["tool"],
+            "html": submission["html"],
+            "custom_css": submission["custom_css"],
+            "node_id": submission["node_id"],
+            "diagnostics": list(diagnostics or []),
+        }
+
+    def _clear_pending(self) -> None:
+        self._last_rejected_authoring = None
+
+    def _decorate_success(
+        self, result: JsonObject, origin: str, patch_count: Optional[int]
+    ) -> None:
+        if origin == "patch":
+            result["repaired_via"] = "patch"
+            result["patches_applied"] = patch_count
+
+    def _submit_page(
+        self, submission: JsonObject, origin: str, patch_count: Optional[int]
+    ) -> str:
+        html = submission["html"]
+        custom_css = submission["custom_css"]
+        input_summary = self._authoring_input_summary(origin, patch_count, html[:200])
         try:
             response = self.core.web_ingest_html(
                 self.web_doc,
                 self.page_id,
                 html,
-                custom_css or None,
+                custom_css,
                 brand_kit=self.config.brand_kit,
             )
         except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self._store_rejection(submission, diagnostics)
             self.record(
                 "author",
-                "web_page_rejected",
-                input_summary=html[:200],
+                self._rejected_event(origin, submission["tool"]),
+                input_summary=input_summary,
                 output_summary=error.message,
-                diagnostics=list(error.diagnostics or []),
+                diagnostics=diagnostics,
             )
             return self._tool_error(
                 "web_author.helper_error",
                 error.message,
-                diagnostics=list(error.diagnostics or []),
+                diagnostics=diagnostics,
             )
 
         diagnostics = response.get("diagnostics") or []
         errors = [d for d in diagnostics if isinstance(d, dict) and d.get("severity") == "error"]
         if errors:
+            self._store_rejection(submission, diagnostics)
             self.record(
                 "author",
-                "web_page_rejected",
-                input_summary=html[:200],
+                self._rejected_event(origin, submission["tool"]),
+                input_summary=input_summary,
                 output_summary=f"{len(errors)} error diagnostic(s); page not stored",
                 diagnostics=diagnostics,
             )
@@ -384,24 +472,28 @@ class LumenWebTools:
 
         self.web_doc = response["web_doc"]
         self._doc_version += 1
+        self._clear_pending()
         installed = response.get("applied_operations")
         warnings = [
             d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
         ]
         self.record(
             "author",
-            "web_page_authored",
-            input_summary=html[:200],
+            self._authored_event(origin, submission["tool"]),
+            input_summary=input_summary,
             output_summary=(
                 f"installed {installed} node(s); page now {self._page_node_count()} nodes"
             ),
             diagnostics=warnings,
             sink_extra={"installed_nodes": installed},
         )
-        return json.dumps(
-            {"status": "ok", "installed_nodes": installed, "warnings": warnings},
-            indent=2,
-        )
+        result: JsonObject = {
+            "status": "ok",
+            "installed_nodes": installed,
+            "warnings": warnings,
+        }
+        self._decorate_success(result, origin, patch_count)
+        return json.dumps(result, indent=2)
 
     def author_web_subtree(self, node_id: str, html: str) -> str:
         """Scoped edit: replace ONE top-level section with new markup.
@@ -434,7 +526,23 @@ class LumenWebTools:
         4. `web_apply_ops` (checked). A rejected batch never replaces the doc;
            on success the working doc is replaced and the section id + new roots
            are returned.
+
+        Prefer `patch_web_page` to repair a rejected submission with targeted
+        string patches instead of re-sending the whole section.
         """
+        submission: JsonObject = {
+            "tool": "author_web_subtree",
+            "html": html,
+            "custom_css": None,
+            "node_id": node_id,
+        }
+        return self._submit_authoring(submission, origin="author")
+
+    def _submit_subtree(
+        self, submission: JsonObject, origin: str, patch_count: Optional[int]
+    ) -> str:
+        node_id = submission["node_id"]
+        html = submission["html"]
         page = self._home_page()
         nodes = page.get("nodes") or {}
         root_id = page.get("root")
@@ -455,17 +563,21 @@ class LumenWebTools:
                 self.web_doc, html, brand_kit=self.config.brand_kit
             )
         except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self._store_rejection(submission, diagnostics)
             self.record(
                 "author",
-                "web_subtree_rejected",
-                input_summary=f"{node_id}->{target_section}: {html[:160]}",
+                self._rejected_event(origin, submission["tool"]),
+                input_summary=self._authoring_input_summary(
+                    origin, patch_count, f"{node_id}->{target_section}: {html[:160]}"
+                ),
                 output_summary=error.message,
-                diagnostics=list(error.diagnostics or []),
+                diagnostics=diagnostics,
             )
             return self._tool_error(
                 "web_subtree.helper_error",
                 error.message,
-                diagnostics=list(error.diagnostics or []),
+                diagnostics=diagnostics,
             )
 
         diagnostics = response.get("diagnostics") or []
@@ -490,10 +602,13 @@ class LumenWebTools:
             isinstance(d, dict) and d.get("code") == "LUMW0102" for d in errors
         )
         if structural:
+            self._store_rejection(submission, diagnostics)
             self.record(
                 "author",
-                "web_subtree_rejected",
-                input_summary=f"{node_id}->{target_section}",
+                self._rejected_event(origin, submission["tool"]),
+                input_summary=self._authoring_input_summary(
+                    origin, patch_count, f"{node_id}->{target_section}"
+                ),
                 output_summary="replacement markup is not a top-level section",
                 diagnostics=diagnostics,
             )
@@ -509,10 +624,13 @@ class LumenWebTools:
         # Any other error-severity diagnostic → the fragment is unusable; store
         # nothing (mirrors author_web_page's reject contract).
         if errors:
+            self._store_rejection(submission, diagnostics)
             self.record(
                 "author",
-                "web_subtree_rejected",
-                input_summary=f"{node_id}->{target_section}",
+                self._rejected_event(origin, submission["tool"]),
+                input_summary=self._authoring_input_summary(
+                    origin, patch_count, f"{node_id}->{target_section}"
+                ),
                 output_summary=f"{len(errors)} error diagnostic(s); section not changed",
                 diagnostics=diagnostics,
             )
@@ -523,6 +641,7 @@ class LumenWebTools:
         if not frag_roots:
             # A clean parse that produced no sections (e.g. empty markup): there
             # is nothing to splice — same remedy as a non-section root.
+            self._store_rejection(submission, diagnostics)
             return self._tool_error(
                 "web_subtree.not_a_section",
                 "the replacement markup produced no top-level section; provide a "
@@ -569,18 +688,23 @@ class LumenWebTools:
         try:
             applied = self.core.web_apply_ops(self.web_doc, batch)
         except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self._store_rejection(submission, diagnostics)
             self.record(
                 "author",
-                "web_subtree_rejected",
-                input_summary=f"{node_id}->{target_section}",
+                self._rejected_event(origin, submission["tool"]),
+                input_summary=self._authoring_input_summary(
+                    origin, patch_count, f"{node_id}->{target_section}"
+                ),
                 output_summary=error.message,
-                diagnostics=list(error.diagnostics or []),
+                diagnostics=diagnostics,
             )
             return json.dumps(
-                {"status": "rejected", "diagnostics": list(error.diagnostics or [])},
+                {"status": "rejected", "diagnostics": diagnostics},
                 indent=2,
             )
         if not applied.get("ok"):
+            self._store_rejection(submission, applied.get("diagnostics") or [])
             return json.dumps(
                 {"status": "rejected", "diagnostics": applied.get("diagnostics") or []},
                 indent=2,
@@ -588,26 +712,143 @@ class LumenWebTools:
 
         self.web_doc = applied["web_doc"]
         self._doc_version += 1
+        self._clear_pending()
         warnings = [
             d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
         ]
         self.record(
             "author",
-            "web_subtree_authored",
-            input_summary=f"{node_id}->{target_section}",
+            self._authored_event(origin, submission["tool"]),
+            input_summary=self._authoring_input_summary(
+                origin, patch_count, f"{node_id}->{target_section}"
+            ),
             output_summary=f"replaced section {target_section} with {frag_roots}",
             diagnostics=warnings,
             payload={"section": target_section, "replaced_with": frag_roots},
             sink_extra={"section": target_section},
         )
-        return json.dumps(
-            {
-                "status": "ok",
-                "section": target_section,
-                "roots": frag_roots,
-                "warnings": warnings,
-            },
-            indent=2,
+        result: JsonObject = {
+            "status": "ok",
+            "section": target_section,
+            "roots": frag_roots,
+            "warnings": warnings,
+        }
+        self._decorate_success(result, origin, patch_count)
+        return json.dumps(result, indent=2)
+
+    def patch_web_page(self, patches_json: str) -> str:
+        """The DEFAULT repair path after a rejected author_web_page /
+        author_web_subtree: apply targeted patches to your rejected markup and
+        resubmit it as the same atomic batch, instead of re-sending the whole
+        document. Full resend (author_web_page / author_web_subtree) remains the
+        fallback for structural rewrites.
+
+        `patches_json` is a JSON array of `{old_string, new_string,
+        replace_all?}` applied IN ORDER, each against the result of the
+        previous. `old_string` must match exactly (including whitespace) and,
+        unless `replace_all` is true, must occur exactly once. The resubmission
+        is atomic exactly like the original tool — a still-rejected patch stores
+        nothing and returns the diagnostics for the next patch round; a clean
+        resubmission installs the whole batch and clears the pending rejection.
+        """
+        pending = self._last_rejected_authoring
+        if not pending:
+            return self._tool_error(
+                "patch.no_pending",
+                "no rejected authoring submission to patch — the last submission "
+                "was accepted (or nothing was authored yet); use web_ops for edits "
+                "to the live page.",
+            )
+
+        try:
+            patches = json.loads(patches_json)
+        except (json.JSONDecodeError, TypeError, ValueError) as error:
+            return self._tool_error(
+                "patch.bad_input",
+                f"patches must be a JSON array of "
+                '{"old_string":"…","new_string":"…","replace_all":false} objects: '
+                f"{error}.",
+            )
+        if not isinstance(patches, list) or not patches:
+            return self._tool_error(
+                "patch.bad_input",
+                "patches must be a non-empty JSON array of "
+                '{"old_string","new_string"} objects.',
+            )
+
+        # 2) Validate every entry structurally before applying any (a patch is
+        #    all-or-nothing; a bad entry never mutates the stored submission).
+        for i, entry in enumerate(patches):
+            if not isinstance(entry, dict):
+                return self._tool_error(
+                    "patch.bad_input",
+                    f"patch {i}: each patch must be an object with old_string and "
+                    "new_string.",
+                )
+            old = entry.get("old_string")
+            new = entry.get("new_string")
+            if not isinstance(old, str) or not isinstance(new, str):
+                return self._tool_error(
+                    "patch.bad_input",
+                    f"patch {i}: old_string and new_string must both be strings.",
+                )
+            if old == "":
+                return self._tool_error(
+                    "patch.bad_input", f"patch {i}: old_string must not be empty."
+                )
+            if old == new:
+                return self._tool_error(
+                    "patch.bad_input",
+                    f"patch {i}: old_string and new_string are identical (no-op).",
+                )
+            if "replace_all" in entry and not isinstance(entry.get("replace_all"), bool):
+                return self._tool_error(
+                    "patch.bad_input", f"patch {i}: replace_all must be a boolean."
+                )
+
+        # 3) Apply in order against a WORKING copy — the stored submission is
+        #    untouched until (and unless) the resubmission is attempted.
+        working = pending["html"]
+        for i, entry in enumerate(patches):
+            old = entry["old_string"]
+            new = entry["new_string"]
+            replace_all = bool(entry.get("replace_all", False))
+            count = working.count(old)
+            if count == 0:
+                return self._tool_error(
+                    "patch.not_found",
+                    f"patch {i}: old_string not found in the rejected markup (match "
+                    "must be exact, including whitespace).",
+                )
+            if count > 1 and not replace_all:
+                return self._tool_error(
+                    "patch.ambiguous",
+                    f"patch {i}: old_string occurs {count} times; make it unique with "
+                    "more context or set replace_all.",
+                )
+            if replace_all:
+                working = working.replace(old, new)
+            else:
+                working = working.replace(old, new, 1)
+
+        # Belt-and-braces: a patch set that produced no textual change.
+        if working == pending["html"]:
+            return self._tool_error(
+                "patch.bad_input", "patches did not change the markup."
+            )
+
+        # 4) Resubmit the patched markup through the SAME path as the original
+        #    tool (page or subtree, same custom_css/node_id). Rejection updates
+        #    the stored submission's html to the patched version so the next
+        #    patch round iterates on it; success clears the pending rejection.
+        submission: JsonObject = {
+            "tool": pending["tool"],
+            "html": working,
+            "custom_css": pending["custom_css"],
+            "node_id": pending["node_id"],
+        }
+        return self._submit_authoring(
+            submission, origin="patch", patch_count=len(patches)
         )
 
     def _enclosing_section(

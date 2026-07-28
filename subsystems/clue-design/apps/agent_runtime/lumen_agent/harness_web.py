@@ -134,6 +134,7 @@ def create_web_deepagent(
                 tools.web_ops,
                 tools.author_web_page,
                 tools.author_web_subtree,
+                tools.patch_web_page,
                 tools.asset,
             ],
             "skills": workspace_skills,
