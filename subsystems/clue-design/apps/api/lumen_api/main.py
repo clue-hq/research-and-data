@@ -3815,7 +3815,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         return FileResponse(
             path,
             media_type=sniff_mime(head) or "application/octet-stream",
-            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                # Content-addressed public bytes, CDN-style. Required because
+                # @font-face fetches are CORS-mode requests and the web
+                # editor's sandboxed srcdoc iframe has origin "null" — without
+                # this, kit fonts silently fall back to system stacks (images
+                # are no-cors and never hit it).
+                "Access-Control-Allow-Origin": "*",
+            },
         )
 
     @app.get("/assets/{asset_id}/thumbnail")
