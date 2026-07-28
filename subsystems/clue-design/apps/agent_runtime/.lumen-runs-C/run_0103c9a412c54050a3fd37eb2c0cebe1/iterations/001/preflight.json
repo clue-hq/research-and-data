@@ -1,0 +1,579 @@
+{
+  "preflight": {
+    "status": "ok",
+    "has_errors": true,
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUMB0613",
+        "message": "font asset brand is not marked embeddable for export",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "warning",
+        "code": "LUMB0614",
+        "message": "font asset brand is not marked subsettable for PDF export",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "error",
+        "code": "LUMB0201",
+        "message": "color token accent.default is not defined in brand kit brand_kit_platform_default",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "accent_rule",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "brand_source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "raw_preflight": {
+    "has_errors": true,
+    "brand_ref_operations": [
+      {
+        "brand_kit_id": "brand_kit_platform_default",
+        "kind": "set_brand_kit_ref",
+        "version": 1
+      }
+    ],
+    "token_operations": [
+      {
+        "kind": "update_node",
+        "node_id": "accent_rule",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "set",
+            "value": {
+              "bottom_left": 999.0,
+              "bottom_right": 999.0,
+              "top_left": 999.0,
+              "top_right": 999.0
+            }
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "artboard",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_artboard_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#111827"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "start",
+              "gap": 48.0,
+              "grow": 0.0,
+              "padding": [
+                96.0,
+                96.0,
+                96.0,
+                96.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "author_name",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_author_name_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Priya N.",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 24.0,
+              "font_weight": 650,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.24,
+              "max_lines": 1,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "author_role",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_author_role_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "VP Brand, Northwind",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 14.0,
+              "font_weight": 450,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.4,
+              "max_lines": 2,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "set",
+            "value": 0.64
+          },
+          "opacity_token": {
+            "kind": "clear"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "main",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "set",
+            "value": {
+              "align_x": "start",
+              "align_y": "center",
+              "gap": 16.0,
+              "grow": 0.0,
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "quote",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_quote_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "Lumen replaced three vendors and a week of design ops.",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 64.0,
+              "font_weight": 800,
+              "kind": "text",
+              "letter_spacing": 0.0,
+              "line_height": 1.1,
+              "max_lines": 4,
+              "wrap": "wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "quote_mark",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "unchanged"
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "set",
+            "value": [
+              {
+                "id": "paint_quote_mark_fill_1",
+                "paint": {
+                  "color": {
+                    "kind": "hex",
+                    "value": "#FFFFFF"
+                  },
+                  "kind": "solid"
+                }
+              }
+            ]
+          },
+          "kind": {
+            "kind": "set",
+            "value": {
+              "align": "left",
+              "content": "\u201c",
+              "direction": "ltr",
+              "font_family": "Inter",
+              "font_size": 96.0,
+              "font_weight": 850,
+              "kind": "text",
+              "letter_spacing": -0.02,
+              "line_height": 1.0,
+              "max_lines": 1,
+              "wrap": "no_wrap"
+            }
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "set",
+            "value": 0.64
+          },
+          "opacity_token": {
+            "kind": "clear"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      }
+    ],
+    "layout_operations": []
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  }
+}

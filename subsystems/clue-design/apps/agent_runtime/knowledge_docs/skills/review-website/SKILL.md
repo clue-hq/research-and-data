@@ -32,6 +32,22 @@ pixels; never assume the markup is right because it should be.
 9. **Brand coherence** — palette and type feel like the brand card, accent
    color used as signal (links, highlights) not flood fill.
 
+## Interactive states (when the page has components)
+
+State captures accompany the width screenshots — the same page with a dialog
+open or the accordions expanded (`view` lists them alongside the previews).
+Judge interactive states from pixels with the same discipline as widths:
+
+10. **Dialog** — opens centered over a dimmed backdrop; content readable and
+    on-brand at 1440 AND 375; the close control visible; the page behind it
+    not reflowed. A CTA wired to a missing dialog is a dead CTA — blocking.
+11. **Accordion** — expanded items show real content with no overflow;
+    summary rows read as tappable at 375; nothing double-renders.
+12. **Marquee** — the strip shows no gap or pile-up at either edge in the
+    base screenshots; content is legible at the pace implied by its length.
+13. **Wiring** — every command button targets a dialog that exists (a
+    LUMW0018 diagnostic is a blocking issue, same as a broken link).
+
 ## Verdict discipline
 
 - **Blocking** (must-fix): overflow/clipping, unreadable contrast, broken or

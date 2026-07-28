@@ -69,6 +69,56 @@ pattern without JS: logo + primary CTA always visible, the nav-link row
 `hidden md:flex`. Stack hero content by default, `md:flex-row` when paired
 with imagery. Verify nothing depends on hover to be reachable.
 
+## Interactive components (Tier 2)
+
+Interactivity is **typed vocabulary, never authored scripts**. Three platform
+components plus command-wired buttons; behavior comes from the platform (native
+`<dialog>`/`<details>` + one vetted runtime), so what you author stays a tree.
+
+| You write | It becomes |
+|---|---|
+| `<div data-component="dialog" id="dlg_book" data-aria-label="Book a call">…</div>` | modal dialog — focus trap, Esc, backdrop close are platform-owned |
+| `<div data-component="accordion" data-single-open="true" data-default-open="0">…</div>` | FAQ / drawer accordion (native, zero-JS) |
+| `<div data-component="marquee" data-speed="30" data-direction="left">…</div>` | logo-strip marquee (CSS animation; reduced-motion honored) |
+| `<a data-button="primary" data-command="show-modal" data-target="dlg_book">Book a call</a>` | trigger button — a command, not a link (**no href**) |
+
+Contracts:
+- **Children are ordinary nodes** — everything inside a component is normal
+  vocabulary (divs, text, buttons, images) and stays individually editable.
+- **dialog** — hidden until triggered. The close control is platform-supplied;
+  do not author one. Put the dialog inside the section that owns its primary
+  trigger; `data-target` on every trigger is the dialog's `id`. A dialog's
+  content follows the same class grammar as any card.
+- **accordion** — each item is a `<div>` whose FIRST child is the summary row
+  (typically an `<h3>` or `<p>`) and whose remaining children are the content.
+  `data-single-open="true"` makes items exclusive; `data-default-open="0"`
+  opens the first item initially.
+- **marquee** — author each logo/child ONCE; the seamless-loop duplication is
+  automatic. `data-speed` is seconds per loop (5–120).
+- A button is a link (`href`) **or** a trigger (`data-command` +
+  `data-target`), never both — the parser rejects the combination. Valid
+  commands: `show-modal` (open a dialog), `close` (close the one it is in).
+
+**The escalation ladder — climb reluctantly.** Palette (sections, text,
+buttons, images) → platform component → embed → custom component. Take the
+FIRST rung that expresses the need; most "interactive" asks are a dialog or an
+accordion. If no rung can express what the brief truly needs, build the
+closest palette approximation and report the gap through the `ladder_gap`
+field at finalize — never fake interactivity with static markup that pretends
+to work.
+
+**Separation of concerns (binding).** A platform node owns everything it can:
+the dialog owns visibility, backdrop, and close; buttons own triggering. Wire
+every CTA that should open the same dialog to the SAME dialog id — never
+duplicate a dialog per trigger, never nest a trigger's logic into the
+component.
+
+**Real endpoints only.** The recipe's "real links only" extends to endpoints:
+never invent a booking URL, form endpoint, or integration. When a dialog needs
+one and none was given, use an obvious placeholder
+(`https://example.com/PLACEHOLDER-booking`), flag it in the finalize summary,
+and ask for the real one.
+
 ## Imagery
 
 Generate before you reference: use the `asset` tool, then
@@ -103,4 +153,9 @@ fix ALL of them, then resend the complete page. Common ones:
 | LUMW0110/0111 | external or missing image ref | generate/import → `data-asset` |
 | LUMW0117 | loose text between elements | wrap copy in `<p>`/headings |
 | LUMW0210/0211/0212 | raw hex / stock palette / unknown color | use a theme token (hint names the nearest) |
+| LUMW0123 | unknown component name | valid: `dialog accordion marquee` |
+| LUMW0125/0126 | unknown command / trigger without target | `data-command="show-modal\|close"` + `data-target="<dialog id>"` |
+| LUMW0127 | button has both href and data-command | pick one: link or trigger |
+| LUMW0018 | command targets a missing/non-dialog node | point `data-target` at a real dialog's id |
 | LUMW0132 (warning) | attribute ignored (e.g. `style=`) | express it as utility classes |
+| LUMW0124 (warning) | bad component prop value | defaults applied; fix the `data-*` value |

@@ -1,0 +1,371 @@
+{
+  "debug_only": false,
+  "debug_reason": null,
+  "canonical": {
+    "status": "ok",
+    "requested_format": "svg",
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node artboard uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "artboard",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node main uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "main",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote_mark uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote_mark",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_name uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_name",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_role uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_role",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      }
+    ],
+    "artifacts": [
+      {
+        "format": "svg",
+        "mime_type": "image/svg+xml",
+        "page_id": "quote_card",
+        "byte_len": 2542,
+        "path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.svg",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.svg",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": []
+  },
+  "critic": {
+    "status": "ok",
+    "requested_format": "png",
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node artboard uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "artboard",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node main uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "main",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote_mark uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote_mark",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_name uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_name",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_role uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_role",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      }
+    ],
+    "artifacts": [
+      {
+        "format": "png",
+        "mime_type": "image/png",
+        "page_id": "quote_card",
+        "byte_len": 48729,
+        "path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.png",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.png",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": []
+  },
+  "reviewer": {
+    "status": "ok",
+    "requested_format": "png",
+    "artifacts": [
+      {
+        "format": "svg",
+        "mime_type": "image/svg+xml",
+        "page_id": "quote_card",
+        "byte_len": 2542,
+        "path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.svg",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.svg",
+        "valid": true,
+        "validation_errors": []
+      },
+      {
+        "format": "png",
+        "mime_type": "image/png",
+        "page_id": "quote_card",
+        "byte_len": 48729,
+        "path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.png",
+        "width": 1080.0,
+        "height": 1350.0,
+        "aspect_ratio": 0.8,
+        "critic_input_path": ".lumen-runs-C/run_0103c9a412c54050a3fd37eb2c0cebe1/iterations/002/preview.png",
+        "valid": true,
+        "validation_errors": []
+      }
+    ],
+    "validation_errors": [],
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node artboard uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "artboard",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node main uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "main",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote_mark uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote_mark",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_name uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_name",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_role uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_role",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node artboard uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "artboard",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node main uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "main",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote_mark uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote_mark",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node quote uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "quote",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_name uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_name",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      },
+      {
+        "severity": "warning",
+        "code": "LUME0205",
+        "message": "node author_role uses hug/fill sizing without resolved export geometry",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": "author_role",
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Run layout before export or provide fixed/computed dimensions."
+      }
+    ]
+  }
+}

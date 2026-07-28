@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import re
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -65,6 +66,78 @@ _SEMANTIC_WEB_TOKENS = [
 
 # The screenshot widths captured for every render, in emission order.
 _PREVIEW_WIDTHS = (1440, 768, 375)
+
+# The two widths interactive STATE captures (dialog-open, accordion-expanded)
+# are taken at — desktop + mobile, the ends that break interaction layouts.
+_STATE_WIDTHS = (1440, 375)
+
+# At most this many dialog components are captured per render (each dialog costs
+# two extra Playwright pages); any beyond the cap are reported, never dropped
+# silently.
+_MAX_DIALOG_CAPTURES = 3
+
+# The @font-face data-URL CSS built from the kit fonts is capped at this many
+# encoded (base64) bytes so a heavy multi-weight kit cannot bloat every render's
+# inlined HTML unbounded. Module-level so tests can force it small.
+_FONT_FACE_CSS_MAX_BYTES = 8 * 1024 * 1024
+
+# Sentinel distinguishing "not yet computed" from a resolved None for the cached
+# font-face CSS (fonts cannot change mid-run, so the first result is memoized).
+_FONT_CSS_UNSET = object()
+
+
+def _font_mime_from_magic(data: bytes) -> str:
+    """The web font MIME for `data` by its leading magic bytes; unknown → the
+    ttf default (a bare sfnt with no recognized signature is a TrueType)."""
+    head = data[:4]
+    if head == b"wOF2":
+        return "font/woff2"
+    if head == b"wOFF":
+        return "font/woff"
+    if head == b"OTTO":
+        return "font/otf"
+    if head == b"\x00\x01\x00\x00":
+        return "font/ttf"
+    return "font/ttf"
+
+
+def _valid_font_weight(value: Any) -> bool:
+    """A CSS font-weight the kit may carry: an int 1..=1000 (bools excluded —
+    `True`/`False` are ints in Python but never a weight)."""
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 1000
+
+
+def _valid_font_style(value: Any) -> bool:
+    return value in ("normal", "italic")
+
+
+def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
+    """Pure scan of a WebDoc for the interactive components that need a STATE
+    capture: every dialog component's node id (opened → screenshot) and whether
+    any accordion component exists (details expanded → screenshot). Factored out
+    of render so it is unit-testable without Playwright.
+
+    Returns ``{"dialogs": [node_id, ...], "has_accordion": bool}``. Dialog ids
+    are collected in page-then-node order across all pages; a node is a dialog
+    when ``kind == "component"`` and ``component == "dialog"`` (accordion the
+    same with ``component == "accordion"``)."""
+    dialogs: List[str] = []
+    has_accordion = False
+    for page in web_doc.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        nodes = page.get("nodes") or {}
+        if not isinstance(nodes, dict):
+            continue
+        for node_id, node in nodes.items():
+            if not isinstance(node, dict) or node.get("kind") != "component":
+                continue
+            component = node.get("component")
+            if component == "dialog":
+                dialogs.append(node_id)
+            elif component == "accordion":
+                has_accordion = True
+    return {"dialogs": dialogs, "has_accordion": has_accordion}
 
 
 def sanitize_token_name(name: str) -> str:
@@ -150,6 +223,12 @@ class LumenWebTools:
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
         self._preview_iteration: Optional[int] = None
+        # Interactive STATE captures from the latest render (dialog-open,
+        # accordion-expanded), reset each render; view("state:<n>") indexes here.
+        self._state_captures: List[JsonObject] = []
+        # Cached @font-face data-URL CSS (fonts cannot change mid-run). The
+        # sentinel distinguishes "not computed" from a resolved None.
+        self._font_face_css_cache: Any = _FONT_CSS_UNSET
         # Staleness contract (mirrors the scene view): a monotonic doc-mutation
         # count, and the count stamped at the last successful render. view()
         # refuses a preview older than the current doc.
@@ -981,11 +1060,104 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
+    def _font_face_css(self) -> Optional[str]:
+        """@font-face CSS embedding the kit's real font faces as data: URLs so
+        the preview render shapes in the brand fonts, not the fallback stack.
+
+        The spec is `self.config.brand_fonts` —
+        ``{store_root, faces: [{digest, family, weight?, style?}]}``. Each face's
+        bytes are read from ``{store_root}/sha256/{digest[:2]}/{digest}`` and
+        inlined as ``data:<mime>;base64,…`` (mime by magic bytes) — Playwright
+        renders via set_content with no asset server, so a URL src would not
+        resolve. weight/style are OPTIONAL: a valid int 1..=1000 / a
+        {normal,italic} enum is honored, else 400/normal.
+
+        Unreadable or invalid faces are skipped (one summary warning event, not
+        one per face); faces past the 8MB encoded-bytes cap are dropped (one
+        warning event). Returns None when nothing resolves. Cached — fonts
+        cannot change mid-run."""
+        if self._font_face_css_cache is not _FONT_CSS_UNSET:
+            return self._font_face_css_cache
+        css = self._build_font_face_css()
+        self._font_face_css_cache = css
+        return css
+
+    def _build_font_face_css(self) -> Optional[str]:
+        spec = self.config.brand_fonts
+        if not isinstance(spec, dict):
+            return None
+        store_root = spec.get("store_root")
+        faces = spec.get("faces")
+        if not isinstance(store_root, str) or not isinstance(faces, list):
+            return None
+
+        rules: List[str] = []
+        seen: set = set()
+        skipped: List[str] = []
+        dropped_for_cap = 0
+        total_encoded = 0
+        for face in faces:
+            if not isinstance(face, dict):
+                continue
+            digest = face.get("digest")
+            family = face.get("family")
+            if not (isinstance(family, str) and family.strip()):
+                continue
+            if not (isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
+                skipped.append(str(digest))
+                continue
+            key = (family, digest)
+            if key in seen:
+                continue
+            path = Path(store_root) / "sha256" / digest[:2] / digest
+            try:
+                data = path.read_bytes()
+            except Exception:  # noqa: BLE001 - unreadable face is skipped-but-recorded
+                skipped.append(digest)
+                continue
+            b64 = base64.b64encode(data).decode("ascii")
+            if total_encoded + len(b64) > _FONT_FACE_CSS_MAX_BYTES:
+                dropped_for_cap += 1
+                continue
+            total_encoded += len(b64)
+            seen.add(key)
+            mime = _font_mime_from_magic(data)
+            weight = face.get("weight") if _valid_font_weight(face.get("weight")) else 400
+            style = face.get("style") if _valid_font_style(face.get("style")) else "normal"
+            rules.append(
+                "@font-face{"
+                f"font-family:{json.dumps(family)};"
+                f"font-style:{style};font-weight:{weight};font-display:swap;"
+                f"src:url(data:{mime};base64,{b64});"
+                "}"
+            )
+
+        if skipped:
+            self.record(
+                "orchestrator",
+                "web_font_faces_skipped",
+                output_summary=f"skipped {len(skipped)} unreadable/invalid font face(s)",
+                payload={"digests": skipped},
+            )
+        if dropped_for_cap:
+            self.record(
+                "orchestrator",
+                "web_font_faces_capped",
+                output_summary=(
+                    f"dropped {dropped_for_cap} font face(s) past the "
+                    f"{_FONT_FACE_CSS_MAX_BYTES}-byte encoded cap"
+                ),
+            )
+        if not rules:
+            return None
+        return "\n".join(rules)
+
     def render_web_preview(self) -> str:
         """Render the live document (editor mode) and capture full-page
-        screenshots at 1440, 768, and 375 px. Look at them with
-        view("preview:<width>"). Returns the screenshot paths and any render
-        diagnostics."""
+        screenshots at 1440, 768, and 375 px, plus interactive STATE captures
+        (dialogs opened, accordions expanded) at 1440 and 375 px. Look at them
+        with view("preview:<width>") and view("state:<n>"). Returns the
+        screenshot paths, the state-capture list, and any render diagnostics."""
         self.iteration += 1
         iter_dir = self.trace_dir / f"iter_{self.iteration}"
         iter_dir.mkdir(parents=True, exist_ok=True)
@@ -998,6 +1170,7 @@ class LumenWebTools:
                 asset_base_url=self.asset_base_url,
                 tailwind_runtime_src=None,
                 brand_kit=self.config.brand_kit,
+                font_face_css=self._font_face_css(),
             )
         except CoreError as error:
             self.record(
@@ -1044,6 +1217,9 @@ class LumenWebTools:
             )
 
         paths: List[str] = []
+        self._state_captures = []
+        state_capture_error: Optional[str] = None
+        state_omitted_dialogs: List[str] = []
         try:
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(headless=True)
@@ -1057,6 +1233,22 @@ class LumenWebTools:
                         page.close()
                         paths.append(str(dest))
                         self._preview_by_width[width] = str(dest)
+
+                    # STATE captures — best-effort, never voids the base previews.
+                    # An exception here degrades to a recorded warning + a
+                    # state_capture_error in the result (see the except below).
+                    try:
+                        state_omitted_dialogs = self._capture_states(
+                            browser, html, iter_dir
+                        )
+                    except Exception as error:  # noqa: BLE001 - degrade, keep base previews
+                        state_capture_error = f"{type(error).__name__}: {error}"
+                        self.record(
+                            "orchestrator",
+                            "web_state_capture_warning",
+                            output_summary=f"state capture degraded: {state_capture_error}",
+                            diagnostics=diagnostics,
+                        )
                 finally:
                     browser.close()
         except Exception as error:  # noqa: BLE001 - turn-safety boundary
@@ -1079,17 +1271,97 @@ class LumenWebTools:
         result: JsonObject = {
             "status": "ok",
             "preview_paths": paths,
+            "state_captures": list(self._state_captures),
             "diagnostics": diagnostics,
         }
         if tailwind_missing:
             result["tailwind_runtime_missing"] = True
+        if state_capture_error is not None:
+            result["state_capture_error"] = state_capture_error
+        if state_omitted_dialogs:
+            result["state_captures_omitted"] = {"dialogs": state_omitted_dialogs}
         self.record(
             "orchestrator",
             "web_preview_rendered",
-            output_summary=f"iteration {self.iteration}: {len(paths)} screenshot(s)",
+            output_summary=(
+                f"iteration {self.iteration}: {len(paths)} screenshot(s), "
+                f"{len(self._state_captures)} state capture(s)"
+            ),
             diagnostics=diagnostics,
         )
         return json.dumps(result, indent=2)
+
+    def _capture_states(self, browser, html: str, iter_dir: Path) -> List[str]:
+        """Take the interactive STATE screenshots for this render, appending each
+        to `self._state_captures`. Uses the already-open Playwright `browser`.
+
+        Per dialog (first _MAX_DIALOG_CAPTURES only), per state width: a fresh
+        page shows the dialog via `showModal()` and a VIEWPORT screenshot is
+        taken (the dialog lives in the top layer over the viewport). If any
+        accordion exists, per width one FULL-page screenshot is taken with every
+        `<details>` forced open. Returns the ids of any dialogs beyond the cap
+        (omitted, never dropped silently)."""
+        plan = _interactive_capture_plan(self.web_doc)
+        dialogs = plan["dialogs"]
+        captured_dialogs = dialogs[:_MAX_DIALOG_CAPTURES]
+        omitted = dialogs[_MAX_DIALOG_CAPTURES:]
+
+        for node_id in captured_dialogs:
+            for width in _STATE_WIDTHS:
+                page = browser.new_page(viewport={"width": width, "height": 1200})
+                page.set_content(html, wait_until="load")
+                page.wait_for_timeout(250)
+                page.evaluate(
+                    "(id) => { const el = document.getElementById(id); "
+                    "if (el && el.tagName === 'DIALOG') el.showModal(); }",
+                    node_id,
+                )
+                page.wait_for_timeout(250)
+                dest = iter_dir / f"state_{width}_dialog_{node_id}.png"
+                page.screenshot(path=str(dest), full_page=False)
+                page.close()
+                self._state_captures.append(
+                    {
+                        "kind": "dialog-open",
+                        "node_id": node_id,
+                        "width": width,
+                        "path": str(dest),
+                    }
+                )
+
+        if plan["has_accordion"]:
+            for width in _STATE_WIDTHS:
+                page = browser.new_page(viewport={"width": width, "height": 1200})
+                page.set_content(html, wait_until="load")
+                page.wait_for_timeout(250)
+                page.evaluate(
+                    "() => document.querySelectorAll('details')"
+                    ".forEach(d => { d.open = true; })"
+                )
+                page.wait_for_timeout(250)
+                dest = iter_dir / f"state_{width}_accordion.png"
+                page.screenshot(path=str(dest), full_page=True)
+                page.close()
+                self._state_captures.append(
+                    {
+                        "kind": "accordion-expanded",
+                        "node_id": None,
+                        "width": width,
+                        "path": str(dest),
+                    }
+                )
+
+        if omitted:
+            self.record(
+                "orchestrator",
+                "web_state_capture_omitted",
+                output_summary=(
+                    f"{len(omitted)} dialog(s) beyond the {_MAX_DIALOG_CAPTURES}-capture "
+                    "cap were not captured"
+                ),
+                payload={"omitted_dialog_ids": omitted},
+            )
+        return omitted
 
     def _view_content(self, target: str) -> list:
         """Build the ToolMessage content for view(target). See make_web_view_tool."""
@@ -1144,27 +1416,100 @@ class LumenWebTools:
                 ),
                 _image_block(Path(path)),
             ]
+        if target.startswith("state:"):
+            return self._view_state(target)
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="unknown_target"
         )
         return [
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
-                '"preview:768", "preview:375", "doc", or "brand".'
+                '"preview:768", "preview:375", "state:<n>", "doc", or "brand".'
             )
         ]
 
-    def finalize_web_run(self, outcome: str, summary: str) -> str:
+    def _view_state(self, target: str) -> list:
+        """Build the view content for a `state:<n>` target — the nth interactive
+        STATE capture (0-based) from the latest render, as [text, image] blocks.
+        An unparseable or out-of-range index returns an honest text-only error
+        naming how many captures exist."""
+        index_str = target[len("state:") :]
+        try:
+            index = int(index_str)
+        except ValueError:
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="bad_state_index"
+            )
+            return [
+                _text_block(
+                    f"view: state index {index_str!r} is not an integer. Use "
+                    "state:0, state:1, … (0-based)."
+                )
+            ]
+        captures = self._state_captures
+        if not captures:
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="no_state"
+            )
+            return [
+                _text_block(
+                    "view: no state captures available — call render_web_preview() "
+                    "first (state captures need an interactive component in the page)."
+                )
+            ]
+        if index < 0 or index >= len(captures):
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="state_out_of_range"
+            )
+            return [
+                _text_block(
+                    f"view: state index {index} out of range — there are "
+                    f"{len(captures)} state capture(s) (0..{len(captures) - 1})."
+                )
+            ]
+        capture = captures[index]
+        path = capture.get("path")
+        if not path or not Path(path).exists():
+            self.record(
+                "agent", "web_view_called", input_summary=target, output_summary="state_missing_file"
+            )
+            return [_text_block(f"view: state capture {index} has no readable screenshot.")]
+        node = capture.get("node_id")
+        node_note = f" node {node}" if node else ""
+        self.record(
+            "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
+        )
+        return [
+            _text_block(
+                f"view: state capture {index} — {capture.get('kind')}"
+                f"{node_note} at {capture.get('width')}px"
+            ),
+            _image_block(Path(path)),
+        ]
+
+    def finalize_web_run(
+        self, outcome: str, summary: str, ladder_gap: Optional[str] = None
+    ) -> str:
         """End the turn. `outcome` is accepted | completed_with_warnings |
         failed; `summary` is the user-facing note. Writes the run's final.json
-        and final_web_doc.json."""
+        and final_web_doc.json.
+
+        `ladder_gap` (optional) names a capability the component catalogue could
+        NOT express this turn — the escalation ladder's demand signal (e.g. a
+        carousel, a tabbed panel, a filterable grid you had to approximate or
+        omit). When present, it is recorded to final.json AND emitted as a
+        dedicated `ladder_gap` trace event so the demand for new components is
+        measurable across runs. Leave it None when the catalogue sufficed."""
         valid = {"accepted", "completed_with_warnings", "failed"}
         if outcome not in valid:
             return self._tool_error(
                 "finalize.bad_outcome",
                 f"outcome must be one of {sorted(valid)}; got {outcome!r}.",
             )
-        payload = {"outcome": outcome, "summary": summary}
+        payload: JsonObject = {"outcome": outcome, "summary": summary}
+        gap = (ladder_gap or "").strip()
+        if gap:
+            payload["ladder_gap"] = gap
         self._write_json(self.trace_dir / "final.json", payload)
         self._write_json(self.trace_dir / "final_web_doc.json", self.web_doc)
         self.record(
@@ -1173,6 +1518,13 @@ class LumenWebTools:
             output_summary=f"{outcome}: {summary[:200]}",
             payload=payload,
         )
+        if gap:
+            self.record(
+                "coordinator",
+                "ladder_gap",
+                output_summary=gap,
+                payload={"ladder_gap": gap},
+            )
         return json.dumps({"status": "ok", **payload}, indent=2)
 
     def _write_json(self, path: Path, data: Any) -> None:
@@ -1184,8 +1536,10 @@ def make_web_view_tool(tools: LumenWebTools):
     """The `view` tool for a website turn: real pixels + doc/brand context.
 
     target="preview:1440"|"preview:768"|"preview:375" returns the latest
-    screenshot of that width as [text, image] blocks; "doc" returns a compact
-    section/asset summary; "brand" returns the brand card. Mirrors
+    screenshot of that width as [text, image] blocks; "state:<n>" returns the
+    nth interactive STATE capture (dialog opened / accordion expanded) from the
+    latest render; "doc" returns a compact section/asset summary; "brand"
+    returns the brand card. Mirrors
     tools/view.make_view_tool: any failure inside returns an honest error STRING
     so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -1195,8 +1549,10 @@ def make_web_view_tool(tools: LumenWebTools):
     def view(target: str) -> list:
         """Look at the page. target="preview:1440" / "preview:768" /
         "preview:375" returns the latest rendered screenshot at that width;
-        "doc" returns a section + asset summary; "brand" returns the brand
-        card. Returns image content so you judge by looking, not guessing."""
+        "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
+        opened or accordions expanded) from the latest render; "doc" returns a
+        section + asset summary; "brand" returns the brand card. Returns image
+        content so you judge by looking, not guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
                 return tools._view_content(target)

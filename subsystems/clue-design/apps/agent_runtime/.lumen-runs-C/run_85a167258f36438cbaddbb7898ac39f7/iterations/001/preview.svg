@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" data-lumen-document-id="run_85a167258f36438cbaddbb7898ac39f7" data-lumen-page-id="poster_revmotion">
+<defs>
+<clipPath id="lumen-clip-artboard_rm"><rect x="0" y="0" width="1080" height="1080" /></clipPath>
+</defs>
+<g id="lumen-page-poster_revmotion" data-lumen-page-id="poster_revmotion">
+<g id="lumen-node-artboard_rm" data-lumen-node-id="artboard_rm">
+<rect x="0" y="0" width="1080" height="1080" fill="#111827" data-lumen-fill-id="paint_artboard_rm_fill_1" />
+<g clip-path="url(#lumen-clip-artboard_rm)">
+<g id="lumen-node-header_rm" data-lumen-node-id="header_rm" transform="translate(96 96)">
+<g id="lumen-node-mark_rm" data-lumen-node-id="mark_rm">
+<rect x="0" y="0" width="44" height="44" rx="22" ry="22" fill="#0F172A" data-lumen-fill-id="paint_mark_rm_fill_1" />
+<text id="lumen-node-markt_rm" data-lumen-node-id="markt_rm" x="22" y="13" font-family="Inter, Arial, Helvetica, sans-serif" font-size="13" font-weight="750" text-anchor="middle" letter-spacing="0.08" direction="ltr" transform="translate(0 15)" fill="#0891B2" data-lumen-fill-id="markt_rm_text_fill"><tspan x="22" y="11.1492">RM</tspan></text>
+</g>
+<text id="lumen-node-logo_rm" data-lumen-node-id="logo_rm" data-lumen-slot-keys="account.name" x="0" y="14" font-family="Inter, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(56 15)" fill="#FFFFFF" data-lumen-fill-id="paint_logo_rm_fill_1"><tspan x="0" y="11.9299">RevMotion</tspan></text>
+</g>
+<g id="lumen-node-main_rm" data-lumen-node-id="main_rm" transform="translate(96 188)">
+<text id="lumen-node-kicker_rm" data-lumen-node-id="kicker_rm" data-lumen-slot-keys="campaign.eyebrow" x="0" y="13" font-family="Inter, Arial, Helvetica, sans-serif" font-size="13" font-weight="750" text-anchor="start" letter-spacing="0.08" direction="ltr" transform="translate(0 260)" fill="#0891B2" data-lumen-fill-id="paint_kicker_rm_fill_1"><tspan x="0" y="11.1492">AI-NATIVE GTM · LIVE IN SF</tspan></text>
+<text id="lumen-node-headline_rm" data-lumen-node-id="headline_rm" data-lumen-slot-keys="campaign.headline" x="0" y="80" font-family="Inter, Arial, Helvetica, sans-serif" font-size="80" font-weight="800" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 290)" fill="#FFFFFF" data-lumen-fill-id="paint_headline_rm_fill_1"><tspan x="0" y="70.4568">RevMotion '26</tspan></text>
+<text id="lumen-node-subtitle_rm" data-lumen-node-id="subtitle_rm" data-lumen-slot-keys="offer.primary_message" x="0" y="16" font-family="Inter, Arial, Helvetica, sans-serif" font-size="16" font-weight="400" text-anchor="start" letter-spacing="0" direction="ltr" transform="translate(0 394)" fill="#FFFFFF" data-lumen-fill-id="paint_subtitle_rm_fill_1"><tspan x="0" y="18.375">September 12–13 · San Francisco</tspan></text>
+</g>
+<g id="lumen-node-footer_rm" data-lumen-node-id="footer_rm" transform="translate(96 912)">
+<g id="lumen-node-cta_rm" data-lumen-node-id="cta_rm">
+<rect x="0" y="0" width="340" height="72" rx="10" ry="10" fill="#0F172A" data-lumen-fill-id="paint_cta_rm_fill_1" />
+<text id="lumen-node-cta_text_rm" data-lumen-node-id="cta_text_rm" data-lumen-slot-keys="campaign.cta" x="134" y="16" font-family="Inter, Arial, Helvetica, sans-serif" font-size="16" font-weight="800" text-anchor="middle" letter-spacing="0" direction="ltr" transform="translate(36 28)" fill="#FFFFFF" data-lumen-fill-id="cta_text_rm_text_fill"><tspan x="134" y="13.6508">Save your seat</tspan></text>
+</g>
+</g>
+</g>
+</g>
+</g>
+</svg>

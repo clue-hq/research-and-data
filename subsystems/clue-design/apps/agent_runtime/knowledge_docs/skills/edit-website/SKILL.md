@@ -34,6 +34,16 @@ Climbing higher than needed destroys human edits you were not asked to
 touch — a whole-page rewrite after a one-class complaint is a defect, even
 if the result looks fine.
 
+Rung choice is a correctness matter, not taste: if the fix is expressible
+as one-to-three ops against EXISTING nodes — `set_node_classes`,
+`set_text`, `set_node_props` (including rewiring a button's action between
+link and command) — then `web_ops` is the ONLY correct rung. Reach for
+`author_web_subtree` solely when the section's STRUCTURE must change:
+nodes added, removed, or reordered beyond what a couple of ops express. A
+subtree rewrite that reproduces the section just to change one attribute
+is a defect even when the pixels match — it re-mints node ids that
+history, selections, and future scoped turns hang off.
+
 ## Respect the human's intent
 
 - Human edits are signal, not noise. If someone tightened a section's

@@ -1,0 +1,2270 @@
+{
+  "preflight": {
+    "status": "ok",
+    "has_errors": false,
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "LUMB0613",
+        "message": "font asset brand is not marked embeddable for export",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "warning",
+        "code": "LUMB0614",
+        "message": "font asset brand is not marked subsettable for PDF export",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "brand_source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "raw_preflight": {
+    "has_errors": false,
+    "brand_ref_operations": [],
+    "token_operations": [],
+    "layout_operations": [
+      {
+        "kind": "update_node",
+        "node_id": "artboard",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 842.0,
+                "width": 595.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "render_bounds": {
+                "height": 842.0,
+                "width": 595.0,
+                "x": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "brand",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 32.0,
+                "width": 280.0,
+                "x": 48.0,
+                "y": 48.0
+              },
+              "render_bounds": {
+                "height": 32.0,
+                "width": 280.0,
+                "x": 48.0,
+                "y": 48.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "contact",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 16.0,
+                "width": 219.0,
+                "x": 328.0,
+                "y": 754.0
+              },
+              "render_bounds": {
+                "height": 16.0,
+                "width": 219.0,
+                "x": 328.0,
+                "y": 754.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "cta",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 64.0,
+                "width": 260.0,
+                "x": 48.0,
+                "y": 730.0
+              },
+              "render_bounds": {
+                "height": 64.0,
+                "width": 260.0,
+                "x": 48.0,
+                "y": 730.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "cta_text",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 17.0,
+                "width": 196.0,
+                "x": 80.0,
+                "y": 754.0
+              },
+              "render_bounds": {
+                "height": 17.0,
+                "width": 196.0,
+                "x": 80.0,
+                "y": 754.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "eyebrow",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 14.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 104.0
+              },
+              "render_bounds": {
+                "height": 14.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 104.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "footer",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 64.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 730.0
+              },
+              "render_bounds": {
+                "height": 64.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 730.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "header",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 32.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 48.0
+              },
+              "render_bounds": {
+                "height": 32.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 48.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "headline",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 70.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 126.0
+              },
+              "render_bounds": {
+                "height": 70.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 126.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "hero",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 120.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 104.0
+              },
+              "render_bounds": {
+                "height": 120.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 104.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "list",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 220.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 248.0
+              },
+              "render_bounds": {
+                "height": 220.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 248.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "logo",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 15.0,
+                "width": 230.0,
+                "x": 90.0,
+                "y": 57.0
+              },
+              "render_bounds": {
+                "height": 15.0,
+                "width": 230.0,
+                "x": 90.0,
+                "y": 57.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "main",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 602.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 104.0
+              },
+              "render_bounds": {
+                "height": 602.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 104.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "mark",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 32.0,
+                "width": 32.0,
+                "x": 48.0,
+                "y": 48.0
+              },
+              "render_bounds": {
+                "height": 32.0,
+                "width": 32.0,
+                "x": 48.0,
+                "y": 48.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "n1",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 248.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 248.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "n1t",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 261.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 261.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "n2",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 320.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 320.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "n2t",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 333.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 333.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "n3",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 392.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 392.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "n3t",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 405.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 56.0,
+                "x": 48.0,
+                "y": 405.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "r1",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 248.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 248.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "r2",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 320.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 320.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "r3",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 76.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 392.0
+              },
+              "render_bounds": {
+                "height": 76.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 392.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "subtitle",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 204.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 499.0,
+                "x": 48.0,
+                "y": 204.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t1",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 248.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 248.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t1d",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 284.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 284.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t1t",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 248.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 248.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t2",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 56.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 320.0
+              },
+              "render_bounds": {
+                "height": 56.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 320.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t2d",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 20.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 356.0
+              },
+              "render_bounds": {
+                "height": 20.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 356.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t2t",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 320.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 320.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t3",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 76.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 392.0
+              },
+              "render_bounds": {
+                "height": 76.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 392.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t3d",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 40.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 428.0
+              },
+              "render_bounds": {
+                "height": 40.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 428.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "t3t",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 30.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 392.0
+              },
+              "render_bounds": {
+                "height": 30.0,
+                "width": 423.0,
+                "x": 124.0,
+                "y": 392.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      },
+      {
+        "kind": "update_node",
+        "node_id": "tag",
+        "patch": {
+          "asset_placement": {
+            "kind": "unchanged"
+          },
+          "clip": {
+            "kind": "unchanged"
+          },
+          "computed": {
+            "kind": "set",
+            "value": {
+              "layout_bounds": {
+                "height": 16.0,
+                "width": 198.0,
+                "x": 349.0,
+                "y": 56.0
+              },
+              "render_bounds": {
+                "height": 16.0,
+                "width": 198.0,
+                "x": 349.0,
+                "y": 56.0
+              }
+            }
+          },
+          "corner": {
+            "kind": "unchanged"
+          },
+          "fills": {
+            "kind": "unchanged"
+          },
+          "kind": {
+            "kind": "unchanged"
+          },
+          "layout": {
+            "kind": "unchanged"
+          },
+          "locked": {
+            "kind": "unchanged"
+          },
+          "name": {
+            "kind": "unchanged"
+          },
+          "opacity": {
+            "kind": "unchanged"
+          },
+          "opacity_token": {
+            "kind": "unchanged"
+          },
+          "size": {
+            "kind": "unchanged"
+          },
+          "source_asset_id": {
+            "kind": "unchanged"
+          },
+          "strokes": {
+            "kind": "unchanged"
+          },
+          "transform": {
+            "kind": "unchanged"
+          }
+        }
+      }
+    ]
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  }
+}

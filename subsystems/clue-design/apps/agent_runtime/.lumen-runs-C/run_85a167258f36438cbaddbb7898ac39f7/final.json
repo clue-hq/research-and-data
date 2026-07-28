@@ -1,0 +1,364 @@
+{
+  "run_id": "run_85a167258f36438cbaddbb7898ac39f7",
+  "status": "accepted",
+  "stop_reason": "visual_review_accepted",
+  "summary": "RevMotion '26 social announcement square (1080x1080) accepted at iteration 003. Clean typographic poster on the Lumen Platform Default brand kit (dark navy $surface.brand artboard, Inter, tokens only), NO hero image per the deliberate decision that a typographic layout reads faster at thumbnail. Full-canvas poster idiom: hug header pinned top (RM monogram chip + RevMotion wordmark), fill-height main y(c) centering the focal block (cyan kicker 'AI-NATIVE GTM - LIVE IN SF' -> 80pt/w800 headline 'RevMotion 26' -> 32pt/w600 subtitle 'September 12-13 - San Francisco'), hug footer pinned bottom (white CTA pill 'Save your seat' with dark bold 22pt label). ABM slots bound: account.name, campaign.eyebrow, campaign.headline, offer.primary_message, campaign.cta. Iteration 001 was rejected (subtitle unreadable at 16pt, invisible dark-on-dark CTA, undersized CTA label, bottom-heavy dead band); iteration 003 repaired all four surgically via compile_dsl_block modify lines (subtitle->32pt/w600, CTA->white $surface.page pill, CTA label->22pt/w800 dark $text.primary; the enlarged subtitle plus y(c) centering resolved the vertical balance). Preflight clean (only environmental LUMB0613/0614 font warnings). Reviewer accepted with confidence 0.83, zero open issues. Final preview: .lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/003/preview.svg (and preview.png), 1080x1080.",
+  "final_scene_summary": {
+    "document_id": "run_85a167258f36438cbaddbb7898ac39f7",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": {
+      "id": "brand_kit_platform_default",
+      "version": 1
+    },
+    "effective_brand": {
+      "source": "platform_default",
+      "brand_kit_id": "brand_kit_platform_default",
+      "brand_kit_version": "1",
+      "brand_kit_name": "Lumen Platform Default",
+      "mode": {
+        "accessibility": "standard",
+        "density": "comfortable",
+        "medium": "digital",
+        "theme": "light"
+      }
+    },
+    "page_count": 1,
+    "node_count": 12,
+    "slot_count": 5,
+    "asset_count": 0,
+    "pages": [
+      {
+        "id": "poster_revmotion",
+        "name": "poster_revmotion",
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1080
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1080.0
+          },
+          "unit": "pt",
+          "width": 1080.0
+        },
+        "width": 1080.0,
+        "height": 1080.0,
+        "aspect_ratio": 1.0,
+        "children": [
+          "artboard_rm"
+        ],
+        "child_count": 1
+      }
+    ],
+    "slots": [
+      {
+        "id": "slot_account_name_06eb8ff1c8310c35",
+        "key": "account.name",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "logo_rm",
+            "name": null,
+            "kind": "text",
+            "text": "RevMotion",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 400.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 15.0,
+                "width": 400.0,
+                "x": 152.0,
+                "y": 111.0
+              },
+              "render_bounds": {
+                "height": 15.0,
+                "width": 400.0,
+                "x": 152.0,
+                "y": 111.0
+              }
+            },
+            "slots": [
+              "account.name"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_campaign_cta_3859a6984f5f9a8b",
+        "key": "campaign.cta",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "cta_text_rm",
+            "name": null,
+            "kind": "text",
+            "text": "Save your seat",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fill",
+                "value": {
+                  "weight": 1.0
+                }
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 23.0,
+                "width": 268.0,
+                "x": 132.0,
+                "y": 937.0
+              },
+              "render_bounds": {
+                "height": 23.0,
+                "width": 268.0,
+                "x": 132.0,
+                "y": 937.0
+              }
+            },
+            "slots": [
+              "campaign.cta"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "key": "campaign.eyebrow",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "kicker_rm",
+            "name": null,
+            "kind": "text",
+            "text": "AI-NATIVE GTM \u00b7 LIVE IN SF",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 14.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 436.0
+              },
+              "render_bounds": {
+                "height": 14.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 436.0
+              }
+            },
+            "slots": [
+              "campaign.eyebrow"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_campaign_headline_65eba10e0a95172f",
+        "key": "campaign.headline",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "headline_rm",
+            "name": null,
+            "kind": "text",
+            "text": "RevMotion '26",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 888.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 88.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 466.0
+              },
+              "render_bounds": {
+                "height": 88.0,
+                "width": 888.0,
+                "x": 96.0,
+                "y": 466.0
+              }
+            },
+            "slots": [
+              "campaign.headline"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      },
+      {
+        "id": "slot_offer_primary_message_66c2f13a2eec8735",
+        "key": "offer.primary_message",
+        "content_type": "text_short",
+        "scope": {
+          "kind": "document"
+        },
+        "bound_nodes": [
+          {
+            "id": "subtitle_rm",
+            "name": null,
+            "kind": "text",
+            "text": "September 12\u201313 \u00b7 San Francisco",
+            "transform": {
+              "flip_x": false,
+              "flip_y": false,
+              "rotation": 0.0,
+              "skew_x": 0.0,
+              "skew_y": 0.0,
+              "x": 0.0,
+              "y": 0.0
+            },
+            "size": {
+              "height": {
+                "kind": "hug"
+              },
+              "width": {
+                "kind": "fixed",
+                "value": 820.0
+              }
+            },
+            "computed": {
+              "layout_bounds": {
+                "height": 46.0,
+                "width": 820.0,
+                "x": 96.0,
+                "y": 570.0
+              },
+              "render_bounds": {
+                "height": 46.0,
+                "width": 820.0,
+                "x": 96.0,
+                "y": 570.0
+              }
+            },
+            "slots": [
+              "offer.primary_message"
+            ],
+            "source_asset_id": null
+          }
+        ]
+      }
+    ]
+  },
+  "effective_brand": {
+    "source": "platform_default",
+    "brand_kit_id": "brand_kit_platform_default",
+    "brand_kit_version": "1",
+    "brand_kit_name": "Lumen Platform Default",
+    "mode": {
+      "accessibility": "standard",
+      "density": "comfortable",
+      "medium": "digital",
+      "theme": "light"
+    }
+  },
+  "preview_paths": [
+    ".lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/001/preview.svg",
+    ".lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/001/preview.png",
+    ".lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/003/preview.svg",
+    ".lumen-runs-C/run_85a167258f36438cbaddbb7898ac39f7/iterations/003/preview.png"
+  ],
+  "critique": {
+    "accepted": true,
+    "confidence": 0.83,
+    "issues": []
+  },
+  "gaps": [],
+  "scene_update_sources": [
+    "compile_dsl_block",
+    "preflight_design",
+    "compile_dsl_block",
+    "preflight_design",
+    "compile_dsl_block",
+    "preflight_design"
+  ],
+  "seeded_from_initial_scene": false,
+  "ops_valid_through_iteration": 3,
+  "baseline_advisory": null,
+  "accommodation": null
+}

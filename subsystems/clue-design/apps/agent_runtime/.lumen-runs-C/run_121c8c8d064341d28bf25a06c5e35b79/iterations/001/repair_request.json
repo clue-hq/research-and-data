@@ -1,0 +1,814 @@
+{
+  "repair_request": {
+    "original_user_request": "Design an A4 portrait one-pager enablement leave-behind: How Lumen works in 3 steps. 1) Brief it. 2) It composes on-brand. 3) You approve and export. Make each step scannable and equal in weight.",
+    "exact_feedback": "Preserve the current layout, spacing, chip design, and CTA. Only change the step-title color: set t1t, t2t, t3t fill to the heading color #111827 (leave descriptions at #4B5563). Also nudge the top-right 'tag' left a few pt so it ends inside the content edge.",
+    "diagnostics": [
+      {
+        "severity": "info",
+        "code": "visual.hierarchy",
+        "message": "step title shares body gray #4B5563 with description; set fill #111827",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "info",
+        "code": "visual.hierarchy",
+        "message": "step title shares body gray #4B5563 with description; set fill #111827",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "info",
+        "code": "visual.hierarchy",
+        "message": "step title shares body gray #4B5563 with description; set fill #111827",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "info",
+        "code": "visual.clipping",
+        "message": "tag grazes right margin; shrink width so it ends inside content edge",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "target": {
+      "page_id": null,
+      "node_id": null,
+      "slot_key": null
+    },
+    "repair_class": null,
+    "cluster": null,
+    "scene_summary": {
+      "document_id": "run_121c8c8d064341d28bf25a06c5e35b79",
+      "title": "Agent-authored design",
+      "status": {
+        "kind": "draft"
+      },
+      "brand_kit": {
+        "id": "brand_kit_platform_default",
+        "version": 1
+      },
+      "effective_brand": {
+        "source": "platform_default",
+        "brand_kit_id": "brand_kit_platform_default",
+        "brand_kit_version": "1",
+        "brand_kit_name": "Lumen Platform Default",
+        "mode": {
+          "accessibility": "standard",
+          "density": "comfortable",
+          "medium": "digital",
+          "theme": "light"
+        }
+      },
+      "page_count": 1,
+      "node_count": 34,
+      "slot_count": 13,
+      "asset_count": 0,
+      "pages": [
+        {
+          "id": "onepager_a4",
+          "name": "onepager_a4",
+          "size": {
+            "height": 841.8897637795276,
+            "orientation": "portrait",
+            "output": {
+              "physical": {
+                "height": 297.0,
+                "unit": "mm",
+                "width": 210.0
+              }
+            },
+            "preset": "a4",
+            "source": {
+              "height": 297.0,
+              "unit": "mm",
+              "width": 210.0
+            },
+            "unit": "pt",
+            "width": 595.2755905511812
+          },
+          "width": 595.2755905511812,
+          "height": 841.8897637795276,
+          "aspect_ratio": 0.7070707070707071,
+          "children": [
+            "artboard"
+          ],
+          "child_count": 1
+        }
+      ],
+      "slots": [
+        {
+          "id": "slot_account_contact_713a105b356d0576",
+          "key": "account.contact",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "contact",
+              "name": null,
+              "kind": "text",
+              "text": "lumen.ai/demo",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 219.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 16.0,
+                  "width": 219.0,
+                  "x": 328.0,
+                  "y": 754.0
+                },
+                "render_bounds": {
+                  "height": 16.0,
+                  "width": 219.0,
+                  "x": 328.0,
+                  "y": 754.0
+                }
+              },
+              "slots": [
+                "account.contact"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_account_name_06eb8ff1c8310c35",
+          "key": "account.name",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "logo",
+              "name": null,
+              "kind": "text",
+              "text": "Lumen",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 230.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 15.0,
+                  "width": 230.0,
+                  "x": 90.0,
+                  "y": 57.0
+                },
+                "render_bounds": {
+                  "height": 15.0,
+                  "width": 230.0,
+                  "x": 90.0,
+                  "y": 57.0
+                }
+              },
+              "slots": [
+                "account.name"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_account_tagline_9a482c70a907100c",
+          "key": "account.tagline",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "tag",
+              "name": null,
+              "kind": "text",
+              "text": "Enablement leave-behind",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 209.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 16.0,
+                  "width": 209.0,
+                  "x": 340.0,
+                  "y": 56.0
+                },
+                "render_bounds": {
+                  "height": 16.0,
+                  "width": 209.0,
+                  "x": 340.0,
+                  "y": 56.0
+                }
+              },
+              "slots": [
+                "account.tagline"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_cta_3859a6984f5f9a8b",
+          "key": "campaign.cta",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "cta_text",
+              "name": null,
+              "kind": "text",
+              "text": "Book a Demo",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fill",
+                  "value": {
+                    "weight": 1.0
+                  }
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 17.0,
+                  "width": 196.0,
+                  "x": 80.0,
+                  "y": 754.0
+                },
+                "render_bounds": {
+                  "height": 17.0,
+                  "width": 196.0,
+                  "x": 80.0,
+                  "y": 754.0
+                }
+              },
+              "slots": [
+                "campaign.cta"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_eyebrow_92252b6be2914522",
+          "key": "campaign.eyebrow",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "eyebrow",
+              "name": null,
+              "kind": "text",
+              "text": "PRODUCT ENABLEMENT",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 499.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 14.0,
+                  "width": 499.0,
+                  "x": 48.0,
+                  "y": 104.0
+                },
+                "render_bounds": {
+                  "height": 14.0,
+                  "width": 499.0,
+                  "x": 48.0,
+                  "y": 104.0
+                }
+              },
+              "slots": [
+                "campaign.eyebrow"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_headline_65eba10e0a95172f",
+          "key": "campaign.headline",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "headline",
+              "name": null,
+              "kind": "text",
+              "text": "How Lumen works in three steps.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 499.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 70.0,
+                  "width": 499.0,
+                  "x": 48.0,
+                  "y": 126.0
+                },
+                "render_bounds": {
+                  "height": 70.0,
+                  "width": 499.0,
+                  "x": 48.0,
+                  "y": 126.0
+                }
+              },
+              "slots": [
+                "campaign.headline"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_offer_primary_message_66c2f13a2eec8735",
+          "key": "offer.primary_message",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "subtitle",
+              "name": null,
+              "kind": "text",
+              "text": "From a plain-language brief to an on-brand, production-ready design.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 499.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 499.0,
+                  "x": 48.0,
+                  "y": 204.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 499.0,
+                  "x": 48.0,
+                  "y": 204.0
+                }
+              },
+              "slots": [
+                "offer.primary_message"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_step_1_desc_8a8c9df6dd5ba4c9",
+          "key": "step.1.desc",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "t1d",
+              "name": null,
+              "kind": "text",
+              "text": "Describe the account, offer, and goal in plain language.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 423.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 284.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 284.0
+                }
+              },
+              "slots": [
+                "step.1.desc"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_step_1_title_5efb494b4473b11e",
+          "key": "step.1.title",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "t1t",
+              "name": null,
+              "kind": "text",
+              "text": "Brief it",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 423.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 248.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 248.0
+                }
+              },
+              "slots": [
+                "step.1.title"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_step_2_desc_465f36d544a3d212",
+          "key": "step.2.desc",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "t2d",
+              "name": null,
+              "kind": "text",
+              "text": "Lumen assembles a layout using your brand kit and tokens.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 423.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 20.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 356.0
+                },
+                "render_bounds": {
+                  "height": 20.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 356.0
+                }
+              },
+              "slots": [
+                "step.2.desc"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_step_2_title_f9916e7f6924828f",
+          "key": "step.2.title",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "t2t",
+              "name": null,
+              "kind": "text",
+              "text": "It composes on-brand",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 423.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 320.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 320.0
+                }
+              },
+              "slots": [
+                "step.2.title"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_step_3_desc_b2ff2bec78f5bb8b",
+          "key": "step.3.desc",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "t3d",
+              "name": null,
+              "kind": "text",
+              "text": "Review the preview, tweak if needed, and export production-ready.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 423.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 40.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 428.0
+                },
+                "render_bounds": {
+                  "height": 40.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 428.0
+                }
+              },
+              "slots": [
+                "step.3.desc"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_step_3_title_9912c0007255fb7c",
+          "key": "step.3.title",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "t3t",
+              "name": null,
+              "kind": "text",
+              "text": "Approve and export",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 423.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 392.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 423.0,
+                  "x": 124.0,
+                  "y": 392.0
+                }
+              },
+              "slots": [
+                "step.3.title"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        }
+      ]
+    },
+    "allowed_edit_surface": "dsl",
+    "permissions": [],
+    "prohibitions": [],
+    "forbidden_changes": [
+      "layout",
+      "spacing",
+      "chip design",
+      "CTA",
+      "step descriptions",
+      "headline",
+      "eyebrow"
+    ]
+  }
+}

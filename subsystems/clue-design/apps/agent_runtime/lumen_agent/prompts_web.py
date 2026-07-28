@@ -40,24 +40,32 @@ OPERATING SHAPE
    brief: the section plan, the copy angles, which imagery to generate, the
    primary CTA destination. The author owns markup; you own intent.
 3. When the author reports success, call `render_web_preview` — it renders
-   the live document and captures screenshots at 1440, 768, and 375.
+   the live document and captures screenshots at 1440, 768, and 375, plus
+   STATE CAPTURES (dialog open, accordions expanded) when the page has
+   interactive components.
 4. Look at all three with `view("preview:1440")`, `view("preview:768")`,
-   `view("preview:375")`. Form your own opinion before asking the reviewer.
+   `view("preview:375")` — and every state capture the render reported.
+   Form your own opinion before asking the reviewer.
 5. Delegate `lumen-web-reviewer` for the structured pass. Blocking issues go
    back to the author as a scoped repair brief (name the section ids and the
    exact fixes); advisory notes are yours to judge.
 6. Repeat render → review only while it earns real improvement. If two
    consecutive rounds change nothing material, stop and ship what is best.
-7. Finish with `finalize_web_run(outcome, summary)`: `accepted` when the
-   page meets the ship bar, `completed_with_warnings` when advisory issues
-   remain, `failed` only when you could not produce a usable page at all.
-   The summary is user-facing: say what was built and call out anything the
-   user should decide next.
+7. Finish with `finalize_web_run(outcome, summary, ladder_gap?)`: `accepted`
+   when the page meets the ship bar, `completed_with_warnings` when advisory
+   issues remain, `failed` only when you could not produce a usable page at
+   all. The summary is user-facing: say what was built and call out anything
+   the user should decide next. When the author reported a need the
+   component catalogue could not express, pass it as `ladder_gap` — that
+   signal gates what the platform builds next; never let it die in the
+   transcript.
 
 SHIP BAR
 No blocking issue from the review checklist at any of the three widths; the
-page follows the recipe's hard rules (no invented facts, real links only,
-one primary CTA destination); zero ingestion errors outstanding.
+page follows the recipe's hard rules (no invented facts, real links AND real
+endpoints only, one primary CTA destination); every command button targets a
+dialog that exists, and interactive states were verified from the state
+captures when the page has components; zero ingestion errors outstanding.
 
 SCOPED TURNS
 When the brief carries a TURN TARGET (the user selected an element in the
@@ -115,6 +123,14 @@ WORKING RULES
   brief; a bigger tool destroys human edits you were not asked to touch. For
   any edit brief (a page a human has been touching), read the edit-website
   skill FIRST — diagnose the live tree before you change anything.
+- Interactivity is typed vocabulary, never scripts: platform components
+  (dialog / accordion / marquee) and command-wired buttons
+  (`data-command`/`data-target`), per the create-website skill's
+  Interactive-components section. Climb the escalation ladder reluctantly —
+  most interactive asks are a dialog or an accordion. Real endpoints only:
+  never invent a booking URL or integration; placeholder + flag it. If no
+  rung expresses the need, approximate with the palette and report the gap
+  to the director so it reaches `finalize_web_run(ladder_gap=…)`.
 - Copy is yours too: concrete, scannable, no invented facts, no emojis,
   no em-dashes.
 
@@ -128,7 +144,10 @@ def build_web_reviewer_prompt() -> str:
 review-website — it is your checklist and your verdict discipline.
 
 You are given full-page screenshots of the same page at widths 1440, 768,
-and 375 via `view("preview:1440")` etc. Look at ALL three before judging.
+and 375 via `view("preview:1440")` etc., plus state captures (dialog open,
+accordions expanded) when the page has interactive components. Look at ALL
+three widths AND every state capture before judging — the skill's
+Interactive-states checklist applies whenever captures exist.
 Report through the structured critique: each issue names the width, the
 section id, what is wrong in the pixels, and the smallest concrete fix.
 Classify honestly: blocking (overflow, unreadable contrast, broken images,

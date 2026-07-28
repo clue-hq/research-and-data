@@ -1,0 +1,3197 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 69,
+    "operation_count": 69,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "add_page",
+      "page": {
+        "background": [],
+        "bleed": null,
+        "children": [],
+        "id": "pipeline_slide",
+        "name": "pipeline_slide",
+        "safe_area": null,
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1920
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1920.0
+          },
+          "unit": "pt",
+          "width": 1920.0
+        }
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": true,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_artboard_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.page"
+            }
+          }
+        ],
+        "id": "artboard",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.section",
+          "grow": 0.0,
+          "padding": [
+            80.0,
+            80.0,
+            80.0,
+            80.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "pipeline_slide",
+        "kind": "page"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "header",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "space_between",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_kicker_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "kicker",
+        "kind": {
+          "align": "left",
+          "content": "PIPELINE COVERAGE BY STAGE",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1200.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "PIPELINE COVERAGE BY STAGE",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "kicker",
+      "slot_id": "slot_campaign_eyebrow_92252b6be2914522"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_context_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "context",
+        "kind": {
+          "align": "right",
+          "content": "FY QUOTA REVIEW",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 360.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "hero",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.lg",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "stats",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "end",
+          "gap": 0.0,
+          "gap_token": "space.2xl",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "coverage",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.xs",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stats",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_coverage_value_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "coverage_value",
+        "kind": {
+          "align": "left",
+          "content": "4.2x",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.9xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "coverage",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stat_coverage_95ba9845fd09efcd",
+        "image_policy": null,
+        "key": "stat.coverage",
+        "label": "stat.coverage",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "4.2x",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "coverage_value",
+      "slot_id": "slot_stat_coverage_95ba9845fd09efcd"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_coverage_label_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "coverage_label",
+        "kind": {
+          "align": "left",
+          "content": "pipeline coverage ratio",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "coverage",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "target",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.xs",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 520.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stats",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_target_value_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.primary"
+            }
+          }
+        ],
+        "id": "target_value",
+        "kind": {
+          "align": "left",
+          "content": "$18M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.6xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 520.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "target",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stat_target_0a6b9effe422b7de",
+        "image_policy": null,
+        "key": "stat.target",
+        "label": "stat.target",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$18M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "target_value",
+      "slot_id": "slot_stat_target_0a6b9effe422b7de"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_target_label_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "target_label",
+        "kind": {
+          "align": "left",
+          "content": "quota target (FY)",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 520.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "target",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_takeaway_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.secondary"
+            }
+          }
+        ],
+        "id": "takeaway",
+        "kind": {
+          "align": "left",
+          "content": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 2,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1000.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_offer_takeaway_0982d3741a674860",
+        "image_policy": null,
+        "key": "offer.takeaway",
+        "label": "offer.takeaway",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "takeaway",
+      "slot_id": "slot_offer_takeaway_0982d3741a674860"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "stages",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "space_between",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.lg",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.lg",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_1_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.card"
+            }
+          }
+        ],
+        "id": "stage_1",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "padding_token": "space.card.padding"
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 410.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stages",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_1_rule_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "stage_1_rule",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 4.0
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_1",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_1_value_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.primary"
+            }
+          }
+        ],
+        "id": "stage_1_value",
+        "kind": {
+          "align": "left",
+          "content": "$24.8M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.4xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_1",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_1_value_e35b90b113ab9d6b",
+        "image_policy": null,
+        "key": "stage.1.value",
+        "label": "stage.1.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$24.8M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_1_value",
+      "slot_id": "slot_stage_1_value_e35b90b113ab9d6b"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_1_label_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "stage_1_label",
+        "kind": {
+          "align": "left",
+          "content": "Discovery",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_1",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_1_label_dfbba873e6981338",
+        "image_policy": null,
+        "key": "stage.1.label",
+        "label": "stage.1.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Discovery",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_1_label",
+      "slot_id": "slot_stage_1_label_dfbba873e6981338"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.lg",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_2_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.card"
+            }
+          }
+        ],
+        "id": "stage_2",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "padding_token": "space.card.padding"
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 410.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stages",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_2_rule_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "stage_2_rule",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 4.0
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_2",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_2_value_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.primary"
+            }
+          }
+        ],
+        "id": "stage_2_value",
+        "kind": {
+          "align": "left",
+          "content": "$21.4M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.4xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_2",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_2_value_aadde8edfc8e6dd2",
+        "image_policy": null,
+        "key": "stage.2.value",
+        "label": "stage.2.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$21.4M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_2_value",
+      "slot_id": "slot_stage_2_value_aadde8edfc8e6dd2"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_2_label_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "stage_2_label",
+        "kind": {
+          "align": "left",
+          "content": "Qualification",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_2",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_2_label_8e84b9c5a30bf8f5",
+        "image_policy": null,
+        "key": "stage.2.label",
+        "label": "stage.2.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Qualification",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_2_label",
+      "slot_id": "slot_stage_2_label_8e84b9c5a30bf8f5"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.lg",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_3_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.card"
+            }
+          }
+        ],
+        "id": "stage_3",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "padding_token": "space.card.padding"
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 410.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stages",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_3_rule_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "stage_3_rule",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 4.0
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_3",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_3_value_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.primary"
+            }
+          }
+        ],
+        "id": "stage_3_value",
+        "kind": {
+          "align": "left",
+          "content": "$17.9M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.4xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_3",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_3_value_4a9dd72274a3ba41",
+        "image_policy": null,
+        "key": "stage.3.value",
+        "label": "stage.3.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$17.9M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_3_value",
+      "slot_id": "slot_stage_3_value_4a9dd72274a3ba41"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_3_label_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "stage_3_label",
+        "kind": {
+          "align": "left",
+          "content": "Proposal",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_3",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_3_label_c770bbe1459c5e8e",
+        "image_policy": null,
+        "key": "stage.3.label",
+        "label": "stage.3.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Proposal",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_3_label",
+      "slot_id": "slot_stage_3_label_c770bbe1459c5e8e"
+    },
+    {
+      "index": 3,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.lg",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_4_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.card"
+            }
+          }
+        ],
+        "id": "stage_4",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.md",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "padding_token": "space.card.padding"
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 410.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stages",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.full",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_4_rule_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "accent.primary"
+            }
+          }
+        ],
+        "id": "stage_4_rule",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 4.0
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_4",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_4_value_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.primary"
+            }
+          }
+        ],
+        "id": "stage_4_value",
+        "kind": {
+          "align": "left",
+          "content": "$11.5M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.4xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_4",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_4_value_f72aadbd1d274e78",
+        "image_policy": null,
+        "key": "stage.4.value",
+        "label": "stage.4.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$11.5M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_4_value",
+      "slot_id": "slot_stage_4_value_f72aadbd1d274e78"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_stage_4_label_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "stage_4_label",
+        "kind": {
+          "align": "left",
+          "content": "Negotiation",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.body.small",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 346.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "stage_4",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_4_label_1e509865d04a0e33",
+        "image_policy": null,
+        "key": "stage.4.label",
+        "label": "stage.4.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Negotiation",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "stage_4_label",
+      "slot_id": "slot_stage_4_label_1e509865d04a0e33"
+    },
+    {
+      "index": 3,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "footer",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_source_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "text.muted"
+            }
+          }
+        ],
+        "id": "source",
+        "kind": {
+          "align": "left",
+          "content": "Source: CRM pipeline snapshot, FY quota model",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.caption",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "footer",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "kicker"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "PIPELINE COVERAGE BY STAGE",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "PIPELINE COVERAGE BY STAGE"
+          ],
+          "worst_case": "PIPELINE COVERAGE BY STAGE AND SEGMENT"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "coverage_value"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stat_coverage_95ba9845fd09efcd",
+        "image_policy": null,
+        "key": "stat.coverage",
+        "label": "stat.coverage",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "4.2x",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "4.2x"
+          ],
+          "worst_case": "4.2x"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "target_value"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stat_target_0a6b9effe422b7de",
+        "image_policy": null,
+        "key": "stat.target",
+        "label": "stat.target",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$18M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "$18M"
+          ],
+          "worst_case": "$18.0M"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "takeaway"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_offer_takeaway_0982d3741a674860",
+        "image_policy": null,
+        "key": "offer.takeaway",
+        "label": "offer.takeaway",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target."
+          ],
+          "worst_case": "Every stage clears the 3x coverage bar, giving healthy margin against the $18M target this fiscal year."
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_1_value"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_1_value_e35b90b113ab9d6b",
+        "image_policy": null,
+        "key": "stage.1.value",
+        "label": "stage.1.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$24.8M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "$24.8M"
+          ],
+          "worst_case": "$248.8M"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_1_label"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_1_label_dfbba873e6981338",
+        "image_policy": null,
+        "key": "stage.1.label",
+        "label": "stage.1.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Discovery",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Discovery"
+          ],
+          "worst_case": "Discovery"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_2_value"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_2_value_aadde8edfc8e6dd2",
+        "image_policy": null,
+        "key": "stage.2.value",
+        "label": "stage.2.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$21.4M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "$21.4M"
+          ],
+          "worst_case": "$214.4M"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_2_label"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_2_label_8e84b9c5a30bf8f5",
+        "image_policy": null,
+        "key": "stage.2.label",
+        "label": "stage.2.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Qualification",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Qualification"
+          ],
+          "worst_case": "Qualification"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_3_value"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_3_value_4a9dd72274a3ba41",
+        "image_policy": null,
+        "key": "stage.3.value",
+        "label": "stage.3.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$17.9M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "$17.9M"
+          ],
+          "worst_case": "$179.9M"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_3_label"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_3_label_c770bbe1459c5e8e",
+        "image_policy": null,
+        "key": "stage.3.label",
+        "label": "stage.3.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Proposal",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Proposal"
+          ],
+          "worst_case": "Proposal"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_4_value"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_4_value_f72aadbd1d274e78",
+        "image_policy": null,
+        "key": "stage.4.value",
+        "label": "stage.4.value",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "$11.5M",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "$11.5M"
+          ],
+          "worst_case": "$115.5M"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "stage_4_label"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_stage_4_label_1e509865d04a0e33",
+        "image_policy": null,
+        "key": "stage.4.label",
+        "label": "stage.4.label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Negotiation",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Negotiation"
+          ],
+          "worst_case": "Negotiation"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "campaign.eyebrow": "slot_campaign_eyebrow_92252b6be2914522",
+      "offer.takeaway": "slot_offer_takeaway_0982d3741a674860",
+      "stage.1.label": "slot_stage_1_label_dfbba873e6981338",
+      "stage.1.value": "slot_stage_1_value_e35b90b113ab9d6b",
+      "stage.2.label": "slot_stage_2_label_8e84b9c5a30bf8f5",
+      "stage.2.value": "slot_stage_2_value_aadde8edfc8e6dd2",
+      "stage.3.label": "slot_stage_3_label_c770bbe1459c5e8e",
+      "stage.3.value": "slot_stage_3_value_4a9dd72274a3ba41",
+      "stage.4.label": "slot_stage_4_label_1e509865d04a0e33",
+      "stage.4.value": "slot_stage_4_value_f72aadbd1d274e78",
+      "stat.coverage": "slot_stat_coverage_95ba9845fd09efcd",
+      "stat.target": "slot_stat_target_0a6b9effe422b7de"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "pipeline_slide",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "footer",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 3,
+    "seen_node_ids": [
+      "artboard",
+      "context",
+      "coverage",
+      "coverage_label",
+      "coverage_value",
+      "footer",
+      "header",
+      "hero",
+      "kicker",
+      "source",
+      "stage_1",
+      "stage_1_label",
+      "stage_1_rule",
+      "stage_1_value",
+      "stage_2",
+      "stage_2_label",
+      "stage_2_rule",
+      "stage_2_value",
+      "stage_3",
+      "stage_3_label",
+      "stage_3_rule",
+      "stage_3_value",
+      "stage_4",
+      "stage_4_label",
+      "stage_4_rule",
+      "stage_4_value",
+      "stages",
+      "stats",
+      "takeaway",
+      "target",
+      "target_label",
+      "target_value"
+    ]
+  },
+  "checkpoint_label": null
+}
