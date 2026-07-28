@@ -1,9 +1,13 @@
-"""Bridge v0 for the website-mode editor iframe.
+"""Bridge for the website-mode editor iframe (v1).
 
 The renderer's editor mode injects this script into the srcdoc document. It
-does three things and nothing else: hover/selection outlines over
-`data-node-id` elements, click-to-select posted to the parent shell, and
-suppression of link navigation inside the canvas. Security posture:
+does four things and nothing else: hover/selection outlines over
+`data-node-id` elements, click-to-select posted to the parent shell,
+suppression of link navigation inside the canvas, and (v1) dblclick
+contenteditable text editing on Text nodes — commit posts
+`{type:"text-commit", nodeId, html}` and the SERVER canonicalizes the HTML
+through the SetText sanitizer, so the bridge payload is never trusted as
+markup. Security posture:
 
 - The iframe runs with `sandbox="allow-scripts"` (NO allow-same-origin), so
   its origin is the literal string "null"; it cannot read the parent, only
@@ -30,10 +34,14 @@ _BRIDGE_V0_TEMPLATE = """
   var selected = null;
   var hoverEl = null;
 
+  var editing = null;
+  var editingOriginal = "";
+
   var style = document.createElement("style");
   style.textContent =
     "[data-node-id].lumen-hover{outline:1.5px dashed rgba(79,111,255,0.7);outline-offset:2px;}" +
-    "[data-node-id].lumen-selected{outline:2px solid rgba(79,111,255,0.95);outline-offset:2px;}";
+    "[data-node-id].lumen-selected{outline:2px solid rgba(79,111,255,0.95);outline-offset:2px;}" +
+    "[data-node-id].lumen-editing{outline:2px solid rgba(34,197,146,0.95);outline-offset:2px;cursor:text;}";
   document.head.appendChild(style);
 
   function nodeInfo(el) {
@@ -92,6 +100,9 @@ _BRIDGE_V0_TEMPLATE = """
       var anchor =
         event.target && event.target.closest ? event.target.closest("a") : null;
       if (anchor) event.preventDefault();
+      // Clicks inside the element being edited belong to the caret, not to
+      // selection; clicking anywhere else blurs (committing) first.
+      if (editing && editing.contains(event.target)) return;
       var el =
         event.target && event.target.closest
           ? event.target.closest("[data-node-id]")
@@ -101,7 +112,65 @@ _BRIDGE_V0_TEMPLATE = """
     true
   );
 
+  // v1: dblclick a Text node (data-tv) to edit its inline content in place.
+  function stopEditing(commit) {
+    if (!editing) return;
+    var el = editing;
+    editing = null;
+    el.removeAttribute("contenteditable");
+    el.classList.remove("lumen-editing");
+    if (commit) {
+      if (el.innerHTML !== editingOriginal) {
+        post("text-commit", {
+          nodeId: el.getAttribute("data-node-id"),
+          html: el.innerHTML
+        });
+      }
+    } else {
+      el.innerHTML = editingOriginal;
+    }
+    editingOriginal = "";
+  }
+
+  document.addEventListener(
+    "dblclick",
+    function (event) {
+      var el =
+        event.target && event.target.closest
+          ? event.target.closest("[data-node-id][data-tv]")
+          : null;
+      if (!el || editing === el) return;
+      stopEditing(true);
+      editing = el;
+      editingOriginal = el.innerHTML;
+      el.classList.remove("lumen-hover");
+      el.classList.add("lumen-editing");
+      el.setAttribute("contenteditable", "true");
+      el.focus();
+      post("edit-start", { nodeId: el.getAttribute("data-node-id") });
+    },
+    true
+  );
+
+  document.addEventListener(
+    "blur",
+    function (event) {
+      if (editing && event.target === editing) stopEditing(true);
+    },
+    true
+  );
+
   document.addEventListener("keydown", function (event) {
+    if (editing) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        stopEditing(false);
+      } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        stopEditing(true);
+      }
+      return;
+    }
     if (event.key === "Escape" && selected) setSelected(null);
   });
 

@@ -406,6 +406,10 @@ enum CoreRequest {
         bridge_script: Option<String>,
         #[serde(default)]
         brand_kit: Option<Value>,
+        /// Pre-built @font-face CSS (the API owns font-serving URLs); folded
+        /// into the theme base layer so kit typography renders everywhere.
+        #[serde(default)]
+        font_face_css: Option<String>,
     },
     /// Parse a constrained-HTML fragment against `doc` WITHOUT mutating it:
     /// returns the would-be nodes + roots so callers can compose surgical
@@ -461,6 +465,8 @@ struct CoreResponse {
     inverse_operations: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     web_fragment: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_theme: Option<Value>,
     build_info: Option<Value>,
 }
 
@@ -513,6 +519,7 @@ fn main() {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 },
             };
@@ -558,6 +565,7 @@ fn main() {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             }
         }
@@ -822,6 +830,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         html: None,
         inverse_operations: None,
         web_fragment: None,
+        web_theme: None,
         build_info: None,
     }
 }
@@ -947,6 +956,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
             }
@@ -975,6 +985,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             });
             let batch = match batch {
@@ -1027,6 +1038,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1058,6 +1070,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
             }
@@ -1111,6 +1124,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1164,6 +1178,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1246,6 +1261,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1270,6 +1286,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
             }
@@ -1425,6 +1442,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1608,6 +1626,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
             }
@@ -1638,6 +1657,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1673,6 +1693,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1707,6 +1728,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         html: None,
                         inverse_operations: None,
                         web_fragment: None,
+                        web_theme: None,
                         build_info: None,
                     })
                 }
@@ -1735,6 +1757,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     html: None,
                     inverse_operations: None,
                     web_fragment: None,
+                    web_theme: None,
                     build_info: None,
                 }),
             }
@@ -1780,6 +1803,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1808,6 +1832,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1841,6 +1866,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1871,6 +1897,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1916,6 +1943,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -1950,6 +1978,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -2190,6 +2219,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 html: None,
                 inverse_operations: None,
                 web_fragment: None,
+                web_theme: None,
                 build_info: None,
             })
         }
@@ -2218,6 +2248,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             html: None,
             inverse_operations: None,
             web_fragment: None,
+            web_theme: None,
             build_info: Some(json!({
                 "schema_version": lumen_core::SCHEMA_VERSION,
                 "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
@@ -2237,10 +2268,14 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
         }
         CoreRequest::WebValidate { doc, brand_kit } => {
             let doc = parse_web_doc(doc)?;
-            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
             diagnostics.extend(lumen_web::validate_web_doc(&doc));
             diagnostics.extend(lint_web_doc_classes(&doc, &theme));
-            Ok(ok_web(Some(&doc), None, None, None, diagnostics))
+            let mut response = ok_web(Some(&doc), None, None, None, diagnostics);
+            // Inspector surface: token pickers list exactly what the lint
+            // accepts, from the same compile.
+            response.web_theme = Some(web_theme_json(&theme));
+            Ok(response)
         }
         CoreRequest::WebIngestHtml {
             doc,
@@ -2250,7 +2285,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
         } => {
             let mut doc = parse_web_doc(doc)?;
-            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
             let outcome = lumen_web::ingest_html_into_page(
                 &mut doc,
                 &lumen_core::PageId::from(page_id),
@@ -2306,9 +2341,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             tailwind_runtime_src,
             bridge_script,
             brand_kit,
+            font_face_css,
         } => {
             let doc = parse_web_doc(doc)?;
-            let (theme, theme_diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let (theme, theme_diagnostics) = web_theme_for(&doc, brand_kit, font_face_css)?;
             let mode = match mode.as_str() {
                 "editor" => lumen_web::RenderMode::Editor,
                 "delivery" => lumen_web::RenderMode::Delivery,
@@ -2348,7 +2384,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             brand_kit,
         } => {
             let doc = parse_web_doc(doc)?;
-            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
             let outcome = lumen_web::ingest_html(&html, &theme);
             // Same asset-reference discipline as the page ingest: a fragment
             // referencing unknown assets must fail loudly, not splice blind.
@@ -2394,13 +2430,23 @@ fn parse_web_doc(value: Value) -> Result<lumen_web::WebDoc, CoreError> {
 fn web_theme_for(
     doc: &lumen_web::WebDoc,
     brand_kit: Option<Value>,
+    font_face_css: Option<String>,
 ) -> Result<(lumen_web::WebTheme, Vec<Diagnostic>), CoreError> {
     let kit = brand_kit.map(parse_brand_kit).transpose()?;
     Ok(lumen_web::compile_web_theme(
         kit.as_ref(),
         &doc.theme,
-        &lumen_web::WebThemeOptions::default(),
+        &lumen_web::WebThemeOptions { font_face_css },
     ))
+}
+
+/// The compiled theme's inspector-facing surface: token map + families.
+fn web_theme_json(theme: &lumen_web::WebTheme) -> Value {
+    json!({
+        "tokens": theme.tokens,
+        "display_family": theme.display_family,
+        "body_family": theme.body_family,
+    })
 }
 
 fn lint_web_doc_classes(doc: &lumen_web::WebDoc, theme: &lumen_web::WebTheme) -> Vec<Diagnostic> {
@@ -2447,6 +2493,7 @@ fn ok_web(
         inverse_operations: inverse_operations
             .map(|inverses| to_value(inverses).expect("web operations should serialize")),
         web_fragment: None,
+        web_theme: None,
         build_info: None,
     }
 }
@@ -2682,6 +2729,7 @@ fn ok_scene(
         html: None,
         inverse_operations: None,
         web_fragment: None,
+        web_theme: None,
         build_info: None,
     }
 }
