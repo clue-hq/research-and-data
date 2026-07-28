@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from clue_api.research_derivations import (
     DerivedClaimPolicy,
@@ -318,6 +318,67 @@ def test_supported_derivation_is_atomic_idempotent_and_not_current_truth() -> No
 
             # Force the deferred DB proof now: claim + edge + verdict are transaction-complete.
             await conn.execute(text("SET CONSTRAINTS derived_claim_has_lineage IMMEDIATE"))
+
+    run_async(_run())
+
+
+def test_dependency_resolution_batches_wide_support_graph_reads() -> None:
+    """Twenty-four siblings cost one breadth query, not one support/claim query per sibling."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, WORKSPACE)
+            entity_id = new_entity_id()
+            supports = tuple(_support(entity_id) for _ in range(24))
+            for support in supports:
+                await insert_claim(conn, support)
+            derived = _derived(entity_id)
+            proposal = _proposal(
+                derived,
+                supports[0],
+                additional_supports=supports[1:],
+            )
+            factory = conn_session_factory(conn)
+            service = DerivedClaimService(
+                judge=EntailmentJudgeImpl(
+                    gateway=FakeGateway(
+                        '{"verdict":"supported","confidence":0.91,"reason_codes":["entailed"]}'
+                    ),
+                    conn_factory=factory,
+                ),
+                conn_factory=factory,
+            )
+            assert (await service.derive(proposal)).accepted
+
+            query_count = 0
+
+            def count_query(*_args: object) -> None:
+                nonlocal query_count
+                query_count += 1
+
+            event.listen(conn.sync_connection, "before_cursor_execute", count_query)
+            try:
+                resolved = await DerivationDependencyResolver().resolve(
+                    conn,
+                    derived.id,
+                    scope=WorkspaceScope.for_workspace(WORKSPACE),
+                )
+            finally:
+                event.remove(conn.sync_connection, "before_cursor_execute", count_query)
+
+            assert resolved.state is DerivationDependencyState.ELIGIBLE_FRESH
+            assert resolved.traversed_nodes == 25
+            assert len(resolved.support_claim_ids) == 24
+            assert query_count <= 7
+
+            bounded = await DerivationDependencyResolver(max_nodes=8).resolve(
+                conn,
+                derived.id,
+                scope=WorkspaceScope.for_workspace(WORKSPACE),
+            )
+            assert bounded.state is DerivationDependencyState.UNAVAILABLE
+            assert any("dependency_node_limit" in reason for reason in bounded.reason_codes)
+            assert bounded.traversed_nodes <= 8
 
     run_async(_run())
 

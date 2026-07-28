@@ -1360,7 +1360,7 @@ integration; REQ-20's parity traceability matrix is a standing exit check as Gro
 | O8 | Exact millicredit pricing map (USD → mc, margins) | Ledger built value-agnostic; pricing config versioned |
 | O9 | Which agent-profile fields are user-editable in V1 (vs admin/policy-locked) | Skills overlay choice, autonomy within policy, budget caps, model tier |
 | O10 | Delegation granularity default (supervisor → sub-agent vs supervisor → toolbelt, per capability) | Campaign ops via toolbelt; judgment/strategy tasks agent-to-agent; recorded per profile |
-| O11 | **Research presentation contract. Resolved for the backend on 2026-07-27:** dossier = structured account/contact research view + provenance/evidence actions; saved versions are reference-only receipts; no upstream consumer binds to a canonical rendered document. Exact frontend layout and any optional downstream renderer remain open. | Structured research view + nine-block reference adapter; consumers insulated from rendered documents |
+| O11 | **Research presentation contract. Resolved for the backend on 2026-07-27; implemented and closed in C7 on 2026-07-28:** dossier = structured account/contact research view + provenance/evidence actions; saved versions are reference-only receipts; no upstream consumer binds to a canonical rendered document. Exact frontend layout and any optional downstream renderer remain open. | Structured research view + nine-block reference adapter; consumers insulated from rendered documents |
 | O12 | Review posture for scaled artifacts (canary + flagged tail vs full-table review) | Canary + flagged tail; gates trusted for the green tail (Doc S §6) |
 
 ### 11. Pre-mortem (failure modes and standing guards)

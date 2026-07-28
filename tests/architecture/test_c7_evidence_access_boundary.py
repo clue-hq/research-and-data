@@ -29,3 +29,22 @@ def test_core_evidence_contract_does_not_depend_on_storage() -> None:
     source = (_ROOT / "libs/clue-core/clue_core/research_view.py").read_text(encoding="utf-8")
     assert "clue_storage" not in source
     assert ".presign(" not in source
+
+
+def test_c7_has_no_unsafe_body_cache() -> None:
+    """C7.8 forbids solving read latency by caching research/evidence bodies."""
+
+    roots = (
+        _ROOT / "platform/api/clue_api",
+        _ROOT / "platform/projections/clue_projections",
+        _ROOT / "subsystems/research/clue_research/narrative",
+    )
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for root in roots
+        for path in root.glob("*.py")
+        if path.name != "__pycache__"
+    ).lower()
+    assert "research_view_projection_cache" not in sources
+    assert "research_view_body_cache" not in sources
+    assert "evidence_body_cache" not in sources

@@ -33,3 +33,39 @@ def test_gateway_config_picks_up_env_synthesis_model(monkeypatch: pytest.MonkeyP
 def test_get_config_gateway_uses_env_synthesis_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLUE_SYNTHESIS_MODEL", "anthropic/claude-3.5-sonnet")
     assert get_config("acme").gateway.synthesis_model == "anthropic/claude-3.5-sonnet"
+
+
+def test_c7_activation_controls_are_independently_default_off() -> None:
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.c7_research_view_read_enabled is False
+    assert settings.c7_snapshot_compose_enabled is False
+    assert settings.c7_evidence_actions_enabled is False
+    assert settings.c7_recheck_enabled is False
+    assert settings.c7_production_handoff_enabled is False
+    assert settings.c7_legacy_dossier_alias_enabled is False
+
+
+def test_c7_activation_controls_load_from_independent_environment_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    names = (
+        "C7_RESEARCH_VIEW_READ_ENABLED",
+        "C7_SNAPSHOT_COMPOSE_ENABLED",
+        "C7_EVIDENCE_ACTIONS_ENABLED",
+        "C7_RECHECK_ENABLED",
+        "C7_PRODUCTION_HANDOFF_ENABLED",
+        "C7_LEGACY_DOSSIER_ALIAS_ENABLED",
+    )
+    for name in names:
+        monkeypatch.setenv(f"CLUE_{name}", "true")
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert all(
+        (
+            settings.c7_research_view_read_enabled,
+            settings.c7_snapshot_compose_enabled,
+            settings.c7_evidence_actions_enabled,
+            settings.c7_recheck_enabled,
+            settings.c7_production_handoff_enabled,
+            settings.c7_legacy_dossier_alias_enabled,
+        )
+    )

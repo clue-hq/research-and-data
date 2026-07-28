@@ -187,14 +187,24 @@ class ComposeDossierTool(_ResearchViewScopeTool):
         "verification_policy",
     )
 
-    def __init__(self, service: ResearchViewSnapshotService | None) -> None:
+    def __init__(
+        self, service: ResearchViewSnapshotService | None, *, enabled: bool = True
+    ) -> None:
         self._service = service
+        self._enabled = enabled
 
     async def preconditions(
         self,
         inputs: ToolInput,
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
+        if not self._enabled:
+            return (
+                PreconditionFailure(
+                    reason_code="research_view_feature_disabled",
+                    message="research-view snapshot composition is disabled in this process",
+                ),
+            )
         if self._service is None:
             return (
                 PreconditionFailure(
@@ -287,14 +297,22 @@ class GetResearchViewTool(_ResearchViewScopeTool):
         "verification_policy",
     )
 
-    def __init__(self, composer: ResearchViewComposer | None) -> None:
+    def __init__(self, composer: ResearchViewComposer | None, *, enabled: bool = True) -> None:
         self._composer = composer
+        self._enabled = enabled
 
     async def preconditions(
         self,
         inputs: ToolInput,
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
+        if not self._enabled:
+            return (
+                PreconditionFailure(
+                    reason_code="research_view_feature_disabled",
+                    message="research-view reads are disabled in this process",
+                ),
+            )
         if self._composer is None:
             return (
                 PreconditionFailure(
@@ -382,8 +400,9 @@ class RecheckResearchViewTool(Tool):
         "verification_policy",
     )
 
-    def __init__(self, service: ResearchViewRecheckService | None) -> None:
+    def __init__(self, service: ResearchViewRecheckService | None, *, enabled: bool = True) -> None:
         self._service = service
+        self._enabled = enabled
 
     async def preconditions(
         self,
@@ -391,6 +410,13 @@ class RecheckResearchViewTool(Tool):
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, RecheckResearchViewInput)
+        if not self._enabled:
+            return (
+                PreconditionFailure(
+                    reason_code="research_view_feature_disabled",
+                    message="research-view re-check is disabled in this process",
+                ),
+            )
         if self._service is None:
             return (
                 PreconditionFailure(
@@ -455,11 +481,14 @@ def build_research_view_tools(
     composer: ResearchViewComposer | None,
     snapshots: ResearchViewSnapshotService | None,
     recheck: ResearchViewRecheckService | None,
+    read_enabled: bool = False,
+    snapshot_compose_enabled: bool = False,
+    recheck_enabled: bool = False,
 ) -> tuple[Tool, ...]:
-    """Return all exact C7.7 contracts, fail-closed when a process lacks serving collaborators."""
+    """Return the C7 contracts behind independent, fail-closed activation controls."""
 
     return (
-        ComposeDossierTool(snapshots),
-        GetResearchViewTool(composer),
-        RecheckResearchViewTool(recheck),
+        ComposeDossierTool(snapshots, enabled=snapshot_compose_enabled),
+        GetResearchViewTool(composer, enabled=read_enabled),
+        RecheckResearchViewTool(recheck, enabled=recheck_enabled),
     )
