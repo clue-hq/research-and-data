@@ -28,11 +28,19 @@ export interface WebSelection {
   text: string;
 }
 
-/** A validated inbound bridge message. `ready` announces the bridge is live;
- * `select` carries the current selection (or `null` when it was cleared). */
+/** A validated inbound bridge message.
+ *   • `ready` — the bridge is live.
+ *   • `select` — the current selection (or `null` when cleared).
+ *   • `edit-start` — a text node entered in-iframe contenteditable (dblclick);
+ *     the shell suppresses selection-chip churn until it commits.
+ *   • `text-commit` — the edited text was committed (blur/Enter); `html` is the
+ *     iframe's current inner markup, which the shell persists via a `set_text`
+ *     op (the server sanitizes). Esc cancels in-iframe and sends nothing. */
 export type WebBridgeInbound =
   | { type: "ready" }
-  | { type: "select"; selection: WebSelection | null };
+  | { type: "select"; selection: WebSelection | null }
+  | { type: "edit-start"; nodeId: string }
+  | { type: "text-commit"; nodeId: string; html: string };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
  * missing/partial shape. Returns `null` for an absent node (a cleared
@@ -93,6 +101,17 @@ export function validateBridgeMessage(
   }
   if (data.type === "select") {
     return { type: "select", selection: coerceSelection(data.node) };
+  }
+  if (data.type === "edit-start") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    return nodeId ? { type: "edit-start", nodeId } : null;
+  }
+  if (data.type === "text-commit") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    if (!nodeId) {
+      return null;
+    }
+    return { type: "text-commit", nodeId, html: typeof data.html === "string" ? data.html : "" };
   }
   return null;
 }

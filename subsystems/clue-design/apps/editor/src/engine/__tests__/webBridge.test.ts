@@ -109,6 +109,74 @@ describe("validateBridgeMessage", () => {
     });
     expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
   });
+
+  it("passes an edit-start through with its node id", () => {
+    const event = makeEvent({
+      data: { channel: "lumen-web-bridge", nonce: NONCE, type: "edit-start", nodeId: "headline" },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
+      type: "edit-start",
+      nodeId: "headline"
+    });
+  });
+
+  it("rejects an edit-start without a node id", () => {
+    const event = makeEvent({
+      data: { channel: "lumen-web-bridge", nonce: NONCE, type: "edit-start" },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
+  });
+
+  it("passes a text-commit through with node id + html", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "text-commit",
+        nodeId: "headline",
+        html: "Hello <strong>world</strong>"
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
+      type: "text-commit",
+      nodeId: "headline",
+      html: "Hello <strong>world</strong>"
+    });
+  });
+
+  it("defaults a text-commit's missing html to an empty string", () => {
+    const event = makeEvent({
+      data: { channel: "lumen-web-bridge", nonce: NONCE, type: "text-commit", nodeId: "sub" },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
+      type: "text-commit",
+      nodeId: "sub",
+      html: ""
+    });
+  });
+
+  it("rejects a stale-nonce text-commit", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: "old-nonce",
+        type: "text-commit",
+        nodeId: "sub",
+        html: "x"
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
+  });
 });
 
 describe("selection labels", () => {

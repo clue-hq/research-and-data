@@ -29,14 +29,44 @@ export interface CreatedWebDocument {
   documentId: string;
 }
 
-/** One web page in a {@link WebDoc}. P0 only needs identity/route; the tree
- * (`root`/`nodes`) and per-page detail land with generation in the next slice. */
+/** A single node in a WebDoc page tree. The Rust `WebNode` flattens its `kind`
+ * enum onto the node object (serde `#[serde(flatten)]`), so `kind` sits beside
+ * `classes`/`children` and the per-kind fields (variant/content, label/href,
+ * asset_id/alt, …) appear inline. Fields are optional so any kind parses
+ * through the one type; the inspector reads only the ones its kind exposes. */
+export interface WebNode {
+  id: string;
+  kind: string;
+  classes: string;
+  children?: string[];
+  name?: string;
+  // text
+  variant?: string;
+  content?: string;
+  // button
+  label?: string;
+  href?: string | null;
+  new_tab?: boolean;
+  // image
+  asset_id?: string;
+  alt?: string;
+  // section
+  tag?: string;
+  anchor_id?: string | null;
+  // icon
+  icon?: string;
+  // embed
+  html?: string;
+}
+
+/** One web page in a {@link WebDoc}: identity/route plus the flattened node
+ * map (`{ [id]: WebNode }`) the inspector looks selections up in. */
 export interface WebPageSummary {
   id: string;
   name: string;
   route: string;
-  root?: unknown;
-  nodes?: unknown;
+  root?: string;
+  nodes?: Record<string, WebNode>;
 }
 
 /** The WebDoc JSON carried under the GET /documents/{id} `scene` key for web
@@ -60,6 +90,13 @@ export interface LoadedWebDocument {
   title: string;
   /** The WebDoc JSON (null when the server returned no scene body). */
   webDoc: WebDoc | null;
+  /** The document's committed version — the `base_version` a manual edit sends
+   * for optimistic concurrency (null when the server omitted it). */
+  currentVersion: number | null;
+  /** Undo/redo depth from the document's stacks (absent stacks → 0) — drives
+   * the topbar's disabled states. */
+  undoDepth: number;
+  redoDepth: number;
 }
 
 /** Pull the human-facing message off a non-2xx response. FastAPI returns
@@ -149,13 +186,20 @@ export async function fetchWebDocument(
     doc_kind?: unknown;
     title?: unknown;
     scene?: unknown;
+    current_version?: unknown;
+    undo_stack?: unknown;
+    redo_stack?: unknown;
   };
   return {
     documentId: typeof payload.id === "string" ? payload.id : documentId,
     docKind: typeof payload.doc_kind === "string" ? payload.doc_kind : "scene",
     title: typeof payload.title === "string" ? payload.title : "Untitled website",
     webDoc:
-      payload.scene && typeof payload.scene === "object" ? (payload.scene as WebDoc) : null
+      payload.scene && typeof payload.scene === "object" ? (payload.scene as WebDoc) : null,
+    currentVersion:
+      typeof payload.current_version === "number" ? payload.current_version : null,
+    undoDepth: Array.isArray(payload.undo_stack) ? payload.undo_stack.length : 0,
+    redoDepth: Array.isArray(payload.redo_stack) ? payload.redo_stack.length : 0
   };
 }
 
@@ -262,4 +306,293 @@ export function webDocumentHasContent(webDoc: WebDoc | null): boolean {
  * shell). One key per document so parallel tabs never cross briefs. */
 export function webPromptStorageKey(documentId: string): string {
   return `lumen.web.prompt.${documentId}`;
+}
+
+// ── manual editing: web operations, undo/redo, theme ─────────────────────────
+
+/** The whole-props payload for a `set_node_props` op — the FULL kind object,
+ * carrying the same `kind` discriminant as the node it targets (a props edit
+ * may not change kind). The inspector only builds text/button/image; the rest
+ * exist for completeness. */
+export type WebNodeProps =
+  | { kind: "text"; variant: string; content: string }
+  | { kind: "button"; label: string; href: string; variant: string; new_tab: boolean }
+  | { kind: "image"; asset_id: string; alt: string; href?: string | null; new_tab: boolean }
+  | { kind: "section"; tag: string; anchor_id?: string | null }
+  | { kind: "container" }
+  | { kind: "icon"; icon: string }
+  | { kind: "embed"; html: string };
+
+/** A single manual-edit operation (serde snake_case, discriminated by `kind`).
+ * v1 exposes the three the inspector + contenteditable commit path emit. */
+export type WebOperation =
+  | { kind: "set_node_classes"; page_id: string; id: string; classes: string }
+  | { kind: "set_text"; page_id: string; id: string; content: string }
+  | { kind: "set_node_props"; page_id: string; id: string; props: WebNodeProps };
+
+/** Op builders — the one place a manual-edit payload is shaped, so panels bind
+ * fields and call these rather than spelling out op objects inline. */
+export function setNodeClassesOp(pageId: string, id: string, classes: string): WebOperation {
+  return { kind: "set_node_classes", page_id: pageId, id, classes };
+}
+
+export function setTextOp(pageId: string, id: string, content: string): WebOperation {
+  return { kind: "set_text", page_id: pageId, id, content };
+}
+
+export function setNodePropsOp(pageId: string, id: string, props: WebNodeProps): WebOperation {
+  return { kind: "set_node_props", page_id: pageId, id, props };
+}
+
+/** One validation diagnostic returned with a 422 invalid-batch rejection. */
+export interface WebOperationDiagnostic {
+  code?: string;
+  message?: string;
+  severity?: string;
+  [key: string]: unknown;
+}
+
+/** A typed failure from {@link applyWebOperations}, distinguishing the two
+ * recoverable server rejections the shell reacts to differently:
+ *   • `kind === "base_version"` (HTTP 409) — the document moved on; refetch and
+ *     retry against the new version.
+ *   • `kind === "invalid"` (HTTP 422) — the batch would leave the doc invalid;
+ *     `diagnostics[0]` carries the message to surface inline.
+ * Anything else is `kind === "other"`. */
+export class WebOperationsError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly kind: "base_version" | "invalid" | "other";
+  readonly diagnostics: WebOperationDiagnostic[];
+
+  constructor(params: {
+    message: string;
+    status: number;
+    code: string | null;
+    kind: "base_version" | "invalid" | "other";
+    diagnostics?: WebOperationDiagnostic[];
+  }) {
+    super(params.message);
+    this.name = "WebOperationsError";
+    this.status = params.status;
+    this.code = params.code;
+    this.kind = params.kind;
+    this.diagnostics = params.diagnostics ?? [];
+  }
+}
+
+/** The successful result of an operations batch. */
+export interface AppliedWebOperations {
+  schemaVersion: number | null;
+  currentVersion: number | null;
+  diagnostics: WebOperationDiagnostic[];
+}
+
+/** Extract `{ code, diagnostics }` from a FastAPI `detail` object (the shape
+ * both the 409 and 422 rejections use), tolerating a string detail. */
+function readErrorDetail(body: unknown): {
+  code: string | null;
+  diagnostics: WebOperationDiagnostic[];
+  message: string | null;
+} {
+  const detail = (body as { detail?: unknown } | null | undefined)?.detail;
+  if (detail && typeof detail === "object") {
+    const record = detail as Record<string, unknown>;
+    return {
+      code: typeof record.code === "string" ? record.code : null,
+      diagnostics: Array.isArray(record.diagnostics)
+        ? (record.diagnostics as WebOperationDiagnostic[])
+        : [],
+      message: typeof record.message === "string" ? record.message : null
+    };
+  }
+  return {
+    code: null,
+    diagnostics: [],
+    message: typeof detail === "string" ? detail : null
+  };
+}
+
+/** Apply a manual-edit batch (`POST /documents/{id}/web/operations`). Sends the
+ * loaded document version as `base_version` for optimistic concurrency. Throws
+ * a {@link WebOperationsError} on 409 (base-version) and 422 (invalid batch) so
+ * the caller can react to each distinctly; any other non-2xx throws it as
+ * `kind: "other"`. */
+export async function applyWebOperations(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  operations: WebOperation[],
+  options?: { baseVersion?: number | null; intent?: string }
+): Promise<AppliedWebOperations> {
+  const body: Record<string, unknown> = { operations };
+  if (options?.baseVersion != null) {
+    body.base_version = options.baseVersion;
+  }
+  if (options?.intent) {
+    body.intent = options.intent;
+  }
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/operations`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!response.ok) {
+    let parsed: unknown = null;
+    try {
+      parsed = await response.clone().json();
+    } catch {
+      /* not JSON — leave parsed null */
+    }
+    const detail = readErrorDetail(parsed);
+    if (response.status === 409) {
+      throw new WebOperationsError({
+        message: detail.message ?? "This website was changed elsewhere.",
+        status: 409,
+        code: detail.code,
+        kind: "base_version"
+      });
+    }
+    if (response.status === 422) {
+      const first = detail.diagnostics[0];
+      throw new WebOperationsError({
+        message:
+          first?.message ?? detail.message ?? "This edit could not be applied.",
+        status: 422,
+        code: detail.code,
+        kind: "invalid",
+        diagnostics: detail.diagnostics
+      });
+    }
+    throw new WebOperationsError({
+      message:
+        detail.message ?? `Edit failed (HTTP ${response.status}).`,
+      status: response.status,
+      code: detail.code,
+      kind: "other"
+    });
+  }
+  const payload = (await response.json()) as {
+    schema_version?: unknown;
+    document?: { current_version?: unknown };
+    diagnostics?: unknown;
+  };
+  return {
+    schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
+    currentVersion:
+      typeof payload.document?.current_version === "number"
+        ? payload.document.current_version
+        : null,
+    diagnostics: Array.isArray(payload.diagnostics)
+      ? (payload.diagnostics as WebOperationDiagnostic[])
+      : []
+  };
+}
+
+/** The version a completed undo/redo leaves the document at. */
+export interface WebHistoryResult {
+  currentVersion: number | null;
+}
+
+async function postWebHistory(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  path: "undo" | "redo"
+): Promise<WebHistoryResult> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/${path}`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    }
+  );
+  if (!response.ok) {
+    let parsed: unknown = null;
+    try {
+      parsed = await response.clone().json();
+    } catch {
+      /* not JSON */
+    }
+    const detail = readErrorDetail(parsed);
+    // 409 undo.empty / redo.empty is expected when the stack is exhausted; the
+    // caller keeps its buttons disabled off the loaded depths, so surface it as
+    // a benign typed error rather than crashing.
+    throw new WebOperationsError({
+      message: detail.message ?? `${path} failed (HTTP ${response.status}).`,
+      status: response.status,
+      code: detail.code,
+      kind: response.status === 409 ? "base_version" : "other"
+    });
+  }
+  const payload = (await response.json()) as { document?: { current_version?: unknown } };
+  return {
+    currentVersion:
+      typeof payload.document?.current_version === "number"
+        ? payload.document.current_version
+        : null
+  };
+}
+
+/** Undo the last committed change (`POST /documents/{id}/web/undo`). */
+export function webUndo(
+  options: WebDocumentOptions,
+  documentId: string
+): Promise<WebHistoryResult> {
+  return postWebHistory(options, documentId, "undo");
+}
+
+/** Redo the last undone change (`POST /documents/{id}/web/redo`). */
+export function webRedo(
+  options: WebDocumentOptions,
+  documentId: string
+): Promise<WebHistoryResult> {
+  return postWebHistory(options, documentId, "redo");
+}
+
+/** The resolved theme the inspector reads token swatches + type families from. */
+export interface WebTheme {
+  /** Token name → CSS color string, e.g. `{ primary: "#0A5", ink: "#111" }`. */
+  tokens: Record<string, string>;
+  displayFamily: string | null;
+  bodyFamily: string | null;
+}
+
+/** Fetch the document's resolved theme (`GET /documents/{id}/web/theme`) — the
+ * inspector's color swatch grid + type family labels. */
+export async function fetchWebTheme(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string
+): Promise<WebTheme> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/theme`, apiBaseUrl)
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Theme fetch failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as {
+    theme?: {
+      tokens?: unknown;
+      display_family?: unknown;
+      body_family?: unknown;
+    };
+  };
+  const theme = payload.theme ?? {};
+  const tokens: Record<string, string> = {};
+  if (theme.tokens && typeof theme.tokens === "object") {
+    for (const [name, value] of Object.entries(theme.tokens as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        tokens[name] = value;
+      }
+    }
+  }
+  return {
+    tokens,
+    displayFamily: typeof theme.display_family === "string" ? theme.display_family : null,
+    bodyFamily: typeof theme.body_family === "string" ? theme.body_family : null
+  };
 }

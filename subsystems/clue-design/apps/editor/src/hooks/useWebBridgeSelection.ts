@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import {
   validateBridgeMessage,
@@ -14,6 +14,12 @@ import {
  * listener reads it live, so a message from a torn-down render (stale nonce) is
  * dropped without re-arming the listener. Workflow policy per
  * docs/frontend-practices.md rule 2; the shell only renders `selection`.
+ *
+ * The same channel carries the in-iframe contenteditable lifecycle:
+ * `edit-start` suppresses selection-chip churn while the user types, and
+ * `text-commit` fires the shell's `onTextCommit` (which persists a `set_text`
+ * op). Esc cancels in-iframe and sends nothing, so a stale `edit-start` is
+ * cleared on the next `select` or render.
  */
 export interface WebBridgeSelection {
   /** The currently selected node, or `null` when nothing is selected. */
@@ -29,9 +35,19 @@ export interface WebBridgeSelection {
 export function useWebBridgeSelection(params: {
   iframeRef: RefObject<HTMLIFrameElement | null>;
   nonceRef: RefObject<string>;
+  /** Invoked when a text node commits its in-iframe edit — the shell persists
+   * a `set_text` op with `html`. Kept in a ref so a changing callback never
+   * re-arms the listener. */
+  onTextCommit?: (nodeId: string, html: string) => void;
 }): WebBridgeSelection {
-  const { iframeRef, nonceRef } = params;
+  const { iframeRef, nonceRef, onTextCommit } = params;
   const [selection, setSelection] = useState<WebSelection | null>(null);
+
+  // While a text node is in contenteditable, the frame keeps posting `select`
+  // as the caret moves; suppress that churn until the edit commits/cancels.
+  const editingRef = useRef(false);
+  const onTextCommitRef = useRef(onTextCommit);
+  onTextCommitRef.current = onTextCommit;
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -40,8 +56,23 @@ export function useWebBridgeSelection(params: {
         nonceRef.current ?? "",
         iframeRef.current?.contentWindow ?? null
       );
-      if (message && message.type === "select") {
+      if (!message) {
+        return;
+      }
+      if (message.type === "select") {
+        if (editingRef.current) {
+          return;
+        }
         setSelection(message.selection);
+        return;
+      }
+      if (message.type === "edit-start") {
+        editingRef.current = true;
+        return;
+      }
+      if (message.type === "text-commit") {
+        editingRef.current = false;
+        onTextCommitRef.current?.(message.nodeId, message.html);
       }
     };
     window.addEventListener("message", onMessage);
@@ -58,6 +89,7 @@ export function useWebBridgeSelection(params: {
   }, [iframeRef, nonceRef]);
 
   const resetSelection = useCallback(() => {
+    editingRef.current = false;
     setSelection(null);
   }, []);
 
