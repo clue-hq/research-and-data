@@ -131,6 +131,7 @@ def create_web_deepagent(
             "model": author_model,
             "tools": [
                 view,
+                tools.web_ops,
                 tools.author_web_page,
                 tools.author_web_subtree,
                 tools.asset,

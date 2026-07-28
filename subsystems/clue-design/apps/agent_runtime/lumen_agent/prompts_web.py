@@ -108,6 +108,13 @@ WORKING RULES
   id). It splices only that section; the rest of the page is untouched.
   `author_web_page` remains the whole-page tool; never use it for a scoped
   fix.
+- Repair ladder — reach for the SMALLEST sufficient tool and climb
+  reluctantly: `web_ops` for a one-or-few-line fix (a bad class, reworded
+  copy, a swapped href) → `author_web_subtree` when a whole section needs
+  recomposing → `author_web_page` only when the page no longer serves the
+  brief; a bigger tool destroys human edits you were not asked to touch. For
+  any edit brief (a page a human has been touching), read the edit-website
+  skill FIRST — diagnose the live tree before you change anything.
 - Copy is yours too: concrete, scannable, no invented facts, no emojis,
   no em-dashes.
 

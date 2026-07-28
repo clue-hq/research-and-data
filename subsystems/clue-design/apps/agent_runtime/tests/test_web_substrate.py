@@ -270,3 +270,71 @@ def test_author_web_subtree_unknown_node(tmp_path: Path):
     assert result["error_code"] == "web_subtree.unknown_node"
     # The error lists the real section ids to guide the caller.
     assert set(result["section_ids"]) == {"alpha", "beta"}
+
+
+# --- web_ops (surgical repair batch) against the real helper -----------------
+
+
+def test_web_ops_set_node_classes_applies(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    nodes_before = tools._home_page().get("nodes") or {}
+    assert nodes_before["alpha_body"].get("classes") == "text-muted"
+    title_classes_before = nodes_before["alpha_title"].get("classes")
+    beta_before = _subtree(nodes_before, "beta")
+    version_before = tools._doc_version
+
+    result = json.loads(
+        tools.web_ops(
+            json.dumps(
+                [
+                    {
+                        "kind": "set_node_classes",
+                        "page_id": "home",
+                        "id": "alpha_body",
+                        "classes": "text-primary font-bold",
+                    }
+                ]
+            )
+        )
+    )
+    assert result["status"] == "ok", result
+    assert result["applied"] == 1
+    assert tools._doc_version == version_before + 1
+
+    nodes_after = tools._home_page().get("nodes") or {}
+    # The targeted node's class string is replaced wholesale.
+    assert nodes_after["alpha_body"].get("classes") == "text-primary font-bold"
+    # A sibling and the whole other section are byte-identical.
+    assert nodes_after["alpha_title"].get("classes") == title_classes_before
+    assert _subtree(nodes_after, "beta") == beta_before
+
+
+def test_web_ops_rejects_invalid_batch(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    version_before = tools._doc_version
+    nodes_before = _subtree(tools._home_page().get("nodes") or {}, "alpha")
+
+    # set_text on a container (a section) cannot apply → the batch is rejected
+    # whole and the working doc is left untouched.
+    result = json.loads(
+        tools.web_ops(
+            json.dumps(
+                [{"kind": "set_text", "page_id": "home", "id": "alpha", "content": "x"}]
+            )
+        )
+    )
+    assert result["status"] == "rejected", result
+    assert any(d.get("severity") == "error" for d in result["diagnostics"])
+    # Nothing stored: doc and version unchanged.
+    assert tools._doc_version == version_before
+    assert _subtree(tools._home_page().get("nodes") or {}, "alpha") == nodes_before
+
+
+def test_web_ops_malformed_json(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    version_before = tools._doc_version
+    result = json.loads(tools.web_ops("{not valid json"))
+    assert result["status"] == "error", result
+    assert result["error_code"] == "web_ops.bad_json"
+    # A malformed call never touches the doc.
+    assert tools._doc_version == version_before

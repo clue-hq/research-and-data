@@ -633,6 +633,128 @@ class LumenWebTools:
             n for n in frag_nodes if isinstance(n, dict) and n.get("id") in ids
         ]
 
+    def web_ops(self, operations_json: str) -> str:
+        """Apply a small batch of surgical operations to the page — the repair
+        ladder's bottom rung, for one-or-a-few-line fixes.
+
+        `operations_json` is a JSON array of op objects. The op grammar
+        (page_id is ALWAYS "home" in v0):
+          - set_node_classes {page_id:"home", id, classes} — replace a node's
+            class string wholesale (it is NOT merged with the old one).
+          - set_text {page_id:"home", id, content} — replace a text node's
+            content (text nodes only).
+          - set_node_props {page_id:"home", id, props:{kind:..., ...}} —
+            replace a node's kind object; `props` is the FULL kind object (its
+            `kind` tag plus every field), not a partial patch.
+          - replace_asset {page_id:"home", id, asset_id} — repoint an image
+            node at another already-registered asset.
+          - move_node {page_id:"home", id, parent, index} — reparent/reorder.
+          - remove_node {page_id:"home", id} — delete a node and its subtree.
+          - insert_node {page_id:"home", parent, index, nodes, root} — splice
+            a new subtree in.
+
+        Use web_ops for a LOCALIZED fix (a bad class, reworded copy, a swapped
+        href). A whole section that needs recomposition is `author_web_subtree`;
+        a page that no longer serves the brief is `author_web_page`. Climb that
+        ladder reluctantly — a bigger tool destroys human edits you were not
+        asked to touch.
+
+        The batch applies checked and atomically: any op that fails, or a batch
+        that would leave the document invalid, is rejected WHOLE (nothing is
+        stored) → {"status":"rejected", "diagnostics":[...]}. On success the
+        working doc is replaced and {"status":"ok", "applied":n, "warnings":[…]}
+        is returned."""
+        try:
+            operations = json.loads(operations_json)
+        except (json.JSONDecodeError, TypeError, ValueError) as error:
+            return self._tool_error(
+                "web_ops.bad_json",
+                f"operations must be a JSON array of op objects: {error}. Each op "
+                'is like {"kind":"set_node_classes","page_id":"home","id":"…",'
+                '"classes":"…"}.',
+            )
+        if (
+            not isinstance(operations, list)
+            or not operations
+            or not all(isinstance(op, dict) for op in operations)
+        ):
+            return self._tool_error(
+                "web_ops.bad_json",
+                "operations must be a non-empty JSON array of op objects.",
+            )
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            code = getattr(error, "code", "") or ""
+            # web_apply_ops raises for two very different reasons. A genuine
+            # helper/infrastructure fault (process crash, unparseable response)
+            # carries a `helper.*` code and is surfaced as a helper_error. A
+            # rejected batch — an op that could not apply (`op.*`) or one that
+            # would leave the document invalid (`op.validation_failed`) — is the
+            # checked apply returning ok:false, which the client raises; that is
+            # the caller's ops being refused, so it is a `rejected`, guiding the
+            # author to fix the ops rather than the plumbing.
+            if code.startswith("helper."):
+                self.record(
+                    "author",
+                    "web_ops_rejected",
+                    input_summary=operations_json[:200],
+                    output_summary=f"helper error: {error.message}",
+                    diagnostics=diagnostics,
+                )
+                return self._tool_error(
+                    "web_ops.helper_error", error.message, diagnostics=diagnostics
+                )
+            if not diagnostics:
+                diagnostics = [
+                    {
+                        "code": code or "op.rejected",
+                        "message": error.message,
+                        "severity": "error",
+                    }
+                ]
+            self.record(
+                "author",
+                "web_ops_rejected",
+                input_summary=operations_json[:200],
+                output_summary=f"batch rejected: {error.message}",
+                diagnostics=diagnostics,
+            )
+            return json.dumps(
+                {"status": "rejected", "diagnostics": diagnostics}, indent=2
+            )
+
+        # Defensive: a non-raising ok:false path (raise_on_error is on today, so
+        # this mirrors author_web_subtree's belt-and-braces reject guard).
+        if not response.get("ok"):
+            return json.dumps(
+                {"status": "rejected", "diagnostics": response.get("diagnostics") or []},
+                indent=2,
+            )
+
+        self.web_doc = response["web_doc"]
+        self._doc_version += 1
+        diagnostics = response.get("diagnostics") or []
+        warnings = [
+            d for d in diagnostics if isinstance(d, dict) and d.get("severity") != "error"
+        ]
+        kinds = [op.get("kind") for op in operations]
+        applied = response.get("applied_operations") or len(operations)
+        self.record(
+            "author",
+            "web_ops_applied",
+            input_summary=operations_json[:200],
+            output_summary=f"applied {applied} op(s): {kinds}",
+            diagnostics=warnings,
+            payload={"operation_count": applied, "kinds": kinds},
+            sink_extra={"operation_count": applied},
+        )
+        return json.dumps(
+            {"status": "ok", "applied": applied, "warnings": warnings}, indent=2
+        )
+
     def asset(
         self,
         action: str,

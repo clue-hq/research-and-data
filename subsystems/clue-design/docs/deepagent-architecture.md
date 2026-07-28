@@ -855,7 +855,8 @@ read-only filesystem permissions, same recursion_limit 200 + honest-finalize
 guarantee.
 - **orchestrator** — tools: `view`, `render_web_preview`, `finalize_web_run`.
   Directs; delegates authoring; renders + looks; decides when the page ships.
-- **lumen-web-author** subagent — tools: `view`, `author_web_page`, `asset`.
+- **lumen-web-author** subagent — tools: `view`, `web_ops`, `author_web_page`,
+  `author_web_subtree`, `asset`.
   Prompt `build_web_author_prompt(brand_card, theme_token_names)`; the token
   vocabulary is the eight semantic web tokens plus the kit's sanitized color
   keys (`web_theme_token_names`, mirroring the Rust theme compiler).
@@ -866,8 +867,20 @@ guarantee.
 methods returning JSON strings (errors via the shared `_tool_error` envelope);
 the core helper is reached through the same `_CoreHelperProxy`; every call is
 traced to `trace.jsonl` and pushed to the event_sink via a simplified `record`.
+- `web_ops(operations_json)` → `web_apply_ops` (checked): the repair ladder's
+  bottom rung, a small atomic batch of surgical ops (`set_node_classes`,
+  `set_text`, `set_node_props` — props is the FULL kind object —,
+  `replace_asset`, `move_node`, `remove_node`, `insert_node`; `page_id` is
+  always `"home"` in v0). Malformed/empty JSON ⇒ `web_ops.bad_json`; a rejected
+  batch (an op that cannot apply or one that would invalidate the doc) ⇒
+  `{status: rejected}` with diagnostics and the doc UNCHANGED; a true helper
+  fault ⇒ `web_ops.helper_error`. On success the doc is replaced and
+  `web_ops_applied` is recorded.
 - `author_web_page(html, custom_css?)` → `web_ingest_html`; any error-severity
   diagnostic ⇒ `{status: rejected}` and the working doc is NOT replaced.
+- `author_web_subtree(node_id, html)` → `web_ingest_fragment` + a checked
+  `remove_node`/`insert_node` batch replacing ONE top-level section (the middle
+  rung: section-granularity recomposition, keep the section id).
 - `asset(action, …)` → `generate_image` (T2I model, deterministic stub fallback)
   or `use_brand_asset` (from the kit manifest), each upserted via
   `web_apply_ops` `{kind: upsert_asset, record}`. Registration only — placement
@@ -879,10 +892,12 @@ traced to `trace.jsonl` and pushed to the event_sink via a simplified `record`.
   preview ⇒ refusal, mirroring the scene view staleness contract).
 - `finalize_web_run(outcome, summary)` → writes `final.json` + `final_web_doc.json`.
 
-**Skills + recipe.** `create-website` (authoring contract) and `review-website`
-(reviewer checklist) materialize automatically from
-`knowledge_docs/skills/`; the landing-page grammar is
-`knowledge_docs/knowledge/web/landing-page.md`.
+**Skills + recipe.** `create-website` (authoring contract), `review-website`
+(reviewer checklist), and `edit-website` (the repair-ladder discipline for a
+page a human has been editing between turns: diagnose the live tree first, then
+`web_ops` → `author_web_subtree` → `author_web_page`, climbing reluctantly)
+materialize automatically from `knowledge_docs/skills/`; the landing-page
+grammar is `knowledge_docs/knowledge/web/landing-page.md`.
 
 **API endpoints (`apps/api/lumen_api/main.py`).**
 - `POST /documents/{id}/web/turns` `{prompt, model?}` — 409 on a non-web doc;
