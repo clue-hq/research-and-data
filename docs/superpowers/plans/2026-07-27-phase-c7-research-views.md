@@ -759,6 +759,8 @@ Commit: `feat(c7): add governed research-view recheck`
 
 ## 12. C7.6 — production committee reader and real handoff
 
+**Status:** COMPLETE — implemented and verified 2026-07-28.
+
 ### Goal
 
 Replace the M12 in-memory/placeholder committee path with a production, governed reader and prove
@@ -809,6 +811,38 @@ real narrative emission.
 ### Checkpoint
 
 Commit: `feat(c7): cut production committee research into handoff`
+
+### Implementation closeout (2026-07-28)
+
+- Added one API-root `ContactEligibilityResolver` bound to the exact project run and product. It
+  resolves only the account run's referenced claims, follows canonical contact survivors, excludes
+  erased/inactive contacts, merges role/persona/facet truth under the claim-store policy, requires
+  strongly bound plausible committee membership, and reads the latest use decision for every
+  personal hook.
+- Added production adapters for both M12 committee protocols and the C7 committee section. Contact
+  display eligibility and personalization eligibility now share one result: a governed contact may
+  remain visible while an outreach-denied facet is omitted from positioning and the outreach-
+  eligible handoff.
+- Product lineage is now born on committee role/persona, contact-facet, score, and value-narrative
+  claims and is consumed exactly by handoff assembly. Production composition rejects a run/ICP
+  product-pin mismatch instead of selecting ambiguous research.
+- Replaced the production HANDOFF gap handler with the real retention-wrapped M12 handler. It
+  performs the tombstone/objection sweep, materializes `AccountHandoff`, and appends the existing
+  durable outbox event in one transaction. New production checkpoints no longer write
+  `narrative_emit_skipped`; projection/tool compatibility retains read-only decoding for historical
+  pre-C7.6 checkpoints.
+- Changed the composition LRU from ICP identity to `project_run_id`. C7.6's governed committee
+  reader is run-reference-bound, so two runs using the same ICP now always receive isolated
+  registries and readers.
+- Integration coverage proves eligible narrative emission and legacy/C7 reference parity,
+  display-allowed/outreach-denied filtering, weak-binding exclusion, merged-survivor redirection,
+  DSAR erasure, empty committee behavior, product A/B isolation, publisher-crash durability, and
+  idempotent replay without duplicate handoffs/outbox rows.
+- Verification passed: clean full DB-enabled suite (2,696 passed, 24 skipped); Mypy across 432
+  source files; all 24 dependency contracts; Ruff across 881 tracked Python files plus both new
+  C7.6 files; one Alembic head; and clean isolated upgrade → downgrade → upgrade. One unrelated
+  SIGKILL-recovery subprocess exceeded its fixed timeout on the first full attempt, passed
+  immediately in isolation, and passed again in the final clean full-suite run.
 
 ---
 

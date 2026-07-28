@@ -32,10 +32,12 @@ from clue_research.profiling.committee import (
     discover_committee,
 )
 from clue_research.profiling.committee.coverage import CommitteeStopReason
+from clue_spine import create_brand, create_product
 
 from ..conftest import (
     FakeCommitteeSource,
     FakeGateway,
+    icp_spec,
     insert_test_account,
     make_candidate,
     rollback_conn,
@@ -85,6 +87,13 @@ def test_discover_committee_end_to_end(require_profiling_db: None) -> None:
         async with rollback_conn() as conn:
             await seed_packs(conn)
             account = await insert_test_account(conn)
+            brand = await create_brand(conn, workspace_id=_TENANT, name="Acme")
+            product = await create_product(
+                conn,
+                brand_id=brand.brand_id,
+                workspace_id=_TENANT,
+                name="Product A",
+            )
             source = FakeCommitteeSource(
                 source_key="apollo_people", tier=2, candidates=[_cfo(), _vp_eng(), _ghost()]
             )
@@ -96,6 +105,7 @@ def test_discover_committee_end_to_end(require_profiling_db: None) -> None:
                 workspace_id=_TENANT,
                 sources=[source],
                 gateway=gateway,
+                spec=icp_spec(product_id=product.product_id),
                 role_model="model-x",
             )
 
@@ -121,6 +131,7 @@ def test_discover_committee_end_to_end(require_profiling_db: None) -> None:
                     assert claim.use_class is UseClass.PROFESSIONAL_PUBLIC
                     assert claim.reuse_scope.value == "tenant_private"
                     assert claim.workspace_id == _TENANT
+                    assert claim.product_id == product.product_id
                 # role claim value carries the plausibility verdict.
                 role_value = role_claims[0].value_json
                 assert isinstance(role_value, dict)

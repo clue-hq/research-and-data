@@ -16,7 +16,8 @@ Design points bound by the PB-B4 spec:
   silent-empty success on an unmet prerequisite.
 * **Invoke returns references.** :meth:`Tool.invoke` returns a :class:`ToolResult` whose
   ``references`` is a JSON-serialisable mapping of ids/keys/versions (and small scalar flags such as
-  the HANDOFF ``narrative_emit_skipped`` marker) — the durable handles a caller resolves later, not
+  the legacy HANDOFF ``narrative_emit_skipped`` marker) — the durable handles a caller resolves
+  later, not
   the payloads themselves.
 * **Quality-mode slot (D9 / A8).** Every invocation carries an optional ``quality_mode: str | None``
   on the :class:`ToolContext` — **recorded and journaled, not yet resolved to knobs** (REQ-14 lands
@@ -280,7 +281,8 @@ class ToolResult(BaseModel):
     """The reference-carrying result of an invocation (never blobs).
 
     ``references`` is a JSON-serialisable mapping of the ids/keys/versions (and small scalar flags,
-    e.g. the HANDOFF ``narrative_emit_skipped`` marker) the caller resolves later. The whole result
+    e.g. the legacy HANDOFF ``narrative_emit_skipped`` marker) the caller resolves later. The whole
+    result
     round-trips through JSON so the D6 idempotency store can replay a stored response byte-for-byte;
     ``replayed`` is set ``True`` by the runner when a result is served from that store (so a caller
     can tell a fresh execution from an idempotent replay). ``meta`` is a small JSON-able mapping the
