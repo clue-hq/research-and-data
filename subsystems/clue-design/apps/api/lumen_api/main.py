@@ -5105,14 +5105,11 @@ def run_web_agent_turn(
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
             )
-            # TODO(web-fonts runtime seam): the runtime substrate
-            # (lumen_agent.harness_web.run_deepagent_web_turn) calls web_render
-            # itself for its in-loop previews and does NOT yet thread a
-            # font_face_css built from `brand_fonts`, so those previews shape in
-            # the fallback stack while the API render endpoint shows the real
-            # kit faces. Threading build_web_font_face_css through
-            # AgentRuntimeConfig → the runtime's web_render call is out of scope
-            # here (apps/agent_runtime is off-limits for this change).
+            # Web-fonts runtime seam (closed in P2.5): the runtime substrate
+            # builds its own data-URL @font-face CSS from config.brand_fonts
+            # (LumenWebTools._font_face_css) for its in-loop previews —
+            # Playwright renders via set_content with no asset server, so the
+            # URL-based CSS this endpoint builds would not resolve there.
         # Mandatory-multimodal (the reviewer attaches screenshots): fail loud
         # before authoring if the configured model is text-only.
         from lumen_agent.llm import assert_model_supports_image_input
@@ -5263,6 +5260,16 @@ def _web_revert_envelope_for(
     )
 
 
+def _valid_font_weight(value: Any) -> bool:
+    """A per-face CSS weight: an int in 1..=1000 (bool excluded — it is an int
+    subclass but never a real weight)."""
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 1000
+
+
+def _valid_font_style(value: Any) -> bool:
+    return value in ("normal", "italic")
+
+
 def build_web_font_face_css(
     brand_fonts: Optional[JsonObject], request_base_url: str
 ) -> Optional[str]:
@@ -5270,18 +5277,20 @@ def build_web_font_face_css(
     the web render displays the brand's real fonts, not the fallback stack.
 
     Input is the kit font spec resolve_web_turn_brand_kit returns —
-    ``{store_root, faces: [{digest, family}]}`` — whose faces resolve to
-    content-addressed asset-store bytes served at ``{base}/asset-store/{digest}``
-    (the same digest route the canvas/export paths use).
+    ``{store_root, faces: [{digest, family, weight?, style?}]}`` — whose faces
+    resolve to content-addressed asset-store bytes served at
+    ``{base}/asset-store/{digest}`` (the same digest route the canvas/export
+    paths use).
 
-    Honest limitation: that spec (brand_kit_font_spec) carries only the face
-    digest + declared family, NOT per-face weight/style — those are dropped when
-    the K3 spec is built. So every face is emitted as a normal-weight rule; a
-    genuine multi-weight kit collapses to whichever face the browser resolves.
-    Emitting correct font-weight/style needs the spec enriched at its source
-    (brand_kit_font_spec, shared with the scene shaping path) — left as a
-    follow-up so this change stays inside the web path. Returns None when there
-    is nothing resolvable to emit."""
+    Per-face weight/style: brand_kit_font_spec now carries each face's
+    ``weight`` (int 1..=1000) and ``style`` ("normal"|"italic") when the kit
+    recorded them, so a multi-weight kit emits one correctly-weighted rule per
+    face instead of collapsing every face to normal 400. (Previously the K3
+    spec dropped these fields, so a genuine multi-weight kit rendered as
+    whichever face the browser resolved.) A spec-less face — one whose weight/
+    style is absent or out of range — still defaults to font-weight:400/
+    font-style:normal. Returns None when there is nothing resolvable to
+    emit."""
     if not isinstance(brand_fonts, dict):
         return None
     faces = brand_fonts.get("faces")
@@ -5304,13 +5313,18 @@ def build_web_font_face_css(
             continue
         seen.add(key)
         url = f"{base}/asset-store/{digest}"
+        weight_value = face.get("weight")
+        weight = weight_value if _valid_font_weight(weight_value) else 400
+        style_value = face.get("style")
+        style = style_value if _valid_font_style(style_value) else "normal"
         # json.dumps supplies CSS-safe double-quoted strings for both the family
         # name and the URL, so a crafted family/digest cannot break out of the
-        # rule (digest is already hex-gated above).
+        # rule (digest is already hex-gated above). weight/style are validated
+        # numerics/enums above, safe to interpolate.
         rules.append(
             "@font-face{"
             f"font-family:{json.dumps(family)};"
-            "font-style:normal;font-weight:400;font-display:swap;"
+            f"font-style:{style};font-weight:{weight};font-display:swap;"
             f"src:url({json.dumps(url)});"
             "}"
         )
@@ -5655,14 +5669,21 @@ def scene_brand_fonts(
 def brand_kit_font_spec(
     repo: Repository, brand_kit: Optional[JsonObject], store_root: str
 ) -> Optional[JsonObject]:
-    """K3: {store_root, faces: [{digest, family}]} for the kit's font faces,
-    resolved from the asset library. The helper reads the bytes from the
-    shared store and registers each face under BOTH its intrinsic name and
-    the kit-DECLARED family — scenes request the declared name, which is
-    routinely a `@font-face` alias over the bytes' intrinsic name (kit
-    "Aeonik" over trial bytes named "Aeonik TRIAL"). Missing records are
-    skipped — a partial font set beats a failed request, and the helper
-    reports any face it cannot load (LUMS0101)."""
+    """K3: {store_root, faces: [{digest, family, weight?, style?}]} for the
+    kit's font faces, resolved from the asset library. The helper reads the
+    bytes from the shared store and registers each face under BOTH its
+    intrinsic name and the kit-DECLARED family — scenes request the declared
+    name, which is routinely a `@font-face` alias over the bytes' intrinsic
+    name (kit "Aeonik" over trial bytes named "Aeonik TRIAL"). Missing records
+    are skipped — a partial font set beats a failed request, and the helper
+    reports any face it cannot load (LUMS0101).
+
+    Each face carries its per-face ``weight`` (int 1..=1000) and ``style``
+    ("normal"|"italic") when the kit recorded them (the ingestion normalizer
+    always does — emit.add_font stamps every face). The keys are omitted when
+    the kit face lacks them or the value is out of range; the consumer
+    (the Rust helper's BrandFontFaceSpec / build_web_font_face_css) defaults to
+    400/normal, so no default is invented here."""
     if not isinstance(brand_kit, dict):
         return None
     fonts = (brand_kit.get("assets") or {}).get("fonts") or {}
@@ -5687,7 +5708,17 @@ def brand_kit_font_spec(
                 and str(digest["value"]) not in seen
             ):
                 seen.add(str(digest["value"]))
-                faces.append({"digest": str(digest["value"]), "family": family})
+                spec_face: JsonObject = {
+                    "digest": str(digest["value"]),
+                    "family": family,
+                }
+                weight = face.get("weight")
+                if _valid_font_weight(weight):
+                    spec_face["weight"] = weight
+                style = face.get("style")
+                if _valid_font_style(style):
+                    spec_face["style"] = style
+                faces.append(spec_face)
     if not faces:
         return None
     return {"store_root": store_root, "faces": faces}

@@ -11,7 +11,11 @@ from fastapi.testclient import TestClient
 
 from lumen_api import font_library as runtime_library
 from lumen_api.core import CoreClient
-from lumen_api.main import create_app
+from lumen_api.main import (
+    brand_kit_font_spec,
+    build_web_font_face_css,
+    create_app,
+)
 from lumen_ingestion.font_library import (
     CURATED_FAMILIES,
     REQUIRED_GLYPHS,
@@ -335,7 +339,36 @@ def test_library_font_spec_flattens_materialized_faces(
     assert spec is not None
     assert spec["store_root"] == str(tmp_path / "store")
     assert spec["faces"] == [
-        {"digest": "a" * 64, "family": "DM Sans"},
+        {"digest": "a" * 64, "family": "DM Sans", "weight": 400},
+        {"digest": "b" * 64, "family": "DM Sans", "weight": 700},
+    ]
+
+
+def test_library_font_spec_forwards_per_face_weight_and_style(
+    tmp_path: Path, manifest_file: Path
+) -> None:
+    """Manifest faces carry weight+style; the spec must forward them so the
+    helper / web @font-face render each face at its true weight instead of
+    collapsing every face to 400/normal. Out-of-range values are dropped."""
+    write_manifest_fixture(
+        manifest_file,
+        [
+            {
+                "family": "DM Sans",
+                "faces": [
+                    {"weight": 700, "style": "italic", "digest": "a" * 64, "asset_id": "x"},
+                    # Bogus weight/style are omitted (consumer defaults 400/normal).
+                    {"weight": 5000, "style": "oblique", "digest": "b" * 64, "asset_id": "y"},
+                ],
+            }
+        ],
+    )
+    materialize_blob(tmp_path, "a" * 64)
+    materialize_blob(tmp_path, "b" * 64)
+    spec = runtime_library.library_font_spec()
+    assert spec is not None
+    assert spec["faces"] == [
+        {"digest": "a" * 64, "family": "DM Sans", "weight": 700, "style": "italic"},
         {"digest": "b" * 64, "family": "DM Sans"},
     ]
 
@@ -362,7 +395,7 @@ def test_library_font_spec_skips_unmaterialized_faces(
     materialize_blob(tmp_path, "b" * 64)
     spec = runtime_library.library_font_spec()
     assert spec is not None
-    assert spec["faces"] == [{"digest": "b" * 64, "family": "DM Sans"}]
+    assert spec["faces"] == [{"digest": "b" * 64, "family": "DM Sans", "weight": 700}]
 
     # Nothing materialized → no spec at all (library disabled).
     runtime_library._spec_cache.update(key=None, spec=None)
@@ -413,7 +446,7 @@ def test_core_client_injects_library_fonts_into_shaping_actions(
 
     core.preflight_scene({"nodes": {}}, None)
     injected = captured["request"]["library_fonts"]
-    assert injected["faces"] == [{"digest": "c" * 64, "family": "DM Sans"}]
+    assert injected["faces"] == [{"digest": "c" * 64, "family": "DM Sans", "weight": 400}]
 
     # derive_instance shapes and renders bulk artifacts: it MUST receive the
     # library spec (its omission was the silent-Inter bulk-export bug), and
@@ -424,7 +457,7 @@ def test_core_client_injects_library_fonts_into_shaping_actions(
         brand_fonts={"store_root": "/tmp/store", "faces": []},
     )
     assert captured["request"]["library_fonts"]["faces"] == [
-        {"digest": "c" * 64, "family": "DM Sans"}
+        {"digest": "c" * 64, "family": "DM Sans", "weight": 400}
     ]
     assert captured["request"]["brand_fonts"] == {
         "store_root": "/tmp/store",
@@ -495,3 +528,121 @@ def test_checked_in_manifest_matches_curation() -> None:
         assert entry["glyph_coverage"]["required_ok"] is True
         for face in entry["faces"]:
             assert len(face["digest"]) == 64
+
+
+# --- kit font spec: per-face weight/style ------------------------------------
+
+
+class _FakeAssetRepo:
+    """Minimal Repository stand-in: brand_kit_font_spec only calls
+    require_asset_record, which we resolve from a preloaded digest map."""
+
+    def __init__(self, records: dict) -> None:
+        self._records = records
+
+    def require_asset_record(self, asset_id: str) -> dict:
+        return self._records[asset_id]
+
+
+def _asset_record(digest: str) -> dict:
+    return {"asset": {"media": {"digest": {"algorithm": "sha256", "value": digest}}}}
+
+
+def _kit_with_faces(faces: list) -> dict:
+    return {"assets": {"fonts": {"heading": {"family": "Aeonik", "faces": faces}}}}
+
+
+def test_brand_kit_font_spec_carries_per_face_weight_and_style() -> None:
+    repo = _FakeAssetRepo(
+        {"a1": _asset_record("a" * 64), "a2": _asset_record("b" * 64)}
+    )
+    kit = _kit_with_faces(
+        [
+            {"asset_id": "a1", "weight": 700, "style": "italic"},
+            {"asset_id": "a2", "weight": 300, "style": "normal"},
+        ]
+    )
+    spec = brand_kit_font_spec(repo, kit, "/store")
+    assert spec == {
+        "store_root": "/store",
+        "faces": [
+            {"digest": "a" * 64, "family": "Aeonik", "weight": 700, "style": "italic"},
+            {"digest": "b" * 64, "family": "Aeonik", "weight": 300, "style": "normal"},
+        ],
+    }
+
+
+def test_brand_kit_font_spec_omits_invalid_weight_and_style() -> None:
+    """Out-of-range weight, a bool weight, and a non-css style are dropped —
+    the key is omitted so the consumer defaults 400/normal (no invented value).
+    A missing weight/style is likewise omitted, not defaulted here."""
+    repo = _FakeAssetRepo(
+        {
+            "a1": _asset_record("a" * 64),
+            "a2": _asset_record("b" * 64),
+            "a3": _asset_record("c" * 64),
+        }
+    )
+    kit = _kit_with_faces(
+        [
+            {"asset_id": "a1", "weight": 5000, "style": "oblique"},
+            {"asset_id": "a2", "weight": True, "style": "italic"},
+            {"asset_id": "a3"},  # no weight/style at all
+        ]
+    )
+    spec = brand_kit_font_spec(repo, kit, "/store")
+    assert spec is not None
+    assert spec["faces"] == [
+        {"digest": "a" * 64, "family": "Aeonik"},
+        {"digest": "b" * 64, "family": "Aeonik", "style": "italic"},
+        {"digest": "c" * 64, "family": "Aeonik"},
+    ]
+
+
+# --- web @font-face CSS: per-face weight/style -------------------------------
+
+
+def test_build_web_font_face_css_emits_enriched_weight_and_style() -> None:
+    css = build_web_font_face_css(
+        {
+            "store_root": "/store",
+            "faces": [
+                {"digest": "a" * 64, "family": "Aeonik", "weight": 700, "style": "italic"},
+            ],
+        },
+        "https://host/",
+    )
+    assert css is not None
+    assert "font-weight:700" in css
+    assert "font-style:italic" in css
+    assert "https://host/asset-store/" + "a" * 64 in css
+
+
+def test_build_web_font_face_css_defaults_legacy_face_to_400_normal() -> None:
+    """A spec-less face (no weight/style, e.g. a pre-enrichment kit) still
+    renders at the 400/normal fallback."""
+    css = build_web_font_face_css(
+        {
+            "store_root": "/store",
+            "faces": [{"digest": "b" * 64, "family": "Aeonik"}],
+        },
+        "https://host/",
+    )
+    assert css is not None
+    assert "font-weight:400" in css
+    assert "font-style:normal" in css
+
+
+def test_build_web_font_face_css_ignores_out_of_range_weight_style() -> None:
+    css = build_web_font_face_css(
+        {
+            "store_root": "/store",
+            "faces": [
+                {"digest": "c" * 64, "family": "Aeonik", "weight": 9999, "style": "oblique"},
+            ],
+        },
+        "https://host/",
+    )
+    assert css is not None
+    assert "font-weight:400" in css
+    assert "font-style:normal" in css

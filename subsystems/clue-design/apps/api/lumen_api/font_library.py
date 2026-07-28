@@ -99,7 +99,20 @@ def library_font_spec() -> Optional[JsonObject]:
                 continue
             digest = str(face["digest"])
             if (store_root / "sha256" / digest[:2] / digest).is_file():
-                faces.append({"digest": digest, "family": family.get("family")})
+                spec_face: JsonObject = {
+                    "digest": digest,
+                    "family": family.get("family"),
+                }
+                # Manifest faces always carry a per-face weight/style; forward
+                # them (validated) so the helper / web @font-face render each
+                # face at its true weight instead of collapsing to 400/normal.
+                weight = face.get("weight")
+                if isinstance(weight, int) and not isinstance(weight, bool) and 1 <= weight <= 1000:
+                    spec_face["weight"] = weight
+                style = face.get("style")
+                if style in ("normal", "italic"):
+                    spec_face["style"] = style
+                faces.append(spec_face)
             else:
                 missing.append(str(family.get("family")))
     if missing:
