@@ -221,10 +221,14 @@ impl ButtonVariant {
 
 /// Untagged + flattened: legacy button JSON ({href, new_tab}) deserializes
 /// as Href with zero migration; Command carries the invoker wiring
-/// ({command, command_target}). Command is listed first so a payload with
-/// both shapes' fields resolves to the typed trigger, but ingest rejects
-/// that ambiguity before it can be authored.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// ({command, command_target}).
+///
+/// Deserialize is hand-written instead of `#[serde(untagged)]`: the derive's
+/// "data did not match any variant" error names neither the accepted shapes
+/// nor the actual mistake, which live-cost an agent turn several rejected
+/// batches (kebab "show-modal" where JSON wants "show_modal"). Every failure
+/// path here says exactly what a button action may be.
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum ButtonAction {
     Command {
@@ -236,6 +240,66 @@ pub enum ButtonAction {
         #[serde(default)]
         new_tab: bool,
     },
+}
+
+impl<'de> Deserialize<'de> for ButtonAction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // Raw tolerates unknown keys: under #[serde(flatten)] this map holds
+        // whatever the outer Button struct did not consume.
+        #[derive(Deserialize)]
+        struct Raw {
+            command: Option<String>,
+            command_target: Option<NodeId>,
+            href: Option<String>,
+            #[serde(default)]
+            new_tab: bool,
+        }
+
+        const SHAPES: &str = "a button action is either a link {href, new_tab?} \
+                              or a trigger {command: \"show_modal\"|\"close\", command_target: \"<dialog node id>\"}";
+
+        let raw = Raw::deserialize(deserializer)?;
+        match (raw.command, raw.href) {
+            (Some(command), None) => {
+                let command = match command.as_str() {
+                    "show_modal" => ButtonCommand::ShowModal,
+                    "close" => ButtonCommand::Close,
+                    other => {
+                        let hint = if ButtonCommand::parse_html_attr(other).is_some() {
+                            " (JSON uses the snake_case form, not the HTML kebab attribute)"
+                        } else {
+                            ""
+                        };
+                        return Err(D::Error::custom(format!(
+                            "unknown button command `{other}`{hint}; valid: \"show_modal\", \"close\""
+                        )));
+                    }
+                };
+                let command_target = raw.command_target.ok_or_else(|| {
+                    D::Error::custom("command button is missing `command_target` (the dialog's node id)")
+                })?;
+                Ok(ButtonAction::Command {
+                    command,
+                    command_target,
+                })
+            }
+            (None, Some(href)) => Ok(ButtonAction::Href {
+                href,
+                new_tab: raw.new_tab,
+            }),
+            (Some(_), Some(_)) => Err(D::Error::custom(format!(
+                "button carries both `href` and `command`; {SHAPES}"
+            ))),
+            (None, None) => Err(D::Error::custom(format!(
+                "button action fields missing; {SHAPES}"
+            ))),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -484,6 +548,40 @@ mod tests {
         assert_eq!(value["command_target"], "dlg_1");
         let back: WebNodeKind = serde_json::from_value(value).expect("deserialize");
         assert_eq!(back, kind);
+    }
+
+    #[test]
+    fn button_action_errors_name_the_accepted_shapes() {
+        // Kebab HTML form in JSON: the error must teach the snake_case form.
+        let err = serde_json::from_str::<WebNodeKind>(
+            r#"{"kind":"button","label":"Go","command":"show-modal","command_target":"dlg_1"}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("show_modal"), "{err}");
+        assert!(err.contains("snake_case"), "{err}");
+
+        // Command without a target.
+        let err = serde_json::from_str::<WebNodeKind>(
+            r#"{"kind":"button","label":"Go","command":"close"}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("command_target"), "{err}");
+
+        // Both shapes at once.
+        let err = serde_json::from_str::<WebNodeKind>(
+            r#"{"kind":"button","label":"Go","href":"https://x.com","command":"close","command_target":"dlg_1"}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("both"), "{err}");
+
+        // Neither shape.
+        let err = serde_json::from_str::<WebNodeKind>(r#"{"kind":"button","label":"Go"}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("link {href"), "{err}");
     }
 
     #[test]

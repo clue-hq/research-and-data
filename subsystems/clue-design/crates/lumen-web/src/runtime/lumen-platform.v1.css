@@ -1,7 +1,10 @@
 /* lumen-platform v1 — base styles for platform components. Versioned with
    the runtime; included only when the page uses a Component node. */
+/* No `position` override: the UA's modal styles (fixed + inset 0 + margin
+   auto) center the open dialog, and that fixed box is already the containing
+   block for the absolute close control. */
 dialog[data-lumen-dialog] {
-  position: relative; border: none; border-radius: 16px; padding: 0;
+  border: none; border-radius: 16px; padding: 0;
   width: 100%; max-width: min(560px, calc(100vw - 2rem));
   box-shadow: 0 24px 64px rgb(0 0 0 / 0.25);
 }

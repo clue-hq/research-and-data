@@ -732,6 +732,14 @@ class LumenWebTools:
           - insert_node {page_id:"home", parent, index, nodes, root} — splice
             a new subtree in.
 
+        Button props are a UNION — a link or a trigger, never both:
+          {kind:"button", label, variant, href:"...", new_tab:false}
+          {kind:"button", label, variant, command:"show_modal"|"close",
+           command_target:"<dialog node id>"}
+        Op JSON uses snake_case ("show_modal") — unlike the authored HTML
+        attribute (data-command="show-modal"). Rewiring a CTA to a dialog is
+        ONE set_node_props with the trigger form.
+
         Use web_ops for a LOCALIZED fix (a bad class, reworded copy, a swapped
         href). A whole section that needs recomposition is `author_web_subtree`;
         a page that no longer serves the brief is `author_web_page`. Climb that
