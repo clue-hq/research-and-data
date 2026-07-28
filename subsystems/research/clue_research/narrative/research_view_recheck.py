@@ -602,7 +602,7 @@ class ResearchViewSectionStalenessService:
                 item_ids = tuple(
                     dict.fromkeys(str(item[4]) for item in group if item[4] is not None)
                 )
-                await _insert_event(
+                await append_research_view_event(
                     conn,
                     event_key=f"section-stale:{operation_id}:{snapshot_id}",
                     topic="research_view.section_stale",
@@ -882,7 +882,7 @@ async def _write_recheck_events(
     section_ids = tuple(dict.fromkeys(item.section_id for item in affected))
     item_ids = tuple(item.item_id for item in affected)
     if affected:
-        await _insert_event(
+        await append_research_view_event(
             conn,
             event_key=f"recheck:{report.report_id}:stale",
             topic="research_view.section_stale",
@@ -898,7 +898,7 @@ async def _write_recheck_events(
             fetch_ref=f"research-view-snapshot:{old_snapshot_id}",
             created_at=created_at,
         )
-        await _insert_event(
+        await append_research_view_event(
             conn,
             event_key=f"recheck:{report.report_id}:updated",
             topic="research_view.updated",
@@ -914,7 +914,7 @@ async def _write_recheck_events(
             fetch_ref=f"research-view-snapshot:{new_snapshot_id}",
             created_at=created_at,
         )
-    await _insert_event(
+    await append_research_view_event(
         conn,
         event_key=f"recheck:{report.report_id}:completed",
         topic="research_view.recheck_completed",
@@ -932,7 +932,7 @@ async def _write_recheck_events(
     )
 
 
-async def _insert_event(
+async def append_research_view_event(
     conn: AsyncConnection,
     *,
     event_key: str,
@@ -949,6 +949,7 @@ async def _insert_event(
     fetch_ref: str,
     created_at: datetime,
 ) -> None:
+    """Append one idempotent scope/ref/reason event; arbitrary body fields are impossible."""
     event_id = uuid5(_EVENT_NAMESPACE, f"{workspace_id}:{event_key}")
     await conn.execute(
         text(
