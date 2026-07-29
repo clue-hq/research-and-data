@@ -7,6 +7,7 @@ don't pass one).
 
 | # | Script | Module | Entry point |
 |---|--------|--------|-------------|
+| 00 | `00_stage0_trial.py` | Interactive Stage 0 deepagent trial | Recipe 0 / Head-of-ABM / governed Stage-0 tools |
 | 01 | `01_stage0_onboarding.py` | Stage 0 client onboarding | `stage0.reverse_profile` |
 | 02 | `02_icp_synthesis.py` | ICP synthesis + confirm | `stage0.synthesize_icps` / `confirm_icp` |
 | 03 | `03_find_accounts.py` | Account intake (import + identity), capped | `identity.insert_account_entity` |
@@ -27,8 +28,9 @@ anything else first.
 
 ## Environment variables
 
-**For offline runs you need none.** The default DB DSN matches `make db-up` exactly, and the
-LLM gateway drops to a deterministic stub when no key is set — which is what these scripts use.
+**For offline runs 01–06 you need none.** The default DB DSN matches `make db-up` exactly, and the
+LLM gateway drops to a deterministic stub when no key is set. Script 00 is the exception: it is a
+real agent-quality trial and requires `CLUE_OPENROUTER_API_KEY`.
 
 | Variable | Needed? | Effect |
 |----------|---------|--------|

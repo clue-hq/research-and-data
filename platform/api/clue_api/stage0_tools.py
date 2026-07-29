@@ -79,6 +79,8 @@ from clue_toolbelt import (
     ToolResult,
 )
 
+MemoryWriteFactory = Callable[[AsyncConnection], MemoryWriteSeam]
+
 
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
     return (PreconditionFailure(reason_code=code, message=message),)
@@ -295,6 +297,7 @@ class _Stage0Tool(Tool):
         policy: Stage0Policy = DEFAULT_STAGE0_POLICY,
         pre_spend_gate: PreSpendGate,
         memory_write: MemoryWriteSeam | None = None,
+        memory_write_factory: MemoryWriteFactory | None = None,
         scrape_binder: Callable[[AccountEntity], None] | None = None,
         storage: StorageBackend | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
@@ -303,6 +306,7 @@ class _Stage0Tool(Tool):
         self._policy = policy
         self._pre_spend_gate = pre_spend_gate
         self._memory_write = memory_write
+        self._memory_write_factory = memory_write_factory
         self._scrape_binder = scrape_binder
         self._storage = storage
         self._project_execution_router = project_execution_router
@@ -693,6 +697,7 @@ class RecordInterviewAnswerTool(_Stage0Tool):
         if (
             any(statement.route.value == "memory" for statement in inputs.statements)
             and self._memory_write is None
+            and self._memory_write_factory is None
         ):
             return _failure(
                 "memory_not_configured",
@@ -703,6 +708,11 @@ class RecordInterviewAnswerTool(_Stage0Tool):
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, RecordInterviewAnswerInput)
         async with self._conn_factory() as conn:
+            memory_write = (
+                self._memory_write_factory(conn)
+                if self._memory_write_factory is not None
+                else self._memory_write
+            )
             result = await route_interview_answer(
                 conn,
                 workspace_id=ctx.workspace_id,
@@ -715,7 +725,7 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 answer=inputs.answer,
                 statements=tuple(inputs.statements),
                 actor=ctx.actor,
-                memory_write=self._memory_write,
+                memory_write=memory_write,
                 run_id=RunId(ctx.operation_id),
             )
         return ToolResult(
@@ -1039,6 +1049,7 @@ def stage0_tools(
     memory_write: MemoryWriteSeam | None,
     scrape_binder: Callable[[AccountEntity], None] | None,
     storage: StorageBackend | None,
+    memory_write_factory: MemoryWriteFactory | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
 ) -> tuple[Tool, ...]:
     def make(tool_type: type[_Stage0Tool]) -> _Stage0Tool:
@@ -1047,6 +1058,7 @@ def stage0_tools(
             policy=policy,
             pre_spend_gate=pre_spend_gate,
             memory_write=memory_write,
+            memory_write_factory=memory_write_factory,
             scrape_binder=scrape_binder,
             storage=storage,
             project_execution_router=project_execution_router,

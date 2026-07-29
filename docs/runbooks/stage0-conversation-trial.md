@@ -1,0 +1,129 @@
+# Stage 0 conversation trial
+
+This is the first quality test of the research subsystem. It answers a narrow question before Exa,
+scraping, API, or full end-to-end testing: **can the Head-of-ABM agent learn the company, product,
+project intent, and ICP through a useful conversation, route the information correctly, and retain
+it across turns?**
+
+The trial deliberately does not read any campaign directory. It also does not fetch the supplied
+website, call Exa, or invoke a scraper. The company name and website entered during setup are
+identity seeds only. The website is researched later, in the separate acquisition test.
+
+## What the CLI exercises
+
+- the active `head-of-abm` prompt and `stage0-interview` skill;
+- the real DeepAgent tool-calling loop through OpenRouter;
+- C5 Recipe 0 and the governed Stage 0 tool surface;
+- exact user-turn artifact capture and quote-addressable interview routing;
+- typed Client-KB claims with provenance;
+- scoped advisory preferences and behavioral learnings;
+- project-local intent and unmapped-evidence preservation;
+- deterministic readiness evaluation;
+- human-only product and ICP confirmation;
+- durable conversation history and restart/resume;
+- an inspectable report containing claims, memories, statements, ICP/readiness state, model calls,
+  and governed tool results.
+
+## Prerequisites
+
+1. Docker Desktop must be running.
+2. Set a real OpenRouter key in `.env`:
+
+   ```dotenv
+   CLUE_OPENROUTER_API_KEY=your-key
+   ```
+
+3. Install dependencies and prepare Postgres:
+
+   ```bash
+   make install
+   make db-up
+   make migrate
+   ```
+
+No Exa or Firecrawl key is required for this test.
+
+## Start the trial
+
+From the repository root:
+
+```bash
+uv run python scripts/00_stage0_trial.py
+```
+
+The CLI asks for four setup values:
+
+1. company/brand name;
+2. company website, used only to establish the client identity;
+3. the product candidate the conversation is about;
+4. a project name.
+
+Then speak naturally. Do not fill a questionnaire. Give the agent the same context you would give
+a senior ABM lead, let it ask the next material question, correct it when necessary, and inspect
+whether it understands the distinction between:
+
+- facts about the company/product;
+- preferences about how work should be done;
+- project-specific choices;
+- ICP hypotheses;
+- assumptions and missing evidence.
+
+Useful commands:
+
+```text
+/status
+/report
+/confirm-product
+/synthesize-icp
+/confirm-icp 1
+/quit
+```
+
+`/confirm-product` and `/confirm-icp` are explicit human actions; the agent cannot perform them.
+After `/synthesize-icp`, continue the conversation once so the generated proposals enter the next
+turn's frozen context and the agent can critique them before confirmation.
+
+## Resume after quitting
+
+The CLI prints the session slug. Resume it with:
+
+```bash
+uv run python scripts/00_stage0_trial.py --session <session-slug>
+```
+
+This is an important part of the test: quit after several turns, restart the process, and ask the
+agent to summarize the company, product, current ICP hypothesis, exclusions, and open questions.
+It should use durable context rather than asking for everything again.
+
+## Inspect the output
+
+After every turn, inspect:
+
+```text
+.context/stage0-trials/<session-slug>/report.md
+.context/stage0-trials/<session-slug>/transcript.md
+.context/stage0-trials/<session-slug>/report.json
+.context/stage0-trials/<session-slug>/icp-proposals.json
+```
+
+`report.md` is the quick status page. `transcript.md` is the human-readable conversation.
+`report.json` is the detailed inspection surface and should be used to verify that confident prose
+actually became a supported claim, preference, project statement, or explicit unmapped item.
+`icp-proposals.json` appears only after `/synthesize-icp`.
+
+## Suggested evaluation
+
+Judge the trial on:
+
+- whether the questions are material rather than form-like;
+- whether the agent correctly understands the company and product;
+- whether the ICP is specific enough to exclude poor targets;
+- whether corrections supersede prior understanding instead of being ignored;
+- whether facts, preferences, and project intent land in the correct stores;
+- whether unsupported assumptions remain visibly unsupported;
+- whether the agent remembers the conversation after a process restart;
+- whether the resulting ICP proposal is useful enough to justify proceeding to Exa testing.
+
+This CLI is not the Exa test and not a complete production launch. Once the conversational quality
+is acceptable, proceed in order: direct Exa output, website acquisition, API, then the complete
+system test.
