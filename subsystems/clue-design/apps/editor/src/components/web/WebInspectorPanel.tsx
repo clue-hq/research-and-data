@@ -24,19 +24,43 @@ import {
   type WebTheme
 } from "@/engine/webDocuments";
 import {
+  alignItemsFacet,
   bgColorFacet,
   directionFacet,
   displayFacet,
+  elementDimensionValue,
+  flexWrapFacet,
+  fontWeightFacet,
   gapFacet,
+  gridColumnsFacet,
+  italicFacet,
+  justifyContentFacet,
+  lineHeightFacet,
+  lineThroughFacet,
+  marginXFacet,
+  marginYFacet,
+  objectFitFacet,
+  objectPositionFacet,
   paddingXFacet,
   paddingYFacet,
+  setElementDimensionClass,
   textAlignFacet,
   textColorFacet,
   textSizeFacet,
+  underlineFacet,
+  ALIGN_ITEMS_VALUES,
+  FLEX_WRAP_VALUES,
+  FONT_WEIGHT_VALUES,
+  GRID_COLUMN_VALUES,
+  JUSTIFY_CONTENT_VALUES,
+  LINE_HEIGHT_VALUES,
+  OBJECT_FIT_VALUES,
+  OBJECT_POSITION_VALUES,
   TEXT_SIZE_RAMP,
   SPACING_STEPS,
   type ClassFacet
 } from "@/engine/webClassFacets";
+import type { WebNodeInfo } from "@/engine/webBridge";
 
 /**
  * The Inspect-mode panel: reads the selected node from the loaded WebDoc and
@@ -46,12 +70,15 @@ import {
  * fires `applyOps`; the hook owns persistence, base-version, and 409/422.
  *
  * Solid vs derived: a facet control shows the parsed value when the utility is
- * present (solid) and "Default" otherwise (derived) — no computed-style
- * readback in v1, so an inherited value reads as Default until it's set here.
+ * present (solid) and "Default" otherwise (derived). The computed-layout card
+ * reports the browser's resolved value separately; it does not turn an
+ * inherited/default value into an authored utility.
  */
 
 interface WebInspectorPanelProps {
   node: WebNode | null;
+  /** Read-only measurements from the instrumented iframe render. */
+  nodeInfo: WebNodeInfo | null;
   /** The page the node lives in — the `page_id` every op carries. */
   pageId: string;
   /** The full page summary — the sibling/parent lookup the header's
@@ -86,6 +113,7 @@ const ALIGN_OPTIONS: { value: string; label: string }[] = [
 
 export function WebInspectorPanel({
   node,
+  nodeInfo,
   pageId,
   page,
   theme,
@@ -127,11 +155,14 @@ export function WebInspectorPanel({
         </p>
       ) : null}
 
+      <ComputedLayoutCard info={nodeInfo} />
+
       {/* Field state (text inputs, textarea) is seeded from the node, so remount
           it when the selection changes. */}
       <WebInspectorBody
         key={node.id}
         node={node}
+        nodeInfo={nodeInfo}
         pageId={pageId}
         theme={theme}
         dialogs={dialogs}
@@ -142,6 +173,166 @@ export function WebInspectorPanel({
         busy={busy}
       />
     </div>
+  );
+}
+
+function metricNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function boxValues(
+  top: string,
+  right: string,
+  bottom: string,
+  left: string
+): string {
+  return `${top} ${right} ${bottom} ${left}`;
+}
+
+function ComputedLayoutCard({ info }: { info: WebNodeInfo | null }): React.ReactElement {
+  if (!info) {
+    return (
+      <Card title="Computed layout">
+        <p className="web-insp-hint">Waiting for the rendered node measurement.</p>
+      </Card>
+    );
+  }
+  const rect = info.geometry.document;
+  const style = info.computedStyle;
+  const isFlex = style.display.includes("flex");
+  const isGrid = style.display.includes("grid");
+  return (
+    <Card title="Computed layout">
+      <dl className="web-insp-metrics">
+        <div>
+          <dt>Size</dt>
+          <dd>
+            {metricNumber(rect.width)} × {metricNumber(rect.height)} px
+          </dd>
+        </div>
+        <div>
+          <dt>Position</dt>
+          <dd>
+            {metricNumber(rect.x)}, {metricNumber(rect.y)} px
+          </dd>
+        </div>
+        <div>
+          <dt>Parent</dt>
+          <dd>{info.parentNodeId ?? "page"}</dd>
+        </div>
+        <div>
+          <dt>Children</dt>
+          <dd>{info.childNodeIds.length}</dd>
+        </div>
+        <div>
+          <dt>Display</dt>
+          <dd>{style.display || "—"}</dd>
+        </div>
+        <div>
+          <dt>Positioning</dt>
+          <dd>{style.position || "—"}</dd>
+        </div>
+        <div>
+          <dt>CSS size</dt>
+          <dd>
+            {style.width || "—"} × {style.height || "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>Constraints</dt>
+          <dd>
+            {style.minWidth || "0"}…{style.maxWidth || "none"} ·{" "}
+            {style.minHeight || "0"}…{style.maxHeight || "none"}
+          </dd>
+        </div>
+        <div className="is-wide">
+          <dt>Padding</dt>
+          <dd>
+            {boxValues(
+              style.paddingTop,
+              style.paddingRight,
+              style.paddingBottom,
+              style.paddingLeft
+            )}
+          </dd>
+        </div>
+        <div className="is-wide">
+          <dt>Margin</dt>
+          <dd>
+            {boxValues(
+              style.marginTop,
+              style.marginRight,
+              style.marginBottom,
+              style.marginLeft
+            )}
+          </dd>
+        </div>
+        {isFlex ? (
+          <>
+            <div>
+              <dt>Flex</dt>
+              <dd>
+                {style.flexDirection} · {style.flexWrap}
+              </dd>
+            </div>
+            <div>
+              <dt>Alignment</dt>
+              <dd>
+                {style.justifyContent} · {style.alignItems}
+              </dd>
+            </div>
+          </>
+        ) : null}
+        {isFlex || isGrid ? (
+          <div>
+            <dt>Gap</dt>
+            <dd>{style.gap || "—"}</dd>
+          </div>
+        ) : null}
+        {isGrid ? (
+          <div className="is-wide">
+            <dt>Grid columns</dt>
+            <dd>{style.gridTemplateColumns || "—"}</dd>
+          </div>
+        ) : null}
+        {info.tv || info.btn ? (
+          <>
+            <div>
+              <dt>Type</dt>
+              <dd>
+                {style.fontSize} / {style.lineHeight} · {style.fontWeight}
+              </dd>
+            </div>
+            <div>
+              <dt>Text align</dt>
+              <dd>{style.textAlign || "—"}</dd>
+            </div>
+          </>
+        ) : null}
+        <div>
+          <dt>Radius</dt>
+          <dd>{style.borderRadius || "—"}</dd>
+        </div>
+        <div>
+          <dt>Opacity</dt>
+          <dd>{style.opacity || "—"}</dd>
+        </div>
+        {info.tag === "img" ? (
+          <div className="is-wide">
+            <dt>Image fit</dt>
+            <dd>
+              {style.objectFit || "—"} · {style.objectPosition || "—"}
+            </dd>
+          </div>
+        ) : null}
+        <div className="is-wide">
+          <dt>Colors</dt>
+          <dd>
+            {style.color || "—"} on {style.backgroundColor || "—"}
+          </dd>
+        </div>
+      </dl>
+    </Card>
   );
 }
 
@@ -236,6 +427,7 @@ function NodeActionRow({
 
 interface BodyProps {
   node: WebNode;
+  nodeInfo: WebNodeInfo | null;
   pageId: string;
   theme: WebTheme | null;
   dialogs: WebDialogOption[];
@@ -248,6 +440,7 @@ interface BodyProps {
 
 function WebInspectorBody({
   node,
+  nodeInfo,
   pageId,
   theme,
   dialogs,
@@ -258,7 +451,16 @@ function WebInspectorBody({
   busy
 }: BodyProps): React.ReactElement {
   const applyClasses = (facet: ClassFacet, value: string | null, intent: string) => {
-    applyOps([setNodeClassesOp(pageId, node.id, facet.set(node.classes, value))], intent);
+    const classes = facet.set(node.classes, value);
+    if (classes !== node.classes) {
+      applyOps([setNodeClassesOp(pageId, node.id, classes)], intent);
+    }
+  };
+  const applyDimension = (axis: "width" | "height", value: string | null) => {
+    const classes = setElementDimensionClass(node.classes, axis, value);
+    if (classes !== node.classes) {
+      applyOps([setNodeClassesOp(pageId, node.id, classes)], `resize_${axis}`);
+    }
   };
   const applyProps = (props: WebNodeProps, intent: string) => {
     applyOps([setNodePropsOp(pageId, node.id, props)], intent);
@@ -267,7 +469,7 @@ function WebInspectorBody({
   return (
     <div className="web-insp-cards">
       {node.kind === "text" ? (
-        <TextCard node={node} theme={theme} busy={busy} applyClasses={applyClasses} applyProps={applyProps} />
+        <TextCard node={node} busy={busy} applyClasses={applyClasses} applyProps={applyProps} />
       ) : null}
       {node.kind === "button" ? (
         <ButtonCard
@@ -293,12 +495,31 @@ function WebInspectorBody({
         <ImageCard
           node={node}
           busy={busy}
+          applyClasses={applyClasses}
           applyProps={applyProps}
           onReplaceImage={onReplaceImage}
         />
       ) : null}
       {node.kind === "embed" ? <EmbedCard node={node} busy={busy} applyProps={applyProps} /> : null}
 
+      {["text", "button", "container", "section"].includes(node.kind) ? (
+        <AppearanceCard
+          node={node}
+          nodeInfo={nodeInfo}
+          theme={theme}
+          busy={busy}
+          applyClasses={applyClasses}
+        />
+      ) : null}
+      {["container", "text", "button", "image"].includes(node.kind) ? (
+        <SizeCard
+          node={node}
+          nodeInfo={nodeInfo}
+          busy={busy}
+          applyDimension={applyDimension}
+        />
+      ) : null}
+      <SpacingCard node={node} busy={busy} applyClasses={applyClasses} />
       <PersonalizationCard node={node} pageId={pageId} busy={busy} applyOps={applyOps} />
       <ClassesCard node={node} pageId={pageId} busy={busy} applyOps={applyOps} />
     </div>
@@ -379,27 +600,306 @@ function PropSelect({
   );
 }
 
+function ThemeColorControl({
+  label,
+  facet,
+  classes,
+  theme,
+  computedValue,
+  busy,
+  onChange
+}: {
+  label: string;
+  facet: ClassFacet;
+  classes: string;
+  theme: WebTheme | null;
+  computedValue: string;
+  busy: boolean;
+  onChange: (value: string | null) => void;
+}): React.ReactElement {
+  const value = facet.parse(classes);
+  // Theme payloads also carry implementation aliases (`palette-*`,
+  // `surface-*`, `text-*`, border roles). The picker should feel like the
+  // compact brand palette from the recordings, not a dump of every compiled
+  // CSS variable; raw aliases remain editable through CSS classes.
+  const tokens = theme
+    ? Object.entries(theme.tokens).filter(
+        ([token]) =>
+          !/^(?:palette-|surface-|text-|border-)/.test(token) &&
+          token !== "focus-ring" &&
+          token !== "accent-primary"
+      )
+    : [];
+  return (
+    <div className="field web-insp-field">
+      <span className="field-label">{label}</span>
+      <span className="web-insp-value-state">
+        {value ? `Authored · ${value}` : `Derived · ${computedValue || "browser default"}`}
+      </span>
+      {tokens.length > 0 ? (
+        <div className="web-swatch-grid" role="group" aria-label={label}>
+          {tokens.map(([token, cssColor]) => (
+            <button
+              key={token}
+              type="button"
+              title={token}
+              aria-label={`${label}: ${token}`}
+              aria-pressed={value === token}
+              disabled={busy}
+              className={`web-swatch${value === token ? " is-selected" : ""}`}
+              style={{ backgroundColor: cssColor }}
+              onClick={() => onChange(token)}
+            />
+          ))}
+          <button
+            type="button"
+            className={`web-swatch is-clear${value === null ? " is-selected" : ""}`}
+            aria-label={`Default ${label.toLowerCase()}`}
+            title="Clear authored color"
+            disabled={busy}
+            onClick={() => onChange(null)}
+          >
+            ×
+          </button>
+        </div>
+      ) : (
+        <p className="web-insp-hint">No theme colors available.</p>
+      )}
+    </div>
+  );
+}
+
+function AppearanceCard({
+  node,
+  nodeInfo,
+  theme,
+  busy,
+  applyClasses
+}: {
+  node: WebNode;
+  nodeInfo: WebNodeInfo | null;
+  theme: WebTheme | null;
+  busy: boolean;
+  applyClasses: (facet: ClassFacet, value: string | null, intent: string) => void;
+}): React.ReactElement {
+  return (
+    <Card title="Appearance">
+      <ThemeColorControl
+        label="Text color"
+        facet={textColorFacet}
+        classes={node.classes}
+        theme={theme}
+        computedValue={nodeInfo?.computedStyle.color ?? ""}
+        busy={busy}
+        onChange={(next) => applyClasses(textColorFacet, next, "text_color")}
+      />
+      <ThemeColorControl
+        label="Background color"
+        facet={bgColorFacet}
+        classes={node.classes}
+        theme={theme}
+        computedValue={nodeInfo?.computedStyle.backgroundColor ?? ""}
+        busy={busy}
+        onChange={(next) => applyClasses(bgColorFacet, next, "background_color")}
+      />
+    </Card>
+  );
+}
+
+type DimensionParseResult =
+  | { kind: "ok"; value: string | null }
+  | { kind: "error"; message: string };
+
+function parseDimensionDraft(axis: "width" | "height", draft: string): DimensionParseResult {
+  let value = draft.trim();
+  if (value === "" || value.toLowerCase() === "default") {
+    return { kind: "ok", value: null };
+  }
+  const ownPrefix = axis === "width" ? "w-" : "h-";
+  const otherPrefix = axis === "width" ? "h-" : "w-";
+  if (value.startsWith(otherPrefix)) {
+    return { kind: "error", message: `Use a ${ownPrefix} class for ${axis}.` };
+  }
+  if (value.startsWith(ownPrefix)) {
+    value = value.slice(ownPrefix.length);
+  }
+  if (/^\d+(?:\.\d+)?(?:px)?$/.test(value)) {
+    const pixels = Number.parseFloat(value);
+    if (!Number.isFinite(pixels) || pixels < 16 || pixels > 10_000) {
+      return { kind: "error", message: "Fixed size must be between 16 and 10,000 px." };
+    }
+    return { kind: "ok", value: `[${Math.round(pixels)}px]` };
+  }
+  if (/^(?:[A-Za-z0-9_.%/]+|\[[A-Za-z0-9_.%(),+*/-]+\])$/.test(value)) {
+    return { kind: "ok", value };
+  }
+  return {
+    kind: "error",
+    message: `Enter Default, ${ownPrefix}full, ${ownPrefix}auto, or a pixel value.`
+  };
+}
+
+function dimensionLabel(axis: "width" | "height", value: string | null): string {
+  if (!value) return "";
+  return `${axis === "width" ? "w" : "h"}-${value}`;
+}
+
+function SizeCard({
+  node,
+  nodeInfo,
+  busy,
+  applyDimension
+}: {
+  node: WebNode;
+  nodeInfo: WebNodeInfo | null;
+  busy: boolean;
+  applyDimension: (axis: "width" | "height", value: string | null) => void;
+}): React.ReactElement {
+  const authoredWidth = elementDimensionValue(node.classes, "width");
+  const authoredHeight = elementDimensionValue(node.classes, "height");
+  const [widthDraft, setWidthDraft] = useState(dimensionLabel("width", authoredWidth));
+  const [heightDraft, setHeightDraft] = useState(dimensionLabel("height", authoredHeight));
+  const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setWidthDraft(dimensionLabel("width", authoredWidth));
+    setHeightDraft(dimensionLabel("height", authoredHeight));
+    setError(null);
+  }, [authoredWidth, authoredHeight]);
+
+  const commit = (axis: "width" | "height", draft: string) => {
+    const result = parseDimensionDraft(axis, draft);
+    if (result.kind === "error") {
+      setError(result.message);
+      return;
+    }
+    setError(null);
+    const current = axis === "width" ? authoredWidth : authoredHeight;
+    if (current !== result.value) {
+      applyDimension(axis, result.value);
+    }
+  };
+
+  return (
+    <Card title="Size">
+      <label className="field web-insp-field">
+        <span className="field-label">Width</span>
+        <input
+          type="text"
+          value={widthDraft}
+          disabled={busy}
+          spellCheck={false}
+          onChange={(event) => setWidthDraft(event.target.value)}
+          onBlur={() => commit("width", widthDraft)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          placeholder={`Default · ${nodeInfo?.computedStyle.width || "computed width"}`}
+        />
+        <span className="web-insp-value-state">
+          {authoredWidth
+            ? `Authored · w-${authoredWidth}`
+            : `Derived · ${nodeInfo?.computedStyle.width || "browser default"}`}
+        </span>
+      </label>
+      <label className="field web-insp-field">
+        <span className="field-label">Height</span>
+        <input
+          type="text"
+          value={heightDraft}
+          disabled={busy}
+          spellCheck={false}
+          onChange={(event) => setHeightDraft(event.target.value)}
+          onBlur={() => commit("height", heightDraft)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+          placeholder={`Default · ${nodeInfo?.computedStyle.height || "computed height"}`}
+        />
+        <span className="web-insp-value-state">
+          {authoredHeight
+            ? `Authored · h-${authoredHeight}`
+            : `Derived · ${nodeInfo?.computedStyle.height || "browser default"}`}
+        </span>
+      </label>
+      <p className="web-insp-hint">
+        Drag the canvas handles for fixed pixels, or enter Tailwind values such
+        as w-full, w-fit, h-auto, or 320px.
+      </p>
+      {error ? (
+        <span className="web-insp-error" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </Card>
+  );
+}
+
+function SpacingCard({
+  node,
+  busy,
+  applyClasses
+}: {
+  node: WebNode;
+  busy: boolean;
+  applyClasses: (facet: ClassFacet, value: string | null, intent: string) => void;
+}): React.ReactElement {
+  return (
+    <Card title="Spacing">
+      <FacetSelect
+        label="Margin X"
+        value={marginXFacet.parse(node.classes)}
+        options={SPACING_STEPS}
+        disabled={busy}
+        onChange={(next) => applyClasses(marginXFacet, next, "margin_x")}
+      />
+      <FacetSelect
+        label="Margin Y"
+        value={marginYFacet.parse(node.classes)}
+        options={SPACING_STEPS}
+        disabled={busy}
+        onChange={(next) => applyClasses(marginYFacet, next, "margin_y")}
+      />
+      <FacetSelect
+        label="Padding X"
+        value={paddingXFacet.parse(node.classes)}
+        options={SPACING_STEPS}
+        disabled={busy}
+        onChange={(next) => applyClasses(paddingXFacet, next, "padding_x")}
+      />
+      <FacetSelect
+        label="Padding Y"
+        value={paddingYFacet.parse(node.classes)}
+        options={SPACING_STEPS}
+        disabled={busy}
+        onChange={(next) => applyClasses(paddingYFacet, next, "padding_y")}
+      />
+    </Card>
+  );
+}
+
 // ── per-kind cards ───────────────────────────────────────────────────────────
 
 function TextCard({
   node,
-  theme,
   busy,
   applyClasses,
   applyProps
 }: {
   node: WebNode;
-  theme: WebTheme | null;
   busy: boolean;
   applyClasses: (facet: ClassFacet, value: string | null, intent: string) => void;
   applyProps: (props: WebNodeProps, intent: string) => void;
 }): React.ReactElement {
   const variant = node.variant ?? "body";
   const content = node.content ?? "";
-  const color = textColorFacet.parse(node.classes);
   const size = textSizeFacet.parse(node.classes);
   const align = textAlignFacet.parse(node.classes);
-  const tokens = theme ? Object.entries(theme.tokens) : [];
+  const weight = fontWeightFacet.parse(node.classes);
+  const lineHeight = lineHeightFacet.parse(node.classes);
+  const italic = italicFacet.parse(node.classes) === "italic";
+  const underline = underlineFacet.parse(node.classes) === "underline";
+  const lineThrough = lineThroughFacet.parse(node.classes) === "line-through";
 
   return (
     <Card title="Text">
@@ -411,39 +911,6 @@ function TextCard({
         onChange={(next) => applyProps({ kind: "text", variant: next, content }, "text_variant")}
       />
 
-      <div className="field web-insp-field">
-        <span className="field-label">Color</span>
-        {tokens.length > 0 ? (
-          <div className="web-swatch-grid" role="group" aria-label="Text color">
-            {tokens.map(([token, cssColor]) => (
-              <button
-                key={token}
-                type="button"
-                title={token}
-                aria-label={token}
-                aria-pressed={color === token}
-                disabled={busy}
-                className={`web-swatch${color === token ? " is-selected" : ""}`}
-                style={{ backgroundColor: cssColor }}
-                onClick={() => applyClasses(textColorFacet, token, "text_color")}
-              />
-            ))}
-            <button
-              type="button"
-              className={`web-swatch is-clear${color === null ? " is-selected" : ""}`}
-              aria-label="Default color"
-              title="Default"
-              disabled={busy}
-              onClick={() => applyClasses(textColorFacet, null, "text_color")}
-            >
-              ×
-            </button>
-          </div>
-        ) : (
-          <p className="web-insp-hint">No theme colors available.</p>
-        )}
-      </div>
-
       <FacetSelect
         label="Size"
         value={size}
@@ -451,6 +918,76 @@ function TextCard({
         disabled={busy}
         onChange={(next) => applyClasses(textSizeFacet, next, "text_size")}
       />
+      <FacetSelect
+        label="Weight"
+        value={weight}
+        options={FONT_WEIGHT_VALUES}
+        disabled={busy}
+        onChange={(next) => applyClasses(fontWeightFacet, next, "font_weight")}
+      />
+      <FacetSelect
+        label="Line spacing"
+        value={lineHeight}
+        options={LINE_HEIGHT_VALUES}
+        disabled={busy}
+        onChange={(next) => applyClasses(lineHeightFacet, next, "line_height")}
+      />
+
+      <div className="field web-insp-field">
+        <span className="field-label">Formatting</span>
+        <div className="web-align-row" role="group" aria-label="Text formatting">
+          <button
+            type="button"
+            className={`web-format-btn${weight === "bold" ? " is-selected" : ""}`}
+            aria-label="Bold"
+            aria-pressed={weight === "bold"}
+            disabled={busy}
+            onClick={() =>
+              applyClasses(fontWeightFacet, weight === "bold" ? null : "bold", "font_weight")
+            }
+          >
+            <strong>B</strong>
+          </button>
+          <button
+            type="button"
+            className={`web-format-btn${italic ? " is-selected" : ""}`}
+            aria-label="Italic"
+            aria-pressed={italic}
+            disabled={busy}
+            onClick={() => applyClasses(italicFacet, italic ? null : "italic", "font_style")}
+          >
+            <em>I</em>
+          </button>
+          <button
+            type="button"
+            className={`web-format-btn${underline ? " is-selected" : ""}`}
+            aria-label="Underline"
+            aria-pressed={underline}
+            disabled={busy}
+            onClick={() =>
+              applyClasses(underlineFacet, underline ? null : "underline", "text_decoration")
+            }
+          >
+            <span style={{ textDecoration: "underline" }}>U</span>
+          </button>
+          <button
+            type="button"
+            className={`web-format-btn${lineThrough ? " is-selected" : ""}`}
+            aria-label="Strikethrough"
+            aria-pressed={lineThrough}
+            disabled={busy}
+            onClick={() =>
+              applyClasses(
+                lineThroughFacet,
+                lineThrough ? null : "line-through",
+                "text_decoration"
+              )
+            }
+          >
+            <span style={{ textDecoration: "line-through" }}>S</span>
+          </button>
+        </div>
+      </div>
 
       <div className="field web-insp-field">
         <span className="field-label">Alignment</span>
@@ -1089,43 +1626,69 @@ function ContainerCard({
   busy: boolean;
   applyClasses: (facet: ClassFacet, value: string | null, intent: string) => void;
 }): React.ReactElement {
+  const display = displayFacet.parse(node.classes);
+  const direction = directionFacet.parse(node.classes);
+  const horizontalFacet = direction === "col" ? alignItemsFacet : justifyContentFacet;
+  const verticalFacet = direction === "col" ? justifyContentFacet : alignItemsFacet;
   return (
     <Card title="Layout">
       <FacetSelect
         label="Display"
-        value={displayFacet.parse(node.classes)}
+        value={display}
         options={["flex", "grid", "block", "inline-flex", "hidden"]}
         disabled={busy}
         onChange={(next) => applyClasses(displayFacet, next, "display")}
       />
-      <FacetSelect
-        label="Direction"
-        value={directionFacet.parse(node.classes)}
-        options={["row", "col"]}
-        disabled={busy}
-        onChange={(next) => applyClasses(directionFacet, next, "direction")}
-      />
-      <FacetSelect
-        label="Gap"
-        value={gapFacet.parse(node.classes)}
-        options={SPACING_STEPS}
-        disabled={busy}
-        onChange={(next) => applyClasses(gapFacet, next, "gap")}
-      />
-      <FacetSelect
-        label="Padding X"
-        value={paddingXFacet.parse(node.classes)}
-        options={SPACING_STEPS}
-        disabled={busy}
-        onChange={(next) => applyClasses(paddingXFacet, next, "padding_x")}
-      />
-      <FacetSelect
-        label="Padding Y"
-        value={paddingYFacet.parse(node.classes)}
-        options={SPACING_STEPS}
-        disabled={busy}
-        onChange={(next) => applyClasses(paddingYFacet, next, "padding_y")}
-      />
+      {display === "flex" || display === "inline-flex" ? (
+        <>
+          <FacetSelect
+            label="Direction"
+            value={direction}
+            options={["row", "col"]}
+            disabled={busy}
+            onChange={(next) => applyClasses(directionFacet, next, "direction")}
+          />
+          <FacetSelect
+            label="Horizontal"
+            value={horizontalFacet.parse(node.classes)}
+            options={direction === "col" ? ALIGN_ITEMS_VALUES : JUSTIFY_CONTENT_VALUES}
+            disabled={busy}
+            onChange={(next) => applyClasses(horizontalFacet, next, "horizontal_alignment")}
+          />
+          <FacetSelect
+            label="Vertical"
+            value={verticalFacet.parse(node.classes)}
+            options={direction === "col" ? JUSTIFY_CONTENT_VALUES : ALIGN_ITEMS_VALUES}
+            disabled={busy}
+            onChange={(next) => applyClasses(verticalFacet, next, "vertical_alignment")}
+          />
+          <FacetSelect
+            label="Wrap"
+            value={flexWrapFacet.parse(node.classes)}
+            options={FLEX_WRAP_VALUES}
+            disabled={busy}
+            onChange={(next) => applyClasses(flexWrapFacet, next, "flex_wrap")}
+          />
+        </>
+      ) : null}
+      {display === "grid" ? (
+        <FacetSelect
+          label="Columns"
+          value={gridColumnsFacet.parse(node.classes)}
+          options={GRID_COLUMN_VALUES}
+          disabled={busy}
+          onChange={(next) => applyClasses(gridColumnsFacet, next, "grid_columns")}
+        />
+      ) : null}
+      {display === "flex" || display === "inline-flex" || display === "grid" ? (
+        <FacetSelect
+          label="Gap"
+          value={gapFacet.parse(node.classes)}
+          options={SPACING_STEPS}
+          disabled={busy}
+          onChange={(next) => applyClasses(gapFacet, next, "gap")}
+        />
+      ) : null}
     </Card>
   );
 }
@@ -1133,15 +1696,34 @@ function ContainerCard({
 function ImageCard({
   node,
   busy,
+  applyClasses,
   applyProps,
   onReplaceImage
 }: {
   node: WebNode;
   busy: boolean;
+  applyClasses: (facet: ClassFacet, value: string | null, intent: string) => void;
   applyProps: (props: WebNodeProps, intent: string) => void;
   onReplaceImage: (nodeId: string) => void;
 }): React.ReactElement {
   const [alt, setAlt] = useState(node.alt ?? "");
+  const [href, setHref] = useState(node.href ?? "");
+  const newTab = node.new_tab ?? false;
+  const commit = (
+    over: Partial<{ alt: string; href: string; newTab: boolean }>,
+    intent: string
+  ) => {
+    applyProps(
+      {
+        kind: "image",
+        asset_id: node.asset_id ?? "",
+        alt: over.alt ?? alt,
+        href: (over.href ?? href).trim() || null,
+        new_tab: over.newTab ?? newTab
+      },
+      intent
+    );
+  };
   return (
     <Card title="Image">
       <label className="field web-insp-field">
@@ -1153,16 +1735,7 @@ function ImageCard({
           onChange={(event) => setAlt(event.target.value)}
           onBlur={() => {
             if (alt !== (node.alt ?? "")) {
-              applyProps(
-                {
-                  kind: "image",
-                  asset_id: node.asset_id ?? "",
-                  alt,
-                  href: node.href ?? null,
-                  new_tab: node.new_tab ?? false
-                },
-                "image_alt"
-              );
+              commit({ alt }, "image_alt");
             }
           }}
           onKeyDown={(event) => {
@@ -1173,6 +1746,49 @@ function ImageCard({
           placeholder="Describe the image"
         />
       </label>
+      <label className="field web-insp-field">
+        <span className="field-label">Link</span>
+        <input
+          type="text"
+          value={href}
+          disabled={busy}
+          onChange={(event) => setHref(event.target.value)}
+          onBlur={() => {
+            if (href !== (node.href ?? "")) {
+              commit({ href }, "image_href");
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="Add a link URL"
+        />
+      </label>
+      <label className="web-insp-checkbox">
+        <input
+          type="checkbox"
+          checked={newTab}
+          disabled={busy || href.trim() === ""}
+          onChange={(event) => commit({ newTab: event.target.checked }, "image_new_tab")}
+        />
+        Open in a new tab
+      </label>
+      <FacetSelect
+        label="Fit"
+        value={objectFitFacet.parse(node.classes)}
+        options={OBJECT_FIT_VALUES}
+        disabled={busy}
+        onChange={(next) => applyClasses(objectFitFacet, next, "image_fit")}
+      />
+      <FacetSelect
+        label="Position"
+        value={objectPositionFacet.parse(node.classes)}
+        options={OBJECT_POSITION_VALUES}
+        disabled={busy}
+        onChange={(next) => applyClasses(objectPositionFacet, next, "image_position")}
+      />
       <button
         type="button"
         className="btn btn-ghost btn-sm"
@@ -1398,6 +2014,9 @@ function ClassesCard({
   applyOps: (operations: WebOperation[], intent?: string) => void;
 }): React.ReactElement {
   const [draft, setDraft] = useState(node.classes);
+  React.useEffect(() => {
+    setDraft(node.classes);
+  }, [node.classes]);
   const dirty = draft !== node.classes;
   return (
     <Card title="CSS classes">

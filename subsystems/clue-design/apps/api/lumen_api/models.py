@@ -143,12 +143,14 @@ class AgentTurnPreviewRequest(BaseModel):
 
 
 class WebTurnRequest(BaseModel):
-    """A website-mode agent turn: the user's brief plus an optional model
-    override. Mirrors AgentTurnPreviewRequest's model field, but a WebDoc turn
-    carries no scene/targets/references — the working document is loaded from
-    storage by id."""
+    """A website-mode agent turn against one exact stored WebDoc revision.
+
+    ``base_version`` is mandatory because the async worker may run for minutes:
+    the result must never replace human edits committed after the turn began.
+    """
 
     prompt: str
+    base_version: int
     model: Optional[str] = None
     # Scoped edit turns: the node ids the user selected in the editor. When
     # present, the turn is scoped to the enclosing section(s) of those nodes

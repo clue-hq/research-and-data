@@ -50,7 +50,7 @@ function setup(snapshot: () => Promise<WebRunSnapshot>) {
 
 async function startTurn(hook: ReturnType<typeof setup>["hook"]) {
   await act(async () => {
-    hook.result.current.start("Build me a landing page");
+    hook.result.current.start("Build me a landing page", 7);
   });
 }
 

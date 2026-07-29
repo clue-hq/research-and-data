@@ -8,6 +8,7 @@ drives the real core helper. Both use temp DBs via the shared `client` fixture.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -85,6 +86,47 @@ def ingest_content(client: TestClient, document_id: str) -> dict:
     return response["web_doc"]
 
 
+def install_operations(before: dict, after: dict) -> list[dict]:
+    """Canonical operations that install ``after`` page content into ``before``."""
+    before_page = before["pages"][0]
+    after_page = after["pages"][0]
+    before_nodes = before_page["nodes"]
+    after_nodes = after_page["nodes"]
+    root_id = before_page["root"]
+    operations: list[dict] = [
+        {"kind": "remove_node", "page_id": before_page["id"], "id": child_id}
+        for child_id in before_nodes[root_id].get("children") or []
+    ]
+
+    def subtree(root: str) -> list[dict]:
+        ids: set[str] = set()
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            if current in ids:
+                continue
+            ids.add(current)
+            stack.extend(after_nodes[current].get("children") or [])
+        return [node for node_id, node in after_nodes.items() if node_id in ids]
+
+    for index, child_id in enumerate(after_nodes[root_id].get("children") or []):
+        operations.append(
+            {
+                "kind": "insert_node",
+                "page_id": after_page["id"],
+                "parent": root_id,
+                "index": index,
+                "nodes": subtree(child_id),
+                "root": child_id,
+            }
+        )
+    if (before.get("custom_css") or "") != (after.get("custom_css") or ""):
+        operations.append(
+            {"kind": "set_custom_css", "css": after.get("custom_css") or ""}
+        )
+    return operations
+
+
 def seed_web_doc(client: TestClient, document_id: str, web_doc: dict) -> None:
     store = Repository(connect(client.app.state.database_path))
     try:
@@ -126,6 +168,79 @@ def test_web_render_editor_contains_node_ids(client: TestClient) -> None:
     assert 'data-node-id="site_footer"' in body["html"]
 
 
+def test_web_render_bridge_includes_generic_node_metrics_protocol(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_web_doc(client, document["id"], ingest_content(client, document["id"]))
+    response = client.get(
+        f"/documents/{document['id']}/web/render"
+        "?bridge=1&nonce=bridge-metrics-123"
+    )
+    assert response.status_code == 200, response.text
+    html = response.json()["html"]
+    assert 'post("node-info"' in html
+    assert "window.getComputedStyle(el)" in html
+    assert 'data.type === "inspect-node"' in html
+    assert "new ResizeObserver" in html
+
+
+def test_web_render_bridge_exposes_generic_reorder_and_reparent_capabilities(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    web_doc = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], web_doc)
+    response = client.get(
+        f"/documents/{document['id']}/web/render"
+        "?bridge=1&nonce=bridge-move-123"
+    )
+    assert response.status_code == 200, response.text
+    html = response.json()["html"]
+    assert "var MOVABLE_NODE_IDS = new Set(" in html
+    assert "var DROP_PARENT_NODE_IDS = new Set(" in html
+    assert 'post("move-node"' in html
+    assert "newParentNodeId: destination.newParentNodeId" in html
+    assert "candidate.axis === \"row\"" in html
+    assert "lumen-drag-ghost" in html
+    # Known rendered Sections are movable and legal drop parents; the page root
+    # is configured separately for top-level Section reorder.
+    assert '"hero"' in html
+    assert f'var ROOT_NODE_ID = "{web_doc["pages"][0]["root"]}"' in html
+
+
+def test_web_render_bridge_exposes_class_backed_resize_capabilities(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    web_doc = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], web_doc)
+    response = client.get(
+        f"/documents/{document['id']}/web/render"
+        "?bridge=1&nonce=bridge-resize-123"
+    )
+    assert response.status_code == 200, response.text
+    html = response.json()["html"]
+    assert "var RESIZABLE_NODE_IDS = new Set(" in html
+    assert 'post("resize-node"' in html
+    assert "lumen-resize-handle" in html
+    assert '["width", "height", "both"]' in html
+    # Text and buttons are resize-capable; Sections remain flow-width parents
+    # and therefore do not receive a resize handle.
+    page = web_doc["pages"][0]
+    expected_ids = sorted(
+        node_id
+        for node_id, node in page["nodes"].items()
+        if node.get("kind") in {"container", "text", "button", "image"}
+        and node_id != page["root"]
+    )
+    assert expected_ids
+    assert (
+        f"var RESIZABLE_NODE_IDS = new Set("
+        f"{json.dumps(expected_ids, separators=(',', ':'))});"
+    ) in html
+
+
 def test_web_render_rejects_scene_document(client: TestClient) -> None:
     scene = create_scene_document(client)
     response = client.get(f"/documents/{scene['id']}/web/render")
@@ -139,7 +254,8 @@ def test_web_render_rejects_scene_document(client: TestClient) -> None:
 def test_web_turn_rejects_scene_document(client: TestClient) -> None:
     scene = create_scene_document(client)
     response = client.post(
-        f"/documents/{scene['id']}/web/turns", json={"prompt": "Build a page"}
+        f"/documents/{scene['id']}/web/turns",
+        json={"prompt": "Build a page", "base_version": 0},
     )
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "document.kind_unsupported"
@@ -148,19 +264,22 @@ def test_web_turn_rejects_scene_document(client: TestClient) -> None:
 # --- turn worker: applied persists, failed leaves the document --------------
 
 
-def test_web_turn_applied_replaces_doc_and_writes_envelope(client: TestClient) -> None:
+def test_web_turn_applied_replays_operations_and_writes_envelope(
+    client: TestClient,
+) -> None:
     document = create_web_document(client)
     content_doc = ingest_content(client, document["id"])
-    content_doc["title"] = "Applied Site"
 
     def stub(doc, prompt, model, root):
         assert prompt == "Build a landing page"
+        operations = install_operations(doc["scene"], content_doc)
         return {
             "schema_version": 1,
             "status": "applied",
             "outcome": "accepted",
             "summary": "Built the landing page.",
             "web_doc": content_doc,
+            "operations": operations,
             "preview_paths": [],
             "doc_kind": "web",
         }
@@ -168,24 +287,25 @@ def test_web_turn_applied_replaces_doc_and_writes_envelope(client: TestClient) -
     client.app.state.web_turn_runner = stub
     response = client.post(
         f"/documents/{document['id']}/web/turns",
-        json={"prompt": "Build a landing page"},
+        json={"prompt": "Build a landing page", "base_version": 0},
     )
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "running"
     run_id = response.json()["run_id"]
 
     run = wait_for_run(client, run_id)
-    assert run["status"] == "succeeded"
+    assert run["status"] == "succeeded", run
     assert run["result"]["doc_kind"] == "web"
     assert any(e["type"] == "result" for e in run["events"])
 
-    # Document row: doc replaced + version bumped.
+    # Document row: operations replayed + version bumped.
     body = client.get(f"/documents/{document['id']}").json()
     assert body["current_version"] == 1
-    assert body["scene"]["title"] == "Applied Site"
+    assert body["scene"]["title"] == "My site"
     assert body["scene"]["pages"][0]["nodes"], "content installed"
 
-    # An invertible replace_web_doc envelope was written.
+    # The real operations and their checked inverses are persisted — no
+    # replace_web_doc marker survives the agent handoff.
     store = Repository(connect(client.app.state.database_path))
     try:
         envelopes = store.list_envelopes(document["id"])
@@ -193,10 +313,45 @@ def test_web_turn_applied_replaces_doc_and_writes_envelope(client: TestClient) -
         store.connection.close()
     assert len(envelopes) == 1
     envelope = envelopes[0]
-    assert envelope["operations"] == [{"kind": "replace_web_doc"}]
-    assert envelope["inverse_operations"][0]["kind"] == "replace_web_doc"
-    # The inverse carries the PRIOR (empty) doc so undo is a whole-doc swap.
-    assert envelope["inverse_operations"][0]["web_doc"]["title"] == "My site"
+    assert envelope["operations"]
+    assert all(op["kind"] != "replace_web_doc" for op in envelope["operations"])
+    assert {op["kind"] for op in envelope["operations"]} == {"insert_node"}
+    assert envelope["inverse_operations"]
+    assert {op["kind"] for op in envelope["inverse_operations"]} == {"remove_node"}
+
+
+def test_web_turn_never_commits_candidate_without_operation_history(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+
+    def stub(doc, prompt, model, root):
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Built it, but omitted the commit ledger.",
+            "web_doc": content_doc,
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    started = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build it", "base_version": 0},
+    )
+    run = wait_for_run(client, started.json()["run_id"])
+    assert run["status"] == "failed"
+    assert (
+        run["result"]["diagnostics"][0]["code"] == "web_turn.operations_missing"
+    )
+    stored = client.get(f"/documents/{document['id']}").json()
+    assert stored["current_version"] == 0
+    page = stored["scene"]["pages"][0]
+    assert list(page["nodes"]) == [page["root"]]
+    assert not page["nodes"][page["root"]].get("children")
 
 
 def test_web_turn_threads_target_node_ids_to_runner(client: TestClient) -> None:
@@ -217,6 +372,7 @@ def test_web_turn_threads_target_node_ids_to_runner(client: TestClient) -> None:
             "outcome": "accepted",
             "summary": "Scoped the hero.",
             "web_doc": doc["scene"],
+            "operations": [],
             "preview_paths": [],
             "doc_kind": "web",
         }
@@ -224,13 +380,17 @@ def test_web_turn_threads_target_node_ids_to_runner(client: TestClient) -> None:
     client.app.state.web_turn_runner = stub
     response = client.post(
         f"/documents/{document['id']}/web/turns",
-        json={"prompt": "Tighten the hero", "target_node_ids": ["hero"]},
+        json={
+            "prompt": "Tighten the hero",
+            "base_version": 1,
+            "target_node_ids": ["hero"],
+        },
     )
     assert response.status_code == 200, response.text
     run_id = response.json()["run_id"]
 
     run = wait_for_run(client, run_id)
-    assert run["status"] == "succeeded"
+    assert run["status"] == "succeeded", run
     assert received["target_node_ids"] == ["hero"]
 
 
@@ -246,12 +406,14 @@ def create_account(client: TestClient, **fields) -> str:
 def applied_stub_capturing_account(content_doc: dict, received: dict):
     def stub(doc, prompt, model, root, account_card=None):
         received["account_card"] = account_card
+        operations = install_operations(doc["scene"], content_doc)
         return {
             "schema_version": 1,
             "status": "applied",
             "outcome": "accepted",
             "summary": "Personalized the page.",
             "web_doc": content_doc,
+            "operations": operations,
             "preview_paths": [],
             "doc_kind": "web",
         }
@@ -263,7 +425,7 @@ def test_web_turn_unknown_account_404_before_run(client: TestClient) -> None:
     document = create_web_document(client)
     response = client.post(
         f"/documents/{document['id']}/web/turns",
-        json={"prompt": "Build it", "account_id": "acc_nope"},
+        json={"prompt": "Build it", "base_version": 0, "account_id": "acc_nope"},
     )
     assert response.status_code == 404, response.text
     assert response.json()["detail"]["code"] == "web_account.not_found"
@@ -286,7 +448,7 @@ def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
     client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)
     response = client.post(
         f"/documents/{document['id']}/web/turns",
-        json={"prompt": "Personalize", "account_id": account_id},
+        json={"prompt": "Personalize", "base_version": 0, "account_id": account_id},
     )
     assert response.status_code == 200, response.text
     wait_for_run(client, response.json()["run_id"])
@@ -322,7 +484,10 @@ def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient
     client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)
     response = client.post(
         f"/documents/{document['id']}/web/turns",
-        json={"prompt": "Refine"},  # no account_id — falls back to the doc row
+        json={
+            "prompt": "Refine",
+            "base_version": 0,
+        },  # no account_id — falls back to the doc row
     )
     assert response.status_code == 200, response.text
     wait_for_run(client, response.json()["run_id"])
@@ -336,23 +501,26 @@ def test_web_turn_without_account_passes_none(client: TestClient) -> None:
     content_doc = ingest_content(client, document["id"])
 
     def stub(doc, prompt, model, root):
+        operations = install_operations(doc["scene"], content_doc)
         return {
             "schema_version": 1,
             "status": "applied",
             "outcome": "accepted",
             "summary": "Built it.",
             "web_doc": content_doc,
+            "operations": operations,
             "preview_paths": [],
             "doc_kind": "web",
         }
 
     client.app.state.web_turn_runner = stub
     response = client.post(
-        f"/documents/{document['id']}/web/turns", json={"prompt": "Build it"}
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build it", "base_version": 0},
     )
     assert response.status_code == 200, response.text
     run = wait_for_run(client, response.json()["run_id"])
-    assert run["status"] == "succeeded"
+    assert run["status"] == "succeeded", run
 
 
 def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
@@ -372,7 +540,8 @@ def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
 
     client.app.state.web_turn_runner = stub
     response = client.post(
-        f"/documents/{document['id']}/web/turns", json={"prompt": "make it"}
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "make it", "base_version": 0},
     )
     run_id = response.json()["run_id"]
 
@@ -387,3 +556,87 @@ def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
         assert store.list_envelopes(document["id"]) == []
     finally:
         store.connection.close()
+
+
+def test_web_turn_requires_base_version(client: TestClient) -> None:
+    document = create_web_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns", json={"prompt": "Build it"}
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_web_turn_rejects_stale_base_version_before_start(client: TestClient) -> None:
+    document = create_web_document(client)
+    content = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Refine it", "base_version": 0},
+    )
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "edits.base_version_mismatch"
+    assert detail["current_version"] == 1
+
+
+def test_web_turn_conflict_preserves_edit_committed_while_agent_runs(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    runner_started = threading.Event()
+    release_runner = threading.Event()
+    agent_operations = [{"kind": "set_custom_css", "css": "body { opacity: 0.9; }"}]
+
+    def stub(doc, prompt, model, root):
+        candidate = client.app.state.core.web_apply_ops(
+            doc["scene"], agent_operations
+        )["web_doc"]
+        runner_started.set()
+        assert release_runner.wait(timeout=10)
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Adjusted the page.",
+            "web_doc": candidate,
+            "operations": agent_operations,
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    started = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Adjust it", "base_version": 0},
+    )
+    assert started.status_code == 200, started.text
+    assert runner_started.wait(timeout=10)
+
+    human_css = "body { opacity: 1; }"
+    edited = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [{"kind": "set_custom_css", "css": human_css}],
+            "base_version": 0,
+            "intent": "human edit during turn",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    release_runner.set()
+
+    run = wait_for_run(client, started.json()["run_id"])
+    assert run["status"] == "failed"
+    assert run["result"]["status"] == "conflicted"
+    assert run["result"]["diagnostics"][0]["code"] == "web_turn.version_conflict"
+
+    stored = client.get(f"/documents/{document['id']}").json()
+    assert stored["current_version"] == 1
+    assert stored["scene"]["custom_css"] == human_css
+    store = Repository(connect(client.app.state.database_path))
+    try:
+        envelopes = store.list_envelopes(document["id"])
+    finally:
+        store.connection.close()
+    assert len(envelopes) == 1
+    assert envelopes[0]["source"] == "editor"

@@ -11,6 +11,7 @@
  */
 
 import type { AssetRecord } from "./contracts";
+import { setElementSizePixels } from "./webClassFacets";
 
 export interface WebDocumentOptions {
   apiBaseUrl: string;
@@ -248,10 +249,11 @@ export async function startWebTurn(
   { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
   documentId: string,
   prompt: string,
+  baseVersion: number,
   model?: string | null,
   targetNodeIds?: string[]
 ): Promise<StartedWebTurn> {
-  const body: Record<string, unknown> = { prompt };
+  const body: Record<string, unknown> = { prompt, base_version: baseVersion };
   if (model != null) {
     body.model = model;
   }
@@ -1103,6 +1105,140 @@ export function duplicateSubtree(
  * (the source is removed before the insert). See the section drag-reorder. */
 export function moveSectionIndex(from: number, boundary: number): number {
   return boundary > from ? boundary - 1 : boundary;
+}
+
+export interface CanvasNodeMovePlan {
+  operation: WebOperation;
+  intent: "reorder_node" | "reparent_node";
+}
+
+const CANVAS_MOVABLE_KINDS = new Set(["section", "container", "text", "button", "image"]);
+const CANVAS_DROP_PARENT_KINDS = new Set(["section", "container"]);
+const CANVAS_RESIZABLE_KINDS = new Set(["container", "text", "button", "image"]);
+const CANVAS_RESIZE_MIN_PX = 16;
+const CANVAS_RESIZE_MAX_PX = 10_000;
+
+function subtreeContains(page: WebPageSummary, rootId: string, candidateId: string): boolean {
+  const nodes = page.nodes ?? {};
+  const pending = [...(nodes[rootId]?.children ?? [])];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const current = pending.pop() as string;
+    if (current === candidateId) {
+      return true;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    pending.push(...(nodes[current]?.children ?? []));
+  }
+  return false;
+}
+
+/**
+ * Turn a generic canvas drop into the one canonical MoveNode contract used by
+ * both sibling reorder and cross-container reparent.
+ *
+ * `index` is measured against the destination's children after the source has
+ * been removed. The iframe computes that directly, so same-parent and
+ * cross-parent drops share identical semantics. This planner rejects malformed
+ * or structurally impossible intents before they reach the checked core.
+ */
+export function planCanvasNodeMove(
+  page: WebPageSummary,
+  nodeId: string,
+  newParentNodeId: string,
+  index: number
+): CanvasNodeMovePlan | null {
+  const nodes = page.nodes ?? {};
+  const rootId = page.root ?? "root";
+  const source = nodes[nodeId];
+  const newParent = nodes[newParentNodeId];
+  const oldParent = source ? parentOfInPage(page, nodeId) : null;
+
+  if (
+    !source ||
+    !newParent ||
+    !oldParent ||
+    nodeId === rootId ||
+    !CANVAS_MOVABLE_KINDS.has(source.kind) ||
+    !Number.isInteger(index) ||
+    index < 0
+  ) {
+    return null;
+  }
+  if (newParentNodeId === rootId) {
+    if (source.kind !== "section") {
+      return null;
+    }
+  } else if (
+    source.kind === "section" ||
+    !CANVAS_DROP_PARENT_KINDS.has(newParent.kind)
+  ) {
+    return null;
+  }
+  if (newParentNodeId === nodeId || subtreeContains(page, nodeId, newParentNodeId)) {
+    return null;
+  }
+
+  const sameParent = oldParent.id === newParentNodeId;
+  const oldIndex = oldParent.children?.indexOf(nodeId) ?? -1;
+  const targetLength =
+    (newParent.children?.length ?? 0) - (sameParent ? 1 : 0);
+  if (oldIndex < 0 || index > targetLength || (sameParent && index === oldIndex)) {
+    return null;
+  }
+
+  return {
+    operation: moveNodeOp(page.id, nodeId, newParentNodeId, index),
+    intent: sameParent ? "reorder_node" : "reparent_node"
+  };
+}
+
+export interface CanvasNodeResizePlan {
+  operation: WebOperation;
+  intent: "resize_node";
+}
+
+/**
+ * Turn a bridge resize into a class-backed manual edit. The bridge reports CSS
+ * width/height pixels (not transient inline styles); this planner validates
+ * node capability and bounds, then rewrites only the base `w-*`/`h-*`/`size-*`
+ * utilities. Responsive and unknown classes survive through the partial lens.
+ */
+export function planCanvasNodeResize(
+  page: WebPageSummary,
+  nodeId: string,
+  widthPx: number | null,
+  heightPx: number | null
+): CanvasNodeResizePlan | null {
+  const node = page.nodes?.[nodeId];
+  if (!node || !CANVAS_RESIZABLE_KINDS.has(node.kind)) {
+    return null;
+  }
+  const dimensions = [widthPx, heightPx].filter(
+    (value): value is number => value !== null
+  );
+  if (
+    dimensions.length === 0 ||
+    dimensions.some(
+      (value) =>
+        !Number.isFinite(value) ||
+        value < CANVAS_RESIZE_MIN_PX ||
+        value > CANVAS_RESIZE_MAX_PX
+    )
+  ) {
+    return null;
+  }
+  const classes = setElementSizePixels(node.classes, { widthPx, heightPx });
+  if (classes === node.classes) {
+    return null;
+  }
+  return {
+    operation: setNodeClassesOp(page.id, nodeId, classes),
+    intent: "resize_node"
+  };
 }
 
 /** Classify a committed embed URL into whole-props: a calendly.com link →

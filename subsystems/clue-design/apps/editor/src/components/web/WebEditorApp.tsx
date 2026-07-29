@@ -10,8 +10,8 @@ import {
   fetchWebRenderHtml,
   fetchWebTheme,
   listDialogComponents,
-  moveNodeOp,
-  moveSectionIndex,
+  planCanvasNodeMove,
+  planCanvasNodeResize,
   replaceAssetOp,
   saveWebTemplate,
   setTextOp,
@@ -309,39 +309,60 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     setActiveNodeId(next ? next.nodeId : null);
   }, []);
 
-  // A top-level section drag-drop from the bridge → a MoveNode against the
-  // page root's children. `boundary` is the drop index among current top-level
-  // sections; `moveSectionIndex` adjusts it for the source's removal. No-op on
-  // a same-slot drop or a missing/unknown node.
-  const handleMoveSection = useCallback(
-    (nodeId: string, boundary: number) => {
-      const page = findWebPage(webDoc, defaultPage);
+  // A generic bridge drop already speaks the canonical post-removal
+  // destination contract: parent id + child index. Resolve the source's real
+  // page, reject malformed/stale/structurally invalid drops in the pure
+  // planner, then persist the resulting MoveNode through the normal envelope.
+  const handleMoveNode = useCallback(
+    (nodeId: string, newParentNodeId: string, index: number) => {
+      const located = findWebNode(webDoc, nodeId);
+      const page = located ? findWebPage(webDoc, located.pageId) : null;
       if (!page) {
         return;
       }
-      const rootId = page.root ?? "root";
-      const children = page.nodes?.[rootId]?.children ?? [];
-      const from = children.indexOf(nodeId);
-      if (from === -1) {
-        return;
+      const plan = planCanvasNodeMove(page, nodeId, newParentNodeId, index);
+      if (plan) {
+        manualEdits.applyOps([plan.operation], plan.intent);
       }
-      const index = moveSectionIndex(from, boundary);
-      if (from === index) {
-        return;
-      }
-      manualEdits.applyOps([moveNodeOp(page.id, nodeId, rootId, index)], "reorder_section");
     },
-    [webDoc, defaultPage, manualEdits]
+    [webDoc, manualEdits]
   );
 
-  const { selection, clearSelection, resetSelection, previewComponent, selectNode } =
-    useWebBridgeSelection({
-      iframeRef,
-      nonceRef,
-      onTextCommit: handleTextCommit,
-      onSelect: handleBridgeSelect,
-      onMoveSection: handleMoveSection
-    });
+  // Resize handles report final CSS dimensions, never an inline-style
+  // mutation. Resolve the canonical node/page and persist a surgical
+  // set_node_classes operation so history, version checks, export, and the
+  // agent all observe the same authored Tailwind classes.
+  const handleResizeNode = useCallback(
+    (nodeId: string, widthPx: number | null, heightPx: number | null) => {
+      const located = findWebNode(webDoc, nodeId);
+      const page = located ? findWebPage(webDoc, located.pageId) : null;
+      if (!page) {
+        return;
+      }
+      const plan = planCanvasNodeResize(page, nodeId, widthPx, heightPx);
+      if (plan) {
+        manualEdits.applyOps([plan.operation], plan.intent);
+      }
+    },
+    [webDoc, manualEdits]
+  );
+
+  const {
+    selection,
+    nodeInfo,
+    ready: bridgeReady,
+    clearSelection,
+    resetSelection,
+    previewComponent,
+    selectNode
+  } = useWebBridgeSelection({
+    iframeRef,
+    nonceRef,
+    onTextCommit: handleTextCommit,
+    onSelect: handleBridgeSelect,
+    onMoveNode: handleMoveNode,
+    onResizeNode: handleResizeNode
+  });
 
   // Clicking the gray canvas region AROUND the iframe (never the rail/topbar,
   // and iframe-internal clicks stay in the frame) clears the selection and tells
@@ -357,6 +378,16 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       setActiveNodeId(null);
     }
   }, [webDoc, activeNodeId]);
+
+  // A render rebuild clears the iframe DOM, but canonical node ids are stable.
+  // Restore the real selection in the fresh frame so the outline, move/resize
+  // handles, context chip, and inspector all remain continuous after a manual
+  // edit or undo/redo.
+  useEffect(() => {
+    if (activeNodeId && renderStatus === "ready" && bridgeReady) {
+      selectNode(activeNodeId);
+    }
+  }, [activeNodeId, renderStatus, bridgeReady, selectNode]);
 
   const located = findWebNode(webDoc, activeNodeId);
   const inspectorNode = located?.node ?? null;
@@ -448,7 +479,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       setHistory((current) => [...current, record]);
       setPending(null);
     }
-    if (status === "applied") {
+    if (status === "applied" || envelope.status === "conflicted") {
       setReloadNonce((nonce) => nonce + 1);
     }
   }, []);
@@ -592,7 +623,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const startTurn = useCallback(
     (prompt: string) => {
       const trimmed = prompt.trim();
-      if (!trimmed || isRunning) {
+      if (!trimmed || isRunning || baseVersion == null) {
         return;
       }
       // Snapshot the active chip so the turn targets it and the bubble records
@@ -601,9 +632,9 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       const targetNodeIds = selection ? [selection.nodeId] : undefined;
       setPending({ id: nextMessageId(), prompt: trimmed, context });
       setComposer("");
-      turn.start(trimmed, null, targetNodeIds);
+      turn.start(trimmed, baseVersion, null, targetNodeIds);
     },
-    [isRunning, turn, selection]
+    [isRunning, turn, selection, baseVersion]
   );
 
   // Queued-brief handoff (runs once, after the first successful load): auto-send
@@ -950,6 +981,9 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                 ) : null}
                 <WebInspectorPanel
                   node={inspectorNode}
+                  nodeInfo={
+                    nodeInfo && nodeInfo.nodeId === inspectorNode?.id ? nodeInfo : null
+                  }
                   pageId={inspectorPageId}
                   page={inspectorPage}
                   theme={theme}

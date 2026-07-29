@@ -500,6 +500,44 @@
   color: var(--text-muted);
   line-height: 1.4;
 }
+.web-insp-value-state {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.web-insp-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.web-insp-metrics > div {
+  min-width: 0;
+}
+
+.web-insp-metrics > div.is-wide {
+  grid-column: 1 / -1;
+}
+
+.web-insp-metrics dt {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+.web-insp-metrics dd {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 
 .web-insp-checkbox {
   display: flex;
@@ -574,6 +612,25 @@
   border-color: var(--border-strong);
 }
 .brand-app .web-align-btn:disabled { opacity: 0.5; cursor: default; }
+.brand-app .web-format-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-white);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.brand-app .web-format-btn:hover:not(:disabled) { color: var(--text-primary); }
+.brand-app .web-format-btn.is-selected {
+  background: var(--bg-card-04);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.brand-app .web-format-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* the same `</>` context, echoed as a quiet prefix inside the user bubble */
 .web-msg-context {

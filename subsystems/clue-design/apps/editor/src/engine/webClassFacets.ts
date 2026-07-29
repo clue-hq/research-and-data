@@ -181,6 +181,56 @@ export const SPACING_STEPS = [
   "24"
 ] as const;
 
+/** Values exposed by the richer layout inspector. These stay intentionally
+ * small: the raw CSS-class field remains the escape hatch for the rest of
+ * Tailwind. */
+export const JUSTIFY_CONTENT_VALUES = [
+  "start",
+  "center",
+  "end",
+  "between",
+  "around",
+  "evenly"
+] as const;
+export const ALIGN_ITEMS_VALUES = [
+  "start",
+  "center",
+  "end",
+  "stretch",
+  "baseline"
+] as const;
+export const FLEX_WRAP_VALUES = ["nowrap", "wrap", "wrap-reverse"] as const;
+export const GRID_COLUMN_VALUES = ["1", "2", "3", "4"] as const;
+export const FONT_WEIGHT_VALUES = [
+  "light",
+  "normal",
+  "medium",
+  "semibold",
+  "bold"
+] as const;
+export const LINE_HEIGHT_VALUES = [
+  "none",
+  "tight",
+  "snug",
+  "normal",
+  "relaxed",
+  "loose"
+] as const;
+export const OBJECT_FIT_VALUES = [
+  "cover",
+  "contain",
+  "fill",
+  "none",
+  "scale-down"
+] as const;
+export const OBJECT_POSITION_VALUES = [
+  "center",
+  "top",
+  "bottom",
+  "left",
+  "right"
+] as const;
+
 // ── families ─────────────────────────────────────────────────────────────────
 
 /** `text-<token>` where the token is NOT a size or an alignment/wrap keyword —
@@ -303,6 +353,176 @@ export const paddingYFacet = spacingFacet("py");
 export const marginXFacet = spacingFacet("mx");
 export const marginYFacet = spacingFacet("my");
 
+/** Width/height are base-class projections. `min-*`, `max-*`, and
+ * breakpoint-prefixed dimensions are deliberately independent and survive
+ * edits. A `size-*` class is handled by {@link setElementDimensionClass}
+ * because it controls both axes. */
+export const widthFacet = spacingFacet("w");
+export const heightFacet = spacingFacet("h");
+
+export const justifyContentFacet = makeFacet({
+  parseToken(token) {
+    if (!token.startsWith("justify-")) return null;
+    const value = token.slice("justify-".length);
+    return (JUSTIFY_CONTENT_VALUES as readonly string[]).includes(value) ? value : null;
+  },
+  formatToken: (value) => `justify-${value}`
+});
+
+export const alignItemsFacet = makeFacet({
+  parseToken: (token) => token.startsWith("items-") ? token.slice("items-".length) : null,
+  formatToken: (value) => `items-${value}`
+});
+
+export const flexWrapFacet = makeFacet({
+  parseToken(token) {
+    if (token === "flex-nowrap") return "nowrap";
+    if (token === "flex-wrap") return "wrap";
+    if (token === "flex-wrap-reverse") return "wrap-reverse";
+    return null;
+  },
+  formatToken: (value) => `flex-${value}`
+});
+
+export const gridColumnsFacet = makeFacet({
+  parseToken: (token) => token.startsWith("grid-cols-") ? token.slice("grid-cols-".length) : null,
+  formatToken: (value) => `grid-cols-${value}`
+});
+
+const FONT_WEIGHT_TOKENS = new Set<string>([
+  "thin",
+  "extralight",
+  "light",
+  "normal",
+  "medium",
+  "semibold",
+  "bold",
+  "extrabold",
+  "black"
+]);
+
+export const fontWeightFacet = makeFacet({
+  parseToken(token) {
+    if (!token.startsWith("font-")) return null;
+    const value = token.slice("font-".length);
+    return FONT_WEIGHT_TOKENS.has(value) ? value : null;
+  },
+  formatToken: (value) => `font-${value}`
+});
+
+export const lineHeightFacet = makeFacet({
+  parseToken: (token) => token.startsWith("leading-") ? token.slice("leading-".length) : null,
+  formatToken: (value) => `leading-${value}`
+});
+
+export const italicFacet = makeFacet({
+  parseToken: (token) => token === "italic" ? "italic" : token === "not-italic" ? "normal" : null,
+  ownsToken: (token) => token === "italic" || token === "not-italic",
+  formatToken: (value) => value === "normal" ? "not-italic" : "italic"
+});
+
+export const underlineFacet = makeFacet({
+  parseToken: (token) => token === "underline" ? "underline" : null,
+  ownsToken: (token) => token === "underline",
+  formatToken: () => "underline"
+});
+
+export const lineThroughFacet = makeFacet({
+  parseToken: (token) => token === "line-through" ? "line-through" : null,
+  ownsToken: (token) => token === "line-through",
+  formatToken: () => "line-through"
+});
+
+export const objectFitFacet = makeFacet({
+  parseToken(token) {
+    if (!token.startsWith("object-")) return null;
+    const value = token.slice("object-".length);
+    return (OBJECT_FIT_VALUES as readonly string[]).includes(value) ? value : null;
+  },
+  formatToken: (value) => `object-${value}`
+});
+
+export const objectPositionFacet = makeFacet({
+  parseToken(token) {
+    if (!token.startsWith("object-")) return null;
+    const value = token.slice("object-".length);
+    return (OBJECT_POSITION_VALUES as readonly string[]).includes(value) ? value : null;
+  },
+  formatToken: (value) => `object-${value}`
+});
+
+type DimensionAxis = "width" | "height";
+
+function sizeValue(token: string): string | null {
+  if (hasVariant(token) || !token.startsWith("size-")) {
+    return null;
+  }
+  const value = token.slice("size-".length);
+  return value || null;
+}
+
+/** Read a base dimension, treating `size-*` as the authored fallback for both
+ * axes while still preferring an explicit `w-*`/`h-*`. */
+export function elementDimensionValue(
+  classes: string,
+  axis: DimensionAxis
+): string | null {
+  const explicit = (axis === "width" ? widthFacet : heightFacet).parse(classes);
+  if (explicit !== null) {
+    return explicit;
+  }
+  return tokenize(classes).map(sizeValue).find((item) => item !== null) ?? null;
+}
+
+/**
+ * Rewrite one base dimension without breaking a pre-existing `size-*` class.
+ * When only one axis changes, the untouched half of `size-*` is materialized
+ * as `w-*`/`h-*`; responsive dimensions remain opaque and survive verbatim.
+ */
+export function setElementDimensionClass(
+  classes: string,
+  axis: DimensionAxis,
+  value: string | null
+): string {
+  const facet = axis === "width" ? widthFacet : heightFacet;
+  const otherFacet = axis === "width" ? heightFacet : widthFacet;
+  const current = elementDimensionValue(classes, axis);
+  const currentSize = tokenize(classes).map(sizeValue).find((item) => item !== null) ?? null;
+  if (currentSize === null && current === value) {
+    return classes;
+  }
+
+  const kept = tokenize(classes).filter((token) => {
+    if (hasVariant(token)) return true;
+    if (sizeValue(token) !== null) return false;
+    return facet.set(token, null) === token;
+  });
+  if (currentSize !== null && otherFacet.parse(classes) === null) {
+    kept.push(`${axis === "width" ? "h" : "w"}-${currentSize}`);
+  }
+  if (value !== null && value !== "") {
+    kept.push(`${axis === "width" ? "w" : "h"}-${value}`);
+  }
+  return kept.join(" ");
+}
+
+/** Apply one resize gesture as canonical arbitrary-pixel Tailwind utilities.
+ * A missing axis is left alone; at least one axis should be supplied by the
+ * caller. */
+export function setElementSizePixels(
+  classes: string,
+  dimensions: { widthPx?: number | null; heightPx?: number | null }
+): string {
+  let next = classes;
+  if (dimensions.widthPx != null) {
+    next = setElementDimensionClass(next, "width", `[${Math.round(dimensions.widthPx)}px]`);
+  }
+  if (dimensions.heightPx != null) {
+    next = setElementDimensionClass(next, "height", `[${Math.round(dimensions.heightPx)}px]`);
+  }
+  return next;
+}
+
 /** All families keyed by name — convenient for the inspector's generic
  * controls and for tests iterating the set. */
 export const webClassFacets = {
@@ -316,7 +536,20 @@ export const webClassFacets = {
   paddingX: paddingXFacet,
   paddingY: paddingYFacet,
   marginX: marginXFacet,
-  marginY: marginYFacet
+  marginY: marginYFacet,
+  width: widthFacet,
+  height: heightFacet,
+  justifyContent: justifyContentFacet,
+  alignItems: alignItemsFacet,
+  flexWrap: flexWrapFacet,
+  gridColumns: gridColumnsFacet,
+  fontWeight: fontWeightFacet,
+  lineHeight: lineHeightFacet,
+  italic: italicFacet,
+  underline: underlineFacet,
+  lineThrough: lineThroughFacet,
+  objectFit: objectFitFacet,
+  objectPosition: objectPositionFacet
 } as const;
 
 export type WebClassFacetName = keyof typeof webClassFacets;

@@ -41,7 +41,14 @@ from fastapi.responses import (
 
 from . import image_cache, image_provider, web_export
 from .core import CoreClient, CoreError, has_error_diagnostics
-from .database import NotFoundError, Repository, connect, run_migrations, utc_now
+from .database import (
+    NotFoundError,
+    Repository,
+    WebDocumentVersionConflict,
+    connect,
+    run_migrations,
+    utc_now,
+)
 from .font_library import manifest as font_library_manifest
 from .dto import (
     brand_compatibility_dto,
@@ -211,6 +218,38 @@ def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObje
             agent_diagnostic(code, message, "validation", "error", detail)
         ],
         "artifacts": [],
+    }
+
+
+def conflicted_web_turn_response(
+    base_version: int, current_version: int
+) -> JsonObject:
+    """Terminal result for an async website turn that lost its version race."""
+    message = (
+        "This website changed while the AI turn was running. Your newer edits "
+        "were preserved; run the instruction again from the current version."
+    )
+    return {
+        "schema_version": 1,
+        "status": "conflicted",
+        "outcome": "conflicted",
+        "summary": message,
+        "base_version": base_version,
+        "current_version": current_version,
+        "operations": [],
+        "preview_paths": [],
+        "diagnostics": [
+            agent_diagnostic(
+                "web_turn.version_conflict",
+                message,
+                "validation",
+                "error",
+                (
+                    f"The turn started at version {base_version}; the stored "
+                    f"document is now version {current_version}."
+                ),
+            )
+        ],
     }
 
 
@@ -1964,6 +2003,8 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # write to a separate Accept). Gate to web docs up front.
         document = require_document(repo, document_id)
         require_web_document(document)
+        require_draft_document(document, "start an AI turn")
+        require_base_version(document, payload.base_version)
         # P5 (D6): resolve the target account BEFORE the run is created so an
         # unknown id 404s cleanly. Precedence: the request's account_id, else
         # the document row's own (a derived doc personalizes for its account
@@ -1993,6 +2034,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         prompt = payload.prompt
         model = payload.model
         target_node_ids = payload.target_node_ids
+        base_version = payload.base_version
 
         def worker() -> None:
             store = Repository(connect(database_path))
@@ -2006,7 +2048,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
 
                 try:
                     doc = store.require_document(document_id)
-                    if override is not None:
+                    if doc["current_version"] != base_version:
+                        response = conflicted_web_turn_response(
+                            base_version, doc["current_version"]
+                        )
+                    elif override is not None:
                         # Backward-compatible seam: existing stubs take four
                         # positional args; only pass the scoped-target ids when
                         # the request carried them (a five-arg stub), and only
@@ -2035,23 +2081,68 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                             target_node_ids=target_node_ids,
                             account_card=account_card,
                         )
-                    status = (
-                        "failed"
-                        if response.get("status") in ("failed", "error")
-                        else "succeeded"
-                    )
                     if response.get("status") == "applied":
-                        prior = doc["scene"]
-                        store.update_web_document(
-                            document_id,
-                            response["web_doc"],
-                            intent=prompt[:120],
-                            checkpoint_label="Website turn",
-                            operations=[{"kind": "replace_web_doc"}],
-                            inverse_operations=[
-                                {"kind": "replace_web_doc", "web_doc": prior}
-                            ],
-                        )
+                        operations = response.get("operations")
+                        if not isinstance(operations, list):
+                            response = failed_agent_turn_response(
+                                "web_turn.operations_missing",
+                                "The AI turn did not return a replayable operation history.",
+                                "The candidate document was not committed.",
+                            )
+                        elif not operations:
+                            if response.get("web_doc") != doc["scene"]:
+                                response = failed_agent_turn_response(
+                                    "web_turn.operations_incomplete",
+                                    "The AI turn's operation history did not describe its result.",
+                                    "The candidate document was not committed.",
+                                )
+                        else:
+                            try:
+                                replay = app.state.core.web_apply_ops(
+                                    doc["scene"], operations, raise_on_error=False
+                                )
+                            except CoreError as error:
+                                response = failed_agent_turn_response(
+                                    "web_turn.operations_replay_failed",
+                                    "The AI turn's operations could not be replayed.",
+                                    error.message,
+                                )
+                            else:
+                                if (
+                                    not replay.get("ok")
+                                    or replay.get("web_doc") != response.get("web_doc")
+                                ):
+                                    response = failed_agent_turn_response(
+                                        "web_turn.operations_incomplete",
+                                        "The AI turn's operation history did not reproduce its result.",
+                                        "The candidate document was not committed.",
+                                    )
+                                else:
+                                    try:
+                                        updated = store.update_web_document(
+                                            document_id,
+                                            replay["web_doc"],
+                                            intent=prompt[:120],
+                                            checkpoint_label="Website turn",
+                                            operations=operations,
+                                            inverse_operations=replay.get(
+                                                "inverse_operations"
+                                            ),
+                                            expected_base_version=base_version,
+                                        )
+                                    except WebDocumentVersionConflict as conflict:
+                                        response = conflicted_web_turn_response(
+                                            conflict.expected, conflict.current
+                                        )
+                                    else:
+                                        response["current_version"] = updated[
+                                            "current_version"
+                                        ]
+                    status = (
+                        "succeeded"
+                        if response.get("status") == "applied"
+                        else "failed"
+                    )
                     store.set_run_result(
                         run_id, status, {**response, "doc_kind": "web"}
                     )
@@ -2123,7 +2214,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     },
                 )
             try:
-                bridge_script = render_bridge_script(nonce or "")
+                bridge_script = render_bridge_script(nonce or "", web_doc, "home")
             except ValueError as error:
                 raise HTTPException(
                     status_code=422,
@@ -2190,16 +2281,31 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "diagnostics": diagnostics,
                 },
             )
-        updated = repo.update_web_document(
-            document_id,
-            result["web_doc"],
-            intent=payload.intent or "Manual edit",
-            checkpoint_label="Manual edit",
-            operations=payload.operations,
-            inverse_operations=result.get("inverse_operations"),
-            actor_kind="editor",
-            source="editor",
-        )
+        try:
+            updated = repo.update_web_document(
+                document_id,
+                result["web_doc"],
+                intent=payload.intent or "Manual edit",
+                checkpoint_label="Manual edit",
+                operations=payload.operations,
+                inverse_operations=result.get("inverse_operations"),
+                actor_kind="editor",
+                source="editor",
+                expected_base_version=payload.base_version,
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "edits.base_version_mismatch",
+                    "message": (
+                        f"base_version {conflict.expected} does not match current "
+                        f"document version {conflict.current}; reload the document "
+                        "and rebuild the edit"
+                    ),
+                    "current_version": conflict.current,
+                },
+            ) from conflict
         log_event(
             api_logger,
             logging.INFO,
@@ -2224,8 +2330,8 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         repo: Repository, document: JsonObject, target: JsonObject
     ) -> JsonObject:
         """Compute the pre-undo → reverted WebDoc for one undo, handling both
-        envelope shapes: a whole-document `replace_web_doc` marker (agent turns)
-        swaps in the inverse's carried doc directly; a real WebOperation batch
+        envelope shapes: a legacy whole-document `replace_web_doc` marker swaps
+        in the inverse's carried doc directly; a current WebOperation batch
         replays its inverse_operations through the checked-apply helper. Returns
         {web_doc, inverse_operations} where inverse_operations is the forward op
         set that a future redo re-applies (a replace_web_doc carrying the
@@ -2233,7 +2339,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         current_doc = document["scene"]
         inverse_ops = target["inverse_operations"]
         if _is_replace_web_doc(inverse_ops):
-            # Agent-turn envelope: the inverse carries the prior whole doc, so
+            # Legacy agent-turn envelope: the inverse carries the prior whole doc, so
             # the undo is a whole-document swap. The revert envelope records the
             # restored doc as its forward op and the pre-undo doc as its inverse
             # (so redo can reinstall doc-after-B via this envelope's inverse).
@@ -2301,17 +2407,31 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 },
             )
         step = _apply_web_undo_step(repo, document, target)
-        updated = repo.update_web_document(
-            document_id,
-            step["web_doc"],
-            intent=f"undo:{target['intent'] or target['batch_id']}",
-            checkpoint_label="Undo",
-            operations=step["operations"],
-            inverse_operations=step["inverse_operations"],
-            actor_kind="system",
-            source="system",
-            reverts_batch_id=target["batch_id"],
-        )
+        try:
+            updated = repo.update_web_document(
+                document_id,
+                step["web_doc"],
+                intent=f"undo:{target['intent'] or target['batch_id']}",
+                checkpoint_label="Undo",
+                operations=step["operations"],
+                inverse_operations=step["inverse_operations"],
+                actor_kind="system",
+                source="system",
+                reverts_batch_id=target["batch_id"],
+                expected_base_version=document["current_version"],
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "edits.base_version_mismatch",
+                    "message": (
+                        "the website changed while undo was being prepared; "
+                        "reload and try again"
+                    ),
+                    "current_version": conflict.current,
+                },
+            ) from conflict
         log_event(
             api_logger,
             logging.INFO,
@@ -2349,7 +2469,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         current_doc = document["scene"]
         forward_ops = target["operations"]
         if _has_replace_web_doc_kind(forward_ops):
-            # Agent-turn redo: the batch's forward op is a bare replace_web_doc
+            # Legacy agent-turn redo: the batch's forward op is a bare replace_web_doc
             # MARKER (no doc payload — web_apply_ops does not understand it), so
             # reinstall the doc it originally installed as a whole-document swap.
             # A marker carries no doc; the doc lives in the revert envelope's
@@ -2395,17 +2515,31 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 )
             new_doc = result["web_doc"]
             inverse_ops = result.get("inverse_operations")
-        updated = repo.update_web_document(
-            document_id,
-            new_doc,
-            intent=f"redo:{target['intent'] or target['batch_id']}",
-            checkpoint_label="Redo",
-            operations=forward_ops,
-            inverse_operations=inverse_ops,
-            actor_kind="system",
-            source="system",
-            reapplies_batch_id=target["batch_id"],
-        )
+        try:
+            updated = repo.update_web_document(
+                document_id,
+                new_doc,
+                intent=f"redo:{target['intent'] or target['batch_id']}",
+                checkpoint_label="Redo",
+                operations=forward_ops,
+                inverse_operations=inverse_ops,
+                actor_kind="system",
+                source="system",
+                reapplies_batch_id=target["batch_id"],
+                expected_base_version=document["current_version"],
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "edits.base_version_mismatch",
+                    "message": (
+                        "the website changed while redo was being prepared; "
+                        "reload and try again"
+                    ),
+                    "current_version": conflict.current,
+                },
+            ) from conflict
         log_event(
             api_logger,
             logging.INFO,
@@ -6074,10 +6208,10 @@ def resolve_agent_turn_brand_kit(
 
 def _is_replace_web_doc(operations: Any) -> bool:
     """True when `operations` is exactly one replace_web_doc marker carrying a
-    whole web_doc payload — the shape agent-turn envelopes use (a marker the
-    checked-apply helper does NOT understand). Manual-edit batches are real
-    typed WebOperations and never match, so undo/redo can branch on this to
-    swap the whole doc directly instead of replaying ops."""
+    whole web_doc payload — the historical agent-turn shape (a marker the
+    checked-apply helper does NOT understand). Current editor and agent batches
+    are real typed WebOperations and never match, so undo/redo can branch on
+    this solely for backward compatibility."""
     return (
         isinstance(operations, list)
         and len(operations) == 1
@@ -6089,9 +6223,9 @@ def _is_replace_web_doc(operations: Any) -> bool:
 
 def _has_replace_web_doc_kind(operations: Any) -> bool:
     """True when `operations` is a single replace_web_doc entry, WHETHER OR NOT
-    it carries a web_doc payload. Agent-turn forward ops are a bare marker
-    (`[{"kind":"replace_web_doc"}]`) while inverses carry the doc; redo branches
-    on the kind and sources the doc separately when it is a marker."""
+    it carries a web_doc payload. Historical agent-turn forward ops are a bare
+    marker while inverses carry the doc; legacy redo branches on the kind and
+    sources the doc separately when it is a marker."""
     return (
         isinstance(operations, list)
         and len(operations) == 1
@@ -6110,8 +6244,8 @@ def _web_revert_envelope_for(
     repo: Repository, document_id: str, batch_id: str
 ) -> JsonObject:
     """The most recent revert envelope that undid `batch_id`. Its
-    inverse_operations carries the whole doc that batch installed — which an
-    agent-turn redo reinstalls, because the batch's own forward op is only a
+    inverse_operations carries the whole doc that historical batch installed —
+    which legacy redo reinstalls because the batch's own forward op is only a
     replace_web_doc marker without a doc payload."""
     for envelope in repo.list_envelopes(document_id, newest_first=True):
         if envelope.get("reverts_batch_id") == batch_id:

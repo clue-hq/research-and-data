@@ -111,6 +111,7 @@ def _tools(tmp_path: Path) -> LumenWebTools:
 
 def test_author_web_page_installs_sections(tmp_path: Path):
     tools = _tools(tmp_path)
+    before = json.loads(json.dumps(tools.web_doc))
     result = json.loads(tools.author_web_page(SAMPLE_HTML))
     assert result["status"] == "ok", result
     # header + hero + footer + their descendants.
@@ -121,6 +122,12 @@ def test_author_web_page_installs_sections(tmp_path: Path):
     assert set(root.get("children") or []) == {"site_header", "hero", "site_footer"}
     # A mutation bumps the doc version (drives view staleness).
     assert tools._doc_version == 1
+    assert tools.operations_ledger
+    assert {operation["kind"] for operation in tools.operations_ledger} == {
+        "insert_node"
+    }
+    replay = tools.core.web_apply_ops(before, tools.operations_ledger)
+    assert replay["web_doc"] == tools.web_doc
 
 
 def test_author_web_page_rejects_raw_hex(tmp_path: Path):
@@ -202,12 +209,18 @@ def test_author_web_subtree_replaces_only_target_section(tmp_path: Path):
     alpha_before = _subtree(nodes_before, "alpha")
     beta_before = _subtree(nodes_before, "beta")
     version_before = tools._doc_version
+    operation_count_before = len(tools.operations_ledger)
 
     result = json.loads(tools.author_web_subtree("beta", BETA_REPLACEMENT))
     assert result["status"] == "ok", result
     assert result["section"] == "beta"
     assert result["roots"] == ["beta"]
     assert tools._doc_version == version_before + 1
+    turn_operations = tools.operations_ledger[operation_count_before:]
+    assert [operation["kind"] for operation in turn_operations] == [
+        "remove_node",
+        "insert_node",
+    ]
 
     page = tools._home_page()
     nodes_after = page.get("nodes") or {}
@@ -238,6 +251,7 @@ def test_author_web_subtree_resolves_child_to_section(tmp_path: Path):
 def test_author_web_subtree_rejects_lint_violation(tmp_path: Path):
     tools = _seed_two_sections(tmp_path)
     version_before = tools._doc_version
+    operation_count_before = len(tools.operations_ledger)
     beta_before = _subtree(tools._home_page().get("nodes") or {}, "beta")
     # A raw hex color inside a valid section is a hard lint error → rejected.
     result = json.loads(
@@ -250,6 +264,7 @@ def test_author_web_subtree_rejects_lint_violation(tmp_path: Path):
     assert any(d.get("severity") == "error" for d in result["diagnostics"])
     # Doc untouched.
     assert tools._doc_version == version_before
+    assert len(tools.operations_ledger) == operation_count_before
     assert _subtree(tools._home_page().get("nodes") or {}, "beta") == beta_before
 
 
@@ -484,6 +499,7 @@ def test_web_ops_set_node_classes_applies(tmp_path: Path):
     title_classes_before = nodes_before["alpha_title"].get("classes")
     beta_before = _subtree(nodes_before, "beta")
     version_before = tools._doc_version
+    operation_count_before = len(tools.operations_ledger)
 
     result = json.loads(
         tools.web_ops(
@@ -502,6 +518,14 @@ def test_web_ops_set_node_classes_applies(tmp_path: Path):
     assert result["status"] == "ok", result
     assert result["applied"] == 1
     assert tools._doc_version == version_before + 1
+    assert tools.operations_ledger[operation_count_before:] == [
+        {
+            "kind": "set_node_classes",
+            "page_id": "home",
+            "id": "alpha_body",
+            "classes": "text-primary font-bold",
+        }
+    ]
 
     nodes_after = tools._home_page().get("nodes") or {}
     # The targeted node's class string is replaced wholesale.

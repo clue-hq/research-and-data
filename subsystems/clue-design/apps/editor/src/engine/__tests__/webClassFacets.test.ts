@@ -1,16 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  alignItemsFacet,
   bgColorFacet,
   directionFacet,
   displayFacet,
+  elementDimensionValue,
+  flexWrapFacet,
+  fontWeightFacet,
   gapFacet,
+  gridColumnsFacet,
+  heightFacet,
+  italicFacet,
+  justifyContentFacet,
+  lineHeightFacet,
+  lineThroughFacet,
   marginXFacet,
+  objectFitFacet,
+  objectPositionFacet,
   paddingXFacet,
   paddingYFacet,
+  setElementDimensionClass,
+  setElementSizePixels,
   textAlignFacet,
   textColorFacet,
   textSizeFacet,
+  underlineFacet,
+  widthFacet,
   webClassFacets
 } from "../webClassFacets";
 
@@ -134,6 +150,71 @@ describe("spacing facets", () => {
     expect(paddingXFacet.parse(next)).toBe("8");
     expect(paddingYFacet.parse(next)).toBe("2");
     expect(marginXFacet.parse(next)).toBe("6");
+  });
+});
+
+describe("dimension facets and class-backed resize", () => {
+  it("reads base width/height without consuming constraints or breakpoint overrides", () => {
+    const classes = "w-full h-auto min-w-0 max-w-xl md:w-1/2 lg:h-96";
+    expect(widthFacet.parse(classes)).toBe("full");
+    expect(heightFacet.parse(classes)).toBe("auto");
+    expect(widthFacet.set(classes, "[420px]")).toBe(
+      "h-auto min-w-0 max-w-xl md:w-1/2 lg:h-96 w-[420px]"
+    );
+  });
+
+  it("splits size-* when only one dimension changes", () => {
+    expect(elementDimensionValue("size-10", "width")).toBe("10");
+    expect(elementDimensionValue("size-10", "height")).toBe("10");
+    expect(setElementDimensionClass("size-10 rounded-full", "width", "[96px]")).toBe(
+      "rounded-full h-10 w-[96px]"
+    );
+    expect(setElementDimensionClass("size-10 object-cover", "height", "auto")).toBe(
+      "object-cover w-10 h-auto"
+    );
+  });
+
+  it("writes a corner resize as canonical arbitrary-pixel classes", () => {
+    const next = setElementSizePixels(
+      "size-10 md:w-full rounded-xl",
+      { widthPx: 321.4, heightPx: 88.6 }
+    );
+    expect(next).toBe("md:w-full rounded-xl w-[321px] h-[89px]");
+    expect(widthFacet.parse(next)).toBe("[321px]");
+    expect(heightFacet.parse(next)).toBe("[89px]");
+  });
+
+  it("is a no-op when the requested class is already authored", () => {
+    const classes = "flex w-[320px] md:w-full";
+    expect(setElementDimensionClass(classes, "width", "[320px]")).toBe(classes);
+  });
+});
+
+describe("expanded inspector facets", () => {
+  it("edits flex alignment, wrap, and grid columns independently", () => {
+    const classes = "flex flex-col justify-between items-center flex-wrap grid-cols-3 gap-6";
+    expect(justifyContentFacet.parse(classes)).toBe("between");
+    expect(alignItemsFacet.parse(classes)).toBe("center");
+    expect(flexWrapFacet.parse(classes)).toBe("wrap");
+    expect(gridColumnsFacet.parse(classes)).toBe("3");
+    expect(justifyContentFacet.set(classes, "end")).toContain("justify-end");
+    expect(alignItemsFacet.set(classes, "stretch")).toContain("items-stretch");
+    expect(flexWrapFacet.set(classes, "nowrap")).toContain("flex-nowrap");
+    expect(gridColumnsFacet.set(classes, "4")).toContain("grid-cols-4");
+  });
+
+  it("keeps typography and image projections disjoint", () => {
+    const classes =
+      "font-semibold leading-relaxed italic underline line-through object-cover object-center";
+    expect(fontWeightFacet.parse(classes)).toBe("semibold");
+    expect(lineHeightFacet.parse(classes)).toBe("relaxed");
+    expect(italicFacet.parse(classes)).toBe("italic");
+    expect(underlineFacet.parse(classes)).toBe("underline");
+    expect(lineThroughFacet.parse(classes)).toBe("line-through");
+    expect(objectFitFacet.parse(classes)).toBe("cover");
+    expect(objectPositionFacet.parse(classes)).toBe("center");
+    expect(objectFitFacet.set(classes, "contain")).toContain("object-contain");
+    expect(objectPositionFacet.set(classes, "top")).toContain("object-top");
   });
 });
 

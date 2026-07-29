@@ -31,7 +31,7 @@ export interface WebRunEvent {
 
 /** The terminal result envelope (contract 2, event name "done"). */
 export interface WebTurnDoneEnvelope {
-  status: "applied" | "failed";
+  status: "applied" | "failed" | "conflicted";
   summary?: string;
   doc_kind?: string;
   [key: string]: unknown;
@@ -77,7 +77,12 @@ export interface WebAgentTurn {
   events: WebRunEvent[];
   summary: string | null;
   error: string | null;
-  start: (prompt: string, model?: string | null, targetNodeIds?: string[]) => void;
+  start: (
+    prompt: string,
+    baseVersion: number,
+    model?: string | null,
+    targetNodeIds?: string[]
+  ) => void;
 }
 
 /** Coerce a parsed progress payload into a WebRunEvent, tolerating missing
@@ -140,7 +145,12 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
   }, [closeSource]);
 
   const start = useCallback(
-    (prompt: string, model?: string | null, targetNodeIds?: string[]) => {
+    (
+      prompt: string,
+      baseVersion: number,
+      model?: string | null,
+      targetNodeIds?: string[]
+    ) => {
       const trimmed = prompt.trim();
       if (!trimmed || runningRef.current) {
         return;
@@ -182,7 +192,14 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
       };
 
       const base = apiBaseUrl ?? editorApiBaseUrl();
-      void startTurn({ apiBaseUrl: base }, documentId, trimmed, model ?? null, targetNodeIds)
+      void startTurn(
+        { apiBaseUrl: base },
+        documentId,
+        trimmed,
+        baseVersion,
+        model ?? null,
+        targetNodeIds
+      )
         .then(({ runId }) => {
           if (!mountedRef.current || settledRef.current) {
             return;

@@ -102,6 +102,42 @@ def ingest_content(client: TestClient, document_id: str) -> dict:
     return response["web_doc"]
 
 
+def install_operations(before: dict, after: dict) -> list[dict]:
+    before_page = before["pages"][0]
+    after_page = after["pages"][0]
+    root_id = before_page["root"]
+    before_nodes = before_page["nodes"]
+    after_nodes = after_page["nodes"]
+    operations: list[dict] = [
+        {"kind": "remove_node", "page_id": before_page["id"], "id": child_id}
+        for child_id in before_nodes[root_id].get("children") or []
+    ]
+
+    def subtree(root: str) -> list[dict]:
+        ids: set[str] = set()
+        stack = [root]
+        while stack:
+            current = stack.pop()
+            if current in ids:
+                continue
+            ids.add(current)
+            stack.extend(after_nodes[current].get("children") or [])
+        return [node for node_id, node in after_nodes.items() if node_id in ids]
+
+    for index, child_id in enumerate(after_nodes[root_id].get("children") or []):
+        operations.append(
+            {
+                "kind": "insert_node",
+                "page_id": after_page["id"],
+                "parent": root_id,
+                "index": index,
+                "nodes": subtree(child_id),
+                "root": child_id,
+            }
+        )
+    return operations
+
+
 def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
     """Install a starting content doc WITHOUT creating an undo entry, so the
     manual-edit stack starts clean (push_undo=False)."""
@@ -180,6 +216,86 @@ def test_web_operations_applies_and_pushes_undo(client: TestClient) -> None:
         }
     ]
     assert tail["batch_id"] == after["undo_stack"][-1]
+
+
+def test_move_node_reorders_siblings_and_undo_restores_order(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    page = before["scene"]["pages"][0]
+    nodes = page["nodes"]
+    hero_container_id = nodes["hero"]["children"][0]
+    original = list(nodes[hero_container_id]["children"])
+    assert len(original) >= 3
+
+    move = {
+        "kind": "move_node",
+        "page_id": page["id"],
+        "id": original[0],
+        "new_parent": hero_container_id,
+        # MoveNode removes the source first, so the end index is len - 1.
+        "index": len(original) - 1,
+    }
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [move], "base_version": before["current_version"]},
+    )
+    assert response.status_code == 200, response.text
+    reordered = get_document(client, document["id"])
+    assert reordered["scene"]["pages"][0]["nodes"][hero_container_id]["children"] == [
+        *original[1:],
+        original[0],
+    ]
+
+    undo = client.post(f"/documents/{document['id']}/web/undo")
+    assert undo.status_code == 200, undo.text
+    restored = get_document(client, document["id"])
+    assert restored["scene"]["pages"][0]["nodes"][hero_container_id]["children"] == original
+
+
+def test_move_node_reparents_between_section_containers_and_redo_reapplies(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    page = before["scene"]["pages"][0]
+    nodes = page["nodes"]
+    source_parent_id = nodes["hero"]["children"][0]
+    target_parent_id = nodes["site_footer"]["children"][0]
+    source_children = list(nodes[source_parent_id]["children"])
+    target_children = list(nodes[target_parent_id]["children"])
+    source_id = source_children[-1]
+
+    move = {
+        "kind": "move_node",
+        "page_id": page["id"],
+        "id": source_id,
+        "new_parent": target_parent_id,
+        "index": len(target_children),
+    }
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [move], "base_version": before["current_version"]},
+    )
+    assert response.status_code == 200, response.text
+    reparented = get_document(client, document["id"])
+    after_nodes = reparented["scene"]["pages"][0]["nodes"]
+    assert source_id not in after_nodes[source_parent_id]["children"]
+    assert after_nodes[target_parent_id]["children"] == [*target_children, source_id]
+
+    undo = client.post(f"/documents/{document['id']}/web/undo")
+    assert undo.status_code == 200, undo.text
+    undone = get_document(client, document["id"])
+    assert undone["scene"] == before["scene"]
+
+    redo = client.post(f"/documents/{document['id']}/web/redo")
+    assert redo.status_code == 200, redo.text
+    redone_nodes = get_document(client, document["id"])["scene"]["pages"][0]["nodes"]
+    assert source_id not in redone_nodes[source_parent_id]["children"]
+    assert redone_nodes[target_parent_id]["children"] == [*target_children, source_id]
 
 
 # --- (b) base_version mismatch ----------------------------------------------
@@ -278,22 +394,23 @@ def test_web_redo_empty_stack(client: TestClient) -> None:
     assert response.json()["detail"]["code"] == "redo.empty"
 
 
-# --- (e) undo of an agent-turn replace_web_doc envelope ---------------------
+# --- (e) undo of an operation-preserving agent-turn envelope ----------------
 
 
 def test_web_undo_of_agent_turn_restores_prior_doc(client: TestClient) -> None:
     document = create_web_document(client)  # empty "My site" WebDoc
     prior_scene = get_document(client, document["id"])["scene"]
     content_doc = ingest_content(client, document["id"])
-    content_doc["title"] = "Applied Site"
 
     def stub(doc, prompt, model, root):
+        operations = install_operations(doc["scene"], content_doc)
         return {
             "schema_version": 1,
             "status": "applied",
             "outcome": "accepted",
             "summary": "Built the landing page.",
             "web_doc": content_doc,
+            "operations": operations,
             "preview_paths": [],
             "doc_kind": "web",
         }
@@ -301,28 +418,27 @@ def test_web_undo_of_agent_turn_restores_prior_doc(client: TestClient) -> None:
     client.app.state.web_turn_runner = stub
     started = client.post(
         f"/documents/{document['id']}/web/turns",
-        json={"prompt": "Build a landing page"},
+        json={"prompt": "Build a landing page", "base_version": 0},
     )
     assert started.status_code == 200, started.text
     wait_for_run(client, started.json()["run_id"])
 
     applied = get_document(client, document["id"])
     assert applied["current_version"] == 1
-    assert applied["scene"]["title"] == "Applied Site"
+    assert applied["scene"]["title"] == "My site"
     # The turn worker pushed the turn batch onto the undo stack (push_undo
     # default) and cleared redo.
     assert len(applied["undo_stack"]) == 1
     assert applied["redo_stack"] == []
     turn_batch = applied["undo_stack"][-1]
 
-    # Undo the agent turn → the prior (empty "My site") doc is restored via the
-    # whole-document replace_web_doc swap.
+    # Undo the agent turn → checked inverse WebOperations restore the prior doc.
     undo = client.post(f"/documents/{document['id']}/web/undo")
     assert undo.status_code == 200, undo.text
     assert undo.json()["undone_batch_id"] == turn_batch
     undone = get_document(client, document["id"])
     assert undone["scene"]["title"] == "My site"
-    # Byte-identical restoration of the pre-turn doc via the whole-doc swap.
+    # Byte-identical restoration of the pre-turn doc via canonical inverses.
     assert undone["scene"] == prior_scene
     assert undone["undo_stack"] == []
     assert undone["redo_stack"] == [turn_batch]
@@ -331,7 +447,7 @@ def test_web_undo_of_agent_turn_restores_prior_doc(client: TestClient) -> None:
     redo = client.post(f"/documents/{document['id']}/web/redo")
     assert redo.status_code == 200, redo.text
     redone = get_document(client, document["id"])
-    assert redone["scene"]["title"] == "Applied Site"
+    assert redone["scene"]["title"] == "My site"
     assert redone["scene"]["pages"][0]["nodes"], "content reinstalled"
     assert redone["undo_stack"] == [turn_batch]
     assert redone["redo_stack"] == []

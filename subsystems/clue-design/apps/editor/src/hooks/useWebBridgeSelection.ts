@@ -4,7 +4,9 @@ import {
   validateBridgeMessage,
   webBridgeClearMessage,
   webBridgeComponentPreviewMessage,
+  webBridgeInspectNodeMessage,
   webBridgeSelectNodeMessage,
+  type WebNodeInfo,
   type WebSelection
 } from "@/engine/webBridge";
 
@@ -26,6 +28,10 @@ import {
 export interface WebBridgeSelection {
   /** The currently selected node, or `null` when nothing is selected. */
   selection: WebSelection | null;
+  /** Latest geometry/computed-style snapshot for a selected or inspected node. */
+  nodeInfo: WebNodeInfo | null;
+  /** True after the current iframe render has installed its message listener. */
+  ready: boolean;
   /** Drop the selection locally AND tell the iframe to clear its highlight
    * (the chip's × button). */
   clearSelection: () => void;
@@ -39,6 +45,8 @@ export interface WebBridgeSelection {
    * message back, repopulating the inspector (button command form's "Select
    * dialog"). No-op until the frame + nonce are live. */
   selectNode: (nodeId: string) => void;
+  /** Request a read-only snapshot without changing the canvas selection. */
+  inspectNode: (nodeId: string) => void;
 }
 
 export function useWebBridgeSelection(params: {
@@ -54,13 +62,22 @@ export function useWebBridgeSelection(params: {
    * keeps the inspector on the same stable node id). Kept in a ref so a
    * changing callback never re-arms the listener. */
   onSelect?: (selection: WebSelection | null) => void;
-  /** Invoked when the bridge posts a `move-section` intent (top-level section
-   * drag-reorder): `boundary` is the drop index among current top-level
-   * sections. Kept in a ref so a changing callback never re-arms the listener. */
-  onMoveSection?: (nodeId: string, boundary: number) => void;
+  /** Invoked when the bridge posts a generic `move-node` intent. `index` is
+   * measured against the destination parent's children after source removal,
+   * so the same callback covers reorder and reparent. */
+  onMoveNode?: (nodeId: string, newParentNodeId: string, index: number) => void;
+  /** Invoked after an in-frame handle resize settles. Null means that axis was
+   * not changed (right edge = width, bottom edge = height, corner = both). */
+  onResizeNode?: (
+    nodeId: string,
+    widthPx: number | null,
+    heightPx: number | null
+  ) => void;
 }): WebBridgeSelection {
-  const { iframeRef, nonceRef, onTextCommit, onSelect, onMoveSection } = params;
+  const { iframeRef, nonceRef, onTextCommit, onSelect, onMoveNode, onResizeNode } = params;
   const [selection, setSelection] = useState<WebSelection | null>(null);
+  const [nodeInfo, setNodeInfo] = useState<WebNodeInfo | null>(null);
+  const [ready, setReady] = useState(false);
 
   // While a text node is in contenteditable, the frame keeps posting `select`
   // as the caret moves; suppress that churn until the edit commits/cancels.
@@ -69,8 +86,10 @@ export function useWebBridgeSelection(params: {
   onTextCommitRef.current = onTextCommit;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
-  const onMoveSectionRef = useRef(onMoveSection);
-  onMoveSectionRef.current = onMoveSection;
+  const onMoveNodeRef = useRef(onMoveNode);
+  onMoveNodeRef.current = onMoveNode;
+  const onResizeNodeRef = useRef(onResizeNode);
+  onResizeNodeRef.current = onResizeNode;
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -82,12 +101,21 @@ export function useWebBridgeSelection(params: {
       if (!message) {
         return;
       }
+      if (message.type === "ready") {
+        setReady(true);
+        return;
+      }
       if (message.type === "select") {
         if (editingRef.current) {
           return;
         }
         setSelection(message.selection);
+        setNodeInfo(message.selection);
         onSelectRef.current?.(message.selection);
+        return;
+      }
+      if (message.type === "node-info") {
+        setNodeInfo(message.node);
         return;
       }
       if (message.type === "edit-start") {
@@ -99,8 +127,20 @@ export function useWebBridgeSelection(params: {
         onTextCommitRef.current?.(message.nodeId, message.html);
         return;
       }
-      if (message.type === "move-section") {
-        onMoveSectionRef.current?.(message.nodeId, message.boundary);
+      if (message.type === "move-node") {
+        onMoveNodeRef.current?.(
+          message.nodeId,
+          message.newParentNodeId,
+          message.index
+        );
+        return;
+      }
+      if (message.type === "resize-node") {
+        onResizeNodeRef.current?.(
+          message.nodeId,
+          message.widthPx,
+          message.heightPx
+        );
       }
     };
     window.addEventListener("message", onMessage);
@@ -109,6 +149,7 @@ export function useWebBridgeSelection(params: {
 
   const clearSelection = useCallback(() => {
     setSelection(null);
+    setNodeInfo(null);
     const win = iframeRef.current?.contentWindow;
     const nonce = nonceRef.current;
     if (win && nonce) {
@@ -118,7 +159,9 @@ export function useWebBridgeSelection(params: {
 
   const resetSelection = useCallback(() => {
     editingRef.current = false;
+    setReady(false);
     setSelection(null);
+    setNodeInfo(null);
   }, []);
 
   const previewComponent = useCallback(
@@ -143,5 +186,25 @@ export function useWebBridgeSelection(params: {
     [iframeRef, nonceRef]
   );
 
-  return { selection, clearSelection, resetSelection, previewComponent, selectNode };
+  const inspectNode = useCallback(
+    (nodeId: string) => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce) {
+        win.postMessage(webBridgeInspectNodeMessage(nonce, nodeId), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
+  return {
+    selection,
+    nodeInfo,
+    ready,
+    clearSelection,
+    resetSelection,
+    previewComponent,
+    selectNode,
+    inspectNode
+  };
 }

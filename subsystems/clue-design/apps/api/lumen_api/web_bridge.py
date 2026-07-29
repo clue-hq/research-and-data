@@ -1,4 +1,4 @@
-"""Bridge for the website-mode editor iframe (v1).
+"""Bridge for the website-mode editor iframe.
 
 The renderer's editor mode injects this script into the srcdoc document. It
 does the following and nothing else: hover/selection outlines over
@@ -24,13 +24,30 @@ message back). Security posture:
   nonce outside a strict charset so the substitution cannot become script
   injection.
 
-v3 adds top-level section drag-reorder: a grip appears on the selected
-top-level section; dragging it shows an insertion line and, on drop, posts a
-`{type:"move-section", nodeId, boundary}` intent (the boundary index among the
-current top-level sections) which the shell turns into a MoveNode op.
+v4 adds a generic read-only node-inspection protocol. Selection payloads and
+`node-info` updates include parent/child identity, viewport + document geometry,
+and an allowlisted computed-style snapshot. The parent may request any rendered
+node with `{type:"inspect-node", nodeId}`; ResizeObserver/scroll/resize refresh
+the selected node. These values inform the GUI only — mutations still go
+through canonical WebOperations.
+
+v5 replaces the section-only drag bridge with a generic direct-manipulation
+contract for sections, containers, text, buttons, and images. The server injects
+the canonical movable/drop-parent id sets for the rendered page. A selected node
+gets a drag handle; the bridge shows a ghost plus an axis-aware insertion marker
+and posts `{type:"move-node", nodeId, newParentNodeId, index}`. The index is
+measured after source removal, so one intent covers both reorder and reparent.
+
+v6 adds class-backed resizing for containers, text, buttons, and images. A
+selected resizable node gets right, bottom, and corner handles. Inline width /
+height are used only as a transient live preview; mouseup restores them and
+posts `{type:"resize-node", nodeId, widthPx, heightPx}` so the parent can persist
+canonical `w-[Npx]` / `h-[Npx]` classes through the normal versioned op path.
 """
 
+import json
 import re
+from typing import Any
 
 NONCE_PATTERN = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 
@@ -40,11 +57,17 @@ _BRIDGE_V0_TEMPLATE = """
 (function () {
   var NONCE = "__LUMEN_BRIDGE_NONCE__";
   var CHANNEL = "lumen-web-bridge";
+  var MOVABLE_NODE_IDS = new Set(__LUMEN_MOVABLE_NODE_IDS__);
+  var DROP_PARENT_NODE_IDS = new Set(__LUMEN_DROP_PARENT_NODE_IDS__);
+  var RESIZABLE_NODE_IDS = new Set(__LUMEN_RESIZABLE_NODE_IDS__);
+  var ROOT_NODE_ID = __LUMEN_ROOT_NODE_ID__;
   var selected = null;
   var hoverEl = null;
 
   var editing = null;
   var editingOriginal = "";
+  var metricsFrame = null;
+  var resizeObserver = null;
 
   var style = document.createElement("style");
   style.textContent =
@@ -53,14 +76,118 @@ _BRIDGE_V0_TEMPLATE = """
     "[data-node-id].lumen-editing{outline:2px solid rgba(34,197,146,0.95);outline-offset:2px;cursor:text;}";
   document.head.appendChild(style);
 
+  function rounded(value) {
+    return Math.round(Number(value || 0) * 100) / 100;
+  }
+
+  function rectInfo(rect, offsetX, offsetY) {
+    return {
+      x: rounded(rect.left + offsetX),
+      y: rounded(rect.top + offsetY),
+      top: rounded(rect.top + offsetY),
+      right: rounded(rect.right + offsetX),
+      bottom: rounded(rect.bottom + offsetY),
+      left: rounded(rect.left + offsetX),
+      width: rounded(rect.width),
+      height: rounded(rect.height)
+    };
+  }
+
+  function authoredClasses(el) {
+    return Array.prototype.slice
+      .call(el.classList || [])
+      .filter(function (name) { return name.indexOf("lumen-") !== 0; })
+      .join(" ");
+  }
+
+  function directNodeElements(el) {
+    return Array.prototype.slice
+      .call(el.querySelectorAll("[data-node-id]"))
+      .filter(function (candidate) {
+        if (el === document.body) {
+          return candidate.parentElement === document.body;
+        }
+        return candidate.parentElement &&
+          candidate.parentElement.closest("[data-node-id]") === el;
+      });
+  }
+
+  function directNodeChildren(el) {
+    return directNodeElements(el)
+      .map(function (candidate) {
+        return candidate.getAttribute("data-node-id");
+      })
+      .filter(Boolean);
+  }
+
   function nodeInfo(el) {
     if (!el) return null;
+    var rect = el.getBoundingClientRect();
+    var computed = window.getComputedStyle(el);
+    var parentNode = el.parentElement
+      ? el.parentElement.closest("[data-node-id]")
+      : null;
     return {
       nodeId: el.getAttribute("data-node-id"),
       tag: el.tagName.toLowerCase(),
-      tv: el.getAttribute("data-tv"),
-      btn: el.getAttribute("data-btn"),
-      text: (el.textContent || "").trim().slice(0, 60)
+      tv: el.hasAttribute("data-tv"),
+      btn: el.hasAttribute("data-btn"),
+      text: (el.textContent || "").trim().slice(0, 60),
+      parentNodeId: parentNode ? parentNode.getAttribute("data-node-id") : null,
+      childNodeIds: directNodeChildren(el),
+      geometry: {
+        viewport: rectInfo(rect, 0, 0),
+        document: rectInfo(rect, window.scrollX, window.scrollY)
+      },
+      computedStyle: {
+        authoredClasses: authoredClasses(el),
+        display: computed.display,
+        position: computed.position,
+        boxSizing: computed.boxSizing,
+        width: computed.width,
+        height: computed.height,
+        minWidth: computed.minWidth,
+        minHeight: computed.minHeight,
+        maxWidth: computed.maxWidth,
+        maxHeight: computed.maxHeight,
+        marginTop: computed.marginTop,
+        marginRight: computed.marginRight,
+        marginBottom: computed.marginBottom,
+        marginLeft: computed.marginLeft,
+        paddingTop: computed.paddingTop,
+        paddingRight: computed.paddingRight,
+        paddingBottom: computed.paddingBottom,
+        paddingLeft: computed.paddingLeft,
+        gap: computed.gap,
+        rowGap: computed.rowGap,
+        columnGap: computed.columnGap,
+        flexDirection: computed.flexDirection,
+        flexWrap: computed.flexWrap,
+        flexGrow: computed.flexGrow,
+        flexShrink: computed.flexShrink,
+        justifyContent: computed.justifyContent,
+        alignItems: computed.alignItems,
+        alignSelf: computed.alignSelf,
+        gridTemplateColumns: computed.gridTemplateColumns,
+        gridTemplateRows: computed.gridTemplateRows,
+        fontFamily: computed.fontFamily,
+        fontSize: computed.fontSize,
+        fontWeight: computed.fontWeight,
+        lineHeight: computed.lineHeight,
+        textAlign: computed.textAlign,
+        color: computed.color,
+        backgroundColor: computed.backgroundColor,
+        borderTopWidth: computed.borderTopWidth,
+        borderRightWidth: computed.borderRightWidth,
+        borderBottomWidth: computed.borderBottomWidth,
+        borderLeftWidth: computed.borderLeftWidth,
+        borderRadius: computed.borderRadius,
+        objectFit: computed.objectFit,
+        objectPosition: computed.objectPosition,
+        overflowX: computed.overflowX,
+        overflowY: computed.overflowY,
+        opacity: computed.opacity
+      }
     };
   }
 
@@ -74,6 +201,30 @@ _BRIDGE_V0_TEMPLATE = """
     parent.postMessage(message, "*");
   }
 
+  function postNodeInfo(el) {
+    if (el && el.isConnected) post("node-info", { node: nodeInfo(el) });
+  }
+
+  function scheduleSelectedInfo() {
+    if (!selected || metricsFrame !== null) return;
+    metricsFrame = window.requestAnimationFrame(function () {
+      metricsFrame = null;
+      positionSelectionControls(selected);
+      postNodeInfo(selected);
+    });
+  }
+
+  function observeSelected() {
+    if (resizeObserver) resizeObserver.disconnect();
+    if (selected && typeof ResizeObserver !== "undefined") {
+      if (!resizeObserver) {
+        resizeObserver = new ResizeObserver(scheduleSelectedInfo);
+      }
+      resizeObserver.observe(selected);
+      if (selected.parentElement) resizeObserver.observe(selected.parentElement);
+    }
+  }
+
   function setSelected(el) {
     if (selected) selected.classList.remove("lumen-selected");
     selected = el;
@@ -82,7 +233,9 @@ _BRIDGE_V0_TEMPLATE = """
       el.classList.add("lumen-selected");
     }
     post("select", { node: nodeInfo(el) });
+    observeSelected();
     showGripFor(el);
+    showResizeHandlesFor(el);
   }
 
   document.addEventListener("mouseover", function (event) {
@@ -115,6 +268,13 @@ _BRIDGE_V0_TEMPLATE = """
           ? event.target.closest("button[commandfor]")
           : null;
       if (cmdBtn) event.preventDefault();
+      if (
+        event.target &&
+        event.target.closest &&
+        event.target.closest(".lumen-grip, .lumen-resize-handle, .lumen-resize-badge")
+      ) {
+        return;
+      }
       // Clicks inside the element being edited belong to the caret, not to
       // selection; clicking anywhere else blurs (committing) first.
       if (editing && editing.contains(event.target)) return;
@@ -186,7 +346,9 @@ _BRIDGE_V0_TEMPLATE = """
       }
       return;
     }
-    if (event.key === "Escape" && selected) setSelected(null);
+    if (event.key === "Escape" && selected && !dragState && !resizeState) {
+      setSelected(null);
+    }
   });
 
   window.addEventListener("message", function (event) {
@@ -195,7 +357,15 @@ _BRIDGE_V0_TEMPLATE = """
     if (data.type === "clear" && selected) {
       selected.classList.remove("lumen-selected");
       selected = null;
+      observeSelected();
       removeGrip();
+      removeResizeControls();
+    }
+    if (data.type === "inspect-node") {
+      var inspected = document.querySelector(
+        '[data-node-id="' + CSS.escape(String(data.nodeId || "")) + '"]'
+      );
+      if (inspected) postNodeInfo(inspected);
     }
     if (data.type === "component-preview") {
       var el = document.querySelector(
@@ -214,93 +384,491 @@ _BRIDGE_V0_TEMPLATE = """
     }
   });
 
-  // v3: drag-reorder for top-level sections. A grip appears on the selected
-  // section; dragging shows an insertion line and posts a move-section
-  // intent with the boundary index among current top-level sections.
+  // v5: generic reorder + reparent. The iframe computes a destination parent
+  // and an insertion index after source removal; the shell validates that
+  // intent against the canonical WebDoc before persisting MoveNode.
   var grip = null;
-  var dropLine = null;
+  var dropMarker = null;
+  var dropParentEl = null;
+  var dragGhost = null;
   var dragState = null;
+  var resizeHandles = [];
+  var resizeBadge = null;
+  var resizeState = null;
 
   var structureStyle = document.createElement("style");
   structureStyle.textContent =
     ".lumen-grip{position:absolute;z-index:2147483000;display:flex;align-items:center;" +
     "justify-content:center;width:28px;height:28px;border-radius:8px;cursor:grab;" +
-    "background:rgba(79,111,255,0.95);color:#fff;font-size:14px;user-select:none;}" +
-    ".lumen-drop-line{position:absolute;left:8px;right:8px;height:3px;border-radius:2px;" +
-    "background:rgba(79,111,255,0.95);z-index:2147483000;pointer-events:none;}";
+    "background:rgba(79,111,255,0.97);color:#fff;font-size:15px;line-height:1;" +
+    "user-select:none;box-shadow:0 4px 14px rgba(31,41,90,.28);}" +
+    ".lumen-drag-ghost{position:fixed;z-index:2147482998;pointer-events:none;opacity:.62;" +
+    "overflow:hidden;max-width:280px;max-height:180px;transform:rotate(.5deg);" +
+    "box-shadow:0 12px 30px rgba(31,41,90,.24);border-radius:6px;}" +
+    ".lumen-drop-marker{position:absolute;z-index:2147483001;pointer-events:none;" +
+    "background:rgba(79,111,255,.98);border-radius:3px;}" +
+    ".lumen-drop-marker::before{content:'';position:absolute;width:9px;height:9px;" +
+    "border-radius:999px;background:rgba(79,111,255,.98);}" +
+    ".lumen-drop-marker.is-block::before{left:-3px;top:-3px;}" +
+    ".lumen-drop-marker.is-row::before{left:-3px;top:-3px;}" +
+    ".lumen-drop-parent{box-shadow:inset 0 0 0 2px rgba(79,111,255,.55)!important;}" +
+    ".lumen-resize-handle{position:absolute;z-index:2147483002;width:12px;height:12px;" +
+    "padding:0;border:2px solid #fff;border-radius:999px;background:rgba(79,111,255,.98);" +
+    "box-shadow:0 1px 5px rgba(31,41,90,.35);touch-action:none;}" +
+    ".lumen-resize-handle[data-axis='width']{cursor:ew-resize;}" +
+    ".lumen-resize-handle[data-axis='height']{cursor:ns-resize;}" +
+    ".lumen-resize-handle[data-axis='both']{cursor:nwse-resize;}" +
+    ".lumen-resize-badge{position:absolute;z-index:2147483003;pointer-events:none;" +
+    "padding:4px 7px;border-radius:6px;background:#172033;color:#fff;font:11px/1.2 ui-monospace,monospace;" +
+    "box-shadow:0 3px 10px rgba(31,41,90,.24);}";
   document.head.appendChild(structureStyle);
 
-  function topSections() {
-    return Array.prototype.slice.call(document.body.children).filter(function (el) {
-      return el.hasAttribute && el.hasAttribute("data-node-id");
+  function nodeId(el) {
+    return el && el.getAttribute ? el.getAttribute("data-node-id") : null;
+  }
+
+  function parentNodeElement(el) {
+    return el && el.parentElement
+      ? el.parentElement.closest("[data-node-id]")
+      : null;
+  }
+
+  function canDropInto(el) {
+    var id = nodeId(el);
+    return Boolean(
+      id &&
+      DROP_PARENT_NODE_IDS.has(id) &&
+      dragState &&
+      el !== dragState.sourceEl &&
+      !dragState.sourceEl.contains(el)
+    );
+  }
+
+  function flowAxis(el) {
+    if (el === document.body) return "block";
+    var computed = window.getComputedStyle(el);
+    if (
+      (computed.display === "flex" || computed.display === "inline-flex") &&
+      (computed.flexDirection === "row" || computed.flexDirection === "row-reverse")
+    ) {
+      return "row";
+    }
+    if (
+      (computed.display === "grid" || computed.display === "inline-grid") &&
+      computed.gridTemplateColumns &&
+      computed.gridTemplateColumns !== "none" &&
+      computed.gridTemplateColumns.trim().split(/\\s+/).length > 1
+    ) {
+      return "row";
+    }
+    return "block";
+  }
+
+  function boundaryCandidate(parentEl, parentNodeId, clientX, clientY) {
+    var axis = flowAxis(parentEl);
+    var children = directNodeElements(parentEl).filter(function (child) {
+      return nodeId(child) !== dragState.nodeId;
     });
+    var coordinate = axis === "row" ? clientX : clientY;
+    var index = children.length;
+    for (var i = 0; i < children.length; i++) {
+      var rect = children[i].getBoundingClientRect();
+      var center =
+        axis === "row"
+          ? rect.left + rect.width / 2
+          : rect.top + rect.height / 2;
+      if (coordinate < center) {
+        index = i;
+        break;
+      }
+    }
+    return {
+      parentEl: parentEl,
+      newParentNodeId: parentNodeId,
+      index: index,
+      axis: axis,
+      children: children
+    };
+  }
+
+  function nearFlowEdge(el, parentEl, clientX, clientY) {
+    var axis = flowAxis(parentEl);
+    var rect = el.getBoundingClientRect();
+    var size = axis === "row" ? rect.width : rect.height;
+    var coordinate = axis === "row" ? clientX : clientY;
+    var start = axis === "row" ? rect.left : rect.top;
+    var threshold = Math.min(32, Math.max(10, size * 0.2));
+    return coordinate <= start + threshold || coordinate >= start + size - threshold;
+  }
+
+  function topLevelCandidate(clientY) {
+    return boundaryCandidate(document.body, ROOT_NODE_ID, 0, clientY);
+  }
+
+  function candidateAtPoint(clientX, clientY) {
+    if (!dragState) return null;
+    if (dragState.sourceEl.parentElement === document.body && ROOT_NODE_ID) {
+      return topLevelCandidate(clientY);
+    }
+    var hit = document.elementFromPoint(clientX, clientY);
+    var hovered =
+      hit && hit.closest ? hit.closest("[data-node-id]") : null;
+    if (!hovered) return null;
+
+    // An eligible container's center means "inside"; its leading/trailing edge
+    // means "beside it" in the container above. This makes both reparent and
+    // sibling reorder available without a mode switch.
+    if (canDropInto(hovered)) {
+      var siblingParent = parentNodeElement(hovered);
+      if (
+        siblingParent &&
+        canDropInto(siblingParent) &&
+        nearFlowEdge(hovered, siblingParent, clientX, clientY)
+      ) {
+        return boundaryCandidate(
+          siblingParent,
+          nodeId(siblingParent),
+          clientX,
+          clientY
+        );
+      }
+      return boundaryCandidate(hovered, nodeId(hovered), clientX, clientY);
+    }
+
+    // A leaf (or any point inside the moving subtree) resolves upward to the
+    // nearest legal parent outside the source subtree.
+    var parentEl = parentNodeElement(hovered);
+    while (parentEl && !canDropInto(parentEl)) {
+      parentEl = parentNodeElement(parentEl);
+    }
+    return parentEl
+      ? boundaryCandidate(parentEl, nodeId(parentEl), clientX, clientY)
+      : null;
   }
 
   function positionGrip(el) {
     if (!grip) return;
     var rect = el.getBoundingClientRect();
-    grip.style.top = rect.top + window.scrollY + 8 + "px";
-    grip.style.left = rect.right + window.scrollX - 40 + "px";
+    grip.style.top = Math.max(2, rect.top + window.scrollY - 30) + "px";
+    grip.style.left =
+      Math.max(2, Math.min(document.documentElement.scrollWidth - 30, rect.right + window.scrollX + 6)) +
+      "px";
   }
 
   function removeGrip() {
     if (grip) { grip.remove(); grip = null; }
   }
 
+  function positionResizeHandles(el) {
+    if (!el || resizeHandles.length === 0) return;
+    var rect = el.getBoundingClientRect();
+    var docLeft = rect.left + window.scrollX;
+    var docTop = rect.top + window.scrollY;
+    for (var i = 0; i < resizeHandles.length; i++) {
+      var handle = resizeHandles[i];
+      var axis = handle.getAttribute("data-axis");
+      if (axis === "width") {
+        handle.style.left = docLeft + rect.width - 6 + "px";
+        handle.style.top = docTop + rect.height / 2 - 6 + "px";
+      } else if (axis === "height") {
+        handle.style.left = docLeft + rect.width / 2 - 6 + "px";
+        handle.style.top = docTop + rect.height - 6 + "px";
+      } else {
+        handle.style.left = docLeft + rect.width - 6 + "px";
+        handle.style.top = docTop + rect.height - 6 + "px";
+      }
+    }
+    if (resizeBadge) {
+      resizeBadge.style.left = docLeft + rect.width + 10 + "px";
+      resizeBadge.style.top = docTop + rect.height + 10 + "px";
+      resizeBadge.textContent =
+        Math.round(rect.width) + " × " + Math.round(rect.height) + " px";
+    }
+  }
+
+  function positionSelectionControls(el) {
+    if (!el) return;
+    if (grip) positionGrip(el);
+    positionResizeHandles(el);
+  }
+
+  function removeResizeControls() {
+    for (var i = 0; i < resizeHandles.length; i++) {
+      resizeHandles[i].remove();
+    }
+    resizeHandles = [];
+    if (resizeBadge) {
+      resizeBadge.remove();
+      resizeBadge = null;
+    }
+  }
+
+  function restoreInlineDimension(el, property, value, priority) {
+    if (value) {
+      el.style.setProperty(property, value, priority || "");
+    } else {
+      el.style.removeProperty(property);
+    }
+  }
+
+  function startResize(event, el, id, axis) {
+    if (event.button !== 0 || resizeState || dragState) return;
+    event.preventDefault();
+    event.stopPropagation();
+    var computed = window.getComputedStyle(el);
+    var cssWidth = parseFloat(computed.width);
+    var cssHeight = parseFloat(computed.height);
+    if (!Number.isFinite(cssWidth) || !Number.isFinite(cssHeight)) return;
+    resizeState = {
+      nodeId: id,
+      sourceEl: el,
+      axis: axis,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: cssWidth,
+      startHeight: cssHeight,
+      widthPx: null,
+      heightPx: null,
+      moved: false,
+      inlineWidth: el.style.getPropertyValue("width"),
+      inlineWidthPriority: el.style.getPropertyPriority("width"),
+      inlineHeight: el.style.getPropertyValue("height"),
+      inlineHeightPriority: el.style.getPropertyPriority("height")
+    };
+    resizeBadge = document.createElement("div");
+    resizeBadge.className = "lumen-resize-badge";
+    document.body.appendChild(resizeBadge);
+    document.body.classList.add("lumen-resizing");
+    positionResizeHandles(el);
+  }
+
+  function updateResize(event) {
+    if (!resizeState) return;
+    var dx = event.clientX - resizeState.startX;
+    var dy = event.clientY - resizeState.startY;
+    if (resizeState.axis === "width" || resizeState.axis === "both") {
+      resizeState.widthPx = Math.max(16, resizeState.startWidth + dx);
+      resizeState.sourceEl.style.width = resizeState.widthPx + "px";
+    }
+    if (resizeState.axis === "height" || resizeState.axis === "both") {
+      resizeState.heightPx = Math.max(16, resizeState.startHeight + dy);
+      resizeState.sourceEl.style.height = resizeState.heightPx + "px";
+    }
+    resizeState.moved =
+      Math.abs(dx) >= 1 || Math.abs(dy) >= 1;
+    positionResizeHandles(resizeState.sourceEl);
+    scheduleSelectedInfo();
+  }
+
+  function finishResize(commit) {
+    if (!resizeState) return;
+    var state = resizeState;
+    resizeState = null;
+    restoreInlineDimension(
+      state.sourceEl,
+      "width",
+      state.inlineWidth,
+      state.inlineWidthPriority
+    );
+    restoreInlineDimension(
+      state.sourceEl,
+      "height",
+      state.inlineHeight,
+      state.inlineHeightPriority
+    );
+    document.body.classList.remove("lumen-resizing");
+    if (resizeBadge) {
+      resizeBadge.remove();
+      resizeBadge = null;
+    }
+    positionSelectionControls(state.sourceEl);
+    scheduleSelectedInfo();
+    if (commit && state.moved) {
+      post("resize-node", {
+        nodeId: state.nodeId,
+        widthPx: state.widthPx === null ? null : Math.round(state.widthPx),
+        heightPx: state.heightPx === null ? null : Math.round(state.heightPx)
+      });
+    }
+  }
+
+  function showResizeHandlesFor(el) {
+    removeResizeControls();
+    var id = nodeId(el);
+    if (!el || !id || !RESIZABLE_NODE_IDS.has(id)) return;
+    ["width", "height", "both"].forEach(function (axis) {
+      var handle = document.createElement("button");
+      handle.type = "button";
+      handle.className = "lumen-resize-handle";
+      handle.setAttribute("data-axis", axis);
+      handle.setAttribute(
+        "aria-label",
+        "Resize " + id + " " + (axis === "both" ? "width and height" : axis)
+      );
+      handle.setAttribute(
+        "title",
+        axis === "both" ? "Resize width and height" : "Resize " + axis
+      );
+      handle.addEventListener("mousedown", function (event) {
+        startResize(event, el, id, axis);
+      });
+      document.body.appendChild(handle);
+      resizeHandles.push(handle);
+    });
+    positionResizeHandles(el);
+  }
+
+  function createGhost(el) {
+    var clone = el.cloneNode(true);
+    clone.removeAttribute("data-node-id");
+    Array.prototype.forEach.call(
+      clone.querySelectorAll("[data-node-id]"),
+      function (child) { child.removeAttribute("data-node-id"); }
+    );
+    clone.classList.remove("lumen-selected", "lumen-hover", "lumen-editing");
+    clone.classList.add("lumen-drag-ghost");
+    var rect = el.getBoundingClientRect();
+    clone.style.width = Math.min(rect.width, 280) + "px";
+    clone.style.height = Math.min(rect.height, 180) + "px";
+    document.body.appendChild(clone);
+    return clone;
+  }
+
+  function positionGhost(clientX, clientY) {
+    if (!dragGhost) return;
+    dragGhost.style.left = clientX + 14 + "px";
+    dragGhost.style.top = clientY + 14 + "px";
+  }
+
+  function clearDropVisuals() {
+    if (dropMarker) { dropMarker.remove(); dropMarker = null; }
+    if (dropParentEl) {
+      dropParentEl.classList.remove("lumen-drop-parent");
+      dropParentEl = null;
+    }
+  }
+
+  function showDropCandidate(candidate) {
+    clearDropVisuals();
+    if (!candidate) return;
+    var parentRect = candidate.parentEl.getBoundingClientRect();
+    var before = candidate.children[candidate.index] || null;
+    var last = candidate.children[candidate.children.length - 1] || null;
+    var beforeRect = before ? before.getBoundingClientRect() : null;
+    var lastRect = last ? last.getBoundingClientRect() : null;
+    dropMarker = document.createElement("div");
+    dropMarker.className =
+      "lumen-drop-marker " + (candidate.axis === "row" ? "is-row" : "is-block");
+    if (candidate.axis === "row") {
+      var x = beforeRect
+        ? beforeRect.left
+        : lastRect
+          ? lastRect.right
+          : parentRect.left + 8;
+      dropMarker.style.left = x + window.scrollX - 1.5 + "px";
+      dropMarker.style.top = parentRect.top + window.scrollY + 8 + "px";
+      dropMarker.style.width = "3px";
+      dropMarker.style.height = Math.max(18, parentRect.height - 16) + "px";
+    } else {
+      var y = beforeRect
+        ? beforeRect.top
+        : lastRect
+          ? lastRect.bottom
+          : parentRect.top + 8;
+      dropMarker.style.left = parentRect.left + window.scrollX + 8 + "px";
+      dropMarker.style.top = y + window.scrollY - 1.5 + "px";
+      dropMarker.style.width = Math.max(18, parentRect.width - 16) + "px";
+      dropMarker.style.height = "3px";
+    }
+    document.body.appendChild(dropMarker);
+    if (candidate.parentEl !== document.body) {
+      dropParentEl = candidate.parentEl;
+      dropParentEl.classList.add("lumen-drop-parent");
+    }
+  }
+
+  function finishDrag(commit) {
+    if (!dragState) return;
+    var destination = dragState.destination;
+    dragState.sourceEl.style.opacity = dragState.sourceOpacity;
+    if (dragGhost) { dragGhost.remove(); dragGhost = null; }
+    clearDropVisuals();
+    if (grip) {
+      grip.style.cursor = "grab";
+    }
+    document.body.classList.remove("lumen-dragging");
+    var nodeIdToMove = dragState.nodeId;
+    dragState = null;
+    if (commit && destination) {
+      post("move-node", {
+        nodeId: nodeIdToMove,
+        newParentNodeId: destination.newParentNodeId,
+        index: destination.index
+      });
+    }
+  }
+
   function showGripFor(el) {
     removeGrip();
-    if (!el || el.parentElement !== document.body) return;
+    var id = nodeId(el);
+    if (!el || !id || !MOVABLE_NODE_IDS.has(id)) return;
     grip = document.createElement("div");
     grip.className = "lumen-grip";
-    grip.textContent = "\\u2261";
+    grip.textContent = "\\u22ee\\u22ee";
+    grip.setAttribute("role", "button");
+    grip.setAttribute("aria-label", "Drag to move " + id);
+    grip.setAttribute("title", "Drag to reorder or move into another container");
     document.body.appendChild(grip);
     positionGrip(el);
     grip.addEventListener("mousedown", function (event) {
+      if (event.button !== 0) return;
       event.preventDefault();
-      dragState = { nodeId: el.getAttribute("data-node-id"), boundary: null };
-      dropLine = document.createElement("div");
-      dropLine.className = "lumen-drop-line";
-      document.body.appendChild(dropLine);
+      event.stopPropagation();
+      dragState = {
+        nodeId: id,
+        sourceEl: el,
+        sourceOpacity: el.style.opacity,
+        destination: null
+      };
+      dragGhost = createGhost(el);
+      positionGhost(event.clientX, event.clientY);
+      el.style.opacity = ".35";
       grip.style.cursor = "grabbing";
+      document.body.classList.add("lumen-dragging");
     });
   }
 
-  function dragBoundary(clientY) {
-    var sections = topSections();
-    for (var i = 0; i < sections.length; i++) {
-      var rect = sections[i].getBoundingClientRect();
-      if (clientY < rect.top + rect.height / 2) {
-        return { index: i, y: rect.top + window.scrollY };
-      }
-    }
-    var last = sections[sections.length - 1];
-    var bottom = last ? last.getBoundingClientRect().bottom : 0;
-    return { index: sections.length, y: bottom + window.scrollY };
-  }
-
   document.addEventListener("mousemove", function (event) {
-    if (!dragState || !dropLine) return;
-    var boundary = dragBoundary(event.clientY);
-    dragState.boundary = boundary.index;
-    dropLine.style.top = boundary.y - 2 + "px";
+    if (resizeState) {
+      event.preventDefault();
+      updateResize(event);
+      return;
+    }
+    if (dragState) {
+      event.preventDefault();
+      positionGhost(event.clientX, event.clientY);
+      dragState.destination = candidateAtPoint(event.clientX, event.clientY);
+      showDropCandidate(dragState.destination);
+    }
   });
 
   document.addEventListener("mouseup", function () {
-    if (!dragState) return;
-    if (typeof dragState.boundary === "number") {
-      post("move-section", { nodeId: dragState.nodeId, boundary: dragState.boundary });
+    if (resizeState) {
+      finishResize(true);
+    } else {
+      finishDrag(true);
     }
-    if (dropLine) { dropLine.remove(); dropLine = null; }
-    if (grip) grip.style.cursor = "grab";
-    dragState = null;
   });
 
   document.addEventListener(
     "keydown",
     function (event) {
       if (event.key === "Escape" && dragState) {
-        if (dropLine) { dropLine.remove(); dropLine = null; }
-        dragState = null;
+        event.preventDefault();
+        finishDrag(false);
+      } else if (event.key === "Escape" && resizeState) {
+        event.preventDefault();
+        finishResize(false);
       }
     },
     true
@@ -309,19 +877,102 @@ _BRIDGE_V0_TEMPLATE = """
   window.addEventListener(
     "scroll",
     function () {
-      if (grip && selected) positionGrip(selected);
+      if (selected) positionSelectionControls(selected);
+      scheduleSelectedInfo();
     },
     { passive: true }
   );
+  window.addEventListener(
+    "resize",
+    function () {
+      if (selected) positionSelectionControls(selected);
+      scheduleSelectedInfo();
+    },
+    { passive: true }
+  );
+  window.addEventListener("blur", function () {
+    if (dragState) finishDrag(false);
+    if (resizeState) finishResize(false);
+  });
 
   post("ready", {});
 })();
 """
 
 
-def render_bridge_script(nonce: str) -> str:
+def _script_json(value: Any) -> str:
+    """Compact JSON safe to interpolate inside an HTML script body."""
+    return (
+        json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
+def _bridge_page_capabilities(
+    web_doc: dict[str, Any] | None, page_id: str
+) -> tuple[list[str], list[str], list[str], str]:
+    pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+    page = next(
+        (
+            candidate
+            for candidate in (pages or [])
+            if isinstance(candidate, dict) and candidate.get("id") == page_id
+        ),
+        None,
+    )
+    if page is None and isinstance(pages, list):
+        page = next((candidate for candidate in pages if isinstance(candidate, dict)), None)
+    if page is None:
+        return [], [], [], ""
+    nodes = page.get("nodes")
+    nodes = nodes if isinstance(nodes, dict) else {}
+    root_id = page.get("root") if isinstance(page.get("root"), str) else "root"
+    movable_kinds = {"section", "container", "text", "button", "image"}
+    parent_kinds = {"section", "container"}
+    resizable_kinds = {"container", "text", "button", "image"}
+    movable = sorted(
+        node_id
+        for node_id, node in nodes.items()
+        if isinstance(node_id, str)
+        and isinstance(node, dict)
+        and node.get("kind") in movable_kinds
+        and node_id != root_id
+    )
+    drop_parents = sorted(
+        node_id
+        for node_id, node in nodes.items()
+        if isinstance(node_id, str)
+        and isinstance(node, dict)
+        and node.get("kind") in parent_kinds
+        and node_id != root_id
+    )
+    resizable = sorted(
+        node_id
+        for node_id, node in nodes.items()
+        if isinstance(node_id, str)
+        and isinstance(node, dict)
+        and node.get("kind") in resizable_kinds
+        and node_id != root_id
+    )
+    return movable, drop_parents, resizable, root_id
+
+
+def render_bridge_script(
+    nonce: str, web_doc: dict[str, Any] | None = None, page_id: str = "home"
+) -> str:
     """The bridge script with the shell's nonce baked in. Raises ValueError on
     a nonce outside the strict charset — the caller maps that to a 422."""
     if not NONCE_PATTERN.match(nonce or ""):
         raise ValueError("bridge nonce must match ^[A-Za-z0-9-]{8,64}$")
-    return _BRIDGE_V0_TEMPLATE.replace("__LUMEN_BRIDGE_NONCE__", nonce)
+    movable, drop_parents, resizable, root_id = _bridge_page_capabilities(
+        web_doc, page_id
+    )
+    return (
+        _BRIDGE_V0_TEMPLATE.replace("__LUMEN_BRIDGE_NONCE__", nonce)
+        .replace("__LUMEN_MOVABLE_NODE_IDS__", _script_json(movable))
+        .replace("__LUMEN_DROP_PARENT_NODE_IDS__", _script_json(drop_parents))
+        .replace("__LUMEN_RESIZABLE_NODE_IDS__", _script_json(resizable))
+        .replace("__LUMEN_ROOT_NODE_ID__", _script_json(root_id))
+    )

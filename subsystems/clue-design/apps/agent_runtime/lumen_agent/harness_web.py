@@ -251,6 +251,7 @@ def run_deepagent_web_turn(
         "status": status,
         "summary": summary,
         "web_doc": web_doc,
+        "operations": list(tools.operations_ledger),
         "preview_paths": list(tools.preview_paths),
         "outcome": outcome,
     }

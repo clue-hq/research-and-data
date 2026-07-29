@@ -156,7 +156,17 @@ pub fn render_page(
             html.push_str(&format!("<script src=\"{}\"></script>\n", escape_attr(src)));
         }
     }
-    html.push_str(&format!("<style>\n{}\n</style>\n", theme.base_css));
+    if editor {
+        // Tailwind v4 emits authored utilities inside cascade layers. Keep
+        // semantic theme defaults in the lower-priority base layer so a
+        // per-node utility from the human inspector can override them.
+        html.push_str(&format!(
+            "<style>\n@layer base {{\n{}\n}}\n</style>\n",
+            theme.base_css
+        ));
+    } else {
+        html.push_str(&format!("<style>\n{}\n</style>\n", theme.base_css));
+    }
     // Platform component base styles, versioned with the runtime; emitted in
     // both modes only when the page actually uses a Component node.
     if uses_components {
@@ -820,6 +830,7 @@ mod tests {
         assert!(output.html.contains("data-node-id=\"hero\""));
         assert!(output.html.contains("text/tailwindcss"));
         assert!(output.html.contains("/vendor/tailwind.js"));
+        assert!(output.html.contains("@layer base"));
         assert!(output.html.contains("console.log('bridge')"));
         assert!(output.html.contains("src=\"/asset-store/abc123\""));
     }
@@ -837,6 +848,7 @@ mod tests {
         assert!(!output.html.contains("data-node-id"));
         assert!(!output.html.contains("<script"));
         assert!(!output.html.contains("text/tailwindcss"));
+        assert!(!output.html.contains("@layer base"));
         // A component-free page pulls in neither the platform CSS nor runtime.
         assert!(!output.html.contains("lumen-platform"));
         // Semantic styling hooks stay.

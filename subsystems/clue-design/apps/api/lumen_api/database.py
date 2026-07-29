@@ -28,6 +28,23 @@ class NotFoundError(KeyError):
         return f"{self.resource_type} {self.resource_id} was not found"
 
 
+class WebDocumentVersionConflict(RuntimeError):
+    """A website write lost its optimistic-concurrency race.
+
+    Raised from the repository rather than only checked at the HTTP boundary so
+    background agent workers and foreground editor writes share the same atomic
+    compare-and-swap protection.
+    """
+
+    def __init__(self, document_id: str, expected: int, current: int) -> None:
+        super().__init__(
+            f"document {document_id} expected version {expected}, current version is {current}"
+        )
+        self.document_id = document_id
+        self.expected = expected
+        self.current = current
+
+
 # The ONE `assets`-table column list + row builder: create_asset_record
 # (canonical upsert) and register_scene_assets (scene promotion) both write
 # through these, so a schema addition cannot silently diverge between the
@@ -657,6 +674,7 @@ class Repository:
         push_undo: bool = True,
         reverts_batch_id: Optional[str] = None,
         reapplies_batch_id: Optional[str] = None,
+        expected_base_version: Optional[int] = None,
     ) -> JsonObject:
         """Persist a website-mode write: replace the stored WebDoc and append an
         invertible edit envelope through the SAME machinery a scene write uses
@@ -685,16 +703,22 @@ class Repository:
         - effective-brand columns — a web turn does not recompute an effective
           scene brand; the theme ref on the WebDoc is the source of truth.
 
-        For a manual edit the forward op is a real WebOperation batch with the
-        helper's inverse_operations; for an agent turn the forward op is the
-        marker `[{"kind":"replace_web_doc"}]` (the new doc is the row's
-        current_scene_json) and the inverse carries the PRIOR doc so a future
-        undo is a pure whole-document swap.
+        Manual edits and current agent turns both persist real WebOperation
+        batches with the helper's checked inverse_operations. Historical rows
+        may still contain a `replace_web_doc` marker; undo/redo retains a legacy
+        compatibility branch for those envelopes.
         """
         now = utc_now()
         with self.connection:
             document = self.require_document(document_id)
             base_revision = document["current_version"]
+            if (
+                expected_base_version is not None
+                and base_revision != expected_base_version
+            ):
+                raise WebDocumentVersionConflict(
+                    document_id, expected_base_version, base_revision
+                )
             version = base_revision + 1
             batch_id = new_batch_id()
             undo_stack = list(document.get("undo_stack") or [])
@@ -722,23 +746,54 @@ class Repository:
                 "reverts_batch_id": reverts_batch_id,
                 "reapplies_batch_id": reapplies_batch_id,
             }
-            self.connection.execute(
-                """
-                UPDATE documents
-                SET title = ?, current_scene_json = ?, current_version = ?,
-                    undo_stack_json = ?, redo_stack_json = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    web_doc["title"],
-                    encode(web_doc),
-                    version,
-                    encode(undo_stack),
-                    encode(redo_stack),
-                    now,
+            if expected_base_version is None:
+                cursor = self.connection.execute(
+                    """
+                    UPDATE documents
+                    SET title = ?, current_scene_json = ?, current_version = ?,
+                        undo_stack_json = ?, redo_stack_json = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        web_doc["title"],
+                        encode(web_doc),
+                        version,
+                        encode(undo_stack),
+                        encode(redo_stack),
+                        now,
+                        document_id,
+                    ),
+                )
+            else:
+                # The version predicate closes the race between the read above
+                # and this write when another connection commits in between.
+                cursor = self.connection.execute(
+                    """
+                    UPDATE documents
+                    SET title = ?, current_scene_json = ?, current_version = ?,
+                        undo_stack_json = ?, redo_stack_json = ?, updated_at = ?
+                    WHERE id = ? AND current_version = ?
+                    """,
+                    (
+                        web_doc["title"],
+                        encode(web_doc),
+                        version,
+                        encode(undo_stack),
+                        encode(redo_stack),
+                        now,
+                        document_id,
+                        expected_base_version,
+                    ),
+                )
+            if cursor.rowcount != 1:
+                current = self.require_document(document_id)["current_version"]
+                raise WebDocumentVersionConflict(
                     document_id,
-                ),
-            )
+                    expected_base_version
+                    if expected_base_version is not None
+                    else base_revision,
+                    current,
+                )
             self.append_envelope(
                 document_id,
                 envelope,

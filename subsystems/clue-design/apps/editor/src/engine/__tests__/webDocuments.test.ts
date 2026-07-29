@@ -18,12 +18,15 @@ import {
   listWebTemplates,
   mint,
   moveSectionIndex,
+  planCanvasNodeMove,
+  planCanvasNodeResize,
   publishWebDocument,
   resumeWebBatch,
   rollbackWebPublish,
   saveWebTemplate,
   setSlotKeyOp,
   slotKeyParts,
+  startWebTurn,
   startWebBatch,
   suggestPublishSlug,
   suggestSlugBase,
@@ -65,6 +68,31 @@ describe("webNodeButtonAction", () => {
 
   it("falls back to link for an unknown command", () => {
     expect(webNodeButtonAction(buttonNode({ command: "bogus" }))).toBe("link");
+  });
+});
+
+describe("startWebTurn", () => {
+  it("pins the async turn to the loaded document version", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { run_id: "run_web_1" }));
+    const started = await startWebTurn(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_web",
+      "Tighten the hero",
+      12,
+      "openai:test-model",
+      ["hero-copy"]
+    );
+    expect(started).toEqual({ runId: "run_web_1" });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/documents/doc_web/web/turns");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      prompt: "Tighten the hero",
+      base_version: 12,
+      model: "openai:test-model",
+      target_node_ids: ["hero-copy"]
+    });
   });
 });
 
@@ -358,6 +386,140 @@ describe("moveSectionIndex", () => {
   it("a same-slot drop resolves to the source index (caller no-ops)", () => {
     expect(moveSectionIndex(1, 1)).toBe(1);
     expect(moveSectionIndex(1, 2)).toBe(1);
+  });
+});
+
+describe("planCanvasNodeMove", () => {
+  function movePage(): WebPageSummary {
+    const page = structuralPage();
+    page.nodes = {
+      ...page.nodes,
+      box: { ...page.nodes!.box, children: ["t1", "cta", "photo", "inner"] },
+      cta: {
+        id: "cta",
+        kind: "button",
+        classes: "",
+        label: "Go",
+        href: "https://example.com"
+      },
+      photo: {
+        id: "photo",
+        kind: "image",
+        classes: "",
+        asset_id: "asset_photo",
+        alt: "Photo"
+      },
+      inner: { id: "inner", kind: "container", classes: "", children: [] }
+    };
+    return page;
+  }
+
+  it("plans sibling reorder with the post-removal destination index", () => {
+    expect(planCanvasNodeMove(movePage(), "photo", "box", 0)).toEqual({
+      operation: {
+        kind: "move_node",
+        page_id: "home",
+        id: "photo",
+        new_parent: "box",
+        index: 0
+      },
+      intent: "reorder_node"
+    });
+  });
+
+  it("plans a text/button/image/container reparent into a Section or Container", () => {
+    const page = movePage();
+    expect(planCanvasNodeMove(page, "t1", "secB", 0)?.intent).toBe("reparent_node");
+    expect(planCanvasNodeMove(page, "cta", "secB", 0)?.operation).toEqual(
+      expect.objectContaining({ kind: "move_node", id: "cta", new_parent: "secB" })
+    );
+    expect(planCanvasNodeMove(page, "photo", "secB", 0)).not.toBeNull();
+    expect(planCanvasNodeMove(page, "inner", "secB", 0)).not.toBeNull();
+  });
+
+  it("keeps Sections at the root while preserving top-level reorder", () => {
+    expect(planCanvasNodeMove(movePage(), "secB", "root", 0)).toEqual({
+      operation: {
+        kind: "move_node",
+        page_id: "home",
+        id: "secB",
+        new_parent: "root",
+        index: 0
+      },
+      intent: "reorder_node"
+    });
+    expect(planCanvasNodeMove(movePage(), "secB", "secA", 0)).toBeNull();
+    expect(planCanvasNodeMove(movePage(), "cta", "root", 0)).toBeNull();
+  });
+
+  it("rejects roots, cycles, leaves as parents, invalid indexes and same-slot drops", () => {
+    const page = movePage();
+    expect(planCanvasNodeMove(page, "root", "secA", 0)).toBeNull();
+    expect(planCanvasNodeMove(page, "box", "inner", 0)).toBeNull();
+    expect(planCanvasNodeMove(page, "cta", "t1", 0)).toBeNull();
+    expect(planCanvasNodeMove(page, "cta", "secB", 2)).toBeNull();
+    expect(planCanvasNodeMove(page, "cta", "box", 1)).toBeNull();
+    expect(planCanvasNodeMove(page, "missing", "box", 0)).toBeNull();
+  });
+});
+
+describe("planCanvasNodeResize", () => {
+  function resizePage(): WebPageSummary {
+    return {
+      id: "home",
+      name: "Home",
+      route: "/",
+      root: "root",
+      nodes: {
+        root: { id: "root", kind: "root", classes: "", children: ["hero"] },
+        hero: { id: "hero", kind: "section", classes: "", children: ["stack"] },
+        stack: {
+          id: "stack",
+          kind: "container",
+          classes: "flex size-10 md:w-full rounded-xl",
+          children: ["copy", "cta", "photo"]
+        },
+        copy: { id: "copy", kind: "text", classes: "text-primary", content: "Hello" },
+        cta: { id: "cta", kind: "button", classes: "w-fit", label: "Go" },
+        photo: { id: "photo", kind: "image", classes: "h-auto", asset_id: "a", alt: "" }
+      }
+    };
+  }
+
+  it("persists a corner resize as one class operation", () => {
+    expect(planCanvasNodeResize(resizePage(), "stack", 320, 180)).toEqual({
+      operation: {
+        kind: "set_node_classes",
+        page_id: "home",
+        id: "stack",
+        classes: "flex md:w-full rounded-xl w-[320px] h-[180px]"
+      },
+      intent: "resize_node"
+    });
+  });
+
+  it("supports one-axis resize for containers, text, buttons, and images", () => {
+    const page = resizePage();
+    expect(planCanvasNodeResize(page, "stack", 240, null)).not.toBeNull();
+    expect(planCanvasNodeResize(page, "copy", 240, null)).not.toBeNull();
+    expect(planCanvasNodeResize(page, "cta", 240, null)).not.toBeNull();
+    expect(planCanvasNodeResize(page, "photo", null, 160)).not.toBeNull();
+  });
+
+  it("rejects sections, roots, missing nodes, invalid bounds, and no-op sizes", () => {
+    const page = resizePage();
+    expect(planCanvasNodeResize(page, "hero", 320, 180)).toBeNull();
+    expect(planCanvasNodeResize(page, "root", 320, 180)).toBeNull();
+    expect(planCanvasNodeResize(page, "missing", 320, 180)).toBeNull();
+    expect(planCanvasNodeResize(page, "copy", 15, null)).toBeNull();
+    expect(planCanvasNodeResize(page, "copy", Number.NaN, null)).toBeNull();
+    expect(planCanvasNodeResize(page, "copy", null, null)).toBeNull();
+    const once = planCanvasNodeResize(page, "copy", 240, null);
+    if (!once || once.operation.kind !== "set_node_classes") {
+      throw new Error("expected set_node_classes");
+    }
+    page.nodes!.copy.classes = once.operation.classes;
+    expect(planCanvasNodeResize(page, "copy", 240, null)).toBeNull();
   });
 });
 

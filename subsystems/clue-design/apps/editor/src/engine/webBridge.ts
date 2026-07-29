@@ -17,16 +17,89 @@
 
 export const WEB_BRIDGE_CHANNEL = "lumen-web-bridge";
 
-/** A node the canvas bridge reported as selected. Mirrors the render bridge's
- * `node` payload: `tag` is the DOM tag, `tv`/`btn` flag a text-value/button
- * node, `text` is the node's trimmed text (used for the chip excerpt). */
-export interface WebSelection {
+export interface WebNodeRect {
+  x: number;
+  y: number;
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+export interface WebNodeGeometry {
+  viewport: WebNodeRect;
+  document: WebNodeRect;
+}
+
+/** Allowlisted getComputedStyle values reported by the sandbox bridge. The
+ * rendered DOM is an observation surface only; authored mutations still go
+ * through canonical WebOperations. */
+export interface WebNodeComputedStyle {
+  authoredClasses: string;
+  display: string;
+  position: string;
+  boxSizing: string;
+  width: string;
+  height: string;
+  minWidth: string;
+  minHeight: string;
+  maxWidth: string;
+  maxHeight: string;
+  marginTop: string;
+  marginRight: string;
+  marginBottom: string;
+  marginLeft: string;
+  paddingTop: string;
+  paddingRight: string;
+  paddingBottom: string;
+  paddingLeft: string;
+  gap: string;
+  rowGap: string;
+  columnGap: string;
+  flexDirection: string;
+  flexWrap: string;
+  flexGrow: string;
+  flexShrink: string;
+  justifyContent: string;
+  alignItems: string;
+  alignSelf: string;
+  gridTemplateColumns: string;
+  gridTemplateRows: string;
+  fontFamily: string;
+  fontSize: string;
+  fontWeight: string;
+  lineHeight: string;
+  textAlign: string;
+  color: string;
+  backgroundColor: string;
+  borderTopWidth: string;
+  borderRightWidth: string;
+  borderBottomWidth: string;
+  borderLeftWidth: string;
+  borderRadius: string;
+  objectFit: string;
+  objectPosition: string;
+  overflowX: string;
+  overflowY: string;
+  opacity: string;
+}
+
+/** A generic rendered-node snapshot reported by the canvas bridge. */
+export interface WebNodeInfo {
   nodeId: string;
   tag: string;
   tv: boolean;
   btn: boolean;
   text: string;
+  parentNodeId: string | null;
+  childNodeIds: string[];
+  geometry: WebNodeGeometry;
+  computedStyle: WebNodeComputedStyle;
 }
+
+export type WebSelection = WebNodeInfo;
 
 /** A validated inbound bridge message.
  *   • `ready` — the bridge is live.
@@ -39,14 +112,106 @@ export interface WebSelection {
 export type WebBridgeInbound =
   | { type: "ready" }
   | { type: "select"; selection: WebSelection | null }
+  | { type: "node-info"; node: WebNodeInfo }
   | { type: "edit-start"; nodeId: string }
   | { type: "text-commit"; nodeId: string; html: string }
-  | { type: "move-section"; nodeId: string; boundary: number };
+  | {
+      type: "move-node";
+      nodeId: string;
+      newParentNodeId: string;
+      index: number;
+    }
+  | {
+      type: "resize-node";
+      nodeId: string;
+      widthPx: number | null;
+      heightPx: number | null;
+    };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
  * missing/partial shape. Returns `null` for an absent node (a cleared
  * selection) or one without an id. */
-function coerceSelection(node: unknown): WebSelection | null {
+const RECT_KEYS = [
+  "x",
+  "y",
+  "top",
+  "right",
+  "bottom",
+  "left",
+  "width",
+  "height"
+] as const;
+
+const COMPUTED_STYLE_KEYS = [
+  "authoredClasses",
+  "display",
+  "position",
+  "boxSizing",
+  "width",
+  "height",
+  "minWidth",
+  "minHeight",
+  "maxWidth",
+  "maxHeight",
+  "marginTop",
+  "marginRight",
+  "marginBottom",
+  "marginLeft",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "gap",
+  "rowGap",
+  "columnGap",
+  "flexDirection",
+  "flexWrap",
+  "flexGrow",
+  "flexShrink",
+  "justifyContent",
+  "alignItems",
+  "alignSelf",
+  "gridTemplateColumns",
+  "gridTemplateRows",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "textAlign",
+  "color",
+  "backgroundColor",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
+  "borderRadius",
+  "objectFit",
+  "objectPosition",
+  "overflowX",
+  "overflowY",
+  "opacity"
+] as const;
+
+function coerceRect(value: unknown): WebNodeRect {
+  const record =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return Object.fromEntries(
+    RECT_KEYS.map((key) => [
+      key,
+      typeof record[key] === "number" && Number.isFinite(record[key]) ? record[key] : 0
+    ])
+  ) as unknown as WebNodeRect;
+}
+
+function coerceComputedStyle(value: unknown): WebNodeComputedStyle {
+  const record =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return Object.fromEntries(
+    COMPUTED_STYLE_KEYS.map((key) => [key, typeof record[key] === "string" ? record[key] : ""])
+  ) as unknown as WebNodeComputedStyle;
+}
+
+function coerceNodeInfo(node: unknown): WebNodeInfo | null {
   if (!node || typeof node !== "object") {
     return null;
   }
@@ -55,12 +220,25 @@ function coerceSelection(node: unknown): WebSelection | null {
   if (!nodeId) {
     return null;
   }
+  const geometry =
+    record.geometry && typeof record.geometry === "object"
+      ? (record.geometry as Record<string, unknown>)
+      : {};
   return {
     nodeId,
     tag: typeof record.tag === "string" ? record.tag : "",
     tv: Boolean(record.tv),
     btn: Boolean(record.btn),
-    text: typeof record.text === "string" ? record.text : ""
+    text: typeof record.text === "string" ? record.text : "",
+    parentNodeId: typeof record.parentNodeId === "string" ? record.parentNodeId : null,
+    childNodeIds: Array.isArray(record.childNodeIds)
+      ? record.childNodeIds.filter((value): value is string => typeof value === "string")
+      : [],
+    geometry: {
+      viewport: coerceRect(geometry.viewport),
+      document: coerceRect(geometry.document)
+    },
+    computedStyle: coerceComputedStyle(record.computedStyle)
   };
 }
 
@@ -101,7 +279,11 @@ export function validateBridgeMessage(
     return { type: "ready" };
   }
   if (data.type === "select") {
-    return { type: "select", selection: coerceSelection(data.node) };
+    return { type: "select", selection: coerceNodeInfo(data.node) };
+  }
+  if (data.type === "node-info") {
+    const node = coerceNodeInfo(data.node);
+    return node ? { type: "node-info", node } : null;
   }
   if (data.type === "edit-start") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
@@ -114,12 +296,46 @@ export function validateBridgeMessage(
     }
     return { type: "text-commit", nodeId, html: typeof data.html === "string" ? data.html : "" };
   }
-  if (data.type === "move-section") {
+  if (data.type === "move-node") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
-    if (!nodeId || typeof data.boundary !== "number" || !Number.isInteger(data.boundary)) {
+    const newParentNodeId =
+      typeof data.newParentNodeId === "string" ? data.newParentNodeId : "";
+    if (
+      !nodeId ||
+      !newParentNodeId ||
+      typeof data.index !== "number" ||
+      !Number.isInteger(data.index) ||
+      data.index < 0
+    ) {
       return null;
     }
-    return { type: "move-section", nodeId, boundary: data.boundary };
+    return { type: "move-node", nodeId, newParentNodeId, index: data.index };
+  }
+  if (data.type === "resize-node") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    const widthPx =
+      data.widthPx === null || data.widthPx === undefined
+        ? null
+        : typeof data.widthPx === "number" && Number.isFinite(data.widthPx)
+          ? data.widthPx
+          : Number.NaN;
+    const heightPx =
+      data.heightPx === null || data.heightPx === undefined
+        ? null
+        : typeof data.heightPx === "number" && Number.isFinite(data.heightPx)
+          ? data.heightPx
+          : Number.NaN;
+    if (
+      !nodeId ||
+      Number.isNaN(widthPx) ||
+      Number.isNaN(heightPx) ||
+      (widthPx === null && heightPx === null) ||
+      (widthPx !== null && widthPx <= 0) ||
+      (heightPx !== null && heightPx <= 0)
+    ) {
+      return null;
+    }
+    return { type: "resize-node", nodeId, widthPx, heightPx };
   }
   return null;
 }
@@ -183,4 +399,18 @@ export function webBridgeSelectNodeMessage(
   nodeId: string;
 } {
   return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "select-node", nodeId };
+}
+
+/** Ask the current iframe render for geometry/computed style for any canonical
+ * node id without changing selection or canvas highlight state. */
+export function webBridgeInspectNodeMessage(
+  nonce: string,
+  nodeId: string
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "inspect-node";
+  nodeId: string;
+} {
+  return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "inspect-node", nodeId };
 }

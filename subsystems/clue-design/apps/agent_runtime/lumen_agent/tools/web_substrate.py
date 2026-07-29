@@ -246,6 +246,11 @@ class LumenWebTools:
         # A deep copy so the caller's stored doc is never mutated in place; every
         # accepted mutation replaces this with the helper's returned doc.
         self.web_doc: JsonObject = copy.deepcopy(initial_web_doc)
+        # The exact checked WebOperations that produced ``web_doc`` from the
+        # turn's starting revision. The API replays this ledger before commit
+        # and persists it as the agent envelope; a whole-document replacement
+        # is no longer an acceptable handoff.
+        self.operations_ledger: List[JsonObject] = []
 
         self.trace_dir = config.trace_dir / self.run_id
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -426,6 +431,79 @@ class LumenWebTools:
     def _page_node_count(self) -> int:
         return len(self._home_page().get("nodes") or {})
 
+    def _record_operations(self, operations: List[JsonObject]) -> None:
+        """Append accepted operations in application order.
+
+        Deep-copying prevents later tool bookkeeping from mutating the durable
+        commit payload after the helper has accepted it.
+        """
+        self.operations_ledger.extend(copy.deepcopy(operations))
+
+    def _page_replacement_operations(
+        self, before: JsonObject, after: JsonObject
+    ) -> List[JsonObject]:
+        """Express a successful full-page ingest as canonical WebOperations.
+
+        ``web_ingest_html`` is deliberately an author-friendly atomic replace
+        primitive. The persistence seam is operation-only, so translate that
+        accepted replacement into remove/insert operations plus a custom-CSS
+        update. Replaying this batch against ``before`` must reproduce ``after``
+        exactly; the API verifies that invariant before committing.
+        """
+
+        def page_in(doc: JsonObject) -> JsonObject:
+            for page in doc.get("pages") or []:
+                if isinstance(page, dict) and page.get("id") == self.page_id:
+                    return page
+            return {}
+
+        before_page = page_in(before)
+        after_page = page_in(after)
+        before_nodes = before_page.get("nodes") or {}
+        after_nodes = after_page.get("nodes") or {}
+        before_root_id = before_page.get("root")
+        after_root_id = after_page.get("root")
+        if not before_root_id or before_root_id != after_root_id:
+            # The ingest contract never replaces a page root. Returning no
+            # operations makes the API replay/equality guard fail closed if
+            # that contract ever drifts.
+            return []
+
+        operations: List[JsonObject] = []
+        before_root = before_nodes.get(before_root_id) or {}
+        for child_id in before_root.get("children") or []:
+            operations.append(
+                {"kind": "remove_node", "page_id": self.page_id, "id": child_id}
+            )
+
+        after_root = after_nodes.get(after_root_id) or {}
+        all_after_nodes = [
+            node for node in after_nodes.values() if isinstance(node, dict)
+        ]
+        for index, child_id in enumerate(after_root.get("children") or []):
+            subtree_ids = self._subtree_ids(after_nodes, child_id)
+            subtree = [
+                copy.deepcopy(node)
+                for node in all_after_nodes
+                if node.get("id") in subtree_ids
+            ]
+            operations.append(
+                {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": after_root_id,
+                    "index": index,
+                    "nodes": subtree,
+                    "root": child_id,
+                }
+            )
+
+        before_css = before.get("custom_css") or ""
+        after_css = after.get("custom_css") or ""
+        if before_css != after_css:
+            operations.append({"kind": "set_custom_css", "css": after_css})
+        return operations
+
     def _doc_summary_text(self) -> str:
         page = self._home_page()
         nodes = page.get("nodes") or {}
@@ -534,6 +612,7 @@ class LumenWebTools:
         html = submission["html"]
         custom_css = submission["custom_css"]
         input_summary = self._authoring_input_summary(origin, patch_count, html[:200])
+        before = copy.deepcopy(self.web_doc)
         try:
             response = self.core.web_ingest_html(
                 self.web_doc,
@@ -574,6 +653,9 @@ class LumenWebTools:
             )
 
         self.web_doc = response["web_doc"]
+        self._record_operations(
+            self._page_replacement_operations(before, self.web_doc)
+        )
         self._doc_version += 1
         self._clear_pending()
         installed = response.get("applied_operations")
@@ -814,6 +896,7 @@ class LumenWebTools:
             )
 
         self.web_doc = applied["web_doc"]
+        self._record_operations(batch)
         self._doc_version += 1
         self._clear_pending()
         warnings = [
@@ -1169,6 +1252,7 @@ class LumenWebTools:
             )
 
         self.web_doc = response["web_doc"]
+        self._record_operations(operations)
         self._doc_version += 1
         diagnostics = response.get("diagnostics") or []
         warnings = [
@@ -1429,9 +1513,10 @@ class LumenWebTools:
         """Upsert an AssetRecord into the WebDoc via the checked op path and
         replace the working doc. A rejected batch (invalid doc) never replaces
         the doc; a helper error surfaces verbatim."""
+        operation = {"kind": "upsert_asset", "record": record}
         try:
             response = self.core.web_apply_ops(
-                self.web_doc, [{"kind": "upsert_asset", "record": record}]
+                self.web_doc, [operation]
             )
         except CoreError as error:
             self.record(
@@ -1448,6 +1533,7 @@ class LumenWebTools:
                 diagnostics=list(error.diagnostics or []),
             )
         self.web_doc = response["web_doc"]
+        self._record_operations([operation])
         self._doc_version += 1
         result: JsonObject = {
             "status": "ok",
@@ -2180,6 +2266,10 @@ class LumenWebTools:
             payload["ladder_gap"] = gap
         self._write_json(self.trace_dir / "final.json", payload)
         self._write_json(self.trace_dir / "final_web_doc.json", self.web_doc)
+        self._write_json(
+            self.trace_dir / "final_web_operations.json",
+            {"operations": self.operations_ledger},
+        )
         self.record(
             "coordinator",
             "web_run_finalized",

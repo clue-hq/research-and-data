@@ -6,6 +6,7 @@ import {
   validateBridgeMessage,
   webBridgeClearMessage,
   webBridgeComponentPreviewMessage,
+  webBridgeInspectNodeMessage,
   webBridgeSelectNodeMessage,
   type WebSelection
 } from "../webBridge";
@@ -34,10 +35,20 @@ describe("validateBridgeMessage", () => {
   it("accepts a valid select from the expected frame with the current nonce", () => {
     const event = makeEvent({ data: selectData(HERO_NODE), origin: "null", source: FRAME });
     const result = validateBridgeMessage(event, NONCE, FRAME);
-    expect(result).toEqual({
+    expect(result).toEqual(
+      expect.objectContaining({
       type: "select",
-      selection: { nodeId: "hero", tag: "section", tv: false, btn: false, text: "Welcome" }
-    });
+        selection: expect.objectContaining({
+          nodeId: "hero",
+          tag: "section",
+          tv: false,
+          btn: false,
+          text: "Welcome",
+          parentNodeId: null,
+          childNodeIds: []
+        })
+      })
+    );
   });
 
   it("rejects a message from a different source window", () => {
@@ -103,6 +114,68 @@ describe("validateBridgeMessage", () => {
     expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({ type: "ready" });
   });
 
+  it("coerces geometry and computed styles from a node-info update", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "node-info",
+        node: {
+          ...HERO_NODE,
+          parentNodeId: "root",
+          childNodeIds: ["headline"],
+          geometry: {
+            viewport: { x: 5.5, y: 7, width: 900, height: 320 },
+            document: { x: 5.5, y: 107, width: 900, height: 320 }
+          },
+          computedStyle: {
+            authoredClasses: "flex gap-4",
+            display: "flex",
+            paddingTop: "16px",
+            fontSize: "16px"
+          }
+        }
+      },
+      origin: "null",
+      source: FRAME
+    });
+    const result = validateBridgeMessage(event, NONCE, FRAME);
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: "node-info",
+        node: expect.objectContaining({
+          nodeId: "hero",
+          parentNodeId: "root",
+          childNodeIds: ["headline"],
+          geometry: expect.objectContaining({
+            viewport: expect.objectContaining({ x: 5.5, width: 900, height: 320 }),
+            document: expect.objectContaining({ y: 107 })
+          }),
+          computedStyle: expect.objectContaining({
+            authoredClasses: "flex gap-4",
+            display: "flex",
+            paddingTop: "16px",
+            fontSize: "16px"
+          })
+        })
+      })
+    );
+  });
+
+  it("rejects node-info without a stable node id", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "node-info",
+        node: { tag: "div" }
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
+  });
+
   it("ignores unknown message types", () => {
     const event = makeEvent({
       data: { channel: "lumen-web-bridge", nonce: NONCE, type: "hover" },
@@ -152,44 +225,113 @@ describe("validateBridgeMessage", () => {
     });
   });
 
-  it("passes a move-section through with node id + integer boundary", () => {
+  it("passes a generic move-node destination through", () => {
     const event = makeEvent({
       data: {
         channel: "lumen-web-bridge",
         nonce: NONCE,
-        type: "move-section",
-        nodeId: "secB",
-        boundary: 2
+        type: "move-node",
+        nodeId: "cta",
+        newParentNodeId: "secondary_stack",
+        index: 2
       },
       origin: "null",
       source: FRAME
     });
     expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
-      type: "move-section",
-      nodeId: "secB",
-      boundary: 2
+      type: "move-node",
+      nodeId: "cta",
+      newParentNodeId: "secondary_stack",
+      index: 2
     });
   });
 
-  it("rejects a move-section with a missing node id or non-integer boundary", () => {
+  it("rejects malformed or negative move-node destinations", () => {
     const noId = makeEvent({
-      data: { channel: "lumen-web-bridge", nonce: NONCE, type: "move-section", boundary: 1 },
-      origin: "null",
-      source: FRAME
-    });
-    expect(validateBridgeMessage(noId, NONCE, FRAME)).toBeNull();
-    const badBoundary = makeEvent({
       data: {
         channel: "lumen-web-bridge",
         nonce: NONCE,
-        type: "move-section",
-        nodeId: "secB",
-        boundary: "2"
+        type: "move-node",
+        newParentNodeId: "stack",
+        index: 1
       },
       origin: "null",
       source: FRAME
     });
-    expect(validateBridgeMessage(badBoundary, NONCE, FRAME)).toBeNull();
+    expect(validateBridgeMessage(noId, NONCE, FRAME)).toBeNull();
+    const badIndex = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "move-node",
+        nodeId: "cta",
+        newParentNodeId: "stack",
+        index: -1
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(badIndex, NONCE, FRAME)).toBeNull();
+  });
+
+  it("passes width-only, height-only, and corner resize intents", () => {
+    const corner = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "resize-node",
+        nodeId: "cta",
+        widthPx: 240,
+        heightPx: 56
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(corner, NONCE, FRAME)).toEqual({
+      type: "resize-node",
+      nodeId: "cta",
+      widthPx: 240,
+      heightPx: 56
+    });
+
+    const widthOnly = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "resize-node",
+        nodeId: "copy",
+        widthPx: 360
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(widthOnly, NONCE, FRAME)).toEqual({
+      type: "resize-node",
+      nodeId: "copy",
+      widthPx: 360,
+      heightPx: null
+    });
+  });
+
+  it("rejects malformed resize intents", () => {
+    for (const payload of [
+      { nodeId: "", widthPx: 120, heightPx: null },
+      { nodeId: "copy", widthPx: null, heightPx: null },
+      { nodeId: "copy", widthPx: -1, heightPx: null },
+      { nodeId: "copy", widthPx: "120", heightPx: null }
+    ]) {
+      const event = makeEvent({
+        data: {
+          channel: "lumen-web-bridge",
+          nonce: NONCE,
+          type: "resize-node",
+          ...payload
+        },
+        origin: "null",
+        source: FRAME
+      });
+      expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
+    }
   });
 
   it("defaults a text-commit's missing html to an empty string", () => {
@@ -222,7 +364,20 @@ describe("validateBridgeMessage", () => {
 });
 
 describe("selection labels", () => {
-  const base: WebSelection = { nodeId: "cta", tag: "a", tv: false, btn: false, text: "" };
+  const base: WebSelection = {
+    nodeId: "cta",
+    tag: "a",
+    tv: false,
+    btn: false,
+    text: "",
+    parentNodeId: null,
+    childNodeIds: [],
+    geometry: {
+      viewport: { x: 0, y: 0, top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 },
+      document: { x: 0, y: 0, top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0 }
+    },
+    computedStyle: {} as WebSelection["computedStyle"]
+  };
 
   it("labels a button, a text node, then falls back to the tag", () => {
     expect(selectionKindLabel({ ...base, btn: true })).toBe("button");
@@ -266,6 +421,17 @@ describe("webBridgeSelectNodeMessage", () => {
       nonce: NONCE,
       type: "select-node",
       nodeId: "dlg-1"
+    });
+  });
+});
+
+describe("webBridgeInspectNodeMessage", () => {
+  it("requests metrics without selecting the node", () => {
+    expect(webBridgeInspectNodeMessage(NONCE, "hero-copy")).toEqual({
+      channel: "lumen-web-bridge",
+      nonce: NONCE,
+      type: "inspect-node",
+      nodeId: "hero-copy"
     });
   });
 });
