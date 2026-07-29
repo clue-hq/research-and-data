@@ -14,10 +14,11 @@ use crate::doc::{
     EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind,
     MAX_TREE_DEPTH,
 };
+use crate::derive::{personalization_key_is_valid, WHEN_PREFIX};
 use crate::inline::sanitize_inline;
 use crate::theme::WebTheme;
 use crate::util::{href_is_allowed, line_col, normalize_entities, self_close_voids};
-use lumen_core::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, NodeId, PageId, Phase};
+use lumen_core::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, NodeId, PageId, Phase, SlotKey};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use std::collections::BTreeSet;
@@ -62,6 +63,7 @@ enum PendingLeaf {
         variant: TextVariant,
         classes: String,
         name: Option<String>,
+        slot_key: Option<SlotKey>,
     },
     Button {
         id: NodeId,
@@ -69,6 +71,7 @@ enum PendingLeaf {
         variant: ButtonVariant,
         classes: String,
         name: Option<String>,
+        slot_key: Option<SlotKey>,
     },
     /// Swallow inner content without producing a node (script bodies,
     /// stray labels inside icon/embed elements).
@@ -366,6 +369,8 @@ impl<'a> IngestState<'a> {
                     | "data-show-arrows"
                     | "data-autoplay"
                     | "data-default-tab"
+                    | "data-slot"
+                    | "data-slot-when"
             );
             if !known {
                 let hint = if key == "style" {
@@ -373,11 +378,11 @@ impl<'a> IngestState<'a> {
                      classes (page-level effects belong in custom_css)."
                 } else {
                     "Recognized attributes: id class href target alt data-variant data-button \
-                     data-icon data-asset data-href data-new-tab data-name, plus the Tier-2 \
-                     component/command/embed data-* attributes (data-component data-command \
-                     data-target data-aria-label data-single-open data-default-open data-speed \
-                     data-direction data-pause-on-hover data-embed data-url data-show-arrows \
-                     data-autoplay data-default-tab)."
+                     data-icon data-asset data-href data-new-tab data-name data-slot \
+                     data-slot-when, plus the Tier-2 component/command/embed data-* attributes \
+                     (data-component data-command data-target data-aria-label data-single-open \
+                     data-default-open data-speed data-direction data-pause-on-hover data-embed \
+                     data-url data-show-arrows data-autoplay data-default-tab)."
                 };
                 self.warning(
                     "LUMW0132",
@@ -438,13 +443,14 @@ impl<'a> IngestState<'a> {
                 let explicit_id = attrs_get(&attrs, "id");
                 let id = self.mint_id("sec", explicit_id.as_deref());
                 let anchor_id = explicit_id;
+                let slot_key = self.take_slot_key(&attrs, &id, true);
                 let node = WebNode {
                     id: id.clone(),
                     kind: WebNodeKind::Section { tag, anchor_id },
                     classes: self.take_classes(&attrs, &id),
                     children: Vec::new(),
                     name: attrs_get(&attrs, "data-name"),
-                    slot_key: None,
+                    slot_key,
                 };
                 if is_empty {
                     self.finish_node(node);
@@ -478,6 +484,7 @@ impl<'a> IngestState<'a> {
                         return;
                     }
                     let classes = self.take_classes(&attrs, &id);
+                    let slot_key = self.take_slot_key(&attrs, &id, false);
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Embed {
@@ -488,7 +495,7 @@ impl<'a> IngestState<'a> {
                         classes,
                         children: Vec::new(),
                         name: attrs_get(&attrs, "data-name"),
-                        slot_key: None,
+                        slot_key,
                     });
                     if !is_empty {
                         // Embed elements are empty; swallow any inner content.
@@ -511,13 +518,14 @@ impl<'a> IngestState<'a> {
                     let Some(spec) = self.parse_component(&component_value, &attrs, &id) else {
                         return;
                     };
+                    let slot_key = self.take_slot_key(&attrs, &id, false);
                     let node = WebNode {
                         id: id.clone(),
                         kind: WebNodeKind::Component { spec },
                         classes: self.take_classes(&attrs, &id),
                         children: Vec::new(),
                         name: attrs_get(&attrs, "data-name"),
-                        slot_key: None,
+                        slot_key,
                     };
                     if is_empty {
                         self.finish_node(node);
@@ -527,13 +535,14 @@ impl<'a> IngestState<'a> {
                     return;
                 }
                 let id = self.mint_id("box", attrs_get(&attrs, "id").as_deref());
+                let slot_key = self.take_slot_key(&attrs, &id, true);
                 let node = WebNode {
                     id: id.clone(),
                     kind: WebNodeKind::Container,
                     classes: self.take_classes(&attrs, &id),
                     children: Vec::new(),
                     name: attrs_get(&attrs, "data-name"),
-                    slot_key: None,
+                    slot_key,
                 };
                 if is_empty {
                     self.finish_node(node);
@@ -583,6 +592,7 @@ impl<'a> IngestState<'a> {
                 let id = self.mint_id("txt", attrs_get(&attrs, "id").as_deref());
                 let classes = self.take_classes(&attrs, &id);
                 let node_name = attrs_get(&attrs, "data-name");
+                let slot_key = self.take_slot_key(&attrs, &id, false);
                 if is_empty {
                     self.finish_node(WebNode {
                         id,
@@ -593,7 +603,7 @@ impl<'a> IngestState<'a> {
                         classes,
                         children: Vec::new(),
                         name: node_name,
-                        slot_key: None,
+                        slot_key,
                     });
                 } else {
                     self.capture = Some(CaptureFrame {
@@ -605,6 +615,7 @@ impl<'a> IngestState<'a> {
                             variant,
                             classes,
                             name: node_name,
+                            slot_key,
                         },
                     });
                 }
@@ -693,6 +704,7 @@ impl<'a> IngestState<'a> {
                 };
                 let classes = self.take_classes(&attrs, &id);
                 let node_name = attrs_get(&attrs, "data-name");
+                let slot_key = self.take_slot_key(&attrs, &id, false);
                 if is_empty {
                     self.finish_node(WebNode {
                         id,
@@ -704,7 +716,7 @@ impl<'a> IngestState<'a> {
                         classes,
                         children: Vec::new(),
                         name: node_name,
-                        slot_key: None,
+                        slot_key,
                     });
                 } else {
                     self.capture = Some(CaptureFrame {
@@ -717,6 +729,7 @@ impl<'a> IngestState<'a> {
                             variant,
                             classes,
                             name: node_name,
+                            slot_key,
                         },
                     });
                 }
@@ -794,6 +807,7 @@ impl<'a> IngestState<'a> {
                 };
                 let new_tab = attrs_get(&attrs, "data-new-tab").as_deref() == Some("true");
                 let classes = self.take_classes(&attrs, &id);
+                let slot_key = self.take_slot_key(&attrs, &id, false);
                 if let Some(asset_id) = asset_id {
                     self.finish_node(WebNode {
                         id,
@@ -806,7 +820,7 @@ impl<'a> IngestState<'a> {
                         classes,
                         children: Vec::new(),
                         name: attrs_get(&attrs, "data-name"),
-                        slot_key: None,
+                        slot_key,
                     });
                 }
             }
@@ -850,13 +864,14 @@ impl<'a> IngestState<'a> {
             return;
         }
         let classes = self.take_classes(attrs, &id);
+        let slot_key = self.take_slot_key(attrs, &id, false);
         self.finish_node(WebNode {
             id: id.clone(),
             kind: WebNodeKind::Icon { icon: icon_name },
             classes,
             children: Vec::new(),
             name: attrs_get(attrs, "data-name"),
-            slot_key: None,
+            slot_key,
         });
     }
 
@@ -1054,7 +1069,7 @@ impl<'a> IngestState<'a> {
                 );
             }
             match capture.pending {
-                PendingLeaf::Text { id, variant, classes, name } => {
+                PendingLeaf::Text { id, variant, classes, name, slot_key } => {
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Text {
@@ -1064,10 +1079,10 @@ impl<'a> IngestState<'a> {
                         classes,
                         children: Vec::new(),
                         name,
-                        slot_key: None,
+                        slot_key,
                     });
                 }
-                PendingLeaf::Button { id, action, variant, classes, name } => {
+                PendingLeaf::Button { id, action, variant, classes, name, slot_key } => {
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Button {
@@ -1078,7 +1093,7 @@ impl<'a> IngestState<'a> {
                         classes,
                         children: Vec::new(),
                         name,
-                        slot_key: None,
+                        slot_key,
                     });
                 }
                 PendingLeaf::Discard { .. } => unreachable!("discard handled above"),
@@ -1135,6 +1150,57 @@ impl<'a> IngestState<'a> {
             self.diagnostics.extend(lint);
         }
         classes
+    }
+
+    /// Resolve a node's personalization slot key from `data-slot` /
+    /// `data-slot-when`. `data-slot` is legal on any element; `data-slot-when`
+    /// (stored as `when:{key}`, a presence gate) is legal only where
+    /// `allow_when` holds (sections and containers). Keys obey the ONE strict
+    /// personalization grammar (`[a-z0-9_.-]+`, ≤64 — same as `data-var`); bad
+    /// key → LUMW0133; misplaced `data-slot-when` → LUMW0134. When both are
+    /// present the gate wins (gating subsumes substitution).
+    fn take_slot_key(
+        &mut self,
+        attrs: &[(String, String)],
+        id: &NodeId,
+        allow_when: bool,
+    ) -> Option<SlotKey> {
+        if let Some(raw) = attrs_get(attrs, "data-slot-when") {
+            let key = raw.trim();
+            if !allow_when {
+                self.error(
+                    "LUMW0134",
+                    format!("data-slot-when on `{id}` is only valid on sections and containers"),
+                    "Presence gating wraps a section or a <div> container; move the marker to the enclosing band.",
+                    Some(id),
+                );
+                return None;
+            }
+            if !personalization_key_is_valid(key) {
+                self.error(
+                    "LUMW0133",
+                    format!("invalid data-slot-when key `{key}` on `{id}`"),
+                    "Keys are lowercase [a-z0-9_.-], max 64 chars (e.g. account.testimonial).",
+                    Some(id),
+                );
+                return None;
+            }
+            return Some(SlotKey::from(format!("{WHEN_PREFIX}{key}")));
+        }
+        if let Some(raw) = attrs_get(attrs, "data-slot") {
+            let key = raw.trim();
+            if !personalization_key_is_valid(key) {
+                self.error(
+                    "LUMW0133",
+                    format!("invalid data-slot key `{key}` on `{id}`"),
+                    "Keys are lowercase [a-z0-9_.-], max 64 chars (e.g. account.name).",
+                    Some(id),
+                );
+                return None;
+            }
+            return Some(SlotKey::from(key));
+        }
+        None
     }
 
     fn mint_id(&mut self, prefix: &str, explicit: Option<&str>) -> NodeId {
@@ -1627,6 +1693,85 @@ mod tests {
             panic!("carousel");
         };
         assert_eq!(*autoplay_s, None);
+    }
+
+    #[test]
+    fn personalization_markers_round_trip_through_ingest() {
+        let outcome = ingest_html(
+            r#"<section id="proof" data-slot-when="account.testimonial">
+                 <div id="grid" data-slot="account.peers">
+                   <p id="peer" data-slot="account.peer_name">Peer</p>
+                 </div>
+                 <h1 id="head">Meet <span data-var="account.name">Acme</span></h1>
+                 <a id="cta" data-button="primary" href="/x" data-slot="account.cta">Go</a>
+               </section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let by_id = |id: &str| {
+            outcome
+                .nodes
+                .iter()
+                .find(|node| node.id.as_str() == id)
+                .unwrap_or_else(|| panic!("node `{id}`"))
+        };
+        // data-slot-when becomes a when:-prefixed slot key on the section.
+        assert_eq!(
+            by_id("proof").slot_key.as_ref().map(|k| k.as_str()),
+            Some("when:account.testimonial")
+        );
+        // data-slot maps straight to slot_key on container, text, and button.
+        assert_eq!(
+            by_id("grid").slot_key.as_ref().map(|k| k.as_str()),
+            Some("account.peers")
+        );
+        assert_eq!(
+            by_id("peer").slot_key.as_ref().map(|k| k.as_str()),
+            Some("account.peer_name")
+        );
+        assert_eq!(
+            by_id("cta").slot_key.as_ref().map(|k| k.as_str()),
+            Some("account.cta")
+        );
+        // data-var survives inside the sanitized text content.
+        let WebNodeKind::Text { content, .. } = &by_id("head").kind else {
+            panic!("text node");
+        };
+        assert!(content.contains("data-var=\"account.name\""), "{content}");
+    }
+
+    #[test]
+    fn invalid_slot_key_errors() {
+        // Off-charset (space), uppercase data-slot, and uppercase
+        // data-slot-when all reject: keys are strictly [a-z0-9_.-].
+        for html in [
+            r#"<section id="s"><p id="p" data-slot="Account Name">x</p></section>"#,
+            r#"<section id="s"><p id="p" data-slot="Account.Name">x</p></section>"#,
+            r#"<section id="s" data-slot-when="Account.Testimonial"><p id="p">x</p></section>"#,
+        ] {
+            let outcome = ingest_html(html, &theme());
+            assert!(
+                outcome
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == "LUMW0133"),
+                "{html}: {:#?}",
+                outcome.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn data_slot_when_on_non_container_errors() {
+        // A text node cannot carry a presence gate.
+        let outcome = ingest_html(
+            r#"<section id="s"><p id="p" data-slot-when="account.x">x</p></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0134"));
     }
 
     #[test]

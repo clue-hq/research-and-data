@@ -6,6 +6,7 @@
 //! sanitizer never fails — disallowed constructs are unwrapped or dropped and
 //! reported as notes; unparseable input is stored as escaped plain text.
 
+use crate::derive::personalization_key_is_valid;
 use crate::util::{
     escape_attr, escape_stray_lt, escape_text, href_is_allowed, normalize_entities,
     self_close_voids,
@@ -147,6 +148,16 @@ fn emit_filtered_attrs(
             }
             ("a", "target") => value == "_blank",
             ("span", "class") => true,
+            // Personalization marker (Phase 5): a data-var span is a variable
+            // node; its inner text is the fallback, replaced at derive time.
+            ("span", "data-var") => {
+                if personalization_key_is_valid(&value) {
+                    true
+                } else {
+                    removed.push(format!("dropped invalid data-var key: {value}"));
+                    false
+                }
+            }
             _ => {
                 if key.starts_with("on") {
                     removed.push(format!("dropped event handler attribute {key}"));
@@ -228,6 +239,37 @@ mod tests {
     fn survives_unparseable_input_as_plain_text() {
         let result = sanitize_inline("a < b & c");
         assert_eq!(result.html, "a &lt; b &amp; c");
+    }
+
+    #[test]
+    fn keeps_valid_data_var_on_span() {
+        let result = sanitize_inline(
+            "Meet <span data-var=\"account.name\" class=\"text-primary\">Acme</span> today",
+        );
+        assert_eq!(
+            result.html,
+            "Meet <span data-var=\"account.name\" class=\"text-primary\">Acme</span> today"
+        );
+        assert!(result.removed.is_empty(), "{:?}", result.removed);
+    }
+
+    #[test]
+    fn strips_invalid_data_var_key_but_keeps_span() {
+        // Uppercase is off the [a-z0-9_.-] charset.
+        let result = sanitize_inline("<span data-var=\"Account.Name\">Acme</span>");
+        assert_eq!(result.html, "<span>Acme</span>");
+        assert!(result
+            .removed
+            .iter()
+            .any(|note| note.contains("invalid data-var key")));
+    }
+
+    #[test]
+    fn data_var_only_survives_on_span() {
+        // On a non-span element data-var is not part of the vocabulary.
+        let result = sanitize_inline("<strong data-var=\"account.name\">Acme</strong>");
+        assert_eq!(result.html, "<strong>Acme</strong>");
+        assert!(!result.removed.is_empty());
     }
 
     #[test]

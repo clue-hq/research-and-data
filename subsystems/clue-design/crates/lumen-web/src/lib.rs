@@ -14,8 +14,10 @@
 //! - `LUMW03xx` — theme compilation
 //! - `LUMW04xx` — rendering
 //! - `LUMW05xx` — operations
+//! - `LUMW06xx` — template derivation (personalization)
 
 pub mod classes;
+pub mod derive;
 pub mod doc;
 pub mod ingest;
 pub mod inline;
@@ -27,6 +29,10 @@ pub mod util;
 pub mod validate;
 
 pub use classes::{lint_classes, ClassLintContext};
+pub use derive::{
+    derive_web_doc, personalization_key_is_valid, web_slot_key_is_valid, DeriveWebOptions,
+    DerivedWebDoc, UnboundEntry, WebBoundValue, WebDeriveCoverage,
+};
 pub use doc::{
     calendly_url_is_valid, ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec,
     EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind,

@@ -1697,3 +1697,113 @@ fn derive_instance_shapes_and_renders_with_request_fonts() {
         "the run must actually produce artifacts: {with_fonts:#?}"
     );
 }
+
+// --- Web derivation (Phase 5 personalization) -------------------------------
+
+/// Build a real web document (through the ingest action) carrying inline
+/// `data-var`, node `data-slot`, and a `data-slot-when` presence gate.
+fn web_template_with_markers() -> Value {
+    let base = helper(json!({
+        "action": "web_new_doc",
+        "document_id": "tmpl_1",
+        "title": "Template",
+    }));
+    assert_eq!(base["ok"], true, "{base:#?}");
+    let ingested = helper(json!({
+        "action": "web_ingest_html",
+        "doc": base["web_doc"].clone(),
+        "page_id": "home",
+        "html": r#"<section id="hero" data-slot-when="account.name">
+                     <h1 id="head">Meet <span data-var="account.name">Acme Health</span></h1>
+                     <p id="tag" data-slot="account.tagline">A better way to work</p>
+                   </section>"#,
+    }));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    ingested["web_doc"].clone()
+}
+
+#[test]
+fn web_derive_substitutes_reports_coverage_and_is_deterministic() {
+    let doc = web_template_with_markers();
+    let request = json!({
+        "action": "web_derive",
+        "doc": doc,
+        "values": {
+            "account.name": { "kind": "text", "value": "Privia Health" },
+            "account.tagline": { "kind": "text", "value": "AI scribing that clinicians trust" },
+            "account.unused": { "kind": "text", "value": "referenced nowhere" }
+        },
+        "new_doc_id": "derived_privia",
+        "new_title": "Privia Health"
+    });
+
+    let first = helper(request.clone());
+    assert_eq!(first["ok"], true, "{first:#?}");
+    assert_eq!(first["web_doc"]["id"], "derived_privia");
+    assert_eq!(first["web_doc"]["title"], "Privia Health");
+
+    // The account name (inline var) and tagline (node slot) are substituted;
+    // the template fallbacks are gone.
+    let serialized = first["web_doc"].to_string();
+    assert!(serialized.contains("Privia Health"), "{serialized}");
+    assert!(serialized.contains("AI scribing that clinicians trust"), "{serialized}");
+    assert!(!serialized.contains("Acme Health"), "fallback should be gone: {serialized}");
+
+    // Coverage names applied keys and flags the unused value.
+    let bound: Vec<&str> = first["coverage"]["bound"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
+    assert!(bound.contains(&"account.name"), "{bound:?}");
+    assert!(bound.contains(&"account.tagline"), "{bound:?}");
+    let unused: Vec<&str> = first["coverage"]["unused_values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
+    assert!(unused.contains(&"account.unused"), "{unused:?}");
+
+    // Determinism: identical inputs → byte-identical derived doc.
+    let second = helper(request);
+    assert_eq!(first["web_doc"], second["web_doc"], "derive must be deterministic");
+}
+
+#[test]
+fn web_derive_rejects_atomically_on_missing_asset() {
+    // Seed a logo asset, then ingest an image carrying a data-slot marker.
+    let base = helper(json!({
+        "action": "web_new_doc",
+        "document_id": "tmpl_logo",
+        "title": "Template",
+    }));
+    let mut doc = base["web_doc"].clone();
+    doc["assets"]["asset_acme_logo"] = binding_logo_record();
+    let ingested = helper(json!({
+        "action": "web_ingest_html",
+        "doc": doc,
+        "page_id": "home",
+        "html": r#"<section id="s"><img id="logo" data-slot="account.logo" data-asset="asset_acme_logo" alt="logo"></section>"#,
+    }));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+
+    // Bind account.logo to an asset whose record is NOT supplied → LUMW0605.
+    let response = helper(json!({
+        "action": "web_derive",
+        "doc": ingested["web_doc"].clone(),
+        "values": {
+            "account.logo": { "kind": "asset", "asset_id": "ghost_asset" }
+        },
+        "assets": [],
+        "new_doc_id": "derived_x"
+    }));
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "web_derive.rejected");
+    // The rejected derive returns no doc but still reports coverage.
+    assert!(response["web_doc"].is_null(), "{response:#?}");
+    assert!(response["coverage"].is_object(), "{response:#?}");
+    let codes: Vec<String> = diagnostic_codes(&response);
+    assert!(codes.contains(&"LUMW0605".to_owned()), "{codes:?}");
+}

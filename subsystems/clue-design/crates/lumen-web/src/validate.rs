@@ -5,6 +5,7 @@
 //! references, allowed hrefs, canonical inline content, and a custom_css
 //! escape hatch that cannot smuggle imports or script schemes.
 
+use crate::derive::{web_slot_key_is_valid, when_gate_key};
 use crate::doc::{
     calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, WebDoc, WebNodeKind,
     MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
@@ -403,6 +404,44 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
             _ => {}
         }
     }
+
+    // Personalization slot keys (Phase 5): charset + `when:` placement, so a
+    // doc mutated via SetSlotKey obeys the same rules ingestion enforces.
+    for node in page.nodes.values() {
+        let Some(slot_key) = &node.slot_key else {
+            continue;
+        };
+        if !web_slot_key_is_valid(slot_key) {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0024",
+                    format!("node `{}` has an invalid slot key `{slot_key}`", node.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint(
+                    "Keys are lowercase [a-z0-9_.-], max 64 chars (with an optional when: gate prefix).",
+                ),
+            );
+        }
+        if when_gate_key(slot_key).is_some()
+            && !matches!(node.kind, WebNodeKind::Section { .. } | WebNodeKind::Container)
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0025",
+                    format!(
+                        "{} node `{}` carries a when: presence gate; only sections and containers may",
+                        node.kind.kind_name(),
+                        node.id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Move the presence gate to the enclosing section or container."),
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -552,6 +591,45 @@ mod tests {
         assert!(validate_web_doc(&doc)
             .iter()
             .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+    }
+
+    #[test]
+    fn slot_key_charset_and_when_placement_are_validated() {
+        // A valid data-slot on a text node validates clean.
+        let doc = ingest_doc(
+            r#"<section id="s"><p id="p" data-slot="account.name">x</p></section>"#,
+        );
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+
+        // A when: gate on a text node (only reachable by hand-mutating the doc,
+        // since ingest rejects it) is caught by validation: LUMW0025.
+        let mut doc = doc;
+        let page = doc.pages.get_mut(0).unwrap();
+        page.nodes
+            .get_mut(&lumen_core::NodeId::from("p"))
+            .unwrap()
+            .slot_key = Some(lumen_core::SlotKey::from("when:account.name"));
+        assert!(validate_web_doc(&doc)
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0025"));
+
+        // Off-charset AND uppercase keys are LUMW0024 (keys are strictly
+        // lowercase [a-z0-9_.-], stricter than lumen_core::SlotKey).
+        for bad in ["bad key!", "Account.Name"] {
+            let page = doc.pages.get_mut(0).unwrap();
+            page.nodes
+                .get_mut(&lumen_core::NodeId::from("p"))
+                .unwrap()
+                .slot_key = Some(lumen_core::SlotKey::from(bad));
+            assert!(
+                validate_web_doc(&doc)
+                    .iter()
+                    .any(|diagnostic| diagnostic.code == "LUMW0024"),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

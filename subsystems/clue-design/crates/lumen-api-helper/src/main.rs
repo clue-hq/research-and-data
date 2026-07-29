@@ -420,6 +420,20 @@ enum CoreRequest {
         #[serde(default)]
         brand_kit: Option<Value>,
     },
+    /// Derive one account-personalized copy of `doc`. Pure (doc → doc, no
+    /// render, no I/O): returns the derived doc, diagnostics, and a coverage
+    /// report. An error-level diagnostic rejects the derive atomically (no
+    /// `web_doc` on the response — the template is never mutated).
+    WebDerive {
+        doc: Value,
+        #[serde(default)]
+        values: std::collections::BTreeMap<String, Value>,
+        #[serde(default)]
+        assets: Vec<Value>,
+        new_doc_id: String,
+        #[serde(default)]
+        new_title: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -467,6 +481,8 @@ struct CoreResponse {
     web_fragment: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     web_theme: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage: Option<Value>,
     build_info: Option<Value>,
 }
 
@@ -520,6 +536,7 @@ fn main() {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 },
             };
@@ -566,6 +583,7 @@ fn main() {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             }
         }
@@ -608,6 +626,7 @@ impl CoreRequest {
             CoreRequest::WebApplyOps { .. } => "web_apply_ops",
             CoreRequest::WebRender { .. } => "web_render",
             CoreRequest::WebIngestFragment { .. } => "web_ingest_fragment",
+            CoreRequest::WebDerive { .. } => "web_derive",
         }
     }
 }
@@ -743,6 +762,10 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "html_bytes": html.len(),
             "has_brand_kit": brand_kit.is_some(),
         }),
+        CoreRequest::WebDerive { values, assets, .. } => json!({
+            "value_count": values.len(),
+            "asset_count": assets.len(),
+        }),
     }
 }
 
@@ -831,6 +854,7 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         inverse_operations: None,
         web_fragment: None,
         web_theme: None,
+        coverage: None,
         build_info: None,
     }
 }
@@ -957,6 +981,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -986,6 +1011,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             });
             let batch = match batch {
@@ -1039,6 +1065,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1071,6 +1098,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1125,6 +1153,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1179,6 +1208,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1262,6 +1292,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -1287,6 +1318,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1443,6 +1475,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1627,6 +1660,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1658,6 +1692,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1694,6 +1729,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1729,6 +1765,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         inverse_operations: None,
                         web_fragment: None,
                         web_theme: None,
+                        coverage: None,
                         build_info: None,
                     })
                 }
@@ -1758,6 +1795,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     inverse_operations: None,
                     web_fragment: None,
                     web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1804,6 +1842,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1833,6 +1872,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1867,6 +1907,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1898,6 +1939,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1944,6 +1986,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1979,6 +2022,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -2220,6 +2264,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 inverse_operations: None,
                 web_fragment: None,
                 web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -2249,6 +2294,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             inverse_operations: None,
             web_fragment: None,
             web_theme: None,
+            coverage: None,
             build_info: Some(json!({
                 "schema_version": lumen_core::SCHEMA_VERSION,
                 "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
@@ -2418,6 +2464,51 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             response.web_fragment = Some(fragment);
             Ok(response)
         }
+        CoreRequest::WebDerive {
+            doc,
+            values,
+            assets,
+            new_doc_id,
+            new_title,
+        } => {
+            let template = parse_web_doc(doc)?;
+            let values: std::collections::BTreeMap<String, lumen_web::WebBoundValue> = values
+                .into_iter()
+                .map(|(key, value)| serde_json::from_value(value).map(|bound| (key, bound)))
+                .collect::<Result<_, _>>()
+                .map_err(|error| core_error("helper.web_values", error.to_string()))?;
+            let assets: Vec<lumen_core::AssetRecord> = assets
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<_, _>>()
+                .map_err(|error| core_error("helper.web_assets", error.to_string()))?;
+            let derived = lumen_web::derive_web_doc(
+                &template,
+                &values,
+                &assets,
+                &lumen_web::DeriveWebOptions {
+                    new_doc_id,
+                    new_title,
+                },
+            );
+            let coverage = to_value(&derived.coverage)?;
+            // Atomic gate mirroring the checked apply: an error-level diagnostic
+            // rejects the derive and the (invalid) doc is never returned.
+            if derived.has_errors() {
+                let mut response = error_response(
+                    core_error(
+                        "web_derive.rejected",
+                        "derivation produced an invalid document",
+                    ),
+                    derived.diagnostics,
+                );
+                response.coverage = Some(coverage);
+                return Ok(response);
+            }
+            let mut response = ok_web(Some(&derived.doc), None, None, None, derived.diagnostics);
+            response.coverage = Some(coverage);
+            Ok(response)
+        }
     }
 }
 
@@ -2494,6 +2585,7 @@ fn ok_web(
             .map(|inverses| to_value(inverses).expect("web operations should serialize")),
         web_fragment: None,
         web_theme: None,
+        coverage: None,
         build_info: None,
     }
 }
@@ -2730,6 +2822,7 @@ fn ok_scene(
         inverse_operations: None,
         web_fragment: None,
         web_theme: None,
+        coverage: None,
         build_info: None,
     }
 }

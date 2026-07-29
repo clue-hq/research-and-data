@@ -6,13 +6,14 @@
 //! Batches apply against a draft and commit atomically: a failing op leaves
 //! the document untouched.
 
+use crate::derive::web_slot_key_is_valid;
 use crate::doc::{
     calendly_url_is_valid, ButtonAction, EmbedProvider, WebDoc, WebNode, WebNodeKind, WebThemeRef,
 };
 use crate::inline::sanitize_inline;
 use crate::util::href_is_allowed;
 use crate::validate::validate_web_doc;
-use lumen_core::{AssetId, AssetRecord, Diagnostic, DiagnosticSeverity, NodeId, PageId};
+use lumen_core::{AssetId, AssetRecord, Diagnostic, DiagnosticSeverity, NodeId, PageId, SlotKey};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -76,6 +77,15 @@ pub enum WebOperation {
         page_id: PageId,
         id: NodeId,
         props: WebNodeKind,
+    },
+    /// Set (or clear) a node's personalization slot key. The first op writing
+    /// a `WebNode` field outside `kind`/`classes`; canonicalization validates
+    /// the key charset (the `when:` presence-gate prefix is tolerated).
+    SetSlotKey {
+        page_id: PageId,
+        id: NodeId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slot_key: Option<SlotKey>,
     },
     SetText {
         page_id: PageId,
@@ -472,6 +482,29 @@ fn apply_operation_in_place(
                 props: previous,
             })
         }
+        WebOperation::SetSlotKey { page_id, id, slot_key } => {
+            // Canonicalization: a provided key must be charset-valid before it
+            // reaches the arena (the `when:` prefix is checked structurally by
+            // validate_web_doc, which the checked apply runs).
+            if let Some(key) = slot_key {
+                if !web_slot_key_is_valid(key) {
+                    return Err(WebOpError::new(
+                        "op.slot_key_invalid",
+                        format!("slot key `{key}` is not valid"),
+                    ));
+                }
+            }
+            let page = require_page_mut(doc, page_id)?;
+            let node = page.nodes.get_mut(id).ok_or_else(|| {
+                WebOpError::new("op.node_missing", format!("node `{id}` not found"))
+            })?;
+            let previous = std::mem::replace(&mut node.slot_key, slot_key.clone());
+            Ok(WebOperation::SetSlotKey {
+                page_id: page_id.clone(),
+                id: id.clone(),
+                slot_key: previous,
+            })
+        }
         WebOperation::SetText { page_id, id, content } => {
             let page = require_page_mut(doc, page_id)?;
             let node = page.nodes.get_mut(id).ok_or_else(|| {
@@ -682,6 +715,11 @@ mod tests {
                 id: NodeId::from("sub"),
                 content: "Updated <strong>copy</strong>".to_owned(),
             },
+            WebOperation::SetSlotKey {
+                page_id: page_id(),
+                id: NodeId::from("headline"),
+                slot_key: Some(SlotKey::from("account.headline")),
+            },
             WebOperation::SetTheme {
                 theme: WebThemeRef {
                     brand_kit: None,
@@ -762,6 +800,52 @@ mod tests {
             panic!("text node");
         };
         assert_eq!(content, "Safe");
+    }
+
+    #[test]
+    fn set_slot_key_round_trips_and_validates() {
+        let base = fixture();
+
+        // Set then clear; each direction's inverse restores exactly.
+        let mut doc = base.clone();
+        let set = WebOperation::SetSlotKey {
+            page_id: page_id(),
+            id: NodeId::from("headline"),
+            slot_key: Some(SlotKey::from("account.name")),
+        };
+        let inverses = apply_operations(&mut doc, std::slice::from_ref(&set)).expect("set");
+        let node = doc.page(&page_id()).unwrap().node(&NodeId::from("headline")).unwrap();
+        assert_eq!(node.slot_key.as_ref().map(|k| k.as_str()), Some("account.name"));
+        apply_operations(&mut doc, &inverses).expect("inverse");
+        assert_eq!(doc, base, "inverse clears the slot key");
+
+        // A when:-prefixed key is accepted by canonicalization.
+        let mut doc = base.clone();
+        apply_operations(
+            &mut doc,
+            &[WebOperation::SetSlotKey {
+                page_id: page_id(),
+                id: NodeId::from("stack"),
+                slot_key: Some(SlotKey::from("when:account.testimonial")),
+            }],
+        )
+        .expect("when-prefixed key accepted");
+
+        // Off-charset and uppercase keys are rejected on the write path
+        // (one strict grammar: [a-z0-9_.-], lowercase only).
+        for bad in ["bad key!", "Account.Name"] {
+            let mut doc = base.clone();
+            let result = apply_operations(
+                &mut doc,
+                &[WebOperation::SetSlotKey {
+                    page_id: page_id(),
+                    id: NodeId::from("headline"),
+                    slot_key: Some(SlotKey::from(bad)),
+                }],
+            );
+            assert_eq!(result.unwrap_err().code, "op.slot_key_invalid", "{bad}");
+            assert_eq!(doc, base, "rejected op must not mutate");
+        }
     }
 
     #[test]
