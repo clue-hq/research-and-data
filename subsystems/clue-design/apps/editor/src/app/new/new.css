@@ -162,3 +162,11 @@
 }
 
 .new-kit-empty { padding: var(--space-xs) var(--space-sm); color: var(--text-disabled); font-size: var(--text-body-sm); }
+
+/* --- template + account selects (Website flow personalization) ----------- */
+.new-template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+.new-template-row .field { flex: 1; min-width: 220px; }

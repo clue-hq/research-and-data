@@ -12,7 +12,15 @@ import {
   type BrandKitListEntry
 } from "@/engine/brandHub";
 import { signatureColors } from "@/components/brand/kitJson";
-import { createWebDocument, webPromptStorageKey } from "@/engine/webDocuments";
+import {
+  createWebDocument,
+  deriveWebDocument,
+  listWebAccounts,
+  listWebTemplates,
+  webPromptStorageKey,
+  type WebAccount,
+  type WebTemplateSummary
+} from "@/engine/webDocuments";
 
 type ProjectType = "design" | "web";
 
@@ -134,6 +142,12 @@ export default function NewProjectPage(): React.ReactElement {
   const [kits, setKits] = useState<BrandKitListEntry[] | null>(null);
   const [palettes, setPalettes] = useState<Record<string, string[]>>({});
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+  // Website flow: optionally start from a template, and — when one is chosen —
+  // an optional account to derive the first page for.
+  const [templates, setTemplates] = useState<WebTemplateSummary[] | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<WebAccount[] | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,6 +185,41 @@ export default function NewProjectPage(): React.ReactElement {
     };
   }, []);
 
+  // Templates power the Website flow's "Start from a template" select; it only
+  // renders when the list is non-empty. A miss leaves it hidden.
+  useEffect(() => {
+    let cancelled = false;
+    listWebTemplates({ apiBaseUrl: editorApiBaseUrl() })
+      .then((list) => {
+        if (!cancelled) setTemplates(list);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Accounts load lazily the first time a template is chosen (the account
+  // select only exists in that branch).
+  useEffect(() => {
+    if (!selectedTemplateId || accounts !== null) {
+      return;
+    }
+    let cancelled = false;
+    listWebAccounts({ apiBaseUrl: editorApiBaseUrl() })
+      .then((list) => {
+        if (!cancelled) setAccounts(list);
+      })
+      .catch(() => {
+        if (!cancelled) setAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTemplateId, accounts]);
+
   const handleCreate = async () => {
     if (submitting) return;
     setError(null);
@@ -184,18 +233,36 @@ export default function NewProjectPage(): React.ReactElement {
 
     setSubmitting(true);
     try {
-      const selectedKit = selectedKitId
-        ? kits?.find((kit) => kit.id === selectedKitId) ?? null
-        : null;
-      const { documentId } = await createWebDocument(
-        { apiBaseUrl: editorApiBaseUrl() },
-        {
-          title: deriveTitle(prompt),
-          brandKitRef: selectedKit
-            ? { id: selectedKit.id, version: selectedKit.version }
-            : undefined
-        }
-      );
+      let documentId: string;
+      if (selectedTemplateId) {
+        // Start from a template: derive a new doc (optionally for an account)
+        // instead of a blank create. The derived doc already has content, so the
+        // brief stash prefills the composer (same handoff as a blank doc that
+        // already has content).
+        const derived = await deriveWebDocument(
+          { apiBaseUrl: editorApiBaseUrl() },
+          selectedTemplateId,
+          {
+            accountId: selectedAccountId ?? undefined,
+            title: prompt.trim() ? deriveTitle(prompt) : undefined
+          }
+        );
+        documentId = derived.documentId;
+      } else {
+        const selectedKit = selectedKitId
+          ? kits?.find((kit) => kit.id === selectedKitId) ?? null
+          : null;
+        const created = await createWebDocument(
+          { apiBaseUrl: editorApiBaseUrl() },
+          {
+            title: deriveTitle(prompt),
+            brandKitRef: selectedKit
+              ? { id: selectedKit.id, version: selectedKit.version }
+              : undefined
+          }
+        );
+        documentId = created.documentId;
+      }
       // Stash the brief for the web shell to pick up (generation lands next slice).
       try {
         window.sessionStorage.setItem(webPromptStorageKey(documentId), prompt);
@@ -258,6 +325,44 @@ export default function NewProjectPage(): React.ReactElement {
               onSelect={setSelectedKitId}
             />
           </div>
+          {projectType === "web" && templates && templates.length > 0 ? (
+            <div className="new-template-row">
+              <label className="field">
+                <span className="field-label">Start from a template</span>
+                <select
+                  value={selectedTemplateId ?? ""}
+                  onChange={(event) => {
+                    const next = event.target.value || null;
+                    setSelectedTemplateId(next);
+                    if (!next) setSelectedAccountId(null);
+                  }}
+                >
+                  <option value="">Blank — describe below</option>
+                  {templates.map((template) => (
+                    <option key={template.documentId} value={template.documentId}>
+                      {template.title || template.documentId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedTemplateId ? (
+                <label className="field">
+                  <span className="field-label">Personalize for (optional)</span>
+                  <select
+                    value={selectedAccountId ?? ""}
+                    onChange={(event) => setSelectedAccountId(event.target.value || null)}
+                  >
+                    <option value="">No account</option>
+                    {(accounts ?? []).map((account) => (
+                      <option key={account.accountId} value={account.accountId}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <textarea
             className="new-prompt"
             placeholder={

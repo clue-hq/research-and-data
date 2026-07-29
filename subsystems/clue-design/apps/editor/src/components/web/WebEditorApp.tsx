@@ -13,6 +13,7 @@ import {
   moveNodeOp,
   moveSectionIndex,
   replaceAssetOp,
+  saveWebTemplate,
   setTextOp,
   upsertAssetOp,
   webDocumentHasContent,
@@ -36,6 +37,7 @@ import { WebInspectorPanel } from "@/components/web/WebInspectorPanel";
 import { WebInsertPalette } from "@/components/web/WebInsertPalette";
 import { WebAssetDrawer } from "@/components/web/WebAssetDrawer";
 import { WebPublishDialog } from "@/components/web/WebPublishDialog";
+import { WebBatchDialog } from "@/components/web/WebBatchDialog";
 import { selectionChipLabel, type WebSelection } from "@/engine/webBridge";
 
 /**
@@ -97,6 +99,12 @@ type RenderStatus = "idle" | "loading" | "ready" | "error";
 
 /** The rail's two modes: the agent chat (default) and the manual inspector. */
 type RailMode = "chat" | "inspect";
+
+/** The transient "Save as template" toast: a link to the new template doc on
+ * success, or the server message on failure. Auto-dismisses. */
+type TemplateToast =
+  | { kind: "success"; documentId: string; title: string }
+  | { kind: "error"; message: string };
 
 /** The default page a manual op targets when nothing is selected — the first
  * page, falling back to the conventional "home". */
@@ -250,6 +258,11 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const [railMode, setRailMode] = useState<RailMode>("chat");
   // The publish modal's open state.
   const [publishOpen, setPublishOpen] = useState(false);
+  // The "Generate for accounts…" batch modal (template docs only) + the
+  // "Save as template" toast/lifecycle.
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateToast, setTemplateToast] = useState<TemplateToast | null>(null);
   const [theme, setTheme] = useState<WebTheme | null>(null);
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
@@ -643,6 +656,40 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     anchor.remove();
   }, [documentId]);
 
+  // Clone the current doc into a fresh template document. On success a toast
+  // links to the new template; failure surfaces the server message in the same
+  // toast slot. The topbar reflects `document.isTemplate` for THIS doc, so a
+  // save-as-template opens the new one rather than mutating this one.
+  const isTemplate = document?.isTemplate ?? false;
+  const handleSaveTemplate = useCallback(async () => {
+    setSavingTemplate(true);
+    setTemplateToast(null);
+    try {
+      const created = await saveWebTemplate({ apiBaseUrl: editorApiBaseUrl() }, documentId, title);
+      setTemplateToast({
+        kind: "success",
+        documentId: created.documentId,
+        title: created.title || title
+      });
+    } catch (cause) {
+      setTemplateToast({
+        kind: "error",
+        message: cause instanceof Error ? cause.message : "Could not save as template."
+      });
+    } finally {
+      setSavingTemplate(false);
+    }
+  }, [documentId, title]);
+
+  // Auto-dismiss the template toast (long enough to click the link).
+  useEffect(() => {
+    if (!templateToast) {
+      return;
+    }
+    const timer = window.setTimeout(() => setTemplateToast(null), 12000);
+    return () => window.clearTimeout(timer);
+  }, [templateToast]);
+
   const liveActivity = pending ? condenseEvents(turn.events) : [];
   const holderStyle: React.CSSProperties | undefined =
     widthMode === "fluid" ? undefined : { width: `${widthMode}px` };
@@ -711,6 +758,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       <header className="web-topbar">
         <span className="web-topbar-title">{title}</span>
         <span className="web-beta-pill">Website · beta</span>
+        {isTemplate ? <span className="web-beta-pill">Template</span> : null}
         <span className="web-topbar-spacer" />
         {state.kind === "ready" ? (
           <div className="web-history-group" role="group" aria-label="History">
@@ -753,6 +801,23 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
         ) : null}
         {state.kind === "ready" ? (
           <div className="web-topbar-actions" role="group" aria-label="Publish">
+            {isTemplate ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setBatchOpen(true)}
+              >
+                Generate for accounts…
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleSaveTemplate}
+              disabled={savingTemplate}
+            >
+              {savingTemplate ? "Saving…" : "Save as template"}
+            </button>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
@@ -780,6 +845,40 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
           title={title}
           onClose={() => setPublishOpen(false)}
         />
+      ) : null}
+
+      {batchOpen && state.kind === "ready" ? (
+        <WebBatchDialog
+          documentId={documentId}
+          title={title}
+          onClose={() => setBatchOpen(false)}
+        />
+      ) : null}
+
+      {templateToast ? (
+        <div className="web-toast" role="status">
+          {templateToast.kind === "success" ? (
+            <>
+              <span className="web-toast-msg">Saved as a template.</span>
+              <Link
+                className="web-toast-link"
+                href={`/web/${encodeURIComponent(templateToast.documentId)}`}
+              >
+                Open template
+              </Link>
+            </>
+          ) : (
+            <span className="web-toast-msg">{templateToast.message}</span>
+          )}
+          <button
+            type="button"
+            className="web-toast-close"
+            onClick={() => setTemplateToast(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
       ) : null}
 
       {state.kind === "loading" ? (

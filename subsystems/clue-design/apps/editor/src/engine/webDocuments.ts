@@ -116,6 +116,13 @@ export interface LoadedWebDocument {
    * the topbar's disabled states. */
   undoDepth: number;
   redoDepth: number;
+  /** Personalization (P5) passthrough for web docs: this doc is a template
+   * (drives the topbar "Template" badge + "Generate for accounts…" action). */
+  isTemplate: boolean;
+  /** The template this doc was derived from, and the account it was derived
+   * for — both null on a plain (non-derived) web doc. */
+  templateDocumentId: string | null;
+  accountId: string | null;
 }
 
 /** Pull the human-facing message off a non-2xx response. FastAPI returns
@@ -208,6 +215,9 @@ export async function fetchWebDocument(
     current_version?: unknown;
     undo_stack?: unknown;
     redo_stack?: unknown;
+    is_template?: unknown;
+    template_document_id?: unknown;
+    account_id?: unknown;
   };
   return {
     documentId: typeof payload.id === "string" ? payload.id : documentId,
@@ -218,7 +228,11 @@ export async function fetchWebDocument(
     currentVersion:
       typeof payload.current_version === "number" ? payload.current_version : null,
     undoDepth: Array.isArray(payload.undo_stack) ? payload.undo_stack.length : 0,
-    redoDepth: Array.isArray(payload.redo_stack) ? payload.redo_stack.length : 0
+    redoDepth: Array.isArray(payload.redo_stack) ? payload.redo_stack.length : 0,
+    isTemplate: payload.is_template === true || payload.is_template === 1,
+    templateDocumentId:
+      typeof payload.template_document_id === "string" ? payload.template_document_id : null,
+    accountId: typeof payload.account_id === "string" ? payload.account_id : null
   };
 }
 
@@ -514,7 +528,8 @@ export type WebOperation =
   | { kind: "move_node"; page_id: string; id: string; new_parent: string; index: number }
   | { kind: "remove_node"; page_id: string; id: string }
   | { kind: "replace_asset"; page_id: string; id: string; asset_id: string }
-  | { kind: "upsert_asset"; record: AssetRecord };
+  | { kind: "upsert_asset"; record: AssetRecord }
+  | { kind: "set_slot_key"; page_id: string; id: string; slot_key: string | null };
 
 /** Op builders — the one place a manual-edit payload is shaped, so panels bind
  * fields and call these rather than spelling out op objects inline. */
@@ -559,6 +574,51 @@ export function replaceAssetOp(pageId: string, id: string, assetId: string): Web
 
 export function upsertAssetOp(record: AssetRecord): WebOperation {
   return { kind: "upsert_asset", record };
+}
+
+/** Set (or clear, with `null`) a node's personalization slot key — the derive
+ * carrier the account binding substitutes into. A `when:{key}` value gates a
+ * Section/Container on binding presence (see {@link slotKeyParts}). */
+export function setSlotKeyOp(pageId: string, id: string, slotKey: string | null): WebOperation {
+  return { kind: "set_slot_key", page_id: pageId, id, slot_key: slotKey };
+}
+
+/** The slot-key charset the engine enforces (`SlotKey` rules, D2): lowercase
+ * alnum plus `_ . -`, 1–64 chars. The `when:` presence prefix is NOT part of a
+ * key — it is stripped/added around a valid key by the inspector. */
+const SLOT_KEY_RE = /^[a-z0-9_.-]{1,64}$/;
+
+/** True when `key` (without any `when:` prefix) is a legal slot key. */
+export function isValidSlotKey(key: string): boolean {
+  return SLOT_KEY_RE.test(key);
+}
+
+/** Split a stored `slot_key` into its editable key + presence-gate flag. A
+ * `when:{key}` value reads as `{ key, whenBound: true }`; a bare key reads as
+ * `{ key, whenBound: false }`; an absent/empty value reads as an empty key. */
+export function slotKeyParts(slotKey: string | null | undefined): {
+  key: string;
+  whenBound: boolean;
+} {
+  if (!slotKey) {
+    return { key: "", whenBound: false };
+  }
+  if (slotKey.startsWith("when:")) {
+    return { key: slotKey.slice("when:".length), whenBound: true };
+  }
+  return { key: slotKey, whenBound: false };
+}
+
+/** Compose an editable key + presence-gate flag back into a stored `slot_key`,
+ * or `null` when the key is blank (clearing the slot). The `when:` prefix is
+ * only applied when `whenBound` — the caller gates that toggle to
+ * Section/Container nodes, where the engine allows it. */
+export function composeSlotKey(key: string, whenBound: boolean): string | null {
+  const trimmed = key.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return whenBound ? `when:${trimmed}` : trimmed;
 }
 
 // ── structural editing: id minting, tree lookup, insert placement, subtrees ───
@@ -1502,4 +1562,499 @@ export async function rollbackWebPublish(
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
     status: typeof payload.status === "string" ? payload.status : "published"
   };
+}
+
+// ── personalization (P5): accounts, templates, derive, batch ─────────────────
+
+/** The slugified base of a title — the same lead the publish slug uses, without
+ * the document-id suffix. Prefills the batch dialog's slug-base input; the
+ * server appends `-{account-slug}` per variant. Falls back to `"site"`. */
+export function suggestSlugBase(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "site"
+  );
+}
+
+/** An account record (D3). `data` is the flat string→string custom-var map that
+ * becomes `account.<key>` bindings; `notes` are agent-context only (never a
+ * substitution value). */
+export interface WebAccount {
+  accountId: string;
+  name: string;
+  domain: string | null;
+  logoAssetId: string | null;
+  data: Record<string, string>;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/** The create/update payload for an account. `accountId` is server-minted when
+ * absent on create; a PATCH sends only the changed fields. */
+export interface WebAccountInput {
+  accountId?: string;
+  name?: string;
+  domain?: string | null;
+  logoAssetId?: string | null;
+  data?: Record<string, string>;
+  notes?: string | null;
+}
+
+/** Read one account row from a server payload (snake_case → camelCase). */
+function readWebAccount(payload: Record<string, unknown>): WebAccount {
+  const rawData = payload.data;
+  const data: Record<string, string> = {};
+  if (rawData && typeof rawData === "object") {
+    for (const [key, value] of Object.entries(rawData as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        data[key] = value;
+      }
+    }
+  }
+  return {
+    accountId: typeof payload.account_id === "string" ? payload.account_id : "",
+    name: typeof payload.name === "string" ? payload.name : "",
+    domain: typeof payload.domain === "string" ? payload.domain : null,
+    logoAssetId: typeof payload.logo_asset_id === "string" ? payload.logo_asset_id : null,
+    data,
+    notes: typeof payload.notes === "string" ? payload.notes : null,
+    createdAt: typeof payload.created_at === "string" ? payload.created_at : null,
+    updatedAt: typeof payload.updated_at === "string" ? payload.updated_at : null
+  };
+}
+
+/** Shape an account input into the server's snake_case JSON body, omitting
+ * fields the caller did not set (so a PATCH is a partial update). */
+function accountRequestBody(input: WebAccountInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (input.accountId != null) {
+    body.account_id = input.accountId;
+  }
+  if (input.name != null) {
+    body.name = input.name;
+  }
+  if (input.domain !== undefined) {
+    body.domain = input.domain;
+  }
+  if (input.logoAssetId !== undefined) {
+    body.logo_asset_id = input.logoAssetId;
+  }
+  if (input.data !== undefined) {
+    body.data = input.data;
+  }
+  if (input.notes !== undefined) {
+    body.notes = input.notes;
+  }
+  return body;
+}
+
+/** List every account (`GET /web/accounts`, name-sorted). */
+export async function listWebAccounts({
+  apiBaseUrl,
+  fetchImpl = (input, init) => fetch(input, init)
+}: WebDocumentOptions): Promise<WebAccount[]> {
+  const response = await fetchImpl(new URL("/web/accounts", apiBaseUrl));
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Account list failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { accounts?: unknown };
+  const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+  return accounts
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+    .map(readWebAccount);
+}
+
+/** Create an account (`POST /web/accounts`). A 409 (duplicate id) or 422
+ * (unresolvable logo) throws with the server message. */
+export async function createWebAccount(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  input: WebAccountInput
+): Promise<WebAccount> {
+  const response = await fetchImpl(new URL("/web/accounts", apiBaseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(accountRequestBody(input))
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Account create failed (HTTP ${response.status}).`)
+    );
+  }
+  return readWebAccount((await response.json()) as Record<string, unknown>);
+}
+
+/** Update an account (`PATCH /web/accounts/{id}` — partial). */
+export async function updateWebAccount(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  accountId: string,
+  patch: WebAccountInput
+): Promise<WebAccount> {
+  const response = await fetchImpl(
+    new URL(`/web/accounts/${encodeURIComponent(accountId)}`, apiBaseUrl),
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(accountRequestBody(patch))
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Account update failed (HTTP ${response.status}).`)
+    );
+  }
+  return readWebAccount((await response.json()) as Record<string, unknown>);
+}
+
+/** Delete an account (`DELETE /web/accounts/{id}`). Derived docs keep their
+ * `account_id` string (no FK). */
+export async function deleteWebAccount(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  accountId: string
+): Promise<{ deleted: boolean }> {
+  const response = await fetchImpl(
+    new URL(`/web/accounts/${encodeURIComponent(accountId)}`, apiBaseUrl),
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Account delete failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { deleted?: unknown };
+  return { deleted: payload.deleted === true };
+}
+
+/** The result of saving the current doc as a template
+ * (`POST /documents/{id}/web/template`). */
+export interface SavedWebTemplate {
+  documentId: string;
+  title: string;
+}
+
+/** Clone the current doc into a fresh template document. Response carries the
+ * new `document_id` + title; the topbar links to `/web/{document_id}`. */
+export async function saveWebTemplate(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  title?: string
+): Promise<SavedWebTemplate> {
+  const body: Record<string, unknown> = {};
+  if (title != null && title.length > 0) {
+    body.title = title;
+  }
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/template`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Save as template failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { document_id?: unknown; title?: unknown };
+  const newId = payload.document_id;
+  if (typeof newId !== "string" || newId.length === 0) {
+    throw new Error("Save as template returned no document id.");
+  }
+  return { documentId: newId, title: typeof payload.title === "string" ? payload.title : "" };
+}
+
+/** A template listed by `GET /web/templates`. */
+export interface WebTemplateSummary {
+  documentId: string;
+  title: string;
+  version: number | null;
+  updatedAt: string | null;
+  brandKitRef: BrandKitRefInput | null;
+}
+
+/** List every template document (`GET /web/templates`). */
+export async function listWebTemplates({
+  apiBaseUrl,
+  fetchImpl = (input, init) => fetch(input, init)
+}: WebDocumentOptions): Promise<WebTemplateSummary[]> {
+  const response = await fetchImpl(new URL("/web/templates", apiBaseUrl));
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Template list failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { templates?: unknown };
+  const templates = Array.isArray(payload.templates) ? payload.templates : [];
+  return templates
+    .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+    .map((row) => {
+      const ref = row.brand_kit_ref;
+      let brandKitRef: BrandKitRefInput | null = null;
+      if (ref && typeof ref === "object") {
+        const record = ref as Record<string, unknown>;
+        if (typeof record.id === "string" && typeof record.version === "number") {
+          brandKitRef = { id: record.id, version: record.version };
+        }
+      }
+      return {
+        documentId: typeof row.document_id === "string" ? row.document_id : "",
+        title: typeof row.title === "string" ? row.title : "",
+        version: typeof row.version === "number" ? row.version : null,
+        updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+        brandKitRef
+      };
+    });
+}
+
+/** One coverage entry: a key and the node ids that referenced it unbound. */
+export interface WebDeriveUnboundEntry {
+  key: string;
+  nodeIds: string[];
+}
+
+/** The derive coverage report (D2). Honest accounting of what a binding did and
+ * did not cover — surfaced as the manifest's unbound count. */
+export interface WebDeriveCoverage {
+  bound: string[];
+  unboundSlots: WebDeriveUnboundEntry[];
+  unboundVars: WebDeriveUnboundEntry[];
+  unusedValues: string[];
+  removedNodeIds: string[];
+}
+
+/** Read a coverage report from a server payload (snake_case → camelCase). */
+function readDeriveCoverage(payload: unknown): WebDeriveCoverage | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  const stringList = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  const entryList = (value: unknown): WebDeriveUnboundEntry[] =>
+    Array.isArray(value)
+      ? value
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+          .map((item) => ({
+            key: typeof item.key === "string" ? item.key : "",
+            nodeIds: stringList(item.node_ids)
+          }))
+      : [];
+  return {
+    bound: stringList(record.bound),
+    unboundSlots: entryList(record.unbound_slots),
+    unboundVars: entryList(record.unbound_vars),
+    unusedValues: stringList(record.unused_values),
+    removedNodeIds: stringList(record.removed_node_ids)
+  };
+}
+
+/** The result of deriving one document for an account
+ * (`POST /documents/{id}/web/derive`). */
+export interface DerivedWebDocument {
+  documentId: string;
+  title: string;
+  coverage: WebDeriveCoverage | null;
+  diagnostics: WebOperationDiagnostic[];
+}
+
+/** Derive a new web document from a template (or any web doc) for an account.
+ * `accountId` is optional per the /new gate contract (a template chosen without
+ * an account). A 422 (`web_derive.rejected`) or 404 throws the server message. */
+export async function deriveWebDocument(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  templateId: string,
+  params: { accountId?: string | null; title?: string }
+): Promise<DerivedWebDocument> {
+  const body: Record<string, unknown> = {};
+  if (params.accountId != null && params.accountId.length > 0) {
+    body.account_id = params.accountId;
+  }
+  if (params.title != null && params.title.length > 0) {
+    body.title = params.title;
+  }
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(templateId)}/web/derive`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Derive failed (HTTP ${response.status}).`));
+  }
+  const payload = (await response.json()) as {
+    document_id?: unknown;
+    title?: unknown;
+    coverage?: unknown;
+    diagnostics?: unknown;
+  };
+  const newId = payload.document_id;
+  if (typeof newId !== "string" || newId.length === 0) {
+    throw new Error("Derive returned no document id.");
+  }
+  return {
+    documentId: newId,
+    title: typeof payload.title === "string" ? payload.title : "",
+    coverage: readDeriveCoverage(payload.coverage),
+    diagnostics: Array.isArray(payload.diagnostics)
+      ? (payload.diagnostics as WebOperationDiagnostic[])
+      : []
+  };
+}
+
+/** One account's outcome in a batch manifest (D5). */
+export type WebBatchRowStatus = "derived" | "published" | "failed";
+
+/** A single manifest row: the account, its derived doc + published URL (when
+ * published), the per-account status, its unbound binding keys, and any error. */
+export interface WebBatchManifestRow {
+  accountId: string;
+  accountName: string;
+  documentId: string | null;
+  slug: string | null;
+  url: string | null;
+  status: WebBatchRowStatus;
+  unbound: string[];
+  error: string | null;
+}
+
+/** The batch's tally across accounts. */
+export interface WebBatchCounts {
+  total: number;
+  derived: number;
+  published: number;
+  failed: number;
+}
+
+/** A batch snapshot: the id, overall status, counts, manifest, and the resume
+ * cursor (the chunked-loop position — see {@link webBatchIsUnfinished}). */
+export interface WebBatchResult {
+  batchId: string;
+  status: string;
+  counts: WebBatchCounts;
+  manifest: WebBatchManifestRow[];
+  cursor: number | null;
+}
+
+/** True when a batch stopped short of every account and can be resumed. Reads
+ * the persisted `cursor` (position in the account list) against the total; a
+ * cursor below the total means unfinished. Falls back to a non-terminal
+ * `status` string when the server omits the cursor. */
+export function webBatchIsUnfinished(result: WebBatchResult): boolean {
+  if (result.cursor != null && result.counts.total > 0) {
+    return result.cursor < result.counts.total;
+  }
+  const status = result.status.toLowerCase();
+  return status === "running" || status === "partial" || status === "interrupted";
+}
+
+/** Read a batch payload (snake_case → camelCase), tolerating the documented
+ * `{batch_id, status, counts, manifest}` shape plus the row's `cursor`. */
+function readWebBatch(payload: Record<string, unknown>): WebBatchResult {
+  const countsRaw = (payload.counts ?? {}) as Record<string, unknown>;
+  const num = (value: unknown): number => (typeof value === "number" ? value : 0);
+  const manifest = Array.isArray(payload.manifest) ? payload.manifest : [];
+  return {
+    batchId: typeof payload.batch_id === "string" ? payload.batch_id : "",
+    status: typeof payload.status === "string" ? payload.status : "",
+    counts: {
+      total: num(countsRaw.total),
+      derived: num(countsRaw.derived),
+      published: num(countsRaw.published),
+      failed: num(countsRaw.failed)
+    },
+    manifest: manifest
+      .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+      .map((row) => {
+        const status = row.status;
+        const rowStatus: WebBatchRowStatus =
+          status === "published" || status === "failed" ? status : "derived";
+        return {
+          accountId: typeof row.account_id === "string" ? row.account_id : "",
+          accountName: typeof row.account_name === "string" ? row.account_name : "",
+          documentId: typeof row.document_id === "string" ? row.document_id : null,
+          slug: typeof row.slug === "string" ? row.slug : null,
+          url: typeof row.url === "string" ? row.url : null,
+          status: rowStatus,
+          unbound: Array.isArray(row.unbound)
+            ? row.unbound.filter((key): key is string => typeof key === "string")
+            : [],
+          error: typeof row.error === "string" ? row.error : null
+        };
+      }),
+    cursor: typeof payload.cursor === "number" ? payload.cursor : null
+  };
+}
+
+/** Start a generate-for-accounts batch (`POST /documents/{id}/web/batch`). The
+ * server derives (and optionally publishes) each account synchronously in
+ * chunks, persisting a resumable cursor. Returns the manifest snapshot. */
+export async function startWebBatch(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  params: { accountIds: string[]; publish: boolean; slugBase?: string }
+): Promise<WebBatchResult> {
+  const body: Record<string, unknown> = {
+    account_ids: params.accountIds,
+    publish: params.publish
+  };
+  if (params.slugBase != null && params.slugBase.length > 0) {
+    body.slug_base = params.slugBase;
+  }
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/batch`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Batch failed (HTTP ${response.status}).`));
+  }
+  return readWebBatch((await response.json()) as Record<string, unknown>);
+}
+
+/** Resume an interrupted batch from its cursor
+ * (`POST /web/batches/{batch_id}/resume`). */
+export async function resumeWebBatch(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  batchId: string
+): Promise<WebBatchResult> {
+  const response = await fetchImpl(
+    new URL(`/web/batches/${encodeURIComponent(batchId)}/resume`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Batch resume failed (HTTP ${response.status}).`)
+    );
+  }
+  return readWebBatch((await response.json()) as Record<string, unknown>);
+}
+
+/** Fetch a batch snapshot (`GET /web/batches/{batch_id}`). */
+export async function fetchWebBatch(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  batchId: string
+): Promise<WebBatchResult> {
+  const response = await fetchImpl(
+    new URL(`/web/batches/${encodeURIComponent(batchId)}`, apiBaseUrl)
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Batch lookup failed (HTTP ${response.status}).`)
+    );
+  }
+  return readWebBatch((await response.json()) as Record<string, unknown>);
 }

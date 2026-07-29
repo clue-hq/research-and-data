@@ -4,18 +4,33 @@ import {
   buildInsertNodeOp,
   buildWebButtonProps,
   classifyEmbedUrl,
+  composeSlotKey,
+  createWebAccount,
   deriveInsertPlacement,
+  deriveWebDocument,
   duplicateSubtree,
+  fetchWebDocument,
   fetchWebPublishInfo,
+  isValidSlotKey,
   isWebButtonCommandProps,
   listDialogComponents,
+  listWebAccounts,
+  listWebTemplates,
   mint,
   moveSectionIndex,
   publishWebDocument,
+  resumeWebBatch,
   rollbackWebPublish,
+  saveWebTemplate,
+  setSlotKeyOp,
+  slotKeyParts,
+  startWebBatch,
   suggestPublishSlug,
+  suggestSlugBase,
   unpublishWebSite,
+  webBatchIsUnfinished,
   webNodeButtonAction,
+  type WebBatchResult,
   type WebDoc,
   type WebNode,
   type WebPageSummary
@@ -573,5 +588,374 @@ describe("rollbackWebPublish", () => {
     await expect(
       rollbackWebPublish({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "acme")
     ).rejects.toThrow("No previous version to roll back to.");
+  });
+});
+
+// ── personalization (P5) ───────────────────────────────────────────────────────
+
+describe("slot key helpers", () => {
+  it("isValidSlotKey accepts the [a-z0-9_.-] charset up to 64 chars", () => {
+    expect(isValidSlotKey("account.name")).toBe(true);
+    expect(isValidSlotKey("plan_tier-2")).toBe(true);
+    expect(isValidSlotKey("a".repeat(64))).toBe(true);
+    expect(isValidSlotKey("a".repeat(65))).toBe(false);
+    expect(isValidSlotKey("Account.Name")).toBe(false); // uppercase
+    expect(isValidSlotKey("has space")).toBe(false);
+    expect(isValidSlotKey("when:account.plan")).toBe(false); // colon not in charset
+    expect(isValidSlotKey("")).toBe(false);
+  });
+
+  it("slotKeyParts splits the when: gate from a bare key", () => {
+    expect(slotKeyParts("account.name")).toEqual({ key: "account.name", whenBound: false });
+    expect(slotKeyParts("when:account.plan")).toEqual({ key: "account.plan", whenBound: true });
+    expect(slotKeyParts(null)).toEqual({ key: "", whenBound: false });
+    expect(slotKeyParts(undefined)).toEqual({ key: "", whenBound: false });
+  });
+
+  it("composeSlotKey round-trips through slotKeyParts (and clears on blank)", () => {
+    expect(composeSlotKey("account.name", false)).toBe("account.name");
+    expect(composeSlotKey("account.plan", true)).toBe("when:account.plan");
+    expect(composeSlotKey("  ", true)).toBeNull();
+    expect(composeSlotKey("", false)).toBeNull();
+    const stored = composeSlotKey("account.logo", true);
+    expect(slotKeyParts(stored)).toEqual({ key: "account.logo", whenBound: true });
+  });
+
+  it("setSlotKeyOp builds the invertible op (null clears)", () => {
+    expect(setSlotKeyOp("home", "hero", "account.name")).toEqual({
+      kind: "set_slot_key",
+      page_id: "home",
+      id: "hero",
+      slot_key: "account.name"
+    });
+    expect(setSlotKeyOp("home", "hero", null)).toEqual({
+      kind: "set_slot_key",
+      page_id: "home",
+      id: "hero",
+      slot_key: null
+    });
+  });
+});
+
+describe("suggestSlugBase", () => {
+  it("slugifies the title without the doc-id suffix", () => {
+    expect(suggestSlugBase("My Cool Site")).toBe("my-cool-site");
+    expect(suggestSlugBase("  Acme!!! Health  ")).toBe("acme-health");
+  });
+  it("falls back to 'site' for an empty/non-latin title", () => {
+    expect(suggestSlugBase("")).toBe("site");
+    expect(suggestSlugBase("日本語")).toBe("site");
+  });
+});
+
+describe("webBatchIsUnfinished", () => {
+  const base: WebBatchResult = {
+    batchId: "batch_1",
+    status: "complete",
+    counts: { total: 5, derived: 5, published: 5, failed: 0 },
+    manifest: [],
+    cursor: 5
+  };
+  it("is unfinished when the cursor is below the total", () => {
+    expect(webBatchIsUnfinished({ ...base, cursor: 3 })).toBe(true);
+  });
+  it("is finished when the cursor reached the total", () => {
+    expect(webBatchIsUnfinished({ ...base, cursor: 5 })).toBe(false);
+  });
+  it("falls back to a non-terminal status when the cursor is absent", () => {
+    expect(webBatchIsUnfinished({ ...base, cursor: null, status: "running" })).toBe(true);
+    expect(webBatchIsUnfinished({ ...base, cursor: null, status: "complete" })).toBe(false);
+  });
+});
+
+describe("fetchWebDocument template passthrough", () => {
+  it("maps is_template / template_document_id / account_id for web docs", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        id: "doc_1",
+        doc_kind: "web",
+        title: "Acme — Priv",
+        scene: { pages: [] },
+        current_version: 4,
+        is_template: 1,
+        template_document_id: "doc_tmpl",
+        account_id: "acc_9"
+      })
+    );
+    const loaded = await fetchWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_1");
+    expect(loaded.isTemplate).toBe(true);
+    expect(loaded.templateDocumentId).toBe("doc_tmpl");
+    expect(loaded.accountId).toBe("acc_9");
+  });
+
+  it("defaults the passthrough fields on a plain web doc", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { id: "doc_2", doc_kind: "web", title: "Plain" }));
+    const loaded = await fetchWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_2");
+    expect(loaded.isTemplate).toBe(false);
+    expect(loaded.templateDocumentId).toBeNull();
+    expect(loaded.accountId).toBeNull();
+  });
+});
+
+describe("listWebAccounts", () => {
+  it("maps the name-sorted rows (snake_case → camelCase)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        accounts: [
+          {
+            account_id: "acc_1",
+            name: "Acme",
+            domain: "acme.com",
+            logo_asset_id: "asset_a",
+            data: { plan: "Enterprise" },
+            notes: "big fish",
+            created_at: "t0",
+            updated_at: "t1"
+          }
+        ]
+      })
+    );
+    const accounts = await listWebAccounts({ apiBaseUrl: "http://localhost:8002", fetchImpl });
+    expect(accounts).toEqual([
+      {
+        accountId: "acc_1",
+        name: "Acme",
+        domain: "acme.com",
+        logoAssetId: "asset_a",
+        data: { plan: "Enterprise" },
+        notes: "big fish",
+        createdAt: "t0",
+        updatedAt: "t1"
+      }
+    ]);
+    expect(String(fetchImpl.mock.calls[0][0])).toBe("http://localhost:8002/web/accounts");
+  });
+});
+
+describe("createWebAccount", () => {
+  it("POSTs camelCase → snake_case, omitting unset fields", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { account_id: "acc_5", name: "Beta" }));
+    const created = await createWebAccount(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      { name: "Beta", domain: "beta.com", logoAssetId: "asset_b", data: { tier: "pro" } }
+    );
+    expect(created.accountId).toBe("acc_5");
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/web/accounts");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      name: "Beta",
+      domain: "beta.com",
+      logo_asset_id: "asset_b",
+      data: { tier: "pro" }
+    });
+  });
+
+  it("surfaces the 422 unresolvable-logo message", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(422, { detail: "logo_asset_id not found." }));
+    await expect(
+      createWebAccount({ apiBaseUrl: "http://localhost:8002", fetchImpl }, { name: "X" })
+    ).rejects.toThrow("logo_asset_id not found.");
+  });
+});
+
+describe("saveWebTemplate", () => {
+  it("POSTs the (optional) title and maps the new id", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { document_id: "doc_t", title: "Base — template" }));
+    const saved = await saveWebTemplate(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_src",
+      "Base"
+    );
+    expect(saved).toEqual({ documentId: "doc_t", title: "Base — template" });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/documents/doc_src/web/template");
+    expect(JSON.parse(String(init?.body))).toEqual({ title: "Base" });
+  });
+});
+
+describe("listWebTemplates", () => {
+  it("maps the template summaries + brand kit ref", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        templates: [
+          {
+            document_id: "doc_t",
+            title: "ABM base",
+            version: 3,
+            updated_at: "t2",
+            brand_kit_ref: { id: "kit_1", version: 2 }
+          }
+        ]
+      })
+    );
+    const templates = await listWebTemplates({ apiBaseUrl: "http://localhost:8002", fetchImpl });
+    expect(templates).toEqual([
+      {
+        documentId: "doc_t",
+        title: "ABM base",
+        version: 3,
+        updatedAt: "t2",
+        brandKitRef: { id: "kit_1", version: 2 }
+      }
+    ]);
+  });
+});
+
+describe("deriveWebDocument", () => {
+  it("POSTs account_id + title and maps coverage", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        document_id: "doc_new",
+        title: "Base — Acme",
+        coverage: {
+          bound: ["account.name"],
+          unbound_slots: [{ key: "account.logo", node_ids: ["img1"] }],
+          unbound_vars: [],
+          unused_values: ["account.domain"],
+          removed_node_ids: ["sec3"]
+        },
+        diagnostics: []
+      })
+    );
+    const derived = await deriveWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_t",
+      { accountId: "acc_1", title: "Base — Acme" }
+    );
+    expect(derived.documentId).toBe("doc_new");
+    expect(derived.coverage).toEqual({
+      bound: ["account.name"],
+      unboundSlots: [{ key: "account.logo", nodeIds: ["img1"] }],
+      unboundVars: [],
+      unusedValues: ["account.domain"],
+      removedNodeIds: ["sec3"]
+    });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/documents/doc_t/web/derive");
+    expect(JSON.parse(String(init?.body))).toEqual({ account_id: "acc_1", title: "Base — Acme" });
+  });
+
+  it("omits account_id when none is passed (template-only derive)", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { document_id: "doc_new", title: "t" }));
+    await deriveWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_t", {});
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({});
+  });
+
+  it("surfaces the 422 web_derive.rejected message", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(422, { detail: { message: "Derive rejected." } }));
+    await expect(
+      deriveWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_t", {
+        accountId: "acc_1"
+      })
+    ).rejects.toThrow("Derive rejected.");
+  });
+});
+
+describe("startWebBatch", () => {
+  it("POSTs account_ids + publish + slug_base and maps the manifest", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        batch_id: "batch_1",
+        status: "complete",
+        counts: { total: 2, derived: 2, published: 1, failed: 1 },
+        cursor: 2,
+        manifest: [
+          {
+            account_id: "acc_1",
+            account_name: "Acme",
+            document_id: "doc_a",
+            slug: "base-acme",
+            url: "/p/base-acme",
+            status: "published",
+            unbound: ["account.logo"]
+          },
+          {
+            account_id: "acc_2",
+            account_name: "Beta",
+            status: "failed",
+            error: "no logo asset"
+          }
+        ]
+      })
+    );
+    const result = await startWebBatch(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_t",
+      { accountIds: ["acc_1", "acc_2"], publish: true, slugBase: "base" }
+    );
+    expect(result.batchId).toBe("batch_1");
+    expect(result.counts).toEqual({ total: 2, derived: 2, published: 1, failed: 1 });
+    expect(result.manifest[0]).toEqual({
+      accountId: "acc_1",
+      accountName: "Acme",
+      documentId: "doc_a",
+      slug: "base-acme",
+      url: "/p/base-acme",
+      status: "published",
+      unbound: ["account.logo"],
+      error: null
+    });
+    expect(result.manifest[1]).toMatchObject({ status: "failed", error: "no logo asset", unbound: [] });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/documents/doc_t/web/batch");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      account_ids: ["acc_1", "acc_2"],
+      publish: true,
+      slug_base: "base"
+    });
+  });
+
+  it("coerces an unknown per-account status to 'derived'", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        batch_id: "b",
+        status: "complete",
+        counts: {},
+        manifest: [{ account_id: "a", account_name: "A", status: "weird" }]
+      })
+    );
+    const result = await startWebBatch(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_t",
+      { accountIds: ["a"], publish: false }
+    );
+    expect(result.manifest[0].status).toBe("derived");
+    // publish=false still sends the flag; slug_base omitted when absent.
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
+      account_ids: ["a"],
+      publish: false
+    });
+  });
+});
+
+describe("resumeWebBatch", () => {
+  it("POSTs to the resume endpoint and maps the snapshot", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        batch_id: "b",
+        status: "complete",
+        counts: { total: 3, derived: 3, published: 0, failed: 0 },
+        cursor: 3,
+        manifest: []
+      })
+    );
+    const result = await resumeWebBatch({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "b");
+    expect(result.cursor).toBe(3);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/web/batches/b/resume");
+    expect(init?.method).toBe("POST");
   });
 });

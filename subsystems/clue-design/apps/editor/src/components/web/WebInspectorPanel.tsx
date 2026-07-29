@@ -3,13 +3,17 @@ import React, { useState } from "react";
 import {
   buildWebButtonProps,
   classifyEmbedUrl,
+  composeSlotKey,
   duplicateSubtree,
   insertNodeOp,
+  isValidSlotKey,
   moveNodeOp,
   parentOfInPage,
   removeNodeOp,
   setNodeClassesOp,
   setNodePropsOp,
+  setSlotKeyOp,
+  slotKeyParts,
   webNodeButtonAction,
   type WebButtonAction,
   type WebDialogOption,
@@ -295,6 +299,7 @@ function WebInspectorBody({
       ) : null}
       {node.kind === "embed" ? <EmbedCard node={node} busy={busy} applyProps={applyProps} /> : null}
 
+      <PersonalizationCard node={node} pageId={pageId} busy={busy} applyOps={applyOps} />
       <ClassesCard node={node} pageId={pageId} busy={busy} applyOps={applyOps} />
     </div>
   );
@@ -1289,6 +1294,92 @@ function EmbedCard({
           </span>
         </label>
       )}
+    </Card>
+  );
+}
+
+/** The personalization row (P5): bind this node to an account value at
+ * generation via a slot key. The key text drives a `set_slot_key` op through
+ * the SAME ops path every other inspector edit uses. On Section/Container nodes
+ * a "show only when bound" toggle wraps the key in the `when:` presence prefix
+ * (kept-when-bound / removed-when-absent at derive). The current content is the
+ * fallback the derived page shows when the account has no value for the key. */
+function PersonalizationCard({
+  node,
+  pageId,
+  busy,
+  applyOps
+}: {
+  node: WebNode;
+  pageId: string;
+  busy: boolean;
+  applyOps: (operations: WebOperation[], intent?: string) => void;
+}): React.ReactElement {
+  const initial = slotKeyParts(node.slot_key);
+  // The `when:` gate is only legal on Section/Container carriers.
+  const supportsWhen = node.kind === "section" || node.kind === "container";
+  const [key, setKey] = useState(initial.key);
+  const [whenBound, setWhenBound] = useState(initial.whenBound && supportsWhen);
+
+  const trimmed = key.trim();
+  const invalid = trimmed.length > 0 && !isValidSlotKey(trimmed);
+
+  // Emit a set_slot_key op for the given key + gate, unless the key is invalid
+  // (wait for a fix — the inline error explains) or the value is unchanged.
+  const commit = (nextKey: string, nextWhen: boolean) => {
+    const nextTrimmed = nextKey.trim();
+    if (nextTrimmed.length > 0 && !isValidSlotKey(nextTrimmed)) {
+      return;
+    }
+    const stored = composeSlotKey(nextTrimmed, nextWhen && supportsWhen);
+    if ((node.slot_key ?? null) === stored) {
+      return;
+    }
+    applyOps([setSlotKeyOp(pageId, node.id, stored)], "set_slot_key");
+  };
+
+  return (
+    <Card title="Personalization">
+      <label className="field web-insp-field">
+        <span className="field-label">Slot key</span>
+        <input
+          type="text"
+          value={key}
+          disabled={busy}
+          spellCheck={false}
+          onChange={(event) => setKey(event.target.value)}
+          onBlur={() => commit(key, whenBound)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="account.name"
+        />
+      </label>
+      {invalid ? (
+        <span className="web-insp-error" role="alert">
+          Use a–z, 0–9, and . _ - (max 64 characters).
+        </span>
+      ) : null}
+      {supportsWhen ? (
+        <label className="web-insp-checkbox">
+          <input
+            type="checkbox"
+            checked={whenBound}
+            disabled={busy || trimmed.length === 0}
+            onChange={(event) => {
+              setWhenBound(event.target.checked);
+              commit(key, event.target.checked);
+            }}
+          />
+          Show only when bound
+        </label>
+      ) : null}
+      <p className="web-insp-hint">
+        Binds this element to an account value when generating pages. The current
+        content is the fallback shown when an account has no value.
+      </p>
     </Card>
   );
 }
