@@ -234,6 +234,127 @@ def test_web_turn_threads_target_node_ids_to_runner(client: TestClient) -> None:
     assert received["target_node_ids"] == ["hero"]
 
 
+# --- account-aware turns (P5 D6) --------------------------------------------
+
+
+def create_account(client: TestClient, **fields) -> str:
+    response = client.post("/web/accounts", json={"name": "Privia", **fields})
+    assert response.status_code == 200, response.text
+    return response.json()["account_id"]
+
+
+def applied_stub_capturing_account(content_doc: dict, received: dict):
+    def stub(doc, prompt, model, root, account_card=None):
+        received["account_card"] = account_card
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Personalized the page.",
+            "web_doc": content_doc,
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    return stub
+
+
+def test_web_turn_unknown_account_404_before_run(client: TestClient) -> None:
+    document = create_web_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Build it", "account_id": "acc_nope"},
+    )
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"]["code"] == "web_account.not_found"
+    # No run was created for the rejected turn.
+    store = Repository(connect(client.app.state.database_path))
+    try:
+        assert store.list_running_runs() == []
+    finally:
+        store.connection.close()
+
+
+def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    account_id = create_account(
+        client, domain="privia.com", data={"cta": "Book a demo"}, notes="context"
+    )
+
+    received: dict = {}
+    client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Personalize", "account_id": account_id},
+    )
+    assert response.status_code == 200, response.text
+    wait_for_run(client, response.json()["run_id"])
+
+    card = received["account_card"]
+    assert card == {
+        "name": "Privia",
+        "domain": "privia.com",
+        "logo_asset_id": None,
+        "data": {"cta": "Book a demo"},
+        "notes": "context",
+    }
+
+
+def test_web_turn_uses_document_account_when_request_omits_it(client: TestClient) -> None:
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    account_id = create_account(client, domain="derived.com")
+
+    # A derived doc carries its account_id on the row (the B2 derive path would
+    # set this; here we set it directly since derive is out of B1 scope).
+    store = Repository(connect(client.app.state.database_path))
+    try:
+        store.connection.execute(
+            "UPDATE documents SET account_id = ? WHERE id = ?",
+            (account_id, document["id"]),
+        )
+        store.connection.commit()
+    finally:
+        store.connection.close()
+
+    received: dict = {}
+    client.app.state.web_turn_runner = applied_stub_capturing_account(content_doc, received)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={"prompt": "Refine"},  # no account_id — falls back to the doc row
+    )
+    assert response.status_code == 200, response.text
+    wait_for_run(client, response.json()["run_id"])
+    assert received["account_card"]["name"] == "Privia"
+    assert received["account_card"]["domain"] == "derived.com"
+
+
+def test_web_turn_without_account_passes_none(client: TestClient) -> None:
+    # The un-personalized 4-arg stub must remain callable (no account kwarg).
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+
+    def stub(doc, prompt, model, root):
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Built it.",
+            "web_doc": content_doc,
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns", json={"prompt": "Build it"}
+    )
+    assert response.status_code == 200, response.text
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "succeeded"
+
+
 def test_web_turn_failed_leaves_document_unchanged(client: TestClient) -> None:
     document = create_web_document(client)
     before = client.get(f"/documents/{document['id']}").json()

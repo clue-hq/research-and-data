@@ -101,6 +101,16 @@ def run_migrations(database_path: Path) -> None:
         ensure_column(
             connection, "documents", "doc_kind", "TEXT NOT NULL DEFAULT 'scene'"
         )
+        # P5 personalization (D4): a web document may be a reusable TEMPLATE and
+        # a DERIVED doc records its template + the account it was derived for.
+        # is_template=0 keeps every pre-existing row an ordinary doc; the rest
+        # are NULL until a clone/derive sets them.
+        ensure_column(
+            connection, "documents", "is_template", "INTEGER NOT NULL DEFAULT 0"
+        )
+        ensure_column(connection, "documents", "template_document_id", "TEXT")
+        ensure_column(connection, "documents", "template_doc_version", "INTEGER")
+        ensure_column(connection, "documents", "account_id", "TEXT")
         # Bulk print controls: the resolved export profile a batch runs with
         # (NULL = format-default artifacts, the pre-profile behavior).
         ensure_column(connection, "instance_batches", "export_profile_json", "TEXT")
@@ -161,6 +171,9 @@ class Repository:
         effective_brand_source: Optional[str] = None,
         effective_brand_mode: Optional[JsonObject] = None,
         doc_kind: str = "scene",
+        template_document_id: Optional[str] = None,
+        template_doc_version: Optional[int] = None,
+        account_id: Optional[str] = None,
     ) -> JsonObject:
         now = utc_now()
         # A WebDoc carries id/title at the top level and has no `meta` wrapper;
@@ -190,9 +203,10 @@ class Repository:
               id, title, status, doc_kind, current_scene_json, current_version,
               effective_brand_kit_source, effective_brand_kit_id,
               effective_brand_kit_version, effective_brand_mode_json,
-              brand_kit_json, created_at, updated_at
+              brand_kit_json, template_document_id, template_doc_version,
+              account_id, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
@@ -205,6 +219,9 @@ class Repository:
                 effective_version,
                 encode_optional(effective_brand_mode),
                 encode_optional(brand_kit),
+                template_document_id,
+                template_doc_version,
+                account_id,
                 now,
                 now,
             ),
@@ -1639,6 +1656,199 @@ class Repository:
         self.connection.commit()
         return self.require_web_publish(slug)
 
+    # --- Website-mode personalization accounts (P5 D3) -------------------- #
+
+    def create_web_account(
+        self,
+        account_id: str,
+        name: str,
+        domain: Optional[str],
+        logo_asset_id: Optional[str],
+        data: JsonObject,
+        notes: Optional[str],
+    ) -> JsonObject:
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO web_accounts (
+              account_id, name, domain, logo_asset_id, data_json, notes,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                name,
+                domain,
+                logo_asset_id,
+                encode(data or {}),
+                notes,
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_web_account(account_id)
+
+    def get_web_account(self, account_id: str) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            "SELECT * FROM web_accounts WHERE account_id = ?", (account_id,)
+        ).fetchone()
+        return web_account_from_row(row) if row is not None else None
+
+    def require_web_account(self, account_id: str) -> JsonObject:
+        account = self.get_web_account(account_id)
+        if account is None:
+            raise NotFoundError("web_account", account_id)
+        return account
+
+    def list_web_accounts(self) -> List[JsonObject]:
+        rows = self.connection.execute(
+            "SELECT * FROM web_accounts ORDER BY name COLLATE NOCASE ASC, account_id ASC"
+        ).fetchall()
+        return [web_account_from_row(row) for row in rows]
+
+    def update_web_account(self, account_id: str, patch: JsonObject) -> JsonObject:
+        """Partial update: only keys present in `patch` are written (the endpoint
+        validates them first). `data` replaces the map wholesale when present."""
+        account = self.require_web_account(account_id)
+        columns = {
+            "name": patch["name"] if "name" in patch else account["name"],
+            "domain": patch["domain"] if "domain" in patch else account["domain"],
+            "logo_asset_id": patch["logo_asset_id"]
+            if "logo_asset_id" in patch
+            else account["logo_asset_id"],
+            "data_json": encode(patch["data"] if "data" in patch else account["data"]),
+            "notes": patch["notes"] if "notes" in patch else account["notes"],
+        }
+        self.connection.execute(
+            """
+            UPDATE web_accounts
+            SET name = ?, domain = ?, logo_asset_id = ?, data_json = ?,
+                notes = ?, updated_at = ?
+            WHERE account_id = ?
+            """,
+            (
+                columns["name"],
+                columns["domain"],
+                columns["logo_asset_id"],
+                columns["data_json"],
+                columns["notes"],
+                utc_now(),
+                account_id,
+            ),
+        )
+        self.connection.commit()
+        return self.require_web_account(account_id)
+
+    def delete_web_account(self, account_id: str) -> None:
+        self.require_web_account(account_id)
+        self.connection.execute(
+            "DELETE FROM web_accounts WHERE account_id = ?", (account_id,)
+        )
+        self.connection.commit()
+
+    # --- Website-mode templates (P5 D4) ---------------------------------- #
+
+    def create_web_template(self, web_doc: JsonObject) -> JsonObject:
+        """Insert a NEW web documents row as a template: fresh undo/redo stacks,
+        version 0, is_template=1. `web_doc` already carries the minted id + title
+        (the endpoint clones + relabels it); the theme/brand ref rides in the
+        payload and mirrors onto the effective-brand columns, exactly as
+        create_document's web path does."""
+        now = utc_now()
+        document_id = web_doc["id"]
+        title = web_doc["title"]
+        brand_ref = (web_doc.get("theme") or {}).get("brand_kit")
+        self.connection.execute(
+            """
+            INSERT INTO documents (
+              id, title, status, doc_kind, current_scene_json, current_version,
+              effective_brand_kit_source, effective_brand_kit_id,
+              effective_brand_kit_version, is_template, created_at, updated_at
+            )
+            VALUES (?, ?, 'draft', 'web', ?, 0, ?, ?, ?, 1, ?, ?)
+            """,
+            (
+                document_id,
+                title,
+                encode(web_doc),
+                None,
+                brand_ref["id"] if brand_ref else None,
+                brand_ref["version"] if brand_ref else None,
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_document(document_id)
+
+    def list_web_templates(self) -> List[JsonObject]:
+        rows = self.connection.execute(
+            """
+            SELECT * FROM documents
+            WHERE doc_kind = 'web' AND is_template = 1
+            ORDER BY updated_at DESC, id ASC
+            """
+        ).fetchall()
+        return [document_from_row(row) for row in rows]
+
+    # --- Website-mode personalization batches (P5 D5) --------------------- #
+
+    def create_web_batch(self, batch: JsonObject) -> JsonObject:
+        """Insert a new bulk derive/publish batch. `cursor` persists per chunk
+        so an interrupted batch resumes exactly where it stopped; per-account
+        results live in manifest_json. counts are computed from the manifest on
+        read — nothing to keep in sync here."""
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO web_batches (
+              batch_id, template_document_id, template_doc_version, status,
+              account_ids_json, publish, slug_base, cursor, manifest_json,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                batch["batch_id"],
+                batch["template_document_id"],
+                batch["template_doc_version"],
+                batch["status"],
+                encode(batch["account_ids"]),
+                1 if batch.get("publish", True) else 0,
+                batch.get("slug_base"),
+                batch.get("cursor", 0),
+                encode(batch.get("manifest", [])),
+                now,
+                now,
+            ),
+        )
+        self.connection.commit()
+        return self.require_web_batch(batch["batch_id"])
+
+    def update_web_batch_progress(
+        self, batch_id: str, cursor: int, status: str, manifest: List[JsonObject]
+    ) -> JsonObject:
+        self.connection.execute(
+            """
+            UPDATE web_batches
+            SET cursor = ?, status = ?, manifest_json = ?, updated_at = ?
+            WHERE batch_id = ?
+            """,
+            (cursor, status, encode(manifest), utc_now(), batch_id),
+        )
+        self.connection.commit()
+        return self.require_web_batch(batch_id)
+
+    def require_web_batch(self, batch_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM web_batches WHERE batch_id = ?", (batch_id,)
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("web_batch", batch_id)
+        return web_batch_from_row(row)
+
 
 def encode(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -1689,6 +1899,16 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "layout_managed_editing": bool(row["layout_managed_editing"])
         if "layout_managed_editing" in columns
         else False,
+        # P5 personalization (D4): template/derived provenance. Column-guarded
+        # so a row read before the migration ran still decodes.
+        "is_template": bool(row["is_template"]) if "is_template" in columns else False,
+        "template_document_id": row["template_document_id"]
+        if "template_document_id" in columns
+        else None,
+        "template_doc_version": row["template_doc_version"]
+        if "template_doc_version" in columns
+        else None,
+        "account_id": row["account_id"] if "account_id" in columns else None,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -1704,6 +1924,35 @@ def web_publish_from_row(row: sqlite3.Row) -> JsonObject:
         "previous_doc_version": row["previous_doc_version"],
         "runtime_version": row["runtime_version"],
         "status": row["status"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def web_account_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "account_id": row["account_id"],
+        "name": row["name"],
+        "domain": row["domain"],
+        "logo_asset_id": row["logo_asset_id"],
+        "data": decode(row["data_json"]),
+        "notes": row["notes"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def web_batch_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "batch_id": row["batch_id"],
+        "template_document_id": row["template_document_id"],
+        "template_doc_version": row["template_doc_version"],
+        "status": row["status"],
+        "account_ids": decode(row["account_ids_json"]),
+        "publish": bool(row["publish"]),
+        "slug_base": row["slug_base"],
+        "cursor": row["cursor"],
+        "manifest": decode(row["manifest_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import io
 import json
 import logging
@@ -82,6 +83,11 @@ from .models import (
     CreateBrandKitRequest,
     CreateInstanceBatchRequest,
     CreateSnapshotRequest,
+    CreateWebAccountRequest,
+    UpdateWebAccountRequest,
+    SaveWebTemplateRequest,
+    DeriveWebRequest,
+    WebBatchRequest,
     DeriveInstanceRequest,
     InstancePreviewRequest,
     ExportDocumentRequest,
@@ -1958,6 +1964,27 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         # write to a separate Accept). Gate to web docs up front.
         document = require_document(repo, document_id)
         require_web_document(document)
+        # P5 (D6): resolve the target account BEFORE the run is created so an
+        # unknown id 404s cleanly. Precedence: the request's account_id, else
+        # the document row's own (a derived doc personalizes for its account
+        # automatically). The card is the compact by-value context the runtime
+        # gets (notes are agent-only; never a substitution value).
+        account_id = payload.account_id or document.get("account_id")
+        account_card: Optional[JsonObject] = None
+        if account_id:
+            try:
+                account = repo.require_web_account(account_id)
+            except NotFoundError as error:
+                raise HTTPException(
+                    status_code=404, detail=not_found_detail(error)
+                ) from error
+            account_card = {
+                "name": account["name"],
+                "domain": account["domain"],
+                "logo_asset_id": account["logo_asset_id"],
+                "data": account["data"],
+                "notes": account["notes"],
+            }
         run_id = f"run_{uuid4().hex}"
         repo.create_run(run_id, document_id)
         root = repo_root()
@@ -1982,13 +2009,22 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     if override is not None:
                         # Backward-compatible seam: existing stubs take four
                         # positional args; only pass the scoped-target ids when
-                        # the request carried them (a five-arg stub).
+                        # the request carried them (a five-arg stub), and only
+                        # pass account_card as a keyword when the turn is
+                        # personalized (so the un-personalized 4/5-arg stubs are
+                        # untouched).
+                        account_kwargs = (
+                            {"account_card": account_card} if account_card else {}
+                        )
                         if target_node_ids:
                             response = override(
-                                doc, prompt, model, root, target_node_ids
+                                doc, prompt, model, root, target_node_ids,
+                                **account_kwargs,
                             )
                         else:
-                            response = override(doc, prompt, model, root)
+                            response = override(
+                                doc, prompt, model, root, **account_kwargs
+                            )
                     else:
                         response = run_web_agent_turn(
                             doc,
@@ -1997,6 +2033,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                             root,
                             event_sink=sink,
                             target_node_ids=target_node_ids,
+                            account_card=account_card,
                         )
                     status = (
                         "failed"
@@ -2613,6 +2650,420 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "doc_version": result["doc_version"],
             "status": result["status"],
         }
+
+    # --- P5 personalization accounts (D3) --------------------------------- #
+
+    def _require_logo_resolves(repo: Repository, logo_asset_id: Optional[str]) -> None:
+        """A provided logo_asset_id must be a known library asset (D3 → 422)."""
+        if not logo_asset_id:
+            return
+        try:
+            repo.require_asset_record(logo_asset_id)
+        except NotFoundError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_account.logo_unresolved",
+                    "message": (
+                        f"logo_asset_id {logo_asset_id!r} does not resolve to a "
+                        "known asset"
+                    ),
+                    "resource_id": error.resource_id,
+                },
+            ) from error
+
+    @app.post("/web/accounts")
+    def create_web_account(
+        payload: CreateWebAccountRequest, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        account_id = payload.account_id or new_web_account_id()
+        if payload.account_id and repo.get_web_account(payload.account_id) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "web_account.exists",
+                    "message": f"account {payload.account_id!r} already exists",
+                    "resource_id": payload.account_id,
+                },
+            )
+        _require_logo_resolves(repo, payload.logo_asset_id)
+        account = repo.create_web_account(
+            account_id,
+            payload.name,
+            payload.domain,
+            payload.logo_asset_id,
+            dict(payload.data),
+            payload.notes,
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_account_created",
+            account_id=account_id,
+            has_logo=payload.logo_asset_id is not None,
+        )
+        return account
+
+    @app.get("/web/accounts")
+    def list_web_accounts(repo: Repository = Depends(repository)) -> JsonObject:
+        return {"accounts": repo.list_web_accounts()}
+
+    @app.get("/web/accounts/{account_id}")
+    def get_web_account(
+        account_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        try:
+            return repo.require_web_account(account_id)
+        except NotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=not_found_detail(error)
+            ) from error
+
+    @app.patch("/web/accounts/{account_id}")
+    def update_web_account(
+        account_id: str,
+        payload: UpdateWebAccountRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        try:
+            repo.require_web_account(account_id)
+        except NotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=not_found_detail(error)
+            ) from error
+        # Partial update: only the fields the client actually sent are written.
+        patch = payload.model_dump(exclude_unset=True)
+        if "logo_asset_id" in patch:
+            _require_logo_resolves(repo, patch["logo_asset_id"])
+        account = repo.update_web_account(account_id, patch)
+        return account
+
+    @app.delete("/web/accounts/{account_id}")
+    def delete_web_account(
+        account_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        try:
+            repo.delete_web_account(account_id)
+        except NotFoundError as error:
+            raise HTTPException(
+                status_code=404, detail=not_found_detail(error)
+            ) from error
+        return {"deleted": True}
+
+    # --- P5 templates (D4) ------------------------------------------------ #
+
+    @app.post("/documents/{document_id}/web/template")
+    def save_web_template(
+        document_id: str,
+        payload: SaveWebTemplateRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        # Clone the CURRENT web doc payload into a NEW template row: fresh
+        # undo/redo stacks, version 0, is_template=1, same theme/brand ref.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        web_doc = copy.deepcopy(document["scene"])
+        new_document_id = new_id("doc")
+        title = (payload.title or "").strip() or f"{document['title']} — template"
+        web_doc["id"] = new_document_id
+        web_doc["title"] = title
+        template = repo.create_web_template(web_doc)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_template_created",
+            document_id=new_document_id,
+            source_document_id=document_id,
+        )
+        return {"document_id": template["id"], "title": template["title"]}
+
+    @app.get("/web/templates")
+    def list_web_templates(repo: Repository = Depends(repository)) -> JsonObject:
+        templates = [
+            {
+                "document_id": doc["id"],
+                "title": doc["title"],
+                "version": doc["current_version"],
+                "updated_at": doc["updated_at"],
+                "brand_kit_ref": (doc["scene"].get("theme") or {}).get("brand_kit"),
+            }
+            for doc in repo.list_web_templates()
+        ]
+        return {"templates": templates}
+
+    @app.post("/documents/{document_id}/web/derive")
+    def derive_web_document(
+        document_id: str,
+        payload: DeriveWebRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        # Derive a personalized copy of a web doc (D4 + editor-wave amendment):
+        # account_id is OPTIONAL. Absent → an empty value map (a plain,
+        # marker-preserving copy, default title "… — copy"); present → the
+        # account's D1 value map (default title "… — {account name}"). The
+        # source may be any web doc (template is the convention). Unknown
+        # doc/account → 404; engine rejection → 422 with coverage passthrough.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        account: Optional[JsonObject] = None
+        if payload.account_id is not None:
+            try:
+                account = repo.require_web_account(payload.account_id)
+            except NotFoundError as error:
+                raise HTTPException(
+                    status_code=404, detail=not_found_detail(error)
+                ) from error
+
+        if account is not None:
+            values, asset_records = account_values(account, repo)
+            default_title = f"{document['title']} — {account['name']}"
+        else:
+            values, asset_records = {}, []
+            default_title = f"{document['title']} — copy"
+        title = (payload.title or "").strip() or default_title
+        new_document_id = new_id("doc")
+        try:
+            result = app.state.core.web_derive(
+                doc=document["scene"],
+                values=values,
+                assets=asset_records,
+                new_doc_id=new_document_id,
+                new_title=title,
+                raise_on_error=False,
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+
+        coverage = result.get("coverage") or {}
+        diagnostics = result.get("diagnostics") or []
+        if not result.get("ok", False):
+            error = result.get("error") or {}
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": error.get("code", "web_derive.rejected"),
+                    "message": error.get("message", "derivation was rejected"),
+                    "diagnostics": diagnostics,
+                    "coverage": coverage,
+                },
+            )
+
+        derived = repo.create_document(
+            result["web_doc"],
+            doc_kind="web",
+            template_document_id=document["id"],
+            template_doc_version=document["current_version"],
+            account_id=payload.account_id,
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_document_derived",
+            document_id=derived["id"],
+            template_document_id=document["id"],
+            account_id=payload.account_id,
+            bound=len(coverage.get("bound") or []),
+        )
+        return {
+            "document_id": derived["id"],
+            "title": derived["title"],
+            "coverage": coverage,
+            "diagnostics": diagnostics,
+        }
+
+    # --- P5 batch generate + publish (D5) --------------------------------- #
+
+    def _derive_publish_account(
+        repo: Repository,
+        template: JsonObject,
+        account_id: str,
+        publish: bool,
+        slug_base: str,
+        public_base: str,
+    ) -> JsonObject:
+        """Derive (and optionally publish) one account against `template`.
+        Never raises: any failure is captured on the manifest row (status
+        "failed" + error) so a bad account can never kill the batch."""
+        account = repo.get_web_account(account_id)
+        row: JsonObject = {
+            "account_id": account_id,
+            "account_name": account["name"] if account else account_id,
+            "document_id": None,
+            "slug": None,
+            "url": None,
+            "status": "failed",
+            "unbound": [],
+            "error": None,
+        }
+        try:
+            if account is None:
+                raise ValueError(f"account {account_id!r} not found")
+            values, asset_records = account_values(account, repo)
+            title = f"{template['title']} — {account['name']}"
+            result = app.state.core.web_derive(
+                doc=template["scene"],
+                values=values,
+                assets=asset_records,
+                new_doc_id=new_id("doc"),
+                new_title=title,
+                raise_on_error=False,
+            )
+            coverage = result.get("coverage") or {}
+            row["unbound"] = coverage_unbound_keys(coverage)
+            if not result.get("ok", False):
+                error = result.get("error") or {}
+                row["error"] = error.get("message") or error.get(
+                    "code", "web_derive.rejected"
+                )
+                return row
+            derived = repo.create_document(
+                result["web_doc"],
+                doc_kind="web",
+                template_document_id=template["id"],
+                template_doc_version=template["current_version"],
+                account_id=account_id,
+            )
+            row["document_id"] = derived["id"]
+            row["status"] = "derived"
+            if publish:
+                slug = _unique_batch_slug(
+                    repo,
+                    f"{slug_base}-{web_slugify(account['name'])}",
+                    derived["id"],
+                )
+                html, runtime_version, _warnings = web_export.build_publish_html(
+                    app.state.core,
+                    repo,
+                    derived,
+                    store_root=asset_store_root(),
+                    database_path=app.state.database_path,
+                    slug=slug,
+                    public_base=public_base,
+                    node_bin=app.state.web_export_node_bin,
+                )
+                repo.upsert_web_publish(
+                    slug,
+                    derived["id"],
+                    derived["current_version"],
+                    html,
+                    runtime_version,
+                )
+                row["slug"] = slug
+                row["url"] = f"/p/{slug}"
+                row["status"] = "published"
+            return row
+        except Exception as error:  # noqa: BLE001 — one account never kills a batch
+            row["error"] = str(error) or "derive failed"
+            log_event(
+                api_logger,
+                logging.WARNING,
+                "web_batch_account_failed",
+                account_id=account_id,
+                template_document_id=template["id"],
+                error=row["error"],
+            )
+            return row
+
+    def _process_web_batch(
+        repo: Repository, batch: JsonObject, public_base: str
+    ) -> JsonObject:
+        """Synchronous-chunked processing (chunk 5): the cursor persists after
+        every chunk so an interrupted batch resumes exactly where it stopped.
+        Status is "partial" mid-way and "completed" when the cursor reaches the
+        account count; "failed" only when the batch itself cannot run (the
+        template is gone)."""
+        try:
+            template = repo.require_document(batch["template_document_id"])
+        except NotFoundError:
+            return repo.update_web_batch_progress(
+                batch["batch_id"], batch["cursor"], "failed", batch["manifest"]
+            )
+
+        account_ids = batch["account_ids"]
+        total = len(account_ids)
+        manifest = list(batch.get("manifest") or [])
+        cursor = batch["cursor"]
+
+        while cursor < total:
+            chunk_end = min(cursor + WEB_BATCH_CHUNK_SIZE, total)
+            for index in range(cursor, chunk_end):
+                manifest.append(
+                    _derive_publish_account(
+                        repo,
+                        template,
+                        account_ids[index],
+                        batch["publish"],
+                        batch["slug_base"],
+                        public_base,
+                    )
+                )
+            cursor = chunk_end
+            status = "completed" if cursor >= total else "partial"
+            batch = repo.update_web_batch_progress(
+                batch["batch_id"], cursor, status, manifest
+            )
+        if cursor >= total and batch["status"] != "completed":
+            # Empty account set (the while loop never ran): still terminal.
+            batch = repo.update_web_batch_progress(
+                batch["batch_id"], cursor, "completed", manifest
+            )
+        return batch
+
+    @app.post("/documents/{document_id}/web/batch")
+    def create_web_batch(
+        document_id: str,
+        payload: WebBatchRequest,
+        request: Request,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        # Unknown accounts are NOT pre-validated: a missing account is a
+        # per-account failure on its manifest row, never a batch-level error.
+        slug_base = (payload.slug_base or "").strip() or web_slugify(document["title"])
+        public_base = str(request.base_url).rstrip("/")
+        batch = repo.create_web_batch(
+            {
+                "batch_id": new_id("wbatch"),
+                "template_document_id": document["id"],
+                "template_doc_version": document["current_version"],
+                "status": "partial",
+                "account_ids": payload.account_ids,
+                "publish": payload.publish,
+                "slug_base": slug_base,
+                "cursor": 0,
+                "manifest": [],
+            }
+        )
+        batch = _process_web_batch(repo, batch, public_base)
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_batch_completed",
+            batch_id=batch["batch_id"],
+            template_document_id=document["id"],
+            status=batch["status"],
+            cursor=batch["cursor"],
+            total=len(batch["account_ids"]),
+        )
+        return web_batch_response(batch)
+
+    @app.post("/web/batches/{batch_id}/resume")
+    def resume_web_batch(
+        batch_id: str, request: Request, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        batch = repo.require_web_batch(batch_id)
+        if batch["status"] == "completed":
+            return web_batch_response(batch)
+        public_base = str(request.base_url).rstrip("/")
+        batch = _process_web_batch(repo, batch, public_base)
+        return web_batch_response(batch)
+
+    @app.get("/web/batches/{batch_id}")
+    def get_web_batch(
+        batch_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        return web_batch_response(repo.require_web_batch(batch_id))
 
     @app.get("/p/{slug}")
     def serve_published_page(
@@ -4332,6 +4783,64 @@ def web_default_slug(title: str, document_id: str) -> str:
     return slug[:64]
 
 
+# P5 batch (D5): a bulk derive/publish run processes accounts in fixed-size
+# chunks and persists the cursor after each chunk, so an interrupted batch
+# resumes exactly where it stopped (the synchronous-chunked job seam).
+WEB_BATCH_CHUNK_SIZE = 5
+
+
+def coverage_unbound_keys(coverage: JsonObject) -> List[str]:
+    """A manifest row's `unbound` = the union of the derive coverage's
+    unbound_slots + unbound_vars KEYS (deduped, sorted). Each entry is a
+    `{key, node_ids}` UnboundEntry; the batch surfaces only the keys."""
+    keys = set()
+    for field in ("unbound_slots", "unbound_vars"):
+        for entry in coverage.get(field) or []:
+            if isinstance(entry, dict) and entry.get("key"):
+                keys.add(str(entry["key"]))
+    return sorted(keys)
+
+
+def _unique_batch_slug(repo: Repository, base_slug: str, document_id: str) -> str:
+    """The account's publish slug, with collision suffixing: if `base_slug` is
+    already owned by a DIFFERENT document, append -2, -3, … until free. A slug
+    already owned by THIS document is reused (a re-publish). The batch never
+    409s on a taken slug."""
+    slug = base_slug
+    suffix = 2
+    while True:
+        existing = repo.get_web_publish(slug)
+        if existing is None or existing["document_id"] == document_id:
+            return slug
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+
+
+def web_batch_response(batch: JsonObject) -> JsonObject:
+    """The batch DTO shared by POST/resume/GET: `cursor` and `status` echo
+    top-level (the editor's Resume button keys off cursor < counts.total or a
+    non-terminal status), and counts tally the manifest row statuses."""
+    account_ids = batch.get("account_ids") or []
+    manifest = batch.get("manifest") or []
+    counts = {
+        "total": len(account_ids),
+        "derived": 0,
+        "published": 0,
+        "failed": 0,
+    }
+    for row in manifest:
+        status = row.get("status")
+        if status in ("derived", "published", "failed"):
+            counts[status] += 1
+    return {
+        "batch_id": batch["batch_id"],
+        "status": batch["status"],
+        "cursor": batch["cursor"],
+        "counts": counts,
+        "manifest": manifest,
+    }
+
+
 def require_draft_document(document: JsonObject, action: str) -> None:
     if is_finalized_document(document):
         raise HTTPException(
@@ -4411,12 +4920,27 @@ def scene_status_kind(scene: JsonObject) -> str:
     return str(status)
 
 
+# P5 (D4): the personalization provenance columns are meaningful only for web
+# documents. The three below pass through GET /documents/{id} for web docs;
+# template_doc_version stays internal (the derive path in B2 reads it, but it is
+# not part of the public document shape).
+_WEB_PERSONALIZATION_PUBLIC = ("is_template", "template_document_id", "account_id")
+_PERSONALIZATION_COLUMNS = _WEB_PERSONALIZATION_PUBLIC + ("template_doc_version",)
+
+
 def public_document(document: JsonObject) -> JsonObject:
-    return {
-        key: value
-        for key, value in document.items()
-        if key != "brand_kit"
-    }
+    is_web = document.get("doc_kind") == "web"
+    result: JsonObject = {}
+    for key, value in document.items():
+        if key == "brand_kit":
+            continue
+        if key == "template_doc_version":
+            # Internal — never part of the public document shape.
+            continue
+        if key in _PERSONALIZATION_COLUMNS and not is_web:
+            continue
+        result[key] = value
+    return result
 
 
 def duplicate_brand_kit_error(brand_kit: JsonObject) -> HTTPException:
@@ -5391,6 +5915,7 @@ def run_web_agent_turn(
     root: Path,
     event_sink=None,
     target_node_ids: Optional[List[str]] = None,
+    account_card: Optional[JsonObject] = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -5400,7 +5925,13 @@ def run_web_agent_turn(
 
     `target_node_ids` (a scoped edit turn): each selected node is resolved to
     its enclosing section in Python and appended to the brief as a TURN TARGET
-    line so the orchestrator scopes the turn to that section."""
+    line so the orchestrator scopes the turn to that section.
+
+    `account_card` (a 1:1 personalized turn, P5 D6): the target account card
+    {name, domain, logo_asset_id, data, notes}, resolved to 404 before the run
+    started. It rides the runtime config BY VALUE (same rule as brand_kit) and
+    its logo AssetRecord is resolved here into config.account_assets so
+    use_account_asset can register it."""
     ensure_agent_runtime_path(root)
     try:
         from lumen_agent.config import AgentRuntimeConfig
@@ -5439,6 +5970,14 @@ def run_web_agent_turn(
             # (LumenWebTools._font_face_css) for its in-loop previews —
             # Playwright renders via set_content with no asset server, so the
             # URL-based CSS this endpoint builds would not resolve there.
+        if account_card:
+            # BY VALUE, mirroring brand_kit: the card for the prompts/view, plus
+            # its logo AssetRecord manifest so use_account_asset can upsert it.
+            config = replace(
+                config,
+                account_card=account_card,
+                account_assets=resolve_account_assets(account_card),
+            )
         # Mandatory-multimodal (the reviewer attaches screenshots): fail loud
         # before authoring if the configured model is text-only.
         from lumen_agent.llm import assert_model_supports_image_input
@@ -5697,6 +6236,72 @@ def resolve_web_turn_brand_kit(
         return brand_kit, "document", manifest, font_spec
     except Exception:
         return None, None, None, None
+    finally:
+        connection.close()
+
+
+def account_values(
+    account: JsonObject, repo: Repository
+) -> Tuple[Dict[str, JsonObject], List[JsonObject]]:
+    """Project a personalization account (P5 D3) into the flat `account.*` value
+    namespace (D1) + the logo's engine AssetRecord for the derive call.
+
+    The account IS the binding set — no separate binding-set authoring exists in
+    v0. Values are kind-tagged snake_case WebBoundValue dicts mirroring
+    `lumen_core::binding::BoundValue`:
+      - account.name  → Text
+      - account.domain → Text (present only when the account carries one)
+      - account.logo  → Asset (present only when the account carries a logo)
+      - account.<key> → Text, one per `data` entry
+    (notes are agent context, NEVER a substitution value). asset_records is the
+    logo AssetRecord list (empty when there is no logo or its row is gone — a
+    DELETE keeps derived docs' account_id but the asset may be absent)."""
+    values: Dict[str, JsonObject] = {
+        "account.name": {"kind": "text", "value": str(account.get("name") or "")},
+    }
+    domain = account.get("domain")
+    if domain:
+        values["account.domain"] = {"kind": "text", "value": str(domain)}
+    logo_asset_id = account.get("logo_asset_id")
+    asset_records: List[JsonObject] = []
+    if logo_asset_id:
+        values["account.logo"] = {"kind": "asset", "asset_id": str(logo_asset_id)}
+        try:
+            record = repo.require_asset_record(str(logo_asset_id))
+            asset_records.append(record.get("asset") or record)
+        except NotFoundError:
+            # The logo row is gone; the value still points at it (unbound at
+            # derive → template fallback, reported in coverage).
+            pass
+    for key, value in (account.get("data") or {}).items():
+        values[f"account.{key}"] = {"kind": "text", "value": str(value)}
+    return values, asset_records
+
+
+def resolve_account_assets(
+    account_card: JsonObject, database_path: Optional[Path] = None
+) -> Optional[JsonObject]:
+    """The account-logo manifest a personalized turn hands the runtime BY VALUE
+    (mirrors resolve_web_turn_brand_kit / brand_kit_asset_manifest): the account
+    card names its logo by `logo_asset_id`, and `use_account_asset` needs the
+    engine AssetRecord to upsert it (the runtime never reads the API database).
+    Shape: {asset_id: {"record": <engine asset record>}}. Returns None when there
+    is no logo or its row cannot be read — the turn still personalizes name/text,
+    and use_account_asset errors honestly with no logo."""
+    logo_asset_id = account_card.get("logo_asset_id")
+    if not logo_asset_id:
+        return None
+    path = database_path or settings.lumen_api_database_path
+    try:
+        connection = connect(path)
+    except Exception:
+        return None
+    try:
+        repo = Repository(connection)
+        record = repo.require_asset_record(str(logo_asset_id))
+        return {str(logo_asset_id): {"record": record.get("asset") or record}}
+    except Exception:
+        return None
     finally:
         connection.close()
 
@@ -6388,6 +6993,11 @@ def agent_diagnostics_from_summaries(
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+def new_web_account_id() -> str:
+    # P5 (D3): `acc_{uuid4hex}` minted when the client provides no explicit id.
+    return f"acc_{uuid4().hex}"
 
 
 def parent_map(scene: JsonObject) -> Dict[str, JsonObject]:

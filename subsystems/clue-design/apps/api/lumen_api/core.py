@@ -460,6 +460,32 @@ class CoreClient:
             }
         )
 
+    def web_derive(
+        self,
+        doc: JsonObject,
+        values: JsonObject,
+        assets: Optional[List[JsonObject]] = None,
+        new_doc_id: Optional[str] = None,
+        new_title: Optional[str] = None,
+        raise_on_error: bool = True,
+    ) -> JsonObject:
+        """P5 derive (D4): apply an account's value map to a template WebDoc,
+        producing a marker-preserving derived doc. Pure (no render/I/O). The
+        derive path passes raise_on_error=False so an engine rejection
+        (ok:false + web_derive.rejected + coverage) comes back as a plain
+        response the endpoint maps to a 422, mirroring web_apply_ops."""
+        return self._run(
+            {
+                "action": "web_derive",
+                "doc": doc,
+                "values": values,
+                "assets": assets or [],
+                "new_doc_id": new_doc_id,
+                "new_title": new_title,
+            },
+            raise_on_error=raise_on_error,
+        )
+
     def web_ingest_fragment(
         self,
         doc: JsonObject,

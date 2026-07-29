@@ -155,6 +155,10 @@ class WebTurnRequest(BaseModel):
     # (the orchestrator reacts to a "TURN TARGET" line appended to the brief).
     # Absent/None → an ordinary whole-page turn.
     target_node_ids: Optional[List[str]] = None
+    # P5 (D6): the target account this turn personalizes for. Unknown id → 404
+    # before the run starts. Absent → the document row's own account_id (a
+    # derived doc) is used when present, else an un-personalized turn.
+    account_id: Optional[str] = None
 
 
 class WebOperationsRequest(BaseModel):
@@ -166,6 +170,62 @@ class WebOperationsRequest(BaseModel):
     operations: List[JsonObject] = Field(default_factory=list)
     base_version: Optional[int] = None
     intent: Optional[str] = None
+
+
+class CreateWebAccountRequest(BaseModel):
+    """A personalization account (P5 D3). `account_id` is minted (`acc_…`) when
+    absent; an explicit duplicate id is a 409. `data` is the string→string custom
+    var map (each key becomes `account.<key>`); `notes` is agent-only context,
+    never a substitution value. A provided `logo_asset_id` must resolve in the
+    assets table (422 otherwise)."""
+
+    account_id: Optional[str] = None
+    name: str
+    domain: Optional[str] = None
+    logo_asset_id: Optional[str] = None
+    data: Dict[str, str] = Field(default_factory=dict)
+    notes: Optional[str] = None
+
+
+class UpdateWebAccountRequest(BaseModel):
+    """Partial account update (P5 D3). Only the fields present in the request
+    body are written; `data`, when present, replaces the whole map. Same
+    logo_asset_id resolution check as create."""
+
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    logo_asset_id: Optional[str] = None
+    data: Optional[Dict[str, str]] = None
+    notes: Optional[str] = None
+
+
+class SaveWebTemplateRequest(BaseModel):
+    """Clone a web document into a reusable template (P5 D4). An omitted title
+    defaults to ``"{source title} — template"``."""
+
+    title: Optional[str] = None
+
+
+class DeriveWebRequest(BaseModel):
+    """Derive a personalized copy of a web document (P5 D4). `account_id` is
+    OPTIONAL: absent → a plain marker-preserving copy with an EMPTY value map
+    (default title ``"{source title} — copy"``); present → the account's value
+    map is applied (default title ``"{source title} — {account name}"``). An
+    unknown account is a 404; an engine rejection is a 422."""
+
+    account_id: Optional[str] = None
+    title: Optional[str] = None
+
+
+class WebBatchRequest(BaseModel):
+    """Bulk derive (+ optional publish) a template web document for a set of
+    accounts (P5 D5). Chunked + resumable; per-account failures never kill the
+    batch. Slugs are ``{slug_base or slugify(template title)}-{slugify(account
+    name)}`` with collision suffixing (never a 409)."""
+
+    account_ids: List[str] = Field(default_factory=list)
+    publish: bool = True
+    slug_base: Optional[str] = None
 
 
 class WebPublishRequest(BaseModel):
