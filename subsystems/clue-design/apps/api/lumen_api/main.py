@@ -6265,7 +6265,13 @@ def account_values(
     logo_asset_id = account.get("logo_asset_id")
     asset_records: List[JsonObject] = []
     if logo_asset_id:
-        values["account.logo"] = {"kind": "asset", "asset_id": str(logo_asset_id)}
+        # Alt rides the binding: without it a derived page keeps the TEMPLATE's
+        # alt text (the seed account's name) — the a11y leak the P5 e2e caught.
+        values["account.logo"] = {
+            "kind": "asset",
+            "asset_id": str(logo_asset_id),
+            "alt": f"{account.get('name') or 'Account'} logo",
+        }
         try:
             record = repo.require_asset_record(str(logo_asset_id))
             asset_records.append(record.get("asset") or record)

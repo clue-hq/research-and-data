@@ -175,7 +175,11 @@ def test_account_values_maps_namespace_and_logo_record(client: TestClient) -> No
 
     assert values["account.name"] == {"kind": "text", "value": "Privia Health"}
     assert values["account.domain"] == {"kind": "text", "value": "priviahealth.com"}
-    assert values["account.logo"] == {"kind": "asset", "asset_id": logo_id}
+    assert values["account.logo"] == {
+        "kind": "asset",
+        "asset_id": logo_id,
+        "alt": "Privia Health logo",
+    }
     assert values["account.headline"] == {
         "kind": "text",
         "value": "Care that connects",
@@ -222,5 +226,9 @@ def test_account_values_logo_row_missing_yields_no_record(client: TestClient) ->
         values, asset_records = account_values(account, repo)
     finally:
         repo.connection.close()
-    assert values["account.logo"] == {"kind": "asset", "asset_id": "asset_deleted"}
+    assert values["account.logo"] == {
+        "kind": "asset",
+        "asset_id": "asset_deleted",
+        "alt": "Ghost logo",
+    }
     assert asset_records == []

@@ -59,9 +59,20 @@ pub fn personalization_key_is_valid(key: &str) -> bool {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WebBoundValue {
-    Text { value: String },
-    Asset { asset_id: AssetId },
-    List { items: Vec<WebBoundValue> },
+    Text {
+        value: String,
+    },
+    Asset {
+        asset_id: AssetId,
+        /// Replacement alt text for the bound image. Alt is CONTENT: without
+        /// this, a derived page keeps the template's alt (e.g. the seed
+        /// account's name) — an a11y/social leak the e2e caught live.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        alt: Option<String>,
+    },
+    List {
+        items: Vec<WebBoundValue>,
+    },
 }
 
 impl WebBoundValue {
@@ -357,7 +368,7 @@ fn apply_slots(
                 }
                 ctx.bind(&key);
             }
-            (Some("image"), WebBoundValue::Asset { asset_id }) => {
+            (Some("image"), WebBoundValue::Asset { asset_id, alt }) => {
                 ensure_asset(
                     asset_id,
                     provided,
@@ -367,10 +378,15 @@ fn apply_slots(
                     diagnostics,
                 );
                 if let Some(WebNodeKind::Image {
-                    asset_id: existing, ..
+                    asset_id: existing,
+                    alt: existing_alt,
+                    ..
                 }) = page.nodes.get_mut(&id).map(|node| &mut node.kind)
                 {
                     *existing = asset_id.clone();
+                    if let Some(alt) = alt {
+                        *existing_alt = alt.clone();
+                    }
                 }
                 ctx.bind(&key);
             }
@@ -498,7 +514,7 @@ fn expand_repeater(
                     "text items but the prototype has no text node",
                 )),
             },
-            WebBoundValue::Asset { asset_id } => match &first_image {
+            WebBoundValue::Asset { asset_id, alt } => match &first_image {
                 Some(target) => {
                     ensure_asset(
                         asset_id,
@@ -510,13 +526,18 @@ fn expand_repeater(
                     );
                     let cloned_id = suffix_id(target, index);
                     if let Some(WebNodeKind::Image {
-                        asset_id: existing, ..
+                        asset_id: existing,
+                        alt: existing_alt,
+                        ..
                     }) = new_nodes
                         .iter_mut()
                         .find(|node| node.id == cloned_id)
                         .map(|node| &mut node.kind)
                     {
                         *existing = asset_id.clone();
+                        if let Some(alt) = alt {
+                            *existing_alt = alt.clone();
+                        }
                     }
                 }
                 None => diagnostics.push(unusable_prototype(
@@ -915,6 +936,7 @@ mod tests {
             "account.logo".to_owned(),
             WebBoundValue::Asset {
                 asset_id: AssetId::from("acct_logo"),
+                alt: None,
             },
         );
         values.insert(
@@ -934,6 +956,49 @@ mod tests {
     }
 
     #[test]
+    fn asset_slot_substitutes_alt_when_bound() {
+        let tmpl = template(
+            r#"<section id="s">
+                 <img id="logo" data-slot="account.logo" data-asset="tmpl_logo" alt="Privia Health">
+               </section>"#,
+        );
+        let mut values = BTreeMap::new();
+        values.insert(
+            "account.logo".to_owned(),
+            WebBoundValue::Asset {
+                asset_id: AssetId::from("acct_logo"),
+                alt: Some("Oak Street Health logo".to_owned()),
+            },
+        );
+        let derived = derive_web_doc(&tmpl, &values, &[logo_record("acct_logo")], &opts());
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        let page = derived.doc.page(&PageId::from("home")).unwrap();
+        let WebNodeKind::Image { asset_id, alt, .. } = &page.node(&NodeId::from("logo")).unwrap().kind
+        else {
+            panic!("logo is an image");
+        };
+        assert_eq!(asset_id.as_str(), "acct_logo");
+        // Alt is content: the template's seed-account alt must not leak.
+        assert_eq!(alt, "Oak Street Health logo");
+
+        // Without an alt in the binding, the template's alt is the fallback.
+        let mut bare = BTreeMap::new();
+        bare.insert(
+            "account.logo".to_owned(),
+            WebBoundValue::Asset {
+                asset_id: AssetId::from("acct_logo"),
+                alt: None,
+            },
+        );
+        let kept = derive_web_doc(&tmpl, &bare, &[logo_record("acct_logo")], &opts());
+        let page = kept.doc.page(&PageId::from("home")).unwrap();
+        let WebNodeKind::Image { alt, .. } = &page.node(&NodeId::from("logo")).unwrap().kind else {
+            panic!("logo is an image");
+        };
+        assert_eq!(alt, "Privia Health");
+    }
+
+    #[test]
     fn repeater_clones_prototype_and_truncates() {
         let tmpl = template(
             r#"<section id="s">
@@ -948,6 +1013,7 @@ mod tests {
             let id = format!("peer_{n}");
             items.push(WebBoundValue::Asset {
                 asset_id: AssetId::from(id.clone()),
+                alt: None,
             });
             assets.push(logo_record(&id));
         }
@@ -1067,6 +1133,7 @@ mod tests {
             "account.logo".to_owned(),
             WebBoundValue::Asset {
                 asset_id: AssetId::from("ghost_asset"),
+                alt: None,
             },
         );
         // No asset records passed → LUMW0605 error → rejection.
@@ -1089,6 +1156,7 @@ mod tests {
             text_value("hi"),
             WebBoundValue::Asset {
                 asset_id: AssetId::from("a1"),
+                alt: None,
             },
             WebBoundValue::List {
                 items: vec![text_value("x")],
