@@ -28,8 +28,9 @@ pub mod validate;
 
 pub use classes::{lint_classes, ClassLintContext};
 pub use doc::{
-    ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec, MarqueeDirection, SectionTag,
-    TextVariant, WebDoc, WebNode, WebNodeKind, WebPage, WebThemeRef, WEB_SCHEMA_VERSION,
+    calendly_url_is_valid, ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec,
+    EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind,
+    WebPage, WebThemeRef, WEB_SCHEMA_VERSION,
 };
 pub use ingest::{ingest_html, ingest_html_into_page, IngestOutcome};
 pub use ops::{apply_operations, apply_operations_checked, WebOpError, WebOperation};

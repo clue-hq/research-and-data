@@ -5,7 +5,10 @@
 //! references, allowed hrefs, canonical inline content, and a custom_css
 //! escape hatch that cannot smuggle imports or script schemes.
 
-use crate::doc::{ButtonAction, ComponentSpec, WebDoc, WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION};
+use crate::doc::{
+    calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, WebDoc, WebNodeKind,
+    MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
+};
 use crate::inline::sanitize_inline;
 use crate::util::href_is_allowed;
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
@@ -301,6 +304,91 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     }
                 }
             }
+            WebNodeKind::Component {
+                spec: ComponentSpec::NavMenu,
+            } => {
+                for child_id in &node.children {
+                    let is_link_or_label = page.nodes.get(child_id).is_some_and(|child| {
+                        matches!(
+                            child.kind,
+                            WebNodeKind::Button { .. } | WebNodeKind::Text { .. }
+                        )
+                    });
+                    if !is_link_or_label {
+                        diagnostics.push(Diagnostic::warning(
+                            Phase::Web,
+                            "LUMW0023",
+                            format!(
+                                "nav menu `{}` item `{child_id}` is not a link or label; nav menu items are links and labels",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(child_id.clone())),
+                        ));
+                    }
+                }
+            }
+            WebNodeKind::Component {
+                spec: ComponentSpec::Carousel { .. },
+            } => {
+                if node.children.len() < 2 {
+                    diagnostics.push(Diagnostic::warning(
+                        Phase::Web,
+                        "LUMW0023",
+                        format!(
+                            "carousel `{}` has fewer than 2 children; a carousel needs slides to page through",
+                            node.id
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                }
+            }
+            WebNodeKind::Component {
+                spec: ComponentSpec::Tabs { .. },
+            } => {
+                for child_id in &node.children {
+                    let is_item = page.nodes.get(child_id).is_some_and(|child| {
+                        matches!(child.kind, WebNodeKind::Container)
+                            && child.children.len() >= 2
+                            && page.nodes.get(&child.children[0]).is_some_and(|first| {
+                                matches!(first.kind, WebNodeKind::Text { .. })
+                            })
+                    });
+                    if !is_item {
+                        diagnostics.push(Diagnostic::warning(
+                            Phase::Web,
+                            "LUMW0023",
+                            format!(
+                                "tabs `{}` item `{child_id}` is not a container with a text label and panel content; it renders after the tabs",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(child_id.clone())),
+                        ));
+                    }
+                }
+            }
+            WebNodeKind::Embed { provider, url, html } => match provider {
+                EmbedProvider::Calendly => {
+                    let valid = url.as_deref().is_some_and(calendly_url_is_valid);
+                    if !valid {
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0021",
+                            format!("calendly embed `{}` has a missing or invalid url", node.id),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                }
+                EmbedProvider::Custom => {
+                    if url.is_none() && html.trim().is_empty() {
+                        diagnostics.push(Diagnostic::warning(
+                            Phase::Web,
+                            "LUMW0022",
+                            format!("embed `{}` has no content", node.id),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                }
+            },
             WebNodeKind::Text { content, .. } => {
                 let canonical = sanitize_inline(content);
                 if canonical.html != *content {

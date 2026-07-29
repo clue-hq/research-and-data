@@ -6,7 +6,9 @@
 //! Batches apply against a draft and commit atomically: a failing op leaves
 //! the document untouched.
 
-use crate::doc::{ButtonAction, WebDoc, WebNode, WebNodeKind, WebThemeRef};
+use crate::doc::{
+    calendly_url_is_valid, ButtonAction, EmbedProvider, WebDoc, WebNode, WebNodeKind, WebThemeRef,
+};
 use crate::inline::sanitize_inline;
 use crate::util::href_is_allowed;
 use crate::validate::validate_web_doc;
@@ -185,6 +187,30 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                     "op.href_invalid",
                     format!("image href is not allowed: {href}"),
                 ));
+            }
+        }
+        WebNodeKind::Embed { provider, url, .. } => {
+            // html is NOT sanitized: embeds are sandboxed by design.
+            match provider {
+                EmbedProvider::Calendly => {
+                    if !url.as_deref().is_some_and(calendly_url_is_valid) {
+                        return Err(WebOpError::new(
+                            "op.embed_url_invalid",
+                            format!("calendly embed url is not a valid calendly link: {url:?}"),
+                        ));
+                    }
+                }
+                EmbedProvider::Custom => {
+                    // Permissive human path: any https URL is accepted.
+                    if let Some(url) = url {
+                        if !url.trim().to_ascii_lowercase().starts_with("https://") {
+                            return Err(WebOpError::new(
+                                "op.embed_url_invalid",
+                                format!("custom embed url must be https: {url}"),
+                            ));
+                        }
+                    }
+                }
             }
         }
         _ => {}
@@ -991,6 +1017,137 @@ mod tests {
             .iter()
             .any(|diagnostic| diagnostic.code == "LUMW0011"));
         assert_eq!(doc, base, "rejected batch must not mutate");
+    }
+
+    fn embed_node(id: &str, kind: WebNodeKind) -> WebNode {
+        WebNode {
+            id: NodeId::from(id),
+            kind,
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        }
+    }
+
+    fn insert_embed(doc: &mut WebDoc, node: WebNode) -> Result<Vec<WebOperation>, WebOpError> {
+        let id = node.id.clone();
+        apply_operations(
+            doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 0,
+                nodes: vec![node],
+                root: id,
+            }],
+        )
+    }
+
+    #[test]
+    fn embed_op_canonicalization() {
+        use crate::doc::EmbedProvider;
+
+        // Calendly with a bad url is rejected.
+        let mut doc = fixture();
+        let result = insert_embed(
+            &mut doc,
+            embed_node(
+                "emb_bad",
+                WebNodeKind::Embed {
+                    provider: EmbedProvider::Calendly,
+                    url: Some("https://evil.com/x".to_owned()),
+                    html: String::new(),
+                },
+            ),
+        );
+        assert_eq!(result.unwrap_err().code, "op.embed_url_invalid");
+
+        // Custom with any https url is accepted (permissive human path).
+        let mut doc = fixture();
+        insert_embed(
+            &mut doc,
+            embed_node(
+                "emb_url",
+                WebNodeKind::Embed {
+                    provider: EmbedProvider::Custom,
+                    url: Some("https://widget.example/embed".to_owned()),
+                    html: String::new(),
+                },
+            ),
+        )
+        .expect("custom https url accepted");
+
+        // Custom non-https url is rejected.
+        let mut doc = fixture();
+        let result = insert_embed(
+            &mut doc,
+            embed_node(
+                "emb_http",
+                WebNodeKind::Embed {
+                    provider: EmbedProvider::Custom,
+                    url: Some("http://widget.example/embed".to_owned()),
+                    html: String::new(),
+                },
+            ),
+        );
+        assert_eq!(result.unwrap_err().code, "op.embed_url_invalid");
+
+        // Custom snippet (html, no url) is accepted and NOT sanitized.
+        let mut doc = fixture();
+        insert_embed(
+            &mut doc,
+            embed_node(
+                "emb_snip",
+                WebNodeKind::Embed {
+                    provider: EmbedProvider::Custom,
+                    url: None,
+                    html: "<script>widget()</script>".to_owned(),
+                },
+            ),
+        )
+        .expect("custom snippet accepted");
+        let page = doc.page(&page_id()).unwrap();
+        let WebNodeKind::Embed { html, .. } = &page.node(&NodeId::from("emb_snip")).unwrap().kind
+        else {
+            panic!("embed");
+        };
+        assert_eq!(html, "<script>widget()</script>", "html is not sanitized");
+    }
+
+    #[test]
+    fn legacy_embed_props_round_trip_through_ops() {
+        use crate::doc::EmbedProvider;
+        let mut doc = fixture();
+        insert_embed(
+            &mut doc,
+            embed_node(
+                "emb_1",
+                WebNodeKind::Embed {
+                    provider: EmbedProvider::Calendly,
+                    url: Some("https://calendly.com/team".to_owned()),
+                    html: String::new(),
+                },
+            ),
+        )
+        .expect("insert");
+        let before = doc.clone();
+        // SetNodeProps to a new valid calendly url, then invert.
+        let inverses = apply_operations(
+            &mut doc,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("emb_1"),
+                props: WebNodeKind::Embed {
+                    provider: EmbedProvider::Calendly,
+                    url: Some("https://acme.calendly.com/demo".to_owned()),
+                    html: String::new(),
+                },
+            }],
+        )
+        .expect("set props");
+        apply_operations(&mut doc, &inverses).expect("undo");
+        assert_eq!(doc, before, "inverse restores the embed props exactly");
     }
 
     #[test]

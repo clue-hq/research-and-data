@@ -310,14 +310,146 @@ fn tier2_components_round_trip_and_rewire() {
         "<button type=\"button\" data-btn=\"outline\" commandfor=\"dlg_book\" command=\"show-modal\">Contact sales</button>"
     ));
     assert!(delivery.html.contains("<dialog id=\"dlg_book\" data-lumen-dialog=\"true\""));
-    assert!(delivery.html.contains("__lumenRuntimeV1"));
-    assert!(delivery.html.contains("lumen-platform v1"));
+    assert!(delivery.html.contains("__lumenRuntimeV2"));
+    assert!(delivery.html.contains("lumen-platform v2"));
     assert!(delivery.html.contains("class=\"lumen-marquee-track\" aria-hidden=\"true\""));
     assert!(delivery.html.contains("<details data-lumen-acc-item=\"true\""));
 
     // 5. Inverse restores the pre-rewire document exactly.
     apply_operations(&mut doc, &inverses).expect("undo rewire");
     assert_eq!(doc, before_rewire, "inverse restores the Href CTA exactly");
+}
+
+/// Wave-2 surface: a nav_menu header band, a 3-item tabs component, a
+/// carousel with autoplay + arrows, and a calendly embed inside a dialog.
+const WAVE2_PAGE: &str = r##"
+<header id="hdr" class="bg-light border-b border-border">
+  <div data-component="nav_menu" id="nav" class="mx-auto max-w-[1200px] px-6 py-4">
+    <p id="nav_brand" data-variant="overline" class="text-primary">Insight Health</p>
+    <a data-button="link" href="#features">Features</a>
+    <a data-button="primary" href="https://insighthealth.ai/demo">Book a demo</a>
+  </div>
+</header>
+<section id="tabs_sec" class="bg-light">
+  <div data-component="tabs" id="tabs" data-default-tab="1" class="mx-auto max-w-[1200px] px-6 py-16 flex flex-col gap-6">
+    <div class="p-4"><h3>Overview</h3><p class="text-muted">How the scribe works end to end.</p></div>
+    <div class="p-4"><h3>Security</h3><p class="text-muted">PHI stays in your compliance boundary.</p></div>
+    <div class="p-4"><h3>Pricing</h3><p class="text-muted">Per clinician, billed monthly.</p></div>
+  </div>
+</section>
+<section id="carousel_sec" class="bg-card">
+  <div data-component="carousel" id="carousel" data-autoplay="6" class="mx-auto max-w-[1200px] px-6 py-16">
+    <div class="p-6 bg-light rounded-2xl"><p>Slide one</p></div>
+    <div class="p-6 bg-light rounded-2xl"><p>Slide two</p></div>
+    <div class="p-6 bg-light rounded-2xl"><p>Slide three</p></div>
+  </div>
+</section>
+<section id="book_sec" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-16 flex flex-col items-center gap-4">
+    <a data-button="primary" data-command="show-modal" data-target="dlg_book">Book a call</a>
+    <div data-component="dialog" id="dlg_book" data-aria-label="Book a call" class="max-w-[560px]">
+      <h3>Pick a time</h3>
+      <div data-embed="calendly" data-url="https://calendly.com/insighthealth/intro" class="w-full"></div>
+    </div>
+  </div>
+</section>
+"##;
+
+#[test]
+fn wave2_surface_round_trip() {
+    let theme = theme();
+    let mut doc = WebDoc::new("doc_web_4", "Insight Health — Wave 2", None);
+    let page_id = PageId::from("home");
+
+    // Ingest + validate clean.
+    let outcome = ingest_html_into_page(&mut doc, &page_id, WAVE2_PAGE, &theme);
+    assert!(!outcome.has_errors(), "ingest: {:#?}", outcome.diagnostics);
+    let validation = validate_web_doc(&doc);
+    assert!(
+        validation
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+        "validation: {validation:#?}"
+    );
+
+    // Delivery render.
+    let delivery = render_page(&doc, &page_id, &theme, &RenderOptions::delivery("/asset-store"))
+        .expect("delivery render");
+
+    // Calendly iframe: src, title, sandbox.
+    assert!(delivery.html.contains("src=\"https://calendly.com/insighthealth/intro\""));
+    assert!(delivery.html.contains("title=\"Calendly scheduling\""));
+    assert!(delivery
+        .html
+        .contains("sandbox=\"allow-scripts allow-same-origin allow-forms allow-popups\""));
+
+    // Nav: desktop row + mobile details clone.
+    assert!(delivery.html.contains("class=\"lumen-nav-row\""));
+    assert!(delivery.html.contains("<details class=\"lumen-nav-menu\""));
+
+    // Tabs: exactly one selected tab and one visible panel (of three).
+    assert_eq!(delivery.html.matches("role=\"tabpanel\"").count(), 3);
+    // The selected tab button (the CSS also mentions aria-selected="true", so
+    // pin the count to the button shape, which carries tabindex="0").
+    assert_eq!(
+        delivery.html.matches("aria-selected=\"true\" tabindex=\"0\"").count(),
+        1
+    );
+    assert_eq!(delivery.html.matches(" hidden>").count(), 2);
+    assert!(delivery.html.contains("id=\"tabs_sec\""));
+
+    // Carousel: autoplay data + both arrows.
+    assert!(delivery.html.contains("data-autoplay-s=\"6\""));
+    assert!(delivery.html.contains("data-dir=\"prev\""));
+    assert!(delivery.html.contains("data-dir=\"next\""));
+
+    // Tabs + carousel need the v2 runtime, even in delivery.
+    assert!(delivery.html.contains("__lumenRuntimeV2"));
+    assert!(delivery.html.contains("lumen-platform v2"));
+
+    // Editor: the nav clone must not duplicate the bridge hook.
+    let mut editor_options = RenderOptions::editor("/asset-store");
+    editor_options.tailwind_runtime_src = Some("/vendor/tailwind.js".to_owned());
+    let editor = render_page(&doc, &page_id, &theme, &editor_options).expect("editor render");
+    assert_eq!(editor.html.matches("data-node-id=\"nav_brand\"").count(), 1);
+}
+
+#[test]
+fn embed_only_page_gets_css_but_no_script() {
+    let theme = theme();
+    let mut doc = WebDoc::new("doc_web_5", "Embed only", None);
+    let page_id = PageId::from("home");
+    let outcome = ingest_html_into_page(
+        &mut doc,
+        &page_id,
+        r#"<section id="s"><div data-embed="calendly" data-url="https://calendly.com/x"></div></section>"#,
+        &theme,
+    );
+    assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+    let delivery = render_page(&doc, &page_id, &theme, &RenderOptions::delivery("/asset-store"))
+        .expect("render");
+    // Embed pulls in the platform CSS...
+    assert!(delivery.html.contains("lumen-platform v2"));
+    // ...but never a script (embeds are CSS-gated, not runtime-gated).
+    assert!(!delivery.html.contains("<script"));
+}
+
+#[test]
+fn component_free_page_has_no_scripts_or_platform_css() {
+    let theme = theme();
+    let mut doc = WebDoc::new("doc_web_6", "Plain", None);
+    let page_id = PageId::from("home");
+    let outcome = ingest_html_into_page(
+        &mut doc,
+        &page_id,
+        r#"<section id="s"><div class="p-6"><h1>Hello</h1><p>Plain copy.</p></div></section>"#,
+        &theme,
+    );
+    assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+    let delivery = render_page(&doc, &page_id, &theme, &RenderOptions::delivery("/asset-store"))
+        .expect("render");
+    assert!(!delivery.html.contains("<script"));
+    assert!(!delivery.html.contains("lumen-platform"));
 }
 
 fn find_display_text(doc: &WebDoc, page_id: &PageId) -> NodeId {

@@ -10,8 +10,9 @@
 
 use crate::classes::{lint_classes, ClassLintContext};
 use crate::doc::{
-    ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec, MarqueeDirection, SectionTag,
-    TextVariant, WebDoc, WebNode, WebNodeKind, MAX_TREE_DEPTH,
+    calendly_url_is_valid, ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec,
+    EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind,
+    MAX_TREE_DEPTH,
 };
 use crate::inline::sanitize_inline;
 use crate::theme::WebTheme;
@@ -70,8 +71,44 @@ enum PendingLeaf {
         name: Option<String>,
     },
     /// Swallow inner content without producing a node (script bodies,
-    /// stray labels inside icon elements).
-    Discard { warn_if_content: bool },
+    /// stray labels inside icon/embed elements).
+    Discard {
+        warn_if_content: bool,
+        /// Which element the swallowed content sat inside — selects the
+        /// warning's wording (icon vs embed). Unused when `warn_if_content`
+        /// is false (script/style bodies).
+        context: DiscardContext,
+    },
+}
+
+/// The element a `Discard` frame is swallowing content from; picks the
+/// LUMW0131 warning wording.
+#[derive(Clone, Copy)]
+enum DiscardContext {
+    Icon,
+    Embed,
+}
+
+impl DiscardContext {
+    fn message(self, inner: &str) -> String {
+        match self {
+            DiscardContext::Icon => {
+                format!("content inside an icon element is ignored: {inner:?}")
+            }
+            DiscardContext::Embed => {
+                format!("content inside an embed element is ignored: {inner:?}")
+            }
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            DiscardContext::Icon => "Icon elements must be empty: <i data-icon=\"name\"></i>.",
+            DiscardContext::Embed => {
+                "Embed elements are empty: <div data-embed=\"calendly\" data-url=\"https://calendly.com/…\"></div>."
+            }
+        }
+    }
 }
 
 struct IngestState<'a> {
@@ -324,6 +361,11 @@ impl<'a> IngestState<'a> {
                     | "data-speed"
                     | "data-direction"
                     | "data-pause-on-hover"
+                    | "data-embed"
+                    | "data-url"
+                    | "data-show-arrows"
+                    | "data-autoplay"
+                    | "data-default-tab"
             );
             if !known {
                 let hint = if key == "style" {
@@ -332,9 +374,10 @@ impl<'a> IngestState<'a> {
                 } else {
                     "Recognized attributes: id class href target alt data-variant data-button \
                      data-icon data-asset data-href data-new-tab data-name, plus the Tier-2 \
-                     component/command data-* attributes (data-component data-command data-target \
-                     data-aria-label data-single-open data-default-open data-speed data-direction \
-                     data-pause-on-hover)."
+                     component/command/embed data-* attributes (data-component data-command \
+                     data-target data-aria-label data-single-open data-default-open data-speed \
+                     data-direction data-pause-on-hover data-embed data-url data-show-arrows \
+                     data-autoplay data-default-tab)."
                 };
                 self.warning(
                     "LUMW0132",
@@ -359,6 +402,7 @@ impl<'a> IngestState<'a> {
                     nested_depth: 0,
                     pending: PendingLeaf::Discard {
                         warn_if_content: false,
+                        context: DiscardContext::Icon,
                     },
                 });
             }
@@ -409,6 +453,57 @@ impl<'a> IngestState<'a> {
                 }
             }
             "div" => {
+                // A div carrying data-embed is a sandboxed embed leaf. Checked
+                // before data-component: the only agent-authorable provider is
+                // calendly (custom URL/snippet embeds are a human editor path).
+                if let Some(embed_value) = attrs_get(&attrs, "data-embed") {
+                    let id = self.mint_id("emb", attrs_get(&attrs, "id").as_deref());
+                    if embed_value.trim() != "calendly" {
+                        self.error(
+                            "LUMW0128",
+                            format!("unknown embed provider `{embed_value}`"),
+                            "Agent-authorable embeds: calendly. Custom URL/snippet embeds are added by humans in the editor.",
+                            Some(&id),
+                        );
+                        return;
+                    }
+                    let url = attrs_get(&attrs, "data-url").unwrap_or_default();
+                    if !calendly_url_is_valid(url.trim()) {
+                        self.error(
+                            "LUMW0129",
+                            format!("calendly embed `{id}` missing/invalid data-url"),
+                            "A real https://calendly.com/… link — real endpoints only; use an obvious placeholder and flag it if none was provided.",
+                            Some(&id),
+                        );
+                        return;
+                    }
+                    let classes = self.take_classes(&attrs, &id);
+                    self.finish_node(WebNode {
+                        id,
+                        kind: WebNodeKind::Embed {
+                            provider: EmbedProvider::Calendly,
+                            url: Some(url.trim().to_owned()),
+                            html: String::new(),
+                        },
+                        classes,
+                        children: Vec::new(),
+                        name: attrs_get(&attrs, "data-name"),
+                        slot_key: None,
+                    });
+                    if !is_empty {
+                        // Embed elements are empty; swallow any inner content.
+                        self.capture = Some(CaptureFrame {
+                            tag_name: name,
+                            start_offset: reader.buffer_position() as usize,
+                            nested_depth: 0,
+                            pending: PendingLeaf::Discard {
+                                warn_if_content: true,
+                                context: DiscardContext::Embed,
+                            },
+                        });
+                    }
+                    return;
+                }
                 // A div carrying data-component is a Tier-2 platform component
                 // branch; its children parse as ordinary nodes inside it.
                 if let Some(component_value) = attrs_get(&attrs, "data-component") {
@@ -457,6 +552,7 @@ impl<'a> IngestState<'a> {
                             nested_depth: 0,
                             pending: PendingLeaf::Discard {
                                 warn_if_content: true,
+                                context: DiscardContext::Icon,
                             },
                         });
                     }
@@ -838,11 +934,52 @@ impl<'a> IngestState<'a> {
                     pause_on_hover,
                 })
             }
+            "nav_menu" => Some(ComponentSpec::NavMenu),
+            "carousel" => {
+                let show_arrows = self.component_bool(attrs, "data-show-arrows", true, id);
+                let autoplay_s = match attrs_get(attrs, "data-autoplay") {
+                    Some(raw) => match raw.trim().parse::<u16>() {
+                        Ok(seconds) if (2..=60).contains(&seconds) => Some(seconds),
+                        _ => {
+                            self.warning(
+                                "LUMW0124",
+                                format!("invalid value for `data-autoplay` on component `{id}`: {raw}"),
+                                "data-autoplay is seconds in 2..=60; omitting autoplay.",
+                                Some(id),
+                            );
+                            None
+                        }
+                    },
+                    None => None,
+                };
+                Some(ComponentSpec::Carousel {
+                    show_arrows,
+                    autoplay_s,
+                })
+            }
+            "tabs" => {
+                let default_tab = match attrs_get(attrs, "data-default-tab") {
+                    Some(raw) => match raw.trim().parse::<u32>() {
+                        Ok(index) => index,
+                        Err(_) => {
+                            self.warning(
+                                "LUMW0124",
+                                format!("invalid value for `data-default-tab` on component `{id}`: {raw}"),
+                                "data-default-tab is a 0-based tab index (a non-negative integer); using 0.",
+                                Some(id),
+                            );
+                            0
+                        }
+                    },
+                    None => 0,
+                };
+                Some(ComponentSpec::Tabs { default_tab })
+            }
             other => {
                 self.error(
                     "LUMW0123",
                     format!("unknown component `{other}`"),
-                    "Valid components: dialog accordion marquee.",
+                    "Valid components: dialog accordion marquee nav_menu carousel tabs.",
                     Some(id),
                 );
                 None
@@ -892,12 +1029,12 @@ impl<'a> IngestState<'a> {
             }
             let capture = self.capture.take().expect("capture present");
             let inner = &self.source[capture.start_offset..pos_before.min(self.source.len())];
-            if let PendingLeaf::Discard { warn_if_content } = &capture.pending {
+            if let PendingLeaf::Discard { warn_if_content, context } = &capture.pending {
                 if *warn_if_content && !inner.trim().is_empty() {
                     self.warning(
                         "LUMW0131",
-                        format!("content inside an icon element is ignored: {:?}", inner.trim()),
-                        "Icon elements must be empty: <i data-icon=\"name\"></i>.",
+                        context.message(inner.trim()),
+                        context.hint(),
                         None,
                     );
                 }
@@ -1263,7 +1400,7 @@ mod tests {
     #[test]
     fn unknown_component_errors() {
         let outcome = ingest_html(
-            r#"<section id="s"><div data-component="carousel"></div></section>"#,
+            r#"<section id="s"><div data-component="lightbox"></div></section>"#,
             &theme(),
         );
         assert!(outcome
@@ -1361,6 +1498,135 @@ mod tests {
             panic!("marquee");
         };
         assert_eq!(*speed_s, 30);
+    }
+
+    #[test]
+    fn calendly_embed_parses() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-embed="calendly" data-url="https://calendly.com/team/intro" class="w-full"></div></section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let embed = outcome
+            .nodes
+            .iter()
+            .find(|node| matches!(&node.kind, WebNodeKind::Embed { .. }))
+            .expect("embed node");
+        assert!(embed.id.as_str().starts_with("emb"));
+        let WebNodeKind::Embed { provider, url, html } = &embed.kind else {
+            panic!("embed");
+        };
+        assert_eq!(*provider, EmbedProvider::Calendly);
+        assert_eq!(url.as_deref(), Some("https://calendly.com/team/intro"));
+        assert!(html.is_empty());
+    }
+
+    #[test]
+    fn embed_unknown_provider_errors() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-embed="typeform" data-url="https://typeform.com/x"></div></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0128"));
+    }
+
+    #[test]
+    fn embed_invalid_url_errors() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-embed="calendly" data-url="https://evil.com/x"></div></section>"#,
+            &theme(),
+        );
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0129"));
+    }
+
+    #[test]
+    fn embed_with_content_warns_and_swallows() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-embed="calendly" data-url="https://calendly.com/x">stray</div></section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let warn = outcome
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "LUMW0131")
+            .expect("discard warning");
+        assert!(warn.message.contains("embed"), "{}", warn.message);
+    }
+
+    #[test]
+    fn nav_menu_carousel_tabs_parse_with_props() {
+        let outcome = ingest_html(
+            r#"<section id="s">
+                 <div data-component="nav_menu" id="nav"><p>Home</p></div>
+                 <div data-component="carousel" id="car" data-show-arrows="false" data-autoplay="5">
+                   <div><p>a</p></div>
+                   <div><p>b</p></div>
+                 </div>
+                 <div data-component="tabs" id="tabs" data-default-tab="1">
+                   <div><p>Tab 1</p><p>Body 1</p></div>
+                   <div><p>Tab 2</p><p>Body 2</p></div>
+                 </div>
+               </section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let carousel = outcome
+            .nodes
+            .iter()
+            .find(|node| node.id.as_str() == "car")
+            .expect("carousel");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Carousel { show_arrows, autoplay_s },
+        } = &carousel.kind
+        else {
+            panic!("carousel");
+        };
+        assert!(!show_arrows);
+        assert_eq!(*autoplay_s, Some(5));
+        let tabs = outcome
+            .nodes
+            .iter()
+            .find(|node| node.id.as_str() == "tabs")
+            .expect("tabs");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Tabs { default_tab },
+        } = &tabs.kind
+        else {
+            panic!("tabs");
+        };
+        assert_eq!(*default_tab, 1);
+    }
+
+    #[test]
+    fn carousel_autoplay_out_of_range_warns() {
+        let outcome = ingest_html(
+            r#"<section id="s"><div data-component="carousel" data-autoplay="600"><div><p>a</p></div><div><p>b</p></div></div></section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0124"));
+        let carousel = outcome
+            .nodes
+            .iter()
+            .find(|node| matches!(&node.kind, WebNodeKind::Component { spec: ComponentSpec::Carousel { .. } }))
+            .expect("carousel");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Carousel { autoplay_s, .. },
+        } = &carousel.kind
+        else {
+            panic!("carousel");
+        };
+        assert_eq!(*autoplay_s, None);
     }
 
     #[test]

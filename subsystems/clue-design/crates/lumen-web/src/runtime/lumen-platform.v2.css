@@ -1,0 +1,76 @@
+/* lumen-platform v2 — base styles for platform components. Versioned with
+   the runtime; included only when the page uses a Component node. */
+/* No `position` override: the UA's modal styles (fixed + inset 0 + margin
+   auto) center the open dialog, and that fixed box is already the containing
+   block for the absolute close control. */
+dialog[data-lumen-dialog] {
+  border: none; border-radius: 16px; padding: 0;
+  width: 100%; max-width: min(560px, calc(100vw - 2rem));
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.25);
+}
+dialog[data-lumen-dialog]::backdrop { background: rgb(0 0 0 / 0.5); }
+.lumen-dialog-close {
+  position: absolute; top: 0.75rem; right: 0.75rem; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border: none; border-radius: 9999px;
+  background: transparent; color: inherit; font-size: 1.25rem;
+  line-height: 1; cursor: pointer;
+}
+.lumen-dialog-close:hover { background: rgb(0 0 0 / 0.08); }
+details[data-lumen-acc-item] > summary { cursor: pointer; list-style: none; }
+details[data-lumen-acc-item] > summary::-webkit-details-marker { display: none; }
+.lumen-marquee { overflow: hidden; display: flex; }
+.lumen-marquee-track {
+  display: flex; flex: none; min-width: 100%;
+  animation: lumen-marquee var(--lumen-marquee-duration, 30s) linear infinite;
+}
+.lumen-marquee[data-direction="right"] .lumen-marquee-track { animation-direction: reverse; }
+.lumen-marquee[data-pause-on-hover="true"]:hover .lumen-marquee-track { animation-play-state: paused; }
+@keyframes lumen-marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { .lumen-marquee-track { animation: none; } }
+/* nav_menu: inline row from md:, hamburger dropdown below. */
+.lumen-nav { position: relative; }
+.lumen-nav-row { display: none; }
+.lumen-nav-menu { display: block; }
+.lumen-nav-menu > summary {
+  cursor: pointer; list-style: none; display: inline-flex;
+  align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem;
+}
+.lumen-nav-menu > summary::-webkit-details-marker { display: none; }
+.lumen-nav-panel {
+  position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 40;
+  display: flex; flex-direction: column; gap: 0.5rem; min-width: 12rem;
+  padding: 1rem; border-radius: 12px; background: var(--color-light, #fff);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.18);
+}
+@media (min-width: 768px) {
+  .lumen-nav-row { display: flex; align-items: center; gap: 1.5rem; }
+  .lumen-nav-menu { display: none; }
+}
+/* carousel: scroll-snap track with overlay arrows. */
+.lumen-carousel { position: relative; }
+.lumen-carousel-track {
+  display: flex; gap: 1rem; overflow-x: auto;
+  scroll-snap-type: x mandatory; scrollbar-width: none;
+}
+.lumen-carousel-track::-webkit-scrollbar { display: none; }
+.lumen-carousel-track > * { flex: none; scroll-snap-align: center; }
+.lumen-carousel-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.5rem; height: 2.5rem; border: none; border-radius: 9999px;
+  cursor: pointer; background: rgb(0 0 0 / 0.55); color: #fff;
+  font-size: 1.25rem; line-height: 1;
+}
+.lumen-carousel-arrow[data-dir="prev"] { left: 0.75rem; }
+.lumen-carousel-arrow[data-dir="next"] { right: 0.75rem; }
+/* tabs */
+.lumen-tabs-list { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.lumen-tab {
+  border: none; background: transparent; cursor: pointer;
+  padding: 0.5rem 1rem; border-radius: 9999px; font: inherit; color: inherit;
+  opacity: 0.65;
+}
+.lumen-tab[aria-selected="true"] { opacity: 1; background: rgb(0 0 0 / 0.06); }
+/* embeds */
+.lumen-embed { border: 0; width: 100%; display: block; }

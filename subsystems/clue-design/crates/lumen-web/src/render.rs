@@ -8,7 +8,10 @@
 //! / `data-btn` attributes appear in both modes: they are the theme base
 //! layer's styling hooks, not instrumentation.
 
-use crate::doc::{ButtonAction, ComponentSpec, MarqueeDirection, WebDoc, WebNodeKind};
+use crate::doc::{
+    calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, MarqueeDirection, WebDoc,
+    WebNodeKind,
+};
 use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS};
 use crate::theme::WebTheme;
 use crate::util::{escape_attr, escape_text};
@@ -57,7 +60,10 @@ pub struct RenderOutput {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Any Component node reachable from the page root (gates PLATFORM_CSS).
+/// Any node reachable from the page root that needs the platform CSS — a
+/// Component OR an Embed (`.lumen-embed`, nav/carousel/tab styles all live in
+/// PLATFORM_CSS). The public name is kept though the concept is now "uses
+/// platform css".
 pub fn page_uses_components(doc: &WebDoc, page_id: &PageId) -> bool {
     let Some(page) = doc.page(page_id) else {
         return false;
@@ -65,13 +71,14 @@ pub fn page_uses_components(doc: &WebDoc, page_id: &PageId) -> bool {
     page.reachable_ids().iter().any(|id| {
         matches!(
             page.node(id).map(|node| &node.kind),
-            Some(WebNodeKind::Component { .. })
+            Some(WebNodeKind::Component { .. } | WebNodeKind::Embed { .. })
         )
     })
 }
 
-/// Any Command-action Button OR any Dialog component reachable — the two
-/// features whose behavior needs the platform interaction runtime.
+/// Reachable features whose behavior needs the platform interaction runtime:
+/// a Command-action Button, a Dialog, a Tabs, or a Carousel that actually
+/// wires arrows or autoplay. NavMenu is CSS-only.
 pub fn page_needs_runtime(doc: &WebDoc, page_id: &PageId) -> bool {
     let Some(page) = doc.page(page_id) else {
         return false;
@@ -86,6 +93,12 @@ pub fn page_needs_runtime(doc: &WebDoc, page_id: &PageId) -> bool {
             Some(WebNodeKind::Component {
                 spec: ComponentSpec::Dialog { .. },
             }) => true,
+            Some(WebNodeKind::Component {
+                spec: ComponentSpec::Tabs { .. },
+            }) => true,
+            Some(WebNodeKind::Component {
+                spec: ComponentSpec::Carousel { show_arrows, autoplay_s },
+            }) => *show_arrows || autoplay_s.is_some(),
             _ => false,
         })
 }
@@ -159,7 +172,7 @@ pub fn render_page(
     // script exception, inlined in both modes only when a command button or
     // dialog needs it. Never any agent-authored code.
     if needs_runtime {
-        html.push_str(&format!("<script>/* lumen-runtime v1 */ {PLATFORM_RUNTIME_JS}</script>\n"));
+        html.push_str(&format!("<script>/* lumen-runtime v2 */ {PLATFORM_RUNTIME_JS}</script>\n"));
     }
     html.push_str("</head>\n<body>\n");
     html.push_str(&body);
@@ -370,6 +383,65 @@ fn render_node(
                 out.push_str("</div>");
                 out.push_str("</div>");
             }
+            ComponentSpec::NavMenu => {
+                out.push_str("<div class=\"lumen-nav");
+                if !node.classes.trim().is_empty() {
+                    out.push(' ');
+                    out.push_str(&escape_attr(node.classes.trim()));
+                }
+                out.push('"');
+                node_attr(out);
+                out.push('>');
+                // Desktop inline row.
+                out.push_str("<div class=\"lumen-nav-row\">");
+                for child in &node.children {
+                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                }
+                out.push_str("</div>");
+                // Mobile hamburger dropdown: the same children, node ids
+                // suppressed so the bridge never sees the clone (marquee pattern).
+                out.push_str(
+                    "<details class=\"lumen-nav-menu\"><summary aria-label=\"Open menu\">&#9776;</summary><div class=\"lumen-nav-panel\">",
+                );
+                for child in &node.children {
+                    render_node(doc, page_id, child, theme, options, out, diagnostics, true);
+                }
+                out.push_str("</div></details>");
+                out.push_str("</div>");
+            }
+            ComponentSpec::Carousel {
+                show_arrows,
+                autoplay_s,
+            } => {
+                out.push_str("<div class=\"lumen-carousel");
+                if !node.classes.trim().is_empty() {
+                    out.push(' ');
+                    out.push_str(&escape_attr(node.classes.trim()));
+                }
+                out.push('"');
+                if let Some(seconds) = autoplay_s {
+                    out.push_str(&format!(" data-autoplay-s=\"{seconds}\""));
+                }
+                node_attr(out);
+                out.push('>');
+                out.push_str("<div class=\"lumen-carousel-track\">");
+                for child in &node.children {
+                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                }
+                out.push_str("</div>");
+                if *show_arrows {
+                    out.push_str(
+                        "<button type=\"button\" class=\"lumen-carousel-arrow\" data-dir=\"prev\" aria-label=\"Previous\">&#8249;</button>",
+                    );
+                    out.push_str(
+                        "<button type=\"button\" class=\"lumen-carousel-arrow\" data-dir=\"next\" aria-label=\"Next\">&#8250;</button>",
+                    );
+                }
+                out.push_str("</div>");
+            }
+            ComponentSpec::Tabs { default_tab } => {
+                render_tabs(doc, page_id, node, theme, options, out, diagnostics, suppress_node_ids, *default_tab);
+            }
         },
         WebNodeKind::Image {
             asset_id,
@@ -430,13 +502,61 @@ fn render_node(
                 ));
             }
         },
-        WebNodeKind::Embed { html } => {
-            out.push_str("<iframe sandbox=\"\" srcdoc=\"");
-            out.push_str(&escape_attr(html));
-            out.push('"');
-            node_attr(out);
-            class_attr(out);
-            out.push_str("></iframe>");
+        WebNodeKind::Embed { provider, url, html } => {
+            // Merged class for a live embed iframe: the platform hook first,
+            // then the node's own utilities.
+            let embed_class = |out: &mut String| {
+                out.push_str(" class=\"lumen-embed");
+                if !node.classes.trim().is_empty() {
+                    out.push(' ');
+                    out.push_str(&escape_attr(node.classes.trim()));
+                }
+                out.push('"');
+            };
+            let src_iframe = |out: &mut String, url: &str, title: &str| {
+                out.push_str(&format!("<iframe src=\"{}\"", escape_attr(url)));
+                out.push_str(&format!(" title=\"{title}\""));
+                out.push_str(" sandbox=\"allow-scripts allow-same-origin allow-forms allow-popups\"");
+                out.push_str(" loading=\"lazy\"");
+                node_attr(out);
+                embed_class(out);
+                out.push_str("></iframe>");
+            };
+            let missing = |out: &mut String, diagnostics: &mut Vec<Diagnostic>| {
+                out.push_str("<div class=\"lumen-embed\" data-missing-embed=\"true\"");
+                node_attr(out);
+                out.push_str("></div>");
+                diagnostics.push(Diagnostic::warning(
+                    Phase::Web,
+                    "LUMW0405",
+                    format!("embed `{}` has no valid url", node.id),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                ));
+            };
+            match provider {
+                EmbedProvider::Calendly => match url {
+                    Some(url) if calendly_url_is_valid(url) => {
+                        src_iframe(out, url, "Calendly scheduling");
+                    }
+                    _ => missing(out, diagnostics),
+                },
+                EmbedProvider::Custom => {
+                    if let Some(url) = url {
+                        src_iframe(out, url, "Embedded content");
+                    } else if !html.trim().is_empty() {
+                        // Pasted widget markup: sandboxed with no same-origin,
+                        // so it runs but stays null-origin.
+                        out.push_str("<iframe sandbox=\"allow-scripts allow-forms\" srcdoc=\"");
+                        out.push_str(&escape_attr(html));
+                        out.push_str("\" title=\"Embedded content\" loading=\"lazy\"");
+                        embed_class(out);
+                        node_attr(out);
+                        out.push_str("></iframe>");
+                    } else {
+                        missing(out, diagnostics);
+                    }
+                }
+            }
         }
     }
 }
@@ -491,6 +611,122 @@ fn render_accordion_item(
         render_node(doc, page_id, grandchild, theme, options, out, diagnostics, suppress_node_ids);
     }
     out.push_str("</details>");
+}
+
+/// A child fits the tabs item shape when it is a Container with >=2 children
+/// whose first child is a Text node (the tab label; the rest is the panel).
+fn tabs_item_shape(page: &crate::doc::WebPage, child_id: &NodeId) -> bool {
+    page.node(child_id)
+        .map(|child| {
+            matches!(child.kind, WebNodeKind::Container)
+                && child.children.len() >= 2
+                && page
+                    .node(&child.children[0])
+                    .map(|first| matches!(first.kind, WebNodeKind::Text { .. }))
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+/// Render a Tabs component: a `role="tablist"` of buttons over the item-shaped
+/// children (Container, >=2 children, Text-first), one `role="tabpanel"` per
+/// item, then any non-fitting children rendered normally (validation warns).
+#[allow(clippy::too_many_arguments)]
+fn render_tabs(
+    doc: &WebDoc,
+    page_id: &PageId,
+    node: &crate::doc::WebNode,
+    theme: &WebTheme,
+    options: &RenderOptions,
+    out: &mut String,
+    diagnostics: &mut Vec<Diagnostic>,
+    suppress_node_ids: bool,
+    default_tab: u32,
+) {
+    let page = doc.page(page_id).expect("page checked by render_page");
+    let editor = options.mode == RenderMode::Editor;
+    let items: Vec<&NodeId> = node
+        .children
+        .iter()
+        .filter(|child_id| tabs_item_shape(page, child_id))
+        .collect();
+    // default_tab clamps to the last item when out of range.
+    let selected = if items.is_empty() {
+        0
+    } else {
+        (default_tab as usize).min(items.len() - 1)
+    };
+
+    out.push_str("<div class=\"lumen-tabs");
+    if !node.classes.trim().is_empty() {
+        out.push(' ');
+        out.push_str(&escape_attr(node.classes.trim()));
+    }
+    out.push('"');
+    if editor && !suppress_node_ids {
+        out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(node.id.as_str())));
+    }
+    out.push('>');
+
+    out.push_str("<div class=\"lumen-tabs-list\" role=\"tablist\">");
+    for (index, item_id) in items.iter().enumerate() {
+        let item = page.node(item_id).expect("item present");
+        let is_selected = index == selected;
+        let label = page
+            .node(&item.children[0])
+            .and_then(|first| match &first.kind {
+                WebNodeKind::Text { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        out.push_str("<button type=\"button\" role=\"tab\" class=\"lumen-tab\"");
+        out.push_str(&format!(" id=\"{}_tab\"", escape_attr(item.id.as_str())));
+        out.push_str(&format!(" aria-controls=\"{}_panel\"", escape_attr(item.id.as_str())));
+        out.push_str(&format!(
+            " aria-selected=\"{}\"",
+            if is_selected { "true" } else { "false" }
+        ));
+        out.push_str(&format!(" tabindex=\"{}\"", if is_selected { "0" } else { "-1" }));
+        out.push('>');
+        // The label is the first Text child's inline content, without its <p>
+        // wrapper or data-node-id.
+        out.push_str(&label);
+        out.push_str("</button>");
+    }
+    out.push_str("</div>");
+
+    for (index, item_id) in items.iter().enumerate() {
+        let item = page.node(item_id).expect("item present");
+        out.push_str(&format!(
+            "<div role=\"tabpanel\" id=\"{}_panel\" aria-labelledby=\"{}_tab\"",
+            escape_attr(item.id.as_str()),
+            escape_attr(item.id.as_str())
+        ));
+        if !item.classes.trim().is_empty() {
+            out.push_str(&format!(" class=\"{}\"", escape_attr(item.classes.trim())));
+        }
+        if editor && !suppress_node_ids {
+            out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(item.id.as_str())));
+        }
+        if index != selected {
+            out.push_str(" hidden");
+        }
+        out.push('>');
+        for grandchild in &item.children[1..] {
+            render_node(doc, page_id, grandchild, theme, options, out, diagnostics, suppress_node_ids);
+        }
+        out.push_str("</div>");
+    }
+
+    // Children that do not fit the item shape render normally after the tab
+    // structure (validation warns about them).
+    for child_id in &node.children {
+        if !tabs_item_shape(page, child_id) {
+            render_node(doc, page_id, child_id, theme, options, out, diagnostics, suppress_node_ids);
+        }
+    }
+
+    out.push_str("</div>");
 }
 
 /// Defense in depth for the one raw-text slot in the document: validation
@@ -687,8 +923,8 @@ mod tests {
         assert!(output.html.contains("command=\"show-modal\""));
         // Exactly one script (the runtime) even in delivery, and the CSS.
         assert_eq!(output.html.matches("<script").count(), 1);
-        assert!(output.html.contains("__lumenRuntimeV1"));
-        assert!(output.html.contains("lumen-platform v1"));
+        assert!(output.html.contains("__lumenRuntimeV2"));
+        assert!(output.html.contains("lumen-platform v2"));
     }
 
     #[test]
@@ -714,7 +950,7 @@ mod tests {
         assert_eq!(output.html.matches("name=\"faq\"").count(), 2);
         assert_eq!(output.html.matches(" open>").count(), 1);
         // Accordion alone needs the CSS but no runtime script.
-        assert!(output.html.contains("lumen-platform v1"));
+        assert!(output.html.contains("lumen-platform v2"));
         assert!(!output.html.contains("<script"));
     }
 
@@ -741,7 +977,7 @@ mod tests {
         assert!(delivery.html.contains("class=\"lumen-marquee py-4\""));
         assert!(delivery.html.contains("data-direction=\"right\""));
         // Marquee alone: CSS but no runtime.
-        assert!(delivery.html.contains("lumen-platform v1"));
+        assert!(delivery.html.contains("lumen-platform v2"));
         assert!(!delivery.html.contains("<script"));
 
         // Editor: the aria-hidden clone must not repeat the bridge hook.

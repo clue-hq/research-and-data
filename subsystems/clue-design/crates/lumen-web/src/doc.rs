@@ -107,9 +107,45 @@ pub enum WebNodeKind {
         icon: String,
     },
     Embed {
+        #[serde(default)]
+        provider: EmbedProvider,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
         /// Rendered inside a sandboxed iframe in both modes.
+        #[serde(default)]
         html: String,
     },
+}
+
+/// Two trust levels, one sandbox: `Calendly` is the AGENT-authorable
+/// allowlisted provider (validated calendly.com URL); `Custom` is the
+/// human paste path (any https URL, or a raw snippet) written through the
+/// inspector. The iframe sandbox applies to both — the allowlist gates the
+/// writer, not the safety.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbedProvider {
+    Calendly,
+    #[default]
+    Custom,
+}
+
+/// True when `url` is an `https://` link whose host is exactly `calendly.com`
+/// or a `*.calendly.com` subdomain. Parsed by hand (no url crate): scheme
+/// must be `https://`, the host runs to the first `/`, `?`, or `#`, and it may
+/// carry neither userinfo (`@`) nor a port (`:`).
+pub fn calendly_url_is_valid(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host_end = rest
+        .find(['/', '?', '#'])
+        .unwrap_or(rest.len());
+    let host = rest[..host_end].to_ascii_lowercase();
+    if host.is_empty() || host.contains('@') || host.contains(':') {
+        return false;
+    }
+    host == "calendly.com" || host.ends_with(".calendly.com")
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -350,6 +386,17 @@ pub enum ComponentSpec {
         #[serde(default = "default_true")]
         pause_on_hover: bool,
     },
+    NavMenu,
+    Carousel {
+        #[serde(default = "default_true")]
+        show_arrows: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        autoplay_s: Option<u16>,
+    },
+    Tabs {
+        #[serde(default)]
+        default_tab: u32,
+    },
 }
 
 fn default_marquee_speed() -> u16 {
@@ -366,6 +413,9 @@ impl ComponentSpec {
             ComponentSpec::Dialog { .. } => "dialog",
             ComponentSpec::Accordion { .. } => "accordion",
             ComponentSpec::Marquee { .. } => "marquee",
+            ComponentSpec::NavMenu => "nav_menu",
+            ComponentSpec::Carousel { .. } => "carousel",
+            ComponentSpec::Tabs { .. } => "tabs",
         }
     }
 }
@@ -635,6 +685,99 @@ mod tests {
         assert_eq!(speed_s, 30);
         assert_eq!(direction, MarqueeDirection::Left);
         assert!(pause_on_hover);
+    }
+
+    #[test]
+    fn legacy_embed_deserializes_as_custom() {
+        let json = r#"{"kind":"embed","html":"<iframe src=\"x\"></iframe>"}"#;
+        let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
+        let WebNodeKind::Embed { provider, url, html } = &kind else {
+            panic!("embed node");
+        };
+        assert_eq!(*provider, EmbedProvider::Custom);
+        assert_eq!(*url, None);
+        assert_eq!(html, "<iframe src=\"x\"></iframe>");
+    }
+
+    #[test]
+    fn calendly_embed_round_trips() {
+        let node = WebNode {
+            id: NodeId::from("emb_1"),
+            kind: WebNodeKind::Embed {
+                provider: EmbedProvider::Calendly,
+                url: Some("https://calendly.com/team/intro".to_owned()),
+                html: String::new(),
+            },
+            classes: "w-full".to_owned(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        let value = serde_json::to_value(&node).expect("serialize");
+        assert_eq!(value["kind"], "embed");
+        assert_eq!(value["provider"], "calendly");
+        assert_eq!(value["url"], "https://calendly.com/team/intro");
+        let back: WebNode = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(back, node);
+    }
+
+    #[test]
+    fn calendly_url_validation() {
+        assert!(calendly_url_is_valid("https://calendly.com/team/intro"));
+        assert!(calendly_url_is_valid("https://acme.calendly.com/demo"));
+        assert!(calendly_url_is_valid("https://CALENDLY.com/x"));
+        assert!(calendly_url_is_valid("https://calendly.com"));
+        // wrong scheme
+        assert!(!calendly_url_is_valid("http://calendly.com/x"));
+        // not calendly
+        assert!(!calendly_url_is_valid("https://evil.com/calendly.com"));
+        assert!(!calendly_url_is_valid("https://notcalendly.com/x"));
+        // userinfo / port rejected
+        assert!(!calendly_url_is_valid("https://calendly.com@evil.com/x"));
+        assert!(!calendly_url_is_valid("https://calendly.com:8080/x"));
+    }
+
+    #[test]
+    fn wave2_components_round_trip() {
+        for (json, name) in [
+            (r#"{"kind":"component","component":"nav_menu"}"#, "nav_menu"),
+            (r#"{"kind":"component","component":"carousel"}"#, "carousel"),
+            (r#"{"kind":"component","component":"tabs"}"#, "tabs"),
+        ] {
+            let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
+            let WebNodeKind::Component { spec } = &kind else {
+                panic!("component node");
+            };
+            assert_eq!(spec.component_name(), name);
+            let value = serde_json::to_value(&kind).expect("serialize");
+            assert_eq!(value["component"], name);
+            let back: WebNodeKind = serde_json::from_value(value).expect("deserialize");
+            assert_eq!(back, kind);
+        }
+    }
+
+    #[test]
+    fn carousel_and_tabs_defaults_fill_in() {
+        let carousel: WebNodeKind =
+            serde_json::from_str(r#"{"kind":"component","component":"carousel"}"#).expect("de");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Carousel { show_arrows, autoplay_s },
+        } = carousel
+        else {
+            panic!("carousel");
+        };
+        assert!(show_arrows);
+        assert_eq!(autoplay_s, None);
+
+        let tabs: WebNodeKind =
+            serde_json::from_str(r#"{"kind":"component","component":"tabs"}"#).expect("de");
+        let WebNodeKind::Component {
+            spec: ComponentSpec::Tabs { default_tab },
+        } = tabs
+        else {
+            panic!("tabs");
+        };
+        assert_eq!(default_tab, 0);
     }
 
     #[test]
