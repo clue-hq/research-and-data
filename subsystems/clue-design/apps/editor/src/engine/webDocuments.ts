@@ -265,6 +265,41 @@ export async function startWebTurn(
   return { runId };
 }
 
+export interface WebRunSnapshot {
+  status: "running" | "succeeded" | "failed";
+  result: Record<string, unknown> | null;
+}
+
+/** Fetch a run's durable snapshot (`GET /agent/runs/{runId}`). Used by the
+ * turn hook when the SSE stream errors: the DB row distinguishes a transient
+ * connection blip (status still `running` — let EventSource reconnect) from a
+ * run that actually settled or was failed by the server's orphan sweep. */
+export async function fetchWebRunSnapshot(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  runId: string
+): Promise<WebRunSnapshot> {
+  const response = await fetchImpl(
+    new URL(`/agent/runs/${encodeURIComponent(runId)}`, apiBaseUrl)
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Run lookup failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as { status?: unknown; result?: unknown };
+  const status = payload.status;
+  if (status !== "running" && status !== "succeeded" && status !== "failed") {
+    throw new Error("Run lookup returned an unreadable status.");
+  }
+  return {
+    status,
+    result:
+      payload.result && typeof payload.result === "object"
+        ? (payload.result as Record<string, unknown>)
+        : null
+  };
+}
+
 /** One diagnostic returned alongside a web render (opaque to the shell — passed
  * through for callers that want to surface them). */
 export interface WebRenderResult {

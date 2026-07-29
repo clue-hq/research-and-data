@@ -171,6 +171,80 @@ def cors_origins() -> List[str]:
     return settings.cors_origins_list
 
 
+def agent_diagnostic(
+    code: str,
+    message: str,
+    phase: str,
+    severity: str,
+    hint: Optional[str],
+    subject: Optional[JsonObject] = None,
+) -> JsonObject:
+    return {
+        "severity": "error" if severity in {"error", "blocker"} else "warning",
+        "phase": phase,
+        "code": code,
+        "message": message,
+        "subject": subject or {"kind": "document"},
+        "hint": hint,
+    }
+
+
+def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObject:
+    return {
+        "schema_version": 1,
+        "status": "failed",
+        "summary": message,
+        "run_id": None,
+        "trace_dir": None,
+        "preview_paths": [],
+        "dsl_blocks": [],
+        "operations": [],
+        "draft_scene": None,
+        "stop_reason": None,
+        "diagnostics": [
+            agent_diagnostic(code, message, "validation", "error", detail)
+        ],
+        "artifacts": [],
+    }
+
+
+def _fail_orphaned_runs(database_path: Path) -> None:
+    """Fail every run left 'running' by a previous API process.
+
+    Agent/web turns execute on daemon threads inside THIS process; a server
+    restart kills them silently, so at startup any 'running' row is an orphan
+    by construction (live failure 2026-07-29: an API bounce orphaned two
+    in-flight website turns, which sat 'running' for hours while the editor
+    saw only a dead stream). Each orphan gets a terminal result plus an
+    `error` run-event so open SSE pollers settle to `done` immediately.
+    """
+    store = Repository(connect(database_path))
+    try:
+        orphans = store.list_running_runs()
+        for run in orphans:
+            failed = failed_agent_turn_response(
+                "agent_runtime.orphaned",
+                "The turn was interrupted by an API server restart and did not finish.",
+                f"run {run['run_id']} was still 'running' at startup; "
+                "worker threads do not survive a restart",
+            )
+            if run["doc_kind"] == "web":
+                failed["doc_kind"] = "web"
+            store.set_run_result(run["run_id"], "failed", failed)
+            store.append_run_event(
+                run["run_id"], "error", {"message": "orphaned by server restart"}
+            )
+        if orphans:
+            log_event(
+                api_logger,
+                logging.WARNING,
+                "orphaned_runs_failed",
+                run_ids=[run["run_id"] for run in orphans],
+            )
+    finally:
+        store.connection.close()
+
+
 def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> FastAPI:
     # The ONE logging setup for the API: hand off to the shared obs module.
     # mode/format come from the environment (LUMEN_LOG_MODE / LUMEN_LOG_FORMAT);
@@ -209,6 +283,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     app.state.web_export_node_bin = "node"
     if migrate:
         run_migrations(app.state.database_path)
+    _fail_orphaned_runs(app.state.database_path)
 
     @app.middleware("http")
     async def structured_request_logging(request: Request, call_next):
@@ -6284,25 +6359,6 @@ def agent_artifact_format(path: str) -> str:
     return extension if extension in {"svg", "png", "pdf", "json"} else "artifact"
 
 
-def failed_agent_turn_response(code: str, message: str, detail: str) -> JsonObject:
-    return {
-        "schema_version": 1,
-        "status": "failed",
-        "summary": message,
-        "run_id": None,
-        "trace_dir": None,
-        "preview_paths": [],
-        "dsl_blocks": [],
-        "operations": [],
-        "draft_scene": None,
-        "stop_reason": None,
-        "diagnostics": [
-            agent_diagnostic(code, message, "validation", "error", detail)
-        ],
-        "artifacts": [],
-    }
-
-
 def agent_diagnostics_from_summaries(
     summaries: List[JsonObject], default_phase: str
 ) -> List[JsonObject]:
@@ -6328,24 +6384,6 @@ def agent_diagnostics_from_summaries(
             )
         )
     return diagnostics
-
-
-def agent_diagnostic(
-    code: str,
-    message: str,
-    phase: str,
-    severity: str,
-    hint: Optional[str],
-    subject: Optional[JsonObject] = None,
-) -> JsonObject:
-    return {
-        "severity": "error" if severity in {"error", "blocker"} else "warning",
-        "phase": phase,
-        "code": code,
-        "message": message,
-        "subject": subject or {"kind": "document"},
-        "hint": hint,
-    }
 
 
 def new_id(prefix: str) -> str:

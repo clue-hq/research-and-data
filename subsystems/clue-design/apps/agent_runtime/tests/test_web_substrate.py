@@ -841,6 +841,65 @@ def test_render_web_preview_unchanged_guard(tmp_path: Path, monkeypatch):
     assert after["error_code"] == "web_render.failed"
 
 
+# --- between-renders edit budget + role-aware stale views --------------------
+# Live failure 2026-07-29: an author round churned blind for 14 minutes (16
+# subtree rewrites) because stale views told it to call render_web_preview —
+# an orchestrator-only tool — and nothing bounded the round.
+
+
+def test_round_budget_refuses_mutations_then_render_reopens(tmp_path: Path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    tools._mutations_since_render = ws._ROUND_MUTATION_BUDGET
+
+    refused_ops = json.loads(tools.web_ops('[{"kind": "set_text"}]'))
+    assert refused_ops["status"] == "error"
+    assert refused_ops["error_code"] == "round.budget_exhausted"
+    assert "END YOUR REPLY" in refused_ops["message"]
+
+    refused_page = json.loads(tools.author_web_page("<section id='s'><p>x</p></section>"))
+    assert refused_page["error_code"] == "round.budget_exhausted"
+
+    # The trace event records once per exhausted round, not per refused call.
+    assert _trace_events(tools).count("web_round_budget_exhausted") == 1
+
+    # A render means control is back with the orchestrator — the guard's
+    # unchanged path is enough to prove the reset (no browser needed).
+    for width in ws._PREVIEW_WIDTHS:
+        path = tmp_path / f"preview_{width}.png"
+        path.write_bytes(b"png")
+        tools._preview_by_width[width] = str(path)
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 1
+    assert json.loads(tools.render_web_preview())["status"] == "ok"
+    assert tools._mutations_since_render == 0
+
+    # Mutating calls flow again; a call past the parse gate charges the budget.
+    after = json.loads(tools.web_ops("not json"))
+    assert after["error_code"] == "web_ops.bad_json"
+    assert tools._mutations_since_render == 1
+
+
+def test_stale_view_refusal_is_role_aware(tmp_path: Path):
+    tools = _bare_tools(tmp_path)
+    preview = tmp_path / "preview_1440.png"
+    preview.write_bytes(b"png")
+    tools._preview_by_width[1440] = str(preview)
+    tools._preview_doc_version = tools._doc_version
+    tools._doc_version += 1  # the doc mutated after the render → stale
+
+    orchestrator_text = tools._view_content("preview:1440", can_render=True)[0]["text"]
+    assert "render_web_preview" in orchestrator_text
+
+    subagent_text = tools._view_content("preview:1440", can_render=False)[0]["text"]
+    assert "render_web_preview" not in subagent_text
+    assert "END YOUR REPLY" in subagent_text
+
+    # The no-preview refusal follows the same rule.
+    tools._preview_by_width.clear()
+    no_preview_sub = tools._view_content("preview:1440", can_render=False)[0]["text"]
+    assert "render_web_preview" not in no_preview_sub
+
+
 # --- browser reuse: _close_browser + finalize teardown ----------------------
 
 

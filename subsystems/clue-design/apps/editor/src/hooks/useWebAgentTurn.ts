@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
-import { startWebTurn } from "@/engine/webDocuments";
+import { fetchWebRunSnapshot, startWebTurn } from "@/engine/webDocuments";
 
 /**
  * The website-mode turn hook — a lean cousin of the scene editor's
@@ -68,6 +68,8 @@ export interface UseWebAgentTurnOptions {
   startTurn?: typeof startWebTurn;
   /** Injectable for tests; defaults to native EventSource. */
   eventSourceFactory?: WebEventSourceFactory;
+  /** Injectable for tests; defaults to the real GET /agent/runs/{id} wrapper. */
+  fetchRunSnapshot?: typeof fetchWebRunSnapshot;
 }
 
 export interface WebAgentTurn {
@@ -102,7 +104,8 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
     onDone,
     apiBaseUrl,
     startTurn = startWebTurn,
-    eventSourceFactory = defaultEventSourceFactory
+    eventSourceFactory = defaultEventSourceFactory,
+    fetchRunSnapshot = fetchWebRunSnapshot
   } = options;
 
   const [phase, setPhase] = useState<WebTurnPhase>("idle");
@@ -164,6 +167,20 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
         setPhase("error");
       };
 
+      const settleDone = (envelope: WebTurnDoneEnvelope) => {
+        if (settledRef.current) {
+          return;
+        }
+        settledRef.current = true;
+        runningRef.current = false;
+        closeSource();
+        if (mountedRef.current) {
+          setSummary(typeof envelope.summary === "string" ? envelope.summary : null);
+          setPhase("done");
+        }
+        onDoneRef.current?.(envelope);
+      };
+
       const base = apiBaseUrl ?? editorApiBaseUrl();
       void startTurn({ apiBaseUrl: base }, documentId, trimmed, model ?? null, targetNodeIds)
         .then(({ runId }) => {
@@ -205,8 +222,6 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
             if (settledRef.current) {
               return;
             }
-            settledRef.current = true;
-            runningRef.current = false;
             let envelope: WebTurnDoneEnvelope;
             try {
               envelope = JSON.parse(event.data) as WebTurnDoneEnvelope;
@@ -216,21 +231,43 @@ export function useWebAgentTurn(options: UseWebAgentTurnOptions): WebAgentTurn {
                 summary: "The turn finished with an unreadable result."
               };
             }
-            closeSource();
-            if (mountedRef.current) {
-              setSummary(typeof envelope.summary === "string" ? envelope.summary : null);
-              setPhase("done");
-            }
-            onDoneRef.current?.(envelope);
+            settleDone(envelope);
           });
 
+          // A stream error is ambiguous: a benign post-`done` close, a
+          // transient blip EventSource will recover from on its own, an API
+          // restart that orphaned the run (the startup sweep marks it failed),
+          // or the API being gone. The durable run row disambiguates — only a
+          // failed probe settles as a lost connection.
+          let probing = false;
           source.onerror = () => {
-            // The server closes the stream right after `done`; the resulting
-            // error is benign once the run has settled.
-            if (settledRef.current) {
+            if (settledRef.current || probing) {
               return;
             }
-            settleError("Lost connection to the website agent.");
+            probing = true;
+            void fetchRunSnapshot({ apiBaseUrl: base }, runId)
+              .then((snapshot) => {
+                if (settledRef.current) {
+                  return;
+                }
+                if (snapshot.status === "running") {
+                  // Run is alive server-side — let EventSource reconnect and
+                  // replay from Last-Event-ID.
+                  return;
+                }
+                settleDone(
+                  (snapshot.result as WebTurnDoneEnvelope | null) ?? {
+                    status: "failed",
+                    summary: "The run ended without a readable result."
+                  }
+                );
+              })
+              .catch(() => {
+                settleError("Lost connection to the website agent.");
+              })
+              .finally(() => {
+                probing = false;
+              });
           };
         })
         .catch((cause: unknown) => {

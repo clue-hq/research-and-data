@@ -195,6 +195,29 @@ def test_run_file_captures_debug_records_in_info_mode(tmp_path):
     assert any(x.get("event") == "verbose_detail" for x in lines)
 
 
+def test_wire_level_third_party_debug_stays_out_of_the_run_file(tmp_path):
+    # The openai client logs full request payloads (base64 screenshots
+    # included) at DEBUG — measured live at 14MB per line and up to 1.7GB of
+    # run.jsonl per turn. configure() pins the wire loggers to INFO even when
+    # a run file asks the root for DEBUG; their INFO records still flow.
+    import logging
+
+    run_log = tmp_path / "run.jsonl"
+    with capture_events(mode=LogMode.INFO, run_log_path=run_log):
+        logging.getLogger("openai._base_client").debug(
+            "Request options: %s", {"json_data": {"messages": ["<14MB of base64>"]}}
+        )
+        logging.getLogger("httpx").debug("send_request_headers")
+        logging.getLogger("httpx").info("HTTP Request: POST /chat/completions")
+        obs.get_logger("lumen_agent.test").debug("our_own_debug_detail")
+    lines = [json.loads(line) for line in run_log.read_text().splitlines() if line.strip()]
+    events = [x.get("event", "") for x in lines]
+    assert not any(event.startswith("Request options") for event in events)
+    assert "send_request_headers" not in events
+    assert any(event.startswith("HTTP Request") for event in events)
+    assert "our_own_debug_detail" in events
+
+
 # --- log_span -------------------------------------------------------------
 
 

@@ -486,6 +486,39 @@ implications.
 
 ---
 
+## Slice: run.jsonl wire-payload flood + web author round budget (2026-07-29)
+
+**Finding.** Post-mortem of two failed live website turns found `run.jsonl`
+at 259MB (19-minute turn) and 103MB (4-minute turn), with single log lines up
+to **14MB**; an older P2.5 turn had written **1.7GB**. Cause: the run-file
+handler asks the stdlib root for DEBUG, and at DEBUG the openai client logs
+every request payload verbatim — including the base64 of every screenshot
+attached to vision calls, re-logged on every subsequent call in the
+conversation. Pure I/O/serialization tax on every model call, plus disk burn.
+Same post-mortem: a web author round churned **14 minutes with 16 blind
+subtree rewrites** because stale previews told it to call
+`render_web_preview()` — a tool only the orchestrator has — and nothing
+bounded the round.
+
+**Build.** (1) `py_lumen_obs.configure()` now pins `openai`/`httpx`/`httpcore`
+to INFO — "full detail" means our events, not the HTTP wire; our own
+instrumentation already records model spans/usage as first-class events.
+(2) `LumenWebTools` charges every mutating call against a between-renders
+budget (`_ROUND_MUTATION_BUDGET = 14`, sized ~30% above a heavy healthy
+round); exhaustion returns a teaching refusal ("end your reply — the
+orchestrator re-renders"), and `render_web_preview` reopens the budget.
+(3) The subagent `view` variant's stale/no-preview refusals no longer name an
+uncallable tool. Quality safety: the budget only forces the round BOUNDARY
+(render → review → next round continues the work); it never truncates the
+turn or weakens review.
+
+**Measurement.** Single-sample baseline only (the failed runs above); the
+next live full-generation turn is the after-measurement. Expected: run.jsonl
+back to the ~1–20MB range of our own events; author rounds bounded at ≤14
+mutations between renders.
+
+---
+
 ## Maintenance protocol
 
 This document is **appended per tier or slice**, never rewritten. Each new

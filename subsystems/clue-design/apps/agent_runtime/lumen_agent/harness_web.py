@@ -108,7 +108,13 @@ def create_web_deepagent(
     author_model = _instrument(runtime_config, tools, runtime_config.author_model, "author")
     reviewer_model = _instrument(runtime_config, tools, runtime_config.reviewer_model, "reviewer")
 
-    view = make_web_view_tool(tools)
+    # Two view variants over the same substrate state: identical except the
+    # stale/no-preview refusal text. The subagent variant never instructs a
+    # role to call render_web_preview — that tool is orchestrator-only, and a
+    # refusal naming an uncallable tool sent the author into a blind edit
+    # churn on a live run (2026-07-29).
+    view = make_web_view_tool(tools, can_render=True)
+    subagent_view = make_web_view_tool(tools, can_render=False)
 
     # The materialized skills tree (SkillsMiddleware source is the PARENT of the
     # skill dirs) — same wiring as the scene harness so create-website /
@@ -130,7 +136,7 @@ def create_web_deepagent(
             ),
             "model": author_model,
             "tools": [
-                view,
+                subagent_view,
                 tools.web_ops,
                 tools.author_web_page,
                 tools.author_web_subtree,
@@ -147,7 +153,7 @@ def create_web_deepagent(
             ),
             "system_prompt": build_web_reviewer_prompt(),
             "model": reviewer_model,
-            "tools": [view],
+            "tools": [subagent_view],
             "skills": workspace_skills,
             # Same rationale as the scene reviewer: extract VisualCritique via the
             # TOOL strategy (native structured output emits malformed JSON on some

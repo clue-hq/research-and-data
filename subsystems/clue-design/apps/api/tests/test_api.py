@@ -1303,6 +1303,54 @@ def test_agent_run_snapshot_404_for_unknown_run(client: TestClient) -> None:
     assert client.get("/agent/runs/run_missing").status_code == 404
 
 
+def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
+    # Turns run on daemon threads inside the API process, so a restart kills
+    # them silently. The next create_app must fail every leftover 'running'
+    # row (terminal result + error event so SSE settles) and leave finished
+    # runs untouched. Live failure 2026-07-29: two website turns sat
+    # 'running' for hours after an API bounce.
+    from lumen_api.database import Repository, connect
+
+    database_path = tmp_path / "api.sqlite3"
+    first = TestClient(create_app(database_path))
+
+    connection = connect(database_path)
+    repo = Repository(connection)
+    repo.create_document(
+        {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
+        doc_kind="web",
+    )
+    repo.create_run("run_orphan_web", "doc_web_orphan")
+    repo.create_run("run_orphan_scene", "doc_untracked")
+    repo.create_run("run_finished", "doc_untracked")
+    repo.set_run_result("run_finished", "succeeded", {"status": "applied"})
+    repo.append_run_event("run_finished", "result", {"status": "applied"})
+    connection.close()
+    del first
+
+    # "Restart": a new app over the same database sweeps at construction.
+    restarted = TestClient(create_app(database_path))
+
+    web_snapshot = restarted.get("/agent/runs/run_orphan_web").json()
+    assert web_snapshot["status"] == "failed"
+    assert web_snapshot["result"]["doc_kind"] == "web"
+    assert web_snapshot["result"]["diagnostics"][0]["code"] == "agent_runtime.orphaned"
+    assert any(event["type"] == "error" for event in web_snapshot["events"])
+
+    scene_snapshot = restarted.get("/agent/runs/run_orphan_scene").json()
+    assert scene_snapshot["status"] == "failed"
+    assert "doc_kind" not in scene_snapshot["result"]
+
+    finished = restarted.get("/agent/runs/run_finished").json()
+    assert finished["status"] == "succeeded"
+    assert finished["result"] == {"status": "applied"}
+
+    # The SSE stream for an orphan closes with `done` immediately.
+    stream = restarted.get("/agent/runs/run_orphan_web/events").text
+    assert "event: done" in stream
+    assert "agent_runtime.orphaned" in stream
+
+
 def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     # Drive the store directly to assert SSE framing deterministically (no
     # dependence on background-thread timing): a progress event replays, then

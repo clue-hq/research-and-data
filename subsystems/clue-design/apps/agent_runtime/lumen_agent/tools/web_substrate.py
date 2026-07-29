@@ -89,6 +89,12 @@ _FONT_FACE_CSS_MAX_BYTES = 8 * 1024 * 1024
 # font-face CSS (fonts cannot change mid-run, so the first result is memoized).
 _FONT_CSS_UNSET = object()
 
+# Mutating tool calls allowed between renders before the substrate refuses and
+# tells the author to end its round. Sized against real healthy rounds (a full
+# page install + several patch repairs + a few surgical ops ≈ 11); the
+# pathological round this guards against burned 20+ (2026-07-29 blind churn).
+_ROUND_MUTATION_BUDGET = 14
+
 
 def _font_mime_from_magic(data: bytes) -> str:
     """The web font MIME for `data` by its leading magic bytes; unknown → the
@@ -262,6 +268,13 @@ class LumenWebTools:
         # refuses a preview older than the current doc.
         self._doc_version = 0
         self._preview_doc_version: Optional[int] = None
+        # Between-renders edit budget (live failure 2026-07-29: an author round
+        # never returned control — 16 blind subtree rewrites over 14 minutes).
+        # Every MUTATING tool call charges it; once exhausted, mutating tools
+        # refuse and tell the author to end the round. render_web_preview
+        # resets it — control is provably back with the orchestrator there.
+        self._mutations_since_render = 0
+        self._round_budget_event_recorded = False
 
         # The last REJECTED authoring submission (author_web_page /
         # author_web_subtree), so patch_web_page can repair the markup with
@@ -298,6 +311,34 @@ class LumenWebTools:
         payload: JsonObject = {"status": "error", "error_code": code, "message": message}
         payload.update(extra)
         return json.dumps(payload, indent=2)
+
+    def _consume_round_budget(self, tool_name: str) -> Optional[str]:
+        """Charge one mutating call against the between-renders budget.
+
+        Returns None while budget remains (and charges it); returns a refusal
+        envelope once exhausted. The refusal is a plain tool result — never an
+        exception — so the model reads it and ends its round instead of dying."""
+        if self._mutations_since_render >= _ROUND_MUTATION_BUDGET:
+            if not self._round_budget_event_recorded:
+                self._round_budget_event_recorded = True
+                self.record(
+                    "author",
+                    "web_round_budget_exhausted",
+                    input_summary=tool_name,
+                    output_summary=(
+                        f"{_ROUND_MUTATION_BUDGET} mutating calls since the last render"
+                    ),
+                )
+            return self._tool_error(
+                "round.budget_exhausted",
+                f"Edit budget for this round is exhausted "
+                f"({_ROUND_MUTATION_BUDGET} mutating calls since the last render). "
+                "STOP editing. END YOUR REPLY now with a short summary of what you "
+                "changed and what remains; the orchestrator re-renders fresh "
+                "previews and the review continues from there.",
+            )
+        self._mutations_since_render += 1
+        return None
 
     def record(
         self,
@@ -409,6 +450,9 @@ class LumenWebTools:
         the submitted html) on rejection and clears it on success, so the two
         origins share EXACTLY the same events, doc-version bookkeeping, and
         success/rejection handling."""
+        refusal = self._consume_round_budget(submission["tool"])
+        if refusal is not None:
+            return refusal
         if submission["tool"] == "author_web_page":
             return self._submit_page(submission, origin, patch_count)
         return self._submit_subtree(submission, origin, patch_count)
@@ -1020,6 +1064,9 @@ class LumenWebTools:
         stored) → {"status":"rejected", "diagnostics":[...]}. On success the
         working doc is replaced and {"status":"ok", "applied":n, "warnings":[…]}
         is returned."""
+        refusal = self._consume_round_budget("web_ops")
+        if refusal is not None:
+            return refusal
         try:
             operations = json.loads(operations_json)
         except (json.JSONDecodeError, TypeError, ValueError) as error:
@@ -1494,6 +1541,10 @@ class LumenWebTools:
         no helper call, no Playwright, no iteration bump — and the result
         carries `unchanged: true` so the orchestrator reuses its standing
         critique instead of re-reviewing byte-identical pixels."""
+        # A render call means control is back with the orchestrator: open a
+        # fresh between-renders edit budget for the next author round.
+        self._mutations_since_render = 0
+        self._round_budget_event_recorded = False
         # Feature 2 — unchanged-render guard. A doc with no mutation since the
         # last render whose previews are all still on hand is reused verbatim.
         if (
@@ -1819,8 +1870,14 @@ class LumenWebTools:
             )
         return {"dialogs": omitted_dialogs, "tabs": omitted_tabs}
 
-    def _view_content(self, target: str) -> list:
-        """Build the ToolMessage content for view(target). See make_web_view_tool."""
+    def _view_content(self, target: str, can_render: bool = True) -> list:
+        """Build the ToolMessage content for view(target). See make_web_view_tool.
+
+        `can_render` says whether the CALLING ROLE also owns render_web_preview
+        (orchestrator: yes; author/reviewer subagents: no). The stale/no-preview
+        refusals must never instruct a role to call a tool it does not have —
+        live failure 2026-07-29: an author churned blind for 14 minutes retrying
+        stale views because the refusal said "call render_web_preview() first"."""
         if target == "brand":
             self.record("agent", "web_view_called", input_summary=target, output_summary="brand")
             return [_text_block(self.brand_card_text)]
@@ -1848,6 +1905,10 @@ class LumenWebTools:
                 return [
                     _text_block(
                         "view: no preview rendered yet — call render_web_preview() first."
+                        if can_render
+                        else "view: no preview rendered yet. Previews are produced "
+                        "between rounds, not by you — use view(\"doc\") for structure, "
+                        "finish your work, and end your reply."
                     )
                 ]
             if (
@@ -1861,6 +1922,12 @@ class LumenWebTools:
                     _text_block(
                         "view: preview is STALE — the document changed since the last "
                         "render. Call render_web_preview() first, then view again."
+                        if can_render
+                        else "view: preview is STALE — the document changed since the "
+                        "last render, and previews only refresh AFTER your round ends. "
+                        "Do NOT keep editing to chase a fresh preview. Finish your "
+                        "remaining changes, then END YOUR REPLY with a summary; the "
+                        "orchestrator re-renders and the reviewer judges the result."
                     )
                 ]
             self.record(
@@ -1991,8 +2058,12 @@ class LumenWebTools:
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def make_web_view_tool(tools: LumenWebTools):
+def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     """The `view` tool for a website turn: real pixels + doc/brand context.
+
+    `can_render=False` builds the variant handed to the author/reviewer
+    subagents: identical behavior except the stale/no-preview refusals, which
+    must not tell those roles to call render_web_preview (orchestrator-only).
 
     target="preview:1440"|"preview:768"|"preview:375" returns the latest
     screenshot of that width as [text, image] blocks; "state:<n>" returns the
@@ -2014,7 +2085,7 @@ def make_web_view_tool(tools: LumenWebTools):
         content so you judge by looking, not guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
-                return tools._view_content(target)
+                return tools._view_content(target, can_render=can_render)
         except Exception as exc:  # noqa: BLE001 - turn-safety boundary
             try:
                 tools.record(

@@ -961,6 +961,28 @@ class Repository:
         ).fetchone()
         return agent_run_from_row(row) if row is not None else None
 
+    def list_running_runs(self) -> List[JsonObject]:
+        """Runs still marked 'running', joined with their document's doc_kind
+        (None when the run has no document). Turns execute only on daemon
+        threads inside the live API process, so at startup every 'running'
+        row is an orphan by construction — the startup sweep fails them."""
+        rows = self.connection.execute(
+            """
+            SELECT r.run_id, r.document_id, d.doc_kind
+            FROM agent_runs r LEFT JOIN documents d ON d.id = r.document_id
+            WHERE r.status = 'running'
+            ORDER BY r.created_at ASC
+            """
+        ).fetchall()
+        return [
+            {
+                "run_id": row["run_id"],
+                "document_id": row["document_id"],
+                "doc_kind": row["doc_kind"],
+            }
+            for row in rows
+        ]
+
     def require_run(self, run_id: str) -> JsonObject:
         run = self.get_run(run_id)
         if run is None:

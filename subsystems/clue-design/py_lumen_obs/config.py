@@ -102,6 +102,15 @@ def configure(
     capture_debug = resolved_mode is LogMode.DEBUG or attach_file
     root.setLevel(logging.DEBUG if capture_debug else logging.INFO)
 
+    # "Full detail" means OUR events, not the HTTP wire. At DEBUG the openai
+    # client logs every request payload verbatim — with vision turns that is
+    # the base64 of every attached screenshot, measured live at 14MB per line
+    # and 0.1–1.7GB of run.jsonl per turn (2026-07-29). Pin the wire-level
+    # third-party loggers to INFO; their spans/usage are already captured as
+    # first-class events by our own instrumentation.
+    for noisy in ("openai", "httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.INFO)
+
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(logging.DEBUG if resolved_mode is LogMode.DEBUG else logging.INFO)
     console.setFormatter(
