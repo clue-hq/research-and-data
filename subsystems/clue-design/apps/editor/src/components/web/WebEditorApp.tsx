@@ -5,18 +5,26 @@ import Link from "next/link";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
+  buildInsertNodeOp,
   fetchWebDocument,
   fetchWebRenderHtml,
   fetchWebTheme,
   listDialogComponents,
+  moveNodeOp,
+  moveSectionIndex,
+  replaceAssetOp,
   setTextOp,
+  upsertAssetOp,
   webDocumentHasContent,
   webPromptStorageKey,
+  type InsertableKind,
   type LoadedWebDocument,
   type WebDoc,
   type WebNode,
+  type WebPageSummary,
   type WebTheme
 } from "@/engine/webDocuments";
+import type { AssetRecord } from "@/engine/contracts";
 import {
   useWebAgentTurn,
   type WebRunEvent,
@@ -25,6 +33,8 @@ import {
 import { useWebBridgeSelection } from "@/hooks/useWebBridgeSelection";
 import { useWebManualEdits } from "@/hooks/useWebManualEdits";
 import { WebInspectorPanel } from "@/components/web/WebInspectorPanel";
+import { WebInsertPalette } from "@/components/web/WebInsertPalette";
+import { WebAssetDrawer } from "@/components/web/WebAssetDrawer";
 import { selectionChipLabel, type WebSelection } from "@/engine/webBridge";
 
 /**
@@ -110,6 +120,32 @@ function findWebNode(
   }
   return null;
 }
+
+/** Locate a page summary by id, falling back to the first page. */
+function findWebPage(webDoc: WebDoc | null, pageId: string): WebPageSummary | null {
+  const pages = webDoc?.pages ?? [];
+  return pages.find((page) => page.id === pageId) ?? pages[0] ?? null;
+}
+
+/** Chat-mode suggestion chips: with a selection (element-scoped edits) and
+ * without (page-level moves). Clicking one fills the composer — it does not
+ * send. */
+const SUGGESTION_CHIPS_SELECTED = [
+  "Rewrite this section",
+  "Swap this image for a better one",
+  "Make this band dark"
+];
+const SUGGESTION_CHIPS_GLOBAL = [
+  "Add a testimonials section",
+  "Tighten the hero copy",
+  "Add an FAQ"
+];
+
+/** The asset drawer's open state: inserting a fresh image, or replacing the
+ * asset of a selected image node. */
+type AssetDrawerState =
+  | { mode: "insert" }
+  | { mode: "replace"; pageId: string; nodeId: string };
 
 /** True when keyboard focus sits in an editable field (composer/inspector
  * inputs) or an iframe — where undo/redo shortcuts must defer to the field. */
@@ -215,6 +251,8 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  // The replace/insert-image drawer's open state (null = closed).
+  const [assetDrawer, setAssetDrawer] = useState<AssetDrawerState | null>(null);
 
   // The live preview iframe and the per-render bridge nonce. A fresh nonce is
   // minted for every render fetch and validated on every inbound bridge message
@@ -255,12 +293,38 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     setActiveNodeId(next ? next.nodeId : null);
   }, []);
 
+  // A top-level section drag-drop from the bridge → a MoveNode against the
+  // page root's children. `boundary` is the drop index among current top-level
+  // sections; `moveSectionIndex` adjusts it for the source's removal. No-op on
+  // a same-slot drop or a missing/unknown node.
+  const handleMoveSection = useCallback(
+    (nodeId: string, boundary: number) => {
+      const page = findWebPage(webDoc, defaultPage);
+      if (!page) {
+        return;
+      }
+      const rootId = page.root ?? "root";
+      const children = page.nodes?.[rootId]?.children ?? [];
+      const from = children.indexOf(nodeId);
+      if (from === -1) {
+        return;
+      }
+      const index = moveSectionIndex(from, boundary);
+      if (from === index) {
+        return;
+      }
+      manualEdits.applyOps([moveNodeOp(page.id, nodeId, rootId, index)], "reorder_section");
+    },
+    [webDoc, defaultPage, manualEdits]
+  );
+
   const { selection, clearSelection, resetSelection, previewComponent, selectNode } =
     useWebBridgeSelection({
       iframeRef,
       nonceRef,
       onTextCommit: handleTextCommit,
-      onSelect: handleBridgeSelect
+      onSelect: handleBridgeSelect,
+      onMoveSection: handleMoveSection
     });
 
   // Clicking the gray canvas region AROUND the iframe (never the rail/topbar,
@@ -281,7 +345,72 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const located = findWebNode(webDoc, activeNodeId);
   const inspectorNode = located?.node ?? null;
   const inspectorPageId = located?.pageId ?? defaultPage;
+  const inspectorPage = findWebPage(webDoc, inspectorPageId);
   const dialogs = React.useMemo(() => listDialogComponents(webDoc), [webDoc]);
+
+  // True when an asset id already lives on the document (a plain replace/insert
+  // then needs no upsert_asset first).
+  const docHasAsset = useCallback(
+    (assetId: string): boolean => {
+      const assets = (webDoc?.assets as Record<string, unknown> | undefined) ?? {};
+      return Object.prototype.hasOwnProperty.call(assets, assetId);
+    },
+    [webDoc]
+  );
+
+  // Insert a plain (non-image) node from the palette. Placement + wrap + id
+  // minting live in the engine; this only picks the page + selection context.
+  const handleInsert = useCallback(
+    (kind: InsertableKind) => {
+      if (!inspectorPage) {
+        return;
+      }
+      const op = buildInsertNodeOp({
+        page: inspectorPage,
+        selectedNodeId: activeNodeId,
+        kind
+      });
+      manualEdits.applyOps([op], `insert_${kind}`);
+    },
+    [inspectorPage, activeNodeId, manualEdits]
+  );
+
+  const handleInsertImage = useCallback(() => setAssetDrawer({ mode: "insert" }), []);
+
+  const handleReplaceImage = useCallback(
+    (nodeId: string) => setAssetDrawer({ mode: "replace", pageId: inspectorPageId, nodeId }),
+    [inspectorPageId]
+  );
+
+  // The asset drawer settled on a record: insert a new Image node, or replace
+  // the selected image's asset — prepending upsert_asset when the record isn't
+  // on the document yet (one batch = one undo step).
+  const handleAssetPick = useCallback(
+    (record: AssetRecord) => {
+      const drawer = assetDrawer;
+      setAssetDrawer(null);
+      if (!drawer) {
+        return;
+      }
+      const inDoc = docHasAsset(record.id);
+      if (drawer.mode === "insert") {
+        if (!inspectorPage) {
+          return;
+        }
+        const insert = buildInsertNodeOp({
+          page: inspectorPage,
+          selectedNodeId: activeNodeId,
+          kind: "image",
+          image: { assetId: record.id, alt: record.label ?? "" }
+        });
+        manualEdits.applyOps(inDoc ? [insert] : [upsertAssetOp(record), insert], "insert_image");
+        return;
+      }
+      const replace = replaceAssetOp(drawer.pageId, drawer.nodeId, record.id);
+      manualEdits.applyOps(inDoc ? [replace] : [upsertAssetOp(record), replace], "replace_image");
+    },
+    [assetDrawer, docHasAsset, inspectorPage, activeNodeId, manualEdits]
+  );
 
   // Keep the latest run events readable inside the hook's onDone callback (which
   // fires before the next render), so a settled turn's activity is captured.
@@ -660,13 +789,29 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
 
             {railMode === "inspect" ? (
               <div className="web-insp-scroll">
+                <div className="web-insp-toolbar">
+                  <WebInsertPalette
+                    onInsert={handleInsert}
+                    onInsertImage={handleInsertImage}
+                    disabled={manualEdits.busy || inspectorPage == null}
+                  />
+                </div>
+                {assetDrawer ? (
+                  <WebAssetDrawer
+                    mode={assetDrawer.mode}
+                    onPick={handleAssetPick}
+                    onClose={() => setAssetDrawer(null)}
+                  />
+                ) : null}
                 <WebInspectorPanel
                   node={inspectorNode}
                   pageId={inspectorPageId}
+                  page={inspectorPage}
                   theme={theme}
                   dialogs={dialogs}
                   previewComponent={previewComponent}
                   selectNode={selectNode}
+                  onReplaceImage={handleReplaceImage}
                   applyOps={manualEdits.applyOps}
                   busy={manualEdits.busy}
                   note={manualEdits.note}
@@ -738,6 +883,19 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
               ) : null}
             </div>
 
+            <div className="web-suggestions" role="group" aria-label="Suggestions">
+              {(selection ? SUGGESTION_CHIPS_SELECTED : SUGGESTION_CHIPS_GLOBAL).map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className="web-suggestion-chip"
+                  disabled={isRunning}
+                  onClick={() => setComposer(chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
             <form className="web-composer" onSubmit={onComposerSubmit}>
               {selection ? (
                 <div className="web-context-chip">

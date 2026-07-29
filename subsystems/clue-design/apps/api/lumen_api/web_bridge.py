@@ -23,6 +23,11 @@ message back). Security posture:
 - The nonce is interpolated server-side; `render_bridge_script` rejects any
   nonce outside a strict charset so the substitution cannot become script
   injection.
+
+v3 adds top-level section drag-reorder: a grip appears on the selected
+top-level section; dragging it shows an insertion line and, on drop, posts a
+`{type:"move-section", nodeId, boundary}` intent (the boundary index among the
+current top-level sections) which the shell turns into a MoveNode op.
 """
 
 import re
@@ -77,6 +82,7 @@ _BRIDGE_V0_TEMPLATE = """
       el.classList.add("lumen-selected");
     }
     post("select", { node: nodeInfo(el) });
+    showGripFor(el);
   }
 
   document.addEventListener("mouseover", function (event) {
@@ -189,6 +195,7 @@ _BRIDGE_V0_TEMPLATE = """
     if (data.type === "clear" && selected) {
       selected.classList.remove("lumen-selected");
       selected = null;
+      removeGrip();
     }
     if (data.type === "component-preview") {
       var el = document.querySelector(
@@ -206,6 +213,106 @@ _BRIDGE_V0_TEMPLATE = """
       if (target) setSelected(target);
     }
   });
+
+  // v3: drag-reorder for top-level sections. A grip appears on the selected
+  // section; dragging shows an insertion line and posts a move-section
+  // intent with the boundary index among current top-level sections.
+  var grip = null;
+  var dropLine = null;
+  var dragState = null;
+
+  var structureStyle = document.createElement("style");
+  structureStyle.textContent =
+    ".lumen-grip{position:absolute;z-index:2147483000;display:flex;align-items:center;" +
+    "justify-content:center;width:28px;height:28px;border-radius:8px;cursor:grab;" +
+    "background:rgba(79,111,255,0.95);color:#fff;font-size:14px;user-select:none;}" +
+    ".lumen-drop-line{position:absolute;left:8px;right:8px;height:3px;border-radius:2px;" +
+    "background:rgba(79,111,255,0.95);z-index:2147483000;pointer-events:none;}";
+  document.head.appendChild(structureStyle);
+
+  function topSections() {
+    return Array.prototype.slice.call(document.body.children).filter(function (el) {
+      return el.hasAttribute && el.hasAttribute("data-node-id");
+    });
+  }
+
+  function positionGrip(el) {
+    if (!grip) return;
+    var rect = el.getBoundingClientRect();
+    grip.style.top = rect.top + window.scrollY + 8 + "px";
+    grip.style.left = rect.right + window.scrollX - 40 + "px";
+  }
+
+  function removeGrip() {
+    if (grip) { grip.remove(); grip = null; }
+  }
+
+  function showGripFor(el) {
+    removeGrip();
+    if (!el || el.parentElement !== document.body) return;
+    grip = document.createElement("div");
+    grip.className = "lumen-grip";
+    grip.textContent = "\\u2261";
+    document.body.appendChild(grip);
+    positionGrip(el);
+    grip.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+      dragState = { nodeId: el.getAttribute("data-node-id"), boundary: null };
+      dropLine = document.createElement("div");
+      dropLine.className = "lumen-drop-line";
+      document.body.appendChild(dropLine);
+      grip.style.cursor = "grabbing";
+    });
+  }
+
+  function dragBoundary(clientY) {
+    var sections = topSections();
+    for (var i = 0; i < sections.length; i++) {
+      var rect = sections[i].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        return { index: i, y: rect.top + window.scrollY };
+      }
+    }
+    var last = sections[sections.length - 1];
+    var bottom = last ? last.getBoundingClientRect().bottom : 0;
+    return { index: sections.length, y: bottom + window.scrollY };
+  }
+
+  document.addEventListener("mousemove", function (event) {
+    if (!dragState || !dropLine) return;
+    var boundary = dragBoundary(event.clientY);
+    dragState.boundary = boundary.index;
+    dropLine.style.top = boundary.y - 2 + "px";
+  });
+
+  document.addEventListener("mouseup", function () {
+    if (!dragState) return;
+    if (typeof dragState.boundary === "number") {
+      post("move-section", { nodeId: dragState.nodeId, boundary: dragState.boundary });
+    }
+    if (dropLine) { dropLine.remove(); dropLine = null; }
+    if (grip) grip.style.cursor = "grab";
+    dragState = null;
+  });
+
+  document.addEventListener(
+    "keydown",
+    function (event) {
+      if (event.key === "Escape" && dragState) {
+        if (dropLine) { dropLine.remove(); dropLine = null; }
+        dragState = null;
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (grip && selected) positionGrip(selected);
+    },
+    { passive: true }
+  );
 
   post("ready", {});
 })();

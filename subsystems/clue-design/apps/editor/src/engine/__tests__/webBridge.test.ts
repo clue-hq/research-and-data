@@ -152,6 +152,46 @@ describe("validateBridgeMessage", () => {
     });
   });
 
+  it("passes a move-section through with node id + integer boundary", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "move-section",
+        nodeId: "secB",
+        boundary: 2
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
+      type: "move-section",
+      nodeId: "secB",
+      boundary: 2
+    });
+  });
+
+  it("rejects a move-section with a missing node id or non-integer boundary", () => {
+    const noId = makeEvent({
+      data: { channel: "lumen-web-bridge", nonce: NONCE, type: "move-section", boundary: 1 },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(noId, NONCE, FRAME)).toBeNull();
+    const badBoundary = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "move-section",
+        nodeId: "secB",
+        boundary: "2"
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(badBoundary, NONCE, FRAME)).toBeNull();
+  });
+
   it("defaults a text-commit's missing html to an empty string", () => {
     const event = makeEvent({
       data: { channel: "lumen-web-bridge", nonce: NONCE, type: "text-commit", nodeId: "sub" },

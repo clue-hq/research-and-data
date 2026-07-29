@@ -40,7 +40,8 @@ export type WebBridgeInbound =
   | { type: "ready" }
   | { type: "select"; selection: WebSelection | null }
   | { type: "edit-start"; nodeId: string }
-  | { type: "text-commit"; nodeId: string; html: string };
+  | { type: "text-commit"; nodeId: string; html: string }
+  | { type: "move-section"; nodeId: string; boundary: number };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
  * missing/partial shape. Returns `null` for an absent node (a cleared
@@ -112,6 +113,13 @@ export function validateBridgeMessage(
       return null;
     }
     return { type: "text-commit", nodeId, html: typeof data.html === "string" ? data.html : "" };
+  }
+  if (data.type === "move-section") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    if (!nodeId || typeof data.boundary !== "number" || !Number.isInteger(data.boundary)) {
+      return null;
+    }
+    return { type: "move-section", nodeId, boundary: data.boundary };
   }
   return null;
 }

@@ -2,6 +2,12 @@ import React, { useState } from "react";
 
 import {
   buildWebButtonProps,
+  classifyEmbedUrl,
+  duplicateSubtree,
+  insertNodeOp,
+  moveNodeOp,
+  parentOfInPage,
+  removeNodeOp,
   setNodeClassesOp,
   setNodePropsOp,
   webNodeButtonAction,
@@ -10,6 +16,7 @@ import {
   type WebNode,
   type WebNodeProps,
   type WebOperation,
+  type WebPageSummary,
   type WebTheme
 } from "@/engine/webDocuments";
 import {
@@ -43,6 +50,9 @@ interface WebInspectorPanelProps {
   node: WebNode | null;
   /** The page the node lives in — the `page_id` every op carries. */
   pageId: string;
+  /** The full page summary — the sibling/parent lookup the header's
+   * reorder/duplicate/delete actions need. */
+  page: WebPageSummary | null;
   theme: WebTheme | null;
   /** Every dialog component in the document — the button command form's target
    * list. */
@@ -51,6 +61,8 @@ interface WebInspectorPanelProps {
   previewComponent: (nodeId: string, action: "open" | "close") => void;
   /** Select a node in the preview (button command form's "Select dialog"). */
   selectNode: (nodeId: string) => void;
+  /** Open the asset drawer to replace the selected image's asset. */
+  onReplaceImage: (nodeId: string) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
   /** Info note (409 reload) and inline error (422 diagnostic), surfaced in the
@@ -71,10 +83,12 @@ const ALIGN_OPTIONS: { value: string; label: string }[] = [
 export function WebInspectorPanel({
   node,
   pageId,
+  page,
   theme,
   dialogs,
   previewComponent,
   selectNode,
+  onReplaceImage,
   applyOps,
   busy,
   note,
@@ -96,6 +110,7 @@ export function WebInspectorPanel({
       <header className="web-insp-head">
         <span className="web-insp-id">{node.id}</span>
         <span className="web-insp-kind">{node.kind}</span>
+        {page ? <NodeActionRow node={node} page={page} busy={busy} applyOps={applyOps} /> : null}
       </header>
       {note ? (
         <p className="web-insp-note" role="status">
@@ -118,9 +133,99 @@ export function WebInspectorPanel({
         dialogs={dialogs}
         previewComponent={previewComponent}
         selectNode={selectNode}
+        onReplaceImage={onReplaceImage}
         applyOps={applyOps}
         busy={busy}
       />
+    </div>
+  );
+}
+
+/** The inspector header's compact structural actions: move within the same
+ * parent (↑/↓, disabled at the ends), Duplicate (deep-copy + remint after the
+ * original), Delete (remove_node; disabled for the page root). */
+function NodeActionRow({
+  node,
+  page,
+  busy,
+  applyOps
+}: {
+  node: WebNode;
+  page: WebPageSummary;
+  busy: boolean;
+  applyOps: (operations: WebOperation[], intent?: string) => void;
+}): React.ReactElement {
+  const isRoot = node.id === (page.root ?? "root");
+  const parent = parentOfInPage(page, node.id);
+  const siblings = parent?.children ?? [];
+  const index = siblings.indexOf(node.id);
+  const canMoveUp = !busy && !isRoot && parent != null && index > 0;
+  const canMoveDown = !busy && !isRoot && parent != null && index >= 0 && index < siblings.length - 1;
+  const canDuplicate = !busy && !isRoot && parent != null;
+  const canDelete = !busy && !isRoot;
+
+  const move = (delta: number) => {
+    if (!parent) {
+      return;
+    }
+    applyOps([moveNodeOp(page.id, node.id, parent.id, index + delta)], "reorder_node");
+  };
+  const duplicate = () => {
+    if (!parent) {
+      return;
+    }
+    const copy = duplicateSubtree(page, node.id);
+    if (copy) {
+      applyOps(
+        [insertNodeOp(page.id, parent.id, index + 1, copy.nodes, copy.root)],
+        "duplicate_node"
+      );
+    }
+  };
+  const remove = () => applyOps([removeNodeOp(page.id, node.id)], "delete_node");
+
+  return (
+    <div className="web-insp-actions" role="group" aria-label="Node actions">
+      <button
+        type="button"
+        className="web-insp-action"
+        aria-label="Move up"
+        title="Move up"
+        disabled={!canMoveUp}
+        onClick={() => move(-1)}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        className="web-insp-action"
+        aria-label="Move down"
+        title="Move down"
+        disabled={!canMoveDown}
+        onClick={() => move(1)}
+      >
+        ↓
+      </button>
+      <button
+        type="button"
+        className="web-insp-action"
+        aria-label="Duplicate"
+        title="Duplicate"
+        disabled={!canDuplicate}
+        onClick={duplicate}
+      >
+        ⧉
+      </button>
+      <button
+        type="button"
+        className="web-insp-action is-danger"
+        aria-label="Delete"
+        title="Delete"
+        disabled={!canDelete}
+        onClick={remove}
+      >
+        🗑
+      </button>
     </div>
   );
 }
@@ -132,6 +237,7 @@ interface BodyProps {
   dialogs: WebDialogOption[];
   previewComponent: (nodeId: string, action: "open" | "close") => void;
   selectNode: (nodeId: string) => void;
+  onReplaceImage: (nodeId: string) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
 }
@@ -143,6 +249,7 @@ function WebInspectorBody({
   dialogs,
   previewComponent,
   selectNode,
+  onReplaceImage,
   applyOps,
   busy
 }: BodyProps): React.ReactElement {
@@ -178,7 +285,15 @@ function WebInspectorBody({
       {(node.kind === "container" || node.kind === "section") ? (
         <ContainerCard node={node} busy={busy} applyClasses={applyClasses} />
       ) : null}
-      {node.kind === "image" ? <ImageCard node={node} busy={busy} applyProps={applyProps} /> : null}
+      {node.kind === "image" ? (
+        <ImageCard
+          node={node}
+          busy={busy}
+          applyProps={applyProps}
+          onReplaceImage={onReplaceImage}
+        />
+      ) : null}
+      {node.kind === "embed" ? <EmbedCard node={node} busy={busy} applyProps={applyProps} /> : null}
 
       <ClassesCard node={node} pageId={pageId} busy={busy} applyOps={applyOps} />
     </div>
@@ -564,8 +679,14 @@ function clampMarqueeSpeed(value: number): number {
 const COMPONENT_TITLES: Record<string, string> = {
   dialog: "Dialog",
   accordion: "Accordion",
-  marquee: "Marquee"
+  marquee: "Marquee",
+  nav_menu: "Nav menu",
+  carousel: "Carousel",
+  tabs: "Tabs"
 };
+
+const CAROUSEL_AUTOPLAY_MIN = 2;
+const CAROUSEL_AUTOPLAY_MAX = 60;
 
 function ComponentCard({
   node,
@@ -597,6 +718,21 @@ function ComponentCard({
   }
   if (component === "marquee") {
     return <MarqueeComponentCard node={node} busy={busy} title={title} applyProps={applyProps} />;
+  }
+  if (component === "carousel") {
+    return <CarouselComponentCard node={node} busy={busy} title={title} applyProps={applyProps} />;
+  }
+  if (component === "tabs") {
+    return <TabsComponentCard node={node} busy={busy} title={title} applyProps={applyProps} />;
+  }
+  if (component === "nav_menu") {
+    return (
+      <Card title={title}>
+        <p className="web-insp-hint">
+          Items are this component’s children — select them in the canvas.
+        </p>
+      </Card>
+    );
   }
   return (
     <Card title={title}>
@@ -818,6 +954,127 @@ function MarqueeComponentCard({
   );
 }
 
+function CarouselComponentCard({
+  node,
+  busy,
+  title,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  title: string;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const showArrows = node.show_arrows ?? true;
+  const [autoplay, setAutoplay] = useState(
+    typeof node.autoplay_s === "number" ? String(node.autoplay_s) : ""
+  );
+
+  const commit = (over: Partial<{ showArrows: boolean; autoplay: string }>, intent: string) => {
+    const nextAutoplay = over.autoplay ?? autoplay;
+    const trimmed = nextAutoplay.trim();
+    let parsed: number | undefined;
+    if (trimmed !== "") {
+      const value = Number.parseInt(trimmed, 10);
+      if (!Number.isNaN(value)) {
+        parsed = Math.min(CAROUSEL_AUTOPLAY_MAX, Math.max(CAROUSEL_AUTOPLAY_MIN, value));
+      }
+    }
+    applyProps(
+      parsed != null
+        ? {
+            kind: "component",
+            component: "carousel",
+            show_arrows: over.showArrows ?? showArrows,
+            autoplay_s: parsed
+          }
+        : { kind: "component", component: "carousel", show_arrows: over.showArrows ?? showArrows },
+      intent
+    );
+  };
+
+  return (
+    <Card title={title}>
+      <label className="web-insp-checkbox">
+        <input
+          type="checkbox"
+          checked={showArrows}
+          disabled={busy}
+          onChange={(event) => commit({ showArrows: event.target.checked }, "carousel_show_arrows")}
+        />
+        Show arrows
+      </label>
+      <label className="field web-insp-field">
+        <span className="field-label">Autoplay (seconds)</span>
+        <input
+          type="number"
+          min={CAROUSEL_AUTOPLAY_MIN}
+          max={CAROUSEL_AUTOPLAY_MAX}
+          value={autoplay}
+          disabled={busy}
+          onChange={(event) => setAutoplay(event.target.value)}
+          onBlur={() => {
+            const current = typeof node.autoplay_s === "number" ? String(node.autoplay_s) : "";
+            if (autoplay !== current) {
+              commit({ autoplay }, "carousel_autoplay");
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="Off"
+        />
+      </label>
+    </Card>
+  );
+}
+
+function TabsComponentCard({
+  node,
+  busy,
+  title,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  title: string;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const [defaultTab, setDefaultTab] = useState(
+    typeof node.default_tab === "number" ? String(node.default_tab) : "0"
+  );
+  const commit = () => {
+    const parsed = Number.parseInt(defaultTab.trim(), 10);
+    const value = Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
+    setDefaultTab(String(value));
+    if (value !== (node.default_tab ?? 0)) {
+      applyProps({ kind: "component", component: "tabs", default_tab: value }, "tabs_default_tab");
+    }
+  };
+  return (
+    <Card title={title}>
+      <label className="field web-insp-field">
+        <span className="field-label">Default tab</span>
+        <input
+          type="number"
+          min={0}
+          value={defaultTab}
+          disabled={busy}
+          onChange={(event) => setDefaultTab(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </label>
+    </Card>
+  );
+}
+
 function ContainerCard({
   node,
   busy,
@@ -871,11 +1128,13 @@ function ContainerCard({
 function ImageCard({
   node,
   busy,
-  applyProps
+  applyProps,
+  onReplaceImage
 }: {
   node: WebNode;
   busy: boolean;
   applyProps: (props: WebNodeProps, intent: string) => void;
+  onReplaceImage: (nodeId: string) => void;
 }): React.ReactElement {
   const [alt, setAlt] = useState(node.alt ?? "");
   return (
@@ -909,6 +1168,127 @@ function ImageCard({
           placeholder="Describe the image"
         />
       </label>
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        disabled={busy}
+        onClick={() => onReplaceImage(node.id)}
+      >
+        Replace…
+      </button>
+    </Card>
+  );
+}
+
+/** The embed card's two modes — the Mutiny trust split. URL mode classifies a
+ * committed link (calendly allowlisted, else any https custom; non-https is
+ * refused inline). Code-snippet mode commits raw html (sandboxed at render).
+ * Current mode is derived: a non-empty html with no url reads as a snippet. */
+function EmbedCard({
+  node,
+  busy,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const isCalendly = node.provider === "calendly";
+  const currentUrl = typeof node.url === "string" ? node.url : "";
+  const currentHtml = node.html ?? "";
+  const initialMode: "url" | "snippet" =
+    currentHtml.trim() !== "" && currentUrl === "" ? "snippet" : "url";
+  const [mode, setMode] = useState<"url" | "snippet">(initialMode);
+  const [url, setUrl] = useState(currentUrl);
+  const [html, setHtml] = useState(currentHtml);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  const commitUrl = () => {
+    setUrlError(null);
+    if (url.trim() === "" && currentUrl === "") {
+      return;
+    }
+    const props = classifyEmbedUrl(url);
+    if (!props) {
+      setUrlError("Enter an https:// URL.");
+      return;
+    }
+    applyProps(props, "embed_url");
+  };
+
+  const commitSnippet = () => {
+    if (html === currentHtml && currentUrl === "") {
+      return;
+    }
+    applyProps({ kind: "embed", provider: "custom", html }, "embed_snippet");
+  };
+
+  return (
+    <Card title="Embed">
+      <div className="web-insp-field">
+        <div className="web-align-row" role="group" aria-label="Embed mode">
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm${mode === "url" ? " is-selected" : ""}`}
+            aria-pressed={mode === "url"}
+            disabled={busy}
+            onClick={() => setMode("url")}
+          >
+            URL
+          </button>
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm${mode === "snippet" ? " is-selected" : ""}`}
+            aria-pressed={mode === "snippet"}
+            disabled={busy}
+            onClick={() => setMode("snippet")}
+          >
+            Code snippet
+          </button>
+          {isCalendly ? <span className="web-embed-badge">Calendly</span> : null}
+        </div>
+      </div>
+
+      {mode === "url" ? (
+        <label className="field web-insp-field">
+          <span className="field-label">URL</span>
+          <input
+            type="text"
+            value={url}
+            disabled={busy}
+            onChange={(event) => setUrl(event.target.value)}
+            onBlur={commitUrl}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder="https://…"
+          />
+          {urlError ? (
+            <span className="web-insp-error" role="alert">
+              {urlError}
+            </span>
+          ) : null}
+        </label>
+      ) : (
+        <label className="field web-insp-field">
+          <span className="field-label">Code snippet</span>
+          <textarea
+            className="web-insp-classes"
+            value={html}
+            disabled={busy}
+            spellCheck={false}
+            rows={4}
+            onChange={(event) => setHtml(event.target.value)}
+            onBlur={commitSnippet}
+            placeholder="<iframe …></iframe>"
+          />
+          <span className="web-insp-hint">
+            Runs sandboxed. Give the embed a height class (e.g. h-[700px]).
+          </span>
+        </label>
+      )}
     </Card>
   );
 }

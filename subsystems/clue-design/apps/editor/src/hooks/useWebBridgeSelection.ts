@@ -54,8 +54,12 @@ export function useWebBridgeSelection(params: {
    * keeps the inspector on the same stable node id). Kept in a ref so a
    * changing callback never re-arms the listener. */
   onSelect?: (selection: WebSelection | null) => void;
+  /** Invoked when the bridge posts a `move-section` intent (top-level section
+   * drag-reorder): `boundary` is the drop index among current top-level
+   * sections. Kept in a ref so a changing callback never re-arms the listener. */
+  onMoveSection?: (nodeId: string, boundary: number) => void;
 }): WebBridgeSelection {
-  const { iframeRef, nonceRef, onTextCommit, onSelect } = params;
+  const { iframeRef, nonceRef, onTextCommit, onSelect, onMoveSection } = params;
   const [selection, setSelection] = useState<WebSelection | null>(null);
 
   // While a text node is in contenteditable, the frame keeps posting `select`
@@ -65,6 +69,8 @@ export function useWebBridgeSelection(params: {
   onTextCommitRef.current = onTextCommit;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMoveSectionRef = useRef(onMoveSection);
+  onMoveSectionRef.current = onMoveSection;
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -91,6 +97,10 @@ export function useWebBridgeSelection(params: {
       if (message.type === "text-commit") {
         editingRef.current = false;
         onTextCommitRef.current?.(message.nodeId, message.html);
+        return;
+      }
+      if (message.type === "move-section") {
+        onMoveSectionRef.current?.(message.nodeId, message.boundary);
       }
     };
     window.addEventListener("message", onMessage);

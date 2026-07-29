@@ -10,6 +10,8 @@
  * inside — the scene-centric documentStore.
  */
 
+import type { AssetRecord } from "./contracts";
+
 export interface WebDocumentOptions {
   apiBaseUrl: string;
   fetchImpl?: typeof fetch;
@@ -59,7 +61,9 @@ export interface WebNode {
   icon?: string;
   // embed
   html?: string;
-  // component (branch: dialog/accordion/marquee)
+  provider?: string;
+  url?: string | null;
+  // component (branch: dialog/accordion/marquee/nav_menu/carousel/tabs)
   component?: string;
   aria_label?: string;
   single_open?: boolean;
@@ -67,6 +71,11 @@ export interface WebNode {
   speed_s?: number;
   direction?: string;
   pause_on_hover?: boolean;
+  show_arrows?: boolean;
+  autoplay_s?: number;
+  default_tab?: number;
+  // personalization hedge — carried by the schema, ignored by every v0 path.
+  slot_key?: string | null;
 }
 
 /** One web page in a {@link WebDoc}: identity/route plus the flattened node
@@ -350,7 +359,15 @@ export type WebComponentProps =
       speed_s: number;
       direction: "left" | "right";
       pause_on_hover: boolean;
-    };
+    }
+  | { kind: "component"; component: "nav_menu" }
+  | { kind: "component"; component: "carousel"; show_arrows: boolean; autoplay_s?: number }
+  | { kind: "component"; component: "tabs"; default_tab: number };
+
+/** An embed's whole-props payload. The URL form carries the provider (calendly
+ * allowlisted, else custom) + url and an empty html; the snippet form carries
+ * custom html with no url. */
+export type WebEmbedProps = { kind: "embed"; provider?: "calendly" | "custom"; url?: string; html: string };
 
 export type WebNodeProps =
   | { kind: "text"; variant: string; content: string }
@@ -359,7 +376,7 @@ export type WebNodeProps =
   | { kind: "section"; tag: string; anchor_id?: string | null }
   | { kind: "container" }
   | { kind: "icon"; icon: string }
-  | { kind: "embed"; html: string }
+  | WebEmbedProps
   | WebComponentProps;
 
 /** The three actions a button can take — the inspector's "Action" control. */
@@ -444,11 +461,25 @@ export function listDialogComponents(webDoc: WebDoc | null): WebDialogOption[] {
 }
 
 /** A single manual-edit operation (serde snake_case, discriminated by `kind`).
- * v1 exposes the three the inspector + contenteditable commit path emit. */
+ * The inspector + contenteditable commit path emit set_node_classes/set_text/
+ * set_node_props; the insert palette and structural edits emit the tree ops
+ * (insert/move/remove) and asset ops (replace/upsert). */
 export type WebOperation =
   | { kind: "set_node_classes"; page_id: string; id: string; classes: string }
   | { kind: "set_text"; page_id: string; id: string; content: string }
-  | { kind: "set_node_props"; page_id: string; id: string; props: WebNodeProps };
+  | { kind: "set_node_props"; page_id: string; id: string; props: WebNodeProps }
+  | {
+      kind: "insert_node";
+      page_id: string;
+      parent: string;
+      index: number;
+      nodes: WebNode[];
+      root: string;
+    }
+  | { kind: "move_node"; page_id: string; id: string; new_parent: string; index: number }
+  | { kind: "remove_node"; page_id: string; id: string }
+  | { kind: "replace_asset"; page_id: string; id: string; asset_id: string }
+  | { kind: "upsert_asset"; record: AssetRecord };
 
 /** Op builders — the one place a manual-edit payload is shaped, so panels bind
  * fields and call these rather than spelling out op objects inline. */
@@ -462,6 +493,536 @@ export function setTextOp(pageId: string, id: string, content: string): WebOpera
 
 export function setNodePropsOp(pageId: string, id: string, props: WebNodeProps): WebOperation {
   return { kind: "set_node_props", page_id: pageId, id, props };
+}
+
+export function insertNodeOp(
+  pageId: string,
+  parent: string,
+  index: number,
+  nodes: WebNode[],
+  root: string
+): WebOperation {
+  return { kind: "insert_node", page_id: pageId, parent, index, nodes, root };
+}
+
+export function moveNodeOp(
+  pageId: string,
+  id: string,
+  newParent: string,
+  index: number
+): WebOperation {
+  return { kind: "move_node", page_id: pageId, id, new_parent: newParent, index };
+}
+
+export function removeNodeOp(pageId: string, id: string): WebOperation {
+  return { kind: "remove_node", page_id: pageId, id };
+}
+
+export function replaceAssetOp(pageId: string, id: string, assetId: string): WebOperation {
+  return { kind: "replace_asset", page_id: pageId, id, asset_id: assetId };
+}
+
+export function upsertAssetOp(record: AssetRecord): WebOperation {
+  return { kind: "upsert_asset", record };
+}
+
+// ── structural editing: id minting, tree lookup, insert placement, subtrees ───
+
+const HEX_DIGITS = "0123456789abcdef";
+
+/** Six random hex characters — the mint suffix. */
+function hex6(rng: () => number = Math.random): string {
+  let out = "";
+  for (let i = 0; i < 6; i += 1) {
+    out += HEX_DIGITS[Math.floor(rng() * 16)];
+  }
+  return out;
+}
+
+/**
+ * Mint a fresh node id `${prefix}_${6 hex}`, re-rolling while the candidate
+ * already lives in `existing` (any id in the page, plus ids minted earlier in
+ * the same batch). The chosen id is added to `existing` so a caller minting a
+ * whole subtree keeps every id distinct. `gen` is injectable for deterministic
+ * tests (defaults to random hex).
+ */
+export function mint(
+  prefix: string,
+  existing: Set<string>,
+  gen: () => string = () => hex6()
+): string {
+  let candidate = `${prefix}_${gen()}`;
+  while (existing.has(candidate)) {
+    candidate = `${prefix}_${gen()}`;
+  }
+  existing.add(candidate);
+  return candidate;
+}
+
+/** Every node id in a page (the mint collision set). */
+export function pageNodeIds(page: WebPageSummary): Set<string> {
+  return new Set(Object.keys(page.nodes ?? {}));
+}
+
+/** The node whose `children` list contains `id`, or null when `id` is the root
+ * / detached. The arena stores no parent pointers, so this scans the map. */
+export function parentOfInPage(page: WebPageSummary, id: string): WebNode | null {
+  const nodes = page.nodes ?? {};
+  for (const node of Object.values(nodes)) {
+    if (node.children?.includes(id)) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/** The top-level section that contains `id` (walking up the arena), or null
+ * when `id` is not inside one. Sections may only live at root level, so a
+ * Section insertable resolves its placement against this. */
+export function enclosingSectionOf(page: WebPageSummary, id: string): WebNode | null {
+  const nodes = page.nodes ?? {};
+  const rootId = page.root ?? "root";
+  let current: WebNode | undefined | null = nodes[id];
+  while (current) {
+    const parent = parentOfInPage(page, current.id);
+    if (parent?.id === rootId) {
+      return current;
+    }
+    current = parent;
+  }
+  return null;
+}
+
+/**
+ * Where a palette insert lands, per the placement rule:
+ *   • no selection (or a stale id) → end of the page root's children;
+ *   • a Section selected → its next sibling (under the root);
+ *   • a Container/Component (branch) selected → appended into it;
+ *   • a leaf selected → after that leaf, inside its parent.
+ * A SECTION insertable overrides all of this (`forSection`): sections may
+ * only live at root level, so it lands after the selection's enclosing
+ * top-level section (or at the root's end) — never inside a container.
+ */
+export function deriveInsertPlacement(
+  page: WebPageSummary,
+  selectedNodeId: string | null,
+  forSection = false
+): { parent: string; index: number } {
+  if (forSection) {
+    const rootId = page.root ?? "root";
+    const nodes = page.nodes ?? {};
+    const rootChildren = nodes[rootId]?.children ?? [];
+    const enclosing = selectedNodeId ? enclosingSectionOf(page, selectedNodeId) : null;
+    const at = enclosing ? rootChildren.indexOf(enclosing.id) : -1;
+    return { parent: rootId, index: at >= 0 ? at + 1 : rootChildren.length };
+  }
+  const rootId = page.root ?? "root";
+  const nodes = page.nodes ?? {};
+  const rootChildren = nodes[rootId]?.children ?? [];
+  const selected = selectedNodeId ? nodes[selectedNodeId] : undefined;
+  if (!selectedNodeId || !selected) {
+    return { parent: rootId, index: rootChildren.length };
+  }
+  if (selected.kind === "section") {
+    const parent = parentOfInPage(page, selectedNodeId);
+    const parentId = parent?.id ?? rootId;
+    const siblings = parent?.children ?? rootChildren;
+    const at = siblings.indexOf(selectedNodeId);
+    return { parent: parentId, index: at >= 0 ? at + 1 : siblings.length };
+  }
+  if (selected.kind === "container" || selected.kind === "component") {
+    return { parent: selectedNodeId, index: selected.children?.length ?? 0 };
+  }
+  // A leaf: insert after it inside its parent.
+  const parent = parentOfInPage(page, selectedNodeId);
+  if (!parent) {
+    return { parent: rootId, index: rootChildren.length };
+  }
+  const at = parent.children?.indexOf(selectedNodeId) ?? -1;
+  return { parent: parent.id, index: at >= 0 ? at + 1 : parent.children?.length ?? 0 };
+}
+
+/** The insertables the palette offers. Kept beside the subtree builder so the
+ * menu labels and the built nodes never drift. */
+export type InsertableKind =
+  | "section"
+  | "row"
+  | "column"
+  | "text"
+  | "button"
+  | "icon"
+  | "image"
+  | "dialog"
+  | "accordion"
+  | "marquee"
+  | "nav_menu"
+  | "carousel"
+  | "tabs"
+  | "embed";
+
+/** The asset an Image insert binds to. */
+export interface InsertImageInput {
+  assetId: string;
+  alt: string;
+}
+
+/** A built subtree ready for an insert_node op: every node (children before or
+ * after parents, any order) plus the id of its root. */
+export interface BuiltSubtree {
+  nodes: WebNode[];
+  root: string;
+}
+
+/** The wrap-scaffold container classes — a centered content column. Reused by
+ * the Section insertable and the root-wrap rule. */
+const WRAP_CONTAINER_CLASSES = "mx-auto max-w-[1180px] px-6 py-20 flex flex-col gap-6";
+
+/** Build one insertable's default subtree, minting fresh ids into `existing`.
+ * Classes are theme-token-only so the result is lint-clean. */
+function buildInsertableSubtree(
+  kind: InsertableKind,
+  existing: Set<string>,
+  gen: () => string,
+  image?: InsertImageInput
+): BuiltSubtree {
+  const id = (prefix: string) => mint(prefix, existing, gen);
+  const text = (variant: string, content: string, classes = ""): WebNode => ({
+    id: id("txt"),
+    kind: "text",
+    variant,
+    content,
+    classes
+  });
+
+  switch (kind) {
+    case "section": {
+      const heading = text("h2", "New section");
+      const container: WebNode = {
+        id: id("box"),
+        kind: "container",
+        classes: WRAP_CONTAINER_CLASSES,
+        children: [heading.id]
+      };
+      const section: WebNode = {
+        id: id("sec"),
+        kind: "section",
+        tag: "section",
+        classes: "",
+        children: [container.id]
+      };
+      return { nodes: [heading, container, section], root: section.id };
+    }
+    case "row": {
+      const container: WebNode = {
+        id: id("row"),
+        kind: "container",
+        classes: "flex flex-col gap-6 md:flex-row md:items-center",
+        children: []
+      };
+      return { nodes: [container], root: container.id };
+    }
+    case "column": {
+      const container: WebNode = {
+        id: id("col"),
+        kind: "container",
+        classes: "flex flex-col gap-4",
+        children: []
+      };
+      return { nodes: [container], root: container.id };
+    }
+    case "text": {
+      const node = text("body", "New text");
+      return { nodes: [node], root: node.id };
+    }
+    case "button": {
+      const node: WebNode = {
+        id: id("btn"),
+        kind: "button",
+        label: "New button",
+        variant: "secondary",
+        href: "#",
+        new_tab: false,
+        classes: ""
+      };
+      return { nodes: [node], root: node.id };
+    }
+    case "icon": {
+      const node: WebNode = {
+        id: id("icn"),
+        kind: "icon",
+        icon: "sparkles",
+        classes: "size-6 text-primary"
+      };
+      return { nodes: [node], root: node.id };
+    }
+    case "image": {
+      const node: WebNode = {
+        id: id("img"),
+        kind: "image",
+        asset_id: image?.assetId ?? "",
+        alt: image?.alt ?? "",
+        classes: ""
+      };
+      return { nodes: [node], root: node.id };
+    }
+    case "dialog": {
+      const title = text("h3", "Dialog title");
+      const copy = text("body", "Dialog copy.");
+      const container: WebNode = {
+        id: id("box"),
+        kind: "container",
+        classes: "p-8 flex flex-col gap-4",
+        children: [title.id, copy.id]
+      };
+      const dialog: WebNode = {
+        id: id("dlg"),
+        kind: "component",
+        component: "dialog",
+        aria_label: "Dialog",
+        classes: "",
+        children: [container.id]
+      };
+      return { nodes: [title, copy, container, dialog], root: dialog.id };
+    }
+    case "accordion": {
+      const items: WebNode[] = [];
+      const itemIds: string[] = [];
+      for (let i = 0; i < 2; i += 1) {
+        const question = text("h4", "Question");
+        const answer = text("body", "Answer.");
+        const item: WebNode = {
+          id: id("box"),
+          kind: "container",
+          classes: "flex flex-col gap-2",
+          children: [question.id, answer.id]
+        };
+        items.push(question, answer, item);
+        itemIds.push(item.id);
+      }
+      const accordion: WebNode = {
+        id: id("acc"),
+        kind: "component",
+        component: "accordion",
+        single_open: true,
+        classes: "",
+        children: itemIds
+      };
+      return { nodes: [...items, accordion], root: accordion.id };
+    }
+    case "marquee": {
+      const one = text("small", "Logo one");
+      const two = text("small", "Logo two");
+      const marquee: WebNode = {
+        id: id("mrq"),
+        kind: "component",
+        component: "marquee",
+        classes: "",
+        children: [one.id, two.id]
+      };
+      return { nodes: [one, two, marquee], root: marquee.id };
+    }
+    case "nav_menu": {
+      const one: WebNode = {
+        id: id("btn"),
+        kind: "button",
+        label: "Item one",
+        variant: "link",
+        href: "#",
+        new_tab: false,
+        classes: ""
+      };
+      const two: WebNode = {
+        id: id("btn"),
+        kind: "button",
+        label: "Item two",
+        variant: "link",
+        href: "#",
+        new_tab: false,
+        classes: ""
+      };
+      const nav: WebNode = {
+        id: id("nav"),
+        kind: "component",
+        component: "nav_menu",
+        classes: "",
+        children: [one.id, two.id]
+      };
+      return { nodes: [one, two, nav], root: nav.id };
+    }
+    case "carousel": {
+      const slides: WebNode[] = [];
+      const slideIds: string[] = [];
+      for (let i = 0; i < 2; i += 1) {
+        const heading = text("h4", "Slide title");
+        const copy = text("body", "Slide copy.");
+        const slide: WebNode = {
+          id: id("box"),
+          kind: "container",
+          classes: "w-72 p-6 rounded-2xl bg-card flex flex-col gap-2",
+          children: [heading.id, copy.id]
+        };
+        slides.push(heading, copy, slide);
+        slideIds.push(slide.id);
+      }
+      const carousel: WebNode = {
+        id: id("car"),
+        kind: "component",
+        component: "carousel",
+        show_arrows: true,
+        classes: "",
+        children: slideIds
+      };
+      return { nodes: [...slides, carousel], root: carousel.id };
+    }
+    case "tabs": {
+      const items: WebNode[] = [];
+      const itemIds: string[] = [];
+      const labels = ["Tab one", "Tab two"];
+      for (let i = 0; i < 2; i += 1) {
+        const label = text("small", labels[i]);
+        const panel = text("body", "Panel copy.");
+        const item: WebNode = {
+          id: id("box"),
+          kind: "container",
+          classes: "flex flex-col gap-2",
+          children: [label.id, panel.id]
+        };
+        items.push(label, panel, item);
+        itemIds.push(item.id);
+      }
+      const tabs: WebNode = {
+        id: id("tab"),
+        kind: "component",
+        component: "tabs",
+        default_tab: 0,
+        classes: "",
+        children: itemIds
+      };
+      return { nodes: [...items, tabs], root: tabs.id };
+    }
+    case "embed": {
+      const node: WebNode = {
+        id: id("emb"),
+        kind: "embed",
+        provider: "custom",
+        html: "",
+        classes: "h-[480px]"
+      };
+      return { nodes: [node], root: node.id };
+    }
+    default: {
+      const node = text("body", "New text");
+      return { nodes: [node], root: node.id };
+    }
+  }
+}
+
+/**
+ * Build the insert_node op for one palette choice: derive placement from the
+ * current selection, build the subtree, and — when landing directly under the
+ * page root with a non-Section insertable — wrap it in a Section+Container
+ * scaffold so the root's children stay sections (validation enforces this).
+ */
+export function buildInsertNodeOp(params: {
+  page: WebPageSummary;
+  selectedNodeId: string | null;
+  kind: InsertableKind;
+  image?: InsertImageInput;
+  gen?: () => string;
+}): WebOperation {
+  const { page, selectedNodeId, kind, image } = params;
+  const gen = params.gen ?? (() => hex6());
+  const existing = pageNodeIds(page);
+  const placement = deriveInsertPlacement(page, selectedNodeId, kind === "section");
+  const rootId = page.root ?? "root";
+  let subtree = buildInsertableSubtree(kind, existing, gen, image);
+
+  if (placement.parent === rootId && kind !== "section") {
+    const container: WebNode = {
+      id: mint("box", existing, gen),
+      kind: "container",
+      classes: WRAP_CONTAINER_CLASSES,
+      children: [subtree.root]
+    };
+    const section: WebNode = {
+      id: mint("sec", existing, gen),
+      kind: "section",
+      tag: "section",
+      classes: "",
+      children: [container.id]
+    };
+    subtree = { nodes: [...subtree.nodes, container, section], root: section.id };
+  }
+
+  return insertNodeOp(page.id, placement.parent, placement.index, subtree.nodes, subtree.root);
+}
+
+/**
+ * Deep-copy a node's subtree from the page, reminting EVERY id (children arrays
+ * remapped through the old→new map), for a Duplicate. Returns the fresh nodes
+ * plus the new root id, or null when the node isn't in the page.
+ */
+export function duplicateSubtree(
+  page: WebPageSummary,
+  nodeId: string,
+  gen: () => string = () => hex6()
+): BuiltSubtree | null {
+  const nodes = page.nodes ?? {};
+  if (!nodes[nodeId]) {
+    return null;
+  }
+  // Collect the subtree (preorder), guarding against a malformed cycle.
+  const collected: WebNode[] = [];
+  const seen = new Set<string>();
+  const stack = [nodeId];
+  while (stack.length > 0) {
+    const current = stack.pop() as string;
+    const node = nodes[current];
+    if (!node || seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+    collected.push(node);
+    const children = node.children ?? [];
+    for (let i = children.length - 1; i >= 0; i -= 1) {
+      stack.push(children[i]);
+    }
+  }
+  const existing = new Set(Object.keys(nodes));
+  const idMap = new Map<string, string>();
+  for (const node of collected) {
+    const cut = node.id.indexOf("_");
+    const prefix = cut > 0 ? node.id.slice(0, cut) : node.id;
+    idMap.set(node.id, mint(prefix, existing, gen));
+  }
+  const cloned = collected.map((node) => ({
+    ...node,
+    id: idMap.get(node.id) as string,
+    children: node.children ? node.children.map((child) => idMap.get(child) ?? child) : undefined
+  }));
+  return { nodes: cloned, root: idMap.get(nodeId) as string };
+}
+
+/** The MoveNode target index for a move to `boundary` among the current
+ * top-level sections: dropping below the source shifts the boundary down one
+ * (the source is removed before the insert). See the section drag-reorder. */
+export function moveSectionIndex(from: number, boundary: number): number {
+  return boundary > from ? boundary - 1 : boundary;
+}
+
+/** Classify a committed embed URL into whole-props: a calendly.com link →
+ * calendly provider; any other https:// URL → custom; a non-https URL is
+ * rejected (returns null so the card shows an inline error and does not
+ * commit). */
+export function classifyEmbedUrl(raw: string): WebEmbedProps | null {
+  const url = raw.trim();
+  if (!/^https:\/\//i.test(url)) {
+    return null;
+  }
+  if (/^https:\/\/([a-z0-9-]+\.)?calendly\.com\//i.test(url)) {
+    return { kind: "embed", provider: "calendly", url, html: "" };
+  }
+  return { kind: "embed", provider: "custom", url, html: "" };
 }
 
 /** One validation diagnostic returned with a 422 invalid-batch rejection. */
