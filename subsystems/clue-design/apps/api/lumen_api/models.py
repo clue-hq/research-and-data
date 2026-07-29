@@ -168,6 +168,14 @@ class WebOperationsRequest(BaseModel):
     intent: Optional[str] = None
 
 
+class WebPublishRequest(BaseModel):
+    """Publish a website-mode document to a public slug. An omitted/None slug is
+    derived from the document title; a provided slug is validated against the
+    public-slug charset by the endpoint."""
+
+    slug: Optional[str] = None
+
+
 class SetAgentInstructionsRequest(BaseModel):
     instructions: Optional[str] = None
 

@@ -35,6 +35,7 @@ import { useWebManualEdits } from "@/hooks/useWebManualEdits";
 import { WebInspectorPanel } from "@/components/web/WebInspectorPanel";
 import { WebInsertPalette } from "@/components/web/WebInsertPalette";
 import { WebAssetDrawer } from "@/components/web/WebAssetDrawer";
+import { WebPublishDialog } from "@/components/web/WebPublishDialog";
 import { selectionChipLabel, type WebSelection } from "@/engine/webBridge";
 
 /**
@@ -247,6 +248,8 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const [renderError, setRenderError] = useState<string | null>(null);
 
   const [railMode, setRailMode] = useState<RailMode>("chat");
+  // The publish modal's open state.
+  const [publishOpen, setPublishOpen] = useState(false);
   const [theme, setTheme] = useState<WebTheme | null>(null);
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
@@ -623,6 +626,23 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   };
 
   const title = document?.title ?? "Website";
+
+  // Export the built site as a zip: the endpoint sets Content-Disposition, so an
+  // anchor click to the absolute API URL is enough (no fetch/blob). `document`
+  // is shadowed by the loaded doc in this scope — reach the DOM via `window`.
+  const handleExport = useCallback(() => {
+    const href = new URL(
+      `/documents/${encodeURIComponent(documentId)}/web/export`,
+      editorApiBaseUrl()
+    ).toString();
+    const anchor = window.document.createElement("a");
+    anchor.href = href;
+    anchor.rel = "noopener";
+    window.document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }, [documentId]);
+
   const liveActivity = pending ? condenseEvents(turn.events) : [];
   const holderStyle: React.CSSProperties | undefined =
     widthMode === "fluid" ? undefined : { width: `${widthMode}px` };
@@ -731,10 +751,36 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
             ))}
           </div>
         ) : null}
+        {state.kind === "ready" ? (
+          <div className="web-topbar-actions" role="group" aria-label="Publish">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleExport}
+            >
+              Export
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setPublishOpen(true)}
+            >
+              Publish
+            </button>
+          </div>
+        ) : null}
         <Link href="/new" className="web-back-link">
           New project
         </Link>
       </header>
+
+      {publishOpen && state.kind === "ready" ? (
+        <WebPublishDialog
+          documentId={documentId}
+          title={title}
+          onClose={() => setPublishOpen(false)}
+        />
+      ) : null}
 
       {state.kind === "loading" ? (
         <div className="web-notice" role="status">

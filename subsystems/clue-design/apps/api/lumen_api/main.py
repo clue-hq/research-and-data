@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ import sqlite3
 import sys
 import threading
 import time
+import zipfile
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -28,9 +30,15 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
 
-from . import image_cache, image_provider
+from . import image_cache, image_provider, web_export
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .database import NotFoundError, Repository, connect, run_migrations, utc_now
 from .font_library import manifest as font_library_manifest
@@ -60,6 +68,7 @@ from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
     WebOperationsRequest,
+    WebPublishRequest,
     SetAgentInstructionsRequest,
     SetLayoutManagedEditingRequest,
     AttachBrandKitRequest,
@@ -194,6 +203,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
     app.state.web_turn_runner = None
+    # Website-mode static-export node binary; the export/publish paths shell out
+    # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
+    # to exercise the honest compile-failure path.
+    app.state.web_export_node_bin = "node"
     if migrate:
         run_migrations(app.state.database_path)
 
@@ -2326,6 +2339,222 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "diagnostics": diagnostics,
         }
 
+    @app.get("/documents/{document_id}/web/export")
+    def export_web_document(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> Response:
+        # Build a self-contained static-site zip (delivery html + statically
+        # compiled site.css + embedded fonts + copied image bytes + SEO +
+        # manifest). A compile failure fails the request honestly (502) rather
+        # than shipping an unstyled zip.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        try:
+            bundle = web_export.build_export_bundle(
+                app.state.core,
+                repo,
+                document,
+                store_root=asset_store_root(),
+                database_path=app.state.database_path,
+                generated_at=utc_now(),
+                node_bin=app.state.web_export_node_bin,
+            )
+        except web_export.WebExportCompileError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "web_export.compile_failed",
+                    "message": error.stderr or "static css compile failed",
+                },
+            ) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "web_export.failed", "message": str(error)},
+            ) from error
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(bundle.files):
+                archive.writestr(path, bundle.files[path])
+        buffer.seek(0)
+        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.zip"
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_export_completed",
+            document_id=document_id,
+            file_count=len(bundle.files),
+            warning_count=len(bundle.warnings),
+        )
+        return Response(
+            content=buffer.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.post("/documents/{document_id}/web/publish")
+    def publish_web_document(
+        document_id: str,
+        payload: WebPublishRequest,
+        request: Request,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        slug = (payload.slug or "").strip() or web_default_slug(
+            document["title"], document_id
+        )
+        if not WEB_SLUG_PATTERN.fullmatch(slug):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_publish.bad_slug",
+                    "message": (
+                        f"slug {slug!r} must match ^[a-z0-9][a-z0-9-]{{2,63}}$"
+                    ),
+                },
+            )
+        existing = repo.get_web_publish(slug)
+        if existing is not None and existing["document_id"] != document_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "web_publish.slug_taken",
+                    "message": (
+                        f"slug {slug!r} is already published by another document"
+                    ),
+                },
+            )
+        public_base = str(request.base_url).rstrip("/")
+        try:
+            html, runtime_version, _warnings = web_export.build_publish_html(
+                app.state.core,
+                repo,
+                document,
+                store_root=asset_store_root(),
+                database_path=app.state.database_path,
+                slug=slug,
+                public_base=public_base,
+                node_bin=app.state.web_export_node_bin,
+            )
+        except web_export.WebExportCompileError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "web_export.compile_failed",
+                    "message": error.stderr or "static css compile failed",
+                },
+            ) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "web_export.failed", "message": str(error)},
+            ) from error
+
+        publish = repo.upsert_web_publish(
+            slug,
+            document_id,
+            document["current_version"],
+            html,
+            runtime_version,
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_publish_completed",
+            document_id=document_id,
+            slug=slug,
+            doc_version=publish["doc_version"],
+        )
+        return {
+            "schema_version": 1,
+            "slug": slug,
+            "url": f"/p/{slug}",
+            "doc_version": publish["doc_version"],
+            "runtime_version": publish["runtime_version"],
+            "previous_available": publish["previous_html"] is not None,
+        }
+
+    @app.get("/documents/{document_id}/web/publish")
+    def get_web_publish_state(
+        document_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        publish = repo.get_web_publish_for_document(document_id)
+        if publish is None:
+            return {"schema_version": 1, "published": False}
+        return {
+            "schema_version": 1,
+            "published": True,
+            "slug": publish["slug"],
+            "url": f"/p/{publish['slug']}",
+            "doc_version": publish["doc_version"],
+            "status": publish["status"],
+            "previous_available": publish["previous_html"] is not None,
+            "updated_at": publish["updated_at"],
+        }
+
+    @app.delete("/web/publishes/{slug}")
+    def unpublish_web_document(
+        slug: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        publish = repo.set_web_publish_status(slug, "unpublished")
+        if publish is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "web_publish.not_found",
+                    "message": f"no publish for slug {slug!r}",
+                },
+            )
+        return {"schema_version": 1, "slug": slug, "status": publish["status"]}
+
+    @app.post("/web/publishes/{slug}/rollback")
+    def rollback_web_document(
+        slug: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        result = repo.rollback_web_publish(slug)
+        if result == "not_found":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "web_publish.not_found",
+                    "message": f"no publish for slug {slug!r}",
+                },
+            )
+        if result == "no_previous":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "web_publish.no_previous",
+                    "message": f"slug {slug!r} has no previous publish to roll back to",
+                },
+            )
+        return {
+            "schema_version": 1,
+            "slug": slug,
+            "doc_version": result["doc_version"],
+            "status": result["status"],
+        }
+
+    @app.get("/p/{slug}")
+    def serve_published_page(
+        slug: str, repo: Repository = Depends(repository)
+    ) -> HTMLResponse:
+        publish = repo.get_web_publish(slug)
+        if publish is None or publish["status"] != "active":
+            return HTMLResponse(
+                content=(
+                    "<!doctype html><html><head><meta charset=\"utf-8\">"
+                    "<title>Not found</title></head><body><h1>404</h1>"
+                    "<p>No published page at this address.</p></body></html>"
+                ),
+                status_code=404,
+            )
+        return HTMLResponse(content=publish["html"], status_code=200)
+
     @app.post("/documents/{document_id}/export")
     def export_document(
         document_id: str,
@@ -4001,6 +4230,31 @@ def require_web_document(document: JsonObject) -> None:
                 ),
             },
         )
+
+
+# Public publish-slug contract: a lowercase alnum/dash token, 3..64 chars,
+# starting with an alnum. Shared by the default-slug builder and the endpoint's
+# validation so both agree.
+WEB_SLUG_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{2,63}")
+
+
+def web_slugify(value: str) -> str:
+    """Lowercase, replace any non-alnum run with a single dash, and trim dashes.
+    An empty result falls back to 'site' so a slug is always emittable."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug or "site"
+
+
+def web_default_slug(title: str, document_id: str) -> str:
+    """The default publish slug: the slugified title plus a short document-id
+    suffix for uniqueness, clamped to the public-slug charset + length."""
+    base = web_slugify(title)
+    suffix = re.sub(r"[^a-z0-9]+", "", document_id[-4:].lower()) or "0000"
+    slug = f"{base}-{suffix}"
+    if len(slug) < 3:
+        slug = (slug + "site")[:3]
+    return slug[:64]
 
 
 def require_draft_document(document: JsonObject, action: str) -> None:

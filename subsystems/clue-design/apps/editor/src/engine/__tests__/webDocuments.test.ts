@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildInsertNodeOp,
@@ -6,15 +6,29 @@ import {
   classifyEmbedUrl,
   deriveInsertPlacement,
   duplicateSubtree,
+  fetchWebPublishInfo,
   isWebButtonCommandProps,
   listDialogComponents,
   mint,
   moveSectionIndex,
+  publishWebDocument,
+  rollbackWebPublish,
+  suggestPublishSlug,
+  unpublishWebSite,
   webNodeButtonAction,
   type WebDoc,
   type WebNode,
   type WebPageSummary
 } from "../webDocuments";
+
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,63}$/;
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
+}
 
 function buttonNode(overrides: Partial<WebNode>): WebNode {
   return { id: "cta", kind: "button", classes: "", label: "Get started", variant: "primary", ...overrides };
@@ -358,5 +372,206 @@ describe("classifyEmbedUrl", () => {
     expect(classifyEmbedUrl("http://widget.example/embed")).toBeNull();
     expect(classifyEmbedUrl("calendly.com/x")).toBeNull();
     expect(classifyEmbedUrl("")).toBeNull();
+  });
+});
+
+// ── publish ──────────────────────────────────────────────────────────────────
+
+describe("suggestPublishSlug", () => {
+  it("slugifies the title and appends the document id's last 4 chars", () => {
+    const slug = suggestPublishSlug("My Cool Site", "doc_ab12");
+    expect(slug).toBe("my-cool-site-ab12");
+    expect(slug).toMatch(SLUG_RE);
+  });
+
+  it("collapses non-alnum runs to a single hyphen and trims the ends", () => {
+    const slug = suggestPublishSlug("  My   Cool!!! Site??? ", "doc_9f3a");
+    expect(slug).toBe("my-cool-site-9f3a");
+    expect(slug).toMatch(SLUG_RE);
+  });
+
+  it("clamps the result to 64 characters", () => {
+    const slug = suggestPublishSlug("word ".repeat(40), "doc_ab12");
+    expect(slug.length).toBeLessThanOrEqual(64);
+    expect(slug).toMatch(SLUG_RE);
+    // No dangling hyphen after the clamp.
+    expect(slug.endsWith("-")).toBe(false);
+  });
+
+  it("falls back to 'site' for a non-latin (or empty) title", () => {
+    const nonLatin = suggestPublishSlug("日本語のサイト", "doc_ab12");
+    expect(nonLatin).toBe("site-ab12");
+    expect(nonLatin).toMatch(SLUG_RE);
+    expect(suggestPublishSlug("", "doc_ab12")).toBe("site-ab12");
+    expect(suggestPublishSlug("   ", "doc_ab12")).toBe("site-ab12");
+  });
+});
+
+describe("fetchWebPublishInfo", () => {
+  it("returns the unpublished state", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { published: false })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123"
+    );
+    expect(info.published).toBe(false);
+    expect(info.slug).toBeNull();
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "http://localhost:8002/documents/doc_abc123/web/publish"
+    );
+  });
+
+  it("maps the published state's snake_case fields", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        published: true,
+        slug: "acme",
+        url: "/p/acme",
+        doc_version: 7,
+        status: "published",
+        previous_available: true,
+        updated_at: "2026-07-29T00:00:00Z"
+      })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123"
+    );
+    expect(info).toEqual({
+      published: true,
+      slug: "acme",
+      url: "/p/acme",
+      docVersion: 7,
+      status: "published",
+      previousAvailable: true,
+      updatedAt: "2026-07-29T00:00:00Z"
+    });
+  });
+
+  it("throws the server message on a non-2xx", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(500, { detail: "boom" }));
+    await expect(
+      fetchWebPublishInfo({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123")
+    ).rejects.toThrow("boom");
+  });
+});
+
+describe("publishWebDocument", () => {
+  it("posts the slug and maps the result", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        schema_version: 3,
+        slug: "acme",
+        url: "/p/acme",
+        doc_version: 2,
+        runtime_version: "v1",
+        previous_available: false
+      })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "acme"
+    );
+    expect(result).toEqual({
+      schemaVersion: 3,
+      slug: "acme",
+      url: "/p/acme",
+      docVersion: 2,
+      runtimeVersion: "v1",
+      previousAvailable: false
+    });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web/publish");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ slug: "acme" });
+  });
+
+  it("omits the slug from the body when none is passed", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { slug: "acme", url: "/p/acme" }));
+    await publishWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123");
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({});
+  });
+
+  it("surfaces the 422 bad-slug message", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(422, { detail: "Slug must be lowercase." }));
+    await expect(
+      publishWebDocument(
+        { apiBaseUrl: "http://localhost:8002", fetchImpl },
+        "doc_abc123",
+        "BAD SLUG"
+      )
+    ).rejects.toThrow("Slug must be lowercase.");
+  });
+
+  it("surfaces the 409 slug-taken message", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(409, { detail: { message: "Slug already in use." } }));
+    await expect(
+      publishWebDocument(
+        { apiBaseUrl: "http://localhost:8002", fetchImpl },
+        "doc_abc123",
+        "acme"
+      )
+    ).rejects.toThrow("Slug already in use.");
+  });
+});
+
+describe("unpublishWebSite", () => {
+  it("DELETEs the slug and maps the result", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { slug: "acme", status: "unpublished" }));
+    const result = await unpublishWebSite(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "acme"
+    );
+    expect(result).toEqual({ slug: "acme", status: "unpublished" });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/web/publishes/acme");
+    expect(init?.method).toBe("DELETE");
+  });
+
+  it("throws the server message on a non-2xx", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(404, { detail: "Not found." }));
+    await expect(
+      unpublishWebSite({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "acme")
+    ).rejects.toThrow("Not found.");
+  });
+});
+
+describe("rollbackWebPublish", () => {
+  it("POSTs the rollback and maps the result", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { slug: "acme", doc_version: 4, status: "published" })
+    );
+    const result = await rollbackWebPublish(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "acme"
+    );
+    expect(result).toEqual({ slug: "acme", docVersion: 4, status: "published" });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe("http://localhost:8002/web/publishes/acme/rollback");
+    expect(init?.method).toBe("POST");
+  });
+
+  it("surfaces the 409 no-previous message", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(409, { detail: "No previous version to roll back to." }));
+    await expect(
+      rollbackWebPublish({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "acme")
+    ).rejects.toThrow("No previous version to roll back to.");
   });
 });

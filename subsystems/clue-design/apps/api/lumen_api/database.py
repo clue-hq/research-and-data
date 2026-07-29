@@ -1513,6 +1513,110 @@ class Repository:
             ).fetchone()
         return diagnostics_from_row(row) if row else None
 
+    # --- Website-mode publishes ------------------------------------------- #
+
+    def upsert_web_publish(
+        self,
+        slug: str,
+        document_id: str,
+        doc_version: int,
+        html: str,
+        runtime_version: Optional[int],
+    ) -> JsonObject:
+        """Publish (or republish) ``slug``. On an existing row the current
+        html/doc_version move into previous_* (the single-step rollback buffer)
+        and the new payload becomes current, status 'active' — all in one atomic
+        UPSERT so a republish can never observe a half-swapped row."""
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO web_publishes (
+              slug, document_id, doc_version, html, previous_html,
+              previous_doc_version, runtime_version, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, NULL, NULL, ?, 'active', ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+              document_id = excluded.document_id,
+              doc_version = excluded.doc_version,
+              html = excluded.html,
+              previous_html = web_publishes.html,
+              previous_doc_version = web_publishes.doc_version,
+              runtime_version = excluded.runtime_version,
+              status = 'active',
+              updated_at = excluded.updated_at
+            """,
+            (slug, document_id, doc_version, html, runtime_version, now, now),
+        )
+        self.connection.commit()
+        return self.require_web_publish(slug)
+
+    def require_web_publish(self, slug: str) -> JsonObject:
+        publish = self.get_web_publish(slug)
+        if publish is None:
+            raise NotFoundError("web_publish", slug)
+        return publish
+
+    def get_web_publish(self, slug: str) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            "SELECT * FROM web_publishes WHERE slug = ?", (slug,)
+        ).fetchone()
+        return web_publish_from_row(row) if row else None
+
+    def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            """
+            SELECT * FROM web_publishes
+            WHERE document_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (document_id,),
+        ).fetchone()
+        return web_publish_from_row(row) if row else None
+
+    def set_web_publish_status(
+        self, slug: str, status: str
+    ) -> Optional[JsonObject]:
+        cursor = self.connection.execute(
+            "UPDATE web_publishes SET status = ?, updated_at = ? WHERE slug = ?",
+            (status, utc_now(), slug),
+        )
+        self.connection.commit()
+        if cursor.rowcount == 0:
+            return None
+        return self.get_web_publish(slug)
+
+    def rollback_web_publish(self, slug: str) -> Any:
+        """Swap current and previous html/doc_version (a one-step undo of the
+        last publish) and re-activate. Returns the updated publish dict, or a
+        string marker: 'not_found' (unknown slug) or 'no_previous' (nothing to
+        roll back to)."""
+        row = self.connection.execute(
+            "SELECT * FROM web_publishes WHERE slug = ?", (slug,)
+        ).fetchone()
+        if row is None:
+            return "not_found"
+        if row["previous_html"] is None:
+            return "no_previous"
+        # A single UPDATE evaluates every SET expression against the ORIGINAL
+        # row, so reading and writing html/previous_html in one statement swaps
+        # them atomically.
+        self.connection.execute(
+            """
+            UPDATE web_publishes SET
+              html = previous_html,
+              doc_version = previous_doc_version,
+              previous_html = html,
+              previous_doc_version = doc_version,
+              status = 'active',
+              updated_at = ?
+            WHERE slug = ?
+            """,
+            (utc_now(), slug),
+        )
+        self.connection.commit()
+        return self.require_web_publish(slug)
+
 
 def encode(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -1563,6 +1667,21 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
         "layout_managed_editing": bool(row["layout_managed_editing"])
         if "layout_managed_editing" in columns
         else False,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def web_publish_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "slug": row["slug"],
+        "document_id": row["document_id"],
+        "doc_version": row["doc_version"],
+        "html": row["html"],
+        "previous_html": row["previous_html"],
+        "previous_doc_version": row["previous_doc_version"],
+        "runtime_version": row["runtime_version"],
+        "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

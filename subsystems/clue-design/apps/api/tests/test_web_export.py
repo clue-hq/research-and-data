@@ -1,0 +1,445 @@
+"""Website-mode static export + publish (P4).
+
+Drives the real core helper (set LUMEN_CORE_HELPER to the release binary) and the
+real node Tailwind toolchain (scripts/web_static_css.mjs) end-to-end: an export
+is a full zip, a publish is a self-contained served page. Temp DBs + asset store
+via the shared `client` fixture.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import zipfile
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from lumen_api.database import Repository, connect
+from lumen_api.main import create_app
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+ACME_KIT_PATH = REPO_ROOT / "crates/lumen-core/fixtures/brand_kits/acme_full.json"
+
+SAMPLE_HTML = """
+<header id="site_header" class="bg-light border-b border-border">
+  <div class="mx-auto max-w-[1200px] px-6 py-4 flex items-center justify-between">
+    <p data-variant="overline" class="text-primary">Acme</p>
+    <a data-button="primary" href="https://acme.test/demo">Get started</a>
+  </div>
+</header>
+<section id="hero" class="bg-light">
+  <div class="mx-auto max-w-[1200px] px-6 py-24 flex flex-col items-center gap-6 text-center">
+    <p data-variant="overline" class="text-primary">Developer tools</p>
+    <h1 data-variant="display" class="max-w-[820px]">Ship faster with Acme</h1>
+    <p class="text-muted max-w-[640px]">Acme helps teams build and launch quickly.</p>
+    <a data-button="primary" href="https://acme.test/demo">Get started</a>
+  </div>
+</section>
+<footer id="site_footer" class="bg-dark">
+  <div class="mx-auto max-w-[1200px] px-6 py-12 flex items-center justify-between">
+    <p data-variant="small" class="text-inverse">Acme</p>
+    <a data-button="link" href="https://acme.test/privacy">Privacy</a>
+  </div>
+</footer>
+"""
+
+
+@pytest.fixture()
+def client(tmp_path: Path) -> TestClient:
+    app = create_app(tmp_path / "api.sqlite3")
+    return TestClient(app)
+
+
+def create_web_document(client: TestClient, **extra) -> dict:
+    response = client.post(
+        "/documents", json={"doc_kind": "web", "title": "My site", **extra}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["document"]
+
+
+def create_scene_document(client: TestClient) -> dict:
+    scene = json.loads(
+        (REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json").read_text()
+    )
+    response = client.post("/documents", json={"title": "A scene", "scene": scene})
+    assert response.status_code == 200, response.text
+    return response.json()["document"]
+
+
+def ingest_content(client: TestClient, document_id: str) -> dict:
+    web_doc = client.get(f"/documents/{document_id}").json()["scene"]
+    response = client.app.state.core.web_ingest_html(
+        web_doc, "home", SAMPLE_HTML, None, None
+    )
+    errors = [d for d in response.get("diagnostics", []) if d.get("severity") == "error"]
+    assert not errors, response.get("diagnostics")
+    return response["web_doc"]
+
+
+def seed_content(client: TestClient, document_id: str, web_doc: dict) -> None:
+    store = Repository(connect(client.app.state.database_path))
+    try:
+        store.update_web_document(
+            document_id,
+            web_doc,
+            intent="seed",
+            checkpoint_label="seed",
+            operations=[{"kind": "replace_web_doc"}],
+            inverse_operations=None,
+            push_undo=False,
+        )
+    finally:
+        store.connection.close()
+
+
+def get_document(client: TestClient, document_id: str) -> dict:
+    return client.get(f"/documents/{document_id}").json()
+
+
+def seed_document(client: TestClient, web_doc: dict | None = None, **extra) -> dict:
+    """Create a web doc + install the sample landing page (or a provided doc)."""
+    document = create_web_document(client, **extra)
+    content = web_doc if web_doc is not None else ingest_content(client, document["id"])
+    seed_content(client, document["id"], content)
+    return document
+
+
+def export_zip(client: TestClient, document_id: str) -> tuple[dict[str, bytes], str, dict]:
+    response = client.get(f"/documents/{document_id}/web/export")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    files = {name: archive.read(name) for name in archive.namelist()}
+    html = files["index.html"].decode("utf-8")
+    manifest = json.loads(files["manifest.json"].decode("utf-8"))
+    return files, html, manifest
+
+
+def find_node(web_doc: dict, kind: str) -> str:
+    nodes = web_doc["pages"][0]["nodes"]
+    return next(nid for nid, node in nodes.items() if node.get("kind") == kind)
+
+
+# --- (a) export zip of a seeded doc -----------------------------------------
+
+
+def test_export_zip_has_core_files(client: TestClient) -> None:
+    document = seed_document(client)
+    files, html, manifest = export_zip(client, document["id"])
+
+    assert "index.html" in files
+    assert "site.css" in files
+    assert "manifest.json" in files
+
+    # Delivery html is un-instrumented, at most the one platform runtime script,
+    # and links the compiled stylesheet.
+    assert "data-node-id" not in html
+    assert html.count("<script") <= 1
+    assert '<link rel="stylesheet" href="site.css">' in html
+
+    css = files["site.css"].decode("utf-8")
+    assert css.strip(), "site.css is non-empty"
+    # A token var the page actually uses (text-primary -> var(--color-primary)).
+    assert "--color-primary" in css
+    assert ".bg-light" in css
+
+    assert manifest["schema_version"] == 1
+    assert manifest["document_id"] == document["id"]
+    assert manifest["doc_version"] == get_document(client, document["id"])["current_version"]
+    assert "index.html" in manifest["files"]
+    assert "manifest.json" in manifest["files"]
+
+
+# --- (b) asset round-trip ---------------------------------------------------
+
+
+def test_export_copies_and_rewrites_image_assets(client: TestClient) -> None:
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), (120, 80, 200)).save(buffer, "PNG")
+    upload = client.post(
+        "/assets", files={"file": ("hero.png", buffer.getvalue(), "image/png")}
+    )
+    assert upload.status_code == 200, upload.text
+    record = upload.json()["asset"]
+    asset_id = record["id"]
+    digest = record["media"]["digest"]["value"]
+
+    document = create_web_document(client)
+    web_doc = ingest_content(client, document["id"])
+    container = find_node(web_doc, "container")
+    image_id = "export_img"
+    web_doc["pages"][0]["nodes"][image_id] = {
+        "id": image_id,
+        "kind": "image",
+        "asset_id": asset_id,
+        "alt": "Export hero",
+        "classes": "",
+    }
+    web_doc["pages"][0]["nodes"][container].setdefault("children", []).append(image_id)
+    web_doc.setdefault("assets", {})[asset_id] = record
+
+    seed_content(client, document["id"], web_doc)
+    files, html, _manifest = export_zip(client, document["id"])
+
+    assert f"assets/{digest}.png" in files
+    assert f"assets/{digest}.png" in html
+    # The bare (extension-less) reference is fully rewritten.
+    assert f'"assets/{digest}"' not in html
+
+
+# --- (c) font license gate --------------------------------------------------
+
+
+def seed_font_asset(client: TestClient, asset_id: str, data: bytes) -> str:
+    digest = hashlib.sha256(data).hexdigest()
+    root = Path(client.app.state.asset_store_root)
+    blob = root / "sha256" / digest[:2] / digest
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(data)
+    record = {
+        "id": asset_id,
+        "label": asset_id,
+        "kind": "font",
+        "status": "ready",
+        "source": {"kind": "uploaded"},
+        "media": {
+            "mime_type": "font/woff2",
+            "digest": {"algorithm": "sha256", "value": digest},
+            "filename": f"{asset_id}.woff2",
+            "byte_length": len(data),
+            "location": None,
+        },
+    }
+    store = Repository(connect(client.app.state.database_path))
+    try:
+        store.create_asset_record(record)
+    finally:
+        store.connection.close()
+    return digest
+
+
+def create_font_kit(client: TestClient, ofl_asset: str, locked_asset: str) -> None:
+    kit = json.loads(ACME_KIT_PATH.read_text())
+    kit["id"] = "kit_export_fonts"
+    kit["version"] = 1
+    template = next(iter(kit["assets"]["fonts"].values()))
+    included = json.loads(json.dumps(template))
+    included["family"] = "Export Sans"
+    # OFL license name → included even though embeddable is false.
+    included["license"] = {
+        "name": "OFL 1.1",
+        "embeddable": False,
+        "subsettable": True,
+        "source_url": None,
+        "restrictions": [],
+    }
+    included["faces"] = [
+        {"weight": 400, "style": "normal", "asset_id": ofl_asset, "source_url": None}
+    ]
+    excluded = json.loads(json.dumps(template))
+    excluded["family"] = "Locked Display"
+    excluded["license"] = {
+        "name": "Commercial",
+        "embeddable": False,
+        "subsettable": False,
+        "source_url": None,
+        "restrictions": [],
+    }
+    excluded["faces"] = [
+        {"weight": 400, "style": "normal", "asset_id": locked_asset, "source_url": None}
+    ]
+    kit["assets"]["fonts"] = {"brand": included, "locked": excluded}
+    store = Repository(connect(client.app.state.database_path))
+    try:
+        store.create_brand_kit(kit, {}, [], "manual")
+    finally:
+        store.connection.close()
+
+
+def test_export_font_license_gate(client: TestClient) -> None:
+    ofl_digest = seed_font_asset(client, "asset_font_ofl", b"wOF2" + b"\x00" * 96)
+    seed_font_asset(client, "asset_font_locked", b"wOF2" + b"\x11" * 96)
+    create_font_kit(client, "asset_font_ofl", "asset_font_locked")
+
+    document = create_web_document(
+        client, brand_kit_ref={"id": "kit_export_fonts", "version": 1}
+    )
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    files, _html, manifest = export_zip(client, document["id"])
+
+    # OFL family embedded under fonts/.
+    assert f"fonts/{ofl_digest[:12]}.woff2" in files
+    assert "Export Sans" in manifest["font_families_included"]
+
+    # Non-embeddable family excluded — no file, manifest entry + warning.
+    assert not any(name.startswith("fonts/") and "Locked" in name for name in files)
+    assert {"family": "Locked Display", "reason": "license not embeddable"} in manifest[
+        "font_families_excluded"
+    ]
+    assert any(
+        "Locked Display" in warning and "license not embeddable" in warning
+        for warning in manifest["warnings"]
+    )
+
+
+# --- (d) SEO ----------------------------------------------------------------
+
+
+def test_export_seo_description(client: TestClient) -> None:
+    document = seed_document(client)
+    _files, html, _manifest = export_zip(client, document["id"])
+    assert '<meta name="description"' in html
+    marker = 'content="'
+    start = html.index('<meta name="description"')
+    content_start = html.index(marker, start) + len(marker)
+    content_end = html.index('"', content_start)
+    description = html[content_start:content_end]
+    assert description, "description is non-empty"
+    assert len(description) <= 155
+
+
+# --- (e) node compile failure fails honestly --------------------------------
+
+
+def test_export_node_failure_is_502(client: TestClient) -> None:
+    document = seed_document(client)
+    client.app.state.web_export_node_bin = "false"  # the unix binary: exits 1
+    response = client.get(f"/documents/{document['id']}/web/export")
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"]["code"] == "web_export.compile_failed"
+
+
+# --- (f) publish / serve / rollback -----------------------------------------
+
+
+def test_publish_serve_republish_rollback(client: TestClient) -> None:
+    document = seed_document(client)
+
+    published = client.post(f"/documents/{document['id']}/web/publish", json={})
+    assert published.status_code == 200, published.text
+    body = published.json()
+    slug = body["slug"]
+    assert body["url"] == f"/p/{slug}"
+    assert body["doc_version"] == 1
+    assert body["previous_available"] is False
+
+    # Served page: inlined style + canonical, no external stylesheet link.
+    served = client.get(f"/p/{slug}")
+    assert served.status_code == 200, served.text
+    assert 'id="lumen-static-css"' in served.text
+    assert '<link rel="canonical"' in served.text
+    assert '<link rel="stylesheet" href="site.css">' not in served.text
+
+    # Edit a text marker, republish → doc_version bumps + previous available.
+    text_id = find_node(get_document(client, document["id"])["scene"], "text")
+    edit = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [
+                {
+                    "kind": "set_text",
+                    "page_id": "home",
+                    "id": text_id,
+                    "content": "MARKER_TWO",
+                }
+            ],
+            "base_version": 1,
+        },
+    )
+    assert edit.status_code == 200, edit.text
+
+    republished = client.post(f"/documents/{document['id']}/web/publish", json={})
+    assert republished.status_code == 200, republished.text
+    assert republished.json()["doc_version"] == 2
+    assert republished.json()["previous_available"] is True
+    assert "MARKER_TWO" in client.get(f"/p/{slug}").text
+
+    # Rollback → serves the previous publish, doc_version back to 1.
+    rolled = client.post(f"/web/publishes/{slug}/rollback")
+    assert rolled.status_code == 200, rolled.text
+    assert rolled.json()["doc_version"] == 1
+    assert rolled.json()["status"] == "active"
+    assert "MARKER_TWO" not in client.get(f"/p/{slug}").text
+
+    # GET publish state reflects the document.
+    state = client.get(f"/documents/{document['id']}/web/publish").json()
+    assert state["published"] is True
+    assert state["slug"] == slug
+
+    # Unpublish → /p 404.
+    unpub = client.delete(f"/web/publishes/{slug}")
+    assert unpub.status_code == 200, unpub.text
+    assert unpub.json()["status"] == "unpublished"
+    assert client.get(f"/p/{slug}").status_code == 404
+
+
+def test_publish_slug_validation(client: TestClient) -> None:
+    document = seed_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/publish", json={"slug": "ab"}
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "web_publish.bad_slug"
+
+
+def test_publish_slug_collision_across_documents(client: TestClient) -> None:
+    first = seed_document(client)
+    second = seed_document(client)
+    published = client.post(
+        f"/documents/{first['id']}/web/publish", json={"slug": "shared-slug"}
+    )
+    assert published.status_code == 200, published.text
+    collision = client.post(
+        f"/documents/{second['id']}/web/publish", json={"slug": "shared-slug"}
+    )
+    assert collision.status_code == 409, collision.text
+    assert collision.json()["detail"]["code"] == "web_publish.slug_taken"
+
+
+def test_rollback_without_previous_is_409(client: TestClient) -> None:
+    document = seed_document(client)
+    client.post(f"/documents/{document['id']}/web/publish", json={"slug": "solo-page"})
+    response = client.post("/web/publishes/solo-page/rollback")
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "web_publish.no_previous"
+
+
+def test_unpublish_unknown_slug_is_404(client: TestClient) -> None:
+    response = client.delete("/web/publishes/nope-nope")
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"]["code"] == "web_publish.not_found"
+
+
+def test_get_publish_state_unpublished(client: TestClient) -> None:
+    document = seed_document(client)
+    state = client.get(f"/documents/{document['id']}/web/publish").json()
+    assert state == {"schema_version": 1, "published": False}
+
+
+# --- (g) scene documents are rejected on the new endpoints -------------------
+
+
+@pytest.mark.parametrize(
+    "method,path,payload",
+    [
+        ("get", "/web/export", None),
+        ("post", "/web/publish", {}),
+        ("get", "/web/publish", None),
+    ],
+)
+def test_web_export_endpoints_reject_scene_documents(
+    client: TestClient, method: str, path: str, payload
+) -> None:
+    scene = create_scene_document(client)
+    url = f"/documents/{scene['id']}{path}"
+    response = (
+        client.post(url, json=payload) if method == "post" else client.get(url)
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "document.kind_unsupported"

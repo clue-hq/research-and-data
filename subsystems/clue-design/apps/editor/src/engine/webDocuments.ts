@@ -1277,3 +1277,194 @@ export async function fetchWebTheme(
     bodyFamily: typeof theme.body_family === "string" ? theme.body_family : null
   };
 }
+
+// ── publish + export ─────────────────────────────────────────────────────────
+
+/** The slug charset the server enforces (`^[a-z0-9][a-z0-9-]{2,63}$`): a
+ * lowercase alnum lead, then alnum/hyphens, total length 3–64. */
+const PUBLISH_SLUG_MAX = 64;
+
+/**
+ * A client-side publish-slug suggestion: the slugified title joined to the
+ * document id's last four characters, conforming to the server's slug charset
+ * (`^[a-z0-9][a-z0-9-]{2,63}$`). Non-alnum runs collapse to a single hyphen and
+ * leading/trailing hyphens are trimmed; a title with no latin/digit characters
+ * (or an empty one) falls back to `"site"`. The result is clamped to 64 chars.
+ * Pure — the publish dialog prefills its input with this and the server
+ * re-validates on POST.
+ */
+export function suggestPublishSlug(title: string, documentId: string): string {
+  const slugify = (raw: string): string =>
+    raw
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  const base = slugify(title) || "site";
+  const suffix = slugify(documentId.slice(-4));
+  let slug = suffix ? `${base}-${suffix}` : base;
+  if (slug.length > PUBLISH_SLUG_MAX) {
+    slug = slug.slice(0, PUBLISH_SLUG_MAX).replace(/-+$/g, "");
+  }
+  return slug;
+}
+
+/** The document's current publish state (`GET /documents/{id}/web/publish`).
+ * `published: false` is the unpublished case; the slug/url/version fields carry
+ * values only when `published` is true. */
+export interface WebPublishState {
+  published: boolean;
+  slug: string | null;
+  url: string | null;
+  docVersion: number | null;
+  status: string | null;
+  previousAvailable: boolean;
+  updatedAt: string | null;
+}
+
+/** Read the document's publish state. Throws (with the server message) on any
+ * non-2xx so the dialog surfaces it inline. */
+export async function fetchWebPublishInfo(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string
+): Promise<WebPublishState> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl)
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(response, `Publish status failed (HTTP ${response.status}).`)
+    );
+  }
+  const payload = (await response.json()) as {
+    published?: unknown;
+    slug?: unknown;
+    url?: unknown;
+    doc_version?: unknown;
+    status?: unknown;
+    previous_available?: unknown;
+    updated_at?: unknown;
+  };
+  return {
+    published: payload.published === true,
+    slug: typeof payload.slug === "string" ? payload.slug : null,
+    url: typeof payload.url === "string" ? payload.url : null,
+    docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
+    status: typeof payload.status === "string" ? payload.status : null,
+    previousAvailable: payload.previous_available === true,
+    updatedAt: typeof payload.updated_at === "string" ? payload.updated_at : null
+  };
+}
+
+/** The result of a `POST /documents/{id}/web/publish`. */
+export interface WebPublishResult {
+  schemaVersion: number | null;
+  slug: string;
+  url: string;
+  docVersion: number | null;
+  runtimeVersion: string | null;
+  previousAvailable: boolean;
+}
+
+/** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
+ * the desired slug; omit it to let the server keep the current one. A 422 (bad
+ * slug) or 409 (slug taken by another document) throws with the server's
+ * message so the dialog can surface it inline. */
+export async function publishWebDocument(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  documentId: string,
+  slug?: string
+): Promise<WebPublishResult> {
+  const body: Record<string, unknown> = {};
+  if (slug != null && slug.length > 0) {
+    body.slug = slug;
+  }
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/web/publish`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Publish failed (HTTP ${response.status}).`));
+  }
+  const payload = (await response.json()) as {
+    schema_version?: unknown;
+    slug?: unknown;
+    url?: unknown;
+    doc_version?: unknown;
+    runtime_version?: unknown;
+    previous_available?: unknown;
+  };
+  return {
+    schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
+    slug: typeof payload.slug === "string" ? payload.slug : "",
+    url: typeof payload.url === "string" ? payload.url : "",
+    docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
+    runtimeVersion: typeof payload.runtime_version === "string" ? payload.runtime_version : null,
+    previousAvailable: payload.previous_available === true
+  };
+}
+
+/** The result of an unpublish (`DELETE /web/publishes/{slug}`). */
+export interface WebUnpublishResult {
+  slug: string;
+  status: string;
+}
+
+/** Take a published site offline (`DELETE /web/publishes/{slug}`). */
+export async function unpublishWebSite(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  slug: string
+): Promise<WebUnpublishResult> {
+  const response = await fetchImpl(
+    new URL(`/web/publishes/${encodeURIComponent(slug)}`, apiBaseUrl),
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Unpublish failed (HTTP ${response.status}).`));
+  }
+  const payload = (await response.json()) as { slug?: unknown; status?: unknown };
+  return {
+    slug: typeof payload.slug === "string" ? payload.slug : slug,
+    status: typeof payload.status === "string" ? payload.status : "unpublished"
+  };
+}
+
+/** The result of a rollback (`POST /web/publishes/{slug}/rollback`). */
+export interface WebRollbackResult {
+  slug: string;
+  docVersion: number | null;
+  status: string;
+}
+
+/** Roll a published site back to its previous version
+ * (`POST /web/publishes/{slug}/rollback`). A 409 (no previous version) throws
+ * with the server message. */
+export async function rollbackWebPublish(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  slug: string
+): Promise<WebRollbackResult> {
+  const response = await fetchImpl(
+    new URL(`/web/publishes/${encodeURIComponent(slug)}/rollback`, apiBaseUrl),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Roll back failed (HTTP ${response.status}).`));
+  }
+  const payload = (await response.json()) as {
+    slug?: unknown;
+    doc_version?: unknown;
+    status?: unknown;
+  };
+  return {
+    slug: typeof payload.slug === "string" ? payload.slug : slug,
+    docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
+    status: typeof payload.status === "string" ? payload.status : "published"
+  };
+}
