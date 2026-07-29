@@ -901,6 +901,82 @@ def test_stale_view_refusal_is_role_aware(tmp_path: Path):
     assert "render_web_preview" not in no_preview_sub
 
 
+# --- render thread affinity + renderer circuit breaker -----------------------
+# Live failure 2026-07-29 (run_841ee2c8): the kept-alive browser was launched
+# on one framework pool thread; every later render ran on another and died on
+# Playwright's greenlet guard ("cannot switch to a different thread"), and the
+# orchestrator burned ~25 retry model calls before giving up on its own.
+
+
+def test_all_playwright_work_runs_on_one_dedicated_thread(tmp_path: Path, monkeypatch):
+    import threading as _threading
+
+    tools = _bare_tools(tmp_path)
+    # The helper render is not under test — return bare HTML.
+    monkeypatch.setattr(
+        tools.core, "web_render", lambda *a, **k: {"html": "<html></html>", "diagnostics": []}
+    )
+    capture_threads: list[int] = []
+
+    def fake_capture(html, iter_dir, diagnostics):
+        capture_threads.append(_threading.get_ident())
+        return ([], None, {})
+
+    monkeypatch.setattr(tools, "_capture_pass", fake_capture)
+
+    assert json.loads(tools.render_web_preview())["status"] == "ok"
+    tools._doc_version += 1  # defeat the unchanged guard
+    assert json.loads(tools.render_web_preview())["status"] == "ok"
+
+    caller = _threading.get_ident()
+    assert len(capture_threads) == 2
+    # Same dedicated thread both times, and never the caller's thread.
+    assert capture_threads[0] == capture_threads[1] != caller
+    assert capture_threads[0] == tools._run_on_render_thread(_threading.get_ident)
+
+
+def test_greenlet_thread_fault_counts_as_dead_browser():
+    error = Exception("cannot switch to a different thread (which happens to have exited)")
+    assert LumenWebTools._looks_like_dead_browser(error)
+
+
+def test_render_circuit_breaker_opens_after_consecutive_failures(
+    tmp_path: Path, monkeypatch
+):
+    tools = _bare_tools(tmp_path)
+    monkeypatch.setattr(
+        tools.core, "web_render", lambda *a, **k: {"html": "<html></html>", "diagnostics": []}
+    )
+    calls = {"n": 0}
+
+    def broken_capture(html, iter_dir, diagnostics):
+        calls["n"] += 1
+        raise ValueError("capture exploded")
+
+    monkeypatch.setattr(tools, "_capture_pass", broken_capture)
+
+    for attempt in range(ws._RENDER_FAILURE_LIMIT):
+        tools._doc_version += 1
+        result = json.loads(tools.render_web_preview())
+        assert result["error_code"] == "web_preview.capture_failed"
+
+    # Breaker open: no further capture attempt, an explicit finalize demand.
+    tools._doc_version += 1
+    refused = json.loads(tools.render_web_preview())
+    assert refused["error_code"] == "web_preview.renderer_down"
+    assert "finalize_web_run" in refused["message"]
+    assert calls["n"] == ws._RENDER_FAILURE_LIMIT
+    assert "web_preview_render_circuit_open" in _trace_events(tools)
+
+    # A later successful pass (e.g. after a process-level fix) resets the
+    # breaker — prove the reset path by clearing the counter as success does.
+    monkeypatch.setattr(tools, "_capture_pass", lambda *a: ([], None, {}))
+    tools._consecutive_render_failures = ws._RENDER_FAILURE_LIMIT - 1
+    tools._doc_version += 1
+    assert json.loads(tools.render_web_preview())["status"] == "ok"
+    assert tools._consecutive_render_failures == 0
+
+
 # --- browser reuse: _close_browser + finalize teardown ----------------------
 
 

@@ -21,6 +21,7 @@ import copy
 import json
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -94,6 +95,12 @@ _FONT_CSS_UNSET = object()
 # page install + several patch repairs + a few surgical ops ≈ 11); the
 # pathological round this guards against burned 20+ (2026-07-29 blind churn).
 _ROUND_MUTATION_BUDGET = 14
+
+# Consecutive failed capture passes before render_web_preview stops
+# re-attempting and instructs the orchestrator to finalize honestly. The
+# 2026-07-29 dead-renderer run retried ~25 times (~6 minutes of model calls)
+# before giving up on its own.
+_RENDER_FAILURE_LIMIT = 3
 
 
 def _font_mime_from_magic(data: bytes) -> str:
@@ -253,6 +260,22 @@ class LumenWebTools:
         # from finalize on every outcome).
         self._pw = None
         self._browser = None
+        # ALL Playwright work runs on this one dedicated thread. The sync
+        # Playwright client is thread-affine (greenlet-bound): touching the
+        # kept-alive browser from any other thread raises "cannot switch to a
+        # different thread". The agent framework dispatches tool calls onto
+        # varying pool threads, so shared-browser reuse is only sound with a
+        # thread the substrate owns (live failure 2026-07-29: 25 consecutive
+        # render failures after the launching pool thread exited). Threads
+        # spawn lazily on first submit; finalize shuts the executor down.
+        self._render_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="web-render"
+        )
+        # Renderer circuit breaker: consecutive failed capture passes. At
+        # _RENDER_FAILURE_LIMIT the render tool stops re-attempting and tells
+        # the orchestrator to finalize honestly instead (the same live run
+        # burned ~25 retry model calls against a dead renderer).
+        self._consecutive_render_failures = 0
         self.preview_paths: List[str] = []
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
@@ -1535,11 +1558,19 @@ class LumenWebTools:
             return None
         return "\n".join(rules)
 
+    def _run_on_render_thread(self, fn, *args):
+        """Run `fn` on the dedicated Playwright thread, propagating its result
+        or exception. Every touch of `self._pw`/`self._browser` MUST go through
+        here — the sync Playwright client is bound to the thread that started
+        it, and any other thread raises "cannot switch to a different thread"."""
+        return self._render_executor.submit(fn, *args).result()
+
     def _browser_handle(self):
         """The shared headless chromium, started lazily and kept alive across
         renders (a fresh launch per render dominates web-turn latency). Started
         on first use via `sync_playwright().start()`; torn down by
-        `_close_browser()` at finalize. Raises if Playwright is unavailable."""
+        `_close_browser()` at finalize. Raises if Playwright is unavailable.
+        Only ever called on the render thread (via _run_on_render_thread)."""
         if self._browser is not None:
             return self._browser
         from playwright.sync_api import sync_playwright
@@ -1549,10 +1580,18 @@ class LumenWebTools:
         return self._browser
 
     def _close_browser(self) -> None:
-        """Tear down the shared browser + Playwright instance. Idempotent and
-        exception-safe: each of `browser.close()` / `pw.stop()` is best-effort
-        and the handles are reset to None regardless (a partially-torn-down
-        browser must not leave a stale handle that a later render reuses)."""
+        """Tear down the shared browser + Playwright instance, on the render
+        thread. Idempotent and exception-safe: each of `browser.close()` /
+        `pw.stop()` is best-effort and the handles are reset to None regardless
+        (a partially-torn-down browser must not leave a stale handle that a
+        later render reuses). Falls back to inline teardown if the executor is
+        already shut down (post-finalize)."""
+        try:
+            self._run_on_render_thread(self._close_browser_on_render_thread)
+        except RuntimeError:  # executor shut down — best-effort inline
+            self._close_browser_on_render_thread()
+
+    def _close_browser_on_render_thread(self) -> None:
         browser, pw = self._browser, self._pw
         self._browser = None
         self._pw = None
@@ -1583,6 +1622,12 @@ class LumenWebTools:
                 "targetclosederror",
                 "browser has crashed",
                 "has crashed",
+                # greenlet thread-affinity faults: should be impossible now
+                # that all Playwright work runs on the dedicated render
+                # thread, but if one ever surfaces, relaunching fresh is the
+                # correct recovery (2026-07-29 live failure).
+                "cannot switch to a different thread",
+                "greenlet",
             )
         )
 
@@ -1604,6 +1649,28 @@ class LumenWebTools:
         # fresh between-renders edit budget for the next author round.
         self._mutations_since_render = 0
         self._round_budget_event_recorded = False
+        # Circuit breaker: a renderer that has failed _RENDER_FAILURE_LIMIT
+        # times in a row is down — stop re-attempting (each retry costs a full
+        # orchestrator model call) and demand an honest finalize instead.
+        if self._consecutive_render_failures >= _RENDER_FAILURE_LIMIT:
+            self.record(
+                "orchestrator",
+                "web_preview_render_circuit_open",
+                output_summary=(
+                    f"{self._consecutive_render_failures} consecutive render "
+                    "failures — refusing further attempts"
+                ),
+            )
+            return self._tool_error(
+                "web_preview.renderer_down",
+                f"The screenshot renderer has failed {self._consecutive_render_failures} "
+                "times in a row and is considered DOWN for this turn. Do NOT call "
+                "render_web_preview again and do NOT try to repair it by editing the "
+                "document. Call finalize_web_run NOW — outcome "
+                '"completed_with_warnings" if the page content is complete (state '
+                "plainly that the final page was not visually verified), otherwise "
+                '"failed".',
+            )
         # Feature 2 — unchanged-render guard. A doc with no mutation since the
         # last render whose previews are all still on hand is reused verbatim.
         if (
@@ -1689,23 +1756,25 @@ class LumenWebTools:
                 diagnostics=diagnostics,
             )
 
-        # The capture pass runs on the shared, kept-alive browser. If it dies
-        # (closed/crashed connection), close + relaunch ONCE and retry before
-        # surfacing the failure.
+        # The capture pass runs on the shared, kept-alive browser — always via
+        # the dedicated render thread (Playwright sync is thread-affine). If
+        # the browser died (closed/crashed connection), close + relaunch ONCE
+        # and retry before surfacing the failure.
         try:
             try:
-                paths, state_capture_error, state_omitted = self._capture_pass(
-                    html, iter_dir, diagnostics
+                paths, state_capture_error, state_omitted = self._run_on_render_thread(
+                    self._capture_pass, html, iter_dir, diagnostics
                 )
             except Exception as error:  # noqa: BLE001
                 if self._looks_like_dead_browser(error):
                     self._close_browser()
-                    paths, state_capture_error, state_omitted = self._capture_pass(
-                        html, iter_dir, diagnostics
+                    paths, state_capture_error, state_omitted = self._run_on_render_thread(
+                        self._capture_pass, html, iter_dir, diagnostics
                     )
                 else:
                     raise
         except Exception as error:  # noqa: BLE001 - turn-safety boundary
+            self._consecutive_render_failures += 1
             self.record(
                 "orchestrator",
                 "web_preview_render_failed",
@@ -1718,6 +1787,7 @@ class LumenWebTools:
                 diagnostics=diagnostics,
             )
 
+        self._consecutive_render_failures = 0
         self.preview_paths.extend(paths)
         self._preview_iteration = self.iteration
         self._preview_doc_version = self._doc_version
@@ -2099,8 +2169,11 @@ class LumenWebTools:
                 f"outcome must be one of {sorted(valid)}; got {outcome!r}.",
             )
         # The turn is ending on every valid outcome — release the kept-alive
-        # browser so no Playwright process outlives the run.
+        # browser so no Playwright process outlives the run, then retire the
+        # render thread (its worker is non-daemon; left alive it would block
+        # interpreter exit).
         self._close_browser()
+        self._render_executor.shutdown(wait=False)
         payload: JsonObject = {"outcome": outcome, "summary": summary}
         gap = (ladder_gap or "").strip()
         if gap:
