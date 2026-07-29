@@ -201,12 +201,18 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                     }
                 }
                 EmbedProvider::Custom => {
-                    // Permissive human path: any https URL is accepted.
-                    if let Some(url) = url {
-                        if !url.trim().to_ascii_lowercase().starts_with("https://") {
+                    // Permissive human path: any https URL is accepted. A
+                    // calendly.com URL is PROMOTED to the Calendly provider so
+                    // the allowlist semantics (editor badge, provider-aware
+                    // rendering) hold no matter which write path authored it —
+                    // ops payloads routinely omit `provider` and default here.
+                    if let Some(url_value) = url {
+                        if calendly_url_is_valid(url_value) {
+                            *provider = EmbedProvider::Calendly;
+                        } else if !url_value.trim().to_ascii_lowercase().starts_with("https://") {
                             return Err(WebOpError::new(
                                 "op.embed_url_invalid",
-                                format!("custom embed url must be https: {url}"),
+                                format!("custom embed url must be https: {url_value}"),
                             ));
                         }
                     }
@@ -1077,6 +1083,31 @@ mod tests {
             ),
         )
         .expect("custom https url accepted");
+
+        // Custom with a calendly.com url is PROMOTED to the Calendly provider
+        // (ops payloads routinely omit `provider`; the allowlist semantics
+        // must hold on every write path — proven by a live agent turn that
+        // stored a calendly link as custom).
+        let mut doc = fixture();
+        insert_embed(
+            &mut doc,
+            embed_node(
+                "emb_promoted",
+                WebNodeKind::Embed {
+                    provider: EmbedProvider::Custom,
+                    url: Some("https://calendly.com/acme/demo".to_owned()),
+                    html: String::new(),
+                },
+            ),
+        )
+        .expect("calendly url accepted");
+        let page = doc.page(&page_id()).unwrap();
+        let WebNodeKind::Embed { provider, .. } =
+            &page.node(&NodeId::from("emb_promoted")).unwrap().kind
+        else {
+            panic!("embed node");
+        };
+        assert_eq!(*provider, EmbedProvider::Calendly);
 
         // Custom non-https url is rejected.
         let mut doc = fixture();
