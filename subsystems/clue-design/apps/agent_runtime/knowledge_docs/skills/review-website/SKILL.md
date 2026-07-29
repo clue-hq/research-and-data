@@ -77,6 +77,22 @@ e.g. "clinical calm precision"). Your job is structural, not vibes:
   button fill, **logo on its band** (a dark logo on a dark band is a
   blocking miss — no class fixes it), muted text still ≥ readable.
 
+## Personalization check (1:1 account pages)
+
+When your brief names a target account, additionally verify in the pixels:
+
+- **No template fallback text** where the account's own content belongs — a
+  generic company name ("Acme", the template's example account) in a
+  headline, eyebrow, or CTA that should carry the target's name is blocking.
+- **The account's logo actually renders** (not the template's placeholder
+  logo, not a blank box) wherever the page co-brands.
+- **Quoted, not adopted**: the page stays in the seller's palette and type;
+  the target appears as name + logo. Any band restyled to the target's
+  colors is blocking.
+- An account-gated band that shows empty or half-populated content (a peer
+  strip with one lonely logo, an empty proof band) is blocking — it should
+  have been omitted instead.
+
 ## Verdict discipline
 
 - **Blocking** (must-fix): overflow/clipping, unreadable contrast, broken or

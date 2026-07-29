@@ -100,6 +100,16 @@ class AgentRuntimeConfig:
     agent_model_orchestrator: str | None = None
     agent_model_author: str | None = None
     agent_model_reviewer: str | None = None
+    # P5 (D6): the TARGET ACCOUNT this website turn personalizes for, passed BY
+    # VALUE (same rule as brand_kit: the runtime never reads the API database).
+    # `account_card` is the compact human-facing card {name, domain,
+    # logo_asset_id, data, notes} the orchestrator/author/reviewer prompts and
+    # view("account") render; `account_assets` is the parallel logo manifest
+    # {asset_id: {"record": <engine asset record>, "title"?: str}} `use_account_asset`
+    # upserts into the WebDoc — exactly mirroring brand_kit / brand_kit_assets.
+    # None → an un-personalized turn (every account path is a no-op).
+    account_card: dict | None = None
+    account_assets: dict | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption

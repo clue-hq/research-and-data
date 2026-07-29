@@ -50,6 +50,11 @@ history, selections, and future scoped turns hang off.
   spacing, do not "normalize" it back while fixing something else.
 - Preserve node ids wherever possible — history, selections, and future
   scoped turns hang off them.
+- **Personalization markers are load-bearing.** `data-var` spans, `data-slot`
+  keys, and `data-slot-when` gates make the page derivable per account —
+  treat them like ids. Never strip one while rewording text or recomposing a
+  section; a subtree rewrite reproduces every marker the old subtree carried
+  unless the brief explicitly removes that personalization.
 - If a human edit conflicts with the brand grammar (e.g. pasted classes the
   lint would reject), fix the conflict and say so in the summary.
 

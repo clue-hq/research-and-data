@@ -132,7 +132,9 @@ def create_web_deepagent(
                 "the section plan and copy angles."
             ),
             "system_prompt": build_web_author_prompt(
-                brand_card=tools.brand_card_text, theme_token_names=theme_token_names
+                brand_card=tools.brand_card_text,
+                theme_token_names=theme_token_names,
+                account_card=tools.account_card_text,
             ),
             "model": author_model,
             "tools": [
@@ -151,7 +153,9 @@ def create_web_deepagent(
                 "Judges the rendered page against the review-website checklist at "
                 "all three widths and returns a structured VisualCritique."
             ),
-            "system_prompt": build_web_reviewer_prompt(),
+            "system_prompt": build_web_reviewer_prompt(
+                has_account=bool(tools.account_card)
+            ),
             "model": reviewer_model,
             "tools": [subagent_view],
             "skills": workspace_skills,
@@ -175,6 +179,7 @@ def create_web_deepagent(
             doc_title=doc_title,
             has_existing_content=_has_existing_content(initial_web_doc, HOME_PAGE_ID),
             brand_card=tools.brand_card_text,
+            account_card=tools.account_card_text,
         ),
         subagents=subagents,
         name="lumen-web-deepagent",

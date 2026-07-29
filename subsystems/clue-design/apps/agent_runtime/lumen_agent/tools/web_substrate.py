@@ -296,6 +296,14 @@ class LumenWebTools:
                 "No brand kit is attached to this document. Author against the "
                 "platform default theme tokens."
             )
+        # P5 (D6): the TARGET ACCOUNT card (None on an un-personalized turn) +
+        # its text form for the prompts and view("account"). The parallel logo
+        # manifest (config.account_assets) feeds `use_account_asset`, exactly as
+        # config.brand_kit_assets feeds `use_brand_asset`.
+        self.account_card: Optional[JsonObject] = config.account_card
+        self.account_card_text = (
+            json.dumps(self.account_card, indent=2) if self.account_card else None
+        )
         # The base URL the rendered page resolves data-asset images against. The
         # API serves the shared store at /asset-store; a config override wins if
         # present (none today), else the pinned API origin.
@@ -1178,6 +1186,10 @@ class LumenWebTools:
         - action="use_brand_asset" — register one of the attached Brand Kit's
           assets by its `asset_id` (from the brand card inventory). Returns the
           asset id.
+        - action="use_account_asset" — register the TARGET ACCOUNT's logo (from
+          the account card). Takes no asset_id; returns the asset id. Carry it
+          on an `<img data-slot="account.logo" data-asset="<id>">` so the page
+          derives the right logo per account.
 
         Registration only — placement is markup: after this, reference the
         returned id with `<img data-asset="<id>" alt="…">` in author_web_page."""
@@ -1197,10 +1209,12 @@ class LumenWebTools:
                     "card's logo/image inventory).",
                 )
             return self._use_brand_asset(asset_id, label, alt)
+        if action == "use_account_asset":
+            return self._use_account_asset(label, alt)
         return self._tool_error(
             "asset.unknown_action",
             f"unknown action '{action}'.",
-            valid_actions=["generate_image", "use_brand_asset"],
+            valid_actions=["generate_image", "use_brand_asset", "use_account_asset"],
         )
 
     def _generate_image_record(
@@ -1333,6 +1347,51 @@ class LumenWebTools:
         }
         return self._register_asset_record(
             record, origin="use_brand_asset", label=resolved_label, alt=alt, extra={}
+        )
+
+    def _use_account_asset(self, label: Optional[str], alt: Optional[str]) -> str:
+        """P5 (D6): register the TARGET ACCOUNT's logo into the WebDoc — the
+        account twin of `_use_brand_asset`. The account card names the logo by
+        `logo_asset_id`; its engine AssetRecord rides in config.account_assets
+        (resolved by the API by value, same as brand_kit_assets), so this never
+        reads the API database. Errors honestly with no account card and with no
+        logo."""
+        if not self.account_card:
+            return self._tool_error(
+                "asset.no_account",
+                "no target account is attached to this turn; use_account_asset "
+                "is only available on a 1:1 account page.",
+            )
+        asset_id = self.account_card.get("logo_asset_id")
+        manifest = self.config.account_assets or {}
+        entry = manifest.get(asset_id) if asset_id else None
+        if not asset_id or not isinstance(entry, dict):
+            return self._tool_error(
+                "asset.no_account_logo",
+                "the target account has no resolvable logo asset — author the "
+                "page without a logo image (the account name still personalizes "
+                "it) or add a logo to the account.",
+            )
+        record = copy.deepcopy(entry.get("record") or {})
+        if not record.get("id"):
+            return self._tool_error(
+                "asset.bad_account_record",
+                f"the account logo entry for '{asset_id}' carries no usable record.",
+            )
+        resolved_label = (
+            label or entry.get("title") or record.get("label") or asset_id
+        )
+        # `brand_guide` is the engine AssetSource variant for a guide-provided
+        # library asset referenced by source_asset_id (same as use_brand_asset);
+        # there is no dedicated account variant and minting one is an engine
+        # change out of this wave's scope.
+        record["source"] = {
+            "kind": "brand_guide",
+            "source_asset_id": asset_id,
+            "label": resolved_label,
+        }
+        return self._register_asset_record(
+            record, origin="use_account_asset", label=resolved_label, alt=alt, extra={}
         )
 
     def _register_asset_record(
@@ -1881,6 +1940,15 @@ class LumenWebTools:
         if target == "brand":
             self.record("agent", "web_view_called", input_summary=target, output_summary="brand")
             return [_text_block(self.brand_card_text)]
+        if target == "account":
+            self.record("agent", "web_view_called", input_summary=target, output_summary="account")
+            return [
+                _text_block(
+                    self.account_card_text
+                    if self.account_card_text
+                    else "No target account is attached to this turn."
+                )
+            ]
         if target == "doc":
             self.record("agent", "web_view_called", input_summary=target, output_summary="doc")
             return [_text_block(self._doc_summary_text())]
@@ -1947,7 +2015,8 @@ class LumenWebTools:
         return [
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
-                '"preview:768", "preview:375", "state:<n>", "doc", or "brand".'
+                '"preview:768", "preview:375", "state:<n>", "doc", "brand", or '
+                '"account".'
             )
         ]
 
@@ -2069,9 +2138,9 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     screenshot of that width as [text, image] blocks; "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
     latest render; "doc" returns a compact section/asset summary; "brand"
-    returns the brand card. Mirrors
-    tools/view.make_view_tool: any failure inside returns an honest error STRING
-    so a bad/unreadable image can never kill the turn unfinalized."""
+    returns the brand card; "account" returns the target account card (P5).
+    Mirrors tools/view.make_view_tool: any failure inside returns an honest error
+    STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
     from py_lumen_obs import log_span
 
@@ -2081,8 +2150,9 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         "preview:375" returns the latest rendered screenshot at that width;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
         opened or accordions expanded) from the latest render; "doc" returns a
-        section + asset summary; "brand" returns the brand card. Returns image
-        content so you judge by looking, not guessing."""
+        section + asset summary; "brand" returns the brand card; "account"
+        returns the target account card. Returns image content so you judge by
+        looking, not guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
                 return tools._view_content(target, can_render=can_render)

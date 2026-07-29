@@ -15,12 +15,33 @@ def build_web_orchestrator_prompt(
     doc_title: str,
     has_existing_content: bool,
     brand_card: str,
+    account_card: str | None = None,
 ) -> str:
     starting_state = (
         "The document already has content; treat the turn as an edit of the "
         "live page unless the brief clearly asks for a rebuild."
         if has_existing_content
         else "The document is empty; this turn creates the page."
+    )
+    account_block = (
+        f"""
+TARGET ACCOUNT — this is a 1:1 page for one company:
+{account_card}
+
+Account rules (binding):
+- The recipe is knowledge_docs/knowledge/web/abm-page.md, not the landing-page
+  default — read it; its hard rules override where they conflict.
+- The target's brand is QUOTED, never adopted: the page renders in OUR theme
+  tokens; the account appears as a name and a logo, never as a restyle.
+- Personalization is factual, not inferred: only account facts from the card
+  or the brief. Never invent news, funding, headcount, or priorities.
+- Brief the author to route every account-varying piece of content through
+  personalization markers (data-var / data-slot — see the create-website
+  skill) so this page derives cleanly for OTHER accounts later. The account
+  name hardcoded outside a marker is a defect.
+"""
+        if account_card
+        else ""
     )
     return f"""You direct a website-building turn for the document "{doc_title}".
 You do not author markup yourself — you delegate, verify with your own eyes,
@@ -31,11 +52,12 @@ no fixed number of rounds.
 
 BRAND
 {brand_card}
-
+{account_block}
 OPERATING SHAPE
 1. Read the brief. Decide the page's section plan (the landing-page recipe in
    knowledge_docs/knowledge/web/landing-page.md is the default grammar for a
-   landing page). Then NAME THE BRAND ANCHOR: 2-3 creative-director words
+   landing page; with a TARGET ACCOUNT above, the abm-page recipe governs
+   instead). Then NAME THE BRAND ANCHOR: 2-3 creative-director words
    from the brand card (e.g. "clinical calm precision") that every design
    decision must express. The anchor goes verbatim into BOTH the author's
    and the reviewer's briefs.
@@ -97,7 +119,34 @@ DISCIPLINE
 """
 
 
-def build_web_author_prompt(*, brand_card: str, theme_token_names: str) -> str:
+def build_web_author_prompt(
+    *,
+    brand_card: str,
+    theme_token_names: str,
+    account_card: str | None = None,
+) -> str:
+    account_block = (
+        f"""
+TARGET ACCOUNT — this page is 1:1 for one company:
+{account_card}
+
+Account authoring rules (binding):
+- Recipe: knowledge_docs/knowledge/web/abm-page.md (read it; it replaces the
+  landing-page section order for this page).
+- Route EVERY account-varying piece through personalization markers so the
+  page derives for other accounts: the account's name inline as
+  `<span data-var="account.name">{{their name}}</span>`, their logo as an
+  image carrying `data-slot="account.logo"` (register it first with
+  `asset(action="use_account_asset")`), account-specific bands gated with
+  `data-slot-when` — the create-website skill's Personalization section has
+  the full grammar. The account name hardcoded outside a marker is a defect.
+- Their brand is quoted, never adopted: our theme tokens everywhere; the
+  account appears as name + logo only. Facts about them come from the card
+  or the brief — never inferred.
+"""
+        if account_card
+        else ""
+    )
     return f"""You are the website author. You write a complete page in the
 constrained-HTML wire format and submit it with `author_web_page(html,
 custom_css?)`. Start by reading your skill: create-website (it is the
@@ -107,6 +156,7 @@ follow its section order and hard rules exactly.
 
 BRAND
 {brand_card}
+{account_block}
 
 THEME TOKENS you may use for every color-bearing class:
 {theme_token_names}
@@ -168,9 +218,18 @@ generated, and any diagnostics you could not resolve.
 """
 
 
-def build_web_reviewer_prompt() -> str:
-    return """You are the website visual reviewer. Read your skill:
+def build_web_reviewer_prompt(*, has_account: bool = False) -> str:
+    account_line = (
+        "\nThis is a 1:1 account page: additionally run the skill's "
+        "personalization check — no generic template fallback text where the "
+        "account's own name/logo should appear, and the target's brand is "
+        "quoted (name + logo), never adopted as a restyle.\n"
+        if has_account
+        else ""
+    )
+    return f"""You are the website visual reviewer. Read your skill:
 review-website — it is your checklist and your verdict discipline.
+{account_line}
 
 You are given full-page screenshots of the same page at widths 1440, 768,
 and 375 via `view("preview:1440")` etc., plus state captures (dialog open,

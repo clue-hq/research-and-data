@@ -7,6 +7,7 @@ ingest only, no LLM or browser).
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -941,3 +942,113 @@ def test_finalize_web_run_closes_browser(tmp_path: Path):
     assert browser.closed is True
     assert pw.stopped is True
     assert tools._browser is None and tools._pw is None
+
+
+# --- P5 account personalization: use_account_asset + view("account") --------
+
+# Smallest valid PNG (1x1) — a real logo the helper can ingest + upsert.
+_TINY_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c626001000000ffff03000006000557"
+    "bfabd40000000049454e44ae426082"
+)
+
+
+def _ingest_account_logo(config, asset_id: str = "acc_logo_1") -> dict:
+    """Ingest a logo into the config's asset store and return its engine
+    AssetRecord — the shape the API's resolve_account_assets manifests."""
+    from lumen_api.core import CoreClient
+
+    core = CoreClient(repo_root=REPO_ROOT)
+    ingest = core.ingest_asset(
+        store_root=str(config.effective_asset_store_root),
+        bytes_base64=base64.b64encode(_TINY_PNG).decode("ascii"),
+        asset_id=asset_id,
+        label="Account logo",
+        declared_mime_type="image/png",
+        kind="raster_image",
+        raise_on_error=False,
+    )
+    assert ingest.get("ok"), ingest
+    return ingest["asset"]["record"]
+
+
+def _account_tools(
+    tmp_path: Path, *, logo_id: str | None = "acc_logo_1", in_manifest: bool = True
+) -> LumenWebTools:
+    """LumenWebTools with a TARGET ACCOUNT over the REAL helper (upsert path)."""
+    from lumen_api.core import CoreClient
+
+    config = replace(
+        AgentRuntimeConfig.from_env(REPO_ROOT), trace_dir=tmp_path / "workspace_root"
+    )
+    account_assets = None
+    if logo_id and in_manifest:
+        record = _ingest_account_logo(config, logo_id)
+        account_assets = {logo_id: {"record": record, "title": "Account logo"}}
+    account_card = {
+        "name": "Privia Health",
+        "domain": "privia.com",
+        "logo_asset_id": logo_id,
+        "data": {},
+        "notes": None,
+    }
+    config = replace(config, account_card=account_card, account_assets=account_assets)
+    core = CoreClient(repo_root=REPO_ROOT)
+    seed = core.web_new_doc("doc_acct_test", "Test site", None)["web_doc"]
+    return LumenWebTools(config, "Personalize the page", initial_web_doc=seed)
+
+
+def test_use_account_asset_registers_logo(tmp_path: Path):
+    tools = _account_tools(tmp_path)
+    result = json.loads(tools.asset("use_account_asset", alt="Privia logo"))
+    assert result["status"] == "ok", result
+    assert result["asset_id"] == "acc_logo_1"
+    # The logo record now lives in the working doc's asset map.
+    assert "acc_logo_1" in (tools.web_doc.get("assets") or {})
+    assert tools._doc_version == 1
+
+
+def test_use_account_asset_errors_without_account_card(tmp_path: Path):
+    tools = _bare_tools(tmp_path)  # no account_card
+    result = json.loads(tools.asset("use_account_asset"))
+    assert result["status"] == "error"
+    assert result["error_code"] == "asset.no_account"
+
+
+def test_use_account_asset_errors_without_logo(tmp_path: Path):
+    # An account with no logo id: honest "no logo", not a crash.
+    tools = _account_tools(tmp_path, logo_id=None)
+    result = json.loads(tools.asset("use_account_asset"))
+    assert result["status"] == "error"
+    assert result["error_code"] == "asset.no_account_logo"
+
+
+def test_use_account_asset_errors_when_logo_missing_from_manifest(tmp_path: Path):
+    # The card names a logo but the by-value manifest lacks its record.
+    tools = _account_tools(tmp_path, in_manifest=False)
+    result = json.loads(tools.asset("use_account_asset"))
+    assert result["status"] == "error"
+    assert result["error_code"] == "asset.no_account_logo"
+
+
+def test_view_account_returns_card(tmp_path: Path):
+    card = {
+        "name": "Privia Health",
+        "domain": "privia.com",
+        "logo_asset_id": None,
+        "data": {"cta": "Book a demo"},
+        "notes": "context",
+    }
+    tools = _bare_tools(tmp_path, account_card=card)
+    blocks = tools._view_content("account")
+    assert len(blocks) == 1
+    text = blocks[0]["text"]
+    assert "Privia Health" in text
+    assert "Book a demo" in text
+
+
+def test_view_account_none_when_unpersonalized(tmp_path: Path):
+    tools = _bare_tools(tmp_path)  # no account
+    blocks = tools._view_content("account")
+    assert "No target account" in blocks[0]["text"]

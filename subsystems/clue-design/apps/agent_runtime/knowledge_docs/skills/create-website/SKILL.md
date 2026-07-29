@@ -200,6 +200,41 @@ one and none was given, use an obvious placeholder
 (`https://example.com/PLACEHOLDER-booking`), flag it in the finalize summary,
 and ask for the real one.
 
+## Personalization markers (templates & account pages)
+
+A page meant to serve MANY accounts (or authored for one account but derived
+for others later) carries markers where content varies per account. Derivation
+is deterministic: markers look up the account's value map; an unbound marker
+keeps the template content as its fallback. **Markers are load-bearing and
+survive derivation — never strip one while editing.**
+
+| You write | Meaning |
+|---|---|
+| `<span data-var="account.name">Acme Health</span>` | inline variable — inner text is the fallback; derivation swaps the text, keeps the span |
+| `<img data-slot="account.logo" data-asset="…" alt="…">` | node slot — derivation swaps the asset; the template's asset is the fallback |
+| `<h2 data-slot="account.headline">…</h2>` | text slot — bound text replaces this node's content |
+| `<section data-slot-when="account.proof" …>` | presence gate — the whole band is REMOVED when the key is unbound (Section/Container only) |
+| `<div data-slot="account.peer_logos"><img …>…</div>` | repeater — a bound List replaces the children with one clone of the FIRST child per item (≤12) |
+
+Rules:
+- Keys are `[a-z0-9_.-]`, ≤64 chars. The account namespace: `account.name`,
+  `account.domain`, `account.logo`, plus `account.<key>` for the account's
+  custom data fields.
+- The same slot key on multiple nodes is deliberate multi-placement (the
+  logo in header AND footer) — every carrier updates together.
+- Fallback content must read as a real, shippable page — a template renders
+  as-is when no account is bound; never leave lorem or empty markers.
+- The account's own logo is registered with
+  `asset(action="use_account_asset")`, then referenced by the returned id.
+- On a 1:1 account page (account card in your brief): the account's name
+  hardcoded OUTSIDE a marker is a defect — route it through `data-var`.
+
+**Recipe selection:** `landing-page.md` is the default grammar. With a target
+account in your brief, `abm-page.md` governs instead — co-branded header,
+personalized hero, peer proof, account-mapped features, and its hard rules:
+the target's brand is quoted, never adopted; personalization is factual,
+never inferred.
+
 ## Imagery
 
 Generate before you reference: use the `asset` tool, then
@@ -266,3 +301,5 @@ Common diagnostic codes:
 | LUMW0018 | command targets a missing/non-dialog node | point `data-target` at a real dialog's id |
 | LUMW0132 (warning) | attribute ignored (e.g. `style=`) | express it as utility classes |
 | LUMW0124 (warning) | bad component prop value | defaults applied; fix the `data-*` value |
+| LUMW0133 | invalid slot/variable key | keys are `[a-z0-9_.-]`, ≤64 chars |
+| LUMW0134 | `data-slot-when` on a non-band element | presence gates go on `<section>`/`<div>` only |
