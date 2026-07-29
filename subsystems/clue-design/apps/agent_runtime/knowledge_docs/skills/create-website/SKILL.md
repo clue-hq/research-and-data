@@ -139,6 +139,10 @@ components plus command-wired buttons; behavior comes from the platform (native
 | `<div data-component="accordion" data-single-open="true" data-default-open="0">…</div>` | FAQ / drawer accordion (native, zero-JS) |
 | `<div data-component="marquee" data-speed="30" data-direction="left">…</div>` | logo-strip marquee (CSS animation; reduced-motion honored) |
 | `<a data-button="primary" data-command="show-modal" data-target="dlg_book">Book a call</a>` | trigger button — a command, not a link (**no href**) |
+| `<div data-component="nav_menu">…buttons…</div>` | header nav: inline row at `md:`+, hamburger dropdown below (zero-JS) |
+| `<div data-component="carousel" data-show-arrows="true" data-autoplay="6">…</div>` | scroll-snap carousel; arrows/autoplay are platform-owned |
+| `<div data-component="tabs" data-default-tab="0">…</div>` | accessible tabs — items like accordion items (first child = the tab label) |
+| `<div data-embed="calendly" data-url="https://calendly.com/…"></div>` | Calendly scheduling embed (empty element; give it a height class, e.g. `h-[700px]`) |
 
 Contracts:
 - **Children are ordinary nodes** — everything inside a component is normal
@@ -156,6 +160,25 @@ Contracts:
 - A button is a link (`href`) **or** a trigger (`data-command` +
   `data-target`), never both — the parser rejects the combination. Valid
   commands: `show-modal` (open a dialog), `close` (close the one it is in).
+- **nav_menu** — children are the nav links (buttons, `ghost`/`link`
+  variants) and optional label text. The desktop row and the mobile
+  hamburger panel are both platform-rendered from the same children —
+  author them ONCE. Put the nav_menu inside the header band next to the
+  logo and CTA.
+- **carousel** — children are the slides (cards, images); each slide sizes
+  itself (`w-72`, `md:w-96`). `data-autoplay` is seconds per step (2–60);
+  omit it for a manual carousel. Needs ≥2 slides to be a carousel.
+- **tabs** — items exactly like accordion items: each child is a `<div>`
+  whose FIRST child is a short Text label (it becomes the tab button) and
+  whose remaining children are the panel. `data-default-tab` is the
+  0-based initially-open item.
+- **calendly embed** — the ONLY embed you may author, and only with a real
+  `https://calendly.com/…` link from the brief; none given → the obvious
+  placeholder + flag at finalize. The element is empty and needs an
+  explicit height class. **A calendly embed inside a dialog is the
+  complete book-a-call flow** — dialog owns open/close, the embed owns
+  scheduling. Custom URL/snippet embeds are human-editor territory, never
+  authored.
 
 **The escalation ladder — climb reluctantly.** Palette (sections, text,
 buttons, images) → platform component → embed → custom component. Take the

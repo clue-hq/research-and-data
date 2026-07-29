@@ -47,6 +47,18 @@ Judge interactive states from pixels with the same discipline as widths:
     base screenshots; content is legible at the pace implied by its length.
 13. **Wiring** — every command button targets a dialog that exists (a
     LUMW0018 diagnostic is a blocking issue, same as a broken link).
+14. **Nav menu (375)** — the expanded capture shows every nav link readable
+    in the dropdown panel; the hamburger is visible in the base 375 shot;
+    at 1440 the links render inline, no hamburger.
+15. **Tabs** — the selected-tab capture shows the panel actually switched
+    (different content than the default tab); tab labels short enough not
+    to wrap into a second row at 375.
+16. **Carousel** — slides sized so a peek of the next slide is visible at
+    the viewport edge (affordance); arrows not overlapping content
+    illegibly.
+17. **Embeds** — a calendly embed has explicit height (not collapsed to a
+    sliver); inside a dialog it fits without double scrollbars at 375. An
+    embed showing the missing-content placeholder is blocking.
 
 ## Brand expression — the anchor check
 

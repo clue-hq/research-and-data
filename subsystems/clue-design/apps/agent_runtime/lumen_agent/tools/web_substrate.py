@@ -76,6 +76,10 @@ _STATE_WIDTHS = (1440, 375)
 # silently.
 _MAX_DIALOG_CAPTURES = 3
 
+# At most this many tabs components are captured per render (each costs one extra
+# Playwright page); any beyond the cap are reported, never dropped silently.
+_MAX_TABS_CAPTURES = 2
+
 # The @font-face data-URL CSS built from the kit fonts is capped at this many
 # encoded (base64) bytes so a heavy multi-weight kit cannot bloat every render's
 # inlined HTML unbounded. Module-level so tests can force it small.
@@ -113,16 +117,24 @@ def _valid_font_style(value: Any) -> bool:
 
 def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
     """Pure scan of a WebDoc for the interactive components that need a STATE
-    capture: every dialog component's node id (opened → screenshot) and whether
-    any accordion component exists (details expanded → screenshot). Factored out
-    of render so it is unit-testable without Playwright.
+    capture. Factored out of render so it is unit-testable without Playwright.
 
-    Returns ``{"dialogs": [node_id, ...], "has_accordion": bool}``. Dialog ids
-    are collected in page-then-node order across all pages; a node is a dialog
-    when ``kind == "component"`` and ``component == "dialog"`` (accordion the
-    same with ``component == "accordion"``)."""
+    Returns ``{"dialogs": [node_id, ...], "has_accordion": bool, "has_nav":
+    bool, "tabs": [node_id, ...]}``:
+    - ``dialogs`` — every dialog component's node id (opened → screenshot), in
+      page-then-node order across all pages.
+    - ``has_accordion`` — any accordion component exists (details expanded →
+      screenshot).
+    - ``has_nav`` — any nav_menu component exists (hamburger opened →
+      screenshot).
+    - ``tabs`` — every tabs component's node id that has at least two children
+      (a single-tab strip has nothing to switch to), same page-then-node order.
+
+    A node's role is its ``component`` value when ``kind == "component"``."""
     dialogs: List[str] = []
     has_accordion = False
+    has_nav = False
+    tabs: List[str] = []
     for page in web_doc.get("pages") or []:
         if not isinstance(page, dict):
             continue
@@ -137,7 +149,17 @@ def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
                 dialogs.append(node_id)
             elif component == "accordion":
                 has_accordion = True
-    return {"dialogs": dialogs, "has_accordion": has_accordion}
+            elif component == "nav_menu":
+                has_nav = True
+            elif component == "tabs":
+                if len(node.get("children") or []) >= 2:
+                    tabs.append(node_id)
+    return {
+        "dialogs": dialogs,
+        "has_accordion": has_accordion,
+        "has_nav": has_nav,
+        "tabs": tabs,
+    }
 
 
 def sanitize_token_name(name: str) -> str:
@@ -219,6 +241,12 @@ class LumenWebTools:
         # Monotonic iteration counter naming per-render screenshot dirs
         # (iter_1, iter_2, …). Bumped at the START of each render.
         self.iteration = 0
+        # A single Playwright instance + headless chromium kept alive across
+        # renders (launching per render dominates web-turn latency). Started
+        # lazily by _browser_handle(); torn down by _close_browser() (called
+        # from finalize on every outcome).
+        self._pw = None
+        self._browser = None
         self.preview_paths: List[str] = []
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
@@ -1401,12 +1429,98 @@ class LumenWebTools:
             return None
         return "\n".join(rules)
 
+    def _browser_handle(self):
+        """The shared headless chromium, started lazily and kept alive across
+        renders (a fresh launch per render dominates web-turn latency). Started
+        on first use via `sync_playwright().start()`; torn down by
+        `_close_browser()` at finalize. Raises if Playwright is unavailable."""
+        if self._browser is not None:
+            return self._browser
+        from playwright.sync_api import sync_playwright
+
+        self._pw = sync_playwright().start()
+        self._browser = self._pw.chromium.launch(headless=True)
+        return self._browser
+
+    def _close_browser(self) -> None:
+        """Tear down the shared browser + Playwright instance. Idempotent and
+        exception-safe: each of `browser.close()` / `pw.stop()` is best-effort
+        and the handles are reset to None regardless (a partially-torn-down
+        browser must not leave a stale handle that a later render reuses)."""
+        browser, pw = self._browser, self._pw
+        self._browser = None
+        self._pw = None
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:  # noqa: BLE001 - teardown is best-effort
+                pass
+        if pw is not None:
+            try:
+                pw.stop()
+            except Exception:  # noqa: BLE001 - teardown is best-effort
+                pass
+
+    @staticmethod
+    def _looks_like_dead_browser(error: Exception) -> bool:
+        """True when a Playwright exception looks like the kept-alive browser
+        died (closed/crashed connection) — the one case worth relaunching and
+        retrying the capture pass once, rather than failing the render."""
+        text = f"{type(error).__name__}: {error}".lower()
+        return any(
+            marker in text
+            for marker in (
+                "target page, context or browser has been closed",
+                "browser has been closed",
+                "browser closed",
+                "connection closed",
+                "targetclosederror",
+                "browser has crashed",
+                "has crashed",
+            )
+        )
+
     def render_web_preview(self) -> str:
         """Render the live document (editor mode) and capture full-page
         screenshots at 1440, 768, and 375 px, plus interactive STATE captures
-        (dialogs opened, accordions expanded) at 1440 and 375 px. Look at them
-        with view("preview:<width>") and view("state:<n>"). Returns the
-        screenshot paths, the state-capture list, and any render diagnostics."""
+        (dialogs opened, accordions expanded, nav menu opened, tabs switched) at
+        the state widths. Look at them with view("preview:<width>") and
+        view("state:<n>"). Returns the screenshot paths, the state-capture list,
+        and any render diagnostics.
+
+        Unchanged-render guard (the L4b analogue): if the document has not
+        mutated since the last successful render (identical doc ⇒ identical
+        pixels, deterministically), the standing previews are reused verbatim —
+        no helper call, no Playwright, no iteration bump — and the result
+        carries `unchanged: true` so the orchestrator reuses its standing
+        critique instead of re-reviewing byte-identical pixels."""
+        # Feature 2 — unchanged-render guard. A doc with no mutation since the
+        # last render whose previews are all still on hand is reused verbatim.
+        if (
+            self._preview_doc_version is not None
+            and self._preview_doc_version == self._doc_version
+            and all(width in self._preview_by_width for width in _PREVIEW_WIDTHS)
+        ):
+            paths = [self._preview_by_width[width] for width in _PREVIEW_WIDTHS]
+            self.record(
+                "orchestrator",
+                "web_preview_unchanged",
+                output_summary=(
+                    f"doc unchanged since iteration {self._preview_iteration}; "
+                    f"reusing {len(paths)} standing preview(s)"
+                ),
+            )
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "preview_paths": paths,
+                    "state_captures": list(self._state_captures),
+                    "diagnostics": [],
+                    "unchanged": True,
+                },
+                indent=2,
+            )
+
         self.iteration += 1
         iter_dir = self.trace_dir / f"iter_{self.iteration}"
         iter_dir.mkdir(parents=True, exist_ok=True)
@@ -1457,7 +1571,7 @@ class LumenWebTools:
             tailwind_missing = True
 
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import sync_playwright  # noqa: F401
         except Exception as error:  # noqa: BLE001
             return self._tool_error(
                 "web_preview.playwright_unavailable",
@@ -1465,41 +1579,22 @@ class LumenWebTools:
                 diagnostics=diagnostics,
             )
 
-        paths: List[str] = []
-        self._state_captures = []
-        state_capture_error: Optional[str] = None
-        state_omitted_dialogs: List[str] = []
+        # The capture pass runs on the shared, kept-alive browser. If it dies
+        # (closed/crashed connection), close + relaunch ONCE and retry before
+        # surfacing the failure.
         try:
-            with sync_playwright() as pw:
-                browser = pw.chromium.launch(headless=True)
-                try:
-                    for width in _PREVIEW_WIDTHS:
-                        page = browser.new_page(viewport={"width": width, "height": 1200})
-                        page.set_content(html, wait_until="load")
-                        page.wait_for_timeout(400)
-                        dest = iter_dir / f"preview_{width}.png"
-                        page.screenshot(path=str(dest), full_page=True)
-                        page.close()
-                        paths.append(str(dest))
-                        self._preview_by_width[width] = str(dest)
-
-                    # STATE captures — best-effort, never voids the base previews.
-                    # An exception here degrades to a recorded warning + a
-                    # state_capture_error in the result (see the except below).
-                    try:
-                        state_omitted_dialogs = self._capture_states(
-                            browser, html, iter_dir
-                        )
-                    except Exception as error:  # noqa: BLE001 - degrade, keep base previews
-                        state_capture_error = f"{type(error).__name__}: {error}"
-                        self.record(
-                            "orchestrator",
-                            "web_state_capture_warning",
-                            output_summary=f"state capture degraded: {state_capture_error}",
-                            diagnostics=diagnostics,
-                        )
-                finally:
-                    browser.close()
+            try:
+                paths, state_capture_error, state_omitted = self._capture_pass(
+                    html, iter_dir, diagnostics
+                )
+            except Exception as error:  # noqa: BLE001
+                if self._looks_like_dead_browser(error):
+                    self._close_browser()
+                    paths, state_capture_error, state_omitted = self._capture_pass(
+                        html, iter_dir, diagnostics
+                    )
+                else:
+                    raise
         except Exception as error:  # noqa: BLE001 - turn-safety boundary
             self.record(
                 "orchestrator",
@@ -1527,8 +1622,9 @@ class LumenWebTools:
             result["tailwind_runtime_missing"] = True
         if state_capture_error is not None:
             result["state_capture_error"] = state_capture_error
-        if state_omitted_dialogs:
-            result["state_captures_omitted"] = {"dialogs": state_omitted_dialogs}
+        omitted_nonempty = {k: v for k, v in (state_omitted or {}).items() if v}
+        if omitted_nonempty:
+            result["state_captures_omitted"] = omitted_nonempty
         self.record(
             "orchestrator",
             "web_preview_rendered",
@@ -1540,7 +1636,47 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
-    def _capture_states(self, browser, html: str, iter_dir: Path) -> List[str]:
+    def _capture_pass(
+        self, html: str, iter_dir: Path, diagnostics: List[JsonObject]
+    ) -> tuple[List[str], Optional[str], JsonObject]:
+        """One full capture pass on the shared browser: the base previews at
+        each `_PREVIEW_WIDTH`, then the best-effort interactive STATE captures.
+
+        Returns ``(paths, state_capture_error, omitted)``. A Playwright fault in
+        the base-preview loop PROPAGATES (so render's dead-browser retry can
+        relaunch and rerun the whole pass); a state-capture failure degrades to
+        a recorded warning + a `state_capture_error` string and NEVER voids the
+        base previews. `omitted` is ``{"dialogs": [...], "tabs": [...]}``."""
+        browser = self._browser_handle()
+        paths: List[str] = []
+        # Reset per pass so a dead-browser retry does not accumulate stale
+        # captures on top of a half-finished first attempt.
+        self._state_captures = []
+        for width in _PREVIEW_WIDTHS:
+            page = browser.new_page(viewport={"width": width, "height": 1200})
+            page.set_content(html, wait_until="load")
+            page.wait_for_timeout(400)
+            dest = iter_dir / f"preview_{width}.png"
+            page.screenshot(path=str(dest), full_page=True)
+            page.close()
+            paths.append(str(dest))
+            self._preview_by_width[width] = str(dest)
+
+        state_capture_error: Optional[str] = None
+        omitted: JsonObject = {"dialogs": [], "tabs": []}
+        try:
+            omitted = self._capture_states(browser, html, iter_dir)
+        except Exception as error:  # noqa: BLE001 - degrade, keep base previews
+            state_capture_error = f"{type(error).__name__}: {error}"
+            self.record(
+                "orchestrator",
+                "web_state_capture_warning",
+                output_summary=f"state capture degraded: {state_capture_error}",
+                diagnostics=diagnostics,
+            )
+        return paths, state_capture_error, omitted
+
+    def _capture_states(self, browser, html: str, iter_dir: Path) -> JsonObject:
         """Take the interactive STATE screenshots for this render, appending each
         to `self._state_captures`. Uses the already-open Playwright `browser`.
 
@@ -1548,12 +1684,21 @@ class LumenWebTools:
         page shows the dialog via `showModal()` and a VIEWPORT screenshot is
         taken (the dialog lives in the top layer over the viewport). If any
         accordion exists, per width one FULL-page screenshot is taken with every
-        `<details>` forced open. Returns the ids of any dialogs beyond the cap
+        NON-nav `<details>` forced open (a nav hamburger is captured separately).
+        If a nav_menu exists, ONE capture at 375px opens just the nav dropdown
+        (a VIEWPORT screenshot — the dropdown is viewport-anchored). Per tabs
+        component (first _MAX_TABS_CAPTURES only), ONE capture at 1440px clicks
+        the SECOND tab and takes a FULL-page screenshot.
+
+        Returns ``{"dialogs": [...], "tabs": [...]}`` — the ids beyond each cap
         (omitted, never dropped silently)."""
         plan = _interactive_capture_plan(self.web_doc)
         dialogs = plan["dialogs"]
         captured_dialogs = dialogs[:_MAX_DIALOG_CAPTURES]
-        omitted = dialogs[_MAX_DIALOG_CAPTURES:]
+        omitted_dialogs = dialogs[_MAX_DIALOG_CAPTURES:]
+        tabs = plan["tabs"]
+        captured_tabs = tabs[:_MAX_TABS_CAPTURES]
+        omitted_tabs = tabs[_MAX_TABS_CAPTURES:]
 
         for node_id in captured_dialogs:
             for width in _STATE_WIDTHS:
@@ -1583,8 +1728,10 @@ class LumenWebTools:
                 page = browser.new_page(viewport={"width": width, "height": 1200})
                 page.set_content(html, wait_until="load")
                 page.wait_for_timeout(250)
+                # Scope to non-nav details so opening accordions never also flips
+                # a nav hamburger open (which has its own dedicated capture).
                 page.evaluate(
-                    "() => document.querySelectorAll('details')"
+                    "() => document.querySelectorAll('details:not(.lumen-nav-menu)')"
                     ".forEach(d => { d.open = true; })"
                 )
                 page.wait_for_timeout(250)
@@ -1600,17 +1747,77 @@ class LumenWebTools:
                     }
                 )
 
-        if omitted:
+        if plan["has_nav"]:
+            # The nav hamburger is only visible below 768px; capture the open
+            # dropdown at 375px. A VIEWPORT screenshot — the dropdown is
+            # viewport-anchored, not part of the full-page flow.
+            page = browser.new_page(viewport={"width": 375, "height": 1200})
+            page.set_content(html, wait_until="load")
+            page.wait_for_timeout(250)
+            page.evaluate(
+                "() => document.querySelectorAll('details.lumen-nav-menu')"
+                ".forEach(d => { d.open = true; })"
+            )
+            page.wait_for_timeout(250)
+            dest = iter_dir / "state_375_nav_open.png"
+            page.screenshot(path=str(dest), full_page=False)
+            page.close()
+            self._state_captures.append(
+                {
+                    "kind": "nav-open",
+                    "node_id": None,
+                    "width": 375,
+                    "path": str(dest),
+                }
+            )
+
+        for node_id in captured_tabs:
+            # Switch to the SECOND tab (the first is the default panel) at
+            # desktop width and capture the full page.
+            page = browser.new_page(viewport={"width": 1440, "height": 1200})
+            page.set_content(html, wait_until="load")
+            page.wait_for_timeout(250)
+            page.evaluate(
+                "(id) => { const root = document.querySelector("
+                "'[data-node-id=\"' + id + '\"]'); const tabs = root ? "
+                "root.querySelectorAll('[role=\"tab\"]') : []; "
+                "if (tabs[1]) tabs[1].click(); }",
+                node_id,
+            )
+            page.wait_for_timeout(250)
+            dest = iter_dir / f"state_1440_tabs_{node_id}.png"
+            page.screenshot(path=str(dest), full_page=True)
+            page.close()
+            self._state_captures.append(
+                {
+                    "kind": "tab-selected",
+                    "node_id": node_id,
+                    "width": 1440,
+                    "path": str(dest),
+                }
+            )
+
+        if omitted_dialogs:
             self.record(
                 "orchestrator",
                 "web_state_capture_omitted",
                 output_summary=(
-                    f"{len(omitted)} dialog(s) beyond the {_MAX_DIALOG_CAPTURES}-capture "
-                    "cap were not captured"
+                    f"{len(omitted_dialogs)} dialog(s) beyond the "
+                    f"{_MAX_DIALOG_CAPTURES}-capture cap were not captured"
                 ),
-                payload={"omitted_dialog_ids": omitted},
+                payload={"omitted_dialog_ids": omitted_dialogs},
             )
-        return omitted
+        if omitted_tabs:
+            self.record(
+                "orchestrator",
+                "web_state_capture_omitted",
+                output_summary=(
+                    f"{len(omitted_tabs)} tabs component(s) beyond the "
+                    f"{_MAX_TABS_CAPTURES}-capture cap were not captured"
+                ),
+                payload={"omitted_tabs_ids": omitted_tabs},
+            )
+        return {"dialogs": omitted_dialogs, "tabs": omitted_tabs}
 
     def _view_content(self, target: str) -> list:
         """Build the ToolMessage content for view(target). See make_web_view_tool."""
@@ -1755,6 +1962,9 @@ class LumenWebTools:
                 "finalize.bad_outcome",
                 f"outcome must be one of {sorted(valid)}; got {outcome!r}.",
             )
+        # The turn is ending on every valid outcome — release the kept-alive
+        # browser so no Playwright process outlives the run.
+        self._close_browser()
         payload: JsonObject = {"outcome": outcome, "summary": summary}
         gap = (ladder_gap or "").strip()
         if gap:

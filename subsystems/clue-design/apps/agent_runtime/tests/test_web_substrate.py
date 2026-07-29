@@ -578,6 +578,8 @@ def test_interactive_capture_plan_finds_dialogs_and_accordion():
     plan = _interactive_capture_plan(_doc_with_nodes(nodes))
     assert set(plan["dialogs"]) == {"d1", "d2"}
     assert plan["has_accordion"] is True
+    assert plan["has_nav"] is False
+    assert plan["tabs"] == []
 
 
 def test_interactive_capture_plan_empty_when_component_free():
@@ -586,7 +588,27 @@ def test_interactive_capture_plan_empty_when_component_free():
         "t": {"kind": "text", "content": "x"},
     }
     plan = _interactive_capture_plan(_doc_with_nodes(nodes))
-    assert plan == {"dialogs": [], "has_accordion": False}
+    assert plan == {"dialogs": [], "has_accordion": False, "has_nav": False, "tabs": []}
+
+
+def test_interactive_capture_plan_finds_nav_and_multichild_tabs_only():
+    # A nav_menu → has_nav; two tabs components, but only the one with ≥2
+    # children is listed (a single-tab strip has nothing to switch to).
+    nodes = {
+        "root": {"kind": "section", "children": ["nav", "t_one", "t_many"]},
+        "nav": {"kind": "component", "component": "nav_menu"},
+        "t_one": {"kind": "component", "component": "tabs", "children": ["p1"]},
+        "t_many": {
+            "kind": "component",
+            "component": "tabs",
+            "children": ["q1", "q2", "q3"],
+        },
+    }
+    plan = _interactive_capture_plan(_doc_with_nodes(nodes))
+    assert plan["has_nav"] is True
+    assert plan["tabs"] == ["t_many"]
+    assert plan["dialogs"] == []
+    assert plan["has_accordion"] is False
 
 
 def test_interactive_capture_plan_carries_all_dialogs_over_cap():
@@ -772,3 +794,91 @@ def test_view_state_none_captured(tmp_path: Path):
     blocks = tools._view_content("state:0")
     assert blocks[0]["type"] == "text"
     assert "no state captures" in blocks[0]["text"]
+
+
+# --- render_web_preview unchanged guard (the L4b analogue) -------------------
+
+
+def test_render_web_preview_unchanged_guard(tmp_path: Path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    # Seed standing previews for EVERY width, stamped at the current doc version
+    # — the exact precondition the guard short-circuits on.
+    for width in ws._PREVIEW_WIDTHS:
+        tools._preview_by_width[width] = str(tmp_path / f"preview_{width}.png")
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 1
+    iteration_before = tools.iteration
+
+    def _must_not_render(*args, **kwargs):
+        raise AssertionError("web_render must not be called on an unchanged doc")
+
+    monkeypatch.setattr(tools.core, "web_render", _must_not_render)
+
+    result = json.loads(tools.render_web_preview())
+    assert result["unchanged"] is True
+    assert result["status"] == "ok"
+    # Same paths, in width order; the state-capture list is echoed.
+    assert result["preview_paths"] == [
+        tools._preview_by_width[w] for w in ws._PREVIEW_WIDTHS
+    ]
+    assert result["diagnostics"] == []
+    # No iteration bump — the guard did no work.
+    assert tools.iteration == iteration_before
+    assert "web_preview_unchanged" in _trace_events(tools)
+
+    # Mutate the doc version → the guard no longer fires, so the normal path is
+    # taken and the (now raising) core.web_render is reached; the render-failure
+    # envelope surfaces, proving the guard was bypassed.
+    from lumen_api.core import CoreError
+
+    def _raise(*args, **kwargs):
+        raise CoreError("helper.boom", "render exploded", [])
+
+    monkeypatch.setattr(tools.core, "web_render", _raise)
+    tools._doc_version += 1
+    after = json.loads(tools.render_web_preview())
+    assert after["status"] == "error"
+    assert after["error_code"] == "web_render.failed"
+
+
+# --- browser reuse: _close_browser + finalize teardown ----------------------
+
+
+def test_close_browser_idempotent_without_playwright(tmp_path: Path):
+    # A fresh substrate never started Playwright; closing (twice) is a safe no-op.
+    tools = _bare_tools(tmp_path)
+    assert tools._browser is None and tools._pw is None
+    tools._close_browser()
+    tools._close_browser()
+    assert tools._browser is None and tools._pw is None
+
+
+class _RecordingBrowser:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class _RecordingPw:
+    def __init__(self):
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_finalize_web_run_closes_browser(tmp_path: Path):
+    tools = _bare_tools(tmp_path)
+    browser = _RecordingBrowser()
+    pw = _RecordingPw()
+    tools._browser = browser
+    tools._pw = pw
+
+    result = json.loads(tools.finalize_web_run("accepted", "done"))
+    assert result["status"] == "ok"
+    # Both handles were closed/stopped and reset to None.
+    assert browser.closed is True
+    assert pw.stopped is True
+    assert tools._browser is None and tools._pw is None

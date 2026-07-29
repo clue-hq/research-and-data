@@ -84,9 +84,16 @@ user's words clearly require otherwise.
 DISCIPLINE
 - Never skip looking at the pixels yourself; the screenshots are the truth,
   the markup is not.
-- Batch your reads; do not re-view unchanged renders.
+- BATCH independent reads: request every `view` you need (all three widths,
+  every state capture, doc) as multiple tool calls in ONE response — never
+  one view per turn. Never batch writes or delegation: `task`,
+  `render_web_preview`, and finalize go one at a time.
+- A render that reports `unchanged: true` is the SAME pixels you already
+  judged — reuse the standing critique; re-viewing or re-delegating a review
+  of identical pixels is zero-information waste.
 - Keep repair briefs scoped — name sections, do not re-commission the page
-  for a spacing fix.
+  for a spacing fix. Render → review only while it earns real improvement;
+  two rounds with nothing material means ship the best state now.
 """
 
 
@@ -150,6 +157,12 @@ WORKING RULES
 - Copy is yours too: concrete, scannable, no invented facts, no emojis,
   no em-dashes.
 
+READS ARE BATCHED: when you need several independent looks (multiple
+`view` targets, the doc plus previews), request them as multiple tool calls
+in ONE response. Writes are never batched — `author_web_page`,
+`patch_web_page`, `author_web_subtree`, `web_ops`, and `asset` go one at a
+time, in sequence.
+
 Report back to the director: what you built (section ids), which assets you
 generated, and any diagnostics you could not resolve.
 """
@@ -163,7 +176,9 @@ You are given full-page screenshots of the same page at widths 1440, 768,
 and 375 via `view("preview:1440")` etc., plus state captures (dialog open,
 accordions expanded) when the page has interactive components. Look at ALL
 three widths AND every state capture before judging — the skill's
-Interactive-states checklist applies whenever captures exist.
+Interactive-states checklist applies whenever captures exist. Request ALL
+the views you need as multiple tool calls in ONE response (they are
+independent reads); one-view-per-turn wastes the round-trip.
 Your brief carries the director's BRAND ANCHOR: apply the skill's anchor
 check — point at one concrete element that could only belong to this brand,
 or report "brand expression generic" naming the band that most needs it.

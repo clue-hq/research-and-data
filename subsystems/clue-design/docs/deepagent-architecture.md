@@ -909,3 +909,42 @@ grammar is `knowledge_docs/knowledge/web/landing-page.md`.
   events stream over the shared `/agent/runs/{id}/events` SSE.
 - `GET /documents/{id}/web/render?mode=editor|delivery&runtime_src=` — renders
   the stored WebDoc; assets resolve against the request origin's `/asset-store`.
+
+**Website mode — P2.5→P3.5 substrate additions (ledger catch-up).** Extending
+the tool ledger above as the web substrate grew:
+- **P2.5 (catch-up)** — `render_web_preview` also takes interactive STATE
+  captures alongside the base 1440/768/375 previews: dialogs opened
+  (`showModal`, viewport shot, ≤ `_MAX_DIALOG_CAPTURES`) and accordions expanded
+  (`<details>` forced open, full-page), at the state widths 1440/375, surfaced
+  via `view("state:<n>")`. `finalize_web_run(outcome, summary, ladder_gap?)`
+  gained the optional `ladder_gap` demand signal — a capability the catalogue
+  could not express — recorded to `final.json` and emitted as a dedicated
+  `ladder_gap` trace event.
+- **P2.6** — `patch_web_page(patches_json)`: the DEFAULT repair after a rejected
+  `author_web_page`/`author_web_subtree` — an ordered array of
+  `{old_string, new_string, replace_all?}` targeted patches applied to the
+  rejected markup and resubmitted as the SAME atomic batch (page or subtree),
+  instead of the model re-sending the whole document. Structurally validated
+  all-or-nothing (`patch.bad_input`/`not_found`/`ambiguous`/`no_pending`); a
+  still-rejected resubmission updates the pending html for the next round, a
+  clean one clears it. Success is decorated `repaired_via: "patch"`.
+- **P3 wave** — the embed allowlist grammar (author-time `<iframe>`/embed
+  domains) and the wave-2 interactive components (`nav_menu` — a
+  `<details class="lumen-nav-menu">` hamburger below 768px; `tabs` —
+  `[role="tab"]` buttons with an inlined platform panel-switch runtime), each
+  with its own STATE capture: `nav-open` (one 375px viewport shot with the nav
+  dropdown forced open; the accordion capture now scopes to
+  `details:not(.lumen-nav-menu)` so it never flips the nav open) and
+  `tab-selected` (per tabs node with ≥2 children, ≤ `_MAX_TABS_CAPTURES`, a
+  1440px full-page shot after clicking the second tab).
+- **P3.5 latency** — the unchanged-render guard (the L4b analogue): when the doc
+  has not mutated since the last successful render and every preview width is on
+  hand, `render_web_preview` short-circuits — no `web_render`, no Playwright, no
+  iteration bump — returning the standing paths with `unchanged: true` and a
+  `web_preview_unchanged` event, so the orchestrator reuses its standing
+  critique on byte-identical pixels. Plus Playwright browser reuse: a single
+  headless chromium is started lazily (`_browser_handle`) and kept alive across
+  renders (a fresh launch per render dominated web-turn latency), torn down by
+  `_close_browser()` (idempotent, exception-safe) at `finalize_web_run` on every
+  outcome; a dead-browser Playwright fault triggers ONE close+relaunch+retry of
+  the capture pass before the render-failure envelope surfaces.
