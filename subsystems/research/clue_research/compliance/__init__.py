@@ -12,6 +12,7 @@ package (the import-linter independence contract). The cross-package use-gate se
 
 from __future__ import annotations
 
+from clue_research.compliance.current_use import latest_use_decisions, standing_objections
 from clue_research.compliance.dsar import (
     ERASE_ALL,
     DataSubjectExport,
@@ -81,6 +82,8 @@ __all__ = [
     "DEFAULT_WORKSPACE_POLICY",
     "decide_use",
     "load_workspace_policy",
+    "latest_use_decisions",
+    "standing_objections",
     # M10.4 — the three postures as per-client config
     "POSTURE_PRESETS",
     "PosturePreset",

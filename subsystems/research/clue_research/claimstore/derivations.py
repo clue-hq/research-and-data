@@ -80,6 +80,9 @@ class DerivationDependencyResolution(BaseModel):
     freshness: FreshnessState | None = None
     reason_codes: tuple[str, ...] = ()
     support_claim_ids: tuple[ClaimId, ...] = ()
+    # Exact required transitive closure, excluding the root. Governance uses this to apply display
+    # and outreach policy to every required dependency, preventing derived-claim laundering.
+    required_transitive_claim_ids: tuple[ClaimId, ...] = ()
     traversed_nodes: int = Field(ge=0)
     max_depth_reached: int = Field(ge=0)
 
@@ -253,6 +256,32 @@ class DerivationDependencyResolver:
             counter=counter,
         )
 
+    async def resolve_many(
+        self,
+        conn: AsyncConnection,
+        claim_ids: Sequence[ClaimId],
+        *,
+        scope: WorkspaceScope,
+    ) -> dict[ClaimId, DerivationDependencyResolution]:
+        """Resolve several roots over one breadth-batched graph load."""
+
+        roots = tuple(dict.fromkeys(claim_ids))
+        if not roots:
+            return {}
+        graph = await self._load_graph_many(conn, roots, scope=scope)
+        memo: dict[ClaimId, DerivationDependencyResolution] = {}
+        results: dict[ClaimId, DerivationDependencyResolution] = {}
+        for claim_id in roots:
+            results[claim_id] = self._resolve(
+                claim_id,
+                depth=0,
+                graph=graph,
+                memo=memo,
+                visiting=set(),
+                counter=[0],
+            )
+        return results
+
     async def _load_graph(
         self,
         conn: AsyncConnection,
@@ -262,13 +291,24 @@ class DerivationDependencyResolver:
     ) -> _DependencyGraph:
         """Load one bounded graph with one support query per depth, never per node."""
 
-        seen: set[ClaimId] = {root_claim_id}
-        frontier: tuple[ClaimId, ...] = (root_claim_id,)
+        return await self._load_graph_many(conn, (root_claim_id,), scope=scope)
+
+    async def _load_graph_many(
+        self,
+        conn: AsyncConnection,
+        root_claim_ids: Sequence[ClaimId],
+        *,
+        scope: WorkspaceScope,
+    ) -> _DependencyGraph:
+        """Load the union graph for several roots with one support query per breadth level."""
+
+        seen: set[ClaimId] = set(root_claim_ids)
+        frontier: tuple[ClaimId, ...] = tuple(root_claim_ids)
         supports: dict[ClaimId, tuple[ResearchSupportRef, ...]] = {}
         node_limited: set[ClaimId] = set()
         depth = 0
         while frontier:
-            rows = await _derivation_supports_batch(conn, frontier)
+            rows = await derivation_supports_batch(conn, frontier)
             for parent in frontier:
                 supports[parent] = rows.get(parent, ())
             if depth >= self._max_depth:
@@ -306,18 +346,18 @@ class DerivationDependencyResolver:
             if operator_missing
             else {}
         )
-        erased: set[ClaimId] = set()
+        erased_reasons: dict[ClaimId, str] = {}
         if scoped_audit:
             erased_rows = (
                 await conn.execute(
                     text(
-                        "SELECT erased_claim_id FROM dsar_tombstone "
+                        "SELECT erased_claim_id, reason FROM dsar_tombstone "
                         "WHERE erased_claim_id IN :claim_ids"
                     ).bindparams(bindparam("claim_ids", expanding=True)),
                     {"claim_ids": list(scoped_audit)},
                 )
-            ).scalars()
-            erased = {ClaimId(value) for value in erased_rows}
+            ).all()
+            erased_reasons = {ClaimId(row[0]): str(row[1]) for row in erased_rows}
 
         field_keys = tuple(sorted({str(claim.field_key) for claim in visible.values()}))
         ttl_by_field: dict[str, timedelta | None] = {}
@@ -356,7 +396,7 @@ class DerivationDependencyResolver:
             visible=visible,
             scoped_audit=frozenset(scoped_audit),
             operator_audit=frozenset(operator_audit),
-            erased=frozenset(erased),
+            erased_reasons=erased_reasons,
             node_limited=frozenset(node_limited),
             ttl_by_field=ttl_by_field,
             conflicted=frozenset(conflicted),
@@ -429,17 +469,10 @@ class DerivationDependencyResolver:
             )
             memo[claim_id] = resolution
             return resolution
-        if claim.verification_status is VerificationStatus.FLAGGED:
-            resolution = DerivationDependencyResolution(
-                claim_id=claim_id,
-                state=DerivationDependencyState.REVIEW_REQUIRED,
-                reason_codes=("verification_flagged",),
-                traversed_nodes=counter[0],
-                max_depth_reached=depth,
-            )
-            memo[claim_id] = resolution
-            return resolution
-        if claim.verification_status is not VerificationStatus.VERIFIED:
+        if claim.verification_status not in {
+            VerificationStatus.VERIFIED,
+            VerificationStatus.FLAGGED,
+        }:
             resolution = DerivationDependencyResolution(
                 claim_id=claim_id,
                 state=DerivationDependencyState.UNAVAILABLE,
@@ -451,6 +484,14 @@ class DerivationDependencyResolver:
             return resolution
 
         local_state, freshness, local_reasons = self._local_state(claim, graph=graph)
+        if claim.verification_status is VerificationStatus.FLAGGED:
+            local_state = max(
+                (local_state, DerivationDependencyState.REVIEW_REQUIRED),
+                key=_STATE_PRECEDENCE.__getitem__,
+            )
+            local_reasons = tuple(
+                dict.fromkeys(("verification_flagged", *local_reasons))
+            )
         if claim.claim_flavor is not ClaimFlavor.DERIVED:
             resolution = DerivationDependencyResolution(
                 claim_id=claim_id,
@@ -500,6 +541,7 @@ class DerivationDependencyResolver:
                 reasons.extend(
                     f"support_{child.claim_id}_{reason}" for reason in child.reason_codes
                 )
+        required_supports = tuple(support for support in supports if support.required)
         resolution = DerivationDependencyResolution(
             claim_id=claim_id,
             state=state,
@@ -510,6 +552,16 @@ class DerivationDependencyResolver:
             ),
             reason_codes=tuple(dict.fromkeys(reasons)),
             support_claim_ids=tuple(support.claim_id for support in supports),
+            required_transitive_claim_ids=tuple(
+                dict.fromkeys(
+                    claim_id
+                    for support, child in zip(required_supports, required_results, strict=True)
+                    for claim_id in (
+                        support.claim_id,
+                        *child.required_transitive_claim_ids,
+                    )
+                )
+            ),
             traversed_nodes=counter[0],
             max_depth_reached=max(
                 [depth, *(child.max_depth_reached for child in required_results)]
@@ -527,7 +579,17 @@ class DerivationDependencyResolver:
         counter: int,
     ) -> DerivationDependencyResolution:
         if claim_id in graph.scoped_audit:
-            erased = claim_id in graph.erased
+            reason = graph.erased_reasons.get(claim_id)
+            erased = reason is not None
+            reason_code = (
+                {
+                    "erasure": "erased_support",
+                    "objection": "objection_erased_support",
+                    "retention_expiry": "retention_expired_support",
+                }.get(reason, "erased_support")
+                if reason is not None
+                else "erased_support"
+            )
             return DerivationDependencyResolution(
                 claim_id=claim_id,
                 state=(
@@ -535,7 +597,7 @@ class DerivationDependencyResolver:
                     if erased
                     else DerivationDependencyState.UNAVAILABLE
                 ),
-                reason_codes=("erased_support",) if erased else ("superseded_or_expired",),
+                reason_codes=(reason_code,) if erased else ("superseded_or_expired",),
                 traversed_nodes=counter,
                 max_depth_reached=depth,
             )
@@ -591,13 +653,13 @@ class _DependencyGraph:
     visible: dict[ClaimId, Claim]
     scoped_audit: frozenset[ClaimId]
     operator_audit: frozenset[ClaimId]
-    erased: frozenset[ClaimId]
+    erased_reasons: dict[ClaimId, str]
     node_limited: frozenset[ClaimId]
     ttl_by_field: dict[str, timedelta | None]
     conflicted: frozenset[tuple[EntityId, str]]
 
 
-async def _derivation_supports_batch(
+async def derivation_supports_batch(
     conn: AsyncConnection,
     derived_claim_ids: Sequence[ClaimId],
 ) -> dict[ClaimId, tuple[ResearchSupportRef, ...]]:
@@ -638,27 +700,8 @@ async def derivation_supports(
     conn: AsyncConnection, derived_claim_id: ClaimId
 ) -> tuple[ResearchSupportRef, ...]:
     """Ordered support references for one derived claim."""
-    rows = (
-        await conn.execute(
-            text(
-                """
-                SELECT supporting_claim_id, support_role, ordinal, support_required
-                FROM claim_derivation
-                WHERE derived_claim_id = :derived_claim_id
-                ORDER BY ordinal
-                """
-            ),
-            {"derived_claim_id": derived_claim_id},
-        )
-    ).all()
-    return tuple(
-        ResearchSupportRef(
-            claim_id=ClaimId(row[0]),
-            role=ResearchSupportRole(row[1]),
-            ordinal=int(row[2]),
-            required=bool(row[3]),
-        )
-        for row in rows
+    return (await derivation_supports_batch(conn, (derived_claim_id,))).get(
+        derived_claim_id, ()
     )
 
 

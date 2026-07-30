@@ -12,7 +12,7 @@ view. It deliberately carries no research values or connective prose.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -131,6 +131,7 @@ class CanonicalSubjectRead(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     subject: ResearchSubjectRef
+    canonical_member_entity_ids: tuple[UUID, ...] = ()
     sections: tuple[ResearchSectionSeed, ...]
 
     @model_validator(mode="after")
@@ -222,6 +223,13 @@ class ActivityReferenceReader(Protocol):
 
 @runtime_checkable
 class StatementGovernanceReader(Protocol):
+    async def resolve_statements(
+        self,
+        request: ResearchViewReadRequest,
+        subject: ResearchSubjectRef,
+        candidates: tuple[ResearchStatementCandidate, ...],
+    ) -> Mapping[ClaimId, StatementGovernanceResult]: ...
+
     async def resolve_statement(
         self,
         request: ResearchViewReadRequest,
@@ -476,6 +484,16 @@ class DeterministicResearchViewComposer:
             items_by_section[seed.kind].extend(seed.references)
             empty_state[seed.kind] = (seed.empty_availability, seed.reason_codes)
 
+        batch_method = getattr(self._governance, "resolve_statements", None)
+        governed = (
+            await batch_method(request, subject, candidates)
+            if batch_method is not None
+            else {}
+        )
+        member_ids = {
+            UUID(str(subject.entity_id)),
+            *(UUID(str(value)) for value in subject_read.canonical_member_entity_ids),
+        }
         seen_candidates: set[tuple[UUID, ResearchSectionKind]] = set()
         for candidate in candidates:
             key = (UUID(str(candidate.claim.id)), candidate.section_kind)
@@ -486,7 +504,13 @@ class DeterministicResearchViewComposer:
                 raise ResearchViewCompositionError(
                     f"section_not_allowed_for_subject:{candidate.section_kind.value}"
                 )
-            statement = await self._resolve_statement(request, subject, candidate)
+            statement = await self._resolve_statement(
+                request,
+                subject,
+                candidate,
+                member_entity_ids=member_ids,
+                governance=governed.get(candidate.claim.id),
+            )
             if candidate.section_kind is ResearchSectionKind.PERSONALIZATION:
                 if statement.state.outreach_decision is OutreachDecision.ALLOWED:
                     items_by_section[candidate.section_kind].append(
@@ -557,9 +581,15 @@ class DeterministicResearchViewComposer:
         request: ResearchViewReadRequest,
         subject: ResearchSubjectRef,
         candidate: ResearchStatementCandidate,
+        *,
+        member_entity_ids: set[UUID],
+        governance: StatementGovernanceResult | None = None,
     ) -> ResearchStatement:
         claim = candidate.claim
-        if claim.entity_id != subject.entity_id or claim.entity_type is not subject.entity_type:
+        if (
+            UUID(str(claim.entity_id)) not in member_entity_ids
+            or claim.entity_type is not subject.entity_type
+        ):
             raise ResearchViewCompositionError("subject_mismatch")
         if (
             claim.reuse_scope is ReuseScope.TENANT_PRIVATE
@@ -571,7 +601,8 @@ class DeterministicResearchViewComposer:
         if claim.product_id is not None and request.product_id is None:
             raise ResearchViewCompositionError("product_mismatch")
 
-        governance = await self._governance.resolve_statement(request, subject, candidate)
+        if governance is None:
+            governance = await self._governance.resolve_statement(request, subject, candidate)
         state = governance.state
         if (
             state.availability is ResearchAvailability.AVAILABLE

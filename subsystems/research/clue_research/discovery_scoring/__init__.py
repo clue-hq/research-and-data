@@ -68,6 +68,11 @@ from clue_research.discovery_scoring.phases import (
     ScoringPhaseHandler,
     TierCheckpointPhaseHandler,
 )
+from clue_research.discovery_scoring.score_projection import (
+    AmbiguousFitProjection,
+    FitProjection,
+    exact_fit_projection,
+)
 from clue_research.discovery_scoring.scoring import (
     DEFAULT_SCORING_CONFIG,
     FIT_FIELD,
@@ -146,6 +151,9 @@ __all__ = [
     "DEFAULT_SCORING_CONFIG",
     "FIT_FIELD",
     "INTENT_FIELD",
+    "FitProjection",
+    "AmbiguousFitProjection",
+    "exact_fit_projection",
     # M6.4 — tiering + human checkpoint
     "assign_tiers",
     "tier_distribution",

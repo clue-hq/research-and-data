@@ -161,6 +161,60 @@ def test_get_handoff_is_workspace_scoped() -> None:
     run_async(_run())
 
 
+def test_get_handoff_is_product_exact() -> None:
+    """Two product projections for one run/account remain independently addressable."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            account, run = new_entity_id(), new_project_run_id()
+            await write_handoff(
+                conn,
+                _assembled(
+                    account=account,
+                    project_run_id=run,
+                    personas=(Persona.ECONOMIC_BUYER,),
+                ),
+                workspace_id=_CLIENT,
+                product_id="product-a",
+            )
+            await write_handoff(
+                conn,
+                _assembled(
+                    account=account,
+                    project_run_id=run,
+                    personas=(Persona.BLOCKER,),
+                ),
+                workspace_id=_CLIENT,
+                product_id="product-b",
+            )
+            service = HandoffService()
+            product_a = await service.get_handoff(
+                conn,
+                workspace_id=_CLIENT,
+                account_entity_id=account,
+                icp_spec_version=1,
+                product_id="product-a",
+            )
+            product_b = await service.get_handoff(
+                conn,
+                workspace_id=_CLIENT,
+                account_entity_id=account,
+                icp_spec_version=1,
+                product_id="product-b",
+            )
+            assert product_a.assembled.handoff.committee[0].persona is Persona.ECONOMIC_BUYER
+            assert product_b.assembled.handoff.committee[0].persona is Persona.BLOCKER
+            with pytest.raises(HandoffNotFoundError):
+                await service.get_handoff(
+                    conn,
+                    workspace_id=_CLIENT,
+                    account_entity_id=account,
+                    icp_spec_version=1,
+                )
+
+    run_async(_run())
+
+
 def test_resolve_provenance_returns_ref_or_not_found() -> None:
     """AC1: every value resolves to its source; an unknown claim id is a not-found, not a miss."""
 

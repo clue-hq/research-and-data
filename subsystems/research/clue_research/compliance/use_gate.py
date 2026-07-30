@@ -177,6 +177,13 @@ class WorkspacePolicy(BaseModel):
     store_sensitive: bool = False  # Option 1/3 minimize; Option 2 stores all (gate still locks use)
     gather_scope: frozenset[str] = frozenset()  # explicit source-key allow-list (empty = no narrow)
     sensitive_overrides: tuple[SensitiveOverride, ...] = ()
+    # C7 display is a separate policy axis from outreach usability. Professional/public and
+    # non-sensitive personal facts may be displayed by default, while sensitive data remains
+    # fail-closed. Contact display also requires a strong identity binding by default.
+    display_professional_public: bool = True
+    display_personal_public_non_sensitive: bool = True
+    display_sensitive: bool = False
+    display_requires_strong_contact_binding: bool = True
     version: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
@@ -531,7 +538,12 @@ async def load_workspace_policy(
                 text(
                     """
                     SELECT posture, allow_map, regime_overrides, source_scope, store_sensitive,
-                           gather_scope, sensitive_overrides, version
+                           gather_scope, sensitive_overrides,
+                           display_professional_public,
+                           display_personal_public_non_sensitive,
+                           display_sensitive,
+                           display_requires_strong_contact_binding,
+                           version
                     FROM workspace_policy
                     WHERE workspace_id IS NOT DISTINCT FROM :workspace_id
                     ORDER BY version DESC, created_at DESC, policy_id DESC
@@ -550,6 +562,10 @@ async def load_workspace_policy(
                 store_sensitive=bool(row[4]),
                 gather_scope=frozenset(str(s) for s in _as_array(row[5])),
                 sensitive_overrides=_parse_sensitive_overrides(row[6]),
-                version=int(row[7]),
+                display_professional_public=bool(row[7]),
+                display_personal_public_non_sensitive=bool(row[8]),
+                display_sensitive=bool(row[9]),
+                display_requires_strong_contact_binding=bool(row[10]),
+                version=int(row[11]),
             )
     return DEFAULT_WORKSPACE_POLICY

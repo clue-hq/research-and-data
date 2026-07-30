@@ -22,6 +22,7 @@ from clue_api.tool_outputs import (
 )
 from clue_core import (
     EntityId,
+    EntityType,
     ProjectRunId,
     ResearchSectionKind,
     ResearchViewComposer,
@@ -30,6 +31,7 @@ from clue_core import (
     ResearchViewRef,
     ResearchViewSnapshotId,
 )
+from clue_research.durable import append_subject_activity
 from clue_research.narrative import (
     ResearchViewRecheckService,
     ResearchViewSnapshotCommand,
@@ -55,6 +57,7 @@ class ResearchViewScopeInput(ToolInput):
     project_id: str = Field(min_length=1)
     project_run_id: UUID
     subject_entity_id: UUID
+    subject_entity_type: EntityType | None = None
     product_id: str | None = Field(default=None, min_length=1)
 
 
@@ -72,6 +75,20 @@ class RecheckResearchViewInput(ToolInput):
     snapshot_id: UUID
     section_kinds: tuple[ResearchSectionKind, ...] = ()
     request_research: bool = False
+
+
+def _canary_failure(
+    workspace_id: str,
+    admitted_workspace_ids: frozenset[str],
+) -> tuple[PreconditionFailure, ...]:
+    if admitted_workspace_ids and workspace_id not in admitted_workspace_ids:
+        return (
+            PreconditionFailure(
+                reason_code="research_view_workspace_not_admitted",
+                message="this workspace is not admitted to the research-view canary",
+            ),
+        )
+    return ()
 
 
 class _ResearchViewScopeTool(Tool):
@@ -153,6 +170,7 @@ class _ResearchViewScopeTool(Tool):
             project_id=inputs.project_id,
             project_run_id=ProjectRunId(inputs.project_run_id),
             subject_entity_id=EntityId(inputs.subject_entity_id),
+            subject_entity_type=inputs.subject_entity_type,
             product_id=inputs.product_id,
         )
 
@@ -188,16 +206,23 @@ class ComposeDossierTool(_ResearchViewScopeTool):
     )
 
     def __init__(
-        self, service: ResearchViewSnapshotService | None, *, enabled: bool = True
+        self,
+        service: ResearchViewSnapshotService | None,
+        *,
+        enabled: bool = True,
+        admitted_workspace_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._service = service
         self._enabled = enabled
+        self._admitted_workspace_ids = admitted_workspace_ids
 
     async def preconditions(
         self,
         inputs: ToolInput,
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
+        if failure := _canary_failure(ctx.workspace_id, self._admitted_workspace_ids):
+            return failure
         if not self._enabled:
             return (
                 PreconditionFailure(
@@ -260,6 +285,7 @@ class ComposeDossierTool(_ResearchViewScopeTool):
                 reason_codes=("snapshot_composed",),
                 fetch_ref=receipt.fetch_ref,
                 created_at=datetime.now(UTC),
+                subject_activity_appender=append_subject_activity,
             )
         return ToolResult(
             tool=self.name,
@@ -297,15 +323,24 @@ class GetResearchViewTool(_ResearchViewScopeTool):
         "verification_policy",
     )
 
-    def __init__(self, composer: ResearchViewComposer | None, *, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        composer: ResearchViewComposer | None,
+        *,
+        enabled: bool = True,
+        admitted_workspace_ids: frozenset[str] = frozenset(),
+    ) -> None:
         self._composer = composer
         self._enabled = enabled
+        self._admitted_workspace_ids = admitted_workspace_ids
 
     async def preconditions(
         self,
         inputs: ToolInput,
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
+        if failure := _canary_failure(ctx.workspace_id, self._admitted_workspace_ids):
+            return failure
         if not self._enabled:
             return (
                 PreconditionFailure(
@@ -400,9 +435,16 @@ class RecheckResearchViewTool(Tool):
         "verification_policy",
     )
 
-    def __init__(self, service: ResearchViewRecheckService | None, *, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        service: ResearchViewRecheckService | None,
+        *,
+        enabled: bool = True,
+        admitted_workspace_ids: frozenset[str] = frozenset(),
+    ) -> None:
         self._service = service
         self._enabled = enabled
+        self._admitted_workspace_ids = admitted_workspace_ids
 
     async def preconditions(
         self,
@@ -410,6 +452,8 @@ class RecheckResearchViewTool(Tool):
         ctx: ToolContext,
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, RecheckResearchViewInput)
+        if failure := _canary_failure(ctx.workspace_id, self._admitted_workspace_ids):
+            return failure
         if not self._enabled:
             return (
                 PreconditionFailure(
@@ -484,11 +528,24 @@ def build_research_view_tools(
     read_enabled: bool = False,
     snapshot_compose_enabled: bool = False,
     recheck_enabled: bool = False,
+    admitted_workspace_ids: frozenset[str] = frozenset(),
 ) -> tuple[Tool, ...]:
     """Return the C7 contracts behind independent, fail-closed activation controls."""
 
     return (
-        ComposeDossierTool(snapshots, enabled=snapshot_compose_enabled),
-        GetResearchViewTool(composer, enabled=read_enabled),
-        RecheckResearchViewTool(recheck, enabled=recheck_enabled),
+        ComposeDossierTool(
+            snapshots,
+            enabled=snapshot_compose_enabled,
+            admitted_workspace_ids=admitted_workspace_ids,
+        ),
+        GetResearchViewTool(
+            composer,
+            enabled=read_enabled,
+            admitted_workspace_ids=admitted_workspace_ids,
+        ),
+        RecheckResearchViewTool(
+            recheck,
+            enabled=recheck_enabled,
+            admitted_workspace_ids=admitted_workspace_ids,
+        ),
     )

@@ -358,6 +358,50 @@ async def claims_for(
     return [_row_to_claim(dict(row)) for row in result.mappings().all()]
 
 
+async def claims_for_entities(
+    conn: AsyncConnection,
+    entity_ids: Sequence[EntityId],
+    field_keys: Sequence[FieldKey | str] | None = None,
+    *,
+    include_superseded: bool = False,
+    scope: WorkspaceScope,
+) -> Sequence[Claim]:
+    """Batch sibling of :func:`claims_for`, retention-safe for live projection reads."""
+
+    entities = tuple(dict.fromkeys(entity_ids))
+    fields = tuple(dict.fromkeys(str(value) for value in (field_keys or ())))
+    if not entities:
+        return ()
+    scope_sql, scope_params = scope.predicate()
+    retention_sql = _retention_eligible_sql()
+    field_clause = "AND field_key IN :field_keys" if fields else ""
+    stmt = text(
+        f"""
+        SELECT {_SELECT_COLUMNS}
+        FROM claim
+        WHERE entity_id IN :entity_ids
+          {field_clause}
+          AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {retention_sql})
+          AND {scope_sql}
+        ORDER BY field_key, collected_at DESC, id
+        """
+    ).bindparams(
+        bindparam("entity_ids", expanding=True),
+        *((bindparam("field_keys", expanding=True),) if fields else ()),
+    )
+    params: dict[str, object] = {
+        "entity_ids": list(entities),
+        "include_superseded": include_superseded,
+        "retention_at": datetime.now(UTC),
+        **scope_params,
+    }
+    if fields:
+        params["field_keys"] = list(fields)
+    rows = (await conn.execute(stmt, params)).mappings()
+    return tuple(_row_to_claim(dict(row)) for row in rows)
+
+
 async def claims_by_ids(
     conn: AsyncConnection,
     claim_ids: Iterable[ClaimId],

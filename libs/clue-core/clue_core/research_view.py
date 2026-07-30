@@ -689,6 +689,10 @@ class ResearchViewReadRequest(BaseModel):
     project_id: ReferenceToken
     project_run_id: ProjectRunId
     subject_entity_id: EntityId
+    # Optional for backwards-compatible callers. HTTP account/contact routes and production tools
+    # always stamp it, letting the shared scope resolver reject cross-kind ids without probing both
+    # identity tables.
+    subject_entity_type: EntityType | None = None
     product_id: ReferenceToken | None = None
     schema_version: Literal["1.0"] = "1.0"
 

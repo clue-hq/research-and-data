@@ -40,14 +40,14 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        AgentRole.HEAD_OF_ABM: "c02590daa7b000a2c64e389cbf3cfd4af48e90acdff3248cca5cbb654762d6fd",
-        AgentRole.RESEARCH: "b2e2aba5b7c25795a3c337c7ce01b3486fa3070634ad7ce050c9114007c6d0ea",
+        AgentRole.HEAD_OF_ABM: "37ec5a2225ee5b8b5085024062df54fece1dcca341843dd9441ffc06918d3bdd",
+        AgentRole.RESEARCH: "410e8dbe943a4d986b2b1a9f16fbab9c16c0d3444612885c0ee7879543c0e9de",
         AgentRole.CONTENT_DRAFTER: (
-            "14ffe6c4cf091cfd2efca8bf65a721c64af1b43ecfb08198dad67904dde794dd"
+            "6ab9f9d10802d6e010b914b1ed3133a82aa553decc4fdefa9cbfdfb4867e512d"
         ),
-        AgentRole.REVIEWER: "1ae8a797285aaea321e9675a59ad0bfc2fd2497aff30300968ab38a438c1ecbc",
+        AgentRole.REVIEWER: "4a62e67190ae4a396a99332796cf20a833f869498c034ae01e086d0648b1c05e",
         AgentRole.ACCOUNT_RESEARCH: (
-            "05497a3e86d87ec59086ba0f44bab50d0a353f26d011926564c6f60795958e2b"
+            "8eb6b879af314c3cb73051d36e30d98be47d2b5229790aaff183649ca907b33c"
         ),
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)

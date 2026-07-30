@@ -281,6 +281,7 @@ class HandoffAssembler:
                 icp_spec_version,
                 icp_key,
                 product_id,
+                project_run_id,
                 scope,
             )
             intent_score, _, intent_scored = await self._read_score(
@@ -290,6 +291,7 @@ class HandoffAssembler:
                 icp_spec_version,
                 icp_key,
                 product_id,
+                project_run_id,
                 scope,
             )
 
@@ -388,6 +390,7 @@ class HandoffAssembler:
         icp_spec_version: int,
         icp_key: str | None,
         product_id: str | None,
+        project_run_id: ProjectRunId | None,
         scope: WorkspaceScope,
     ) -> tuple[Score, bool, bool]:
         """The decomposed score for *this* ICP segment. Filters the live ``account.scoring.*``
@@ -406,6 +409,10 @@ class HandoffAssembler:
                 and value.get("icp_version") == icp_spec_version
                 and (icp_key is None or value.get("icp_key") == icp_key)
                 and claim.product_id == product_id
+                and (
+                    project_run_id is None
+                    or value.get("project_run_id") == str(project_run_id)
+                )
             ):
                 score, non_fit = _score_from_value_json(value)
                 return score, non_fit, True

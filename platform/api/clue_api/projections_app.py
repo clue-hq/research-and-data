@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID
@@ -45,6 +45,7 @@ from clue_api.research_view_api import (
     research_actor_resolver,
     research_workspace_resolver,
 )
+from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
 from clue_config import Settings, load_settings
 from clue_core import (
@@ -690,6 +691,9 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
     clue_obs.setup()
     async with db_lifespan():
+        startup_check = getattr(_app.state, "startup_check", None)
+        if startup_check is not None:
+            await startup_check()
         yield
 
 
@@ -709,6 +713,8 @@ def create_projections_app(
     research_view_composer: ResearchViewComposer | None = None,
     research_view_snapshots: ResearchViewSnapshotService | None = None,
     research_view_evidence_access: EvidenceAccessService | None = None,
+    research_view_owner_references: ProductionOwnerReferenceResolver | None = None,
+    startup_check: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -724,6 +730,7 @@ def create_projections_app(
         version=PROJECTIONS_SCHEMA_VERSION,
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
+    app.state.startup_check = startup_check
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -766,6 +773,30 @@ def create_projections_app(
         research_view_snapshots,
         research_view_evidence_access,
     )
+    c7_http_enabled = any(
+        (
+            resolved.c7_research_view_read_enabled,
+            resolved.c7_snapshot_compose_enabled,
+            resolved.c7_recheck_enabled,
+            resolved.c7_evidence_actions_enabled,
+            resolved.c7_legacy_dossier_alias_enabled,
+        )
+    )
+    if resolved.c7_legacy_dossier_alias_enabled and not (
+        resolved.c7_research_view_read_enabled or resolved.c7_snapshot_compose_enabled
+    ):
+        raise ValueError(
+            "the legacy dossier alias requires canonical C7 read or snapshot composition"
+        )
+    if c7_http_enabled and not all(component is not None for component in research_components):
+        raise ValueError(
+            "an enabled C7 HTTP capability requires the production composer, "
+            "snapshot service, and evidence-access service"
+        )
+    if resolved.c7_research_view_read_enabled and research_view_owner_references is None:
+        raise ValueError(
+            "enabled C7 reads require authenticated owner-reference batch resolution"
+        )
     if any(component is not None for component in research_components):
         if not all(component is not None for component in research_components):
             raise ValueError(
@@ -782,6 +813,7 @@ def create_projections_app(
                 tool_invoker=tool_invoker,
                 conn_factory=conn_factory,
                 settings=resolved,
+                owner_references=research_view_owner_references,
             )
         )
     return app

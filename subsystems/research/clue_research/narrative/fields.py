@@ -35,8 +35,15 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, Persona, ReuseScope
-from clue_research.claimstore import SeedField, load_pack
+from clue_core import (
+    EntityType,
+    FieldDef,
+    PassKind,
+    Persona,
+    ResearchSectionKind,
+    ReuseScope,
+)
+from clue_research.claimstore import ResearchViewFieldRoute, SeedField, load_pack
 
 # --- field key (conventions §3: account.* namespace, the value-narrative output) -------------
 VALUE_NARRATIVE = "account.value_narrative"
@@ -92,6 +99,13 @@ NARRATIVE_PACK: tuple[SeedField, ...] = (
         description=(
             "Per-(account, persona) value narrative — Output 4 (overview §1/§3; substrate §8). "
             "A tier-4 llm_synthesis claim-with-provenance; TENANT_PRIVATE (client-tuned)."
+        ),
+        research_view_route=ResearchViewFieldRoute(
+            field_key=VALUE_NARRATIVE,
+            entity_type=EntityType.ACCOUNT,
+            section_kind=ResearchSectionKind.VALUE_NARRATIVE,
+            context_scope="project_run_pinned",
+            product_mode="exact_required",
         ),
     ),
 )
