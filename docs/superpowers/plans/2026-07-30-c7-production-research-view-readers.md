@@ -5,8 +5,8 @@
 **Parent plan:** [Phase C7 structured research views](2026-07-27-phase-c7-research-views.md)
 **Binding spec:** [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md)
 **Review input:** `_memory/2026-07-29-c7-implementation-review.md`
-**Status:** READY FOR IMPLEMENTATION — read flag must remain off until every pre-activation gate in
-this plan is green
+**Status:** IMPLEMENTED — automated gates are green; all flags remain default-off pending the real
+Exa-first manual quality trial and explicit canary approval
 
 ## 1. Outcome
 
@@ -1357,3 +1357,62 @@ C7.9 is done only when all of the following are true:
 20. the read flag remains default-off until explicit canary activation.
 
 Anything less is a partially implemented read seam, not a production research-view subsystem.
+
+## 19. Implementation closeout
+
+### 19.1 Delivered
+
+C7.9.0–C7.9.6 are implemented end to end:
+
+- migration `6a7f8eed5b23` adds canonical identity versions, registered field routes,
+  exact-subject activity, display policy, product-aware change reports, and product-safe legacy
+  handoff identity;
+- owner queries resolve exact workspace/project/project-run/account-run/product/subject scope,
+  canonical members, run-pinned claims, scores, committee eligibility, coverage, and activity;
+- current governance and evidence authorization share one batch evaluator over verification,
+  freshness, conflicts, erasure, objections, display policy, outreach policy, and the transitive
+  derivation support graph;
+- all eight database readers compose through one read-only `REPEATABLE READ` production wrapper;
+- API, governed tools, fleet, snapshots, recheck, evidence actions, handoff, and owner-reference
+  resolution share the same production runtime;
+- enabled-but-incomplete startup fails closed, local header auth and workspace canaries are
+  explicit, and every C7 capability remains independently default-off;
+- retention/objection sweeps use the same dependent expansion and legacy-payload purge as
+  interactive erase;
+- entailment and faithfulness use one strict JSON response parser;
+- the body-safe production trial CLI, Exa-first runbook, and sanitized Postman collection are
+  checked in.
+
+The implementation remains presentation-neutral. It reads typed claims, derivations, governed
+states, and body-free owner references; it does not create a Markdown dossier or frontend model.
+
+### 19.2 Automated verification
+
+The closeout gates were run from clean isolated PostgreSQL databases:
+
+- Ruff passed for every changed Python surface; mypy passed for 446 source files;
+- all 24 import contracts passed over 508 files and 3,799 dependencies;
+- the focused C7/adjacent suite passed, including readers, D7 support governance, DSAR, scoring,
+  handoff, API, fleet, contracts, identity, and migration-dependent paths;
+- production composition passed the same bounded query ceiling at 1, 25, and 100 statements;
+- the DB-enabled repository suite passed with the three pre-existing order-sensitive
+  logging/OpenTelemetry tests deselected, and those three passed separately;
+- Alembic reports the single head `6a7f8eed5b23`;
+- a clean database passed full `head -> base -> head` migration reversibility;
+- the production CLI help/startup contract and checked-in Postman JSON were validated;
+- scoped `git diff --check` passed while unrelated worktree changes were preserved.
+
+### 19.3 Activation state and remaining manual acceptance
+
+No C7 flag was enabled and no live Exa, scraper, or customer-data trial was fabricated. The
+remaining gate is deliberately a human quality decision, not missing reader code:
+
+1. persist one normal governed Exa-only account/contact research run;
+2. inspect it with `scripts/07_research_view_trial.py`;
+3. decide whether the actual research quality is worth continuing;
+4. only then run the scraper comparison;
+5. only after that enable the read flag for one workspace and use the Postman collection.
+
+The CLI is read-only and has no fixture/acquisition fallback. If routes or persisted scope are
+missing it fails explicitly. Operational rollback remains flag/canary removal; migration downgrade
+is a development reversibility proof, not the live rollback strategy.
