@@ -2072,6 +2072,9 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                                 doc, prompt, model, root, **account_kwargs
                             )
                     else:
+                        asset_library = workspace_asset_library_manifest(
+                            store, store.connection
+                        )
                         response = run_web_agent_turn(
                             doc,
                             prompt,
@@ -2080,6 +2083,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                             event_sink=sink,
                             target_node_ids=target_node_ids,
                             account_card=account_card,
+                            asset_library=asset_library,
                         )
                     if response.get("status") == "applied":
                         operations = response.get("operations")
@@ -6050,6 +6054,7 @@ def run_web_agent_turn(
     event_sink=None,
     target_node_ids: Optional[List[str]] = None,
     account_card: Optional[JsonObject] = None,
+    asset_library: Optional[JsonObject] = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -6065,7 +6070,11 @@ def run_web_agent_turn(
     {name, domain, logo_asset_id, data, notes}, resolved to 404 before the run
     started. It rides the runtime config BY VALUE (same rule as brand_kit) and
     its logo AssetRecord is resolved here into config.account_assets so
-    use_account_asset can register it."""
+    use_account_asset can register it.
+
+    `asset_library`: the API-resolved non-archived workspace records and their
+    descriptions, passed BY VALUE. This is the only source search_assets and
+    use_library_asset can use; the runtime never reads the API database."""
     ensure_agent_runtime_path(root)
     try:
         from lumen_agent.config import AgentRuntimeConfig
@@ -6088,6 +6097,8 @@ def run_web_agent_turn(
             # Generated imagery must land in (and export from) the API's store,
             # exactly as the scene path pins it.
             config = replace(config, asset_store_root=api_asset_store_root())
+        if asset_library is not None:
+            config = replace(config, asset_library=asset_library)
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
             resolve_web_turn_brand_kit(web_doc)
         )
@@ -6140,6 +6151,10 @@ def run_web_agent_turn(
         "outcome": result.get("outcome"),
         "summary": result.get("summary"),
         "web_doc": result.get("web_doc"),
+        "operations": result.get("operations", []),
+        "grounding": result.get(
+            "grounding", {"schema_version": 1, "sources": [], "citations": []}
+        ),
         "preview_paths": result.get("preview_paths", []),
         "doc_kind": "web",
     }
@@ -6444,6 +6459,53 @@ def resolve_account_assets(
         return None
     finally:
         connection.close()
+
+
+WEB_AGENT_ASSET_LIBRARY_MAX = 2_000
+
+
+def workspace_asset_library_manifest(
+    repo: Repository, connection
+) -> JsonObject:
+    """Grounded website-agent inventory of real workspace asset records.
+
+    The API owns persistence, so it materializes a bounded, non-archived
+    manifest BY VALUE for the runtime. Description rows are advisory search
+    metadata; the engine-built record remains authoritative for placement,
+    license, digest, and provenance.
+    """
+    rows = repo.list_asset_records(
+        include_archived=False,
+        limit=WEB_AGENT_ASSET_LIBRARY_MAX,
+        offset=0,
+    )
+    asset_ids = [
+        str((row.get("asset") or {}).get("id"))
+        for row in rows
+        if (row.get("asset") or {}).get("id")
+    ]
+    try:
+        descriptions = DescriptionStore(connection).get_many(asset_ids)
+    except Exception:
+        descriptions = {}
+
+    manifest: JsonObject = {}
+    for row in rows:
+        record = row.get("asset") or {}
+        asset_id = record.get("id")
+        if not asset_id or record.get("status") == "archived":
+            continue
+        described = descriptions.get(str(asset_id)) or {}
+        entry: JsonObject = {
+            "record": record,
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+        for field in ("title", "description", "usage", "tags"):
+            if described.get(field):
+                entry[field] = described[field]
+        manifest[str(asset_id)] = entry
+    return manifest
 
 
 def brand_kit_asset_manifest(

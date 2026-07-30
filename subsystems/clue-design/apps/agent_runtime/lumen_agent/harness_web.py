@@ -143,6 +143,9 @@ def create_web_deepagent(
                 tools.author_web_page,
                 tools.author_web_subtree,
                 tools.patch_web_page,
+                tools.fetch_page,
+                tools.search_assets,
+                tools.provenance,
                 tools.asset,
             ],
             "skills": workspace_skills,
@@ -157,7 +160,7 @@ def create_web_deepagent(
                 has_account=bool(tools.account_card)
             ),
             "model": reviewer_model,
-            "tools": [subagent_view],
+            "tools": [subagent_view, tools.provenance],
             "skills": workspace_skills,
             # Same rationale as the scene reviewer: extract VisualCritique via the
             # TOOL strategy (native structured output emits malformed JSON on some
@@ -167,7 +170,14 @@ def create_web_deepagent(
         },
     ]
 
-    orchestrator_tools = [view, tools.render_web_preview, tools.finalize_web_run]
+    orchestrator_tools = [
+        view,
+        tools.fetch_page,
+        tools.search_assets,
+        tools.provenance,
+        tools.render_web_preview,
+        tools.finalize_web_run,
+    ]
 
     doc_title = initial_web_doc.get("title") or "Untitled site"
     agent = create_deep_agent(
@@ -195,8 +205,8 @@ def run_deepagent_web_turn(
 ) -> dict:
     """Create + invoke + guarantee an honest finalize.
 
-    Returns {status: "applied"|"failed", summary, web_doc (final),
-    preview_paths, outcome}. `applied` iff the orchestrator finalized
+    Returns {status: "applied"|"failed", summary, web_doc (final), operations,
+    grounding, preview_paths, outcome}. `applied` iff the orchestrator finalized
     accepted/completed_with_warnings; a crash/recursion-limit/no-finalize turn
     is finalized "failed" here — never a fabricated success."""
     agent, tools = create_web_deepagent(
@@ -252,6 +262,7 @@ def run_deepagent_web_turn(
         "summary": summary,
         "web_doc": web_doc,
         "operations": list(tools.operations_ledger),
+        "grounding": tools.grounding_report(),
         "preview_paths": list(tools.preview_paths),
         "outcome": outcome,
     }

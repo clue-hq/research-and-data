@@ -16,7 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lumen_api.database import Repository, connect
-from lumen_api.main import create_app
+from lumen_api.main import create_app, workspace_asset_library_manifest
+from lumen_ingestion.describe import DescriptionStore
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -152,6 +153,43 @@ def wait_for_run(client: TestClient, run_id: str, timeout: float = 30.0) -> dict
     raise AssertionError(f"run {run_id} did not finish within {timeout}s")
 
 
+# --- grounded asset manifest -----------------------------------------------
+
+
+def test_workspace_asset_library_manifest_carries_descriptions_and_provenance(
+    client: TestClient,
+) -> None:
+    record = json.loads(
+        (
+            REPO_ROOT
+            / "crates/lumen-core/fixtures/assets/uploaded_logo_asset.json"
+        ).read_text()
+    )
+    connection = connect(client.app.state.database_path)
+    repo = Repository(connection)
+    try:
+        repo.create_asset_record(record)
+        DescriptionStore(connection).put_human(
+            record["id"],
+            "Acme primary logo",
+            "A navy Acme wordmark.",
+            "Use on light backgrounds.",
+            ["wordmark"],
+        )
+        manifest = workspace_asset_library_manifest(repo, connection)
+    finally:
+        connection.close()
+
+    entry = manifest[record["id"]]
+    assert entry["record"] == record
+    assert entry["title"] == "Acme primary logo"
+    assert entry["description"] == "A navy Acme wordmark."
+    assert entry["usage"] == "Use on light backgrounds."
+    assert entry["tags"] == ["wordmark"]
+    assert entry["record"]["license"]["name"] == "client_owned"
+    assert entry["record"]["provenance"]["source_label"] == "manual upload"
+
+
 # --- render endpoint --------------------------------------------------------
 
 
@@ -280,6 +318,25 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
             "summary": "Built the landing page.",
             "web_doc": content_doc,
             "operations": operations,
+            "grounding": {
+                "schema_version": 1,
+                "sources": [
+                    {
+                        "source_id": "page_acme",
+                        "kind": "page",
+                        "final_url": "https://acme.test/about",
+                        "title": "About Acme",
+                    }
+                ],
+                "citations": [
+                    {
+                        "citation_id": "citation_1",
+                        "source_ids": ["page_acme"],
+                        "note": "Supports the hero claim.",
+                        "node_ids": ["hero"],
+                    }
+                ],
+            },
             "preview_paths": [],
             "doc_kind": "web",
         }
@@ -296,6 +353,8 @@ def test_web_turn_applied_replays_operations_and_writes_envelope(
     run = wait_for_run(client, run_id)
     assert run["status"] == "succeeded", run
     assert run["result"]["doc_kind"] == "web"
+    assert run["result"]["grounding"]["sources"][0]["source_id"] == "page_acme"
+    assert run["result"]["grounding"]["citations"][0]["node_ids"] == ["hero"]
     assert any(e["type"] == "result" for e in run["events"])
 
     # Document row: operations replayed + version bumped.

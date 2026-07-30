@@ -110,6 +110,14 @@ class AgentRuntimeConfig:
     # None → an un-personalized turn (every account path is a no-op).
     account_card: dict | None = None
     account_assets: dict | None = None
+    # P6 grounding: the non-archived workspace asset library, resolved by the
+    # API and passed BY VALUE so the runtime can search real records without
+    # reading the API database or calling the API back over HTTP. Shape:
+    # {asset_id: {"record": <engine AssetRecord>, "title"?: str,
+    # "description"?: str, "usage"?: str, "tags"?: [str, ...]}}.
+    # The runtime only returns/places records from this manifest; None means the
+    # library is unavailable for this turn, never that an asset may be invented.
+    asset_library: dict | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption

@@ -579,11 +579,235 @@ def _bare_tools(tmp_path: Path, **cfg) -> LumenWebTools:
         AgentRuntimeConfig.from_env(REPO_ROOT), trace_dir=tmp_path / "workspace_root", **cfg
     )
     seed = {
+        "schema_version": 1,
+        "id": "doc_web_test",
         "title": "Test site",
-        "pages": [{"id": "home", "root": "root", "nodes": {"root": {"kind": "section", "children": []}}}],
+        "theme": {},
+        "custom_css": "",
+        "pages": [
+            {
+                "id": "home",
+                "name": "Home",
+                "route": "/",
+                "root": "root",
+                "nodes": {
+                    "root": {
+                        "id": "root",
+                        "kind": "container",
+                        "classes": "",
+                        "new_tab": False,
+                    }
+                },
+            }
+        ],
         "assets": {},
     }
     return LumenWebTools(config, "Build a page", initial_web_doc=seed)
+
+
+# --- grounded page, asset search, provenance -------------------------------
+
+
+def test_extract_grounded_page_strips_scripts_and_absolutizes_links():
+    page = ws._extract_grounded_page(
+        requested_url="https://example.test/about",
+        final_url="https://example.test/about",
+        status=200,
+        content_type="text/html; charset=utf-8",
+        body=(
+            b"<html><head><title> About Acme </title><style>.x{}</style></head>"
+            b"<body><h1>Acme facts</h1><script>ignore me</script>"
+            b"<a href='/proof#team'>Proof</a><a href='mailto:x@y.test'>Mail</a>"
+            b"</body></html>"
+        ),
+        retrieved_at="2026-07-30T00:00:00+00:00",
+    )
+    assert page["kind"] == "page"
+    assert page["content_trust"] == "untrusted_evidence"
+    assert page["title"] == "About Acme"
+    assert "Acme facts" in page["text"]
+    assert "ignore me" not in page["text"]
+    assert page["links"] == [
+        {"url": "https://example.test/proof", "text": "Proof"}
+    ]
+    assert page["retrieved_at"] == "2026-07-30T00:00:00+00:00"
+    assert len(page["content_sha256"]) == 64
+
+
+def test_fetch_page_registers_exact_source_and_trace(tmp_path: Path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    fetched = {
+        "source_id": "page_grounded",
+        "kind": "page",
+        "requested_url": "https://example.test",
+        "final_url": "https://example.test/",
+        "retrieved_at": "2026-07-30T00:00:00+00:00",
+        "http_status": 200,
+        "content_type": "text/html",
+        "content_sha256": "a" * 64,
+        "title": "Example",
+        "text": "Grounded copy",
+        "links": [],
+        "truncated": False,
+        "diagnostics": [],
+    }
+    monkeypatch.setattr(ws, "_fetch_grounded_page", lambda url: fetched)
+
+    result = json.loads(tools.fetch_page("https://example.test"))
+    assert result["status"] == "ok"
+    assert result["source_id"] == "page_grounded"
+    assert tools.grounding_report()["sources"] == [fetched]
+    trace = (tools.trace_dir / "trace.jsonl").read_text()
+    assert "web_page_fetched" in trace
+
+
+def test_fetch_page_surfaces_blocked_url_without_source(tmp_path: Path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+
+    def blocked(_url: str):
+        raise ws.CaptureError("LUMI0501", "blocked url — private address")
+
+    monkeypatch.setattr(ws, "_fetch_grounded_page", blocked)
+    result = json.loads(tools.fetch_page("http://127.0.0.1/private"))
+    assert result["status"] == "error"
+    assert result["error_code"] == "page_fetch.blocked"
+    assert tools.grounding_report()["sources"] == []
+
+
+def _library_logo_entry() -> tuple[str, dict]:
+    record = json.loads(
+        (REPO_ROOT / "crates/lumen-core/fixtures/assets/uploaded_logo_asset.json").read_text()
+    )
+    return record["id"], {
+        "record": record,
+        "title": "Acme primary logo",
+        "description": "A navy Acme wordmark.",
+        "usage": "Use on light backgrounds.",
+        "tags": ["wordmark"],
+        "created_at": "2026-07-01T00:00:00Z",
+        "updated_at": "2026-07-02T00:00:00Z",
+    }
+
+
+def test_search_assets_matches_descriptions_and_returns_provenance(tmp_path: Path):
+    asset_id, entry = _library_logo_entry()
+    tools = _bare_tools(tmp_path, asset_library={asset_id: entry})
+    before = json.dumps(tools.web_doc, sort_keys=True)
+
+    result = json.loads(tools.search_assets("navy wordmark", kind="logo"))
+    assert result["status"] == "ok"
+    assert result["count"] == 1
+    match = result["results"][0]
+    assert match["asset_id"] == asset_id
+    assert match["license"]["name"] == "client_owned"
+    assert match["provenance"]["source_label"] == "manual upload"
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+    assert tools.grounding_report()["sources"][0]["asset_id"] == asset_id
+
+
+def test_use_library_asset_preserves_record_and_auto_cites(tmp_path: Path):
+    asset_id, entry = _library_logo_entry()
+    tools = _bare_tools(tmp_path, asset_library={asset_id: entry})
+
+    result = json.loads(
+        tools.asset(
+            action="use_library_asset",
+            asset_id=asset_id,
+            alt="Acme",
+        )
+    )
+    assert result["status"] == "ok"
+    assert result["asset_id"] == asset_id
+    assert result["citation_id"] == "citation_1"
+    stored = tools.web_doc["assets"][asset_id]
+    assert stored["license"] == entry["record"]["license"]
+    assert stored["provenance"] == entry["record"]["provenance"]
+    assert stored["media"]["digest"] == entry["record"]["media"]["digest"]
+    assert tools.operations_ledger[-1] == {
+        "kind": "upsert_asset",
+        "record": entry["record"],
+    }
+    report = tools.grounding_report()
+    assert report["citations"][0]["source_ids"] == [result["source_id"]]
+
+
+def test_provenance_validates_sources_and_current_nodes(tmp_path: Path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    fetched = {
+        "source_id": "page_grounded",
+        "kind": "page",
+        "requested_url": "https://example.test",
+        "final_url": "https://example.test",
+        "retrieved_at": "2026-07-30T00:00:00+00:00",
+        "http_status": 200,
+        "content_type": "text/html",
+        "content_sha256": "b" * 64,
+        "title": "Example",
+        "text": "Fact",
+        "links": [],
+        "truncated": False,
+        "diagnostics": [],
+    }
+    monkeypatch.setattr(ws, "_fetch_grounded_page", lambda url: fetched)
+    json.loads(tools.fetch_page("https://example.test"))
+
+    unknown_source = json.loads(
+        tools.provenance(
+            action="cite",
+            source_ids_json='["missing"]',
+            note="Unsupported",
+        )
+    )
+    assert unknown_source["error_code"] == "provenance.unknown_source"
+    unknown_node = json.loads(
+        tools.provenance(
+            action="cite",
+            source_ids_json='["page_grounded"]',
+            note="Supports the hero claim.",
+            node_ids_json='["missing"]',
+        )
+    )
+    assert unknown_node["error_code"] == "provenance.unknown_node"
+
+    cited = json.loads(
+        tools.provenance(
+            action="cite",
+            source_ids_json='["page_grounded"]',
+            note="Supports the page claim.",
+            node_ids_json='["root"]',
+        )
+    )
+    assert cited["status"] == "ok"
+    assert cited["citation"]["node_ids"] == ["root"]
+
+
+def test_finalize_writes_grounding_ledger(tmp_path: Path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    monkeypatch.setattr(
+        ws,
+        "_fetch_grounded_page",
+        lambda url: {
+            "source_id": "page_grounded",
+            "kind": "page",
+            "requested_url": url,
+            "final_url": url,
+            "retrieved_at": "2026-07-30T00:00:00+00:00",
+            "http_status": 200,
+            "content_type": "text/plain",
+            "content_sha256": "c" * 64,
+            "title": "",
+            "text": "Evidence",
+            "links": [],
+            "truncated": False,
+            "diagnostics": [],
+        },
+    )
+    json.loads(tools.fetch_page("https://example.test/evidence"))
+    final = json.loads(tools.finalize_web_run("accepted", "done"))
+    assert final["grounding_source_count"] == 1
+    assert final["provenance_citation_count"] == 0
+    report = json.loads((tools.trace_dir / "final_grounding.json").read_text())
+    assert report["sources"][0]["source_id"] == "page_grounded"
 
 
 # --- _interactive_capture_plan (pure) ---------------------------------------

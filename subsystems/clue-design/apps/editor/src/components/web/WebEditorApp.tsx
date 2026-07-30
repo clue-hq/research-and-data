@@ -41,6 +41,10 @@ import { WebAssetDrawer } from "@/components/web/WebAssetDrawer";
 import { WebPublishDialog } from "@/components/web/WebPublishDialog";
 import { WebBatchDialog } from "@/components/web/WebBatchDialog";
 import { selectionChipLabel, type WebSelection } from "@/engine/webBridge";
+import {
+  parseWebGroundingSummary,
+  type WebGroundingSummary
+} from "@/engine/webGrounding";
 
 /**
  * The website-mode editor shell: loads the web document, drives agent turns
@@ -87,6 +91,7 @@ interface TurnRecord {
   context: TurnContext | null;
   activity: string[];
   summary: string | null;
+  grounding: WebGroundingSummary | null;
   status: "applied" | "failed";
 }
 
@@ -196,6 +201,9 @@ function chipExcerpt(text: string): string {
  * from the raw type text. */
 const KNOWN_EVENT_LABELS: Record<string, string> = {
   web_page_authored: "Page authored",
+  web_page_fetched: "Grounded page fetched",
+  web_assets_searched: "Asset library searched",
+  web_provenance_cited: "Evidence cited",
   web_preview_rendered: "Previews rendered (3 widths)",
   web_theme_resolved: "Theme resolved",
   web_turn_started: "Started",
@@ -511,6 +519,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     const settled = pendingRef.current;
     const status: TurnRecord["status"] = envelope.status === "applied" ? "applied" : "failed";
     const summary = typeof envelope.summary === "string" ? envelope.summary : null;
+    const grounding = parseWebGroundingSummary(envelope.grounding);
     if (settled) {
       const record: TurnRecord = {
         id: settled.id,
@@ -518,6 +527,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
         context: settled.context,
         activity: condenseEvents(eventsRef.current),
         summary,
+        grounding,
         status
       };
       setHistory((current) => [...current, record]);
@@ -547,6 +557,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       context: settled.context,
       activity: condenseEvents(eventsRef.current),
       summary: turn.error,
+      grounding: null,
       status: "failed"
     };
     setHistory((current) => [...current, record]);
@@ -1079,6 +1090,38 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                     >
                       {record.summary}
                     </div>
+                  ) : null}
+                  {record.grounding ? (
+                    <details className="web-grounding">
+                      <summary>
+                        Grounded in {record.grounding.sources.length} source
+                        {record.grounding.sources.length === 1 ? "" : "s"}
+                        {record.grounding.citationCount > 0
+                          ? ` · ${record.grounding.citationCount} citation${
+                              record.grounding.citationCount === 1 ? "" : "s"
+                            }`
+                          : ""}
+                      </summary>
+                      <ul>
+                        {record.grounding.sources.map((source) => (
+                          <li key={`${record.id}-${source.sourceId}`}>
+                            <span className="web-grounding-kind">
+                              {source.kind === "page" ? "Page" : "Asset"}
+                            </span>
+                            {source.url ? (
+                              <a href={source.url} target="_blank" rel="noreferrer">
+                                {source.label}
+                              </a>
+                            ) : (
+                              <span>{source.label}</span>
+                            )}
+                            {source.assetId ? (
+                              <code className="web-grounding-id">{source.assetId}</code>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   ) : null}
                 </React.Fragment>
               ))}
