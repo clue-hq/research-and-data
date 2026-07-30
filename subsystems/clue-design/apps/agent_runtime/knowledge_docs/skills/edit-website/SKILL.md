@@ -47,6 +47,13 @@ subtree rewrite that reproduces the section just to change one attribute
 is a defect even when the pixels match — it re-mints node ids that
 history, selections, and future scoped turns hang off.
 
+For a `custom_component` leaf, do not replace its enclosing section merely to
+change component behavior. Load the `custom-components` skill, inspect the
+slug/source/version, write and compile a new immutable version, then
+`place_custom_component(action="repin")` with the explicit selected node ids.
+That operation preserves the section, node identity, unrelated nodes, and every
+other page's prior artifact pin.
+
 ## Respect the human's intent
 
 - Human edits are signal, not noise. If someone tightened a section's

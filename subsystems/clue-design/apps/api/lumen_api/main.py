@@ -43,17 +43,17 @@ from . import image_cache, image_provider, web_export
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .custom_component_compiler import (
     DEFAULT_COMPILER_TIMEOUT_SECONDS,
+    compile_and_persist_custom_component,
     compile_custom_component,
     default_compiler_worker_path,
 )
+from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
     build_custom_component_runtime_frames,
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
 from .custom_components import (
-    canonical_custom_component_source_snapshot,
-    persist_compiled_custom_component_artifact,
     persist_custom_component_source_revision,
     resolve_custom_component_artifact_blob,
     resolve_custom_component_source_snapshot,
@@ -2154,6 +2154,31 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                         asset_library = workspace_asset_library_manifest(
                             store, store.connection
                         )
+                        component_account_id = doc.get("account_id")
+                        custom_component_registry = (
+                            DurableAgentCustomComponentRegistry(
+                                database_path=Path(database_path),
+                                store_root=Path(
+                                    app.state.custom_component_store_root
+                                ),
+                                account_id=component_account_id,
+                                document_id=document_id,
+                                node_binary=(
+                                    app.state.custom_component_compiler_node_bin
+                                ),
+                                worker_path=Path(
+                                    app.state.custom_component_compiler_worker
+                                ),
+                                timeout_seconds=(
+                                    app.state
+                                    .custom_component_compiler_timeout_seconds
+                                ),
+                                compile_fn=compile_custom_component,
+                            )
+                            if isinstance(component_account_id, str)
+                            and component_account_id
+                            else None
+                        )
                         response = run_web_agent_turn(
                             doc,
                             prompt,
@@ -2163,6 +2188,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                             target_node_ids=target_node_ids,
                             account_card=account_card,
                             asset_library=asset_library,
+                            custom_component_registry=custom_component_registry,
                         )
                     if response.get("status") == "applied":
                         operations = response.get("operations")
@@ -3153,122 +3179,21 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         payload: CompileCustomComponentRequest,
         repo: Repository = Depends(repository),
     ) -> Any:
-        component = repo.require_custom_component(account_id, slug)
-        current_version = int(component["source_version"])
-        if current_version != payload.source_version:
-            raise CustomComponentSourceVersionConflict(
-                slug, payload.source_version, current_version
-            )
-        revision = repo.get_current_custom_component_source(account_id, slug)
-        if revision is None:
-            raise NotFoundError("custom_component_source", slug)
-        _, files = resolve_custom_component_source_snapshot(
-            repo,
-            Path(app.state.custom_component_store_root),
-            account_id=account_id,
-            revision_id=revision["revision_id"],
-        )
-        component_artifacts = {
-            item["slug"]: item["latest_artifact_id"]
-            for item in repo.list_custom_components(account_id)
-            if item["slug"] != slug and item["latest_artifact_id"] is not None
-        }
-        result = compile_custom_component(
+        response = compile_and_persist_custom_component(
+            repository=repo,
+            store_root=Path(app.state.custom_component_store_root),
             node_binary=app.state.custom_component_compiler_node_bin,
             worker_path=Path(app.state.custom_component_compiler_worker),
             timeout_seconds=app.state.custom_component_compiler_timeout_seconds,
+            account_id=account_id,
             slug=slug,
-            entry=revision["entry_path"],
-            files=files,
-            component_artifacts=component_artifacts,
+            source_version=payload.source_version,
+            actor=payload.actor.model_dump(),
+            # Keep the module seam injectable: compiler integration tests and
+            # operators can still replace main.compile_custom_component.
+            compile_fn=compile_custom_component,
         )
-        # Source compilation runs outside the database transaction. Re-check
-        # the optimistic version after the worker returns so an older compile
-        # cannot finish after a concurrent source write and become the newest
-        # attachable artifact for this component family.
-        current_version = int(
-            repo.require_custom_component(account_id, slug)["source_version"]
-        )
-        if current_version != payload.source_version:
-            raise CustomComponentSourceVersionConflict(
-                slug, payload.source_version, current_version
-            )
-        compilation_id = f"cccmp_{uuid4().hex}"
-        compiler_version = str(result.get("compiler_version") or "unavailable")
-        diagnostics = result.get("diagnostics")
-        if not isinstance(diagnostics, list):
-            diagnostics = []
-        artifact = None
-        status = result["status"]
-        if status == "success":
-            snapshot_bytes, _ = canonical_custom_component_source_snapshot(
-                slug=slug, files=files
-            )
-            outputs = result["outputs"]
-            manifest = result["manifest"]
-            try:
-                artifact = persist_compiled_custom_component_artifact(
-                    repo,
-                    Path(app.state.custom_component_store_root),
-                    account_id=account_id,
-                    slug=slug,
-                    source=snapshot_bytes,
-                    bundle=outputs["browser_bundle"].encode("utf-8"),
-                    css=outputs["component_css"].encode("utf-8"),
-                    first_frame=outputs["first_frame_html"].encode("utf-8"),
-                    manifest=manifest,
-                    provenance={
-                        "kind": "lumen_custom_component_compiler",
-                        "compiler_protocol_version": 1,
-                        "compiler_version": compiler_version,
-                        "source_revision_id": revision["revision_id"],
-                        "source_version": revision["source_version"],
-                        "dependency_artifacts": manifest.get(
-                            "dependency_artifacts", {}
-                        ),
-                        "actor": payload.actor.model_dump(),
-                    },
-                )
-            except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
-                status = "transient_error"
-                diagnostics = [
-                    *diagnostics,
-                    {
-                        "code": "CCI0003",
-                        "severity": "error",
-                        "category": "infrastructure",
-                        "message": (
-                            "compiled artifact could not be persisted: "
-                            f"{type(error).__name__}"
-                        ),
-                        "file": None,
-                        "line": None,
-                        "column": None,
-                    },
-                ]
-                artifact = None
-
-        compilation = repo.record_custom_component_compilation(
-            {
-                "compilation_id": compilation_id,
-                "account_id": account_id,
-                "slug": slug,
-                "source_revision_id": revision["revision_id"],
-                "source_version": revision["source_version"],
-                "status": (
-                    "succeeded" if status == "success" else status
-                ),
-                "compiler_protocol_version": 1,
-                "compiler_version": compiler_version,
-                "diagnostics": diagnostics,
-                "artifact_id": artifact["artifact_id"] if artifact else None,
-            }
-        )
-        response = {
-            "schema_version": 1,
-            "compilation": compilation,
-            "artifact": artifact,
-        }
+        status = response.pop("compile_status")
         if status == "failed":
             return JSONResponse(status_code=422, content=response)
         if status == "transient_error":
@@ -6489,6 +6414,7 @@ def run_web_agent_turn(
     target_node_ids: Optional[List[str]] = None,
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
+    custom_component_registry: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -6508,7 +6434,12 @@ def run_web_agent_turn(
 
     `asset_library`: the API-resolved non-archived workspace records and their
     descriptions, passed BY VALUE. This is the only source search_assets and
-    use_library_asset can use; the runtime never reads the API database."""
+    use_library_asset can use; the runtime never reads the API database.
+
+    `custom_component_registry`: an account/document-bound capability. Unlike
+    brand/assets it is not passed by value because source/compile operations
+    must be durable between runs; the runtime receives typed methods, never
+    database/store paths."""
     ensure_agent_runtime_path(root)
     try:
         from lumen_agent.config import AgentRuntimeConfig
@@ -6533,6 +6464,21 @@ def run_web_agent_turn(
             config = replace(config, asset_store_root=api_asset_store_root())
         if asset_library is not None:
             config = replace(config, asset_library=asset_library)
+        if custom_component_registry is not None:
+            config = replace(
+                config,
+                custom_component_registry=custom_component_registry,
+                custom_component_account_id=(
+                    custom_component_registry.account_id
+                ),
+                custom_component_document_id=(
+                    custom_component_registry.document_id
+                ),
+            )
+        if target_node_ids:
+            config = replace(
+                config, turn_target_node_ids=list(target_node_ids)
+            )
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
             resolve_web_turn_brand_kit(web_doc)
         )

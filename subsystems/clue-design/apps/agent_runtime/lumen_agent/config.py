@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from py_lumen_config import settings
 
@@ -118,6 +119,13 @@ class AgentRuntimeConfig:
     # The runtime only returns/places records from this manifest; None means the
     # library is unavailable for this turn, never that an asset may be invented.
     asset_library: dict | None = None
+    # P6.4: an account-bound durable custom-component capability supplied by
+    # the API worker. The runtime receives methods, not database/store paths;
+    # source is projected by value into the run's virtual filesystem while all
+    # mutations go through CAS/compile-gated typed tools.
+    custom_component_registry: Any | None = None
+    custom_component_account_id: str | None = None
+    custom_component_document_id: str | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption

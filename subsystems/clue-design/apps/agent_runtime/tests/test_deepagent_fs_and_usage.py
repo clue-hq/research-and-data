@@ -208,15 +208,60 @@ def test_symlink_escape_surfaces_clean_error(ws_backend, tmp_path):
 
 
 def test_write_deny_globs_target_the_readonly_virtual_trees():
-    """The harness denies writes to the two read-only virtual trees (D1)."""
+    """The harness denies writes to every derived read-only virtual tree."""
     from lumen_agent.harness import _filesystem_permissions
 
     perms = _filesystem_permissions()
     assert len(perms) == 1
     perm = perms[0]
-    assert set(perm.paths) == {"/.deepagent/**", "/knowledge_docs/**"}
+    assert set(perm.paths) == {
+        "/.deepagent/**",
+        "/knowledge_docs/**",
+        "/custom_components",
+        "/custom_components/**",
+    }
     assert perm.operations == ["write"]
     assert perm.mode == "deny"
+
+
+def test_custom_component_projection_has_public_paths_and_typed_writes_only(
+    tmp_path: Path,
+):
+    root = tmp_path / "workspace"
+    projection = root / "run_1" / "custom_components"
+    component = projection / "pricing-card"
+    component.mkdir(parents=True)
+    entry = component / "pricing-card.tsx"
+    entry.write_text("export default function Card() { return null; }")
+    backend = AgentWorkspaceBackend(
+        str(root), custom_components_root=projection
+    )
+
+    read = backend.read(
+        "/custom_components/pricing-card/pricing-card.tsx"
+    )
+    assert read.error is None
+    assert "function Card" in (read.file_data or {}).get("content", "")
+    listed = backend.ls("/custom_components/pricing-card")
+    assert listed.error is None
+    assert [item["path"] for item in listed.entries or []] == [
+        "/custom_components/pricing-card/pricing-card.tsx"
+    ]
+
+    denied = backend.edit(
+        "/custom_components/pricing-card/pricing-card.tsx",
+        "return null",
+        "return <div />",
+    )
+    assert denied.error is not None
+    assert "write_custom_component_source" in denied.error
+    internal_alias = backend.write(
+        "/run_1/custom_components/pricing-card/helper.ts",
+        "export const value = 1;",
+    )
+    assert internal_alias.error is not None
+    assert "read-only projection" in internal_alias.error
+    assert entry.read_text() == "export default function Card() { return null; }"
 
 
 # ============================================================================

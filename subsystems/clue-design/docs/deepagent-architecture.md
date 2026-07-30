@@ -856,7 +856,10 @@ guarantee.
 - **orchestrator** — tools: `view`, `render_web_preview`, `finalize_web_run`.
   Directs; delegates authoring; renders + looks; decides when the page ships.
 - **lumen-web-author** subagent — tools: `view`, `web_ops`, `author_web_page`,
-  `author_web_subtree`, `asset`.
+  `author_web_subtree`, `asset`, plus the P6.4 custom-component tools
+  (`list_custom_components`, `inspect_custom_component`,
+  `write_custom_component_source`, `compile_custom_component`,
+  `place_custom_component`).
   Prompt `build_web_author_prompt(brand_card, theme_token_names)`; the token
   vocabulary is the eight semantic web tokens plus the kit's sanitized color
   keys (`web_theme_token_names`, mirroring the Rust theme compiler).
@@ -948,3 +951,62 @@ the tool ledger above as the web substrate grew:
   `_close_browser()` (idempotent, exception-safe) at `finalize_web_run` on every
   outcome; a dead-browser Playwright fault triggers ONE close+relaunch+retry of
   the capture pass before the render-failure envelope surfaces.
+
+### P6.4 — durable custom-component authoring
+
+The custom-component workflow deliberately does **not** turn the agent
+filesystem into a second source store. The API creates one
+`DurableAgentCustomComponentRegistry` capability bound to the stored document's
+exact `account_id` and `document_id`. Its methods open short-lived repository
+connections and apply the account predicate internally; the runtime receives
+the capability, never a database path or content-store root.
+
+`LumenWebTools` materializes that capability's current source snapshot inside
+the run and `AgentWorkspaceBackend` maps it to the stable virtual path
+`/custom_components/<slug>/`. Both middleware permissions and backend
+`write`/`edit` refuse changes through the public path or its internal run-path
+alias. The projection is rebuilt from the durable registry for every run and
+after each successful typed source write, so a later turn/process restart sees
+the same current source while a filesystem write can never bypass CAS,
+provenance, or endpoint validation.
+
+The tool surface separates state transitions:
+
+- `list_custom_components()` returns only runtime-contract-v2 artifacts with a
+  matching durable `succeeded` compilation record.
+- `inspect_custom_component(slug)` returns only that account's current source,
+  schema/defaults, diagnostics, immutable artifact/compile history, and exact
+  document/page/node usages. Source is returned to the tool caller but is never
+  copied into trace payloads.
+- `write_custom_component_source(slug, expected_version, files_json,
+  ladder_gap, endpoint_claims_json)` writes one complete source snapshot
+  through repository CAS. It requires a concrete palette → platform → embed
+  gap and validates every literal endpoint as user-provided, grounded to a
+  fetched page source, or an unmistakable surfaced placeholder.
+- `compile_custom_component(slug, source_version)` calls the same
+  `compile_and_persist_custom_component` service as the HTTP route. That service
+  repeats the source-version check after the out-of-transaction compiler and
+  creates an immutable artifact only for a protocol-valid success.
+  Deterministic failures block another compile of that same version until a new
+  source write; transient infrastructure failures receive at most two retries
+  (three total attempts).
+- `place_custom_component(action="attach"|"repin", ...)` first resolves the
+  exact account-local artifact through the successful-compilation gate, then
+  emits checked `insert_node` or full `set_node_props` operations. Attach
+  requires an explicit parent/index; repin requires explicit node ids. Selected
+  turns enforce the enclosing-section boundary for attach and an exact subset
+  rule for repin. Placement never mutates source.
+
+Every accepted document mutation is appended to the existing exact operation
+ledger and is replayed/CAS-committed by the web-turn worker. There is no
+whole-document custom-component handoff and no mutable "latest" pin. Source
+writes, compile attempts, artifact creation, attach/repin, ladder gaps,
+endpoint claims, and failures each emit provenance events; only explicit
+current-page nodes receive a new artifact, so other pages remain on their
+existing immutable pins.
+
+The materialized `custom-components` skill adapts the captured Mutiny authoring
+contract to Lumen's sandbox, theme payload, static class compiler, operation
+envelope, selected-node safety, and endpoint-honesty rules. `create-website`
+climbs to it only after the first three capability rungs fail; `edit-website`
+uses explicit repin instead of rewriting a component's enclosing section.

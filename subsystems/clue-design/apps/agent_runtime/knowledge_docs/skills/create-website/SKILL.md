@@ -208,10 +208,11 @@ Contracts:
 **The escalation ladder — climb reluctantly.** Palette (sections, text,
 buttons, images) → platform component → embed → custom component. Take the
 FIRST rung that expresses the need; most "interactive" asks are a dialog or an
-accordion. If no rung can express what the brief truly needs, build the
-closest palette approximation and report the gap through the `ladder_gap`
-field at finalize — never fake interactivity with static markup that pretends
-to work.
+accordion. When the first three rungs provably cannot express the requirement,
+load the `custom-components` skill, record the concrete `ladder_gap`, and use
+its durable source → compile → explicit placement workflow. Never fake
+interactivity with static markup that pretends to work, and never reach for
+custom source merely to avoid composing ordinary typed nodes.
 
 **Separation of concerns (binding).** A platform node owns everything it can:
 the dialog owns visibility, backdrop, and close; buttons own triggering. Wire

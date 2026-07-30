@@ -12,9 +12,18 @@ from __future__ import annotations
 import json
 import os
 import signal
+import sqlite3
 import subprocess
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
+from uuid import uuid4
+
+from .custom_components import (
+    canonical_custom_component_source_snapshot,
+    persist_compiled_custom_component_artifact,
+    resolve_custom_component_source_snapshot,
+)
+from .database import Repository
 
 
 JsonObject = Dict[str, Any]
@@ -187,3 +196,153 @@ def compile_custom_component(
                 "custom-component compiler success response is incomplete"
             )
     return result
+
+
+def compile_and_persist_custom_component(
+    *,
+    repository: Repository,
+    store_root: Path,
+    node_binary: str,
+    worker_path: Path,
+    timeout_seconds: float,
+    account_id: str,
+    slug: str,
+    source_version: int,
+    actor: JsonObject,
+    compile_fn: Callable[..., JsonObject] = compile_custom_component,
+) -> JsonObject:
+    """Compile one exact durable source revision and persist its outcome.
+
+    This is the single orchestration seam shared by the HTTP endpoint and the
+    Deep Agent registry gateway. It preserves the P6.2 guarantees: the worker
+    receives only the requested account's durable source/dependency pins, an
+    optimistic version check is repeated after the out-of-transaction compile,
+    only a protocol-valid success can create an immutable artifact, and every
+    outcome gets a durable compilation record.
+
+    The returned ``compile_status`` is one of ``success``, ``failed``, or
+    ``transient_error``. Callers decide how to expose/retry those states; this
+    function performs exactly one worker attempt.
+    """
+
+    component = repository.require_custom_component(account_id, slug)
+    current_version = int(component["source_version"])
+    if current_version != source_version:
+        from .database import CustomComponentSourceVersionConflict
+
+        raise CustomComponentSourceVersionConflict(
+            slug, source_version, current_version
+        )
+    revision = repository.get_current_custom_component_source(account_id, slug)
+    if revision is None:
+        from .database import NotFoundError
+
+        raise NotFoundError("custom_component_source", slug)
+    _, files = resolve_custom_component_source_snapshot(
+        repository,
+        store_root,
+        account_id=account_id,
+        revision_id=revision["revision_id"],
+    )
+    component_artifacts = {
+        item["slug"]: item["latest_artifact_id"]
+        for item in repository.list_custom_components(account_id)
+        if item["slug"] != slug and item["latest_artifact_id"] is not None
+    }
+    result = compile_fn(
+        node_binary=node_binary,
+        worker_path=worker_path,
+        timeout_seconds=timeout_seconds,
+        slug=slug,
+        entry=revision["entry_path"],
+        files=files,
+        component_artifacts=component_artifacts,
+    )
+
+    # The compiler runs outside the database transaction. An older compile may
+    # finish after a source write, so re-check before it can become attachable.
+    current_version = int(
+        repository.require_custom_component(account_id, slug)["source_version"]
+    )
+    if current_version != source_version:
+        from .database import CustomComponentSourceVersionConflict
+
+        raise CustomComponentSourceVersionConflict(
+            slug, source_version, current_version
+        )
+
+    compilation_id = f"cccmp_{uuid4().hex}"
+    compiler_version = str(result.get("compiler_version") or "unavailable")
+    diagnostics = result.get("diagnostics")
+    if not isinstance(diagnostics, list):
+        diagnostics = []
+    artifact = None
+    status = result["status"]
+    if status == "success":
+        snapshot_bytes, _ = canonical_custom_component_source_snapshot(
+            slug=slug, files=files
+        )
+        outputs = result["outputs"]
+        manifest = result["manifest"]
+        try:
+            artifact = persist_compiled_custom_component_artifact(
+                repository,
+                store_root,
+                account_id=account_id,
+                slug=slug,
+                source=snapshot_bytes,
+                bundle=outputs["browser_bundle"].encode("utf-8"),
+                css=outputs["component_css"].encode("utf-8"),
+                first_frame=outputs["first_frame_html"].encode("utf-8"),
+                manifest=manifest,
+                provenance={
+                    "kind": "lumen_custom_component_compiler",
+                    "compiler_protocol_version": COMPILER_PROTOCOL_VERSION,
+                    "compiler_version": compiler_version,
+                    "source_revision_id": revision["revision_id"],
+                    "source_version": revision["source_version"],
+                    "dependency_artifacts": manifest.get(
+                        "dependency_artifacts", {}
+                    ),
+                    "actor": actor,
+                },
+            )
+        except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+            status = "transient_error"
+            diagnostics = [
+                *diagnostics,
+                {
+                    "code": "CCI0003",
+                    "severity": "error",
+                    "category": "infrastructure",
+                    "message": (
+                        "compiled artifact could not be persisted: "
+                        f"{type(error).__name__}"
+                    ),
+                    "file": None,
+                    "line": None,
+                    "column": None,
+                },
+            ]
+            artifact = None
+
+    compilation = repository.record_custom_component_compilation(
+        {
+            "compilation_id": compilation_id,
+            "account_id": account_id,
+            "slug": slug,
+            "source_revision_id": revision["revision_id"],
+            "source_version": revision["source_version"],
+            "status": "succeeded" if status == "success" else status,
+            "compiler_protocol_version": COMPILER_PROTOCOL_VERSION,
+            "compiler_version": compiler_version,
+            "diagnostics": diagnostics,
+            "artifact_id": artifact["artifact_id"] if artifact else None,
+        }
+    )
+    return {
+        "schema_version": 1,
+        "compile_status": status,
+        "compilation": compilation,
+        "artifact": artifact,
+    }

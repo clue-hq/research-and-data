@@ -2416,6 +2416,46 @@ class Repository:
         ).fetchall()
         return [custom_component_compilation_from_row(row) for row in rows]
 
+    def list_custom_component_usages(
+        self, account_id: str, slug: str
+    ) -> List[JsonObject]:
+        """Return exact document/node pins for one account-local component.
+
+        The SQL account predicate is the tenancy boundary. The JSON walk then
+        performs an exact kind/slug match (rather than trusting a broad LIKE)
+        and returns only location/version metadata, never another document's
+        source or page content.
+        """
+
+        rows = self.connection.execute(
+            """
+            SELECT id, title, current_version, current_scene_json
+            FROM documents
+            WHERE doc_kind = 'web' AND account_id = ?
+            ORDER BY updated_at DESC, id ASC
+            """,
+            (account_id,),
+        ).fetchall()
+        usages: List[JsonObject] = []
+        for row in rows:
+            web_doc = decode(row["current_scene_json"])
+            for (page_id, node_id), node in sorted(
+                custom_component_nodes(web_doc).items()
+            ):
+                if node.get("slug") != slug:
+                    continue
+                usages.append(
+                    {
+                        "document_id": row["id"],
+                        "document_title": row["title"],
+                        "document_version": row["current_version"],
+                        "page_id": page_id,
+                        "node_id": node_id,
+                        "artifact_id": node.get("artifact_id"),
+                    }
+                )
+        return usages
+
     def validate_custom_component_reference_changes(
         self,
         *,

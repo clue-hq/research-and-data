@@ -93,7 +93,10 @@ def create_web_deepagent(
     )
     workspace_str = _scaffold_web_workspace(tools, prompt)
 
-    backend = AgentWorkspaceBackend(root_dir=str(runtime_config.workspace_root))
+    backend = AgentWorkspaceBackend(
+        root_dir=str(runtime_config.workspace_root),
+        custom_components_root=tools.custom_component_projection_root,
+    )
 
     from .llm import assert_all_role_models_support_image_input
 
@@ -147,6 +150,11 @@ def create_web_deepagent(
                 tools.search_assets,
                 tools.provenance,
                 tools.asset,
+                tools.list_custom_components,
+                tools.inspect_custom_component,
+                tools.write_custom_component_source,
+                tools.compile_custom_component,
+                tools.place_custom_component,
             ],
             "skills": workspace_skills,
         },
@@ -175,6 +183,8 @@ def create_web_deepagent(
         tools.fetch_page,
         tools.search_assets,
         tools.provenance,
+        tools.list_custom_components,
+        tools.inspect_custom_component,
         tools.render_web_preview,
         tools.finalize_web_run,
     ]

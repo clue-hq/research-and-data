@@ -22,6 +22,7 @@ import copy
 import hashlib
 import json
 import re
+import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -113,6 +114,23 @@ _ROUND_MUTATION_BUDGET = 14
 # 2026-07-29 dead-renderer run retried ~25 times (~6 minutes of model calls)
 # before giving up on its own.
 _RENDER_FAILURE_LIMIT = 3
+
+# P6.4 custom-component authoring limits. Deterministic compiler failures must
+# be repaired in source; infrastructure failures may retry twice (three total
+# attempts) and then return control to the orchestrator.
+_CUSTOM_COMPONENT_TRANSIENT_ATTEMPTS = 3
+_CUSTOM_COMPONENT_LADDER_GAP_MAX_CHARS = 1200
+_CUSTOM_COMPONENT_CLASSES_MAX_CHARS = 1000
+_CUSTOM_COMPONENT_ENDPOINT_MAX = 32
+_ABSOLUTE_ENDPOINT_RE = re.compile(r"https?://[^\s\"'`<>)}\]]+")
+_CALL_ENDPOINT_RE = re.compile(
+    r"(?:fetch|axios(?:\.(?:get|post|put|patch|delete))?)\s*\(\s*"
+    r"[\"']([^\"']+)[\"']"
+)
+_NAMED_ENDPOINT_RE = re.compile(
+    r"(?:action|endpoint|webhookUrl|bookingUrl|formUrl)\s*[:=]\s*"
+    r"[\"']([^\"']+)[\"']"
+)
 
 # Grounded research bounds. Page bytes are already capped at 5 MB by the shared
 # capture fetcher; these caps keep the model/result envelope compact and make
@@ -407,10 +425,23 @@ class LumenWebTools:
         self.trace_dir = config.trace_dir / self.run_id
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         bind_run_id(self.run_id)
+        # P6.4: each run gets an account-local, read-only projection at the
+        # public virtual path /custom_components. The files are derived from
+        # the durable registry on every run; typed tools below are the only
+        # write/compile/place paths.
+        self.custom_component_projection_root = (
+            self.trace_dir / "custom_components"
+        )
+        self._custom_component_compile_repairs: Dict[
+            tuple[str, int], str
+        ] = {}
+        self._custom_component_ladder_gaps: List[str] = []
+        self._custom_component_placeholder_endpoints: List[str] = []
 
         # Monotonic iteration counter naming per-render screenshot dirs
         # (iter_1, iter_2, …). Bumped at the START of each render.
         self.iteration = 0
+        self._refresh_custom_component_projection()
         # A single Playwright instance + headless chromium kept alive across
         # renders (launching per render dominates web-turn latency). Started
         # lazily by _browser_handle(); torn down by _close_browser() (called
@@ -590,6 +621,291 @@ class LumenWebTools:
         commit payload after the helper has accepted it.
         """
         self.operations_ledger.extend(copy.deepcopy(operations))
+
+    def _custom_component_registry(self):
+        return getattr(self.config, "custom_component_registry", None)
+
+    def _refresh_custom_component_projection(self) -> None:
+        """Materialize the account registry into this run's read-only view."""
+
+        root = self.custom_component_projection_root
+        root.mkdir(parents=True, exist_ok=True)
+        registry = self._custom_component_registry()
+        readme = (
+            "# Custom components\n\n"
+            "This is a read-only projection of the durable account registry. "
+            "Inspect these files normally. Use `write_custom_component_source` "
+            "for CAS-protected writes; filesystem write/edit operations are "
+            "intentionally rejected.\n"
+        )
+        (root / "README.md").write_text(readme, encoding="utf-8")
+        if registry is None:
+            (root / ".unavailable.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "available": False,
+                        "reason": (
+                            "This website turn is not bound to an account-local "
+                            "custom-component registry."
+                        ),
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            return
+        try:
+            projection = registry.projection()
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            (root / ".unavailable.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "available": False,
+                        "reason": f"{type(error).__name__}: {error}",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            self.record(
+                "agent",
+                "custom_component_projection_failed",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return
+
+        unavailable = root / ".unavailable.json"
+        unavailable.unlink(missing_ok=True)
+        current_slugs: set[str] = set()
+        for item in projection.get("components") or []:
+            if not isinstance(item, dict):
+                continue
+            slug = item.get("slug")
+            files = item.get("files")
+            if (
+                not isinstance(slug, str)
+                or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) is None
+                or not isinstance(files, dict)
+            ):
+                continue
+            current_slugs.add(slug)
+            component_dir = root / slug
+            if component_dir.exists():
+                shutil.rmtree(component_dir)
+            component_dir.mkdir(parents=True)
+            for relative_path, source in files.items():
+                if (
+                    not isinstance(relative_path, str)
+                    or not isinstance(source, str)
+                    or relative_path.startswith("/")
+                    or ".." in Path(relative_path).parts
+                ):
+                    continue
+                target = component_dir / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(source, encoding="utf-8")
+            (component_dir / ".lumen-component.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "slug": slug,
+                        "source_version": item.get("source_version"),
+                        "revision_id": item.get("revision_id"),
+                        "write_contract": "write_custom_component_source",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        for child in root.iterdir():
+            if child.is_dir() and child.name not in current_slugs:
+                shutil.rmtree(child)
+        (root / ".registry.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "available": True,
+                    "virtual_root": "/custom_components",
+                    "slugs": sorted(current_slugs),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    def _record_custom_component_ladder_gap(
+        self, *, slug: str, ladder_gap: str
+    ) -> None:
+        gap = ladder_gap.strip()
+        if gap not in self._custom_component_ladder_gaps:
+            self._custom_component_ladder_gaps.append(gap)
+            self.record(
+                "author",
+                "ladder_gap",
+                input_summary=slug,
+                output_summary=gap[:500],
+                payload={
+                    "slug": slug,
+                    "ladder_gap": gap,
+                    "capability_ladder": [
+                        "palette",
+                        "platform_component",
+                        "embed",
+                        "custom_component",
+                    ],
+                },
+            )
+
+    @staticmethod
+    def _source_endpoints(files: Dict[str, str]) -> List[str]:
+        endpoints: List[str] = []
+        for source in files.values():
+            endpoints.extend(_ABSOLUTE_ENDPOINT_RE.findall(source))
+            endpoints.extend(_CALL_ENDPOINT_RE.findall(source))
+            endpoints.extend(_NAMED_ENDPOINT_RE.findall(source))
+        return list(dict.fromkeys(endpoint.strip() for endpoint in endpoints if endpoint))[
+            : _CUSTOM_COMPONENT_ENDPOINT_MAX + 1
+        ]
+
+    @staticmethod
+    def _is_obvious_endpoint_placeholder(endpoint: str) -> bool:
+        lowered = endpoint.lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "example.com",
+                "example.invalid",
+                "placeholder",
+                "replace-me",
+                "replace_me",
+                "todo-endpoint",
+            )
+        )
+
+    def _validate_custom_component_endpoints(
+        self,
+        files: Dict[str, str],
+        endpoint_claims_json: str,
+        existing_claims: Optional[List[JsonObject]] = None,
+    ) -> tuple[Optional[List[JsonObject]], Optional[str]]:
+        endpoints = self._source_endpoints(files)
+        if len(endpoints) > _CUSTOM_COMPONENT_ENDPOINT_MAX:
+            return None, (
+                f"component source contains more than "
+                f"{_CUSTOM_COMPONENT_ENDPOINT_MAX} literal endpoints"
+            )
+        try:
+            claims = json.loads(endpoint_claims_json or "[]")
+        except (TypeError, json.JSONDecodeError) as error:
+            return None, f"endpoint_claims_json must be a JSON array: {error}"
+        if not isinstance(claims, list) or any(
+            not isinstance(claim, dict) for claim in claims
+        ):
+            return None, "endpoint_claims_json must be a JSON array of objects"
+        by_endpoint: Dict[str, JsonObject] = {}
+        for claim in claims:
+            endpoint = claim.get("endpoint")
+            provenance = claim.get("provenance")
+            if (
+                not isinstance(endpoint, str)
+                or not endpoint.strip()
+                or provenance
+                not in {"user_provided", "grounded_source", "placeholder"}
+            ):
+                return None, (
+                    "each endpoint claim requires endpoint and provenance="
+                    "user_provided|grounded_source|placeholder"
+                )
+            endpoint = endpoint.strip()
+            if endpoint in by_endpoint:
+                return None, f"endpoint {endpoint!r} is claimed more than once"
+            by_endpoint[endpoint] = claim
+        unclaimed = [endpoint for endpoint in endpoints if endpoint not in by_endpoint]
+        extra = [endpoint for endpoint in by_endpoint if endpoint not in endpoints]
+        if unclaimed:
+            return None, (
+                "literal endpoints require explicit provenance claims: "
+                + ", ".join(unclaimed)
+            )
+        if extra:
+            return None, (
+                "endpoint claims must name literal endpoints present in source: "
+                + ", ".join(extra)
+            )
+
+        validated: List[JsonObject] = []
+        existing_by_endpoint = {
+            claim.get("endpoint"): claim
+            for claim in existing_claims or []
+            if isinstance(claim, dict)
+            and isinstance(claim.get("endpoint"), str)
+        }
+        for endpoint in endpoints:
+            claim = by_endpoint[endpoint]
+            provenance = claim["provenance"]
+            source_id = claim.get("source_id")
+            prior = existing_by_endpoint.get(endpoint)
+            preserves_prior = (
+                isinstance(prior, dict)
+                and prior.get("provenance") == provenance
+                and (
+                    provenance != "grounded_source"
+                    or prior.get("source_id") == source_id
+                )
+            )
+            if provenance == "user_provided":
+                if endpoint not in self.prompt and not preserves_prior:
+                    return None, (
+                        f"endpoint {endpoint!r} was not present in the user's turn "
+                        "prompt or the prior durable source provenance and cannot "
+                        "be claimed as user-provided"
+                    )
+            elif provenance == "grounded_source":
+                source = (
+                    self._grounding_sources.get(source_id)
+                    if isinstance(source_id, str)
+                    else None
+                )
+                grounded_urls = set()
+                if isinstance(source, dict) and source.get("kind") == "page":
+                    grounded_urls.update(
+                        str(value)
+                        for value in (
+                            source.get("requested_url"),
+                            source.get("final_url"),
+                        )
+                        if value
+                    )
+                    grounded_urls.update(
+                        str(link.get("url"))
+                        for link in source.get("links") or []
+                        if isinstance(link, dict) and link.get("url")
+                    )
+                if (
+                    (source is None or endpoint not in grounded_urls)
+                    and not preserves_prior
+                ):
+                    return None, (
+                        f"endpoint {endpoint!r} is not evidenced by grounded page "
+                        f"source {source_id!r}"
+                    )
+            elif not self._is_obvious_endpoint_placeholder(endpoint):
+                return None, (
+                    f"placeholder endpoint {endpoint!r} is not obvious; use an "
+                    "example.com/PLACEHOLDER or example.invalid value"
+                )
+            validated.append(
+                {
+                    "endpoint": endpoint,
+                    "provenance": provenance,
+                    "source_id": source_id
+                    if provenance == "grounded_source"
+                    else None,
+                }
+            )
+        return validated, None
 
     def _page_replacement_operations(
         self, before: JsonObject, after: JsonObject
@@ -1448,6 +1764,780 @@ class LumenWebTools:
         )
         return json.dumps(
             {"status": "ok", "applied": applied, "warnings": warnings}, indent=2
+        )
+
+    # --- durable custom-component authoring (P6.4) -------------------------
+
+    def list_custom_components(self) -> str:
+        """List account-local components that may be attached now.
+
+        Only immutable compiler-v2 artifacts backed by a successful durable
+        compilation are returned. Draft source and failed compiles are omitted
+        from this attachable list; use inspect_custom_component for their
+        diagnostics and version history.
+        """
+
+        registry = self._custom_component_registry()
+        if registry is None:
+            return self._tool_error(
+                "custom_component.registry_unavailable",
+                "This website is not bound to an account-local component registry.",
+            )
+        try:
+            result = registry.list_attachable()
+        except Exception as error:  # noqa: BLE001 - capability boundary
+            self.record(
+                "author",
+                "custom_component_list_failed",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "custom_component.registry_failed",
+                f"component registry lookup failed: {type(error).__name__}: {error}",
+            )
+        components = result.get("components") or []
+        self.record(
+            "author",
+            "custom_components_listed",
+            output_summary=f"{len(components)} attachable component(s)",
+            payload={
+                "slugs": [
+                    component.get("slug")
+                    for component in components
+                    if isinstance(component, dict)
+                ]
+            },
+        )
+        return json.dumps({"status": "ok", **result}, indent=2)
+
+    def inspect_custom_component(self, slug: str) -> str:
+        """Inspect one account-local component completely.
+
+        Returns the current durable source/files, source version, generated
+        schema/defaults, immutable artifacts, compile diagnostics/version
+        history, and exact document/node usages. The same source is readable at
+        /custom_components/<slug>/ and survives later runs/process restarts.
+        """
+
+        registry = self._custom_component_registry()
+        if registry is None:
+            return self._tool_error(
+                "custom_component.registry_unavailable",
+                "This website is not bound to an account-local component registry.",
+            )
+        clean_slug = (slug or "").strip()
+        try:
+            result = registry.inspect(clean_slug)
+        except Exception as error:  # noqa: BLE001 - account-bound lookup
+            self.record(
+                "author",
+                "custom_component_inspect_failed",
+                input_summary=clean_slug,
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+            )
+            return self._tool_error(
+                "custom_component.not_found",
+                f"component {clean_slug!r} could not be inspected: {error}",
+            )
+        component = result.get("component") or {}
+        self.record(
+            "author",
+            "custom_component_inspected",
+            input_summary=clean_slug,
+            output_summary=(
+                f"source v{component.get('source_version')}; "
+                f"{len(result.get('compilations') or [])} compile(s); "
+                f"{len(result.get('usages') or [])} usage(s)"
+            ),
+            payload={
+                "slug": clean_slug,
+                "source_version": component.get("source_version"),
+                "revision_id": component.get("current_source_revision_id"),
+                "artifact_ids": [
+                    artifact.get("artifact_id")
+                    for artifact in result.get("artifacts") or []
+                    if isinstance(artifact, dict)
+                ],
+                "usage_count": len(result.get("usages") or []),
+            },
+        )
+        return json.dumps({"status": "ok", **result}, indent=2)
+
+    def write_custom_component_source(
+        self,
+        slug: str,
+        expected_version: int,
+        files_json: str,
+        ladder_gap: str,
+        endpoint_claims_json: str = "[]",
+    ) -> str:
+        """Create/update durable source with optimistic version protection.
+
+        `files_json` is the COMPLETE own-directory source map and must include
+        `<slug>.tsx`. `expected_version` is 0 for a new slug or the exact
+        current version returned by inspect_custom_component. `ladder_gap` is a
+        concrete explanation of why palette → platform component → embed could
+        not express the requirement; it is mandatory and traced.
+
+        Every literal endpoint must appear in `endpoint_claims_json`, an array
+        of `{endpoint, provenance, source_id?}`. provenance is user_provided
+        (literal occurs in this turn's prompt), grounded_source (source_id from
+        fetch_page), or placeholder (an obvious example.com/PLACEHOLDER value).
+        This writes SOURCE only; compile_custom_component is a separate gate.
+        """
+
+        refusal = self._consume_round_budget("write_custom_component_source")
+        if refusal is not None:
+            return refusal
+        registry = self._custom_component_registry()
+        if registry is None:
+            return self._tool_error(
+                "custom_component.registry_unavailable",
+                "This website is not bound to an account-local component registry.",
+            )
+        clean_slug = (slug or "").strip()
+        gap = (ladder_gap or "").strip()
+        if not gap:
+            return self._tool_error(
+                "custom_component.ladder_gap_required",
+                "Custom-component source may be written only after recording the "
+                "specific palette/platform/embed capability gap.",
+            )
+        if len(gap) > _CUSTOM_COMPONENT_LADDER_GAP_MAX_CHARS:
+            return self._tool_error(
+                "custom_component.ladder_gap_too_long",
+                f"ladder_gap must be at most "
+                f"{_CUSTOM_COMPONENT_LADDER_GAP_MAX_CHARS} characters.",
+            )
+        if (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 0
+        ):
+            return self._tool_error(
+                "custom_component.bad_expected_version",
+                "expected_version must be a non-negative integer.",
+            )
+        try:
+            files = json.loads(files_json)
+        except (TypeError, json.JSONDecodeError) as error:
+            return self._tool_error(
+                "custom_component.bad_source_json",
+                f"files_json must be an object of relative path → source: {error}",
+            )
+        if not isinstance(files, dict) or any(
+            not isinstance(path, str) or not isinstance(source, str)
+            for path, source in files.items()
+        ):
+            return self._tool_error(
+                "custom_component.bad_source_json",
+                "files_json must be an object of relative path → UTF-8 source strings.",
+            )
+        existing_endpoint_claims: List[JsonObject] = []
+        if expected_version > 0:
+            try:
+                existing = registry.inspect(clean_slug)
+                existing_source = existing.get("source") or {}
+                existing_provenance = existing_source.get("provenance") or {}
+                prior_claims = existing_provenance.get("endpoint_claims")
+                if isinstance(prior_claims, list):
+                    existing_endpoint_claims = [
+                        claim
+                        for claim in prior_claims
+                        if isinstance(claim, dict)
+                    ]
+            except Exception:
+                # The CAS write below owns not-found/version truth. Endpoint
+                # validation simply gets no prior-proof allowance here.
+                pass
+        endpoint_claims, endpoint_error = self._validate_custom_component_endpoints(
+            files,
+            endpoint_claims_json,
+            existing_claims=existing_endpoint_claims,
+        )
+        if endpoint_error:
+            self.record(
+                "author",
+                "custom_component_source_write_rejected",
+                input_summary=f"{clean_slug} expected={expected_version}",
+                output_summary=endpoint_error[:500],
+                payload={"slug": clean_slug, "reason": "endpoint_honesty"},
+            )
+            return self._tool_error(
+                "custom_component.endpoint_unverified", endpoint_error
+            )
+        assert endpoint_claims is not None
+        self._record_custom_component_ladder_gap(
+            slug=clean_slug, ladder_gap=gap
+        )
+        provenance = {
+            "kind": "deep_agent_custom_component_source_write",
+            "actor": {"kind": "agent", "id": self.run_id},
+            "run_id": self.run_id,
+            "document_id": getattr(
+                self.config, "custom_component_document_id", None
+            ),
+            "ladder_gap": gap,
+            "endpoint_claims": endpoint_claims,
+            "prompt_sha256": hashlib.sha256(
+                self.prompt.encode("utf-8")
+            ).hexdigest(),
+        }
+        try:
+            result = registry.write_source(
+                slug=clean_slug,
+                expected_version=expected_version,
+                files=files,
+                provenance=provenance,
+            )
+        except Exception as error:  # noqa: BLE001 - CAS/validation boundary
+            is_conflict = hasattr(error, "expected") and hasattr(error, "current")
+            code = (
+                "custom_component.source_version_conflict"
+                if is_conflict
+                else "custom_component.source_invalid"
+            )
+            self.record(
+                "author",
+                "custom_component_source_write_failed",
+                input_summary=f"{clean_slug} expected={expected_version}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+                payload={
+                    "slug": clean_slug,
+                    "expected_version": expected_version,
+                    "error_code": code,
+                },
+            )
+            return self._tool_error(
+                code,
+                str(error),
+                expected_version=expected_version,
+                current_version=getattr(error, "current", None),
+            )
+        self._custom_component_compile_repairs = {
+            key: value
+            for key, value in self._custom_component_compile_repairs.items()
+            if key[0] != clean_slug
+        }
+        for claim in endpoint_claims:
+            if claim["provenance"] == "placeholder":
+                endpoint = claim["endpoint"]
+                if endpoint not in self._custom_component_placeholder_endpoints:
+                    self._custom_component_placeholder_endpoints.append(endpoint)
+        self._refresh_custom_component_projection()
+        source = result.get("source") or {}
+        self.record(
+            "author",
+            "custom_component_source_written",
+            input_summary=f"{clean_slug} expected={expected_version}",
+            output_summary=f"source v{source.get('source_version')}",
+            payload={
+                "slug": clean_slug,
+                "expected_version": expected_version,
+                "source_version": source.get("source_version"),
+                "revision_id": source.get("revision_id"),
+                "file_paths": sorted(files),
+                "endpoint_claims": endpoint_claims,
+                "ladder_gap": gap,
+            },
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                **result,
+                "virtual_path": f"/custom_components/{clean_slug}/",
+                "endpoint_claims": endpoint_claims,
+                "next_required_action": (
+                    "Compile this exact source_version. Source is not attachable yet."
+                ),
+            },
+            indent=2,
+        )
+
+    def compile_custom_component(self, slug: str, source_version: int) -> str:
+        """Compile/publish one exact durable source version.
+
+        Deterministic failures are attempted once and then require a source
+        repair/new version. Infrastructure failures retry at most twice (three
+        attempts total). A successful result creates an immutable artifact but
+        does NOT place or repin any document node.
+        """
+
+        registry = self._custom_component_registry()
+        if registry is None:
+            return self._tool_error(
+                "custom_component.registry_unavailable",
+                "This website is not bound to an account-local component registry.",
+            )
+        clean_slug = (slug or "").strip()
+        if (
+            not isinstance(source_version, int)
+            or isinstance(source_version, bool)
+            or source_version < 1
+        ):
+            return self._tool_error(
+                "custom_component.bad_source_version",
+                "source_version must be a positive integer.",
+            )
+        blocked_compilation = self._custom_component_compile_repairs.get(
+            (clean_slug, source_version)
+        )
+        if blocked_compilation:
+            return self._tool_error(
+                "custom_component.source_repair_required",
+                "This exact source version already failed deterministically. "
+                "Repair it with write_custom_component_source using the current "
+                "expected version, then compile the new version.",
+                compilation_id=blocked_compilation,
+                source_version=source_version,
+            )
+
+        attempts: List[JsonObject] = []
+        for attempt in range(1, _CUSTOM_COMPONENT_TRANSIENT_ATTEMPTS + 1):
+            try:
+                result = registry.compile_once(
+                    slug=clean_slug,
+                    source_version=source_version,
+                    actor={"kind": "agent", "id": self.run_id},
+                )
+            except Exception as error:  # noqa: BLE001 - version/registry boundary
+                code = (
+                    "custom_component.source_version_conflict"
+                    if hasattr(error, "expected") and hasattr(error, "current")
+                    else "custom_component.compile_failed"
+                )
+                self.record(
+                    "author",
+                    "custom_component_compile_failed",
+                    input_summary=f"{clean_slug} v{source_version}",
+                    output_summary=f"{type(error).__name__}: {error}"[:500],
+                    payload={
+                        "slug": clean_slug,
+                        "source_version": source_version,
+                        "attempt": attempt,
+                        "error_code": code,
+                    },
+                )
+                return self._tool_error(
+                    code,
+                    str(error),
+                    current_version=getattr(error, "current", None),
+                )
+            compile_status = result.get("compile_status")
+            compilation = result.get("compilation") or {}
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "status": compile_status,
+                    "compilation_id": compilation.get("compilation_id"),
+                }
+            )
+            self.record(
+                "author",
+                "custom_component_compile_attempted",
+                input_summary=f"{clean_slug} v{source_version}",
+                output_summary=(
+                    f"{compile_status} attempt "
+                    f"{attempt}/{_CUSTOM_COMPONENT_TRANSIENT_ATTEMPTS}"
+                ),
+                diagnostics=compilation.get("diagnostics") or [],
+                payload={
+                    "slug": clean_slug,
+                    "source_version": source_version,
+                    "attempt": attempt,
+                    "status": compile_status,
+                    "compilation_id": compilation.get("compilation_id"),
+                },
+            )
+            if compile_status == "success":
+                artifact = result.get("artifact") or {}
+                self.record(
+                    "author",
+                    "custom_component_artifact_created",
+                    input_summary=f"{clean_slug} v{source_version}",
+                    output_summary=str(artifact.get("artifact_id")),
+                    payload={
+                        "slug": clean_slug,
+                        "source_version": source_version,
+                        "compilation_id": compilation.get("compilation_id"),
+                        "artifact_id": artifact.get("artifact_id"),
+                        "source_digest": (artifact.get("source") or {}).get(
+                            "value"
+                        ),
+                        "bundle_digest": (artifact.get("bundle") or {}).get(
+                            "value"
+                        ),
+                    },
+                )
+                self._refresh_custom_component_projection()
+                return json.dumps(
+                    {
+                        "status": "ok",
+                        **{
+                            key: value
+                            for key, value in result.items()
+                            if key != "compile_status"
+                        },
+                        "attempts": attempts,
+                        "next_required_action": (
+                            "Artifact is attachable but not placed. Use "
+                            "place_custom_component with action attach or repin."
+                        ),
+                    },
+                    indent=2,
+                )
+            if compile_status == "failed":
+                self._custom_component_compile_repairs[
+                    (clean_slug, source_version)
+                ] = str(compilation.get("compilation_id") or "")
+                return json.dumps(
+                    {
+                        "status": "repair_required",
+                        "slug": clean_slug,
+                        "source_version": source_version,
+                        "compilation": compilation,
+                        "attempts": attempts,
+                        "instruction": (
+                            "Repair the diagnosed source, write it as a new "
+                            "version, then compile that new version."
+                        ),
+                    },
+                    indent=2,
+                )
+            if compile_status != "transient_error":
+                return self._tool_error(
+                    "custom_component.compile_protocol_error",
+                    f"registry returned unknown compile status {compile_status!r}.",
+                )
+        self.record(
+            "author",
+            "custom_component_compile_retries_exhausted",
+            input_summary=f"{clean_slug} v{source_version}",
+            output_summary=f"{len(attempts)} transient attempt(s)",
+            payload={
+                "slug": clean_slug,
+                "source_version": source_version,
+                "attempts": attempts,
+            },
+        )
+        return self._tool_error(
+            "custom_component.compile_temporarily_unavailable",
+            "Compiler infrastructure failed transiently after three bounded "
+            "attempts. Source was not changed and no artifact was created.",
+            attempts=attempts,
+        )
+
+    def place_custom_component(
+        self,
+        action: str,
+        slug: str,
+        artifact_id: str,
+        parent_node_id: Optional[str] = None,
+        index: Optional[int] = None,
+        target_node_ids_json: Optional[str] = None,
+        props_json: Optional[str] = None,
+        classes: str = "w-full min-h-[160px]",
+    ) -> str:
+        """Attach a compiled component or repin explicit current-page nodes.
+
+        action="attach" requires an explicit parent_node_id and index.
+        action="repin" requires target_node_ids_json, a non-empty JSON array.
+        When the turn carries selected-node scope, every repin target must be
+        selected and an attach parent must be inside a selected target's
+        enclosing section. `artifact_id` must be an exact account-local,
+        successfully compiled immutable pin. This changes document operations
+        only; it never changes component source.
+        """
+
+        refusal = self._consume_round_budget("place_custom_component")
+        if refusal is not None:
+            return refusal
+        registry = self._custom_component_registry()
+        if registry is None:
+            return self._tool_error(
+                "custom_component.registry_unavailable",
+                "This website is not bound to an account-local component registry.",
+            )
+        if action not in {"attach", "repin"}:
+            return self._tool_error(
+                "custom_component.bad_place_action",
+                "action must be 'attach' or 'repin'.",
+            )
+        clean_slug = (slug or "").strip()
+        raw_props: Optional[JsonObject] = None
+        if props_json is not None:
+            try:
+                decoded_props = json.loads(props_json)
+            except (TypeError, json.JSONDecodeError) as error:
+                return self._tool_error(
+                    "custom_component.bad_props",
+                    f"props_json must be an object: {error}",
+                )
+            if not isinstance(decoded_props, dict):
+                return self._tool_error(
+                    "custom_component.bad_props",
+                    "props_json must be an object.",
+                )
+            raw_props = decoded_props
+
+        page = self._home_page()
+        nodes = page.get("nodes") or {}
+        root_id = page.get("root")
+        root = nodes.get(root_id) if isinstance(root_id, str) else None
+        root_children = root.get("children") or [] if isinstance(root, dict) else []
+        selected_targets = list(
+            dict.fromkeys(self.config.turn_target_node_ids or [])
+        )
+        operations: List[JsonObject] = []
+        target_ids: List[str] = []
+
+        try:
+            if action == "attach":
+                if not isinstance(parent_node_id, str) or not parent_node_id:
+                    return self._tool_error(
+                        "custom_component.attach_parent_required",
+                        "attach requires an explicit parent_node_id.",
+                    )
+                if (
+                    not isinstance(index, int)
+                    or isinstance(index, bool)
+                    or index < 0
+                ):
+                    return self._tool_error(
+                        "custom_component.attach_index_required",
+                        "attach requires a non-negative integer index.",
+                    )
+                if parent_node_id not in nodes:
+                    return self._tool_error(
+                        "custom_component.attach_parent_unknown",
+                        f"parent node {parent_node_id!r} is not on page 'home'.",
+                    )
+                if selected_targets:
+                    allowed_sections = {
+                        section
+                        for target in selected_targets
+                        for section in [
+                            self._enclosing_section(
+                                target, nodes, list(root_children)
+                            )
+                        ]
+                        if section is not None
+                    }
+                    parent_section = self._enclosing_section(
+                        parent_node_id, nodes, list(root_children)
+                    )
+                    if parent_section not in allowed_sections:
+                        return self._tool_error(
+                            "custom_component.scope_violation",
+                            "attach parent is outside the explicitly selected "
+                            "turn scope.",
+                            selected_node_ids=selected_targets,
+                            parent_node_id=parent_node_id,
+                        )
+                resolved = registry.resolve_attachable(
+                    slug=clean_slug,
+                    artifact_id=artifact_id,
+                    props=raw_props,
+                )
+                if (
+                    not isinstance(classes, str)
+                    or len(classes) > _CUSTOM_COMPONENT_CLASSES_MAX_CHARS
+                ):
+                    return self._tool_error(
+                        "custom_component.bad_classes",
+                        f"classes must be a string of at most "
+                        f"{_CUSTOM_COMPONENT_CLASSES_MAX_CHARS} characters.",
+                    )
+                existing = set(nodes)
+                salt = 0
+                while True:
+                    digest = hashlib.sha256(
+                        (
+                            f"{self.run_id}\0{clean_slug}\0"
+                            f"{len(self.operations_ledger)}\0{salt}"
+                        ).encode("utf-8")
+                    ).hexdigest()[:8]
+                    node_id = f"cc_{digest}"
+                    if node_id not in existing:
+                        break
+                    salt += 1
+                node = {
+                    "id": node_id,
+                    "kind": "custom_component",
+                    "slug": clean_slug,
+                    "artifact_id": artifact_id,
+                    "props": resolved["props"],
+                    "classes": classes,
+                }
+                operations = [
+                    {
+                        "kind": "insert_node",
+                        "page_id": self.page_id,
+                        "parent": parent_node_id,
+                        "index": index,
+                        "nodes": [node],
+                        "root": node_id,
+                    }
+                ]
+                target_ids = [node_id]
+            else:
+                try:
+                    decoded_targets = json.loads(target_node_ids_json or "")
+                except (TypeError, json.JSONDecodeError) as error:
+                    return self._tool_error(
+                        "custom_component.repin_targets_required",
+                        f"target_node_ids_json must be a JSON array: {error}",
+                    )
+                if (
+                    not isinstance(decoded_targets, list)
+                    or not decoded_targets
+                    or any(
+                        not isinstance(target, str) or not target
+                        for target in decoded_targets
+                    )
+                ):
+                    return self._tool_error(
+                        "custom_component.repin_targets_required",
+                        "repin requires a non-empty JSON array of node ids.",
+                    )
+                target_ids = list(dict.fromkeys(decoded_targets))
+                if selected_targets and not set(target_ids).issubset(
+                    set(selected_targets)
+                ):
+                    return self._tool_error(
+                        "custom_component.scope_violation",
+                        "repin may change only explicitly selected target nodes.",
+                        selected_node_ids=selected_targets,
+                        requested_node_ids=target_ids,
+                    )
+                for target_id in target_ids:
+                    node = nodes.get(target_id)
+                    if (
+                        not isinstance(node, dict)
+                        or node.get("kind") != "custom_component"
+                    ):
+                        return self._tool_error(
+                            "custom_component.repin_target_invalid",
+                            f"node {target_id!r} is not a custom-component leaf "
+                            "on page 'home'.",
+                        )
+                    if node.get("slug") != clean_slug:
+                        return self._tool_error(
+                            "custom_component.repin_slug_mismatch",
+                            f"node {target_id!r} belongs to slug "
+                            f"{node.get('slug')!r}, not {clean_slug!r}.",
+                        )
+                    requested_props = (
+                        raw_props
+                        if raw_props is not None
+                        else (
+                            node.get("props")
+                            if isinstance(node.get("props"), dict)
+                            else {}
+                        )
+                    )
+                    resolved = registry.resolve_attachable(
+                        slug=clean_slug,
+                        artifact_id=artifact_id,
+                        props=requested_props,
+                    )
+                    operations.append(
+                        {
+                            "kind": "set_node_props",
+                            "page_id": self.page_id,
+                            "id": target_id,
+                            "props": {
+                                "kind": "custom_component",
+                                "slug": clean_slug,
+                                "artifact_id": artifact_id,
+                                "props": resolved["props"],
+                            },
+                        }
+                    )
+        except Exception as error:  # noqa: BLE001 - registry gate
+            self.record(
+                "author",
+                "custom_component_placement_failed",
+                input_summary=f"{action} {clean_slug} {artifact_id}",
+                output_summary=f"{type(error).__name__}: {error}"[:500],
+                payload={
+                    "action": action,
+                    "slug": clean_slug,
+                    "artifact_id": artifact_id,
+                    "target_node_ids": target_ids,
+                    "reason": "artifact_or_props_gate",
+                },
+            )
+            return self._tool_error(
+                "custom_component.artifact_not_attachable", str(error)
+            )
+
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            self.record(
+                "author",
+                "custom_component_placement_failed",
+                input_summary=f"{action} {clean_slug} {artifact_id}",
+                output_summary=error.message[:500],
+                diagnostics=diagnostics,
+                payload={
+                    "action": action,
+                    "slug": clean_slug,
+                    "artifact_id": artifact_id,
+                    "target_node_ids": target_ids,
+                    "reason": "checked_operation_rejected",
+                },
+            )
+            return json.dumps(
+                {"status": "rejected", "diagnostics": diagnostics}, indent=2
+            )
+        if not response.get("ok"):
+            diagnostics = response.get("diagnostics") or []
+            return json.dumps(
+                {"status": "rejected", "diagnostics": diagnostics}, indent=2
+            )
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        event = (
+            "custom_component_attached"
+            if action == "attach"
+            else "custom_component_repinned"
+        )
+        self.record(
+            "author",
+            event,
+            input_summary=f"{clean_slug} {artifact_id}",
+            output_summary=", ".join(target_ids),
+            diagnostics=response.get("diagnostics") or [],
+            payload={
+                "action": action,
+                "slug": clean_slug,
+                "artifact_id": artifact_id,
+                "page_id": self.page_id,
+                "target_node_ids": target_ids,
+                "operations": copy.deepcopy(operations),
+                "source_mutated": False,
+            },
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "action": action,
+                "page_id": self.page_id,
+                "node_ids": target_ids,
+                "artifact_id": artifact_id,
+                "applied": len(operations),
+                "source_mutated": False,
+                "warnings": [
+                    diagnostic
+                    for diagnostic in response.get("diagnostics") or []
+                    if diagnostic.get("severity") == "warning"
+                ],
+            },
+            indent=2,
         )
 
     # --- grounded research + provenance -----------------------------------
@@ -2906,15 +3996,30 @@ class LumenWebTools:
         self._close_browser()
         self._render_executor.shutdown(wait=False)
         grounding = self.grounding_report()
+        explicit_gap = (ladder_gap or "").strip()
+        gaps = list(self._custom_component_ladder_gaps)
+        if explicit_gap and explicit_gap not in gaps:
+            gaps.append(explicit_gap)
+        gap = "; ".join(gaps)
+        placeholders = list(self._custom_component_placeholder_endpoints)
+        if placeholders:
+            placeholder_note = (
+                "Placeholder endpoints still require real values: "
+                + ", ".join(placeholders)
+            )
+            if placeholder_note not in summary:
+                summary = f"{summary.rstrip()} {placeholder_note}".strip()
         payload: JsonObject = {
             "outcome": outcome,
             "summary": summary,
             "grounding_source_count": len(grounding["sources"]),
             "provenance_citation_count": len(grounding["citations"]),
         }
-        gap = (ladder_gap or "").strip()
         if gap:
             payload["ladder_gap"] = gap
+            payload["ladder_gaps"] = gaps
+        if placeholders:
+            payload["custom_component_placeholder_endpoints"] = placeholders
         self._write_json(self.trace_dir / "final.json", payload)
         self._write_json(self.trace_dir / "final_web_doc.json", self.web_doc)
         self._write_json(

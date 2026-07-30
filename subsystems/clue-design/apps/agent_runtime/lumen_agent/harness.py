@@ -98,7 +98,12 @@ def _filesystem_permissions():
     return [
         FilesystemPermission(
             operations=["write"],
-            paths=["/.deepagent/**", "/knowledge_docs/**"],
+            paths=[
+                "/.deepagent/**",
+                "/knowledge_docs/**",
+                "/custom_components",
+                "/custom_components/**",
+            ],
             mode="deny",
         ),
     ]

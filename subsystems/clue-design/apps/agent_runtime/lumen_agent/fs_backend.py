@@ -42,6 +42,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from deepagents.backends.filesystem import FilesystemBackend
+from deepagents.backends.protocol import EditResult, WriteResult
 from py_lumen_obs import get_logger
 
 from .paths import normalize_agent_key
@@ -59,13 +60,66 @@ class AgentWorkspaceBackend(FilesystemBackend):
     teaching ``PermissionError``.
     """
 
-    def __init__(self, root_dir: str | Path, max_file_size_mb: int = 10) -> None:
+    def __init__(
+        self,
+        root_dir: str | Path,
+        max_file_size_mb: int = 10,
+        custom_components_root: str | Path | None = None,
+    ) -> None:
         super().__init__(
             root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb
         )
         # Stored from the constructor arg (not ``self.cwd``) so the class also works
         # under the harness's stubbed ``FilesystemBackend``, which does not set cwd.
         self._workspace_root = str(Path(root_dir))
+        self._custom_components_root: Path | None = None
+        self._custom_components_internal_prefix: str | None = None
+        if custom_components_root is not None:
+            workspace = Path(root_dir).resolve()
+            projection = Path(custom_components_root).resolve()
+            try:
+                relative = projection.relative_to(workspace)
+            except ValueError as error:
+                raise ValueError(
+                    "custom component projection must live inside the agent workspace"
+                ) from error
+            self._custom_components_root = projection
+            self._custom_components_internal_prefix = "/" + relative.as_posix()
+
+    def _normalize_and_map_key(self, key: str) -> str:
+        normalized = normalize_agent_key(key, self._workspace_root)
+        prefix = self._custom_components_internal_prefix
+        if prefix is None:
+            return normalized
+        if normalized == "/custom_components":
+            return prefix
+        if normalized.startswith("/custom_components/"):
+            return prefix + normalized[len("/custom_components") :]
+        return normalized
+
+    def _is_component_projection_key(self, key: str) -> bool:
+        normalized = normalize_agent_key(key, self._workspace_root)
+        prefix = self._custom_components_internal_prefix
+        return (
+            normalized == "/custom_components"
+            or normalized.startswith("/custom_components/")
+            or (
+                prefix is not None
+                and (
+                    normalized == prefix
+                    or normalized.startswith(prefix + "/")
+                )
+            )
+        )
+
+    @staticmethod
+    def _projection_write_message() -> str:
+        return (
+            "/custom_components is a read-only projection of the durable "
+            "account registry. Use write_custom_component_source with an "
+            "expected source version; ordinary filesystem writes cannot bypass "
+            "version, provenance, or endpoint-honesty checks."
+        )
 
     def _teaching_message(self, key: str) -> str:
         return (
@@ -85,7 +139,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         it as a ``PermissionError`` so read/write/edit surface it as a clean,
         teaching error string instead of crashing the turn.
         """
-        normalized = normalize_agent_key(key, self._workspace_root)
+        normalized = self._normalize_and_map_key(key)
         # Debug detail: `_resolve_path` is the ONE seam every file operation
         # (read/write/edit/ls/grep/glob) funnels through, so logging the raw key,
         # its normalized virtual form, and the resolution outcome here traces the
@@ -103,3 +157,40 @@ class AgentWorkspaceBackend(FilesystemBackend):
             resolved=str(resolved),
         )
         return resolved
+
+    def _to_virtual_path(self, path: Path) -> str:
+        projection = self._custom_components_root
+        if projection is not None:
+            try:
+                relative = path.resolve().relative_to(projection)
+            except (OSError, ValueError):
+                pass
+            else:
+                suffix = relative.as_posix()
+                return (
+                    "/custom_components"
+                    if suffix == "."
+                    else f"/custom_components/{suffix}"
+                )
+        return super()._to_virtual_path(path)
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        if self._is_component_projection_key(file_path):
+            return WriteResult(error=self._projection_write_message())
+        return super().write(file_path, content)
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        if self._is_component_projection_key(file_path):
+            return EditResult(error=self._projection_write_message())
+        return super().edit(
+            file_path,
+            old_string,
+            new_string,
+            replace_all=replace_all,
+        )
