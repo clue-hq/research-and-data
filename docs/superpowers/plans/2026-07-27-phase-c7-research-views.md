@@ -5,17 +5,18 @@
 **Base:** completed C6 head `7755bea`
 **Binding child spec:** [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md)
 **Parent scope:** [PC §C7–C8](../../specs/PC-phase-c-agentic-layer.md)
-**Status:** C7.0–C7.8 IMPLEMENTED; PRODUCTION READ ACTIVATION BLOCKED — the post-closeout audit
-found that the real database-backed research-view reader/runtime stack was not implemented.
-Complete [C7.9](2026-07-30-c7-production-research-view-readers.md) before enabling any C7 read,
-snapshot, evidence, recheck, handoff, or legacy-alias flag.
+**Status:** C7.0–C7.9 IMPLEMENTED; AUTOMATED REMEDIATION CLOSED — all C7 flags remain default-off
+pending the real Exa-first manual quality trial and explicit canary approval. See
+[C7.9](2026-07-30-c7-production-research-view-readers.md) for the production reader closeout.
 
 > **Post-closeout correction (2026-07-30):** the original closeout proved the contract,
 > derivation, deterministic composer, snapshots, evidence seam, recheck, committee/handoff,
 > serving surfaces, default-off flags, and adversarial fixtures. It did not prove a production
 > caller of `build_research_view_composer` or real implementations of the reader/governance
-> protocols. Historical C7.0–C7.8 status entries below are retained as implementation history;
-> they do not authorize flag-on.
+> protocols. C7.9 subsequently supplied that production stack and closed the two final residual
+> review findings: explicit flagged-root/erased-support precedence coverage and product-exact
+> legacy review projection. Historical C7.0–C7.8 status entries below remain implementation
+> history; neither their closeout nor C7.9 authorizes flag-on without the manual rollout gates.
 
 ## 1. Purpose
 

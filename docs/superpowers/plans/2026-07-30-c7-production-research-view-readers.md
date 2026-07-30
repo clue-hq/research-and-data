@@ -1416,3 +1416,26 @@ remaining gate is deliberately a human quality decision, not missing reader code
 The CLI is read-only and has no fixture/acquisition fallback. If routes or persisted scope are
 missing it fails explicitly. Operational rollback remains flag/canary removal; migration downgrade
 is a development reversibility proof, not the live rollback strategy.
+
+### 19.4 Residual adversarial and multi-product closeout
+
+The final two review residuals are closed:
+
+1. `flagged_derived_erased_dependency` is now an executable adversarial fixture backed by a
+   database test. The test deliberately leaves the derived root `FLAGGED`, erases only its required
+   support, and proves governance returns `redacted` with reason `dependency_erased` and no
+   evidence action. The root's weaker review-required state cannot mask an erased dependency.
+2. The legacy `ReviewProjector` resolves the owning project run's pinned product through a
+   production durable scope reader. Raw account/contact claims admit only neutral or exact-product
+   rows; fit/intent scores require the exact product and project run; current winners prefer exact
+   product truth with neutral fallback; committee, conflict, annotation, and provenance surfaces
+   are derived only from admitted claim IDs. Foreign-product action targets fail closed, and a
+   correction/rejection preserves the target claim's product identity.
+
+Focused database coverage proves exact-product claim, score, winner, committee, provenance, and
+action behavior. The full repository suite reached only the three already-documented
+order-sensitive logging/toolbelt capture failures; those three pass independently. Changed-surface
+Ruff, repository mypy, and all 24 import contracts pass.
+
+This closes automated C7 remediation. It does not change rollout state: every C7 flag remains
+default-off, and the real Exa-first quality trial is still the next acceptance step.

@@ -80,7 +80,7 @@ class _AdversarialCase(BaseModel):
     contract_case: str | None
     later_guard_stage: str
     expected_reason_code: str
-    expected_outcome: Literal["rejected", "restricted", "unavailable"]
+    expected_outcome: Literal["redacted", "rejected", "restricted", "unavailable"]
     evidence_test: str
 
 
@@ -410,6 +410,7 @@ def test_adversarial_fixture_map_is_complete_and_stage_owned() -> None:
         "rejected_dependency",
         "expired_dependency",
         "erased_dependency",
+        "flagged_derived_erased_dependency",
         "conflicted_dependency",
         "wrong_account_activity",
     }

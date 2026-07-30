@@ -23,23 +23,39 @@ from clue_core import (
     Claim,
     EntityId,
     ExtractionMethod,
+    IdentityBinding,
+    ProjectRunId,
     ResearchMode,
+    ReuseScope,
     ReviewAction,
     ReviewActionOutcome,
     ReviewRejectReason,
     ReviewSessionStatus,
+    UseClass,
     account_claim,
+    contact_claim,
     new_project_run_id,
     new_run_id,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for, current_value, insert_claim
-from clue_research.identity import insert_account_entity
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    claims_for,
+    current_value,
+    insert_claim,
+)
+from clue_research.identity import insert_account_entity, insert_contact_entity, stamp_reuse
+from clue_research.profiling.committee import load_committee_pack
 from clue_research.review import (
+    FIT_FIELD,
+    ClaimNotInSession,
     InMemoryVerificationAnnotationReader,
     ReviewProjector,
+    ReviewProjectScope,
     ReviewSurfaceImpl,
     finalized_review_account_ids,
 )
+from clue_spine import create_brand, create_product
 from tests._workspace import seed_workspace
 
 from .conftest import rollback_conn, run_async
@@ -69,17 +85,38 @@ class _RecordingEmitter:
         *,
         account_entity_id: EntityId,
         contact_entity_id: EntityId | None,
-        project_run_id: object,
+        project_run_id: ProjectRunId,
         actor: str,
     ) -> None:
         self.actions.append(outcome.action)
 
 
+class _StaticProjectScopeReader:
+    def __init__(self, product_id: str | None) -> None:
+        self._product_id = product_id
+
+    async def read_scope(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        workspace_id: str,
+    ) -> ReviewProjectScope:
+        del conn, project_run_id, workspace_id
+        return ReviewProjectScope(product_id=self._product_id)
+
+
 def _surface(
-    conn: AsyncConnection, *, emitter: _RecordingEmitter | None = None
+    conn: AsyncConnection,
+    *,
+    emitter: _RecordingEmitter | None = None,
+    product_id: str | None = "product-a",
 ) -> ReviewSurfaceImpl:
     return ReviewSurfaceImpl(
-        projector=ReviewProjector(annotation_reader=InMemoryVerificationAnnotationReader()),
+        projector=ReviewProjector(
+            annotation_reader=InMemoryVerificationAnnotationReader(),
+            project_scope_reader=_StaticProjectScopeReader(product_id),
+        ),
         session_factory=_factory(conn),
         resume_hook=None,  # no campaign to resume in these surface-level proofs
         disposition_emitter=emitter,
@@ -162,6 +199,142 @@ def test_reject_excludes_claim_from_current_value() -> None:
             )
             cv = await current_value(conn, acct, _PAIN, scope=_SCOPE)
             assert cv is None  # rejected → empty field (a correct output; absent from the handoff)
+
+    run_async(_run())
+
+
+def test_review_projection_and_actions_are_exact_product_scoped() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_committee_pack(conn)
+            acct = await _account(conn)
+            brand = await create_brand(
+                conn, workspace_id=_CLIENT, name="Review product-scope brand"
+            )
+            for product_id in ("product-a", "product-b"):
+                await create_product(
+                    conn,
+                    workspace_id=_CLIENT,
+                    brand_id=brand.brand_id,
+                    product_id=product_id,
+                    name=product_id,
+                )
+            run_id = new_project_run_id()
+            neutral = _orig(acct).model_copy(update={"value_json": "neutral pain"})
+            product_a = _orig(acct).model_copy(
+                update={
+                    "value_json": "product A pain",
+                    "reuse_scope": ReuseScope.TENANT_PRIVATE,
+                    "workspace_id": _CLIENT,
+                    "product_id": "product-a",
+                }
+            )
+            product_b = _orig(acct).model_copy(
+                update={
+                    "value_json": "product B pain",
+                    "reuse_scope": ReuseScope.TENANT_PRIVATE,
+                    "workspace_id": _CLIENT,
+                    "product_id": "product-b",
+                }
+            )
+            for claim in (neutral, product_a, product_b):
+                await insert_claim(conn, claim)
+
+            for product_id, score_value in (("product-a", 0.91), ("product-b", 0.22)):
+                score = account_claim(
+                    entity_id=acct,
+                    field_key=FIT_FIELD,
+                    value_json={
+                        "value": score_value,
+                        "components": [],
+                        "project_run_id": str(run_id),
+                    },
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    source_url="https://scores.example/fit",
+                    confidence=1.0,
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                )
+                await insert_claim(
+                    conn,
+                    stamp_reuse(score, workspace_id=_CLIENT).model_copy(
+                        update={"product_id": product_id}
+                    ),
+                )
+
+            contacts: list[tuple[EntityId, str]] = []
+            for suffix, product_id in (("A", "product-a"), ("B", "product-b")):
+                contact_id = await insert_contact_entity(
+                    conn,
+                    account_entity_id=acct,
+                    full_name=f"Product {suffix} contact",
+                    linkedin_url=f"https://linkedin.example/product-{suffix.lower()}",
+                    status=AccountStatus.ACTIVE,
+                )
+                role = contact_claim(
+                    entity_id=contact_id,
+                    field_key="contact.role_on_committee",
+                    value_json={"role": "champion", "plausible": True},
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    source_url=f"https://linkedin.example/product-{suffix.lower()}",
+                    confidence=0.9,
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.COMMITTEE_DISCOVERY,
+                    identity_binding=IdentityBinding.STRONG,
+                    use_class=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
+                )
+                await insert_claim(
+                    conn,
+                    stamp_reuse(role, workspace_id=_CLIENT).model_copy(
+                        update={"product_id": product_id}
+                    ),
+                )
+                contacts.append((contact_id, product_id))
+
+            surface = _surface(conn, product_id="product-a")
+            session = await surface.open_session(
+                account_entity_id=acct,
+                project_run_id=run_id,
+                workspace_id=_CLIENT,
+            )
+
+            claim_rows = {row.claim_id: row for row in session.account_claims}
+            assert neutral.id in claim_rows
+            assert product_a.id in claim_rows
+            assert product_b.id not in claim_rows
+            assert claim_rows[product_a.id].is_current is True
+            assert claim_rows[neutral.id].is_current is False
+            assert session.fit_score is not None
+            assert float(session.fit_score.value) == pytest.approx(0.91)
+            assert {member.contact_entity_id for member in session.committee} == {contacts[0][0]}
+            assert str(product_b.id) not in session.provenance_index
+
+            corrected = await surface.apply_action(
+                session_id=session.session_id,
+                claim_id=product_a.id,
+                action=ReviewAction.CORRECT,
+                corrected_value_json="corrected product A pain",
+                actor="reviewer",
+            )
+            assert corrected.superseding_claim_id is not None
+            successor = (
+                await claims_by_ids(
+                    conn,
+                    [corrected.superseding_claim_id],
+                    scope=_SCOPE,
+                )
+            )[corrected.superseding_claim_id]
+            assert successor.product_id == "product-a"
+
+            with pytest.raises(ClaimNotInSession):
+                await surface.apply_action(
+                    session_id=session.session_id,
+                    claim_id=product_b.id,
+                    action=ReviewAction.APPROVE,
+                    actor="reviewer",
+                )
 
     run_async(_run())
 

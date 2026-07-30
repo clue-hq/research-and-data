@@ -77,6 +77,7 @@ from clue_research.claimstore.registry import (
 from clue_research.claimstore.research_view_queries import (
     ResolvedCurrentClaim,
     current_field_claims_resolved_for_product,
+    current_values_resolved_for_product,
     live_derived_claims_for_research_view,
 )
 from clue_research.claimstore.research_view_routes import (
@@ -153,5 +154,6 @@ __all__ = [
     "list_research_view_routes",
     "ResolvedCurrentClaim",
     "current_field_claims_resolved_for_product",
+    "current_values_resolved_for_product",
     "live_derived_claims_for_research_view",
 ]
