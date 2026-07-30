@@ -8,8 +8,9 @@
 
 use crate::derive::web_slot_key_is_valid;
 use crate::doc::{
-    calendly_url_is_valid, ButtonAction, EmbedProvider, TextVariant, WebDoc, WebNode, WebNodeKind,
-    WebThemeRef,
+    calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
+    custom_component_slug_is_valid, ButtonAction, EmbedProvider, TextVariant, WebDoc, WebNode,
+    WebNodeKind, WebThemeRef,
 };
 use crate::inline::sanitize_inline;
 use crate::rich_text::RichTextDocument;
@@ -260,6 +261,30 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                         }
                     }
                 }
+            }
+        }
+        WebNodeKind::CustomComponent {
+            slug,
+            artifact_id,
+            props,
+        } => {
+            if !custom_component_slug_is_valid(slug) {
+                return Err(WebOpError::new(
+                    "op.custom_component_slug_invalid",
+                    format!("custom component slug is invalid: {slug}"),
+                ));
+            }
+            if !custom_component_artifact_id_is_valid(artifact_id) {
+                return Err(WebOpError::new(
+                    "op.custom_component_artifact_invalid",
+                    format!("custom component artifact id is invalid: {artifact_id}"),
+                ));
+            }
+            if let Some(issue) = custom_component_props_issue(props) {
+                return Err(WebOpError::new(
+                    "op.custom_component_props_invalid",
+                    format!("custom component {issue}"),
+                ));
             }
         }
         _ => {}
@@ -884,6 +909,142 @@ mod tests {
             apply_operations(&mut doc, &inverses).expect("apply inverse");
             assert_eq!(doc, base, "inverse must restore: {operation:?}");
         }
+    }
+
+    fn custom_component_node(id: &str, digest_char: char) -> WebNode {
+        WebNode {
+            id: NodeId::from(id),
+            kind: WebNodeKind::CustomComponent {
+                slug: "book-a-call".to_owned(),
+                artifact_id: format!("ccart_{}", digest_char.to_string().repeat(64)),
+                props: BTreeMap::from([
+                    (
+                        "headline".to_owned(),
+                        crate::doc::CustomComponentValue::String("Book a call".to_owned()),
+                    ),
+                    (
+                        "showLogo".to_owned(),
+                        crate::doc::CustomComponentValue::Boolean(true),
+                    ),
+                ]),
+            },
+            classes: "w-[480px] h-[240px]".to_owned(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        }
+    }
+
+    #[test]
+    fn custom_component_insert_edit_move_duplicate_delete_and_inverses_are_total() {
+        let base = fixture();
+        let mut doc = base.clone();
+
+        let insert = WebOperation::InsertNode {
+            page_id: page_id(),
+            parent: NodeId::from("stack"),
+            index: 2,
+            nodes: vec![custom_component_node("cc_form", 'a')],
+            root: NodeId::from("cc_form"),
+        };
+        let (insert_inverse, _) =
+            apply_operations_checked(&mut doc, std::slice::from_ref(&insert)).expect("insert");
+
+        let edit_batch = vec![
+            WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("cc_form"),
+                props: WebNodeKind::CustomComponent {
+                    slug: "book-a-call".to_owned(),
+                    artifact_id: format!("ccart_{}", "b".repeat(64)),
+                    props: BTreeMap::from([(
+                        "headline".to_owned(),
+                        crate::doc::CustomComponentValue::String("Choose a time".to_owned()),
+                    )]),
+                },
+            },
+            WebOperation::SetNodeClasses {
+                page_id: page_id(),
+                id: NodeId::from("cc_form"),
+                classes: "w-[560px] h-[300px]".to_owned(),
+            },
+            WebOperation::MoveNode {
+                page_id: page_id(),
+                id: NodeId::from("cc_form"),
+                new_parent: NodeId::from("grid"),
+                index: 1,
+            },
+            WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("grid"),
+                index: 2,
+                nodes: vec![custom_component_node("cc_copy", 'b')],
+                root: NodeId::from("cc_copy"),
+            },
+            WebOperation::RemoveNode {
+                page_id: page_id(),
+                id: NodeId::from("cc_copy"),
+            },
+        ];
+        let (edit_inverse, diagnostics) =
+            apply_operations_checked(&mut doc, &edit_batch).expect("edit batch");
+        assert!(diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+
+        let node = doc.pages[0]
+            .node(&NodeId::from("cc_form"))
+            .expect("custom component");
+        assert_eq!(node.classes, "w-[560px] h-[300px]");
+        let WebNodeKind::CustomComponent {
+            artifact_id, props, ..
+        } = &node.kind
+        else {
+            panic!("custom component");
+        };
+        assert_eq!(artifact_id, &format!("ccart_{}", "b".repeat(64)));
+        assert_eq!(
+            props.get("headline"),
+            Some(&crate::doc::CustomComponentValue::String(
+                "Choose a time".to_owned()
+            ))
+        );
+        assert_eq!(
+            doc.pages[0].parent_of(&NodeId::from("cc_form")),
+            Some(&NodeId::from("grid"))
+        );
+        assert!(doc.pages[0].node(&NodeId::from("cc_copy")).is_none());
+
+        apply_operations_checked(&mut doc, &edit_inverse).expect("undo edit batch");
+        apply_operations_checked(&mut doc, &insert_inverse).expect("undo insert");
+        assert_eq!(doc, base);
+    }
+
+    #[test]
+    fn custom_component_is_never_a_move_parent() {
+        let mut doc = fixture();
+        apply_operations_checked(
+            &mut doc,
+            &[WebOperation::InsertNode {
+                page_id: page_id(),
+                parent: NodeId::from("stack"),
+                index: 2,
+                nodes: vec![custom_component_node("cc_form", 'a')],
+                root: NodeId::from("cc_form"),
+            }],
+        )
+        .expect("insert");
+        let error = apply_operations_checked(
+            &mut doc,
+            &[WebOperation::MoveNode {
+                page_id: page_id(),
+                id: NodeId::from("sub"),
+                new_parent: NodeId::from("cc_form"),
+                index: 0,
+            }],
+        )
+        .expect_err("leaf rejects children");
+        assert_eq!(error.code, "op.parent_not_branch");
     }
 
     #[test]

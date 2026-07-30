@@ -290,6 +290,30 @@ describe("duplicateSubtree", () => {
   it("returns null when the node isn't in the page", () => {
     expect(duplicateSubtree(structuralPage(), "nope")).toBeNull();
   });
+
+  it("remints a custom-component leaf while preserving its immutable pin and typed props", () => {
+    const page = structuralPage();
+    page.nodes!.cc = {
+      id: "cc",
+      kind: "custom_component",
+      classes: "w-[420px] h-[200px]",
+      slug: "book-a-call",
+      artifact_id: `ccart_${"a".repeat(64)}`,
+      props: { headline: "Book a call", showLogo: true, step: 2 }
+    };
+    page.nodes!.box.children = ["t1", "cc"];
+    const copy = duplicateSubtree(page, "cc", seqGen("c1c1c1"));
+    expect(copy).toEqual({
+      root: "cc_c1c1c1",
+      nodes: [
+        {
+          ...page.nodes!.cc,
+          id: "cc_c1c1c1",
+          children: undefined
+        }
+      ]
+    });
+  });
 });
 
 describe("deriveInsertPlacement", () => {
@@ -397,7 +421,7 @@ describe("planCanvasNodeMove", () => {
     const page = structuralPage();
     page.nodes = {
       ...page.nodes,
-      box: { ...page.nodes!.box, children: ["t1", "cta", "photo", "inner"] },
+      box: { ...page.nodes!.box, children: ["t1", "cta", "photo", "inner", "cc"] },
       cta: {
         id: "cta",
         kind: "button",
@@ -412,7 +436,15 @@ describe("planCanvasNodeMove", () => {
         asset_id: "asset_photo",
         alt: "Photo"
       },
-      inner: { id: "inner", kind: "container", classes: "", children: [] }
+      inner: { id: "inner", kind: "container", classes: "", children: [] },
+      cc: {
+        id: "cc",
+        kind: "custom_component",
+        classes: "",
+        slug: "book-a-call",
+        artifact_id: `ccart_${"a".repeat(64)}`,
+        props: {}
+      }
     };
     return page;
   }
@@ -430,7 +462,7 @@ describe("planCanvasNodeMove", () => {
     });
   });
 
-  it("plans a text/button/image/container reparent into a Section or Container", () => {
+  it("plans a text/button/image/container/custom-component reparent into a Section or Container", () => {
     const page = movePage();
     expect(planCanvasNodeMove(page, "t1", "secB", 0)?.intent).toBe("reparent_node");
     expect(planCanvasNodeMove(page, "cta", "secB", 0)?.operation).toEqual(
@@ -438,6 +470,7 @@ describe("planCanvasNodeMove", () => {
     );
     expect(planCanvasNodeMove(page, "photo", "secB", 0)).not.toBeNull();
     expect(planCanvasNodeMove(page, "inner", "secB", 0)).not.toBeNull();
+    expect(planCanvasNodeMove(page, "cc", "secB", 0)).not.toBeNull();
   });
 
   it("keeps Sections at the root while preserving top-level reorder", () => {
@@ -480,11 +513,19 @@ describe("planCanvasNodeResize", () => {
           id: "stack",
           kind: "container",
           classes: "flex size-10 md:w-full rounded-xl",
-          children: ["copy", "cta", "photo"]
+          children: ["copy", "cta", "photo", "cc"]
         },
         copy: { id: "copy", kind: "text", classes: "text-primary", content: "Hello" },
         cta: { id: "cta", kind: "button", classes: "w-fit", label: "Go" },
-        photo: { id: "photo", kind: "image", classes: "h-auto", asset_id: "a", alt: "" }
+        photo: { id: "photo", kind: "image", classes: "h-auto", asset_id: "a", alt: "" },
+        cc: {
+          id: "cc",
+          kind: "custom_component",
+          classes: "",
+          slug: "book-a-call",
+          artifact_id: `ccart_${"a".repeat(64)}`,
+          props: {}
+        }
       }
     };
   }
@@ -501,12 +542,13 @@ describe("planCanvasNodeResize", () => {
     });
   });
 
-  it("supports one-axis resize for containers, text, buttons, and images", () => {
+  it("supports one-axis resize for containers, text, buttons, images, and custom components", () => {
     const page = resizePage();
     expect(planCanvasNodeResize(page, "stack", 240, null)).not.toBeNull();
     expect(planCanvasNodeResize(page, "copy", 240, null)).not.toBeNull();
     expect(planCanvasNodeResize(page, "cta", 240, null)).not.toBeNull();
     expect(planCanvasNodeResize(page, "photo", null, 160)).not.toBeNull();
+    expect(planCanvasNodeResize(page, "cc", 480, 240)).not.toBeNull();
   });
 
   it("rejects sections, roots, missing nodes, invalid bounds, and no-op sizes", () => {

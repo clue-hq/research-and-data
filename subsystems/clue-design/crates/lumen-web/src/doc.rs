@@ -17,6 +17,21 @@ pub const WEB_SCHEMA_VERSION: u32 = 1;
 /// Maximum tree depth (root exclusive) accepted by validation and ingestion.
 pub const MAX_TREE_DEPTH: usize = 12;
 
+/// Custom-component props are intentionally a small JSON scalar vocabulary.
+/// P6.2 derives this map from the component's TypeScript `Props` type; keeping
+/// it typed here prevents arbitrary JSON trees from becoming a second document
+/// model inside a leaf.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CustomComponentValue {
+    String(String),
+    Number(serde_json::Number),
+    Boolean(bool),
+}
+
+pub const MAX_CUSTOM_COMPONENT_PROPS: usize = 128;
+pub const MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES: usize = 65_536;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WebDoc {
     pub schema_version: u32,
@@ -103,6 +118,16 @@ pub enum WebNodeKind {
     Component {
         #[serde(flatten)]
         spec: ComponentSpec,
+    },
+    /// Tier-3 custom program output. This node is always a leaf: the document
+    /// owns host layout/classes while `artifact_id` pins one immutable compile.
+    /// Source and bundle bytes live in the durable account-scoped registry,
+    /// never in this document payload.
+    CustomComponent {
+        slug: String,
+        artifact_id: String,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        props: BTreeMap<String, CustomComponentValue>,
     },
     Image {
         asset_id: AssetId,
@@ -533,6 +558,85 @@ impl ComponentSpec {
     }
 }
 
+/// Registry slugs double as the stable source-directory id. They use the
+/// Mutiny-compatible kebab grammar, bounded so paths and inspector labels stay
+/// manageable. Consecutive/trailing hyphens are rejected.
+pub fn custom_component_slug_is_valid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() || bytes.len() > 64 {
+        return false;
+    }
+    if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return false;
+    }
+    if !bytes[bytes.len() - 1].is_ascii_lowercase()
+        && !bytes[bytes.len() - 1].is_ascii_digit()
+    {
+        return false;
+    }
+    let mut previous_hyphen = false;
+    for byte in bytes {
+        let hyphen = *byte == b'-';
+        if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && !hyphen {
+            return false;
+        }
+        if hyphen && previous_hyphen {
+            return false;
+        }
+        previous_hyphen = hyphen;
+    }
+    true
+}
+
+/// Artifact ids are content identities minted by the registry:
+/// `ccart_` + one lowercase SHA-256 digest.
+pub fn custom_component_artifact_id_is_valid(value: &str) -> bool {
+    value.strip_prefix("ccart_").is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    })
+}
+
+/// Props originate from TypeScript object fields, so use the JavaScript
+/// identifier grammar supported by the P6 compiler rather than accepting
+/// arbitrary attacker-controlled keys.
+pub fn custom_component_prop_name_is_valid(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if value.len() > 64 || !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
+}
+
+pub fn custom_component_props_issue(
+    props: &BTreeMap<String, CustomComponentValue>,
+) -> Option<String> {
+    if props.len() > MAX_CUSTOM_COMPONENT_PROPS {
+        return Some(format!(
+            "has {} props; maximum is {MAX_CUSTOM_COMPONENT_PROPS}",
+            props.len()
+        ));
+    }
+    for (name, value) in props {
+        if !custom_component_prop_name_is_valid(name) {
+            return Some(format!("prop name `{name}` is not a supported identifier"));
+        }
+        if let CustomComponentValue::String(text) = value {
+            if text.len() > MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES {
+                return Some(format!(
+                    "string prop `{name}` exceeds {MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES} bytes"
+                ));
+            }
+        }
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MarqueeDirection {
@@ -549,14 +653,15 @@ impl WebNodeKind {
             WebNodeKind::Text { .. } => "text",
             WebNodeKind::Button { .. } => "button",
             WebNodeKind::Component { .. } => "component",
+            WebNodeKind::CustomComponent { .. } => "custom_component",
             WebNodeKind::Image { .. } => "image",
             WebNodeKind::Icon { .. } => "icon",
             WebNodeKind::Embed { .. } => "embed",
         }
     }
 
-    /// Section, Container, and Component may hold children (a Component's
-    /// children are ordinary nodes; its behavior is the platform runtime's).
+    /// Section, Container, and built-in Component may hold children. A custom
+    /// component is deliberately absent: it is always a leaf.
     pub fn is_branch(&self) -> bool {
         matches!(
             self,
@@ -696,6 +801,101 @@ mod tests {
         assert_eq!(value["classes"], "text-dark");
         let back: WebNode = serde_json::from_value(value).expect("deserialize");
         assert_eq!(back, node);
+    }
+
+    #[test]
+    fn custom_component_leaf_round_trips_typed_props_and_pin() {
+        let artifact_id = format!("ccart_{}", "a".repeat(64));
+        let node = WebNode {
+            id: NodeId::from("cc_form"),
+            kind: WebNodeKind::CustomComponent {
+                slug: "book-a-call".to_owned(),
+                artifact_id: artifact_id.clone(),
+                props: BTreeMap::from([
+                    (
+                        "headline".to_owned(),
+                        CustomComponentValue::String("Book a call".to_owned()),
+                    ),
+                    (
+                        "seats".to_owned(),
+                        CustomComponentValue::Number(serde_json::Number::from(12)),
+                    ),
+                    (
+                        "showLogo".to_owned(),
+                        CustomComponentValue::Boolean(true),
+                    ),
+                ]),
+            },
+            classes: "w-[480px] h-[320px]".to_owned(),
+            children: Vec::new(),
+            name: Some("Booking form".to_owned()),
+            slot_key: None,
+        };
+
+        let value = serde_json::to_value(&node).expect("serialize");
+        assert_eq!(value["kind"], "custom_component");
+        assert_eq!(value["slug"], "book-a-call");
+        assert_eq!(value["artifact_id"], artifact_id);
+        assert_eq!(value["props"]["headline"], "Book a call");
+        assert_eq!(value["props"]["seats"], 12);
+        assert_eq!(value["props"]["showLogo"], true);
+        let back: WebNode = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(back, node);
+        assert!(!back.kind.is_branch());
+        assert_eq!(back.kind.kind_name(), "custom_component");
+    }
+
+    #[test]
+    fn custom_component_rejects_nested_prop_values_during_deserialization() {
+        let artifact_id = format!("ccart_{}", "b".repeat(64));
+        for props in [
+            serde_json::json!({"nested": {"unsafe": true}}),
+            serde_json::json!({"items": ["one", "two"]}),
+            serde_json::json!({"empty": null}),
+        ] {
+            let value = serde_json::json!({
+                "id": "cc_bad",
+                "kind": "custom_component",
+                "slug": "safe-slug",
+                "artifact_id": artifact_id,
+                "props": props,
+                "classes": ""
+            });
+            assert!(
+                serde_json::from_value::<WebNode>(value).is_err(),
+                "nested/null JSON must not enter the typed props map"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_component_identity_grammars_are_bounded() {
+        assert!(custom_component_slug_is_valid("book-a-call"));
+        assert!(custom_component_slug_is_valid("chart2"));
+        for bad in [
+            "",
+            "Book-a-call",
+            "-book",
+            "book-",
+            "book--call",
+            "book_call",
+        ] {
+            assert!(!custom_component_slug_is_valid(bad), "{bad}");
+        }
+        assert!(custom_component_artifact_id_is_valid(&format!(
+            "ccart_{}",
+            "0".repeat(64)
+        )));
+        assert!(!custom_component_artifact_id_is_valid("ccart_abc"));
+        assert!(!custom_component_artifact_id_is_valid(&format!(
+            "ccart_{}",
+            "A".repeat(64)
+        )));
+        assert!(custom_component_prop_name_is_valid("showLogo"));
+        assert!(custom_component_prop_name_is_valid("_private"));
+        assert!(!custom_component_prop_name_is_valid(""));
+        assert!(!custom_component_prop_name_is_valid("bad-key"));
+        assert!(!custom_component_prop_name_is_valid("2bad"));
     }
 
     #[test]

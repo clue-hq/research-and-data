@@ -529,6 +529,9 @@ function WebInspectorBody({
           applyProps={applyProps}
         />
       ) : null}
+      {node.kind === "custom_component" ? (
+        <CustomComponentIdentityCard node={node} />
+      ) : null}
       {(node.kind === "container" || node.kind === "section") ? (
         <ContainerCard node={node} busy={busy} applyClasses={applyClasses} />
       ) : null}
@@ -563,7 +566,7 @@ function WebInspectorBody({
           applyClasses={applyClasses}
         />
       ) : null}
-      {["container", "text", "button", "image"].includes(node.kind) ? (
+      {["container", "text", "button", "image", "custom_component"].includes(node.kind) ? (
         <SizeCard
           node={node}
           nodeInfo={nodeInfo}
@@ -579,6 +582,39 @@ function WebInspectorBody({
 }
 
 // ── shared controls ──────────────────────────────────────────────────────────
+
+function CustomComponentIdentityCard({
+  node
+}: {
+  node: WebNode;
+}): React.ReactElement {
+  return (
+    <Card title="Custom component">
+      <dl className="web-insp-metrics">
+        <div className="is-wide">
+          <dt>Slug</dt>
+          <dd>{node.slug ?? "—"}</dd>
+        </div>
+        <div className="is-wide">
+          <dt>Artifact pin</dt>
+          <dd title={node.artifact_id}>{node.artifact_id ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Props</dt>
+          <dd>{Object.keys(node.props ?? {}).length}</dd>
+        </div>
+        <div>
+          <dt>Children</dt>
+          <dd>Not allowed</dd>
+        </div>
+      </dl>
+      <p className="web-insp-hint">
+        This immutable pin is read-only in P6.1. Runtime preview and prop editing
+        arrive in later custom-component slices.
+      </p>
+    </Card>
+  );
+}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }): React.ReactElement {
   return (

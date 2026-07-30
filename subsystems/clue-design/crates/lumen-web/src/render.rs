@@ -71,7 +71,11 @@ pub fn page_uses_components(doc: &WebDoc, page_id: &PageId) -> bool {
     page.reachable_ids().iter().any(|id| {
         matches!(
             page.node(id).map(|node| &node.kind),
-            Some(WebNodeKind::Component { .. } | WebNodeKind::Embed { .. })
+            Some(
+                WebNodeKind::Component { .. }
+                    | WebNodeKind::CustomComponent { .. }
+                    | WebNodeKind::Embed { .. }
+            )
         )
     })
 }
@@ -186,8 +190,9 @@ pub fn render_page(
     } else {
         html.push_str(&format!("<style>\n{}\n</style>\n", theme.base_css));
     }
-    // Platform component base styles, versioned with the runtime; emitted in
-    // both modes only when the page actually uses a Component node.
+    // Platform component/placeholder base styles, versioned with the runtime;
+    // emitted in both modes only when the page uses a built-in component,
+    // custom-component placeholder, or embed.
     if uses_components {
         html.push_str(&format!("<style>\n{PLATFORM_CSS}\n</style>\n"));
     }
@@ -569,6 +574,40 @@ fn render_node(
                 );
             }
         },
+        WebNodeKind::CustomComponent {
+            slug, artifact_id, ..
+        } => {
+            out.push_str("<div class=\"lumen-custom-component-placeholder");
+            if !node.classes.trim().is_empty() {
+                out.push(' ');
+                out.push_str(&escape_attr(node.classes.trim()));
+            }
+            out.push('"');
+            out.push_str(" role=\"status\" data-custom-component-placeholder=\"true\"");
+            out.push_str(&format!(
+                " data-custom-component-slug=\"{}\" data-custom-component-artifact=\"{}\"",
+                escape_attr(slug),
+                escape_attr(artifact_id)
+            ));
+            node_attr(out);
+            out.push_str(&format!(
+                " aria-label=\"Custom component {} is unavailable\">",
+                escape_attr(slug)
+            ));
+            out.push_str("<span>Custom component unavailable</span>");
+            out.push_str(&format!("<strong>{}</strong>", escape_text(slug)));
+            out.push_str("<small>The sandboxed component runtime is not active yet.</small>");
+            out.push_str("</div>");
+            diagnostics.push(Diagnostic::warning(
+                Phase::Web,
+                "LUMW0406",
+                format!(
+                    "custom component `{}` artifact `{artifact_id}` rendered as a safe placeholder",
+                    node.id
+                ),
+                Some(DiagnosticSubject::Node(node.id.clone())),
+            ));
+        }
         WebNodeKind::Image {
             asset_id,
             alt,
@@ -1079,6 +1118,75 @@ mod tests {
         assert!(output.html.contains("@layer base"));
         assert!(output.html.contains("console.log('bridge')"));
         assert!(output.html.contains("src=\"/asset-store/abc123\""));
+    }
+
+    #[test]
+    fn custom_component_renders_a_bounded_selectable_placeholder() {
+        let (mut doc, theme) = fixture();
+        let page = doc.pages.get_mut(0).expect("page");
+        let host_id = page
+            .nodes
+            .get(&NodeId::from("hero"))
+            .expect("hero")
+            .children[0]
+            .clone();
+        page.nodes
+            .get_mut(&host_id)
+            .expect("host")
+            .children
+            .push(NodeId::from("cc_booking"));
+        page.nodes.insert(
+            NodeId::from("cc_booking"),
+            WebNode {
+                id: NodeId::from("cc_booking"),
+                kind: WebNodeKind::CustomComponent {
+                    slug: "book-a-call".to_owned(),
+                    artifact_id: format!("ccart_{}", "c".repeat(64)),
+                    props: std::collections::BTreeMap::from([(
+                        "headline".to_owned(),
+                        crate::doc::CustomComponentValue::String("Talk to us".to_owned()),
+                    )]),
+                },
+                classes: "w-[480px] h-[240px]".to_owned(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::editor("/asset-store"),
+        )
+        .expect("editor render");
+        assert!(editor
+            .html
+            .contains("class=\"lumen-custom-component-placeholder w-[480px] h-[240px]\""));
+        assert!(editor.html.contains("data-node-id=\"cc_booking\""));
+        assert!(editor
+            .html
+            .contains("data-custom-component-slug=\"book-a-call\""));
+        assert!(editor.html.contains("Custom component unavailable"));
+        assert!(editor.html.contains(".lumen-custom-component-placeholder"));
+        assert!(editor
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0406"));
+
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("delivery render");
+        assert!(!delivery.html.contains("data-node-id=\"cc_booking\""));
+        assert!(delivery
+            .html
+            .contains("data-custom-component-placeholder=\"true\""));
+        assert!(!delivery.html.contains("<script"));
     }
 
     #[test]

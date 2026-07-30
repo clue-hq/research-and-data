@@ -78,6 +78,10 @@ export interface WebNode {
   show_arrows?: boolean;
   autoplay_s?: number;
   default_tab?: number;
+  // custom component (leaf): immutable account-scoped artifact pin + typed props
+  slug?: string;
+  artifact_id?: string;
+  props?: Record<string, CustomComponentPropValue>;
   // personalization hedge — carried by the schema, ignored by every v0 path.
   slot_key?: string | null;
 }
@@ -158,6 +162,8 @@ export interface WebBackgroundScrim {
   color: "dark" | "light" | "primary" | "accent" | "black" | "white";
   opacity: number;
 }
+
+export type CustomComponentPropValue = string | number | boolean;
 
 /** One web page in a {@link WebDoc}: identity/route plus the flattened node
  * map (`{ [id]: WebNode }`) the inspector looks selections up in. */
@@ -500,6 +506,13 @@ export type WebComponentProps =
  * custom html with no url. */
 export type WebEmbedProps = { kind: "embed"; provider?: "calendly" | "custom"; url?: string; html: string };
 
+export type WebCustomComponentProps = {
+  kind: "custom_component";
+  slug: string;
+  artifact_id: string;
+  props: Record<string, CustomComponentPropValue>;
+};
+
 export type WebNodeProps =
   | { kind: "text"; variant: string; content: RichTextDocument | string }
   | WebButtonProps
@@ -518,7 +531,8 @@ export type WebNodeProps =
     }
   | { kind: "icon"; icon: string }
   | WebEmbedProps
-  | WebComponentProps;
+  | WebComponentProps
+  | WebCustomComponentProps;
 
 /** The three actions a button can take — the inspector's "Action" control. */
 export type WebButtonAction = "link" | "show_modal" | "close";
@@ -1209,9 +1223,22 @@ export interface CanvasNodeMovePlan {
   intent: "reorder_node" | "reparent_node";
 }
 
-const CANVAS_MOVABLE_KINDS = new Set(["section", "container", "text", "button", "image"]);
+const CANVAS_MOVABLE_KINDS = new Set([
+  "section",
+  "container",
+  "text",
+  "button",
+  "image",
+  "custom_component"
+]);
 const CANVAS_DROP_PARENT_KINDS = new Set(["section", "container"]);
-const CANVAS_RESIZABLE_KINDS = new Set(["container", "text", "button", "image"]);
+const CANVAS_RESIZABLE_KINDS = new Set([
+  "container",
+  "text",
+  "button",
+  "image",
+  "custom_component"
+]);
 const CANVAS_RESIZE_MIN_PX = 16;
 const CANVAS_RESIZE_MAX_PX = 10_000;
 

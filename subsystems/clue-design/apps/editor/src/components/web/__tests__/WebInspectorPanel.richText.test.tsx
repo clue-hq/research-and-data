@@ -139,3 +139,30 @@ describe("WebInspectorPanel selected-range formatting", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("WebInspectorPanel custom-component foundation", () => {
+  it("inspects the immutable identity and exposes class-backed size controls", () => {
+    renderPanel({
+      editingNodeId: null,
+      richTextFormats: null,
+      node: {
+        id: "cc_booking",
+        kind: "custom_component",
+        classes: "w-[420px] h-[200px]",
+        slug: "book-a-call",
+        artifact_id: `ccart_${"a".repeat(64)}`,
+        props: { headline: "Book a call", showLogo: true }
+      }
+    });
+
+    expect(screen.getByText("book-a-call")).toBeInTheDocument();
+    expect(screen.getByText(`ccart_${"a".repeat(64)}`)).toBeInTheDocument();
+    expect(screen.getByText("Not allowed")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Default · computed width")).toHaveValue(
+      "w-[420px]"
+    );
+    expect(screen.getByPlaceholderText("Default · computed height")).toHaveValue(
+      "h-[200px]"
+    );
+  });
+});

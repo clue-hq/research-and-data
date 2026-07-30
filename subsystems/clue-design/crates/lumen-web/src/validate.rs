@@ -7,8 +7,9 @@
 
 use crate::derive::{web_slot_key_is_valid, when_gate_key};
 use crate::doc::{
-    calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, WebDoc, WebNodeKind,
-    MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
+    calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
+    custom_component_slug_is_valid, ButtonAction, ComponentSpec, EmbedProvider, WebDoc,
+    WebNodeKind, MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
 };
 use crate::util::href_is_allowed;
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
@@ -445,6 +446,52 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     }
                 }
             },
+            WebNodeKind::CustomComponent {
+                slug,
+                artifact_id,
+                props,
+            } => {
+                if !custom_component_slug_is_valid(slug) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0030",
+                            format!(
+                                "custom component `{}` has invalid slug `{slug}`",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint(
+                            "Use a 1–64 character lowercase kebab-case slug without repeated hyphens.",
+                        ),
+                    );
+                }
+                if !custom_component_artifact_id_is_valid(artifact_id) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0031",
+                            format!(
+                                "custom component `{}` has invalid artifact id `{artifact_id}`",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint(
+                            "Artifact ids are immutable registry ids in the form ccart_<sha256>.",
+                        ),
+                    );
+                }
+                if let Some(issue) = custom_component_props_issue(props) {
+                    diagnostics.push(Diagnostic::error(
+                        Phase::Web,
+                        "LUMW0032",
+                        format!("custom component `{}` {issue}", node.id),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                }
+            }
             WebNodeKind::Text { variant, content } => {
                 for issue in content.validate() {
                     diagnostics.push(Diagnostic::error(
@@ -585,6 +632,7 @@ fn first_interactive_descendant(
         let interactive = match &descendant.kind {
             WebNodeKind::Button { .. }
             | WebNodeKind::Component { .. }
+            | WebNodeKind::CustomComponent { .. }
             | WebNodeKind::Embed { .. } => true,
             WebNodeKind::Image { href, .. } => href.is_some(),
             WebNodeKind::Container { href, .. } => href.is_some(),
@@ -633,6 +681,86 @@ mod tests {
                 .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
             "{diagnostics:#?}"
         );
+    }
+
+    fn add_custom_component(doc: &mut WebDoc) {
+        let page = doc.pages.get_mut(0).expect("page");
+        let container_id = page
+            .nodes
+            .get(&lumen_core::NodeId::from("hero"))
+            .expect("hero")
+            .children[0]
+            .clone();
+        page.nodes
+            .get_mut(&container_id)
+            .expect("hero container")
+            .children
+            .push(lumen_core::NodeId::from("cc_form"));
+        page.nodes.insert(
+            lumen_core::NodeId::from("cc_form"),
+            WebNode {
+                id: lumen_core::NodeId::from("cc_form"),
+                kind: WebNodeKind::CustomComponent {
+                    slug: "book-a-call".to_owned(),
+                    artifact_id: format!("ccart_{}", "a".repeat(64)),
+                    props: BTreeMap::from([(
+                        "headline".to_owned(),
+                        crate::doc::CustomComponentValue::String("Book a call".to_owned()),
+                    )]),
+                },
+                classes: "w-full".to_owned(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+    }
+
+    #[test]
+    fn valid_custom_component_leaf_validates() {
+        let mut doc = clean_doc();
+        add_custom_component(&mut doc);
+        let diagnostics = validate_web_doc(&doc);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+            "{diagnostics:#?}"
+        );
+    }
+
+    #[test]
+    fn custom_component_identity_props_and_leaf_shape_are_validated() {
+        let mut doc = clean_doc();
+        add_custom_component(&mut doc);
+        let node = doc.pages[0]
+            .nodes
+            .get_mut(&lumen_core::NodeId::from("cc_form"))
+            .expect("custom component");
+        let WebNodeKind::CustomComponent {
+            slug,
+            artifact_id,
+            props,
+        } = &mut node.kind
+        else {
+            panic!("custom component");
+        };
+        *slug = "Bad--Slug".to_owned();
+        *artifact_id = "latest".to_owned();
+        props.insert(
+            "bad-key".to_owned(),
+            crate::doc::CustomComponentValue::Boolean(true),
+        );
+        node.children.push(lumen_core::NodeId::from("impossible"));
+
+        let codes: Vec<String> = validate_web_doc(&doc)
+            .iter()
+            .map(|diagnostic| diagnostic.code.clone())
+            .collect();
+        assert!(codes.contains(&"LUMW0007".to_owned()), "{codes:?}");
+        assert!(codes.contains(&"LUMW0030".to_owned()), "{codes:?}");
+        assert!(codes.contains(&"LUMW0031".to_owned()), "{codes:?}");
+        assert!(codes.contains(&"LUMW0032".to_owned()), "{codes:?}");
     }
 
     #[test]

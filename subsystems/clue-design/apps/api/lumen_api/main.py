@@ -42,6 +42,8 @@ from fastapi.responses import (
 from . import image_cache, image_provider, web_export
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .database import (
+    CustomComponentArtifactConflict,
+    CustomComponentReferenceError,
     NotFoundError,
     Repository,
     WebDocumentVersionConflict,
@@ -392,6 +394,37 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     @app.exception_handler(NotFoundError)
     def not_found_handler(_request: Request, error: NotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": not_found_detail(error)})
+
+    @app.exception_handler(CustomComponentReferenceError)
+    def custom_component_reference_handler(
+        _request: Request, error: CustomComponentReferenceError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": error.code,
+                    "message": error.message,
+                    "node_id": error.node_id,
+                    "artifact_id": error.artifact_id,
+                }
+            },
+        )
+
+    @app.exception_handler(CustomComponentArtifactConflict)
+    def custom_component_artifact_conflict_handler(
+        _request: Request, error: CustomComponentArtifactConflict
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "custom_component.artifact_conflict",
+                    "message": str(error),
+                    "artifact_id": error.artifact_id,
+                }
+            },
+        )
 
     @app.exception_handler(sqlite3.Error)
     def database_error_handler(_request: Request, error: sqlite3.Error) -> JSONResponse:
@@ -2138,6 +2171,15 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                                         response = conflicted_web_turn_response(
                                             conflict.expected, conflict.current
                                         )
+                                    except CustomComponentReferenceError as error:
+                                        response = failed_agent_turn_response(
+                                            error.code,
+                                            error.message,
+                                            (
+                                                f"Node {error.node_id} references "
+                                                f"artifact {error.artifact_id}."
+                                            ),
+                                        )
                                     else:
                                         response["current_version"] = updated[
                                             "current_version"
@@ -2857,6 +2899,46 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 status_code=404, detail=not_found_detail(error)
             ) from error
 
+    @app.get("/web/accounts/{account_id}/custom-components")
+    def list_custom_components(
+        account_id: str, repo: Repository = Depends(repository)
+    ) -> JsonObject:
+        """List account-local component families without exposing another tenant."""
+        repo.require_web_account(account_id)
+        return {
+            "schema_version": 1,
+            "account_id": account_id,
+            "components": repo.list_custom_components(account_id),
+        }
+
+    @app.get("/web/accounts/{account_id}/custom-components/{slug}")
+    def get_custom_component(
+        account_id: str,
+        slug: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_web_account(account_id)
+        return {
+            "schema_version": 1,
+            "component": repo.require_custom_component(account_id, slug),
+        }
+
+    @app.get(
+        "/web/accounts/{account_id}/custom-component-artifacts/{artifact_id}"
+    )
+    def get_custom_component_artifact(
+        account_id: str,
+        artifact_id: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_web_account(account_id)
+        return {
+            "schema_version": 1,
+            "artifact": repo.require_custom_component_artifact(
+                account_id, artifact_id
+            ),
+        }
+
     @app.patch("/web/accounts/{account_id}")
     def update_web_account(
         account_id: str,
@@ -2905,7 +2987,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         title = (payload.title or "").strip() or f"{document['title']} — template"
         web_doc["id"] = new_document_id
         web_doc["title"] = title
-        template = repo.create_web_template(web_doc)
+        template = repo.create_web_template(web_doc, document.get("account_id"))
         log_event(
             api_logger,
             logging.INFO,

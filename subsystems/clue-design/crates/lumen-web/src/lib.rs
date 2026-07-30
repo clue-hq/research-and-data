@@ -35,9 +35,13 @@ pub use derive::{
     DerivedWebDoc, UnboundEntry, WebBoundValue, WebDeriveCoverage,
 };
 pub use doc::{
-    calendly_url_is_valid, ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec,
-    EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind,
-    WebPage, WebThemeRef, WEB_SCHEMA_VERSION,
+    calendly_url_is_valid, custom_component_artifact_id_is_valid,
+    custom_component_prop_name_is_valid, custom_component_props_issue,
+    custom_component_slug_is_valid, ButtonAction, ButtonCommand, ButtonVariant,
+    ComponentSpec, CustomComponentValue, EmbedProvider, MarqueeDirection, SectionTag,
+    TextVariant, WebDoc, WebNode, WebNodeKind, WebPage, WebThemeRef,
+    MAX_CUSTOM_COMPONENT_PROPS, MAX_CUSTOM_COMPONENT_PROP_STRING_BYTES,
+    WEB_SCHEMA_VERSION,
 };
 pub use ingest::{ingest_html, ingest_html_into_page, IngestOutcome};
 pub use ops::{apply_operations, apply_operations_checked, WebOpError, WebOperation};

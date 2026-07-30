@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from .custom_component_contract import custom_component_slug_is_valid
+
 
 JsonObject = Dict[str, Any]
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
@@ -43,6 +45,34 @@ class WebDocumentVersionConflict(RuntimeError):
         self.document_id = document_id
         self.expected = expected
         self.current = current
+
+
+class CustomComponentArtifactConflict(RuntimeError):
+    """An immutable artifact id was reused with different stored metadata."""
+
+    def __init__(self, artifact_id: str) -> None:
+        super().__init__(
+            f"custom component artifact {artifact_id} already exists with different content"
+        )
+        self.artifact_id = artifact_id
+
+
+class CustomComponentReferenceError(RuntimeError):
+    """A document write introduced an unresolved or cross-account artifact."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        node_id: str,
+        artifact_id: str,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.node_id = node_id
+        self.artifact_id = artifact_id
 
 
 # The ONE `assets`-table column list + row builder: create_asset_record
@@ -206,6 +236,12 @@ class Repository:
             title = scene["meta"]["title"]
             status = scene_status(scene)
             brand_ref = scene["meta"].get("brand_kit")
+        if doc_kind == "web":
+            self.validate_custom_component_reference_changes(
+                before_web_doc={},
+                after_web_doc=scene,
+                account_id=account_id,
+            )
         effective_source = effective_brand_source
         effective_id = brand_ref["id"] if brand_ref else None
         effective_version = brand_ref["version"] if brand_ref else None
@@ -719,6 +755,11 @@ class Repository:
                 raise WebDocumentVersionConflict(
                     document_id, expected_base_version, base_revision
                 )
+            self.validate_custom_component_reference_changes(
+                before_web_doc=document["scene"],
+                after_web_doc=web_doc,
+                account_id=document.get("account_id"),
+            )
             version = base_revision + 1
             batch_id = new_batch_id()
             undo_stack = list(document.get("undo_stack") or [])
@@ -1711,6 +1752,339 @@ class Repository:
         self.connection.commit()
         return self.require_web_publish(slug)
 
+    # --- P6 custom-component immutable registry ---------------------------- #
+
+    def register_custom_component_artifact(
+        self, artifact: JsonObject
+    ) -> JsonObject:
+        """Persist one successful compile artifact.
+
+        There is deliberately no update method. An exact retry is idempotent;
+        reusing the content-derived id with different metadata is a hard
+        conflict. The caller stores source/bundle bytes before invoking this
+        seam, so every committed row points at durable content-addressed bytes.
+        """
+
+        account_id = str(artifact["account_id"])
+        slug = str(artifact["slug"])
+        artifact_id = str(artifact["artifact_id"])
+        source_blob = artifact["source"]
+        bundle_blob = artifact["bundle"]
+        manifest = artifact.get("manifest", {})
+        provenance = artifact.get("provenance", {})
+        self.require_web_account(account_id)
+        if not custom_component_slug_is_valid(slug):
+            raise ValueError(
+                "custom component slug must be 1–64 lowercase kebab-case characters"
+            )
+        if not isinstance(manifest, dict) or not isinstance(provenance, dict):
+            raise ValueError("custom component manifest and provenance must be objects")
+        if (
+            not artifact_id.startswith("ccart_")
+            or len(artifact_id) != len("ccart_") + 64
+            or any(ch not in "0123456789abcdef" for ch in artifact_id[len("ccart_") :])
+        ):
+            raise ValueError("artifact_id must be ccart_<lowercase sha256>")
+        for label, blob in (("source", source_blob), ("bundle", bundle_blob)):
+            if not isinstance(blob, dict):
+                raise ValueError(f"{label} blob record must be an object")
+            digest = str(blob.get("value") or "")
+            opaque_ref = str(blob.get("opaque_ref") or "")
+            if (
+                blob.get("algorithm") != "sha256"
+                or len(digest) != 64
+                or any(ch not in "0123456789abcdef" for ch in digest)
+                or opaque_ref != f"sha256/{digest[:2]}/{digest}"
+                or not isinstance(blob.get("byte_length"), int)
+                or isinstance(blob.get("byte_length"), bool)
+                or blob["byte_length"] <= 0
+            ):
+                raise ValueError(
+                    f"{label} blob must be a non-empty canonical sha256 store record"
+                )
+
+        now = utc_now()
+        candidate = {
+            "artifact_id": artifact_id,
+            "account_id": account_id,
+            "slug": slug,
+            "source": {
+                "algorithm": "sha256",
+                "value": source_blob["value"],
+                "opaque_ref": source_blob["opaque_ref"],
+                "byte_length": source_blob["byte_length"],
+            },
+            "bundle": {
+                "algorithm": "sha256",
+                "value": bundle_blob["value"],
+                "opaque_ref": bundle_blob["opaque_ref"],
+                "byte_length": bundle_blob["byte_length"],
+            },
+            "manifest": manifest,
+            "provenance": provenance,
+        }
+        existing = self.get_custom_component_artifact(artifact_id)
+        if existing is not None:
+            comparable = {
+                key: existing[key]
+                for key in (
+                    "artifact_id",
+                    "account_id",
+                    "slug",
+                    "source",
+                    "bundle",
+                    "manifest",
+                    "provenance",
+                )
+            }
+            if comparable != candidate:
+                raise CustomComponentArtifactConflict(artifact_id)
+            return existing
+
+        with self.connection:
+            self.connection.execute(
+                """
+                INSERT INTO custom_components (
+                  account_id, slug, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(account_id, slug) DO UPDATE SET updated_at = excluded.updated_at
+                """,
+                (account_id, slug, now, now),
+            )
+            cursor = self.connection.execute(
+                """
+                INSERT OR IGNORE INTO custom_component_artifacts (
+                  artifact_id, account_id, slug,
+                  source_digest_algorithm, source_digest_value,
+                  source_opaque_ref, source_byte_length,
+                  bundle_digest_algorithm, bundle_digest_value,
+                  bundle_opaque_ref, bundle_byte_length,
+                  manifest_json, provenance_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    artifact_id,
+                    account_id,
+                    slug,
+                    "sha256",
+                    source_blob["value"],
+                    source_blob["opaque_ref"],
+                    source_blob["byte_length"],
+                    "sha256",
+                    bundle_blob["value"],
+                    bundle_blob["opaque_ref"],
+                    bundle_blob["byte_length"],
+                    encode(manifest),
+                    encode(provenance),
+                    now,
+                ),
+            )
+        stored = self.get_custom_component_artifact(artifact_id)
+        if stored is None:
+            raise RuntimeError(
+                f"custom component artifact {artifact_id} was not persisted"
+            )
+        comparable = {
+            key: stored[key]
+            for key in (
+                "artifact_id",
+                "account_id",
+                "slug",
+                "source",
+                "bundle",
+                "manifest",
+                "provenance",
+            )
+        }
+        if cursor.rowcount == 0 and comparable != candidate:
+            raise CustomComponentArtifactConflict(artifact_id)
+        return stored
+
+    def get_custom_component_artifact(
+        self, artifact_id: str
+    ) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            "SELECT * FROM custom_component_artifacts WHERE artifact_id = ?",
+            (artifact_id,),
+        ).fetchone()
+        return custom_component_artifact_from_row(row) if row is not None else None
+
+    def get_custom_component_artifact_for_account(
+        self, account_id: str, artifact_id: str
+    ) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            """
+            SELECT * FROM custom_component_artifacts
+            WHERE account_id = ? AND artifact_id = ?
+            """,
+            (account_id, artifact_id),
+        ).fetchone()
+        return custom_component_artifact_from_row(row) if row is not None else None
+
+    def require_custom_component_artifact(
+        self, account_id: str, artifact_id: str
+    ) -> JsonObject:
+        artifact = self.get_custom_component_artifact_for_account(
+            account_id, artifact_id
+        )
+        if artifact is None:
+            raise NotFoundError("custom_component_artifact", artifact_id)
+        return artifact
+
+    def list_custom_component_artifacts(
+        self, account_id: str, slug: Optional[str] = None
+    ) -> List[JsonObject]:
+        if slug is None:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM custom_component_artifacts
+                WHERE account_id = ?
+                ORDER BY created_at DESC, artifact_id DESC
+                """,
+                (account_id,),
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM custom_component_artifacts
+                WHERE account_id = ? AND slug = ?
+                ORDER BY created_at DESC, artifact_id DESC
+                """,
+                (account_id, slug),
+            ).fetchall()
+        return [custom_component_artifact_from_row(row) for row in rows]
+
+    def list_custom_components(self, account_id: str) -> List[JsonObject]:
+        rows = self.connection.execute(
+            """
+            SELECT
+              component.account_id,
+              component.slug,
+              component.created_at,
+              component.updated_at,
+              COUNT(artifact.artifact_id) AS artifact_count,
+              (
+                SELECT newest.artifact_id
+                FROM custom_component_artifacts AS newest
+                WHERE newest.account_id = component.account_id
+                  AND newest.slug = component.slug
+                ORDER BY newest.created_at DESC, newest.artifact_id DESC
+                LIMIT 1
+              ) AS latest_artifact_id
+            FROM custom_components AS component
+            LEFT JOIN custom_component_artifacts AS artifact
+              ON artifact.account_id = component.account_id
+             AND artifact.slug = component.slug
+            WHERE component.account_id = ?
+            GROUP BY component.account_id, component.slug
+            ORDER BY component.slug ASC
+            """,
+            (account_id,),
+        ).fetchall()
+        return [
+            {
+                "account_id": row["account_id"],
+                "slug": row["slug"],
+                "artifact_count": row["artifact_count"],
+                # Convenience for listing only. Documents may never store
+                # "latest"; attach operations use a concrete artifact id.
+                "latest_artifact_id": row["latest_artifact_id"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def get_custom_component(
+        self, account_id: str, slug: str
+    ) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            """
+            SELECT * FROM custom_components
+            WHERE account_id = ? AND slug = ?
+            """,
+            (account_id, slug),
+        ).fetchone()
+        if row is None:
+            return None
+        artifacts = self.list_custom_component_artifacts(account_id, slug)
+        return {
+            "account_id": row["account_id"],
+            "slug": row["slug"],
+            "artifacts": artifacts,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def require_custom_component(self, account_id: str, slug: str) -> JsonObject:
+        component = self.get_custom_component(account_id, slug)
+        if component is None:
+            raise NotFoundError("custom_component", slug)
+        return component
+
+    def validate_custom_component_reference_changes(
+        self,
+        *,
+        before_web_doc: JsonObject,
+        after_web_doc: JsonObject,
+        account_id: Optional[str],
+    ) -> None:
+        """Resolve every newly introduced/re-pinned artifact.
+
+        Existing missing pins remain loadable and render as placeholders; an
+        unrelated edit does not become impossible because old registry data is
+        unavailable. A new node, duplicate, or changed slug/artifact pair must
+        resolve in the document's exact account.
+        """
+
+        before = custom_component_references(before_web_doc)
+        after = custom_component_references(after_web_doc)
+        for location, (node_id, slug, artifact_id) in after.items():
+            previous = before.get(location)
+            if previous == (node_id, slug, artifact_id):
+                continue
+            if account_id is None:
+                raise CustomComponentReferenceError(
+                    "custom_component.account_required",
+                    "the website must belong to an account before attaching a custom component",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            if self.get_web_account(account_id) is None:
+                raise CustomComponentReferenceError(
+                    "custom_component.account_unresolved",
+                    f"website account {account_id!r} was not found",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            artifact = self.get_custom_component_artifact(artifact_id)
+            if artifact is None:
+                raise CustomComponentReferenceError(
+                    "custom_component.artifact_unresolved",
+                    f"custom component artifact {artifact_id!r} was not found",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            if artifact["account_id"] != account_id:
+                raise CustomComponentReferenceError(
+                    "custom_component.artifact_forbidden",
+                    "custom component artifact belongs to a different account",
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            if artifact["slug"] != slug:
+                raise CustomComponentReferenceError(
+                    "custom_component.artifact_slug_mismatch",
+                    (
+                        f"artifact {artifact_id!r} belongs to slug "
+                        f"{artifact['slug']!r}, not {slug!r}"
+                    ),
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+
     # --- Website-mode personalization accounts (P5 D3) -------------------- #
 
     def create_web_account(
@@ -1805,24 +2179,34 @@ class Repository:
 
     # --- Website-mode templates (P5 D4) ---------------------------------- #
 
-    def create_web_template(self, web_doc: JsonObject) -> JsonObject:
+    def create_web_template(
+        self, web_doc: JsonObject, account_id: Optional[str] = None
+    ) -> JsonObject:
         """Insert a NEW web documents row as a template: fresh undo/redo stacks,
         version 0, is_template=1. `web_doc` already carries the minted id + title
         (the endpoint clones + relabels it); the theme/brand ref rides in the
         payload and mirrors onto the effective-brand columns, exactly as
-        create_document's web path does."""
+        create_document's web path does. An account-scoped custom-component pin
+        keeps that account on the template; account-free templates continue to
+        behave exactly as before."""
         now = utc_now()
         document_id = web_doc["id"]
         title = web_doc["title"]
         brand_ref = (web_doc.get("theme") or {}).get("brand_kit")
+        self.validate_custom_component_reference_changes(
+            before_web_doc={},
+            after_web_doc=web_doc,
+            account_id=account_id,
+        )
         self.connection.execute(
             """
             INSERT INTO documents (
               id, title, status, doc_kind, current_scene_json, current_version,
               effective_brand_kit_source, effective_brand_kit_id,
-              effective_brand_kit_version, is_template, created_at, updated_at
+              effective_brand_kit_version, is_template, account_id,
+              created_at, updated_at
             )
-            VALUES (?, ?, 'draft', 'web', ?, 0, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, 'draft', 'web', ?, 0, ?, ?, ?, 1, ?, ?, ?)
             """,
             (
                 document_id,
@@ -1831,6 +2215,7 @@ class Repository:
                 None,
                 brand_ref["id"] if brand_ref else None,
                 brand_ref["version"] if brand_ref else None,
+                account_id,
                 now,
                 now,
             ),
@@ -1994,6 +2379,66 @@ def web_account_from_row(row: sqlite3.Row) -> JsonObject:
         "notes": row["notes"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+    }
+
+
+def custom_component_references(
+    web_doc: JsonObject,
+) -> Dict[Tuple[str, str], Tuple[str, str, str]]:
+    """Index every pinned custom-component node by page and node id.
+
+    Location is stable across ordinary move/reparent/resize edits, so those
+    operations do not re-resolve an unchanged artifact. Duplicate mints a new
+    node id and therefore is correctly treated as a new reference.
+    """
+
+    references: Dict[Tuple[str, str], Tuple[str, str, str]] = {}
+    pages = web_doc.get("pages")
+    if not isinstance(pages, list):
+        return references
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_id = page.get("id")
+        nodes = page.get("nodes")
+        if not isinstance(page_id, str) or not isinstance(nodes, dict):
+            continue
+        for node_id, node in nodes.items():
+            if not isinstance(node_id, str) or not isinstance(node, dict):
+                continue
+            if node.get("kind") != "custom_component":
+                continue
+            slug = node.get("slug")
+            artifact_id = node.get("artifact_id")
+            if isinstance(slug, str) and isinstance(artifact_id, str):
+                references[(page_id, node_id)] = (
+                    node_id,
+                    slug,
+                    artifact_id,
+                )
+    return references
+
+
+def custom_component_artifact_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "artifact_id": row["artifact_id"],
+        "account_id": row["account_id"],
+        "slug": row["slug"],
+        "source": {
+            "algorithm": row["source_digest_algorithm"],
+            "value": row["source_digest_value"],
+            "opaque_ref": row["source_opaque_ref"],
+            "byte_length": row["source_byte_length"],
+        },
+        "bundle": {
+            "algorithm": row["bundle_digest_algorithm"],
+            "value": row["bundle_digest_value"],
+            "opaque_ref": row["bundle_opaque_ref"],
+            "byte_length": row["bundle_byte_length"],
+        },
+        "manifest": decode(row["manifest_json"]),
+        "provenance": decode(row["provenance_json"]),
+        "created_at": row["created_at"],
     }
 
 

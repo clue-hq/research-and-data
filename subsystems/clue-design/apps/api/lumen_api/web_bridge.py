@@ -32,16 +32,18 @@ the selected node. These values inform the GUI only — mutations still go
 through canonical WebOperations.
 
 v5 replaces the section-only drag bridge with a generic direct-manipulation
-contract for sections, containers, text, buttons, and images. The server injects
+contract for sections, containers, text, buttons, images, and custom-component
+leaves. The server injects
 the canonical movable/drop-parent id sets for the rendered page. A selected node
 gets a drag handle; the bridge shows a ghost plus an axis-aware insertion marker
 and posts `{type:"move-node", nodeId, newParentNodeId, index}`. The index is
 measured after source removal, so one intent covers both reorder and reparent.
 
-v6 adds class-backed resizing for containers, text, buttons, and images. A
-selected resizable node gets right, bottom, and corner handles. Inline width /
-height are used only as a transient live preview; mouseup restores them and
-posts `{type:"resize-node", nodeId, widthPx, heightPx}` so the parent can persist
+v6 adds class-backed resizing for containers, text, buttons, images, and
+custom-component leaves. A selected resizable node gets right, bottom, and
+corner handles. Inline width / height are used only as a transient live
+preview; mouseup restores them and posts
+`{type:"resize-node", nodeId, widthPx, heightPx}` so the parent can persist
 canonical `w-[Npx]` / `h-[Npx]` classes through the normal versioned op path.
 
 v7 replaces native contenteditable serialization with an editor-only Lexical
@@ -1114,9 +1116,22 @@ def _bridge_page_capabilities(
     nodes = page.get("nodes")
     nodes = nodes if isinstance(nodes, dict) else {}
     root_id = page.get("root") if isinstance(page.get("root"), str) else "root"
-    movable_kinds = {"section", "container", "text", "button", "image"}
+    movable_kinds = {
+        "section",
+        "container",
+        "text",
+        "button",
+        "image",
+        "custom_component",
+    }
     parent_kinds = {"section", "container"}
-    resizable_kinds = {"container", "text", "button", "image"}
+    resizable_kinds = {
+        "container",
+        "text",
+        "button",
+        "image",
+        "custom_component",
+    }
     movable = sorted(
         node_id
         for node_id, node in nodes.items()
