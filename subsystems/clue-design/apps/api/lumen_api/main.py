@@ -41,9 +41,22 @@ from fastapi.responses import (
 
 from . import image_cache, image_provider, web_export
 from .core import CoreClient, CoreError, has_error_diagnostics
+from .custom_component_compiler import (
+    DEFAULT_COMPILER_TIMEOUT_SECONDS,
+    compile_custom_component,
+    default_compiler_worker_path,
+)
+from .custom_components import (
+    canonical_custom_component_source_snapshot,
+    persist_compiled_custom_component_artifact,
+    persist_custom_component_source_revision,
+    resolve_custom_component_artifact_blob,
+    resolve_custom_component_source_snapshot,
+)
 from .database import (
     CustomComponentArtifactConflict,
     CustomComponentReferenceError,
+    CustomComponentSourceVersionConflict,
     NotFoundError,
     Repository,
     WebDocumentVersionConflict,
@@ -93,6 +106,8 @@ from .models import (
     CreateInstanceBatchRequest,
     CreateSnapshotRequest,
     CreateWebAccountRequest,
+    CompileCustomComponentRequest,
+    PutCustomComponentSourceRequest,
     UpdateWebAccountRequest,
     SaveWebTemplateRequest,
     DeriveWebRequest,
@@ -319,6 +334,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         settings.lumen_asset_store_root
         or app.state.database_path.parent / "asset-store"
     )
+    app.state.custom_component_store_root = (
+        Path(app.state.asset_store_root) / "custom-components"
+    )
+    app.state.custom_component_compiler_node_bin = "node"
+    app.state.custom_component_compiler_worker = default_compiler_worker_path()
+    app.state.custom_component_compiler_timeout_seconds = (
+        DEFAULT_COMPILER_TIMEOUT_SECONDS
+    )
     app.state.core = CoreClient()
     app.state.agent_turn_runner = None
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
@@ -422,6 +445,23 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "code": "custom_component.artifact_conflict",
                     "message": str(error),
                     "artifact_id": error.artifact_id,
+                }
+            },
+        )
+
+    @app.exception_handler(CustomComponentSourceVersionConflict)
+    def custom_component_source_version_conflict_handler(
+        _request: Request, error: CustomComponentSourceVersionConflict
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "custom_component.source_version_conflict",
+                    "message": str(error),
+                    "slug": error.slug,
+                    "expected_version": error.expected,
+                    "current_version": error.current,
                 }
             },
         )
@@ -2936,6 +2976,272 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "schema_version": 1,
             "artifact": repo.require_custom_component_artifact(
                 account_id, artifact_id
+            ),
+        }
+
+    @app.get(
+        "/web/accounts/{account_id}/custom-component-artifacts/"
+        "{artifact_id}/{member}"
+    )
+    def get_custom_component_artifact_member(
+        account_id: str,
+        artifact_id: str,
+        member: str,
+        repo: Repository = Depends(repository),
+    ) -> Response:
+        if member not in {"source", "bundle", "css", "first_frame"}:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "custom_component.artifact_member_not_found",
+                    "message": f"unknown custom component artifact member {member!r}",
+                },
+            )
+        artifact = repo.require_custom_component_artifact(
+            account_id, artifact_id
+        )
+        if artifact[member] is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "custom_component.artifact_member_not_found",
+                    "message": (
+                        f"custom component artifact {artifact_id!r} has no "
+                        f"{member!r} member"
+                    ),
+                },
+            )
+        _, data = resolve_custom_component_artifact_blob(
+            repo,
+            Path(app.state.custom_component_store_root),
+            account_id=account_id,
+            artifact_id=artifact_id,
+            member=member,  # type: ignore[arg-type]
+        )
+        media_types = {
+            "source": "application/json",
+            "bundle": "text/javascript; charset=utf-8",
+            "css": "text/css; charset=utf-8",
+            "first_frame": "text/html; charset=utf-8",
+        }
+        return Response(content=data, media_type=media_types[member])
+
+    @app.put("/web/accounts/{account_id}/custom-components/{slug}/source")
+    def put_custom_component_source(
+        account_id: str,
+        slug: str,
+        payload: PutCustomComponentSourceRequest,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_web_account(account_id)
+        try:
+            revision = persist_custom_component_source_revision(
+                repo,
+                Path(app.state.custom_component_store_root),
+                account_id=account_id,
+                slug=slug,
+                expected_version=payload.expected_version,
+                files=dict(payload.files),
+                provenance={
+                    "kind": "custom_component_source_write",
+                    "actor": payload.actor.model_dump(),
+                },
+            )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "custom_component.source_invalid",
+                    "message": str(error),
+                    "slug": slug,
+                },
+            ) from error
+        return {
+            "schema_version": 1,
+            "component": repo.require_custom_component(account_id, slug),
+            "source": revision,
+        }
+
+    @app.get("/web/accounts/{account_id}/custom-components/{slug}/source")
+    def get_custom_component_source(
+        account_id: str,
+        slug: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_web_account(account_id)
+        revision = repo.get_current_custom_component_source(account_id, slug)
+        if revision is None:
+            raise NotFoundError("custom_component_source", slug)
+        _, files = resolve_custom_component_source_snapshot(
+            repo,
+            Path(app.state.custom_component_store_root),
+            account_id=account_id,
+            revision_id=revision["revision_id"],
+        )
+        return {
+            "schema_version": 1,
+            "source": revision,
+            "files": files,
+        }
+
+    @app.get(
+        "/web/accounts/{account_id}/custom-components/{slug}/source-revisions"
+    )
+    def list_custom_component_source_revisions(
+        account_id: str,
+        slug: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_custom_component(account_id, slug)
+        return {
+            "schema_version": 1,
+            "revisions": repo.list_custom_component_source_revisions(
+                account_id, slug
+            ),
+        }
+
+    @app.post("/web/accounts/{account_id}/custom-components/{slug}/compile")
+    def compile_custom_component_source(
+        account_id: str,
+        slug: str,
+        payload: CompileCustomComponentRequest,
+        repo: Repository = Depends(repository),
+    ) -> Any:
+        component = repo.require_custom_component(account_id, slug)
+        current_version = int(component["source_version"])
+        if current_version != payload.source_version:
+            raise CustomComponentSourceVersionConflict(
+                slug, payload.source_version, current_version
+            )
+        revision = repo.get_current_custom_component_source(account_id, slug)
+        if revision is None:
+            raise NotFoundError("custom_component_source", slug)
+        _, files = resolve_custom_component_source_snapshot(
+            repo,
+            Path(app.state.custom_component_store_root),
+            account_id=account_id,
+            revision_id=revision["revision_id"],
+        )
+        component_artifacts = {
+            item["slug"]: item["latest_artifact_id"]
+            for item in repo.list_custom_components(account_id)
+            if item["slug"] != slug and item["latest_artifact_id"] is not None
+        }
+        result = compile_custom_component(
+            node_binary=app.state.custom_component_compiler_node_bin,
+            worker_path=Path(app.state.custom_component_compiler_worker),
+            timeout_seconds=app.state.custom_component_compiler_timeout_seconds,
+            slug=slug,
+            entry=revision["entry_path"],
+            files=files,
+            component_artifacts=component_artifacts,
+        )
+        # Source compilation runs outside the database transaction. Re-check
+        # the optimistic version after the worker returns so an older compile
+        # cannot finish after a concurrent source write and become the newest
+        # attachable artifact for this component family.
+        current_version = int(
+            repo.require_custom_component(account_id, slug)["source_version"]
+        )
+        if current_version != payload.source_version:
+            raise CustomComponentSourceVersionConflict(
+                slug, payload.source_version, current_version
+            )
+        compilation_id = f"cccmp_{uuid4().hex}"
+        compiler_version = str(result.get("compiler_version") or "unavailable")
+        diagnostics = result.get("diagnostics")
+        if not isinstance(diagnostics, list):
+            diagnostics = []
+        artifact = None
+        status = result["status"]
+        if status == "success":
+            snapshot_bytes, _ = canonical_custom_component_source_snapshot(
+                slug=slug, files=files
+            )
+            outputs = result["outputs"]
+            manifest = result["manifest"]
+            try:
+                artifact = persist_compiled_custom_component_artifact(
+                    repo,
+                    Path(app.state.custom_component_store_root),
+                    account_id=account_id,
+                    slug=slug,
+                    source=snapshot_bytes,
+                    bundle=outputs["browser_bundle"].encode("utf-8"),
+                    css=outputs["component_css"].encode("utf-8"),
+                    first_frame=outputs["first_frame_html"].encode("utf-8"),
+                    manifest=manifest,
+                    provenance={
+                        "kind": "lumen_custom_component_compiler",
+                        "compiler_protocol_version": 1,
+                        "compiler_version": compiler_version,
+                        "source_revision_id": revision["revision_id"],
+                        "source_version": revision["source_version"],
+                        "dependency_artifacts": manifest.get(
+                            "dependency_artifacts", {}
+                        ),
+                        "actor": payload.actor.model_dump(),
+                    },
+                )
+            except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+                status = "transient_error"
+                diagnostics = [
+                    *diagnostics,
+                    {
+                        "code": "CCI0003",
+                        "severity": "error",
+                        "category": "infrastructure",
+                        "message": (
+                            "compiled artifact could not be persisted: "
+                            f"{type(error).__name__}"
+                        ),
+                        "file": None,
+                        "line": None,
+                        "column": None,
+                    },
+                ]
+                artifact = None
+
+        compilation = repo.record_custom_component_compilation(
+            {
+                "compilation_id": compilation_id,
+                "account_id": account_id,
+                "slug": slug,
+                "source_revision_id": revision["revision_id"],
+                "source_version": revision["source_version"],
+                "status": (
+                    "succeeded" if status == "success" else status
+                ),
+                "compiler_protocol_version": 1,
+                "compiler_version": compiler_version,
+                "diagnostics": diagnostics,
+                "artifact_id": artifact["artifact_id"] if artifact else None,
+            }
+        )
+        response = {
+            "schema_version": 1,
+            "compilation": compilation,
+            "artifact": artifact,
+        }
+        if status == "failed":
+            return JSONResponse(status_code=422, content=response)
+        if status == "transient_error":
+            return JSONResponse(status_code=503, content=response)
+        return response
+
+    @app.get(
+        "/web/accounts/{account_id}/custom-components/{slug}/compilations"
+    )
+    def list_custom_component_compilations(
+        account_id: str,
+        slug: str,
+        repo: Repository = Depends(repository),
+    ) -> JsonObject:
+        repo.require_custom_component(account_id, slug)
+        return {
+            "schema_version": 1,
+            "compilations": repo.list_custom_component_compilations(
+                account_id, slug
             ),
         }
 

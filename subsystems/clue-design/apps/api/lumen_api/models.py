@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 
 JsonObject = Dict[str, Any]
@@ -199,6 +199,25 @@ class UpdateWebAccountRequest(BaseModel):
     logo_asset_id: Optional[str] = None
     data: Optional[Dict[str, str]] = None
     notes: Optional[str] = None
+
+
+class PutCustomComponentSourceRequest(BaseModel):
+    """Replace one component source tree using optimistic source versioning."""
+
+    expected_version: StrictInt = Field(ge=0)
+    files: Dict[str, str]
+    actor: ActorEnvelope = Field(
+        default_factory=lambda: ActorEnvelope(kind="human")
+    )
+
+
+class CompileCustomComponentRequest(BaseModel):
+    """Compile only the exact durable source version named by the caller."""
+
+    source_version: StrictInt = Field(ge=1)
+    actor: ActorEnvelope = Field(
+        default_factory=lambda: ActorEnvelope(kind="human")
+    )
 
 
 class SaveWebTemplateRequest(BaseModel):

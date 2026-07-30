@@ -57,6 +57,19 @@ class CustomComponentArtifactConflict(RuntimeError):
         self.artifact_id = artifact_id
 
 
+class CustomComponentSourceVersionConflict(RuntimeError):
+    """A component source write or compile targeted a stale source version."""
+
+    def __init__(self, slug: str, expected: int, current: int) -> None:
+        super().__init__(
+            f"custom component {slug} expected source version {expected}, "
+            f"current version is {current}"
+        )
+        self.slug = slug
+        self.expected = expected
+        self.current = current
+
+
 class CustomComponentReferenceError(RuntimeError):
     """A document write introduced an unresolved or cross-account artifact."""
 
@@ -73,6 +86,37 @@ class CustomComponentReferenceError(RuntimeError):
         self.message = message
         self.node_id = node_id
         self.artifact_id = artifact_id
+
+
+def canonical_custom_component_blob(
+    label: str,
+    blob: Any,
+    *,
+    allow_empty: bool = False,
+) -> JsonObject:
+    if not isinstance(blob, dict):
+        raise ValueError(f"{label} blob record must be an object")
+    digest = str(blob.get("value") or "")
+    opaque_ref = str(blob.get("opaque_ref") or "")
+    byte_length = blob.get("byte_length")
+    minimum = 0 if allow_empty else 1
+    if (
+        blob.get("algorithm") != "sha256"
+        or len(digest) != 64
+        or any(ch not in "0123456789abcdef" for ch in digest)
+        or opaque_ref != f"sha256/{digest[:2]}/{digest}"
+        or not isinstance(byte_length, int)
+        or isinstance(byte_length, bool)
+        or byte_length < minimum
+    ):
+        qualifier = "canonical" if allow_empty else "non-empty canonical"
+        raise ValueError(f"{label} blob must be a {qualifier} sha256 store record")
+    return {
+        "algorithm": "sha256",
+        "value": digest,
+        "opaque_ref": opaque_ref,
+        "byte_length": byte_length,
+    }
 
 
 # The ONE `assets`-table column list + row builder: create_asset_record
@@ -158,6 +202,36 @@ def run_migrations(database_path: Path) -> None:
         ensure_column(connection, "documents", "template_document_id", "TEXT")
         ensure_column(connection, "documents", "template_doc_version", "INTEGER")
         ensure_column(connection, "documents", "account_id", "TEXT")
+        # P6.2 compiler/source state. Existing P6.1 families deterministically
+        # remain at source_version=0 with no fabricated source snapshot.
+        ensure_column(
+            connection,
+            "custom_components",
+            "source_version",
+            "INTEGER NOT NULL DEFAULT 0",
+        )
+        ensure_column(
+            connection,
+            "custom_components",
+            "current_source_revision_id",
+            "TEXT",
+        )
+        for column, definition in (
+            ("css_digest_algorithm", "TEXT"),
+            ("css_digest_value", "TEXT"),
+            ("css_opaque_ref", "TEXT"),
+            ("css_byte_length", "INTEGER"),
+            ("first_frame_digest_algorithm", "TEXT"),
+            ("first_frame_digest_value", "TEXT"),
+            ("first_frame_opaque_ref", "TEXT"),
+            ("first_frame_byte_length", "INTEGER"),
+        ):
+            ensure_column(
+                connection,
+                "custom_component_artifacts",
+                column,
+                definition,
+            )
         # Bulk print controls: the resolved export profile a batch runs with
         # (NULL = format-default artifacts, the pre-profile behavior).
         ensure_column(connection, "instance_batches", "export_profile_json", "TEXT")
@@ -1768,8 +1842,32 @@ class Repository:
         account_id = str(artifact["account_id"])
         slug = str(artifact["slug"])
         artifact_id = str(artifact["artifact_id"])
-        source_blob = artifact["source"]
-        bundle_blob = artifact["bundle"]
+        source_blob = canonical_custom_component_blob(
+            "source", artifact["source"]
+        )
+        bundle_blob = canonical_custom_component_blob(
+            "bundle", artifact["bundle"]
+        )
+        css_blob = (
+            canonical_custom_component_blob(
+                "css", artifact["css"], allow_empty=True
+            )
+            if artifact.get("css") is not None
+            else None
+        )
+        first_frame_blob = (
+            canonical_custom_component_blob(
+                "first_frame",
+                artifact["first_frame"],
+                allow_empty=True,
+            )
+            if artifact.get("first_frame") is not None
+            else None
+        )
+        if (css_blob is None) != (first_frame_blob is None):
+            raise ValueError(
+                "css and first_frame blob records must be supplied together"
+            )
         manifest = artifact.get("manifest", {})
         provenance = artifact.get("provenance", {})
         self.require_web_account(account_id)
@@ -1785,41 +1883,15 @@ class Repository:
             or any(ch not in "0123456789abcdef" for ch in artifact_id[len("ccart_") :])
         ):
             raise ValueError("artifact_id must be ccart_<lowercase sha256>")
-        for label, blob in (("source", source_blob), ("bundle", bundle_blob)):
-            if not isinstance(blob, dict):
-                raise ValueError(f"{label} blob record must be an object")
-            digest = str(blob.get("value") or "")
-            opaque_ref = str(blob.get("opaque_ref") or "")
-            if (
-                blob.get("algorithm") != "sha256"
-                or len(digest) != 64
-                or any(ch not in "0123456789abcdef" for ch in digest)
-                or opaque_ref != f"sha256/{digest[:2]}/{digest}"
-                or not isinstance(blob.get("byte_length"), int)
-                or isinstance(blob.get("byte_length"), bool)
-                or blob["byte_length"] <= 0
-            ):
-                raise ValueError(
-                    f"{label} blob must be a non-empty canonical sha256 store record"
-                )
-
         now = utc_now()
         candidate = {
             "artifact_id": artifact_id,
             "account_id": account_id,
             "slug": slug,
-            "source": {
-                "algorithm": "sha256",
-                "value": source_blob["value"],
-                "opaque_ref": source_blob["opaque_ref"],
-                "byte_length": source_blob["byte_length"],
-            },
-            "bundle": {
-                "algorithm": "sha256",
-                "value": bundle_blob["value"],
-                "opaque_ref": bundle_blob["opaque_ref"],
-                "byte_length": bundle_blob["byte_length"],
-            },
+            "source": source_blob,
+            "bundle": bundle_blob,
+            "css": css_blob,
+            "first_frame": first_frame_blob,
             "manifest": manifest,
             "provenance": provenance,
         }
@@ -1833,6 +1905,8 @@ class Repository:
                     "slug",
                     "source",
                     "bundle",
+                    "css",
+                    "first_frame",
                     "manifest",
                     "provenance",
                 )
@@ -1860,9 +1934,13 @@ class Repository:
                   source_opaque_ref, source_byte_length,
                   bundle_digest_algorithm, bundle_digest_value,
                   bundle_opaque_ref, bundle_byte_length,
+                  css_digest_algorithm, css_digest_value,
+                  css_opaque_ref, css_byte_length,
+                  first_frame_digest_algorithm, first_frame_digest_value,
+                  first_frame_opaque_ref, first_frame_byte_length,
                   manifest_json, provenance_json, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     artifact_id,
@@ -1876,6 +1954,14 @@ class Repository:
                     bundle_blob["value"],
                     bundle_blob["opaque_ref"],
                     bundle_blob["byte_length"],
+                    css_blob["algorithm"] if css_blob else None,
+                    css_blob["value"] if css_blob else None,
+                    css_blob["opaque_ref"] if css_blob else None,
+                    css_blob["byte_length"] if css_blob else None,
+                    first_frame_blob["algorithm"] if first_frame_blob else None,
+                    first_frame_blob["value"] if first_frame_blob else None,
+                    first_frame_blob["opaque_ref"] if first_frame_blob else None,
+                    first_frame_blob["byte_length"] if first_frame_blob else None,
                     encode(manifest),
                     encode(provenance),
                     now,
@@ -1894,6 +1980,8 @@ class Repository:
                 "slug",
                 "source",
                 "bundle",
+                "css",
+                "first_frame",
                 "manifest",
                 "provenance",
             )
@@ -1962,6 +2050,8 @@ class Repository:
             SELECT
               component.account_id,
               component.slug,
+              component.source_version,
+              component.current_source_revision_id,
               component.created_at,
               component.updated_at,
               COUNT(artifact.artifact_id) AS artifact_count,
@@ -1987,6 +2077,8 @@ class Repository:
             {
                 "account_id": row["account_id"],
                 "slug": row["slug"],
+                "source_version": row["source_version"],
+                "current_source_revision_id": row["current_source_revision_id"],
                 "artifact_count": row["artifact_count"],
                 # Convenience for listing only. Documents may never store
                 # "latest"; attach operations use a concrete artifact id.
@@ -2013,6 +2105,8 @@ class Repository:
         return {
             "account_id": row["account_id"],
             "slug": row["slug"],
+            "source_version": row["source_version"],
+            "current_source_revision_id": row["current_source_revision_id"],
             "artifacts": artifacts,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -2023,6 +2117,304 @@ class Repository:
         if component is None:
             raise NotFoundError("custom_component", slug)
         return component
+
+    def create_custom_component_source_revision(
+        self,
+        source: JsonObject,
+        *,
+        expected_version: int,
+    ) -> JsonObject:
+        """Atomically append an immutable source revision with CAS versioning."""
+
+        account_id = str(source["account_id"])
+        slug = str(source["slug"])
+        revision_id = str(source["revision_id"])
+        entry_path = str(source["entry_path"])
+        snapshot = canonical_custom_component_blob(
+            "source snapshot", source["snapshot"]
+        )
+        files_manifest = source.get("files_manifest")
+        provenance = source.get("provenance", {})
+        self.require_web_account(account_id)
+        if not custom_component_slug_is_valid(slug):
+            raise ValueError(
+                "custom component slug must be 1–64 lowercase kebab-case characters"
+            )
+        if (
+            not revision_id.startswith("ccsrc_")
+            or len(revision_id) != len("ccsrc_") + 64
+            or any(
+                ch not in "0123456789abcdef"
+                for ch in revision_id[len("ccsrc_") :]
+            )
+        ):
+            raise ValueError("revision_id must be ccsrc_<lowercase sha256>")
+        if (
+            not isinstance(expected_version, int)
+            or isinstance(expected_version, bool)
+            or expected_version < 0
+        ):
+            raise ValueError("expected_version must be a non-negative integer")
+        if not isinstance(files_manifest, dict) or not isinstance(provenance, dict):
+            raise ValueError("files_manifest and provenance must be objects")
+
+        now = utc_now()
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.connection.execute(
+                """
+                SELECT source_version
+                FROM custom_components
+                WHERE account_id = ? AND slug = ?
+                """,
+                (account_id, slug),
+            ).fetchone()
+            current_version = int(row["source_version"]) if row else 0
+            if current_version != expected_version:
+                raise CustomComponentSourceVersionConflict(
+                    slug, expected_version, current_version
+                )
+            if row is None:
+                self.connection.execute(
+                    """
+                    INSERT INTO custom_components (
+                      account_id, slug, source_version,
+                      current_source_revision_id, created_at, updated_at
+                    )
+                    VALUES (?, ?, 0, NULL, ?, ?)
+                    """,
+                    (account_id, slug, now, now),
+                )
+            next_version = current_version + 1
+            self.connection.execute(
+                """
+                INSERT INTO custom_component_source_revisions (
+                  revision_id, account_id, slug, source_version, entry_path,
+                  snapshot_digest_algorithm, snapshot_digest_value,
+                  snapshot_opaque_ref, snapshot_byte_length,
+                  files_manifest_json, provenance_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    revision_id,
+                    account_id,
+                    slug,
+                    next_version,
+                    entry_path,
+                    snapshot["algorithm"],
+                    snapshot["value"],
+                    snapshot["opaque_ref"],
+                    snapshot["byte_length"],
+                    encode(files_manifest),
+                    encode(provenance),
+                    now,
+                ),
+            )
+            cursor = self.connection.execute(
+                """
+                UPDATE custom_components
+                SET source_version = ?, current_source_revision_id = ?,
+                    updated_at = ?
+                WHERE account_id = ? AND slug = ? AND source_version = ?
+                """,
+                (
+                    next_version,
+                    revision_id,
+                    now,
+                    account_id,
+                    slug,
+                    current_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                current = self.connection.execute(
+                    """
+                    SELECT source_version FROM custom_components
+                    WHERE account_id = ? AND slug = ?
+                    """,
+                    (account_id, slug),
+                ).fetchone()
+                raise CustomComponentSourceVersionConflict(
+                    slug,
+                    expected_version,
+                    int(current["source_version"]) if current else 0,
+                )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return self.require_custom_component_source_revision(
+            account_id, revision_id
+        )
+
+    def get_custom_component_source_revision(
+        self, account_id: str, revision_id: str
+    ) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            """
+            SELECT * FROM custom_component_source_revisions
+            WHERE account_id = ? AND revision_id = ?
+            """,
+            (account_id, revision_id),
+        ).fetchone()
+        return (
+            custom_component_source_revision_from_row(row)
+            if row is not None
+            else None
+        )
+
+    def require_custom_component_source_revision(
+        self, account_id: str, revision_id: str
+    ) -> JsonObject:
+        revision = self.get_custom_component_source_revision(
+            account_id, revision_id
+        )
+        if revision is None:
+            raise NotFoundError("custom_component_source_revision", revision_id)
+        return revision
+
+    def get_current_custom_component_source(
+        self, account_id: str, slug: str
+    ) -> Optional[JsonObject]:
+        row = self.connection.execute(
+            """
+            SELECT revision.*
+            FROM custom_components AS component
+            JOIN custom_component_source_revisions AS revision
+              ON revision.revision_id = component.current_source_revision_id
+            WHERE component.account_id = ? AND component.slug = ?
+            """,
+            (account_id, slug),
+        ).fetchone()
+        return (
+            custom_component_source_revision_from_row(row)
+            if row is not None
+            else None
+        )
+
+    def list_custom_component_source_revisions(
+        self, account_id: str, slug: str
+    ) -> List[JsonObject]:
+        rows = self.connection.execute(
+            """
+            SELECT * FROM custom_component_source_revisions
+            WHERE account_id = ? AND slug = ?
+            ORDER BY source_version DESC
+            """,
+            (account_id, slug),
+        ).fetchall()
+        return [custom_component_source_revision_from_row(row) for row in rows]
+
+    def record_custom_component_compilation(
+        self, compilation: JsonObject
+    ) -> JsonObject:
+        account_id = str(compilation["account_id"])
+        slug = str(compilation["slug"])
+        compilation_id = str(compilation["compilation_id"])
+        revision_id = str(compilation["source_revision_id"])
+        source_version = compilation["source_version"]
+        status = str(compilation["status"])
+        protocol_version = compilation["compiler_protocol_version"]
+        compiler_version = str(compilation["compiler_version"])
+        diagnostics = compilation.get("diagnostics", [])
+        artifact_id = compilation.get("artifact_id")
+        if (
+            not compilation_id.startswith("cccmp_")
+            or len(compilation_id) != len("cccmp_") + 32
+            or any(
+                ch not in "0123456789abcdef"
+                for ch in compilation_id[len("cccmp_") :]
+            )
+        ):
+            raise ValueError("compilation_id must be cccmp_<32 lowercase hex>")
+        if status not in {"succeeded", "failed", "transient_error"}:
+            raise ValueError("compile status is invalid")
+        if not isinstance(diagnostics, list):
+            raise ValueError("compile diagnostics must be an array")
+        if (
+            not isinstance(source_version, int)
+            or isinstance(source_version, bool)
+            or source_version <= 0
+            or not isinstance(protocol_version, int)
+            or isinstance(protocol_version, bool)
+            or protocol_version <= 0
+            or not compiler_version
+        ):
+            raise ValueError("compile version fields are invalid")
+        revision = self.require_custom_component_source_revision(
+            account_id, revision_id
+        )
+        if (
+            revision["slug"] != slug
+            or revision["source_version"] != source_version
+        ):
+            raise ValueError("compile source revision identity does not match")
+        if status == "succeeded":
+            if not isinstance(artifact_id, str):
+                raise ValueError("successful compile requires an artifact id")
+            artifact = self.require_custom_component_artifact(
+                account_id, artifact_id
+            )
+            if artifact["slug"] != slug:
+                raise ValueError("compile artifact slug does not match")
+        elif artifact_id is not None:
+            raise ValueError("failed compile cannot reference an artifact")
+
+        self.connection.execute(
+            """
+            INSERT INTO custom_component_compilations (
+              compilation_id, account_id, slug, source_revision_id,
+              source_version, status, compiler_protocol_version,
+              compiler_version, diagnostics_json, artifact_id, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                compilation_id,
+                account_id,
+                slug,
+                revision_id,
+                source_version,
+                status,
+                protocol_version,
+                compiler_version,
+                encode(diagnostics),
+                artifact_id,
+                utc_now(),
+            ),
+        )
+        self.connection.commit()
+        return self.require_custom_component_compilation(
+            account_id, compilation_id
+        )
+
+    def require_custom_component_compilation(
+        self, account_id: str, compilation_id: str
+    ) -> JsonObject:
+        row = self.connection.execute(
+            """
+            SELECT * FROM custom_component_compilations
+            WHERE account_id = ? AND compilation_id = ?
+            """,
+            (account_id, compilation_id),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("custom_component_compilation", compilation_id)
+        return custom_component_compilation_from_row(row)
+
+    def list_custom_component_compilations(
+        self, account_id: str, slug: str
+    ) -> List[JsonObject]:
+        rows = self.connection.execute(
+            """
+            SELECT * FROM custom_component_compilations
+            WHERE account_id = ? AND slug = ?
+            ORDER BY created_at DESC, compilation_id DESC
+            """,
+            (account_id, slug),
+        ).fetchall()
+        return [custom_component_compilation_from_row(row) for row in rows]
 
     def validate_custom_component_reference_changes(
         self,
@@ -2436,8 +2828,63 @@ def custom_component_artifact_from_row(row: sqlite3.Row) -> JsonObject:
             "opaque_ref": row["bundle_opaque_ref"],
             "byte_length": row["bundle_byte_length"],
         },
+        "css": optional_custom_component_blob_from_row(row, "css"),
+        "first_frame": optional_custom_component_blob_from_row(
+            row, "first_frame"
+        ),
         "manifest": decode(row["manifest_json"]),
         "provenance": decode(row["provenance_json"]),
+        "created_at": row["created_at"],
+    }
+
+
+def optional_custom_component_blob_from_row(
+    row: sqlite3.Row, prefix: str
+) -> Optional[JsonObject]:
+    digest = row[f"{prefix}_digest_value"]
+    if digest is None:
+        return None
+    return {
+        "algorithm": row[f"{prefix}_digest_algorithm"],
+        "value": digest,
+        "opaque_ref": row[f"{prefix}_opaque_ref"],
+        "byte_length": row[f"{prefix}_byte_length"],
+    }
+
+
+def custom_component_source_revision_from_row(
+    row: sqlite3.Row,
+) -> JsonObject:
+    return {
+        "revision_id": row["revision_id"],
+        "account_id": row["account_id"],
+        "slug": row["slug"],
+        "source_version": row["source_version"],
+        "entry_path": row["entry_path"],
+        "snapshot": {
+            "algorithm": row["snapshot_digest_algorithm"],
+            "value": row["snapshot_digest_value"],
+            "opaque_ref": row["snapshot_opaque_ref"],
+            "byte_length": row["snapshot_byte_length"],
+        },
+        "files_manifest": decode(row["files_manifest_json"]),
+        "provenance": decode(row["provenance_json"]),
+        "created_at": row["created_at"],
+    }
+
+
+def custom_component_compilation_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "compilation_id": row["compilation_id"],
+        "account_id": row["account_id"],
+        "slug": row["slug"],
+        "source_revision_id": row["source_revision_id"],
+        "source_version": row["source_version"],
+        "status": row["status"],
+        "compiler_protocol_version": row["compiler_protocol_version"],
+        "compiler_version": row["compiler_version"],
+        "diagnostics": decode(row["diagnostics_json"]),
+        "artifact_id": row["artifact_id"],
         "created_at": row["created_at"],
     }
 

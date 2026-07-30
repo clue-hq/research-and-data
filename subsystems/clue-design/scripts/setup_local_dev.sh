@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EDITOR_DIR="$ROOT_DIR/apps/editor"
+CUSTOM_COMPONENT_COMPILER_DIR="$ROOT_DIR/apps/custom-component-compiler"
 API_DIR="$ROOT_DIR/apps/api"
 VENV_DIR="$ROOT_DIR/.venv"
 PYTHON_BIN=""
@@ -153,6 +154,11 @@ setup_python() {
 setup_node() {
   install_with_brew_if_missing node node "Node.js"
   install_with_brew_if_missing npm node "npm"
+  local node_major
+  node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+  if (( node_major < 24 )); then
+    fail "Node.js 24 or newer is required by the constrained custom-component compiler (found $(node --version))."
+  fi
 
   log "Installing editor Node packages"
   if [[ -f "$EDITOR_DIR/package-lock.json" ]]; then
@@ -160,6 +166,9 @@ setup_node() {
   else
     npm --prefix "$EDITOR_DIR" install
   fi
+
+  log "Installing custom-component compiler Node packages"
+  npm --prefix "$CUSTOM_COMPONENT_COMPILER_DIR" ci
 }
 
 setup_print_tools() {
@@ -188,6 +197,7 @@ setup_rust() {
 verify_setup() {
   log "Running quick verification"
   "$VENV_DIR/bin/python" -m pytest "$API_DIR/tests" -q
+  npm --prefix "$CUSTOM_COMPONENT_COMPILER_DIR" test
   npm --prefix "$EDITOR_DIR" run lint
   cargo check -p lumen-api-helper
 }
