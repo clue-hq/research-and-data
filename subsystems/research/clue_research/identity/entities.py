@@ -109,11 +109,11 @@ def _normalize_strong_text(value: str | None) -> str | None:
 
 _ACCOUNT_COLUMNS = (
     "id, canonical_name, primary_domain, aliases, hq_geo, registry_ids, status, merged_into, "
-    "workspace_id"
+    "canonical_version, workspace_id"
 )
 _CONTACT_COLUMNS = (
     "id, account_entity_id, full_name, linkedin_url, verified_email, aliases, geo, "
-    "jurisdiction, status, merged_into, workspace_id"
+    "jurisdiction, status, merged_into, canonical_version, workspace_id"
 )
 
 
@@ -326,6 +326,15 @@ async def mark_merged(
         ),
         {"survivor": survivor_id, "loser": loser_id},
     )
+    # The survivor's canonical membership changed even when none of its visible scalar columns
+    # did. Bump its durable revision explicitly so C7 view/snapshot identity changes as well.
+    await conn.execute(
+        text(
+            f"UPDATE {table} SET canonical_version = canonical_version + 1, updated_at = now() "
+            "WHERE id = :survivor"
+        ),
+        {"survivor": survivor_id},
+    )
 
 
 # --- reads ------------------------------------------------------------------
@@ -358,6 +367,127 @@ async def get_contact(conn: AsyncConnection, entity_id: EntityId) -> ContactEnti
         .first()
     )
     return _row_to_contact(dict(row)) if row is not None else None
+
+
+async def get_accounts(
+    conn: AsyncConnection, entity_ids: Sequence[EntityId]
+) -> dict[EntityId, AccountEntity]:
+    """Batch-load canonical account rows by exact id."""
+    if not entity_ids:
+        return {}
+    stmt = text(
+        f"SELECT {_ACCOUNT_COLUMNS} FROM account_entity WHERE id IN :ids ORDER BY id"
+    ).bindparams(bindparam("ids", expanding=True))
+    rows = (await conn.execute(stmt, {"ids": list(entity_ids)})).mappings().all()
+    return {
+        account.id: account
+        for account in (_row_to_account(dict(row)) for row in rows)
+    }
+
+
+async def get_contacts(
+    conn: AsyncConnection, entity_ids: Sequence[EntityId]
+) -> dict[EntityId, ContactEntity]:
+    """Batch-load canonical contact rows by exact id."""
+    if not entity_ids:
+        return {}
+    stmt = text(
+        f"SELECT {_CONTACT_COLUMNS} FROM contact_entity WHERE id IN :ids ORDER BY id"
+    ).bindparams(bindparam("ids", expanding=True))
+    rows = (await conn.execute(stmt, {"ids": list(entity_ids)})).mappings().all()
+    return {
+        contact.id: contact
+        for contact in (_row_to_contact(dict(row)) for row in rows)
+    }
+
+
+async def canonical_member_ids(
+    conn: AsyncConnection,
+    survivor_id: EntityId,
+    entity_type: EntityType,
+    *,
+    workspace_id: str,
+) -> tuple[EntityId, ...]:
+    """Return the exact identity rows whose merge chain terminates at ``survivor_id``.
+
+    Immutable claims remain keyed to their origin row after an identity merge. C7 uses this
+    bounded, workspace-scoped membership set to retain those claims without rewriting history.
+    """
+    table = _table(entity_type)
+    rows = (
+        await conn.execute(
+            text(
+                f"""
+                WITH RECURSIVE members(id, depth) AS (
+                    SELECT id, 0
+                    FROM {table}
+                    WHERE id = :survivor_id
+                      AND workspace_id = :workspace_id
+                    UNION ALL
+                    SELECT candidate.id, members.depth + 1
+                    FROM {table} candidate
+                    JOIN members ON candidate.merged_into = members.id
+                    WHERE candidate.workspace_id = :workspace_id
+                      AND members.depth < :max_hops
+                )
+                SELECT DISTINCT id
+                FROM members
+                ORDER BY id
+                """
+            ),
+            {
+                "survivor_id": survivor_id,
+                "workspace_id": workspace_id,
+                "max_hops": _MAX_MERGE_HOPS,
+            },
+        )
+    ).scalars()
+    return tuple(EntityId(value) for value in rows)
+
+
+async def surviving_ids(
+    conn: AsyncConnection,
+    entity_ids: Sequence[EntityId],
+    entity_type: EntityType,
+    *,
+    workspace_id: str,
+) -> dict[EntityId, EntityId]:
+    """Resolve several merge chains in one bounded recursive query."""
+
+    ids = tuple(dict.fromkeys(entity_ids))
+    if not ids:
+        return {}
+    table = _table(entity_type)
+    stmt = text(
+        f"""
+        WITH RECURSIVE paths(origin_id, current_id, merged_into, depth) AS (
+            SELECT id, id, merged_into, 0
+            FROM {table}
+            WHERE id IN :entity_ids AND workspace_id = :workspace_id
+            UNION ALL
+            SELECT paths.origin_id, next.id, next.merged_into, paths.depth + 1
+            FROM paths
+            JOIN {table} next ON next.id = paths.merged_into
+            WHERE paths.merged_into IS NOT NULL
+              AND next.workspace_id = :workspace_id
+              AND paths.depth < :max_hops
+        )
+        SELECT DISTINCT ON (origin_id) origin_id, current_id
+        FROM paths
+        ORDER BY origin_id, depth DESC
+        """
+    ).bindparams(bindparam("entity_ids", expanding=True))
+    rows = (
+        await conn.execute(
+            stmt,
+            {
+                "entity_ids": list(ids),
+                "workspace_id": workspace_id,
+                "max_hops": _MAX_MERGE_HOPS,
+            },
+        )
+    ).all()
+    return {EntityId(row[0]): EntityId(row[1]) for row in rows}
 
 
 async def contact_ids_for_account(

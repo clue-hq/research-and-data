@@ -113,16 +113,22 @@ def _request() -> EntailmentJudgeRequest:
     )
 
 
-def test_strict_parser_accepts_only_bounded_schema() -> None:
+def test_shared_parser_tolerates_wrappers_but_keeps_a_bounded_schema() -> None:
     parsed = parse_entailment_response(
         '{"verdict":"supported","confidence":0.91,"reason_codes":["entailed"]}'
     )
     assert parsed is not None
     assert parsed.reason_codes == (EntailmentReasonCode.ENTAILED,)
 
+    wrapped = parse_entailment_response(
+        'prefix {"verdict":"supported","confidence":0.9,"reason_codes":["entailed"]}'
+    )
+    assert wrapped is not None
+    assert wrapped.verdict == "supported"
     assert (
         parse_entailment_response(
-            'prefix {"verdict":"supported","confidence":0.9,"reason_codes":["entailed"]}'
+            '{"verdict":"supported","confidence":0.9,"reason_codes":["entailed"]} '
+            '{"verdict":"unsupported","confidence":0.9,"reason_codes":["not_entailed"]}'
         )
         is None
     )

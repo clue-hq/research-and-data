@@ -21,8 +21,10 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    EntityId,
     EntityType,
     OperationId,
+    ProjectRunId,
     ResearchSectionKind,
     ResearchStatement,
     ResearchStatementId,
@@ -33,6 +35,7 @@ from clue_core import (
     ResearchViewReadRequest,
     ResearchViewRecheckRequest,
     ResearchViewSnapshotId,
+    RunId,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.narrative.research_view_snapshots import (
@@ -80,6 +83,27 @@ class GovernedResearchOperationRequester(Protocol):
     """Request one replay-certified research operation; implementations own admission/spend."""
 
     async def request(self, request: GovernedResearchOperationRequest) -> OperationId: ...
+
+
+class SubjectActivityAppender(Protocol):
+    """Injected owner seam for projecting a body-free research-view event into activity."""
+
+    async def __call__(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        project_id: str,
+        project_run_id: ProjectRunId,
+        account_run_id: RunId,
+        subject_entity_id: EntityId,
+        subject_entity_type: EntityType,
+        product_id: str | None,
+        owner_event_ref: str,
+        event_kind: str,
+        occurred_at: datetime,
+        actor_category: str | None = None,
+    ) -> None: ...
 
 
 type RecheckCrashHook = Callable[[str], Awaitable[None]]
@@ -210,12 +234,14 @@ class ResearchViewRecheckService:
         *,
         snapshots: ResearchViewSnapshotService,
         research_requester: GovernedResearchOperationRequester | None = None,
+        subject_activity_appender: SubjectActivityAppender | None = None,
         conn_factory: ConnFactory = transaction,
         clock: Callable[[], datetime] | None = None,
         crash_hook: RecheckCrashHook = _no_crash,
     ) -> None:
         self._snapshots = snapshots
         self._research_requester = research_requester
+        self._subject_activity_appender = subject_activity_appender
         self._conn_factory = conn_factory
         self._clock = clock or (lambda: datetime.now(UTC))
         self._crash_hook = crash_hook
@@ -355,6 +381,7 @@ class ResearchViewRecheckService:
                     INSERT INTO research_view_change_report (
                         report_id, operation_id, workspace_id, project_id, project_run_id,
                         subject_entity_id, subject_entity_type, parent_account_entity_id,
+                        product_id,
                         old_snapshot_id, new_snapshot_id,
                         old_source_state_sha256, new_source_state_sha256,
                         old_composition_sha256, new_composition_sha256,
@@ -362,6 +389,7 @@ class ResearchViewRecheckService:
                     ) VALUES (
                         :report_id, :operation_id, :workspace_id, :project_id, :project_run_id,
                         :subject_entity_id, :subject_entity_type, :parent_account_entity_id,
+                        :product_id,
                         :old_snapshot_id, :new_snapshot_id,
                         :old_source_state_sha256, :new_source_state_sha256,
                         :old_composition_sha256, :new_composition_sha256,
@@ -384,6 +412,7 @@ class ResearchViewRecheckService:
                         if old_receipt.subject.parent_account_id is not None
                         else None
                     ),
+                    "product_id": old_receipt.product_id,
                     "old_snapshot_id": str(old_receipt.snapshot_id),
                     "new_snapshot_id": str(new_receipt.snapshot_id),
                     "old_source_state_sha256": old_receipt.source_state_sha256,
@@ -467,6 +496,7 @@ class ResearchViewRecheckService:
                 report=report,
                 changes=changes,
                 created_at=self._clock(),
+                subject_activity_appender=self._subject_activity_appender,
             )
             await self._crash_hook("before_report_commit")
             return report
@@ -523,10 +553,12 @@ class ResearchViewSectionStalenessService:
     def __init__(
         self,
         *,
+        subject_activity_appender: SubjectActivityAppender | None = None,
         conn_factory: ConnFactory = transaction,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._conn_factory = conn_factory
+        self._subject_activity_appender = subject_activity_appender
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def mark_claims_changed(
@@ -617,6 +649,7 @@ class ResearchViewSectionStalenessService:
                     reason_codes=(reason_code,),
                     fetch_ref=f"research-view-snapshot:{snapshot_id}",
                     created_at=created_at,
+                    subject_activity_appender=self._subject_activity_appender,
                 )
             return tuple(ids)
 
@@ -877,6 +910,7 @@ async def _write_recheck_events(
     report: ResearchViewChangeReportRef,
     changes: tuple[_ChangeItem, ...],
     created_at: datetime,
+    subject_activity_appender: SubjectActivityAppender | None,
 ) -> None:
     affected = tuple(item for item in changes if item.kind != "unchanged")
     section_ids = tuple(dict.fromkeys(item.section_id for item in affected))
@@ -888,7 +922,7 @@ async def _write_recheck_events(
             topic="research_view.section_stale",
             workspace_id=workspace_id,
             project_id=project_id,
-            project_run_id=project_run_id,
+            project_run_id=ProjectRunId(project_run_id),
             subject_entity_id=subject_entity_id,
             snapshot_id=old_snapshot_id,
             report_id=report.report_id,
@@ -897,6 +931,7 @@ async def _write_recheck_events(
             reason_codes=report.reason_codes,
             fetch_ref=f"research-view-snapshot:{old_snapshot_id}",
             created_at=created_at,
+            subject_activity_appender=subject_activity_appender,
         )
         await append_research_view_event(
             conn,
@@ -904,7 +939,7 @@ async def _write_recheck_events(
             topic="research_view.updated",
             workspace_id=workspace_id,
             project_id=project_id,
-            project_run_id=project_run_id,
+            project_run_id=ProjectRunId(project_run_id),
             subject_entity_id=subject_entity_id,
             snapshot_id=new_snapshot_id,
             report_id=report.report_id,
@@ -913,6 +948,7 @@ async def _write_recheck_events(
             reason_codes=report.reason_codes,
             fetch_ref=f"research-view-snapshot:{new_snapshot_id}",
             created_at=created_at,
+            subject_activity_appender=subject_activity_appender,
         )
     await append_research_view_event(
         conn,
@@ -929,6 +965,7 @@ async def _write_recheck_events(
         reason_codes=report.reason_codes,
         fetch_ref=report.fetch_ref,
         created_at=created_at,
+        subject_activity_appender=subject_activity_appender,
     )
 
 
@@ -948,6 +985,7 @@ async def append_research_view_event(
     reason_codes: tuple[str, ...],
     fetch_ref: str,
     created_at: datetime,
+    subject_activity_appender: SubjectActivityAppender | None = None,
 ) -> None:
     """Append one idempotent scope/ref/reason event; arbitrary body fields are impossible."""
     event_id = uuid5(_EVENT_NAMESPACE, f"{workspace_id}:{event_key}")
@@ -983,6 +1021,57 @@ async def append_research_view_event(
             "created_at": created_at,
         },
     )
+    if subject_activity_appender is None:
+        return
+    scope_rows = (
+        await conn.execute(
+            text(
+                """
+                SELECT snapshot.subject_entity_type, snapshot.product_id, account_run.id
+                FROM research_view_snapshot snapshot
+                LEFT JOIN contact_entity contact
+                  ON snapshot.subject_entity_type = 'contact'
+                 AND contact.id = snapshot.subject_entity_id
+                 AND contact.workspace_id = snapshot.workspace_id
+                JOIN account_run
+                  ON account_run.project_run_id = snapshot.project_run_id
+                 AND account_run.entity_id = CASE
+                     WHEN snapshot.subject_entity_type = 'contact'
+                     THEN contact.account_entity_id
+                     ELSE snapshot.subject_entity_id
+                 END
+                WHERE snapshot.snapshot_id = :snapshot_id
+                  AND snapshot.workspace_id = :workspace_id
+                  AND snapshot.project_id = :project_id
+                  AND snapshot.project_run_id = :project_run_id
+                  AND snapshot.subject_entity_id = :subject_entity_id
+                """
+            ),
+            {
+                "snapshot_id": snapshot_id,
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "project_run_id": project_run_id,
+                "subject_entity_id": subject_entity_id,
+            },
+        )
+    ).all()
+    if len(scope_rows) == 1:
+        subject_type, product_id, account_run_id = scope_rows[0]
+        await subject_activity_appender(
+            conn,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            project_run_id=ProjectRunId(project_run_id),
+            account_run_id=RunId(account_run_id),
+            subject_entity_id=EntityId(subject_entity_id),
+            subject_entity_type=EntityType(str(subject_type)),
+            product_id=product_id,
+            owner_event_ref=f"research-view-event:{event_id}",
+            event_kind=topic,
+            actor_category="system",
+            occurred_at=created_at,
+        )
 
 
 async def _sections_reached_by_claims(

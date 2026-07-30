@@ -26,6 +26,7 @@ from clue_core import (
 from clue_research.claimstore.claims import (
     claims_by_ids,
     claims_for,
+    claims_for_entities,
     claims_for_runs,
     entities_with_field_claim,
     insert_claim,
@@ -42,6 +43,7 @@ from clue_research.claimstore.derivations import (
     DerivationValidationError,
     affected_derivations,
     derivation_supports,
+    derivation_supports_batch,
     support_set_sha256,
 )
 from clue_research.claimstore.merge import (
@@ -72,6 +74,20 @@ from clue_research.claimstore.registry import (
     register_field,
     validate_value,
 )
+from clue_research.claimstore.research_view_queries import (
+    ResolvedCurrentClaim,
+    current_field_claims_resolved_for_product,
+    live_derived_claims_for_research_view,
+)
+from clue_research.claimstore.research_view_routes import (
+    ResearchRouteContext,
+    ResearchRouteProductMode,
+    ResearchRoutePurpose,
+    ResearchViewFieldRoute,
+    ResearchViewRouteRedefinitionError,
+    list_research_view_routes,
+    register_research_view_route,
+)
 from clue_research.claimstore.tenancy import ALL_WORKSPACES, PUBLIC_ONLY, WorkspaceScope
 
 __all__ = [
@@ -80,6 +96,7 @@ __all__ = [
     "supersede_claim",
     "supersede_claims",
     "claims_for",
+    "claims_for_entities",
     "claims_by_ids",
     "claims_for_runs",
     "entities_with_field_claim",
@@ -94,6 +111,7 @@ __all__ = [
     "DerivationDependencyState",
     "support_set_sha256",
     "derivation_supports",
+    "derivation_supports_batch",
     "affected_derivations",
     # merge / current truth (M1.2)
     "current_value",
@@ -125,4 +143,15 @@ __all__ = [
     "ValueSchemaError",
     "FieldRedefinitionError",
     "ReuseScopeError",
+    # C7 registered semantic field placement
+    "ResearchViewFieldRoute",
+    "ResearchViewRouteRedefinitionError",
+    "ResearchRoutePurpose",
+    "ResearchRouteContext",
+    "ResearchRouteProductMode",
+    "register_research_view_route",
+    "list_research_view_routes",
+    "ResolvedCurrentClaim",
+    "current_field_claims_resolved_for_product",
+    "live_derived_claims_for_research_view",
 ]

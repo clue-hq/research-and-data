@@ -123,6 +123,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         workspace_id: WorkspaceDep,
         icp_spec_version: Annotated[int, Query(ge=1)],
         icp_key: Annotated[str, Query()] = "",
+        product_id: Annotated[str | None, Query(min_length=1)] = None,
     ) -> ServedHandoff:
         """Fetch one ``account_handoff`` (with its ``provenance_index`` + ``verification_health``).
         ``404`` if not yet assembled or not this tenant's (AC1/AC6)."""
@@ -134,6 +135,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
                 account_entity_id=EntityId(account_entity_id),
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
+                product_id=product_id,
             )
         except HandoffNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -150,6 +152,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
         workspace_id: WorkspaceDep,
         icp_spec_version: Annotated[int, Query(ge=1)],
         icp_key: Annotated[str, Query()] = "",
+        product_id: Annotated[str | None, Query(min_length=1)] = None,
     ) -> ProvenanceRefResponse:
         """Resolve one value's ``claim_id`` to its full source provenance within a served handoff —
         the "every line is sourced" traversal (AC1). ``404`` if the handoff/claim is absent."""
@@ -162,6 +165,7 @@ def create_handoff_router(service: HandoffService) -> APIRouter:
                 icp_spec_version=icp_spec_version,
                 claim_id=ClaimId(claim_id),
                 icp_key=icp_key,
+                product_id=product_id,
             )
         except HandoffNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

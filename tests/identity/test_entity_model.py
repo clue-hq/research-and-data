@@ -23,6 +23,7 @@ from clue_core import (
 from clue_research.claimstore import insert_claim
 from clue_research.identity import (
     MergeCycleError,
+    canonical_member_ids,
     get_account,
     get_contact,
     get_entity,
@@ -56,6 +57,7 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                         "registry_ids",
                         "status",
                         "merged_into",
+                        "canonical_version",
                         "workspace_id",
                         "created_at",
                         "updated_at",
@@ -74,6 +76,7 @@ def test_tables_present_at_head_with_contract_columns() -> None:
                         "jurisdiction",
                         "status",
                         "merged_into",
+                        "canonical_version",
                         "workspace_id",
                         "created_at",
                         "updated_at",
@@ -370,6 +373,74 @@ def test_get_entity_returns_typed_record_and_surfaces_merged_into() -> None:
             crec = await get_contact(conn, contact)
             assert crec is not None and crec.account_entity_id == contact_account
             assert crec.as_entity().entity_type is EntityType.CONTACT
+
+    run_async(_run())
+
+
+def test_canonical_version_tracks_visible_mutations_and_exact_merge_membership() -> None:
+    """C7 identity hashes change once per canonical mutation and include only exact members."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            workspace_id = await seed_workspace(conn)
+            survivor = await insert_account_entity(
+                conn,
+                canonical_name="Canonical Target",
+                primary_domain="canonical.example",
+                workspace_id=workspace_id,
+            )
+            original = await get_account(conn, survivor)
+            assert original is not None and original.canonical_version == 1
+
+            await conn.execute(
+                text("UPDATE account_entity SET updated_at = now() WHERE id = :id"),
+                {"id": survivor},
+            )
+            bookkeeping = await get_account(conn, survivor)
+            assert bookkeeping is not None and bookkeeping.canonical_version == 1
+
+            await conn.execute(
+                text(
+                    "UPDATE account_entity "
+                    "SET canonical_name = 'Canonical Target Incorporated' "
+                    "WHERE id = :id"
+                ),
+                {"id": survivor},
+            )
+            renamed = await get_account(conn, survivor)
+            assert renamed is not None and renamed.canonical_version == 2
+
+            loser = await insert_account_entity(
+                conn,
+                canonical_name="Target Legacy",
+                workspace_id=workspace_id,
+            )
+            await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
+            merged = await get_account(conn, survivor)
+            assert merged is not None and merged.canonical_version == 3
+            assert set(
+                await canonical_member_ids(
+                    conn,
+                    survivor,
+                    EntityType.ACCOUNT,
+                    workspace_id=workspace_id,
+                )
+            ) == {survivor, loser}
+
+            foreign_workspace = await seed_workspace(conn, "identity-foreign-c7")
+            foreign = await insert_account_entity(
+                conn,
+                canonical_name="Foreign Target",
+                workspace_id=foreign_workspace,
+            )
+            assert foreign not in set(
+                await canonical_member_ids(
+                    conn,
+                    survivor,
+                    EntityType.ACCOUNT,
+                    workspace_id=workspace_id,
+                )
+            )
 
     run_async(_run())
 

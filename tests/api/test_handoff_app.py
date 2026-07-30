@@ -128,6 +128,33 @@ def test_get_handoff_200_with_schema_header() -> None:
     run_async(_run())
 
 
+def test_get_handoff_product_query_is_exact() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            account, run = new_entity_id(), new_project_run_id()
+            await write_handoff(
+                conn,
+                _assembled(account=account, run=run),
+                workspace_id=_CLIENT,
+                product_id="product-a",
+            )
+            async with _client(_app(conn, run=run)) as client:
+                exact = await client.get(
+                    f"/accounts/{account}/handoff",
+                    params={"icp_spec_version": 1, "product_id": "product-a"},
+                    headers={"X-Workspace-Id": _CLIENT},
+                )
+                neutral = await client.get(
+                    f"/accounts/{account}/handoff",
+                    params={"icp_spec_version": 1},
+                    headers={"X-Workspace-Id": _CLIENT},
+                )
+            assert exact.status_code == 200
+            assert neutral.status_code == 404
+
+    run_async(_run())
+
+
 def test_missing_handoff_is_404() -> None:
     """AC2: an account with no materialised handoff (still in deep/verification) is not servable."""
 

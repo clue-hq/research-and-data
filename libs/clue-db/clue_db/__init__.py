@@ -26,6 +26,7 @@ from clue_db.engine import (
     db_lifespan,
     get_engine,
     get_pool,
+    repeatable_read_transaction,
     transaction,
 )
 
@@ -40,4 +41,5 @@ __all__ = [
     "get_pool",
     "connection",
     "transaction",
+    "repeatable_read_transaction",
 ]

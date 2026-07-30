@@ -48,6 +48,10 @@ def test_handoff_ref_includes_icp_key_only_for_segments() -> None:
         handoff_ref_for(acc, 2, "seg_a")
         == f"/accounts/{acc}/handoff?icp_spec_version=2&icp_key=seg_a"
     )
+    assert (
+        handoff_ref_for(acc, 2, "seg a", "product/a")
+        == f"/accounts/{acc}/handoff?icp_spec_version=2&icp_key=seg+a&product_id=product%2Fa"
+    )
 
 
 def test_status_allowlist_matches_enum() -> None:

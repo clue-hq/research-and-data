@@ -85,6 +85,11 @@ class _UnavailableEvidence:
         )
 
 
+class _EmptyOwnerReferences:
+    async def resolve(self, *_args: object) -> tuple[()]:
+        return ()
+
+
 def _client(app) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://c7")
 
@@ -152,6 +157,7 @@ def test_c7_serving_is_scoped_replay_safe_body_free_and_alias_exact() -> None:
             research_view_composer=composer,
             research_view_snapshots=snapshots,
             research_view_evidence_access=_UnavailableEvidence(),
+            research_view_owner_references=_EmptyOwnerReferences(),  # type: ignore[arg-type]
         )
         headers = {"X-Workspace-Id": view.workspace_id}
         canonical_path = (
@@ -464,6 +470,7 @@ def test_contact_live_and_legacy_routes_share_scope_payload_and_hash() -> None:
                 research_view_composer=composer,
                 research_view_snapshots=snapshots,
                 research_view_evidence_access=_UnavailableEvidence(),
+                research_view_owner_references=_EmptyOwnerReferences(),  # type: ignore[arg-type]
             )
             headers = {"X-Workspace-Id": view.workspace_id}
             canonical_path = (

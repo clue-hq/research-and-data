@@ -25,8 +25,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import bindparam, text
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     Claim,
@@ -46,7 +44,6 @@ from clue_core import (
     ResearchSubjectRef,
     ResearchViewReadRequest,
     UseDecision,
-    UseReason,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
@@ -55,8 +52,15 @@ from clue_research.claimstore import (
     claims_by_ids,
     merge_claims,
 )
-from clue_research.durable import list_account_runs
-from clue_research.identity import contact_ids_for_account, get_account, get_contact, surviving_id
+from clue_research.compliance import latest_use_decisions
+from clue_research.durable import find_account_runs_for_entity
+from clue_research.identity import (
+    contact_ids_for_account,
+    get_account,
+    get_contacts,
+    surviving_id,
+    surviving_ids,
+)
 from clue_research.narrative import (
     CommitteeContact,
     FacetHook,
@@ -118,6 +122,7 @@ class GovernedCommitteeContact(BaseModel):
     role_claim_id: ClaimId
     persona_claim_id: ClaimId
     claims: tuple[GovernedContactClaim, ...]
+    canonical_entity_version: int
     product_id: str | None = None
 
     @property
@@ -174,16 +179,14 @@ class ContactEligibilityResolver:
             ):
                 return ()
 
-            account_run = next(
-                (
-                    row
-                    for row in await list_account_runs(conn, self._project_run_id)
-                    if row.entity_id == account_entity_id
-                ),
-                None,
+            account_runs = await find_account_runs_for_entity(
+                conn,
+                project_run_id=self._project_run_id,
+                entity_id=account_entity_id,
             )
-            if account_run is None:
+            if len(account_runs) != 1:
                 return ()
+            account_run = account_runs[0]
 
             referenced = await claims_by_ids(
                 conn,
@@ -205,12 +208,23 @@ class ContactEligibilityResolver:
                 return ()
 
             live_contacts = set(await contact_ids_for_account(conn, account_entity_id))
+            redirects = await surviving_ids(
+                conn,
+                tuple({claim.entity_id for claim in product_claims}),
+                EntityType.CONTACT,
+                workspace_id=workspace_id,
+            )
+            contacts_by_id = await get_contacts(
+                conn, tuple(set(redirects.values()) & live_contacts)
+            )
             by_contact: dict[EntityId, list[Claim]] = defaultdict(list)
             for claim in product_claims:
-                canonical_id = await surviving_id(conn, claim.entity_id, EntityType.CONTACT)
+                canonical_id = redirects.get(claim.entity_id)
+                if canonical_id is None:
+                    continue
                 if canonical_id not in live_contacts:
                     continue
-                contact = await get_contact(conn, canonical_id)
+                contact = contacts_by_id.get(canonical_id)
                 if (
                     contact is None
                     or contact.workspace_id != workspace_id
@@ -227,11 +241,14 @@ class ContactEligibilityResolver:
                 )
 
             all_ids = tuple(claim.id for claims in by_contact.values() for claim in claims)
-            use_decisions = await self._latest_use_decisions(conn, all_ids)
+            use_decisions = await latest_use_decisions(conn, all_ids)
             resolved = [
                 self._resolve_contact_claims(
                     contact_entity_id=contact_id,
                     account_entity_id=account_entity_id,
+                    canonical_entity_version=contacts_by_id[
+                        contact_id
+                    ].canonical_version,
                     claims=claims,
                     use_decisions=use_decisions,
                 )
@@ -274,6 +291,7 @@ class ContactEligibilityResolver:
         *,
         contact_entity_id: EntityId,
         account_entity_id: EntityId,
+        canonical_entity_version: int,
         claims: Iterable[Claim],
         use_decisions: dict[ClaimId, UseDecision],
     ) -> GovernedCommitteeContact | None:
@@ -341,35 +359,8 @@ class ContactEligibilityResolver:
             persona_claim_id=persona_claim.id,
             claims=tuple(selected),
             product_id=self._product_id,
+            canonical_entity_version=canonical_entity_version,
         )
-
-    async def _latest_use_decisions(
-        self,
-        conn: AsyncConnection,
-        claim_ids: tuple[ClaimId, ...],
-    ) -> dict[ClaimId, UseDecision]:
-        if not claim_ids:
-            return {}
-        stmt = text(
-            """
-            SELECT DISTINCT ON (claim_id)
-                   claim_id, usable_for_outreach, reason, policy_version
-            FROM use_decision
-            WHERE claim_id IN :claim_ids
-            ORDER BY claim_id, policy_version DESC, evaluated_at DESC, id DESC
-            """
-        ).bindparams(bindparam("claim_ids", expanding=True))
-        rows = (await conn.execute(stmt, {"claim_ids": [str(value) for value in claim_ids]})).all()
-        return {
-            ClaimId(row[0]): UseDecision(
-                claim_id=ClaimId(row[0]),
-                usable_for_outreach=bool(row[1]),
-                reason=UseReason(str(row[2])),
-                policy_version=int(row[3]),
-            )
-            for row in rows
-        }
-
 
 class ProductionHandoffCommitteeReader:
     """Production adapter satisfying both narrative committee protocols."""
@@ -471,7 +462,7 @@ class GovernedCommitteeViewReader:
                 subject=ResearchSubjectRef(
                     entity_id=contact.contact_entity_id,
                     entity_type=EntityType.CONTACT,
-                    canonical_entity_version=1,
+                    canonical_entity_version=contact.canonical_entity_version,
                     parent_account_id=contact.account_entity_id,
                 ),
                 data_species=ResearchDataSpecies.COMMITTEE,

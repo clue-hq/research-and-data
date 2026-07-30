@@ -136,6 +136,19 @@ class Settings(BaseSettings):
     c7_production_handoff_enabled: bool = False
     # Env: ``CLUE_C7_LEGACY_DOSSIER_ALIAS_ENABLED``.
     c7_legacy_dossier_alias_enabled: bool = False
+    # Optional JSON array of workspace ids admitted after a global C7 capability is enabled.
+    # Empty means no additional workspace restriction (useful for local/manual trials).
+    # Env: ``CLUE_C7_WORKSPACE_CANARY_IDS``.
+    c7_workspace_canary_ids: tuple[str, ...] = ()
+
+    # --- projections HTTP process ----------------------------------------------------------
+    # Env: ``CLUE_PROJECTIONS_HOST`` / ``CLUE_PROJECTIONS_PORT``.
+    projections_host: str = "127.0.0.1"
+    projections_port: int = Field(default=8000, ge=1, le=65535)
+    # Header tenancy is explicitly local/manual-test only; service auth must be wired before that
+    # mode can be selected in production.
+    # Env: ``CLUE_PROJECTIONS_AUTH_MODE``.
+    projections_auth_mode: Literal["local_header", "service"] = "local_header"
 
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:

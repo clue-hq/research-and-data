@@ -23,6 +23,7 @@ row was *newly* inserted so the caller fires the push exactly once.
 from __future__ import annotations
 
 from enum import StrEnum
+from urllib.parse import quote_plus
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
@@ -58,14 +59,21 @@ class HandoffEventStatus(StrEnum):
 HANDOFF_EVENT_STATUSES: tuple[str, ...] = tuple(s.value for s in HandoffEventStatus)
 
 
-def handoff_ref_for(account_entity_id: EntityId, icp_spec_version: int, icp_key: str = "") -> str:
+def handoff_ref_for(
+    account_entity_id: EntityId,
+    icp_spec_version: int,
+    icp_key: str = "",
+    product_id: str | None = None,
+) -> str:
     """The canonical fetch ref carried on an emitted event — the read-API path a consumer GETs to
     retrieve the assembled object (M12.3 ``GET /accounts/{id}/handoff``). ``icp_key`` is appended
     only
     for a multi-segment account (D5) so a single-segment ref stays clean."""
     ref = f"/accounts/{account_entity_id}/handoff?icp_spec_version={icp_spec_version}"
     if icp_key:
-        ref += f"&icp_key={icp_key}"
+        ref += f"&icp_key={quote_plus(icp_key)}"
+    if product_id:
+        ref += f"&product_id={quote_plus(product_id)}"
     return ref
 
 

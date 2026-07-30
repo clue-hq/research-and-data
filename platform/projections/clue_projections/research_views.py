@@ -112,6 +112,7 @@ async def research_view_statuses(
                         WHERE r.workspace_id = l.workspace_id
                           AND r.project_id = l.project_id
                           AND r.subject_entity_id = l.subject_entity_id
+                          AND r.product_id IS NOT DISTINCT FROM l.product_id
                         ORDER BY r.created_at DESC, r.report_id DESC
                         LIMIT 1
                     ) report ON true

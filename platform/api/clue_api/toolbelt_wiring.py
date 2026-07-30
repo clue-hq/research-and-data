@@ -1748,6 +1748,7 @@ def build_toolbelt(
         read_enabled=resolved_settings.c7_research_view_read_enabled,
         snapshot_compose_enabled=resolved_settings.c7_snapshot_compose_enabled,
         recheck_enabled=resolved_settings.c7_recheck_enabled,
+        admitted_workspace_ids=frozenset(resolved_settings.c7_workspace_canary_ids),
     ):
         registry.register(tool, make_default=True)
     return registry

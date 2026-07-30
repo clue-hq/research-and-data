@@ -33,6 +33,10 @@ def test_c7_http_capabilities_activate_independently() -> None:
         ("GET", "/v1/projects/{project_id}/contacts/{contact_id}/research-view"),
         ("GET", "/v1/projects/{project_id}/research-view-status"),
         ("GET", "/v1/research-view-snapshots/{snapshot_id}"),
+        (
+            "POST",
+            "/v1/projects/{project_id}/research-view-owner-references:resolve",
+        ),
     }
     assert _paths(_settings(c7_snapshot_compose_enabled=True)) == {
         ("POST", "/v1/research-view-snapshots")
