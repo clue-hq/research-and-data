@@ -1,6 +1,6 @@
 # P6 custom components — living implementation plan
 
-Status: **IN PROGRESS — P6.1 complete; P6.2 queued**
+Status: **IN PROGRESS — P6.2 complete; P6.3 queued**
 
 Owner branch: `agents/custom-components-v0`
 
@@ -41,12 +41,13 @@ For every completed slice:
 | Slice | Status | Delivers |
 | --- | --- | --- |
 | P6.1 Canonical model and durable registry | ✅ | First-class leaf nodes, immutable version records, checked operations |
-| P6.2 Compiler and security gate | ▢ | TSX-to-artifact compilation, props schema, import/policy validation |
+| P6.2 Compiler and security gate | ✅ | TSX-to-artifact compilation, props schema, import/policy validation |
 | P6.3 Sandboxed runtime and editor experience | ▢ | In-canvas rendering, picker, generated props inspector, ordinary editing |
 | P6.4 Deep Agent authoring workflow | ▢ | Persistent source tools, compile-before-attach, custom-component skill |
 | P6.5 Publish, rollback, and end-to-end hardening | ▢ | Self-contained delivery artifacts, pinned versions, complete live proof |
 
 P6.1 was completed and verified on 2026-07-30.
+P6.2 was completed and verified on 2026-07-30.
 
 ## Outcome
 
@@ -327,7 +328,7 @@ page. No picker or live TSX execution is promised in this slice.
   - The 26 unrelated legacy editor harness failures above remain repository
     test debt and are explicitly carried forward.
 
-### P6.2 — Compiler and security gate `▢`
+### P6.2 — Compiler and security gate `✅`
 
 **Purpose**
 
@@ -375,10 +376,57 @@ Editing the same slug creates a second artifact without modifying the first.
 
 **Completion record**
 
-- Commits: —
-- Automated gates: —
-- Browser evidence: —
-- Residuals: —
+- Commits: `e1d27ae` (`feat(web): add constrained custom component compiler`)
+  plus the plan-close commit containing this record.
+- Automated gates:
+  - Clean Node 24 install and audit: zero vulnerabilities. Compiler suite:
+    24 passed, covering React/Tailwind, Visx, Motion, GSAP, contained helpers,
+    dependency pins, deterministic output, constrained first-frame rendering,
+    forbidden syntax/imports, TypeScript errors, and render timeout.
+  - Focused P6.1/P6.2 API suites: 14 passed, including immutable revisions and
+    artifacts, exact retries, stale writes and compiles, cross-account
+    rejection, worker crash/timeout/malformed output, migration replay, and
+    both write/write and write/compile concurrency races.
+  - `cargo test --workspace` and
+    `cargo build -p lumen-api-helper --release`: passed. No engine source
+    changed, so the WASM rebuild/handshake gate did not apply.
+  - Agent runtime: 539 passed, 2 skipped.
+  - API: 478 passed, 6 skipped. The sandboxed run's four expected public-DNS
+    failures were rerun with network access and passed.
+  - Editor lint and production build passed. A clean build was used after a
+    stale `.next` cache produced an unrelated missing `/icon.svg` error.
+  - Full editor suite remained at the carried baseline: 1,051 passed and 26
+    failed in the same two legacy `EditorApp` suites, with three associated
+    CanvasKit missing-WASM unhandled errors. P6.2 has no editor implementation
+    changes and did not alter or hide this debt.
+  - Workflow YAML, shell syntax, Node module syntax, Python compile checks, and
+    `git diff --check` passed.
+- Live API and browser evidence:
+  - Through the real API, account `acc_p62_live_20260730` compiled source
+    revision
+    `ccsrc_df0d699fab12ed107dddf2cec7c0d43add4fd15ead8eb6ae3049e35c06098ff0`
+    into immutable artifact
+    `ccart_b18b29e73eea8d101435c918e8e331d8a7d082117a56759973ff366ab0ca380a`.
+    Its manifest exposed metadata, supported props, defaults, the named
+    unsupported-prop warning, exact toolchain versions, and all source,
+    bundle, CSS, and first-frame CAS records.
+  - A forbidden-import/eval fixture returned deterministic HTTP 422 diagnostics
+    and no artifact. Artifact member endpoints returned their integrity-checked
+    bytes, and stale source-version compilation returned HTTP 409.
+  - Reloaded the actual website design editor at
+    `doc_p61_custom_component_e19997f0e9f1` against the final restarted API.
+    The document, editor controls, sibling content, and bounded semantic
+    custom-component placeholder all rendered normally.
+- Residuals:
+  - No P6.2 acceptance residual. Browser execution of the compiled bundle,
+    picker/prop controls, and interactive error states remain intentionally
+    compile-gated until the sandboxed P6.3 runtime lands.
+  - Cross-component dependencies are pinned in browser artifacts; constrained
+    first-frame output represents such dependencies with explicit pinned
+    placeholders until the recursive runtime resolver is implemented in
+    P6.3/P6.5.
+  - The compiler requires Node 24 or newer so its process permission model is
+    enforced consistently in local development and CI.
 
 ### P6.3 — Sandboxed runtime and editor experience `▢`
 
@@ -602,6 +650,11 @@ Browser evidence must cover at minimum:
 | 2026-07-30 | P6.1 implementation started. | Establish the canonical leaf and immutable registry before compiler, editor-runtime, or agent authoring paths. |
 | 2026-07-30 | P6.1 completed with normalized account-scoped families/artifacts, CAS metadata/blob storage, checked leaf operations, and bounded placeholders. | One immutable identity and persistence model is now established before any compile or execution path can create attachable artifacts. |
 | 2026-07-30 | Removed a forced placeholder width discovered in live browser testing. | Platform placeholder CSS must not override the node's canonical class-backed width; after the fix, inspector and rendered geometry agreed exactly. |
+| 2026-07-30 | P6.2 implementation started with a separate versioned Node compiler process and durable optimistic source revisions. | The Python API must orchestrate untrusted TSX without parsing or executing it, while deterministic authoring failures remain distinct from transient worker failures. |
+| 2026-07-30 | P6.2 completed with a Node 24 permission-constrained compiler, TypeScript AST policy gate, isolated deterministic SSR smoke render, component-local Tailwind output, and immutable source/compile/artifact ledgers. | A successful artifact now has reproducible bytes and provenance, while unsafe source, stale versions, and worker failures cannot create attachable partial artifacts. |
+| 2026-07-30 | Browser bundles externalize React 18 while curated libraries are bundled; the isolated first-frame build pins the same React version. | Visx's supported peer range and deterministic SSR require one explicit React identity instead of depending on the editor application's mutable package graph. |
+| 2026-07-30 | Dynamic Tailwind class expressions are rejected unless every branch is statically enumerable. | Silently missing generated CSS would produce artifacts that compile successfully but render incorrectly. |
+| 2026-07-30 | A post-worker source-version check rejects a compile overtaken by a concurrent source write. | The initial optimistic check alone had a time-of-check/time-of-use window that could make an older compile appear newest after a later edit. |
 
 ## Open implementation discoveries
 
@@ -613,11 +666,13 @@ scope:
   deletion is allowed for development/retention workflows and deterministically
   produces the document's explicit missing-artifact state rather than deleting
   or rewriting nodes.
-- Choose the compiler worker transport and process isolation mechanism in P6.2;
-  untrusted code must not execute in the API process.
+- P6.2 resolved compiler transport as a versioned JSON protocol over a
+  short-lived Node 24 process with memory, time, filesystem, and network
+  constraints. Source is parsed and built there and first-frame code executes
+  only inside a code-generation-disabled VM, never in the Python API process.
 - Prove the smallest sandbox capability set for interactive forms in P6.3.
   Network remains denied until an explicit endpoint contract is designed and
   reviewed.
-- Measure whether first-frame rendering should be generated at save, preview,
-  or publish time; all options must use the pinned artifact and constrained
-  worker.
+- P6.2 generates and stores the deterministic first frame at successful compile
+  time so it is content-addressed with the pinned artifact. P6.5 still needs to
+  prove packaging and hydration use those exact stored bytes.
