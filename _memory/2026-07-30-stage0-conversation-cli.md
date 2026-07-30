@@ -60,3 +60,21 @@ campaign directory; it learns company/product/project/ICP context from the user 
   The CLI uses the same synthesis service at the human boundary and freezes proposals into the next
   turn context; a production fix should add a durable proposal-pack read surface rather than put
   proposal blobs into `ToolResult.references`.
+
+## First live-run correction
+
+- The first local launch created session `trial-20260730-173753`, then failed while seeding recipes:
+  the Stage-0-only toolbelt attempted to promote Recipe 1, whose phase-transition tools are
+  deliberately not bound in this CLI.
+- Corrected the trial composition to seed only the checked-in `recipe0-stage0` revisions and assert
+  that v3 exists. Recipe seeding already accepts an explicit definition subset and the C5 Recipe 0
+  harness uses the same boundary, so this does not alter fleet/full-platform recipe seeding.
+- The resumed launch then exposed the documented `.env.example` blank
+  `CLUE_AGENT_WORKSPACE_ROOT=` value being parsed as an explicit relative path. The trial now
+  treats a blank/whitespace-only optional root like an unset root and derives its isolated absolute
+  temporary root, matching the CLI's original no-configuration intent.
+- On macOS, `tempfile.gettempdir()` returned `/var/...`, which traverses the system `/var` symlink
+  and is intentionally rejected by the agent-workspace path policy. The CLI now resolves the
+  existing temporary parent first (`/private/var/...`) and only then appends its dedicated root.
+- The failed launch is resumable: its workspace and local session state were created durably before
+  composition, and Recipe 0 promotion is replay-safe.

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -8,7 +9,10 @@ from clue_api.stage0_trial import (
     Stage0TrialPaths,
     Stage0TrialState,
     stage0_trial_context_policy,
+    stage0_trial_recipe_definitions,
+    stage0_trial_settings,
 )
+from clue_config import Settings
 
 
 def _state(slug: str = "quality-trial") -> Stage0TrialState:
@@ -54,3 +58,20 @@ def test_stage0_trial_context_budgets_every_layer_and_keeps_history_room() -> No
     assert tuple(item.layer for item in policy.budgets) == tuple(ContextLayer)
     assert policy.budget_for(ContextLayer.L4_MEMORY) > 0
     assert policy.budget_for(ContextLayer.L6_CONVERSATION) > policy.budget_for(ContextLayer.L7_TURN)
+
+
+def test_trial_seeds_only_recipe0_with_required_active_version() -> None:
+    definitions = stage0_trial_recipe_definitions()
+
+    assert {definition.recipe_key for definition in definitions} == {"recipe0-stage0"}
+    assert 3 in {definition.version for definition in definitions}
+
+
+@pytest.mark.parametrize("configured", (None, "", "   "))
+def test_trial_derives_canonical_absolute_workspace_root_when_unset(configured: str | None) -> None:
+    resolved = stage0_trial_settings(Settings(_env_file=None, agent_workspace_root=configured))
+    root = Path(resolved.agent_workspace_root or "")
+
+    assert root.is_absolute()
+    assert root.parent == root.parent.resolve()
+    assert root.name.startswith("clue-stage0-agent-")
