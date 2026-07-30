@@ -92,3 +92,15 @@ structured output before enabling any scraper or HTTP flag. If accepted, follow
   head -> base -> head all passed.
 - Manual state: Exa-first quality trial intentionally remains unrun until a real governed target
   and credentials are supplied; all C7 flags remain default-off.
+
+## Follow-up — governance shadow comparison setting
+
+- Added `Settings.c7_governance_shadow_compare_enabled`, loaded from
+  `CLUE_C7_GOVERNANCE_SHADOW_COMPARE_ENABLED`, independently default-off.
+- This is an admission/configuration contract only. The diagnostic comparator/report is not
+  implemented yet, the setting is not part of C7 route/runtime activation, and it cannot weaken
+  governance or expose denied values through normal API responses.
+- The operations runbook records the exact boundary.
+- Verification: config and C7 activation tests passed (10 tests); changed-surface Ruff, mypy, and
+  diff checks passed. Enabling the shadow setting alone is explicitly tested to expose zero HTTP
+  routes.

@@ -49,6 +49,10 @@ def test_c7_http_capabilities_activate_independently() -> None:
     }
 
 
+def test_governance_shadow_compare_setting_does_not_expose_api_routes() -> None:
+    assert _paths(_settings(c7_governance_shadow_compare_enabled=True)) == set()
+
+
 def test_legacy_alias_requires_its_flag_and_the_canonical_capability() -> None:
     alias_only = _paths(_settings(c7_legacy_dossier_alias_enabled=True))
     assert alias_only == set()
