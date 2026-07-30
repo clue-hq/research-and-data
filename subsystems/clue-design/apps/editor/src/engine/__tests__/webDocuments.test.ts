@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildInsertCustomComponentOp,
   buildInsertNodeOp,
   buildWebRichTextVariableCatalog,
   buildWebButtonProps,
@@ -12,9 +13,11 @@ import {
   duplicateSubtree,
   fetchWebDocument,
   fetchWebPublishInfo,
+  initialCustomComponentProps,
   isValidSlotKey,
   isWebButtonCommandProps,
   listDialogComponents,
+  listCustomComponents,
   listWebAccounts,
   listWebTemplates,
   mint,
@@ -36,6 +39,7 @@ import {
   webNodeButtonAction,
   type WebBatchResult,
   type WebAccount,
+  type CustomComponentArtifact,
   type WebDoc,
   type WebNode,
   type WebPageSummary
@@ -54,6 +58,32 @@ function jsonResponse(status: number, body: unknown): Response {
 function buttonNode(overrides: Partial<WebNode>): WebNode {
   return { id: "cta", kind: "button", classes: "", label: "Get started", variant: "primary", ...overrides };
 }
+
+const CUSTOM_ARTIFACT: CustomComponentArtifact = {
+  artifact_id: `ccart_${"a".repeat(64)}`,
+  account_id: "acc_alpha",
+  slug: "pricing-card",
+  manifest: {
+    schema_version: 2,
+    meta: { name: "Pricing Card", description: "Typed pricing." },
+    props_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["headline", "count", "featured", "tone"],
+      properties: {
+        headline: { type: "string" },
+        count: { type: "number", default: 2 },
+        featured: { type: "boolean" },
+        tone: { type: "string", enum: ["calm", "bold"] },
+        optionalCopy: { type: "string" }
+      }
+    },
+    defaults: { headline: "Plans" },
+    warnings: [],
+    browser: { format: "esm", react: "host-singleton" }
+  },
+  provenance: { source_version: 2 }
+};
 
 describe("webNodeButtonAction", () => {
   it("reads the link form when no command is present", () => {
@@ -398,6 +428,96 @@ describe("buildInsertNodeOp", () => {
     expect(rootNode.kind).toBe("section");
     // Exactly one section (no wrap scaffold added a second).
     expect(op.nodes.filter((node) => node.kind === "section")).toHaveLength(1);
+  });
+});
+
+describe("custom-component picker insertion", () => {
+  it("derives deterministic supported defaults and neutral required values", () => {
+    expect(initialCustomComponentProps(CUSTOM_ARTIFACT)).toEqual({
+      headline: "Plans",
+      count: 2,
+      featured: false,
+      tone: "calm"
+    });
+  });
+
+  it("reuses generic placement and inserts one canonical immutable leaf", () => {
+    const op = buildInsertCustomComponentOp({
+      page: structuralPage(),
+      selectedNodeId: "box",
+      component: {
+        slug: CUSTOM_ARTIFACT.slug,
+        artifactId: CUSTOM_ARTIFACT.artifact_id,
+        props: initialCustomComponentProps(CUSTOM_ARTIFACT)
+      },
+      gen: seqGen("c00001")
+    });
+    expect(op).toEqual({
+      kind: "insert_node",
+      page_id: "home",
+      parent: "box",
+      index: 1,
+      root: "cc_c00001",
+      nodes: [
+        {
+          id: "cc_c00001",
+          kind: "custom_component",
+          classes: "w-full min-h-[160px]",
+          slug: "pricing-card",
+          artifact_id: CUSTOM_ARTIFACT.artifact_id,
+          props: {
+            headline: "Plans",
+            count: 2,
+            featured: false,
+            tone: "calm"
+          }
+        }
+      ]
+    });
+  });
+
+  it("loads only executable account-local catalog artifacts", async () => {
+    const legacy = {
+      ...CUSTOM_ARTIFACT,
+      artifact_id: `ccart_${"b".repeat(64)}`,
+      manifest: { schema_version: 1 }
+    };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        components: [
+          {
+            account_id: "acc_alpha",
+            slug: "pricing-card",
+            source_version: 2,
+            artifact_count: 2,
+            latest_artifact: CUSTOM_ARTIFACT
+          },
+          {
+            account_id: "acc_alpha",
+            slug: "legacy",
+            source_version: 1,
+            artifact_count: 1,
+            latest_artifact: legacy
+          }
+        ]
+      })
+    );
+    const catalog = await listCustomComponents(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "acc_alpha"
+    );
+    expect(catalog).toEqual([
+      {
+        accountId: "acc_alpha",
+        slug: "pricing-card",
+        sourceVersion: 2,
+        artifactCount: 2,
+        latestArtifact: CUSTOM_ARTIFACT
+      }
+    ]);
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      "http://localhost:8002/web/accounts/acc_alpha/custom-components"
+    );
   });
 });
 

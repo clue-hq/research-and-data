@@ -2,7 +2,10 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-import type { InsertableKind } from "@/engine/webDocuments";
+import type {
+  CustomComponentCatalogItem,
+  InsertableKind
+} from "@/engine/webDocuments";
 
 /**
  * The Inspect-rail "Add" affordance: a button that opens a small menu of
@@ -15,6 +18,10 @@ import type { InsertableKind } from "@/engine/webDocuments";
 interface WebInsertPaletteProps {
   onInsert: (kind: InsertableKind) => void;
   onInsertImage: () => void;
+  onInsertCustomComponent: (component: CustomComponentCatalogItem) => void;
+  customComponents: CustomComponentCatalogItem[];
+  customComponentsStatus: "idle" | "loading" | "ready" | "error";
+  customComponentsUnavailableReason: string | null;
   disabled: boolean;
 }
 
@@ -42,6 +49,10 @@ const COMPONENT_INSERTABLES: { kind: InsertableKind; label: string }[] = [
 export function WebInsertPalette({
   onInsert,
   onInsertImage,
+  onInsertCustomComponent,
+  customComponents,
+  customComponentsStatus,
+  customComponentsUnavailableReason,
   disabled
 }: WebInsertPaletteProps): React.ReactElement {
   const [open, setOpen] = useState(false);
@@ -126,6 +137,50 @@ export function WebInsertPalette({
               {item.label}
             </button>
           ))}
+          <div className="web-insert-sep" role="separator" />
+          <div role="group" aria-labelledby="web-insert-custom-components-label">
+            <div
+              id="web-insert-custom-components-label"
+              className="web-insert-menu-label"
+            >
+              Custom components
+            </div>
+            {customComponentsStatus === "loading" ? (
+              <span className="web-insert-empty" role="status">
+                Loading custom components…
+              </span>
+            ) : customComponentsUnavailableReason ? (
+              <span className="web-insert-empty">
+                {customComponentsUnavailableReason}
+              </span>
+            ) : customComponentsStatus === "error" ? (
+              <span className="web-insert-empty" role="alert">
+                Custom components could not be loaded.
+              </span>
+            ) : customComponents.length === 0 ? (
+              <span className="web-insert-empty">
+                No compiled custom components.
+              </span>
+            ) : (
+              customComponents.map((component) => (
+                <button
+                  key={component.latestArtifact.artifact_id}
+                  type="button"
+                  role="menuitem"
+                  className="web-insert-item web-insert-custom"
+                  aria-label={`Insert ${component.latestArtifact.manifest.meta.name} custom component`}
+                  title={component.latestArtifact.manifest.meta.description}
+                  onClick={() => {
+                    setOpen(false);
+                    onInsertCustomComponent(component);
+                  }}
+                >
+                  <span>{component.latestArtifact.manifest.meta.name}</span>
+                  <small>{component.latestArtifact.manifest.meta.description}</small>
+                </button>
+              ))
+            )}
+          </div>
         </div>
       ) : null}
     </div>

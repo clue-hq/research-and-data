@@ -26,6 +26,7 @@ import {
   type WebPageSummary,
   type WebTheme
 } from "@/engine/webDocuments";
+import type { CustomComponentArtifact } from "@/engine/webDocuments";
 import {
   alignItemsFacet,
   bgColorFacet,
@@ -69,10 +70,15 @@ import type {
   RichTextFormatValue,
   WebNodeInfo
 } from "@/engine/webBridge";
+import type { WebCustomComponentRuntimeState } from "@/engine/webBridge";
 import {
   RICH_TEXT_MARK_CONTROLS,
   richTextAriaPressed
 } from "@/engine/webRichText";
+import {
+  WebCustomComponentInspector,
+  type CustomComponentArtifactStatus
+} from "@/components/web/WebCustomComponentInspector";
 
 /**
  * The Inspect-mode panel: reads the selected node from the loaded WebDoc and
@@ -111,6 +117,13 @@ interface WebInspectorPanelProps {
   editingNodeId: string | null;
   richTextFormats: RichTextFormatState | null;
   formatRichText: (nodeId: string, format: RichTextFormat) => void;
+  customComponentArtifact: CustomComponentArtifact | null;
+  customComponentArtifactStatus: CustomComponentArtifactStatus;
+  customComponentArtifactError: string | null;
+  customComponentRuntime: WebCustomComponentRuntimeState | null;
+  customComponentRepublishRequired: boolean;
+  onEditCustomComponentWithAI: (node: WebNode) => void;
+  onRepublish: () => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
   /** Info note (409 reload) and inline error (422 diagnostic), surfaced in the
@@ -142,6 +155,13 @@ export function WebInspectorPanel({
   editingNodeId,
   richTextFormats,
   formatRichText,
+  customComponentArtifact,
+  customComponentArtifactStatus,
+  customComponentArtifactError,
+  customComponentRuntime,
+  customComponentRepublishRequired,
+  onEditCustomComponentWithAI,
+  onRepublish,
   applyOps,
   busy,
   note,
@@ -194,6 +214,13 @@ export function WebInspectorPanel({
         editingNodeId={editingNodeId}
         richTextFormats={richTextFormats}
         formatRichText={formatRichText}
+        customComponentArtifact={customComponentArtifact}
+        customComponentArtifactStatus={customComponentArtifactStatus}
+        customComponentArtifactError={customComponentArtifactError}
+        customComponentRuntime={customComponentRuntime}
+        customComponentRepublishRequired={customComponentRepublishRequired}
+        onEditCustomComponentWithAI={onEditCustomComponentWithAI}
+        onRepublish={onRepublish}
         applyOps={applyOps}
         busy={busy}
       />
@@ -463,6 +490,13 @@ interface BodyProps {
   editingNodeId: string | null;
   richTextFormats: RichTextFormatState | null;
   formatRichText: (nodeId: string, format: RichTextFormat) => void;
+  customComponentArtifact: CustomComponentArtifact | null;
+  customComponentArtifactStatus: CustomComponentArtifactStatus;
+  customComponentArtifactError: string | null;
+  customComponentRuntime: WebCustomComponentRuntimeState | null;
+  customComponentRepublishRequired: boolean;
+  onEditCustomComponentWithAI: (node: WebNode) => void;
+  onRepublish: () => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
 }
@@ -480,6 +514,13 @@ function WebInspectorBody({
   editingNodeId,
   richTextFormats,
   formatRichText,
+  customComponentArtifact,
+  customComponentArtifactStatus,
+  customComponentArtifactError,
+  customComponentRuntime,
+  customComponentRepublishRequired,
+  onEditCustomComponentWithAI,
+  onRepublish,
   applyOps,
   busy
 }: BodyProps): React.ReactElement {
@@ -530,7 +571,28 @@ function WebInspectorBody({
         />
       ) : null}
       {node.kind === "custom_component" ? (
-        <CustomComponentIdentityCard node={node} />
+        <WebCustomComponentInspector
+          node={node}
+          artifact={customComponentArtifact}
+          artifactStatus={customComponentArtifactStatus}
+          artifactError={customComponentArtifactError}
+          runtime={customComponentRuntime}
+          republishRequired={customComponentRepublishRequired}
+          busy={busy}
+          applyProps={(props) =>
+            applyProps(
+              {
+                kind: "custom_component",
+                slug: node.slug ?? "",
+                artifact_id: node.artifact_id ?? "",
+                props
+              },
+              "set_custom_component_props"
+            )
+          }
+          onEditWithAI={() => onEditCustomComponentWithAI(node)}
+          onRepublish={onRepublish}
+        />
       ) : null}
       {(node.kind === "container" || node.kind === "section") ? (
         <ContainerCard node={node} busy={busy} applyClasses={applyClasses} />
@@ -582,39 +644,6 @@ function WebInspectorBody({
 }
 
 // ── shared controls ──────────────────────────────────────────────────────────
-
-function CustomComponentIdentityCard({
-  node
-}: {
-  node: WebNode;
-}): React.ReactElement {
-  return (
-    <Card title="Custom component">
-      <dl className="web-insp-metrics">
-        <div className="is-wide">
-          <dt>Slug</dt>
-          <dd>{node.slug ?? "—"}</dd>
-        </div>
-        <div className="is-wide">
-          <dt>Artifact pin</dt>
-          <dd title={node.artifact_id}>{node.artifact_id ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>Props</dt>
-          <dd>{Object.keys(node.props ?? {}).length}</dd>
-        </div>
-        <div>
-          <dt>Children</dt>
-          <dd>Not allowed</dd>
-        </div>
-      </dl>
-      <p className="web-insp-hint">
-        This immutable pin is read-only in P6.1. Runtime preview and prop editing
-        arrive in later custom-component slices.
-      </p>
-    </Card>
-  );
-}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }): React.ReactElement {
   return (

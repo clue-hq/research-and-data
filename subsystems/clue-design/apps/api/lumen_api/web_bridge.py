@@ -61,6 +61,13 @@ v9 cache-keys the editor-only runtime at the structured-block protocol version.
 The bridge and runtime are deployed together, but the sandbox loads the runtime
 as a public asset; changing the query key prevents a previously cached inline-
 only bundle from flattening paragraphs and lists after an editor upgrade.
+
+v10 relays P6.3 nested custom-component runtime state. A nested opaque-origin
+frame is trusted only for its own renderer-created iframe element: source
+window, runtime contract, nonce, canonical node id, and artifact pin must all
+match the outer DOM. The outer frame then relays a nonce-scoped status through
+the existing parent bridge; a component never addresses the React shell
+directly.
 """
 
 import json
@@ -241,6 +248,78 @@ _BRIDGE_V0_TEMPLATE = """
 
   function postNodeInfo(el) {
     if (el && el.isConnected) post("node-info", { node: nodeInfo(el) });
+  }
+
+  function customComponentFrameFor(event, data) {
+    if (
+      data.channel !== "lumen-custom-component-runtime" ||
+      data.contractVersion !== 1 ||
+      typeof data.runtimeNonce !== "string" ||
+      typeof data.nodeId !== "string" ||
+      typeof data.artifactId !== "string"
+    ) {
+      return null;
+    }
+    var frames = document.querySelectorAll(
+      "iframe[data-lumen-custom-component-runtime='true']"
+    );
+    for (var index = 0; index < frames.length; index += 1) {
+      var frame = frames[index];
+      if (
+        frame.contentWindow === event.source &&
+        frame.getAttribute("data-runtime-contract-version") === "1" &&
+        frame.getAttribute("data-runtime-nonce") === data.runtimeNonce &&
+        frame.getAttribute("data-node-id-ref") === data.nodeId &&
+        frame.getAttribute("data-artifact-id") === data.artifactId
+      ) {
+        return frame;
+      }
+    }
+    return null;
+  }
+
+  function relayCustomComponentRuntime(event, data) {
+    var frame = customComponentFrameFor(event, data);
+    if (!frame) return false;
+    var host = frame.closest("[data-custom-component-node-id]");
+    if (!host || host.closest("[aria-hidden='true']")) return true;
+    if (data.type === "height") {
+      var height = Number(data.height);
+      if (!Number.isFinite(height) || height < 1 || height > 10000) return true;
+      if (host.getAttribute("data-custom-component-intrinsic") === "true") {
+        frame.style.height = Math.ceil(height) + "px";
+        scheduleSelectedInfo();
+      }
+    }
+    if (data.type === "ready") {
+      host.setAttribute("data-custom-component-runtime-state", "ready");
+    } else if (data.type === "error") {
+      host.setAttribute("data-custom-component-runtime-state", "error");
+      var state = host.querySelector(".lumen-custom-component-state");
+      if (state) state.textContent = "Runtime error";
+    } else if (
+      data.type !== "height" &&
+      data.type !== "recoverable-error"
+    ) {
+      return true;
+    }
+    post("custom-component-runtime", {
+      nodeId: data.nodeId,
+      artifactId: data.artifactId,
+      state:
+        data.type === "error"
+          ? "error"
+          : data.type === "ready"
+            ? "ready"
+            : data.type,
+      height:
+        data.type === "height" && Number.isFinite(Number(data.height))
+          ? Math.ceil(Number(data.height))
+          : null,
+      message:
+        typeof data.message === "string" ? data.message.slice(0, 500) : null
+    });
+    return true;
   }
 
   function scheduleSelectedInfo() {
@@ -493,6 +572,7 @@ _BRIDGE_V0_TEMPLATE = """
 
   window.addEventListener("message", function (event) {
     var data = event.data || {};
+    if (relayCustomComponentRuntime(event, data)) return;
     if (event.source !== parent || data.channel !== CHANNEL || data.nonce !== NONCE) return;
     if (data.type === "rich-text-command") {
       if (

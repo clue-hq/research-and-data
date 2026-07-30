@@ -2431,12 +2431,21 @@ class Repository:
         resolve in the document's exact account.
         """
 
+        before_nodes = custom_component_nodes(before_web_doc)
+        after_nodes = custom_component_nodes(after_web_doc)
         before = custom_component_references(before_web_doc)
         after = custom_component_references(after_web_doc)
-        for location, (node_id, slug, artifact_id) in after.items():
-            previous = before.get(location)
-            if previous == (node_id, slug, artifact_id):
-                continue
+        resolved: Dict[Tuple[str, str], JsonObject] = {}
+
+        def resolve(
+            location: Tuple[str, str],
+            node_id: str,
+            slug: str,
+            artifact_id: str,
+        ) -> JsonObject:
+            cached = resolved.get(location)
+            if cached is not None:
+                return cached
             if account_id is None:
                 raise CustomComponentReferenceError(
                     "custom_component.account_required",
@@ -2473,6 +2482,41 @@ class Repository:
                         f"artifact {artifact_id!r} belongs to slug "
                         f"{artifact['slug']!r}, not {slug!r}"
                     ),
+                    node_id=node_id,
+                    artifact_id=artifact_id,
+                )
+            resolved[location] = artifact
+            return artifact
+
+        for location, (node_id, slug, artifact_id) in after.items():
+            previous = before.get(location)
+            if previous == (node_id, slug, artifact_id):
+                continue
+            resolve(location, node_id, slug, artifact_id)
+
+        # SetNodeProps carries the whole custom-component value. Validate every
+        # changed prop map against the exact pinned artifact's generated schema;
+        # unchanged legacy/missing nodes remain movable and resizable.
+        for location, node in after_nodes.items():
+            previous = before_nodes.get(location)
+            if (
+                previous is not None
+                and previous.get("slug") == node.get("slug")
+                and previous.get("artifact_id") == node.get("artifact_id")
+                and previous.get("props") == node.get("props")
+            ):
+                continue
+            node_id = str(node.get("id") or location[1])
+            slug = str(node.get("slug") or "")
+            artifact_id = str(node.get("artifact_id") or "")
+            artifact = resolve(location, node_id, slug, artifact_id)
+            issue = custom_component_props_schema_issue(
+                node.get("props"), artifact.get("manifest")
+            )
+            if issue is not None:
+                raise CustomComponentReferenceError(
+                    "custom_component.props_invalid",
+                    f"custom component props do not match the pinned artifact: {issue}",
                     node_id=node_id,
                     artifact_id=artifact_id,
                 )
@@ -2774,6 +2818,81 @@ def web_account_from_row(row: sqlite3.Row) -> JsonObject:
     }
 
 
+def custom_component_nodes(
+    web_doc: JsonObject,
+) -> Dict[Tuple[str, str], JsonObject]:
+    nodes_by_location: Dict[Tuple[str, str], JsonObject] = {}
+    pages = web_doc.get("pages")
+    if not isinstance(pages, list):
+        return nodes_by_location
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_id = page.get("id")
+        nodes = page.get("nodes")
+        if not isinstance(page_id, str) or not isinstance(nodes, dict):
+            continue
+        for node_id, node in nodes.items():
+            if (
+                isinstance(node_id, str)
+                and isinstance(node, dict)
+                and node.get("kind") == "custom_component"
+            ):
+                nodes_by_location[(page_id, node_id)] = node
+    return nodes_by_location
+
+
+def custom_component_props_schema_issue(
+    props: Any, manifest: Any
+) -> Optional[str]:
+    if not isinstance(props, dict):
+        return "props must be an object"
+    # P6.1 fixture/backfill artifacts deliberately predate generated schemas.
+    # They remain movable/duplicable; only compiler-v2 artifacts participate in
+    # generated-control validation and the executable P6.3 runtime.
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 2:
+        return None
+    schema = manifest.get("props_schema") if isinstance(manifest, dict) else None
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    required = schema.get("required", []) if isinstance(schema, dict) else []
+    if (
+        not isinstance(schema, dict)
+        or schema.get("type") != "object"
+        or not isinstance(properties, dict)
+        or not isinstance(required, list)
+        or any(not isinstance(name, str) for name in required)
+    ):
+        return "artifact has no usable generated prop schema"
+    unknown = sorted(set(props) - set(properties))
+    if unknown:
+        return f"unknown prop {unknown[0]!r}"
+    missing = sorted(name for name in required if name not in props)
+    if missing:
+        return f"required prop {missing[0]!r} is missing"
+    for name, value in sorted(props.items()):
+        field = properties.get(name)
+        if not isinstance(field, dict):
+            return f"prop {name!r} has no field schema"
+        expected = field.get("type")
+        valid = (
+            (expected == "string" and isinstance(value, str))
+            or (
+                expected == "number"
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            )
+            or (expected == "boolean" and isinstance(value, bool))
+        )
+        if not valid:
+            return f"prop {name!r} must be {expected}"
+        enum = field.get("enum")
+        if enum is not None and (
+            not isinstance(enum, list) or value not in enum
+        ):
+            return f"prop {name!r} is not one of its allowed values"
+    return None
+
+
 def custom_component_references(
     web_doc: JsonObject,
 ) -> Dict[Tuple[str, str], Tuple[str, str, str]]:
@@ -2785,29 +2904,15 @@ def custom_component_references(
     """
 
     references: Dict[Tuple[str, str], Tuple[str, str, str]] = {}
-    pages = web_doc.get("pages")
-    if not isinstance(pages, list):
-        return references
-    for page in pages:
-        if not isinstance(page, dict):
-            continue
-        page_id = page.get("id")
-        nodes = page.get("nodes")
-        if not isinstance(page_id, str) or not isinstance(nodes, dict):
-            continue
-        for node_id, node in nodes.items():
-            if not isinstance(node_id, str) or not isinstance(node, dict):
-                continue
-            if node.get("kind") != "custom_component":
-                continue
-            slug = node.get("slug")
-            artifact_id = node.get("artifact_id")
-            if isinstance(slug, str) and isinstance(artifact_id, str):
-                references[(page_id, node_id)] = (
-                    node_id,
-                    slug,
-                    artifact_id,
-                )
+    for (page_id, node_id), node in custom_component_nodes(web_doc).items():
+        slug = node.get("slug")
+        artifact_id = node.get("artifact_id")
+        if isinstance(slug, str) and isinstance(artifact_id, str):
+            references[(page_id, node_id)] = (
+                node_id,
+                slug,
+                artifact_id,
+            )
     return references
 
 

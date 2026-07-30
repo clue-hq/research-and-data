@@ -46,6 +46,11 @@ from .custom_component_compiler import (
     compile_custom_component,
     default_compiler_worker_path,
 )
+from .custom_component_runtime import (
+    build_custom_component_runtime_frames,
+    default_runtime_host_path,
+    web_doc_uses_custom_components,
+)
 from .custom_components import (
     canonical_custom_component_source_snapshot,
     persist_compiled_custom_component_artifact,
@@ -342,6 +347,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     app.state.custom_component_compiler_timeout_seconds = (
         DEFAULT_COMPILER_TIMEOUT_SECONDS
     )
+    app.state.custom_component_runtime_host = default_runtime_host_path()
     app.state.core = CoreClient()
     app.state.agent_turn_runner = None
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
@@ -2289,6 +2295,37 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
         font_face_css = build_web_font_face_css(
             brand_fonts, str(request.base_url).rstrip("/")
         )
+        runtime_frames: Dict[str, JsonObject] = {}
+        if web_doc_uses_custom_components(web_doc, "home"):
+            try:
+                theme_response = app.state.core.web_validate(web_doc, brand_kit)
+            except CoreError as error:
+                raise core_http_error(error) from error
+            override_variables: Dict[str, str] = {}
+            account_id = document.get("account_id")
+            if isinstance(account_id, str):
+                try:
+                    values, _records = account_values(
+                        repo.require_web_account(account_id), repo
+                    )
+                    override_variables = {
+                        key: str(value.get("value") or "")
+                        for key, value in values.items()
+                        if isinstance(value, dict)
+                        and value.get("kind") == "text"
+                    }
+                except NotFoundError:
+                    override_variables = {}
+            runtime_frames = build_custom_component_runtime_frames(
+                repo,
+                Path(app.state.custom_component_store_root),
+                account_id=account_id if isinstance(account_id, str) else None,
+                web_doc=web_doc,
+                page_id="home",
+                theme=theme_response.get("web_theme"),
+                override_variables=override_variables,
+                runtime_host_path=Path(app.state.custom_component_runtime_host),
+            )
         bridge_script = None
         if bridge:
             if mode != "editor":
@@ -2315,6 +2352,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 asset_base_url=asset_base_url,
                 tailwind_runtime_src=runtime_src,
                 bridge_script=bridge_script,
+                custom_component_runtimes=runtime_frames,
                 brand_kit=brand_kit,
                 font_face_css=font_face_css,
             )
@@ -2945,10 +2983,18 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         """List account-local component families without exposing another tenant."""
         repo.require_web_account(account_id)
+        components = repo.list_custom_components(account_id)
+        for component in components:
+            latest_id = component.get("latest_artifact_id")
+            component["latest_artifact"] = (
+                repo.require_custom_component_artifact(account_id, latest_id)
+                if isinstance(latest_id, str)
+                else None
+            )
         return {
             "schema_version": 1,
             "account_id": account_id,
-            "components": repo.list_custom_components(account_id),
+            "components": components,
         }
 
     @app.get("/web/accounts/{account_id}/custom-components/{slug}")

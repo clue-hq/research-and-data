@@ -7,6 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
+    "build:runtime-host": "node scripts/build-runtime-host.mjs",
+    "check:runtime-host": "node scripts/build-runtime-host.mjs --check",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

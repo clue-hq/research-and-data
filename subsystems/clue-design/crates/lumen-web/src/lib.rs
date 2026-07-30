@@ -49,7 +49,9 @@ pub use rich_text::{
     RichTextAlignment, RichTextBlock, RichTextDocument, RichTextInline, RichTextLink,
     RichTextListItem, RichTextListType, RichTextMarks, RICH_TEXT_SCHEMA_VERSION,
 };
-pub use render::{render_page, RenderMode, RenderOptions, RenderOutput};
+pub use render::{
+    render_page, CustomComponentRuntimeFrame, RenderMode, RenderOptions, RenderOutput,
+};
 pub use runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS, PLATFORM_RUNTIME_VERSION};
 pub use theme::{compile_web_theme, WebTheme, WebThemeOptions};
 pub use validate::validate_web_doc;

@@ -6,10 +6,15 @@ import Link from "next/link";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
   buildWebRichTextVariableCatalog,
+  buildInsertCustomComponentOp,
   buildInsertNodeOp,
+  fetchCustomComponentArtifact,
   fetchWebDocument,
+  fetchWebPublishInfo,
   fetchWebRenderHtml,
   fetchWebTheme,
+  initialCustomComponentProps,
+  listCustomComponents,
   listDialogComponents,
   listWebAccounts,
   planCanvasNodeMove,
@@ -22,6 +27,8 @@ import {
   webDocumentHasContent,
   webPromptStorageKey,
   type InsertableKind,
+  type CustomComponentArtifact,
+  type CustomComponentCatalogItem,
   type LoadedWebDocument,
   type RichTextDocument,
   type WebAccount,
@@ -111,6 +118,11 @@ type RenderStatus = "idle" | "loading" | "ready" | "error";
 
 /** The rail's two modes: the agent chat (default) and the manual inspector. */
 type RailMode = "chat" | "inspect";
+type CustomArtifactState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; artifact: CustomComponentArtifact }
+  | { kind: "error"; message: string };
 
 /** The transient "Save as template" toast: a link to the new template doc on
  * success, or the server message on failure. Auto-dismisses. */
@@ -258,6 +270,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const [state, setState] = useState<ShellState>({ kind: "loading" });
   const [widthMode, setWidthMode] = useState<WidthMode>("fluid");
   const [composer, setComposer] = useState("");
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const [history, setHistory] = useState<TurnRecord[]>([]);
   const [pending, setPending] = useState<PendingTurn | null>(null);
@@ -281,6 +294,15 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const [templateToast, setTemplateToast] = useState<TemplateToast | null>(null);
   const [theme, setTheme] = useState<WebTheme | null>(null);
   const [accounts, setAccounts] = useState<WebAccount[]>([]);
+  const [customComponents, setCustomComponents] = useState<
+    CustomComponentCatalogItem[]
+  >([]);
+  const [customComponentsStatus, setCustomComponentsStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [customArtifactState, setCustomArtifactState] =
+    useState<CustomArtifactState>({ kind: "idle" });
+  const [publishedVersion, setPublishedVersion] = useState<number | null>(null);
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -372,6 +394,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     richTextFormats,
     richTextSelection,
     richTextError,
+    customComponentRuntime,
     clearSelection,
     resetSelection,
     previewComponent,
@@ -454,6 +477,41 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     },
     [inspectorPage, activeNodeId, manualEdits]
   );
+
+  const handleInsertCustomComponent = useCallback(
+    (component: CustomComponentCatalogItem) => {
+      if (!inspectorPage || component.accountId !== document?.accountId) {
+        return;
+      }
+      const artifact = component.latestArtifact;
+      const op = buildInsertCustomComponentOp({
+        page: inspectorPage,
+        selectedNodeId: activeNodeId,
+        component: {
+          slug: component.slug,
+          artifactId: artifact.artifact_id,
+          props: initialCustomComponentProps(artifact)
+        }
+      });
+      manualEdits.applyOps([op], "insert_custom_component");
+    },
+    [
+      inspectorPage,
+      activeNodeId,
+      document?.accountId,
+      manualEdits
+    ]
+  );
+
+  const handleEditCustomComponentWithAI = useCallback((node: WebNode) => {
+    const label =
+      customArtifactState.kind === "ready"
+        ? customArtifactState.artifact.manifest.meta.name
+        : node.slug ?? "this custom component";
+    setComposer(`Update the custom component “${label}”: `);
+    setRailMode("chat");
+    requestAnimationFrame(() => composerRef.current?.focus());
+  }, [customArtifactState]);
 
   const handleInsertImage = useCallback(() => setAssetDrawer({ mode: "insert" }), []);
 
@@ -690,6 +748,101 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       cancelled = true;
     };
   }, [shouldRender, reloadNonce]);
+
+  // The picker is always account-local. A template/plain page without an
+  // account shows an explanatory empty state rather than a cross-tenant global
+  // component list.
+  useEffect(() => {
+    const accountId = document?.accountId;
+    if (!shouldRender || !accountId) {
+      setCustomComponents([]);
+      setCustomComponentsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setCustomComponentsStatus("loading");
+    listCustomComponents({ apiBaseUrl: editorApiBaseUrl() }, accountId)
+      .then((components) => {
+        if (cancelled) return;
+        setCustomComponents(components);
+        setCustomComponentsStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCustomComponents([]);
+        setCustomComponentsStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [document?.accountId, shouldRender, reloadNonce]);
+
+  // Inspector metadata resolves the selected immutable artifact, even when it
+  // is an older pin rather than the family currently offered by the picker.
+  useEffect(() => {
+    const accountId = document?.accountId;
+    const artifactId =
+      inspectorNode?.kind === "custom_component"
+        ? inspectorNode.artifact_id
+        : null;
+    if (!accountId || !artifactId) {
+      setCustomArtifactState({ kind: "idle" });
+      return;
+    }
+    const cached = customComponents
+      .map((item) => item.latestArtifact)
+      .find((artifact) => artifact.artifact_id === artifactId);
+    if (cached) {
+      setCustomArtifactState({ kind: "ready", artifact: cached });
+      return;
+    }
+    let cancelled = false;
+    setCustomArtifactState({ kind: "loading" });
+    fetchCustomComponentArtifact(
+      { apiBaseUrl: editorApiBaseUrl() },
+      accountId,
+      artifactId
+    )
+      .then((artifact) => {
+        if (!cancelled) setCustomArtifactState({ kind: "ready", artifact });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setCustomArtifactState({
+          kind: "error",
+          message:
+            cause instanceof Error ? cause.message : "Artifact could not be loaded."
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    document?.accountId,
+    inspectorNode?.kind,
+    inspectorNode?.artifact_id,
+    customComponents
+  ]);
+
+  useEffect(() => {
+    if (!shouldRender) {
+      setPublishedVersion(null);
+      return;
+    }
+    let cancelled = false;
+    fetchWebPublishInfo({ apiBaseUrl: editorApiBaseUrl() }, documentId)
+      .then((state) => {
+        if (!cancelled) {
+          setPublishedVersion(state.published ? state.docVersion : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPublishedVersion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId, shouldRender, reloadNonce, publishOpen]);
 
   // Undo/redo keyboard: ⌘Z / ⇧⌘Z (Ctrl on non-mac). Ignored while a turn runs,
   // a mutation is in flight, or focus is in an editable field / the iframe.
@@ -1081,6 +1234,14 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                   <WebInsertPalette
                     onInsert={handleInsert}
                     onInsertImage={handleInsertImage}
+                    onInsertCustomComponent={handleInsertCustomComponent}
+                    customComponents={customComponents}
+                    customComponentsStatus={customComponentsStatus}
+                    customComponentsUnavailableReason={
+                      document?.accountId
+                        ? null
+                        : "Assign this website to an account to use custom components."
+                    }
                     disabled={manualEdits.busy || inspectorPage == null}
                   />
                 </div>
@@ -1107,6 +1268,29 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                   editingNodeId={editingNodeId}
                   richTextFormats={richTextFormats}
                   formatRichText={formatRichText}
+                  customComponentArtifact={
+                    customArtifactState.kind === "ready"
+                      ? customArtifactState.artifact
+                      : null
+                  }
+                  customComponentArtifactStatus={customArtifactState.kind}
+                  customComponentArtifactError={
+                    customArtifactState.kind === "error"
+                      ? customArtifactState.message
+                      : null
+                  }
+                  customComponentRuntime={
+                    inspectorNode
+                      ? customComponentRuntime[inspectorNode.id] ?? null
+                      : null
+                  }
+                  customComponentRepublishRequired={
+                    publishedVersion != null &&
+                    baseVersion != null &&
+                    baseVersion > publishedVersion
+                  }
+                  onEditCustomComponentWithAI={handleEditCustomComponentWithAI}
+                  onRepublish={() => setPublishOpen(true)}
                   applyOps={manualEdits.applyOps}
                   busy={manualEdits.busy}
                   note={manualEdits.note}
@@ -1245,6 +1429,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
               ) : null}
               <div className="web-composer-row">
                 <textarea
+                  ref={composerRef}
                   value={composer}
                   onChange={(event) => setComposer(event.target.value)}
                   onKeyDown={onComposerKeyDown}

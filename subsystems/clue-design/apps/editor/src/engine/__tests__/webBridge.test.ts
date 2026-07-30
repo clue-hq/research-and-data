@@ -117,6 +117,60 @@ describe("validateBridgeMessage", () => {
     expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({ type: "ready" });
   });
 
+  it("accepts a bounded custom-component runtime status from the trusted outer frame", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "custom-component-runtime",
+        nodeId: "cc_booking",
+        artifactId: `ccart_${"a".repeat(64)}`,
+        state: "height",
+        height: 248,
+        message: null
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
+      type: "custom-component-runtime",
+      runtime: {
+        nodeId: "cc_booking",
+        artifactId: `ccart_${"a".repeat(64)}`,
+        state: "height",
+        height: 248,
+        message: null
+      }
+    });
+  });
+
+  it.each([
+    ["wrong source", {}, NONCE, `ccart_${"a".repeat(64)}`, "ready", null],
+    ["stale nonce", FRAME, "stale-nonce", `ccart_${"a".repeat(64)}`, "ready", null],
+    ["forged artifact", FRAME, NONCE, "ccart_not-a-digest", "ready", null],
+    ["unknown state", FRAME, NONCE, `ccart_${"a".repeat(64)}`, "mounted", null],
+    ["unbounded height", FRAME, NONCE, `ccart_${"a".repeat(64)}`, "height", 10_001]
+  ])(
+    "rejects a custom-component runtime message with %s",
+    (_label, source, nonce, artifactId, state, height) => {
+      const event = makeEvent({
+        data: {
+          channel: "lumen-web-bridge",
+          nonce,
+          type: "custom-component-runtime",
+          nodeId: "cc_booking",
+          artifactId,
+          state,
+          height,
+          message: null
+        },
+        origin: "null",
+        source
+      });
+      expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
+    }
+  );
+
   it("coerces geometry and computed styles from a node-info update", () => {
     const event = makeEvent({
       data: {

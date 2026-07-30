@@ -405,6 +405,9 @@ enum CoreRequest {
         #[serde(default)]
         bridge_script: Option<String>,
         #[serde(default)]
+        custom_component_runtimes:
+            std::collections::BTreeMap<String, lumen_web::CustomComponentRuntimeFrame>,
+        #[serde(default)]
         brand_kit: Option<Value>,
         /// Pre-built @font-face CSS (the API owns font-serving URLs); folded
         /// into the theme base layer so kit typography renders everywhere.
@@ -2386,6 +2389,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             asset_base_url,
             tailwind_runtime_src,
             bridge_script,
+            custom_component_runtimes,
             brand_kit,
             font_face_css,
         } => {
@@ -2406,6 +2410,7 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 asset_base_url: asset_base_url.unwrap_or_else(|| "/asset-store".to_owned()),
                 tailwind_runtime_src,
                 bridge_script,
+                custom_component_runtimes,
             };
             let output = lumen_web::render_page(
                 &doc,

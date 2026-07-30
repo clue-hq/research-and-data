@@ -17,6 +17,15 @@ import {
 const require = createRequire(import.meta.url);
 const COMPILER_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const VIRTUAL_ROOT = "/__lumen_custom_components__";
+const FORBIDDEN_OUTPUT_ELEMENTS = new Set([
+  "base",
+  "embed",
+  "iframe",
+  "link",
+  "meta",
+  "object",
+  "style",
+]);
 
 function nodeLocation(sourceFile, node) {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
@@ -383,6 +392,36 @@ function analyzeImportsAndPolicy(input, sourceFiles, diagnostics) {
           }),
         );
       }
+      const navigationProperty =
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        ["window", "document", "globalThis"].includes(node.expression.text) &&
+        node.name.text === "location";
+      const bareLocation =
+        ts.isIdentifier(node) &&
+        node.text === "location" &&
+        !(
+          ts.isPropertyAccessExpression(node.parent) &&
+          node.parent.name === node
+        ) &&
+        !(ts.isPropertyAssignment(node.parent) && node.parent.name === node);
+      const openCall =
+        ts.isCallExpression(node) &&
+        ((ts.isIdentifier(node.expression) && node.expression.text === "open") ||
+          (ts.isPropertyAccessExpression(node.expression) &&
+            ts.isIdentifier(node.expression.expression) &&
+            ["window", "globalThis"].includes(node.expression.expression.text) &&
+            node.expression.name.text === "open"));
+      if (navigationProperty || bareLocation || openCall) {
+        diagnostics.push(
+          issue(sourceFile, node, {
+            code: "CCC0118",
+            category: "policy",
+            message:
+              "ambient navigation APIs are forbidden; use a declared host interaction",
+          }),
+        );
+      }
       if (
         (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
         ts.isIdentifier(node.tagName) &&
@@ -393,6 +432,19 @@ function analyzeImportsAndPolicy(input, sourceFiles, diagnostics) {
             code: "CCC0115",
             category: "policy",
             message: "script elements are forbidden in component output",
+          }),
+        );
+      }
+      if (
+        (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+        ts.isIdentifier(node.tagName) &&
+        FORBIDDEN_OUTPUT_ELEMENTS.has(node.tagName.text.toLowerCase())
+      ) {
+        diagnostics.push(
+          issue(sourceFile, node, {
+            code: "CCC0117",
+            category: "policy",
+            message: `${node.tagName.text.toLowerCase()} elements are forbidden in component output`,
           }),
         );
       }

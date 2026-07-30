@@ -14,6 +14,7 @@ import {
   type RichTextFormatState,
   type RichTextSelectionState,
   type WebNodeInfo,
+  type WebCustomComponentRuntimeState,
   type WebSelection
 } from "@/engine/webBridge";
 import type { RichTextDocument } from "@/engine/webDocuments";
@@ -47,6 +48,9 @@ export interface WebBridgeSelection {
   richTextSelection: RichTextSelectionState | null;
   /** A runtime-load/session failure from the iframe, if any. */
   richTextError: string | null;
+  /** Latest authenticated nested-runtime status for each custom-component
+   * node in the current outer render. */
+  customComponentRuntime: Record<string, WebCustomComponentRuntimeState>;
   /** Drop the selection locally AND tell the iframe to clear its highlight
    * (the chip's × button). */
   clearSelection: () => void;
@@ -114,6 +118,9 @@ export function useWebBridgeSelection(params: {
   const [richTextSelection, setRichTextSelection] =
     useState<RichTextSelectionState | null>(null);
   const [richTextError, setRichTextError] = useState<string | null>(null);
+  const [customComponentRuntime, setCustomComponentRuntime] = useState<
+    Record<string, WebCustomComponentRuntimeState>
+  >({});
 
   // While a text node is in contenteditable, the frame keeps posting `select`
   // as the caret moves; suppress that churn until the edit commits/cancels.
@@ -197,6 +204,13 @@ export function useWebBridgeSelection(params: {
           message.widthPx,
           message.heightPx
         );
+        return;
+      }
+      if (message.type === "custom-component-runtime") {
+        setCustomComponentRuntime((current) => ({
+          ...current,
+          [message.runtime.nodeId]: message.runtime
+        }));
       }
     };
     window.addEventListener("message", onMessage);
@@ -226,6 +240,7 @@ export function useWebBridgeSelection(params: {
     setRichTextError(null);
     setSelection(null);
     setNodeInfo(null);
+    setCustomComponentRuntime({});
   }, []);
 
   const previewComponent = useCallback(
@@ -318,6 +333,7 @@ export function useWebBridgeSelection(params: {
     richTextFormats,
     richTextSelection,
     richTextError,
+    customComponentRuntime,
     clearSelection,
     resetSelection,
     previewComponent,

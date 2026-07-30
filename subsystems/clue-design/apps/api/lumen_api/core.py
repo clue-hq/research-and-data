@@ -443,6 +443,7 @@ class CoreClient:
         asset_base_url: Optional[str] = None,
         tailwind_runtime_src: Optional[str] = None,
         bridge_script: Optional[str] = None,
+        custom_component_runtimes: Optional[Dict[str, JsonObject]] = None,
         brand_kit: Optional[JsonObject] = None,
         font_face_css: Optional[str] = None,
     ) -> JsonObject:
@@ -455,6 +456,7 @@ class CoreClient:
                 "asset_base_url": asset_base_url,
                 "tailwind_runtime_src": tailwind_runtime_src,
                 "bridge_script": bridge_script,
+                "custom_component_runtimes": custom_component_runtimes or {},
                 "brand_kit": brand_kit,
                 "font_face_css": font_face_css,
             }

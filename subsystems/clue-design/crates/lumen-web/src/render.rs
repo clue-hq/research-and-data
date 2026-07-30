@@ -16,11 +16,38 @@ use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS};
 use crate::theme::WebTheme;
 use crate::util::{escape_attr, escape_text};
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, PageId, Phase};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RenderMode {
     Editor,
     Delivery,
+}
+
+/// One API-resolved, account-scoped runtime frame for a custom-component leaf.
+///
+/// The canonical document stores only slug, immutable artifact pin, typed
+/// props, and host layout classes. Executable bytes are resolved outside the
+/// engine and arrive here as an already-contained nested `srcdoc`; the renderer
+/// never reads mutable source or manufactures a successful runtime.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CustomComponentRuntimeFrame {
+    pub state: String,
+    pub artifact_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub srcdoc: Option<String>,
+    #[serde(default)]
+    pub runtime_nonce: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
+    #[serde(default)]
+    pub intrinsic_height: bool,
+    #[serde(default)]
+    pub warning_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -32,6 +59,9 @@ pub struct RenderOptions {
     pub tailwind_runtime_src: Option<String>,
     /// Editor mode only: inline bridge script (hover/select/postMessage).
     pub bridge_script: Option<String>,
+    /// API-resolved runtime frames keyed by canonical node id. Missing entries
+    /// preserve the explicit P6.1 placeholder.
+    pub custom_component_runtimes: BTreeMap<String, CustomComponentRuntimeFrame>,
 }
 
 impl RenderOptions {
@@ -41,6 +71,7 @@ impl RenderOptions {
             asset_base_url: asset_base_url.into(),
             tailwind_runtime_src: None,
             bridge_script: None,
+            custom_component_runtimes: BTreeMap::new(),
         }
     }
 
@@ -50,6 +81,7 @@ impl RenderOptions {
             asset_base_url: asset_base_url.into(),
             tailwind_runtime_src: None,
             bridge_script: None,
+            custom_component_runtimes: BTreeMap::new(),
         }
     }
 }
@@ -577,6 +609,93 @@ fn render_node(
         WebNodeKind::CustomComponent {
             slug, artifact_id, ..
         } => {
+            if let Some(runtime) = options
+                .custom_component_runtimes
+                .get(node.id.as_str())
+            {
+                out.push_str("<div class=\"lumen-custom-component-runtime");
+                if !node.classes.trim().is_empty() {
+                    out.push(' ');
+                    out.push_str(&escape_attr(node.classes.trim()));
+                }
+                out.push('"');
+                out.push_str(&format!(
+                    " role=\"group\" data-custom-component-runtime-state=\"{}\"",
+                    escape_attr(&runtime.state)
+                ));
+                out.push_str(&format!(
+                    " data-custom-component-node-id=\"{}\" data-custom-component-slug=\"{}\" data-custom-component-artifact=\"{}\"",
+                    escape_attr(node.id.as_str()),
+                    escape_attr(slug),
+                    escape_attr(artifact_id)
+                ));
+                out.push_str(&format!(
+                    " data-custom-component-intrinsic=\"{}\" data-custom-component-warning-count=\"{}\"",
+                    if runtime.intrinsic_height { "true" } else { "false" },
+                    runtime.warning_count
+                ));
+                if editor {
+                    out.push_str(" data-custom-component-editor=\"true\"");
+                }
+                if let Some(error_code) = &runtime.error_code {
+                    out.push_str(&format!(
+                        " data-custom-component-error-code=\"{}\"",
+                        escape_attr(error_code)
+                    ));
+                }
+                if runtime.state != "ready" {
+                    out.push_str(" data-custom-component-placeholder=\"true\"");
+                }
+                node_attr(out);
+                out.push_str(&format!(
+                    " aria-label=\"Custom component {}\">",
+                    escape_attr(&runtime.name)
+                ));
+                if runtime.state == "ready"
+                    && runtime.artifact_id == *artifact_id
+                    && runtime.srcdoc.is_some()
+                    && runtime.runtime_nonce.is_some()
+                {
+                    let srcdoc = runtime.srcdoc.as_deref().unwrap_or_default();
+                    let runtime_nonce =
+                        runtime.runtime_nonce.as_deref().unwrap_or_default();
+                    out.push_str(&format!(
+                        "<iframe class=\"lumen-custom-component-frame\" title=\"{}\" sandbox=\"allow-scripts\" referrerpolicy=\"no-referrer\" credentialless data-lumen-custom-component-runtime=\"true\" data-runtime-contract-version=\"1\" data-runtime-nonce=\"{}\" data-node-id-ref=\"{}\" data-artifact-id=\"{}\"",
+                        escape_attr(&format!("{} component", runtime.name)),
+                        escape_attr(runtime_nonce),
+                        escape_attr(node.id.as_str()),
+                        escape_attr(artifact_id)
+                    ));
+                    if editor {
+                        out.push_str(" tabindex=\"-1\"");
+                    }
+                    out.push_str(&format!(" srcdoc=\"{}\"></iframe>", escape_attr(srcdoc)));
+                    out.push_str(
+                        "<span class=\"lumen-custom-component-state\" aria-live=\"polite\"></span>",
+                    );
+                } else {
+                    let message = runtime
+                        .message
+                        .as_deref()
+                        .unwrap_or("The pinned artifact is unavailable.");
+                    out.push_str("<div class=\"lumen-custom-component-unavailable\" role=\"status\">");
+                    out.push_str("<span>Custom component unavailable</span>");
+                    out.push_str(&format!("<strong>{}</strong>", escape_text(slug)));
+                    out.push_str(&format!("<small>{}</small>", escape_text(message)));
+                    out.push_str("</div>");
+                    diagnostics.push(Diagnostic::warning(
+                        Phase::Web,
+                        "LUMW0410",
+                        format!(
+                            "custom component `{}` artifact `{artifact_id}` is unavailable: {message}",
+                            node.id
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                }
+                out.push_str("</div>");
+                return;
+            }
             out.push_str("<div class=\"lumen-custom-component-placeholder");
             if !node.classes.trim().is_empty() {
                 out.push(' ');
@@ -1187,6 +1306,108 @@ mod tests {
             .html
             .contains("data-custom-component-placeholder=\"true\""));
         assert!(!delivery.html.contains("<script"));
+    }
+
+    #[test]
+    fn custom_component_runtime_is_nested_sandboxed_and_editor_selectable() {
+        let (mut doc, theme) = fixture();
+        let page = doc.pages.get_mut(0).expect("page");
+        let host_id = page
+            .nodes
+            .get(&NodeId::from("hero"))
+            .expect("hero")
+            .children[0]
+            .clone();
+        page.nodes
+            .get_mut(&host_id)
+            .expect("host")
+            .children
+            .push(NodeId::from("cc_runtime"));
+        let artifact_id = format!("ccart_{}", "d".repeat(64));
+        page.nodes.insert(
+            NodeId::from("cc_runtime"),
+            WebNode {
+                id: NodeId::from("cc_runtime"),
+                kind: WebNodeKind::CustomComponent {
+                    slug: "runtime-card".to_owned(),
+                    artifact_id: artifact_id.clone(),
+                    props: std::collections::BTreeMap::new(),
+                },
+                classes: "w-full min-h-[160px]".to_owned(),
+                children: Vec::new(),
+                name: None,
+                slot_key: None,
+            },
+        );
+        let runtime = CustomComponentRuntimeFrame {
+            state: "ready".to_owned(),
+            artifact_id: artifact_id.clone(),
+            name: "Runtime Card".to_owned(),
+            srcdoc: Some("<!doctype html><h2>First & ready</h2>".to_owned()),
+            runtime_nonce: Some("runtime-nonce-123".to_owned()),
+            message: None,
+            error_code: None,
+            intrinsic_height: true,
+            warning_count: 2,
+        };
+
+        let mut editor_options = RenderOptions::editor("/asset-store");
+        editor_options
+            .custom_component_runtimes
+            .insert("cc_runtime".to_owned(), runtime.clone());
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &editor_options,
+        )
+        .expect("editor runtime");
+        assert!(editor.html.contains(
+            "class=\"lumen-custom-component-runtime w-full min-h-[160px]\""
+        ));
+        assert_eq!(
+            editor
+                .html
+                .matches("data-custom-component-editor=\"true\"")
+                .count(),
+            2
+        );
+        assert!(editor.html.contains("sandbox=\"allow-scripts\""));
+        assert!(!editor.html.contains("allow-same-origin"));
+        assert!(editor.html.contains("credentialless"));
+        assert!(editor.html.contains("tabindex=\"-1\""));
+        assert!(!editor
+            .html
+            .contains("tabindex=\"-1\" aria-hidden=\"true\""));
+        assert!(editor
+            .html
+            .contains("srcdoc=\"&lt;!doctype html&gt;&lt;h2&gt;First &amp; ready&lt;/h2&gt;\""));
+        assert!(editor
+            .html
+            .contains("data-custom-component-warning-count=\"2\""));
+        assert!(editor.html.contains("pointer-events: none"));
+
+        let mut delivery_options = RenderOptions::delivery("/asset-store");
+        delivery_options
+            .custom_component_runtimes
+            .insert("cc_runtime".to_owned(), runtime);
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &delivery_options,
+        )
+        .expect("delivery runtime");
+        assert_eq!(
+            delivery
+                .html
+                .matches("data-custom-component-editor=\"true\"")
+                .count(),
+            1
+        );
+        assert!(!delivery.html.contains("tabindex=\"-1\""));
+        assert!(delivery.html.contains("title=\"Runtime Card component\""));
+        assert!(!delivery.html.contains("data-node-id=\"cc_runtime\""));
     }
 
     #[test]

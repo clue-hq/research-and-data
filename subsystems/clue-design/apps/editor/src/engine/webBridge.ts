@@ -155,6 +155,14 @@ export interface WebNodeInfo {
 
 export type WebSelection = WebNodeInfo;
 
+export interface WebCustomComponentRuntimeState {
+  nodeId: string;
+  artifactId: string;
+  state: "ready" | "error" | "recoverable-error" | "height";
+  height: number | null;
+  message: string | null;
+}
+
 /** A validated inbound bridge message.
  *   • `ready` — the bridge is live.
  *   • `select` — the current selection (or `null` when cleared).
@@ -186,6 +194,10 @@ export type WebBridgeInbound =
       nodeId: string;
       widthPx: number | null;
       heightPx: number | null;
+    }
+  | {
+      type: "custom-component-runtime";
+      runtime: WebCustomComponentRuntimeState;
     };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
@@ -532,6 +544,43 @@ export function validateBridgeMessage(
       return null;
     }
     return { type: "resize-node", nodeId, widthPx, heightPx };
+  }
+  if (data.type === "custom-component-runtime") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    const artifactId =
+      typeof data.artifactId === "string" ? data.artifactId : "";
+    const state = data.state;
+    const height =
+      data.height === null
+        ? null
+        : typeof data.height === "number" &&
+            Number.isFinite(data.height) &&
+            data.height >= 1 &&
+            data.height <= 10_000
+          ? data.height
+          : Number.NaN;
+    const message =
+      data.message === null
+        ? null
+        : typeof data.message === "string"
+          ? data.message.slice(0, 500)
+          : null;
+    if (
+      !nodeId ||
+      !/^ccart_[0-9a-f]{64}$/.test(artifactId) ||
+      (state !== "ready" &&
+        state !== "error" &&
+        state !== "recoverable-error" &&
+        state !== "height") ||
+      Number.isNaN(height) ||
+      (data.message !== null && typeof data.message !== "string")
+    ) {
+      return null;
+    }
+    return {
+      type: "custom-component-runtime",
+      runtime: { nodeId, artifactId, state, height, message }
+    };
   }
   return null;
 }

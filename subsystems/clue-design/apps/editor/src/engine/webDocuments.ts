@@ -165,6 +165,57 @@ export interface WebBackgroundScrim {
 
 export type CustomComponentPropValue = string | number | boolean;
 
+export interface CustomComponentPropSchema {
+  type: "string" | "number" | "boolean";
+  enum?: string[];
+  default?: CustomComponentPropValue;
+}
+
+export interface CustomComponentManifest {
+  schema_version: 2;
+  meta: { name: string; description: string };
+  props_schema: {
+    type: "object";
+    properties: Record<string, CustomComponentPropSchema>;
+    required?: string[];
+    additionalProperties: false;
+  };
+  defaults: Record<string, CustomComponentPropValue>;
+  warnings: Array<{
+    code?: string;
+    severity?: string;
+    category?: string;
+    message?: string;
+  }>;
+  browser: {
+    format: "esm";
+    react: "host-singleton";
+    target?: string;
+  };
+}
+
+export interface CustomComponentArtifact {
+  artifact_id: string;
+  account_id: string;
+  slug: string;
+  manifest: CustomComponentManifest;
+  provenance: {
+    source_revision_id?: string;
+    source_version?: number;
+    compiler_version?: string;
+    [key: string]: unknown;
+  };
+  created_at?: string;
+}
+
+export interface CustomComponentCatalogItem {
+  accountId: string;
+  slug: string;
+  sourceVersion: number;
+  artifactCount: number;
+  latestArtifact: CustomComponentArtifact;
+}
+
 /** One web page in a {@link WebDoc}: identity/route plus the flattened node
  * map (`{ [id]: WebNode }`) the inspector looks selections up in. */
 export interface WebPageSummary {
@@ -874,6 +925,12 @@ export interface InsertImageInput {
   alt: string;
 }
 
+export interface InsertCustomComponentInput {
+  slug: string;
+  artifactId: string;
+  props: Record<string, CustomComponentPropValue>;
+}
+
 /** A built subtree ready for an insert_node op: every node (children before or
  * after parents, any order) plus the id of its root. */
 export interface BuiltSubtree {
@@ -1141,11 +1198,31 @@ export function buildInsertNodeOp(params: {
   const { page, selectedNodeId, kind, image } = params;
   const gen = params.gen ?? (() => hex6());
   const existing = pageNodeIds(page);
-  const placement = deriveInsertPlacement(page, selectedNodeId, kind === "section");
-  const rootId = page.root ?? "root";
   let subtree = buildInsertableSubtree(kind, existing, gen, image);
+  return placeInsertableSubtree({
+    page,
+    selectedNodeId,
+    forSection: kind === "section",
+    subtree,
+    existing,
+    gen
+  });
+}
 
-  if (placement.parent === rootId && kind !== "section") {
+function placeInsertableSubtree(params: {
+  page: WebPageSummary;
+  selectedNodeId: string | null;
+  forSection: boolean;
+  subtree: BuiltSubtree;
+  existing: Set<string>;
+  gen: () => string;
+}): WebOperation {
+  const { page, selectedNodeId, forSection, existing, gen } = params;
+  const placement = deriveInsertPlacement(page, selectedNodeId, forSection);
+  const rootId = page.root ?? "root";
+  let subtree = params.subtree;
+
+  if (placement.parent === rootId && !forSection) {
     const container: WebNode = {
       id: mint("box", existing, gen),
       kind: "container",
@@ -1163,6 +1240,65 @@ export function buildInsertNodeOp(params: {
   }
 
   return insertNodeOp(page.id, placement.parent, placement.index, subtree.nodes, subtree.root);
+}
+
+/** Build one canonical leaf insertion for a picker-selected immutable artifact.
+ * Required props without compiler defaults receive a deterministic neutral
+ * value so the new node satisfies its generated schema immediately. */
+export function initialCustomComponentProps(
+  artifact: CustomComponentArtifact
+): Record<string, CustomComponentPropValue> {
+  const properties = artifact.manifest.props_schema.properties;
+  const required = new Set(artifact.manifest.props_schema.required ?? []);
+  const values: Record<string, CustomComponentPropValue> = {};
+  for (const [name, schema] of Object.entries(properties)) {
+    const declaredDefault = artifact.manifest.defaults[name] ?? schema.default;
+    if (
+      (schema.type === "string" && typeof declaredDefault === "string") ||
+      (schema.type === "number" && typeof declaredDefault === "number") ||
+      (schema.type === "boolean" && typeof declaredDefault === "boolean")
+    ) {
+      values[name] = declaredDefault;
+      continue;
+    }
+    if (!required.has(name)) {
+      continue;
+    }
+    if (schema.type === "boolean") {
+      values[name] = false;
+    } else if (schema.type === "number") {
+      values[name] = 0;
+    } else {
+      values[name] = schema.enum?.[0] ?? "";
+    }
+  }
+  return values;
+}
+
+export function buildInsertCustomComponentOp(params: {
+  page: WebPageSummary;
+  selectedNodeId: string | null;
+  component: InsertCustomComponentInput;
+  gen?: () => string;
+}): WebOperation {
+  const gen = params.gen ?? (() => hex6());
+  const existing = pageNodeIds(params.page);
+  const node: WebNode = {
+    id: mint("cc", existing, gen),
+    kind: "custom_component",
+    classes: "w-full min-h-[160px]",
+    slug: params.component.slug,
+    artifact_id: params.component.artifactId,
+    props: { ...params.component.props }
+  };
+  return placeInsertableSubtree({
+    page: params.page,
+    selectedNodeId: params.selectedNodeId,
+    forSection: false,
+    subtree: { nodes: [node], root: node.id },
+    existing,
+    gen
+  });
 }
 
 /**
@@ -1985,6 +2121,212 @@ export async function listWebAccounts({
   return accounts
     .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
     .map(readWebAccount);
+}
+
+function customComponentPropValueMatches(
+  value: unknown,
+  schema: CustomComponentPropSchema
+): value is CustomComponentPropValue {
+  return (
+    (schema.type === "string" && typeof value === "string") ||
+    (schema.type === "number" &&
+      typeof value === "number" &&
+      Number.isFinite(value)) ||
+    (schema.type === "boolean" && typeof value === "boolean")
+  );
+}
+
+function readCustomComponentArtifact(value: unknown): CustomComponentArtifact | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const artifact = value as Record<string, unknown>;
+  const manifest = artifact.manifest;
+  if (!manifest || typeof manifest !== "object") {
+    return null;
+  }
+  const contract = manifest as Record<string, unknown>;
+  const meta = contract.meta;
+  const propsSchema = contract.props_schema;
+  const browser = contract.browser;
+  const properties =
+    propsSchema && typeof propsSchema === "object"
+      ? (propsSchema as Record<string, unknown>).properties
+      : null;
+  const required =
+    propsSchema && typeof propsSchema === "object"
+      ? (propsSchema as Record<string, unknown>).required
+      : null;
+  const defaults = contract.defaults;
+  const warnings = contract.warnings;
+  if (
+    contract.schema_version !== 2 ||
+    !meta ||
+    typeof meta !== "object" ||
+    typeof (meta as Record<string, unknown>).name !== "string" ||
+    !(meta as Record<string, unknown>).name ||
+    typeof (meta as Record<string, unknown>).description !== "string" ||
+    !propsSchema ||
+    typeof propsSchema !== "object" ||
+    (propsSchema as Record<string, unknown>).type !== "object" ||
+    (propsSchema as Record<string, unknown>).additionalProperties !== false ||
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties) ||
+    (required !== undefined &&
+      (!Array.isArray(required) ||
+        required.some((name) => typeof name !== "string"))) ||
+    !defaults ||
+    typeof defaults !== "object" ||
+    Array.isArray(defaults) ||
+    !Array.isArray(warnings) ||
+    warnings.some(
+      (warning) =>
+        !warning || typeof warning !== "object" || Array.isArray(warning)
+    ) ||
+    !browser ||
+    typeof browser !== "object" ||
+    (browser as Record<string, unknown>).format !== "esm" ||
+    (browser as Record<string, unknown>).react !== "host-singleton" ||
+    typeof artifact.artifact_id !== "string" ||
+    !/^ccart_[0-9a-f]{64}$/.test(artifact.artifact_id) ||
+    typeof artifact.account_id !== "string" ||
+    artifact.account_id.length === 0 ||
+    typeof artifact.slug !== "string" ||
+    artifact.slug.length === 0 ||
+    !artifact.provenance ||
+    typeof artifact.provenance !== "object" ||
+    Array.isArray(artifact.provenance)
+  ) {
+    return null;
+  }
+  const fields = properties as Record<string, unknown>;
+  const parsedFields: Record<string, CustomComponentPropSchema> = {};
+  for (const [name, raw] of Object.entries(fields)) {
+    if (
+      !raw ||
+      typeof raw !== "object" ||
+      Array.isArray(raw) ||
+      !["string", "number", "boolean"].includes(
+        String((raw as Record<string, unknown>).type)
+      )
+    ) {
+      return null;
+    }
+    const field = raw as unknown as CustomComponentPropSchema;
+    if (
+      (field.enum !== undefined &&
+        (field.type !== "string" ||
+          !Array.isArray(field.enum) ||
+          field.enum.length === 0 ||
+          field.enum.some((option) => typeof option !== "string"))) ||
+      (field.default !== undefined &&
+        (!customComponentPropValueMatches(field.default, field) ||
+          (field.enum !== undefined &&
+            typeof field.default === "string" &&
+            !field.enum.includes(field.default))))
+    ) {
+      return null;
+    }
+    parsedFields[name] = field;
+  }
+  if (
+    Array.isArray(required) &&
+    required.some((name) => !Object.hasOwn(parsedFields, name))
+  ) {
+    return null;
+  }
+  for (const [name, defaultValue] of Object.entries(
+    defaults as Record<string, unknown>
+  )) {
+    const field = parsedFields[name];
+    if (
+      !field ||
+      !customComponentPropValueMatches(defaultValue, field) ||
+      (field.enum !== undefined &&
+        typeof defaultValue === "string" &&
+        !field.enum.includes(defaultValue))
+    ) {
+      return null;
+    }
+  }
+  return artifact as unknown as CustomComponentArtifact;
+}
+
+/** Account-local, successfully compiled custom components available to the
+ * editor picker. Families whose newest artifact predates runtime contract 1
+ * remain inspectable through the API but are not offered as executable UI. */
+export async function listCustomComponents(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  accountId: string
+): Promise<CustomComponentCatalogItem[]> {
+  const response = await fetchImpl(
+    new URL(
+      `/web/accounts/${encodeURIComponent(accountId)}/custom-components`,
+      apiBaseUrl
+    )
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Custom-component list failed (HTTP ${response.status}).`
+      )
+    );
+  }
+  const payload = (await response.json()) as { components?: unknown };
+  return (Array.isArray(payload.components) ? payload.components : [])
+    .map((value): CustomComponentCatalogItem | null => {
+      if (!value || typeof value !== "object") {
+        return null;
+      }
+      const component = value as Record<string, unknown>;
+      const artifact = readCustomComponentArtifact(component.latest_artifact);
+      if (
+        !artifact ||
+        typeof component.slug !== "string" ||
+        typeof component.account_id !== "string"
+      ) {
+        return null;
+      }
+      return {
+        accountId: component.account_id,
+        slug: component.slug,
+        sourceVersion:
+          typeof component.source_version === "number" ? component.source_version : 0,
+        artifactCount:
+          typeof component.artifact_count === "number" ? component.artifact_count : 0,
+        latestArtifact: artifact
+      };
+    })
+    .filter((value): value is CustomComponentCatalogItem => value !== null);
+}
+
+export async function fetchCustomComponentArtifact(
+  { apiBaseUrl, fetchImpl = (input, init) => fetch(input, init) }: WebDocumentOptions,
+  accountId: string,
+  artifactId: string
+): Promise<CustomComponentArtifact> {
+  const response = await fetchImpl(
+    new URL(
+      `/web/accounts/${encodeURIComponent(accountId)}/custom-component-artifacts/${encodeURIComponent(artifactId)}`,
+      apiBaseUrl
+    )
+  );
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Custom-component artifact failed to load (HTTP ${response.status}).`
+      )
+    );
+  }
+  const payload = (await response.json()) as { artifact?: unknown };
+  const artifact = readCustomComponentArtifact(payload.artifact);
+  if (!artifact) {
+    throw new Error("Custom-component artifact uses an unsupported runtime contract.");
+  }
+  return artifact;
 }
 
 /** Create an account (`POST /web/accounts`). A 409 (duplicate id) or 422
