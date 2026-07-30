@@ -5,11 +5,13 @@ import Link from "next/link";
 
 import { editorApiBaseUrl } from "@/engine/editorConfig";
 import {
+  buildWebRichTextVariableCatalog,
   buildInsertNodeOp,
   fetchWebDocument,
   fetchWebRenderHtml,
   fetchWebTheme,
   listDialogComponents,
+  listWebAccounts,
   planCanvasNodeMove,
   planCanvasNodeResize,
   replaceAssetOp,
@@ -22,6 +24,7 @@ import {
   type InsertableKind,
   type LoadedWebDocument,
   type RichTextDocument,
+  type WebAccount,
   type WebDoc,
   type WebNode,
   type WebNodeProps,
@@ -41,6 +44,7 @@ import { WebInsertPalette } from "@/components/web/WebInsertPalette";
 import { WebAssetDrawer } from "@/components/web/WebAssetDrawer";
 import { WebPublishDialog } from "@/components/web/WebPublishDialog";
 import { WebBatchDialog } from "@/components/web/WebBatchDialog";
+import { WebRichTextToolbar } from "@/components/web/WebRichTextToolbar";
 import { selectionChipLabel, type WebSelection } from "@/engine/webBridge";
 import {
   parseWebGroundingSummary,
@@ -276,6 +280,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateToast, setTemplateToast] = useState<TemplateToast | null>(null);
   const [theme, setTheme] = useState<WebTheme | null>(null);
+  const [accounts, setAccounts] = useState<WebAccount[]>([]);
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
@@ -365,12 +370,16 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     ready: bridgeReady,
     editingNodeId,
     richTextFormats,
+    richTextSelection,
     richTextError,
     clearSelection,
     resetSelection,
     previewComponent,
     selectNode,
-    formatRichText
+    formatRichText,
+    commandRichText,
+    setRichTextToolbarActive,
+    settleRichText
   } = useWebBridgeSelection({
     iframeRef,
     nonceRef,
@@ -410,6 +419,14 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const inspectorPageId = located?.pageId ?? defaultPage;
   const inspectorPage = findWebPage(webDoc, inspectorPageId);
   const dialogs = React.useMemo(() => listDialogComponents(webDoc), [webDoc]);
+  const richTextVariables = React.useMemo(
+    () =>
+      buildWebRichTextVariableCatalog(
+        accounts,
+        document?.accountId ?? null
+      ),
+    [accounts, document?.accountId]
+  );
 
   // True when an asset id already lives on the document (a plain replace/insert
   // then needs no upsert_asset first).
@@ -652,6 +669,27 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
       cancelled = true;
     };
   }, [documentId, shouldRender, reloadNonce]);
+
+  // Personalization variables come from the same persisted account records the
+  // derive path consumes. A missing catalog is an honest empty state in the
+  // toolbar, not a hard-coded list of placeholders.
+  useEffect(() => {
+    if (!shouldRender) {
+      setAccounts([]);
+      return;
+    }
+    let cancelled = false;
+    listWebAccounts({ apiBaseUrl: editorApiBaseUrl() })
+      .then((records) => {
+        if (!cancelled) setAccounts(records);
+      })
+      .catch(() => {
+        if (!cancelled) setAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldRender, reloadNonce]);
 
   // Undo/redo keyboard: ⌘Z / ⇧⌘Z (Ctrl on non-mac). Ignored while a turn runs,
   // a mutation is in flight, or focus is in an editable field / the iframe.
@@ -970,6 +1008,20 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
             ×
           </button>
         </div>
+      ) : null}
+
+      {editingNodeId && richTextSelection ? (
+        <WebRichTextToolbar
+          iframeRef={iframeRef}
+          nodeId={editingNodeId}
+          selection={richTextSelection}
+          theme={theme}
+          variables={richTextVariables}
+          disabled={manualEdits.busy}
+          command={commandRichText}
+          setInteractionActive={setRichTextToolbarActive}
+          settle={settleRichText}
+        />
       ) : null}
 
       {state.kind === "loading" ? (

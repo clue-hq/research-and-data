@@ -12,6 +12,7 @@
 
 import type { AssetRecord } from "./contracts";
 import { setElementSizePixels } from "./webClassFacets";
+import { webBindingKeyIsAllowed } from "./webRichText";
 
 export interface WebDocumentOptions {
   apiBaseUrl: string;
@@ -673,11 +674,9 @@ export function setSlotKeyOp(pageId: string, id: string, slotKey: string | null)
 /** The slot-key charset the engine enforces (`SlotKey` rules, D2): lowercase
  * alnum plus `_ . -`, 1–64 chars. The `when:` presence prefix is NOT part of a
  * key — it is stripped/added around a valid key by the inspector. */
-const SLOT_KEY_RE = /^[a-z0-9_.-]{1,64}$/;
-
 /** True when `key` (without any `when:` prefix) is a legal slot key. */
 export function isValidSlotKey(key: string): boolean {
-  return SLOT_KEY_RE.test(key);
+  return webBindingKeyIsAllowed(key);
 }
 
 /** Split a stored `slot_key` into its editable key + presence-gate flag. A
@@ -1822,6 +1821,64 @@ export interface WebAccountInput {
   logoAssetId?: string | null;
   data?: Record<string, string>;
   notes?: string | null;
+}
+
+/** One text-valued personalization variable the rich-text toolbar may insert.
+ * Asset values (currently `account.logo`) are deliberately absent: inline
+ * variable nodes derive text only. `example` is an account-backed suggestion,
+ * never an implicit fallback — the human must keep visible fallback copy. */
+export interface WebRichTextVariable {
+  key: string;
+  label: string;
+  example: string | null;
+}
+
+/** Build the variable catalog from the exact account model used by derivation.
+ * A derived page sees only its own account. A template/accountless page sees
+ * the union of currently persisted account text fields. With no applicable
+ * account rows the result is empty, allowing the toolbar to explain why the
+ * variable control is disabled. */
+export function buildWebRichTextVariableCatalog(
+  accounts: WebAccount[],
+  accountId: string | null
+): WebRichTextVariable[] {
+  const applicable = accountId
+    ? accounts.filter((account) => account.accountId === accountId)
+    : accounts;
+  if (applicable.length === 0) {
+    return [];
+  }
+
+  const examples = new Map<string, string>();
+  const add = (key: string, value: string | null | undefined) => {
+    const trimmed = value?.trim() ?? "";
+    if (isValidSlotKey(key) && !examples.has(key)) {
+      examples.set(key, trimmed);
+    } else if (isValidSlotKey(key) && !examples.get(key) && trimmed) {
+      examples.set(key, trimmed);
+    }
+  };
+
+  for (const account of applicable) {
+    add("account.name", account.name);
+    if (account.domain) {
+      add("account.domain", account.domain);
+    }
+    for (const [name, value] of Object.entries(account.data)) {
+      add(`account.${name}`, value);
+    }
+  }
+
+  return Array.from(examples, ([key, example]) => ({
+    key,
+    label: key
+      .replace(/^account\./, "")
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "),
+    example: example || null
+  })).sort((left, right) => left.key.localeCompare(right.key));
 }
 
 /** Read one account row from a server payload (snake_case → camelCase). */

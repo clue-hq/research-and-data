@@ -23,6 +23,39 @@ export type RichTextFormat = "bold" | "italic" | "underline" | "strikethrough";
 export type RichTextFormatValue = "on" | "off" | "mixed";
 export type RichTextFormatState = Record<RichTextFormat, RichTextFormatValue>;
 
+export interface RichTextLinkSelection {
+  state: RichTextFormatValue;
+  href: string | null;
+  newTab: boolean | null;
+}
+
+/** The iframe-local selection snapshot driving the floating toolbar. `rect` is
+ * measured in iframe viewport coordinates and translated by the parent against
+ * the iframe's current bounding rect. */
+export interface RichTextSelectionState {
+  collapsed: boolean;
+  selectedText: string;
+  rect: WebNodeRect | null;
+  formats: RichTextFormatState;
+  commonClasses: string[];
+  mixedClasses: string[];
+  link: RichTextLinkSelection;
+}
+
+export type RichTextCommand =
+  | { type: "format"; format: RichTextFormat }
+  | {
+      type: "set_class_facet";
+      facet: "text_color" | "highlight";
+      token: string | null;
+      knownTokens: string[];
+    }
+  | { type: "set_link"; href: string; newTab: boolean }
+  | { type: "remove_link" }
+  | { type: "insert_variable"; key: string; fallback: string }
+  | { type: "clear_formatting" }
+  | { type: "refresh_selection" };
+
 export interface WebNodeRect {
   x: number;
   y: number;
@@ -111,7 +144,7 @@ export type WebSelection = WebNodeInfo;
  *   • `ready` — the bridge is live.
  *   • `select` — the current selection (or `null` when cleared).
  *   • `edit-start` / `edit-end` — one local Lexical session lifecycle.
- *   • `rich-text-format` — current selected-range marks for inspector state.
+ *   • `rich-text-selection` — range geometry plus marks/classes/link state.
  *   • `rich-text-commit` — one canonical RichTextDocument for the whole local
  *     session; the server validates it before a SetRichText commit. */
 export type WebBridgeInbound =
@@ -121,7 +154,11 @@ export type WebBridgeInbound =
   | { type: "edit-start"; nodeId: string }
   | { type: "edit-end"; nodeId: string; committed: boolean; changed: boolean }
   | { type: "edit-error"; nodeId: string; message: string }
-  | { type: "rich-text-format"; nodeId: string; formats: RichTextFormatState }
+  | {
+      type: "rich-text-selection";
+      nodeId: string;
+      selection: RichTextSelectionState;
+    }
   | { type: "rich-text-commit"; nodeId: string; content: RichTextDocument }
   | {
       type: "move-node";
@@ -274,6 +311,69 @@ function coerceRichTextFormatState(value: unknown): RichTextFormatState | null {
   return Object.fromEntries(entries as [RichTextFormat, RichTextFormatValue][]) as RichTextFormatState;
 }
 
+function coerceStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    return null;
+  }
+  return Array.from(new Set(value));
+}
+
+function coerceRichTextSelectionState(value: unknown): RichTextSelectionState | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const formats = coerceRichTextFormatState(record.formats);
+  const commonClasses = coerceStringArray(record.commonClasses);
+  const mixedClasses = coerceStringArray(record.mixedClasses);
+  const rect =
+    record.rect === null
+      ? null
+      : record.rect && typeof record.rect === "object"
+        ? coerceRect(record.rect)
+        : null;
+  const linkRecord =
+    record.link && typeof record.link === "object"
+      ? (record.link as Record<string, unknown>)
+      : null;
+  const linkState = linkRecord?.state;
+  if (
+    typeof record.collapsed !== "boolean" ||
+    typeof record.selectedText !== "string" ||
+    !formats ||
+    !commonClasses ||
+    !mixedClasses ||
+    (record.rect !== null && !rect) ||
+    !linkRecord ||
+    (linkState !== "on" && linkState !== "off" && linkState !== "mixed")
+  ) {
+    return null;
+  }
+  const href =
+    linkRecord.href === null || typeof linkRecord.href === "string"
+      ? linkRecord.href
+      : null;
+  const newTab =
+    linkRecord.newTab === null || typeof linkRecord.newTab === "boolean"
+      ? linkRecord.newTab
+      : null;
+  if (
+    (linkState === "on" && (typeof href !== "string" || typeof newTab !== "boolean")) ||
+    (linkState !== "on" && (linkRecord.href !== null || linkRecord.newTab !== null))
+  ) {
+    return null;
+  }
+  return {
+    collapsed: record.collapsed,
+    selectedText: record.selectedText,
+    rect,
+    formats,
+    commonClasses,
+    mixedClasses,
+    link: { state: linkState, href, newTab }
+  };
+}
+
 function coerceRichTextDocument(value: unknown): RichTextDocument | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -353,10 +453,12 @@ export function validateBridgeMessage(
         }
       : null;
   }
-  if (data.type === "rich-text-format") {
+  if (data.type === "rich-text-selection") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
-    const formats = coerceRichTextFormatState(data.formats);
-    return nodeId && formats ? { type: "rich-text-format", nodeId, formats } : null;
+    const selection = coerceRichTextSelectionState(data.selection);
+    return nodeId && selection
+      ? { type: "rich-text-selection", nodeId, selection }
+      : null;
   }
   if (data.type === "rich-text-commit") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
@@ -487,19 +589,63 @@ export function webBridgeInspectNodeMessage(
 export function webBridgeRichTextCommandMessage(
   nonce: string,
   nodeId: string,
-  format: RichTextFormat
+  command: RichTextCommand
 ): {
   channel: typeof WEB_BRIDGE_CHANNEL;
   nonce: string;
   type: "rich-text-command";
   nodeId: string;
-  format: RichTextFormat;
+  command: RichTextCommand;
 } {
   return {
     channel: WEB_BRIDGE_CHANNEL,
     nonce,
     type: "rich-text-command",
     nodeId,
-    format
+    command
+  };
+}
+
+/** Tell the iframe that focus is intentionally moving into/out of the parent
+ * toolbar. While active, iframe focusout must not settle the local edit. */
+export function webBridgeRichTextToolbarMessage(
+  nonce: string,
+  nodeId: string,
+  active: boolean
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "rich-text-toolbar";
+  nodeId: string;
+  active: boolean;
+} {
+  return {
+    channel: WEB_BRIDGE_CHANNEL,
+    nonce,
+    type: "rich-text-toolbar",
+    nodeId,
+    active
+  };
+}
+
+/** Explicitly settle an iframe-local edit while parent toolbar focus is active.
+ * Escape cancels; clicking outside the toolbar commits before the new action. */
+export function webBridgeRichTextSettleMessage(
+  nonce: string,
+  nodeId: string,
+  action: "commit" | "cancel"
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "rich-text-settle";
+  nodeId: string;
+  action: "commit" | "cancel";
+} {
+  return {
+    channel: WEB_BRIDGE_CHANNEL,
+    nonce,
+    type: "rich-text-settle",
+    nodeId,
+    action
   };
 }

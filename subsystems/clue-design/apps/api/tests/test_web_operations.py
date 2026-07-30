@@ -291,6 +291,76 @@ def test_selected_range_rich_text_commits_atomically_and_undoes(
     )
 
 
+def test_rich_text_rejects_unsafe_links_and_missing_variable_fallback(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    headline = next(
+        node
+        for node in before["scene"]["pages"][0]["nodes"].values()
+        if node.get("kind") == "text"
+    )
+
+    def apply(content: dict[str, object]):
+        return client.post(
+            f"/documents/{document['id']}/web/operations",
+            json={
+                "base_version": before["current_version"],
+                "operations": [
+                    {
+                        "kind": "set_rich_text",
+                        "page_id": "home",
+                        "id": headline["id"],
+                        "content": content,
+                    }
+                ],
+            },
+        )
+
+    unsafe = apply(
+        {
+            "schema_version": 1,
+            "blocks": [
+                {
+                    "type": "paragraph",
+                    "children": [
+                        {
+                            "type": "text",
+                            "text": "unsafe",
+                            "link": {"href": "javascript:alert(1)"},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    assert unsafe.status_code == 422, unsafe.text
+    assert "rich-text link href is not allowed" in unsafe.text
+
+    no_fallback = apply(
+        {
+            "schema_version": 1,
+            "blocks": [
+                {
+                    "type": "paragraph",
+                    "children": [
+                        {
+                            "type": "variable",
+                            "key": "account.name",
+                            "fallback": "   ",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    assert no_fallback.status_code == 422, no_fallback.text
+    assert "visible fallback text" in no_fallback.text
+    assert get_document(client, document["id"])["current_version"] == before["current_version"]
+
+
 def test_clickable_container_and_background_semantics_persist_render_and_undo(
     client: TestClient,
 ) -> None:

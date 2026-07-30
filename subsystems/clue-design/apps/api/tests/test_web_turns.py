@@ -291,9 +291,14 @@ def test_web_render_bridge_exposes_sandboxed_selected_range_rich_text(
     assert response.status_code == 200, response.text
     html = response.json()["html"]
     assert 'script.src = "/vendor/web-rich-text-runtime.js"' in html
-    assert 'post("rich-text-format"' in html
+    assert 'post("rich-text-selection"' in html
     assert 'post("rich-text-commit"' in html
     assert 'data.type === "rich-text-command"' in html
+    assert 'data.type === "rich-text-toolbar"' in html
+    assert 'data.type === "rich-text-settle"' in html
+    assert "editingSession.command(data.command)" in html
+    assert "editingSession.setInteractionActive(editingToolbarActive)" in html
+    assert "editingSession.refreshSelection()" in html
     assert "event.source !== parent" in html
     assert "session.getDocument()" in html
 

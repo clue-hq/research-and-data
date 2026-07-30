@@ -181,6 +181,195 @@
   background: var(--bg-white);
 }
 
+/* --- selected-range rich-text toolbar ------------------------------------ */
+.web-rich-toolbar {
+  position: fixed;
+  z-index: 40;
+  visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  max-width: min(620px, calc(100vw - 24px));
+  color: var(--text-primary);
+}
+.web-rich-toolbar.is-positioned { visibility: visible; }
+.web-rich-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+.brand-app .web-rich-tool {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.brand-app .web-rich-tool:hover:not(:disabled),
+.brand-app .web-rich-tool:focus-visible {
+  border-color: var(--border-default);
+  background: var(--bg-card-04);
+  color: var(--text-primary);
+}
+.brand-app .web-rich-tool.is-selected {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+.brand-app .web-rich-tool.is-mixed {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+.brand-app .web-rich-tool:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.web-rich-glyph.is-italic { font-style: italic; }
+.web-rich-glyph.is-underline { text-decoration: underline; }
+.web-rich-glyph.is-strikethrough { text-decoration: line-through; }
+.web-rich-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 3px;
+  background: var(--border-default);
+}
+.web-rich-color-glyph {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  line-height: 1;
+}
+.web-rich-color-glyph > span {
+  display: block;
+  width: 14px;
+  height: 3px;
+  margin-top: 2px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+.web-rich-highlight-glyph {
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: var(--accent-wash);
+}
+.web-rich-popover {
+  width: min(360px, calc(100vw - 24px));
+  padding: var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+.web-rich-toolbar.is-above .web-rich-popover { order: -1; }
+.web-rich-popover-head {
+  margin-bottom: var(--space-xs);
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.web-rich-popover-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-body-sm);
+}
+.web-rich-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-xs);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.brand-app .web-rich-swatch {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 5px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--text-body-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.brand-app .web-rich-swatch.is-selected {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.web-rich-swatch-color {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+}
+.brand-app .web-rich-swatch.is-clear {
+  justify-content: center;
+  color: var(--text-muted);
+}
+.web-rich-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.web-rich-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+}
+.web-rich-form input,
+.web-rich-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card-01);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body-sm);
+}
+.web-rich-form .web-rich-check {
+  flex-direction: row;
+  align-items: center;
+}
+.web-rich-form .web-rich-check input {
+  width: auto;
+}
+.web-rich-error {
+  margin: 0;
+  color: var(--status-error);
+  font-size: var(--text-caption);
+}
+.web-rich-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+}
+.brand-app .web-rich-form button {
+  padding: 6px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card-04);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body-sm);
+  cursor: pointer;
+}
+
 /* the "Generating…" overlay pill — pinned to the region, unaffected by scroll */
 .web-generating-pill {
   position: absolute;

@@ -578,7 +578,7 @@ fn render_leaf(
         out.push_str(&escape_attr(&link.href));
         out.push('"');
         if link.new_tab {
-            out.push_str(" target=\"_blank\"");
+            out.push_str(" target=\"_blank\" rel=\"noopener noreferrer\"");
         }
         out.push('>');
     }
@@ -724,6 +724,11 @@ fn validate_inlines(
                 if !personalization_key_is_valid(key) {
                     issues.push(format!("invalid personalization variable key `{key}`"));
                 }
+                if fallback.trim().is_empty() {
+                    issues.push(format!(
+                        "personalization variable `{key}` requires visible fallback text"
+                    ));
+                }
                 validate_leaf(classes, link, issues);
             }
             RichTextInline::LineBreak { link } => validate_link(link, issues),
@@ -762,7 +767,7 @@ mod tests {
     #[test]
     fn imports_marks_links_classes_variables_and_breaks() {
         let doc = RichTextDocument::from_inline_html(
-            "Hello <a href=\"/x\"><strong>bold</strong></a> <span data-var=\"account.name\" class=\"text-primary\">Acme</span><br>now",
+            "Hello <a href=\"/x\" target=\"_blank\"><strong>bold</strong></a> <span data-var=\"account.name\" class=\"text-primary\">Acme</span><br>now",
         );
 
         assert_eq!(doc.plain_text(), "Hello bold Acme\nnow");
@@ -770,7 +775,7 @@ mod tests {
         assert!(doc.contains_variable());
         assert_eq!(
             doc.to_inline_html(),
-            "Hello <a href=\"/x\"><strong>bold</strong></a> <span data-var=\"account.name\" class=\"text-primary\">Acme</span><br />now"
+            "Hello <a href=\"/x\" target=\"_blank\" rel=\"noopener noreferrer\"><strong>bold</strong></a> <span data-var=\"account.name\" class=\"text-primary\">Acme</span><br />now"
         );
         assert!(doc.validate().is_empty());
     }
@@ -812,5 +817,26 @@ mod tests {
         let issues = doc.validate();
         assert!(issues.iter().any(|issue| issue.contains("variable key")));
         assert!(issues.iter().any(|issue| issue.contains("href")));
+    }
+
+    #[test]
+    fn rejects_variables_without_visible_fallback_text() {
+        let doc = RichTextDocument {
+            schema_version: RICH_TEXT_SCHEMA_VERSION,
+            blocks: vec![RichTextBlock::Paragraph {
+                alignment: None,
+                children: vec![RichTextInline::Variable {
+                    key: "account.name".to_owned(),
+                    fallback: "   ".to_owned(),
+                    marks: RichTextMarks::default(),
+                    classes: None,
+                    link: None,
+                }],
+            }],
+        };
+        assert!(doc
+            .validate()
+            .iter()
+            .any(|issue| issue.contains("visible fallback text")));
     }
 }

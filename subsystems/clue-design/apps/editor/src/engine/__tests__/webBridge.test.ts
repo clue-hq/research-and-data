@@ -8,6 +8,8 @@ import {
   webBridgeComponentPreviewMessage,
   webBridgeInspectNodeMessage,
   webBridgeRichTextCommandMessage,
+  webBridgeRichTextSettleMessage,
+  webBridgeRichTextToolbarMessage,
   webBridgeSelectNodeMessage,
   type WebSelection
 } from "../webBridge";
@@ -235,39 +237,47 @@ describe("validateBridgeMessage", () => {
     });
   });
 
-  it("passes mixed selected-range format state through", () => {
-    const formats = {
-      bold: "mixed",
-      italic: "off",
-      underline: "on",
-      strikethrough: "off"
+  it("passes selected-range geometry, marks, classes, and link state through", () => {
+    const selection = {
+      collapsed: false,
+      selectedText: "selected words",
+      rect: { x: 20, y: 30, top: 30, right: 120, bottom: 48, left: 20, width: 100, height: 18 },
+      formats: {
+        bold: "mixed",
+        italic: "off",
+        underline: "on",
+        strikethrough: "off"
+      },
+      commonClasses: ["text-primary"],
+      mixedClasses: ["bg-accent"],
+      link: { state: "on", href: "/story", newTab: false }
     };
     const event = makeEvent({
       data: {
         channel: "lumen-web-bridge",
         nonce: NONCE,
-        type: "rich-text-format",
+        type: "rich-text-selection",
         nodeId: "headline",
-        formats
+        selection
       },
       origin: "null",
       source: FRAME
     });
     expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
-      type: "rich-text-format",
+      type: "rich-text-selection",
       nodeId: "headline",
-      formats
+      selection
     });
   });
 
-  it("rejects malformed selected-range format state", () => {
+  it("rejects malformed selected-range toolbar state", () => {
     const event = makeEvent({
       data: {
         channel: "lumen-web-bridge",
         nonce: NONCE,
-        type: "rich-text-format",
+        type: "rich-text-selection",
         nodeId: "headline",
-        formats: { bold: true }
+        selection: { collapsed: false, formats: { bold: true } }
       },
       origin: "null",
       source: FRAME
@@ -488,13 +498,39 @@ describe("webBridgeInspectNodeMessage", () => {
 });
 
 describe("webBridgeRichTextCommandMessage", () => {
-  it("targets one active node and one selected-range mark", () => {
-    expect(webBridgeRichTextCommandMessage(NONCE, "headline", "strikethrough")).toEqual({
+  it("targets one active node with a typed selected-range command", () => {
+    expect(
+      webBridgeRichTextCommandMessage(NONCE, "headline", {
+        type: "format",
+        format: "strikethrough"
+      })
+    ).toEqual({
       channel: "lumen-web-bridge",
       nonce: NONCE,
       type: "rich-text-command",
       nodeId: "headline",
-      format: "strikethrough"
+      command: { type: "format", format: "strikethrough" }
+    });
+  });
+});
+
+describe("rich-text toolbar lifecycle messages", () => {
+  it("keeps parent toolbar focus alive and settles explicitly", () => {
+    expect(webBridgeRichTextToolbarMessage(NONCE, "headline", true)).toEqual({
+      channel: "lumen-web-bridge",
+      nonce: NONCE,
+      type: "rich-text-toolbar",
+      nodeId: "headline",
+      active: true
+    });
+    expect(
+      webBridgeRichTextSettleMessage(NONCE, "headline", "cancel")
+    ).toEqual({
+      channel: "lumen-web-bridge",
+      nonce: NONCE,
+      type: "rich-text-settle",
+      nodeId: "headline",
+      action: "cancel"
     });
   });
 });

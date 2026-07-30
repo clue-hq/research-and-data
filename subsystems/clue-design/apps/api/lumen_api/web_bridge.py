@@ -49,6 +49,11 @@ session loaded lazily inside the existing sandbox. The session exports the
 library-independent RichTextDocument, reports selection formatting, and accepts
 nonce-scoped format commands from the inspector. A whole session commits as one
 SetRichText operation; Escape restores the exact pre-session HTML.
+
+v8 reports the active DOM range rectangle plus mark/class/link state for a
+parent-rendered floating toolbar. Its nonce-scoped command envelope covers theme
+class facets, safe links, typed variables, and clear-formatting. A toolbar-focus
+handshake keeps the iframe selection alive while parent controls own focus.
 """
 
 import json
@@ -77,6 +82,7 @@ _BRIDGE_V0_TEMPLATE = """
   var editingRoot = null;
   var editingGeneration = 0;
   var editingBlurTimer = null;
+  var editingToolbarActive = false;
   var richTextRuntimePromise = null;
   var metricsFrame = null;
   var resizeObserver = null;
@@ -310,7 +316,7 @@ _BRIDGE_V0_TEMPLATE = """
   }
 
   function scheduleEditingBlurCommit() {
-    if (!editing) return;
+    if (!editing || editingToolbarActive) return;
     clearEditingBlurTimer();
     editingBlurTimer = window.setTimeout(function () {
       editingBlurTimer = null;
@@ -357,6 +363,7 @@ _BRIDGE_V0_TEMPLATE = """
     editing = null;
     editingSession = null;
     editingRoot = null;
+    editingToolbarActive = false;
     editingGeneration += 1;
     el.classList.remove("lumen-editing");
     el.innerHTML = settledHtml;
@@ -379,6 +386,7 @@ _BRIDGE_V0_TEMPLATE = """
     editingOriginal = el.innerHTML;
     editingOriginalDocument = "";
     editingSession = null;
+    editingToolbarActive = false;
     editingRoot = document.createElement("span");
     editingRoot.className = "lumen-rich-editor-root";
     el.innerHTML = "";
@@ -391,11 +399,11 @@ _BRIDGE_V0_TEMPLATE = """
         if (generation !== editingGeneration || editing !== el || !editingRoot) return;
         editingSession = runtime.mount(editingRoot, {
           initialHtml: editingOriginal,
-          onFormatStateChange: function (formats) {
+          onSelectionStateChange: function (selection) {
             if (editing === el) {
-              post("rich-text-format", {
+              post("rich-text-selection", {
                 nodeId: el.getAttribute("data-node-id"),
-                formats: formats
+                selection: selection
               });
             }
           },
@@ -410,6 +418,7 @@ _BRIDGE_V0_TEMPLATE = """
         var id = el.getAttribute("data-node-id");
         editing = null;
         editingRoot = null;
+        editingToolbarActive = false;
         editingGeneration += 1;
         el.classList.remove("lumen-editing");
         el.innerHTML = editingOriginal;
@@ -464,20 +473,42 @@ _BRIDGE_V0_TEMPLATE = """
     var data = event.data || {};
     if (event.source !== parent || data.channel !== CHANNEL || data.nonce !== NONCE) return;
     if (data.type === "rich-text-command") {
-      var validFormat =
-        data.format === "bold" ||
-        data.format === "italic" ||
-        data.format === "underline" ||
-        data.format === "strikethrough";
       if (
         editing &&
         editingSession &&
-        validFormat &&
+        data.command &&
+        typeof data.command === "object" &&
         data.nodeId === editing.getAttribute("data-node-id")
       ) {
         clearEditingBlurTimer();
-        editingSession.format(data.format);
+        editingSession.command(data.command);
+        editingSession.setInteractionActive(false);
+        editingToolbarActive = false;
         editingSession.focus();
+      }
+    }
+    if (data.type === "rich-text-toolbar") {
+      if (
+        editing &&
+        editingSession &&
+        data.nodeId === editing.getAttribute("data-node-id")
+      ) {
+        editingToolbarActive = data.active === true;
+        clearEditingBlurTimer();
+        editingSession.setInteractionActive(editingToolbarActive);
+        if (!editingToolbarActive) {
+          editingSession.focus();
+          editingSession.refreshSelection();
+        }
+      }
+    }
+    if (data.type === "rich-text-settle") {
+      if (
+        editing &&
+        data.nodeId === editing.getAttribute("data-node-id") &&
+        (data.action === "commit" || data.action === "cancel")
+      ) {
+        stopEditing(data.action === "commit");
       }
     }
     if (data.type === "clear") {
@@ -1011,6 +1042,7 @@ _BRIDGE_V0_TEMPLATE = """
     function () {
       if (selected) positionSelectionControls(selected);
       scheduleSelectedInfo();
+      if (editingSession) editingSession.refreshSelection();
     },
     { passive: true }
   );
@@ -1019,6 +1051,7 @@ _BRIDGE_V0_TEMPLATE = """
     function () {
       if (selected) positionSelectionControls(selected);
       scheduleSelectedInfo();
+      if (editingSession) editingSession.refreshSelection();
     },
     { passive: true }
   );

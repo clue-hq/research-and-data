@@ -21,7 +21,12 @@ import {
   type TextFormatType
 } from "lexical";
 import { createEmptyHistoryState, registerHistory } from "@lexical/history";
-import { $createLinkNode, $isLinkNode, LinkNode } from "@lexical/link";
+import {
+  $createLinkNode,
+  $isLinkNode,
+  $toggleLink,
+  LinkNode
+} from "@lexical/link";
 import { registerRichText } from "@lexical/rich-text";
 
 import type {
@@ -31,10 +36,18 @@ import type {
   RichTextLink,
   RichTextMarks
 } from "../engine/webDocuments";
-
-export type RichTextFormat = "bold" | "italic" | "underline" | "strikethrough";
-export type RichTextFormatValue = "on" | "off" | "mixed";
-export type RichTextFormatState = Record<RichTextFormat, RichTextFormatValue>;
+import {
+  richTextHrefIsAllowed,
+  webBindingKeyIsAllowed
+} from "../engine/webRichText";
+import type {
+  RichTextCommand,
+  RichTextFormat,
+  RichTextFormatState,
+  RichTextFormatValue,
+  RichTextSelectionState,
+  WebNodeRect
+} from "../engine/webBridge";
 
 interface InlineMetadata {
   classes: string | null;
@@ -66,9 +79,13 @@ interface ImportContext {
 
 export interface RichTextSession {
   format: (format: RichTextFormat) => void;
+  command: (command: RichTextCommand) => void;
+  setInteractionActive: (active: boolean) => void;
   getDocument: () => RichTextDocument;
   getHtml: () => string;
   getFormatState: () => RichTextFormatState;
+  getSelectionState: () => RichTextSelectionState;
+  refreshSelection: () => void;
   focus: () => void;
   destroy: () => void;
 }
@@ -76,6 +93,7 @@ export interface RichTextSession {
 export interface RichTextMountOptions {
   initialHtml: string;
   onFormatStateChange?: (state: RichTextFormatState) => void;
+  onSelectionStateChange?: (state: RichTextSelectionState) => void;
   onCommitRequest?: () => void;
   onCancelRequest?: () => void;
 }
@@ -296,7 +314,7 @@ function renderInline(inline: RichTextInline): string {
   }
   if (link) {
     html = `<a href="${escapeAttribute(link.href)}"${
-      link.new_tab ? ' target="_blank"' : ""
+      link.new_tab ? ' target="_blank" rel="noopener noreferrer"' : ""
     }>${html}</a>`;
   }
   return html;
@@ -336,17 +354,193 @@ function formatValue(selection: RangeSelection, format: TextFormatType): RichTex
   return "mixed";
 }
 
-function readFormatState(): RichTextFormatState {
-  const selection = $getSelection();
-  if (!$isRangeSelection(selection)) {
-    return { bold: "off", italic: "off", underline: "off", strikethrough: "off" };
+function textNodesForSelection(selection: RangeSelection): ReturnType<typeof $createTextNode>[] {
+  return selection.getNodes().filter($isTextNode);
+}
+
+function classSelectionState(selection: RangeSelection): {
+  commonClasses: string[];
+  mixedClasses: string[];
+} {
+  const nodes = textNodesForSelection(selection);
+  if (nodes.length === 0) {
+    return { commonClasses: [], mixedClasses: [] };
+  }
+  const sets = nodes.map(
+    (node) =>
+      new Set(
+        ($getState(node, inlineMetadataState).classes ?? "")
+          .split(/\s+/)
+          .filter(Boolean)
+      )
+  );
+  const union = new Set(sets.flatMap((set) => Array.from(set)));
+  const commonClasses = Array.from(union).filter((name) =>
+    sets.every((set) => set.has(name))
+  );
+  return {
+    commonClasses,
+    mixedClasses: Array.from(union).filter((name) => !commonClasses.includes(name))
+  };
+}
+
+function parentLinkFor(node: LexicalNode): LinkNode | null {
+  let current = node.getParent();
+  while (current) {
+    if ($isLinkNode(current)) {
+      return current;
+    }
+    current = current.getParent();
+  }
+  return null;
+}
+
+function enclosingLinkFor(node: LexicalNode): LinkNode | null {
+  return $isLinkNode(node) ? node : parentLinkFor(node);
+}
+
+function selectionHasToolbarContext(selection: RangeSelection): boolean {
+  return (
+    !selection.isCollapsed() ||
+    enclosingLinkFor(selection.anchor.getNode()) !== null
+  );
+}
+
+function unwrapLink(link: LinkNode): void {
+  const parent = link.getParentOrThrow();
+  parent.splice(link.getIndexWithinParent(), 0, link.getChildren());
+  link.remove();
+}
+
+function linkSelectionState(selection: RangeSelection): RichTextSelectionState["link"] {
+  const nodes = textNodesForSelection(selection);
+  const candidates =
+    nodes.length > 0
+      ? nodes
+      : $isTextNode(selection.anchor.getNode())
+        ? [selection.anchor.getNode()]
+        : [];
+  if (candidates.length === 0) {
+    return { state: "off", href: null, newTab: null };
+  }
+  const links = candidates.map(parentLinkFor);
+  if (links.every((link) => link === null)) {
+    return { state: "off", href: null, newTab: null };
+  }
+  const first = links[0];
+  if (
+    first &&
+    links.every(
+      (link) =>
+        link?.getURL() === first.getURL() &&
+        link?.getTarget() === first.getTarget()
+    )
+  ) {
+    return {
+      state: "on",
+      href: first.getURL(),
+      newTab: first.getTarget() === "_blank"
+    };
+  }
+  return { state: "mixed", href: null, newTab: null };
+}
+
+function domSelectionRect(rootElement: HTMLElement): WebNodeRect | null {
+  const domSelection = window.getSelection();
+  if (!domSelection || domSelection.rangeCount === 0) {
+    return null;
+  }
+  const anchor = domSelection.anchorNode;
+  const focus = domSelection.focusNode;
+  if (
+    !anchor ||
+    !focus ||
+    (!rootElement.contains(anchor) && anchor !== rootElement) ||
+    (!rootElement.contains(focus) && focus !== rootElement)
+  ) {
+    return null;
+  }
+  const range = domSelection.getRangeAt(0);
+  const rect =
+    typeof range.getBoundingClientRect === "function"
+      ? range.getBoundingClientRect()
+      : null;
+  const firstClientRect =
+    (!rect || (rect.width === 0 && rect.height === 0)) &&
+    typeof range.getClientRects === "function"
+      ? range.getClientRects()[0]
+      : null;
+  const measured = firstClientRect ?? rect;
+  if (!measured) {
+    return null;
   }
   return {
-    bold: formatValue(selection, "bold"),
-    italic: formatValue(selection, "italic"),
-    underline: formatValue(selection, "underline"),
-    strikethrough: formatValue(selection, "strikethrough")
+    x: measured.x,
+    y: measured.y,
+    top: measured.top,
+    right: measured.right,
+    bottom: measured.bottom,
+    left: measured.left,
+    width: measured.width,
+    height: measured.height
   };
+}
+
+function emptySelectionState(): RichTextSelectionState {
+  return {
+    collapsed: true,
+    selectedText: "",
+    rect: null,
+    formats: {
+      bold: "off",
+      italic: "off",
+      underline: "off",
+      strikethrough: "off"
+    },
+    commonClasses: [],
+    mixedClasses: [],
+    link: { state: "off", href: null, newTab: null }
+  };
+}
+
+/** Personalization variables are semantic atoms. Expanding a partial endpoint
+ * to the whole variable prevents formatting from splitting one variable into
+ * multiple same-key spans (which would duplicate its derived value). */
+function expandVariableEndpoints(selection: RangeSelection): void {
+  if (selection.isCollapsed()) {
+    return;
+  }
+  const backward = selection.isBackward();
+  const start = backward ? selection.focus : selection.anchor;
+  const end = backward ? selection.anchor : selection.focus;
+  const startNode = start.getNode();
+  const endNode = end.getNode();
+  if (
+    $isTextNode(startNode) &&
+    $getState(startNode, inlineMetadataState).variableKey
+  ) {
+    start.set(startNode.getKey(), 0, "text");
+  }
+  if (
+    $isTextNode(endNode) &&
+    $getState(endNode, inlineMetadataState).variableKey
+  ) {
+    end.set(endNode.getKey(), endNode.getTextContentSize(), "text");
+  }
+}
+
+function updateMetadataClasses(
+  node: ReturnType<typeof $createTextNode>,
+  transform: (classes: string[]) => string[]
+): void {
+  const metadata = $getState(node, inlineMetadataState);
+  const classes = transform(
+    (metadata.classes ?? "").split(/\s+/).filter(Boolean)
+  );
+  $setState(node, inlineMetadataState, {
+    classes: classes.length > 0 ? Array.from(new Set(classes)).join(" ") : null,
+    variableKey: metadata.variableKey
+  });
 }
 
 export function mountRichTextEditor(
@@ -363,6 +557,7 @@ export function mountRichTextEditor(
   const unregisterRichText = registerRichText(editor);
   const unregisterHistory = registerHistory(editor, createEmptyHistoryState(), 300);
   let lastSelection: RangeSelection | null = null;
+  let interactionActive = false;
 
   editor.setRootElement(rootElement);
   rootElement.setAttribute("contenteditable", "true");
@@ -372,26 +567,66 @@ export function mountRichTextEditor(
   rootElement.setAttribute("aria-label", "Edit text");
   importInlineHtml(editor, options.initialHtml);
 
-  const emitFormatState = (): RichTextFormatState => {
-    let state: RichTextFormatState = {
-      bold: "off",
-      italic: "off",
-      underline: "off",
-      strikethrough: "off"
-    };
+  let lastRect: WebNodeRect | null = null;
+  let selectionFrame: number | null = null;
+
+  const readSelectionState = (): RichTextSelectionState => {
+    let state = emptySelectionState();
     editor.getEditorState().read(() => {
-      const selection = $getSelection();
-      if ($isRangeSelection(selection)) {
-        lastSelection = selection.clone();
+      const current = $getSelection();
+      const selection =
+        interactionActive && lastSelection
+          ? lastSelection
+          : $isRangeSelection(current)
+            ? current
+            : lastSelection;
+      if (!selection) {
+        return;
       }
-      state = readFormatState();
+      if ($isRangeSelection(current) && !interactionActive) {
+        lastSelection = current.clone();
+      }
+      const classes = classSelectionState(selection);
+      const measured = domSelectionRect(rootElement);
+      if (measured) {
+        lastRect = measured;
+      }
+      state = {
+        collapsed: selection.isCollapsed(),
+        selectedText: selection.getTextContent(),
+        rect: measured ?? lastRect,
+        formats: {
+          bold: formatValue(selection, "bold"),
+          italic: formatValue(selection, "italic"),
+          underline: formatValue(selection, "underline"),
+          strikethrough: formatValue(selection, "strikethrough")
+        },
+        ...classes,
+        link: linkSelectionState(selection)
+      };
     });
-    options.onFormatStateChange?.(state);
     return state;
   };
 
+  const emitSelectionState = (): RichTextSelectionState => {
+    const state = readSelectionState();
+    options.onFormatStateChange?.(state.formats);
+    options.onSelectionStateChange?.(state);
+    return state;
+  };
+
+  const scheduleSelectionState = () => {
+    if (selectionFrame !== null) {
+      return;
+    }
+    selectionFrame = window.requestAnimationFrame(() => {
+      selectionFrame = null;
+      emitSelectionState();
+    });
+  };
+
   const unregisterUpdate = editor.registerUpdateListener(() => {
-    emitFormatState();
+    scheduleSelectionState();
   });
   const onKeyDown = (event: KeyboardEvent) => {
     const modifier = event.metaKey || event.ctrlKey;
@@ -424,27 +659,150 @@ export function mountRichTextEditor(
   };
   rootElement.addEventListener("keydown", onKeyDown, true);
 
-  const format = (value: RichTextFormat): void => {
+  const runWithSelection = (
+    mutate: (selection: RangeSelection) => void
+  ): void => {
     editor.update(
       () => {
         let selection = $getSelection();
-        if (!$isRangeSelection(selection) && lastSelection) {
+        if (
+          lastSelection &&
+          (!$isRangeSelection(selection) ||
+            interactionActive ||
+            (!selectionHasToolbarContext(selection) &&
+              selectionHasToolbarContext(lastSelection)))
+        ) {
           $setSelection(lastSelection.clone());
           selection = $getSelection();
         }
         if ($isRangeSelection(selection)) {
-          selection.formatText(value);
-          lastSelection = selection.clone();
+          expandVariableEndpoints(selection);
+          mutate(selection);
+          const settled = $getSelection();
+          if ($isRangeSelection(settled)) {
+            lastSelection = settled.clone();
+          }
         }
       },
       { discrete: true }
     );
     editor.focus();
-    emitFormatState();
+    scheduleSelectionState();
   };
+
+  const format = (value: RichTextFormat): void => {
+    runWithSelection((selection) => selection.formatText(value));
+  };
+
+  const command = (value: RichTextCommand): void => {
+    if (value.type === "refresh_selection") {
+      scheduleSelectionState();
+      return;
+    }
+    if (value.type === "format") {
+      format(value.format);
+      return;
+    }
+    runWithSelection((selection) => {
+      if (value.type === "set_class_facet") {
+        const safeTokens = new Set(
+          value.knownTokens.filter((token) => /^[a-z0-9_-]+$/.test(token))
+        );
+        if (value.token !== null && !safeTokens.has(value.token)) {
+          return;
+        }
+        const prefix = value.facet === "text_color" ? "text-" : "bg-";
+        const removable = new Set(
+          Array.from(safeTokens, (token) => `${prefix}${token}`)
+        );
+        for (const node of selection.extract().filter($isTextNode)) {
+          updateMetadataClasses(node, (classes) => [
+            ...classes.filter((name) => !removable.has(name)),
+            ...(value.token ? [`${prefix}${value.token}`] : [])
+          ]);
+        }
+        return;
+      }
+      if (value.type === "set_link") {
+        const href = value.href.trim();
+        if (richTextHrefIsAllowed(href)) {
+          $toggleLink(href, {
+            target: value.newTab ? "_blank" : null,
+            rel: value.newTab ? "noopener noreferrer" : null
+          });
+        }
+        return;
+      }
+      if (value.type === "remove_link") {
+        if (selection.isCollapsed()) {
+          const link = enclosingLinkFor(selection.anchor.getNode());
+          if (link) {
+            // Lexical's generic collapsed unlink path depends on getNodes(),
+            // which may be empty for a caret-only selection. Resolve the
+            // enclosing semantic link directly so toolbar unlink is reliable.
+            unwrapLink(link);
+            return;
+          }
+        }
+        $toggleLink(null);
+        return;
+      }
+      if (value.type === "insert_variable") {
+        const key = value.key.trim();
+        const fallback = value.fallback.trim();
+        if (!webBindingKeyIsAllowed(key) || !fallback) {
+          return;
+        }
+        const variable = $createTextNode(fallback);
+        applyMarks(
+          variable,
+          Object.fromEntries(
+            FORMATS.filter((mark) => selection.hasFormat(mark)).map((mark) => [
+              mark,
+              true
+            ])
+          )
+        );
+        $setState(variable, inlineMetadataState, {
+          classes: null,
+          variableKey: key
+        });
+        selection.insertNodes([variable]);
+        variable.select();
+        return;
+      }
+      if (value.type === "clear_formatting") {
+        for (const node of selection.extract().filter($isTextNode)) {
+          for (const mark of FORMATS) {
+            if (node.hasFormat(mark)) {
+              node.toggleFormat(mark);
+            }
+          }
+          updateMetadataClasses(node, () => []);
+        }
+      }
+    });
+  };
+
+  const onSelectionChange = () => scheduleSelectionState();
+  const onViewportChange = () => scheduleSelectionState();
+  document.addEventListener("selectionchange", onSelectionChange);
+  window.addEventListener("scroll", onViewportChange, { passive: true });
+  window.addEventListener("resize", onViewportChange, { passive: true });
 
   const session: RichTextSession = {
     format,
+    command,
+    setInteractionActive(active) {
+      if (active && !interactionActive) {
+        // Snapshot the actionable iframe selection before a parent toolbar
+        // input takes focus. While active, selection reports and commands use
+        // this stable Lexical range instead of a browser focus side effect.
+        emitSelectionState();
+      }
+      interactionActive = active;
+      scheduleSelectionState();
+    },
     getDocument() {
       let document: RichTextDocument = {
         schema_version: 1,
@@ -458,12 +816,25 @@ export function mountRichTextEditor(
     getHtml() {
       return renderRichTextDocument(session.getDocument());
     },
-    getFormatState: emitFormatState,
+    getFormatState() {
+      return emitSelectionState().formats;
+    },
+    getSelectionState: emitSelectionState,
+    refreshSelection: scheduleSelectionState,
     focus() {
       editor.focus();
+      scheduleSelectionState();
     },
     destroy() {
+      interactionActive = false;
+      if (selectionFrame !== null) {
+        window.cancelAnimationFrame(selectionFrame);
+        selectionFrame = null;
+      }
       rootElement.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("selectionchange", onSelectionChange);
+      window.removeEventListener("scroll", onViewportChange);
+      window.removeEventListener("resize", onViewportChange);
       unregisterUpdate();
       unregisterHistory();
       unregisterRichText();
@@ -477,7 +848,7 @@ export function mountRichTextEditor(
   };
 
   editor.focus();
-  emitFormatState();
+  emitSelectionState();
   return session;
 }
 

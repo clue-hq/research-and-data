@@ -67,6 +67,10 @@ import type {
   RichTextFormatValue,
   WebNodeInfo
 } from "@/engine/webBridge";
+import {
+  RICH_TEXT_MARK_CONTROLS,
+  richTextAriaPressed
+} from "@/engine/webRichText";
 
 /**
  * The Inspect-mode panel: reads the selected node from the loaded WebDoc and
@@ -988,7 +992,7 @@ function TextCard({
       className: `web-format-btn${current === "on" ? " is-selected" : ""}${
         current === "mixed" ? " is-mixed" : ""
       }`,
-      "aria-pressed": current === "mixed" ? ("mixed" as const) : current === "on",
+      "aria-pressed": richTextAriaPressed(current),
       disabled: busy || (editing && richTextFormats === null),
       onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
       onClick: () => applyFormat(format, current)
@@ -1030,34 +1034,22 @@ function TextCard({
       <div className="field web-insp-field">
         <span className="field-label">Formatting</span>
         <div className="web-align-row" role="group" aria-label="Text formatting">
-          <button
-            type="button"
-            aria-label="Bold"
-            {...formatButtonProps("bold")}
-          >
-            <strong>B</strong>
-          </button>
-          <button
-            type="button"
-            aria-label="Italic"
-            {...formatButtonProps("italic")}
-          >
-            <em>I</em>
-          </button>
-          <button
-            type="button"
-            aria-label="Underline"
-            {...formatButtonProps("underline")}
-          >
-            <span style={{ textDecoration: "underline" }}>U</span>
-          </button>
-          <button
-            type="button"
-            aria-label="Strikethrough"
-            {...formatButtonProps("strikethrough")}
-          >
-            <span style={{ textDecoration: "line-through" }}>S</span>
-          </button>
+          {RICH_TEXT_MARK_CONTROLS.map((control) => (
+            <button
+              key={control.format}
+              type="button"
+              aria-label={control.label}
+              title={`${control.label} (${control.shortcut})`}
+              {...formatButtonProps(control.format)}
+            >
+              <span
+                className={`web-rich-glyph is-${control.format}`}
+                aria-hidden="true"
+              >
+                {control.glyph}
+              </span>
+            </button>
+          ))}
         </div>
         <p className="web-insp-hint">
           {editing

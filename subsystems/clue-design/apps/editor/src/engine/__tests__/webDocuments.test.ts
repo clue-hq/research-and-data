@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildInsertNodeOp,
+  buildWebRichTextVariableCatalog,
   buildWebButtonProps,
   classifyEmbedUrl,
   composeSlotKey,
@@ -34,10 +35,12 @@ import {
   webBatchIsUnfinished,
   webNodeButtonAction,
   type WebBatchResult,
+  type WebAccount,
   type WebDoc,
   type WebNode,
   type WebPageSummary
 } from "../webDocuments";
+import { richTextHrefError } from "../webRichText";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{2,63}$/;
 
@@ -893,6 +896,74 @@ describe("listWebAccounts", () => {
       }
     ]);
     expect(String(fetchImpl.mock.calls[0][0])).toBe("http://localhost:8002/web/accounts");
+  });
+});
+
+describe("rich-text account variable catalog", () => {
+  const account = (
+    accountId: string,
+    overrides: Partial<WebAccount> = {}
+  ): WebAccount => ({
+    accountId,
+    name: "Acme",
+    domain: null,
+    logoAssetId: null,
+    data: {},
+    notes: null,
+    createdAt: null,
+    updatedAt: null,
+    ...overrides
+  });
+
+  it("uses only a derived page's account text model and excludes asset values", () => {
+    const catalog = buildWebRichTextVariableCatalog(
+      [
+        account("acc_1", {
+          name: "Acme",
+          domain: "acme.test",
+          logoAssetId: "asset_logo",
+          data: { plan: "Enterprise" }
+        }),
+        account("acc_2", { name: "Beta", data: { region: "West" } })
+      ],
+      "acc_1"
+    );
+    expect(catalog).toEqual([
+      { key: "account.domain", label: "Domain", example: "acme.test" },
+      { key: "account.name", label: "Name", example: "Acme" },
+      { key: "account.plan", label: "Plan", example: "Enterprise" }
+    ]);
+  });
+
+  it("returns the template union, filters invalid keys, and is honestly empty without accounts", () => {
+    expect(
+      buildWebRichTextVariableCatalog(
+        [
+          account("acc_1", { data: { plan: "Pro", "Bad Key": "No" } }),
+          account("acc_2", { data: { region: "West" } })
+        ],
+        null
+      ).map((entry) => entry.key)
+    ).toEqual(["account.name", "account.plan", "account.region"]);
+    expect(buildWebRichTextVariableCatalog([], null)).toEqual([]);
+    expect(buildWebRichTextVariableCatalog([account("acc_1")], "missing")).toEqual([]);
+  });
+});
+
+describe("richTextHrefError", () => {
+  it("mirrors the server's safe href scheme grammar", () => {
+    for (const href of [
+      "https://example.com",
+      "http://example.com",
+      "mailto:hello@example.com",
+      "tel:+15555550100",
+      "#pricing",
+      "/pricing"
+    ]) {
+      expect(richTextHrefError(href)).toBeNull();
+    }
+    expect(richTextHrefError("javascript:alert(1)")).toContain("Use http(s)");
+    expect(richTextHrefError("   ")).toBe("Enter a link URL.");
   });
 });
 
