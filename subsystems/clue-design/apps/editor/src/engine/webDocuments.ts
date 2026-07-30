@@ -58,6 +58,8 @@ export interface WebNode {
   // section
   tag?: string;
   anchor_id?: string | null;
+  // section/container background image semantics
+  background?: WebBackgroundImage | null;
   // icon
   icon?: string;
   // embed
@@ -77,6 +79,18 @@ export interface WebNode {
   default_tab?: number;
   // personalization hedge — carried by the schema, ignored by every v0 path.
   slot_key?: string | null;
+}
+
+export interface WebBackgroundImage {
+  asset_id: string;
+  fit: "cover" | "contain";
+  position: "center" | "top" | "right" | "bottom" | "left";
+  scrim?: WebBackgroundScrim | null;
+}
+
+export interface WebBackgroundScrim {
+  color: "dark" | "light" | "primary" | "accent" | "black" | "white";
+  opacity: number;
 }
 
 /** One web page in a {@link WebDoc}: identity/route plus the flattened node
@@ -424,8 +438,18 @@ export type WebNodeProps =
   | { kind: "text"; variant: string; content: string }
   | WebButtonProps
   | { kind: "image"; asset_id: string; alt: string; href?: string | null; new_tab: boolean }
-  | { kind: "section"; tag: string; anchor_id?: string | null }
-  | { kind: "container" }
+  | {
+      kind: "section";
+      tag: string;
+      anchor_id?: string | null;
+      background?: WebBackgroundImage | null;
+    }
+  | {
+      kind: "container";
+      href?: string | null;
+      new_tab: boolean;
+      background?: WebBackgroundImage | null;
+    }
   | { kind: "icon"; icon: string }
   | WebEmbedProps
   | WebComponentProps;

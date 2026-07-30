@@ -16,6 +16,7 @@ import {
   slotKeyParts,
   webNodeButtonAction,
   type WebButtonAction,
+  type WebBackgroundImage,
   type WebDialogOption,
   type WebNode,
   type WebNodeProps,
@@ -94,6 +95,8 @@ interface WebInspectorPanelProps {
   selectNode: (nodeId: string) => void;
   /** Open the asset drawer to replace the selected image's asset. */
   onReplaceImage: (nodeId: string) => void;
+  /** Open the asset drawer to set/replace this section/container background. */
+  onChooseBackground: (nodeId: string) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
   /** Info note (409 reload) and inline error (422 diagnostic), surfaced in the
@@ -121,6 +124,7 @@ export function WebInspectorPanel({
   previewComponent,
   selectNode,
   onReplaceImage,
+  onChooseBackground,
   applyOps,
   busy,
   note,
@@ -169,6 +173,7 @@ export function WebInspectorPanel({
         previewComponent={previewComponent}
         selectNode={selectNode}
         onReplaceImage={onReplaceImage}
+        onChooseBackground={onChooseBackground}
         applyOps={applyOps}
         busy={busy}
       />
@@ -434,6 +439,7 @@ interface BodyProps {
   previewComponent: (nodeId: string, action: "open" | "close") => void;
   selectNode: (nodeId: string) => void;
   onReplaceImage: (nodeId: string) => void;
+  onChooseBackground: (nodeId: string) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
 }
@@ -447,6 +453,7 @@ function WebInspectorBody({
   previewComponent,
   selectNode,
   onReplaceImage,
+  onChooseBackground,
   applyOps,
   busy
 }: BodyProps): React.ReactElement {
@@ -490,6 +497,17 @@ function WebInspectorBody({
       ) : null}
       {(node.kind === "container" || node.kind === "section") ? (
         <ContainerCard node={node} busy={busy} applyClasses={applyClasses} />
+      ) : null}
+      {node.kind === "container" ? (
+        <ContainerLinkCard node={node} busy={busy} applyProps={applyProps} />
+      ) : null}
+      {node.kind === "container" || node.kind === "section" ? (
+        <BackgroundImageCard
+          node={node}
+          busy={busy}
+          applyProps={applyProps}
+          onChooseBackground={onChooseBackground}
+        />
       ) : null}
       {node.kind === "image" ? (
         <ImageCard
@@ -1613,6 +1631,243 @@ function TabsComponentCard({
           }}
         />
       </label>
+    </Card>
+  );
+}
+
+function containerProps(
+  node: WebNode,
+  href: string | null,
+  newTab: boolean,
+  background: WebBackgroundImage | null
+): WebNodeProps {
+  return {
+    kind: "container",
+    href,
+    new_tab: href ? newTab : false,
+    background
+  };
+}
+
+function branchPropsWithBackground(
+  node: WebNode,
+  background: WebBackgroundImage | null
+): WebNodeProps {
+  if (node.kind === "section") {
+    return {
+      kind: "section",
+      tag: node.tag ?? "section",
+      anchor_id: node.anchor_id ?? null,
+      background
+    };
+  }
+  return containerProps(node, node.href?.trim() || null, node.new_tab ?? false, background);
+}
+
+function ContainerLinkCard({
+  node,
+  busy,
+  applyProps
+}: {
+  node: WebNode;
+  busy: boolean;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+}): React.ReactElement {
+  const [href, setHref] = useState(node.href ?? "");
+  const newTab = node.new_tab ?? false;
+  React.useEffect(() => {
+    setHref(node.href ?? "");
+  }, [node.id, node.href]);
+  const commit = (nextHref: string, nextNewTab: boolean, intent: string) => {
+    applyProps(
+      containerProps(node, nextHref.trim() || null, nextNewTab, node.background ?? null),
+      intent
+    );
+  };
+  return (
+    <Card title="Click action">
+      <label className="field web-insp-field">
+        <span className="field-label">Link URL</span>
+        <input
+          type="text"
+          value={href}
+          disabled={busy}
+          onChange={(event) => setHref(event.target.value)}
+          onBlur={() => {
+            if (href.trim() !== (node.href ?? "")) {
+              commit(href, newTab, "container_href");
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="https://… or /path"
+        />
+      </label>
+      <label className="web-insp-checkbox">
+        <input
+          type="checkbox"
+          checked={newTab}
+          disabled={busy || href.trim() === ""}
+          onChange={(event) => commit(href, event.target.checked, "container_new_tab")}
+        />
+        Open in a new tab
+      </label>
+      <p className="web-insp-hint">
+        Clicking still selects this container here. The link is active on the published/exported
+        page.
+      </p>
+    </Card>
+  );
+}
+
+function BackgroundImageCard({
+  node,
+  busy,
+  applyProps,
+  onChooseBackground
+}: {
+  node: WebNode;
+  busy: boolean;
+  applyProps: (props: WebNodeProps, intent: string) => void;
+  onChooseBackground: (nodeId: string) => void;
+}): React.ReactElement {
+  const background = node.background ?? null;
+  const [scrimOpacity, setScrimOpacity] = useState(background?.scrim?.opacity ?? 50);
+  React.useEffect(() => {
+    setScrimOpacity(background?.scrim?.opacity ?? 50);
+  }, [node.id, background?.scrim?.opacity]);
+  const commit = (next: WebBackgroundImage | null, intent: string) => {
+    applyProps(branchPropsWithBackground(node, next), intent);
+  };
+  const commitScrimOpacity = (opacity: number) => {
+    if (background?.scrim && opacity !== background.scrim.opacity) {
+      commit(
+        {
+          ...background,
+          scrim: {
+            ...background.scrim,
+            opacity
+          }
+        },
+        "background_scrim_opacity"
+      );
+    }
+  };
+  return (
+    <Card title="Background image">
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        disabled={busy}
+        onClick={() => onChooseBackground(node.id)}
+      >
+        {background ? "Replace background image" : "Add background image"}
+      </button>
+      {background ? (
+        <>
+          <p className="web-insp-hint">Asset: {background.asset_id}</p>
+          <PropSelect
+            label="Fit"
+            value={background.fit}
+            options={["cover", "contain"]}
+            disabled={busy}
+            onChange={(fit) =>
+              commit(
+                { ...background, fit: fit as WebBackgroundImage["fit"] },
+                "background_fit"
+              )
+            }
+          />
+          <PropSelect
+            label="Position"
+            value={background.position}
+            options={["center", "top", "right", "bottom", "left"]}
+            disabled={busy}
+            onChange={(position) =>
+              commit(
+                {
+                  ...background,
+                  position: position as WebBackgroundImage["position"]
+                },
+                "background_position"
+              )
+            }
+          />
+          <label className="web-insp-checkbox">
+            <input
+              type="checkbox"
+              checked={background.scrim != null}
+              disabled={busy}
+              onChange={(event) =>
+                commit(
+                  {
+                    ...background,
+                    scrim: event.target.checked ? { color: "dark", opacity: 50 } : null
+                  },
+                  "background_scrim"
+                )
+              }
+            />
+            Add readable-text scrim
+          </label>
+          {background.scrim ? (
+            <>
+              <PropSelect
+                label="Scrim color"
+                value={background.scrim.color}
+                options={["dark", "light", "primary", "accent", "black", "white"]}
+                disabled={busy}
+                onChange={(color) =>
+                  commit(
+                    {
+                      ...background,
+                      scrim: {
+                        ...background.scrim!,
+                        color: color as NonNullable<WebBackgroundImage["scrim"]>["color"]
+                      }
+                    },
+                    "background_scrim_color"
+                  )
+                }
+              />
+              <label className="field web-insp-field">
+                <span className="field-label">Scrim opacity ({scrimOpacity}%)</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={scrimOpacity}
+                  disabled={busy}
+                  onChange={(event) => setScrimOpacity(Number(event.target.value))}
+                  onPointerUp={(event) =>
+                    commitScrimOpacity(Number(event.currentTarget.value))
+                  }
+                  onKeyUp={(event) =>
+                    commitScrimOpacity(Number(event.currentTarget.value))
+                  }
+                  onBlur={(event) => commitScrimOpacity(Number(event.currentTarget.value))}
+                />
+              </label>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={busy}
+            onClick={() => commit(null, "remove_background")}
+          >
+            Remove background
+          </button>
+        </>
+      ) : (
+        <p className="web-insp-hint">
+          Choose a library or uploaded image, then control its crop and optional text scrim.
+        </p>
+      )}
     </Card>
   );
 }

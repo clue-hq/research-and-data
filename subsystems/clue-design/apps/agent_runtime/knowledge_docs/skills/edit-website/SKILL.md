@@ -37,7 +37,10 @@ if the result looks fine.
 Rung choice is a correctness matter, not taste: if the fix is expressible
 as one-to-three ops against EXISTING nodes — `set_node_classes`,
 `set_text`, `set_node_props` (including rewiring a button's action between
-link and command) — then `web_ops` is the ONLY correct rung. Reach for
+link and command, making a container clickable, or changing a section/container
+background and scrim) — then `web_ops` is the ONLY correct rung. Send the FULL
+kind payload: container link/background and section background fields are
+preserved explicitly, not partial-patched. Reach for
 `author_web_subtree` solely when the section's STRUCTURE must change:
 nodes added, removed, or reordered beyond what a couple of ops express. A
 subtree rewrite that reproduces the section just to change one attribute

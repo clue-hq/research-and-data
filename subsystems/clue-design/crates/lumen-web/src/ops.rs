@@ -199,6 +199,24 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                 ));
             }
         }
+        WebNodeKind::Container { href, new_tab, .. } => {
+            if let Some(value) = href {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    *href = None;
+                    *new_tab = false;
+                } else if !href_is_allowed(trimmed) {
+                    return Err(WebOpError::new(
+                        "op.href_invalid",
+                        format!("container href is not allowed: {value}"),
+                    ));
+                } else if trimmed != value {
+                    *value = trimmed.to_owned();
+                }
+            } else {
+                *new_tab = false;
+            }
+        }
         WebNodeKind::Embed { provider, url, .. } => {
             // html is NOT sanitized: embeds are sandboxed by design.
             match provider {
@@ -219,7 +237,11 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
                     if let Some(url_value) = url {
                         if calendly_url_is_valid(url_value) {
                             *provider = EmbedProvider::Calendly;
-                        } else if !url_value.trim().to_ascii_lowercase().starts_with("https://") {
+                        } else if !url_value
+                            .trim()
+                            .to_ascii_lowercase()
+                            .starts_with("https://")
+                        {
                             return Err(WebOpError::new(
                                 "op.embed_url_invalid",
                                 format!("custom embed url must be https: {url_value}"),
@@ -338,7 +360,10 @@ fn apply_operation_in_place(
         WebOperation::RemoveNode { page_id, id } => {
             let page = require_page_mut(doc, page_id)?;
             if *id == page.root {
-                return Err(WebOpError::new("op.cannot_remove_root", "the page root is fixed"));
+                return Err(WebOpError::new(
+                    "op.cannot_remove_root",
+                    "the page root is fixed",
+                ));
             }
             if !page.nodes.contains_key(id) {
                 return Err(WebOpError::new(
@@ -386,7 +411,10 @@ fn apply_operation_in_place(
         } => {
             let page = require_page_mut(doc, page_id)?;
             if *id == page.root {
-                return Err(WebOpError::new("op.cannot_move_root", "the page root is fixed"));
+                return Err(WebOpError::new(
+                    "op.cannot_move_root",
+                    "the page root is fixed",
+                ));
             }
             if !page.nodes.contains_key(id) {
                 return Err(WebOpError::new(
@@ -446,7 +474,11 @@ fn apply_operation_in_place(
                 index: old_index,
             })
         }
-        WebOperation::SetNodeClasses { page_id, id, classes } => {
+        WebOperation::SetNodeClasses {
+            page_id,
+            id,
+            classes,
+        } => {
             let page = require_page_mut(doc, page_id)?;
             let node = page.nodes.get_mut(id).ok_or_else(|| {
                 WebOpError::new("op.node_missing", format!("node `{id}` not found"))
@@ -482,7 +514,11 @@ fn apply_operation_in_place(
                 props: previous,
             })
         }
-        WebOperation::SetSlotKey { page_id, id, slot_key } => {
+        WebOperation::SetSlotKey {
+            page_id,
+            id,
+            slot_key,
+        } => {
             // Canonicalization: a provided key must be charset-valid before it
             // reaches the arena (the `when:` prefix is checked structurally by
             // validate_web_doc, which the checked apply runs).
@@ -505,12 +541,19 @@ fn apply_operation_in_place(
                 slot_key: previous,
             })
         }
-        WebOperation::SetText { page_id, id, content } => {
+        WebOperation::SetText {
+            page_id,
+            id,
+            content,
+        } => {
             let page = require_page_mut(doc, page_id)?;
             let node = page.nodes.get_mut(id).ok_or_else(|| {
                 WebOpError::new("op.node_missing", format!("node `{id}` not found"))
             })?;
-            let WebNodeKind::Text { content: existing, .. } = &mut node.kind else {
+            let WebNodeKind::Text {
+                content: existing, ..
+            } = &mut node.kind
+            else {
                 return Err(WebOpError::new(
                     "op.not_text",
                     format!("node `{id}` is {}, not text", node.kind.kind_name()),
@@ -526,7 +569,11 @@ fn apply_operation_in_place(
                 content: previous,
             })
         }
-        WebOperation::ReplaceAsset { page_id, id, asset_id } => {
+        WebOperation::ReplaceAsset {
+            page_id,
+            id,
+            asset_id,
+        } => {
             if !doc.assets.contains_key(asset_id) {
                 return Err(WebOpError::new(
                     "op.asset_missing",
@@ -537,7 +584,10 @@ fn apply_operation_in_place(
             let node = page.nodes.get_mut(id).ok_or_else(|| {
                 WebOpError::new("op.node_missing", format!("node `{id}` not found"))
             })?;
-            let WebNodeKind::Image { asset_id: existing, .. } = &mut node.kind else {
+            let WebNodeKind::Image {
+                asset_id: existing, ..
+            } = &mut node.kind
+            else {
                 return Err(WebOpError::new(
                     "op.not_image",
                     format!("node `{id}` is {}, not image", node.kind.kind_name()),
@@ -565,6 +615,14 @@ fn apply_operation_in_place(
                     WebNodeKind::Image { asset_id: used, .. } if used == asset_id => {
                         Some(node.id.clone())
                     }
+                    WebNodeKind::Section {
+                        background: Some(background),
+                        ..
+                    }
+                    | WebNodeKind::Container {
+                        background: Some(background),
+                        ..
+                    } if &background.asset_id == asset_id => Some(node.id.clone()),
                     _ => None,
                 })
             });
@@ -586,7 +644,11 @@ fn apply_operation_in_place(
             let previous = std::mem::replace(&mut doc.theme, theme.clone());
             Ok(WebOperation::SetTheme { theme: previous })
         }
-        WebOperation::SetPageMeta { page_id, name, route } => {
+        WebOperation::SetPageMeta {
+            page_id,
+            name,
+            route,
+        } => {
             let page = require_page_mut(doc, page_id)?;
             let mut previous_name = None;
             let mut previous_route = None;
@@ -620,7 +682,10 @@ fn require_page_mut<'doc>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::doc::{SectionTag, TextVariant, WebThemeRef};
+    use crate::doc::{
+        SectionTag, TextVariant, WebBackgroundFit, WebBackgroundImage, WebBackgroundPosition,
+        WebBackgroundScrim, WebScrimColor, WebThemeRef,
+    };
     use crate::ingest::ingest_html_into_page;
     use crate::theme::{compile_web_theme, WebThemeOptions};
 
@@ -669,6 +734,7 @@ mod tests {
             WebNodeKind::Section {
                 tag: SectionTag::Section,
                 anchor_id: None,
+                background: None,
             },
             "",
         );
@@ -814,8 +880,15 @@ mod tests {
             slot_key: Some(SlotKey::from("account.name")),
         };
         let inverses = apply_operations(&mut doc, std::slice::from_ref(&set)).expect("set");
-        let node = doc.page(&page_id()).unwrap().node(&NodeId::from("headline")).unwrap();
-        assert_eq!(node.slot_key.as_ref().map(|k| k.as_str()), Some("account.name"));
+        let node = doc
+            .page(&page_id())
+            .unwrap()
+            .node(&NodeId::from("headline"))
+            .unwrap();
+        assert_eq!(
+            node.slot_key.as_ref().map(|k| k.as_str()),
+            Some("account.name")
+        );
         apply_operations(&mut doc, &inverses).expect("inverse");
         assert_eq!(doc, base, "inverse clears the slot key");
 
@@ -856,7 +929,11 @@ mod tests {
             &[WebOperation::SetNodeProps {
                 page_id: page_id(),
                 id: NodeId::from("headline"),
-                props: WebNodeKind::Container,
+                props: WebNodeKind::Container {
+                    href: None,
+                    new_tab: false,
+                    background: None,
+                },
             }],
         );
         assert_eq!(result.unwrap_err().code, "op.kind_mismatch");
@@ -896,7 +973,15 @@ mod tests {
         assert_eq!(content, "Safe <strong>copy</strong>");
 
         // A child reference outside the subtree is rejected.
-        let mut orphaning = WebNode::branch(NodeId::from("bad_box"), WebNodeKind::Container, "");
+        let mut orphaning = WebNode::branch(
+            NodeId::from("bad_box"),
+            WebNodeKind::Container {
+                href: None,
+                new_tab: false,
+                background: None,
+            },
+            "",
+        );
         orphaning.children = vec![NodeId::from("headline")];
         let result = apply_operations(
             &mut doc,
@@ -927,8 +1012,7 @@ mod tests {
         )
         .expect("apply");
         let page = doc.page(&page_id()).unwrap();
-        let WebNodeKind::Text { content, .. } =
-            &page.node(&NodeId::from("headline")).unwrap().kind
+        let WebNodeKind::Text { content, .. } = &page.node(&NodeId::from("headline")).unwrap().kind
         else {
             panic!("text node");
         };
@@ -979,6 +1063,88 @@ mod tests {
     }
 
     #[test]
+    fn clickable_container_and_background_props_are_checked_and_invertible() {
+        let base = fixture();
+        let mut doc = base.clone();
+        let (link_inverse, _) = apply_operations_checked(
+            &mut doc,
+            &[WebOperation::SetNodeProps {
+                page_id: page_id(),
+                id: NodeId::from("stack"),
+                props: WebNodeKind::Container {
+                    href: Some("  /story  ".to_owned()),
+                    new_tab: true,
+                    background: None,
+                },
+            }],
+        )
+        .expect("set clickable container");
+        let WebNodeKind::Container { href, new_tab, .. } = &doc
+            .page(&page_id())
+            .unwrap()
+            .node(&NodeId::from("stack"))
+            .unwrap()
+            .kind
+        else {
+            panic!("container");
+        };
+        assert_eq!(href.as_deref(), Some("/story"));
+        assert!(*new_tab);
+        apply_operations_checked(&mut doc, &link_inverse).expect("undo link");
+        assert_eq!(doc, base);
+
+        let record: AssetRecord = serde_json::from_value(serde_json::json!({
+            "id": "hero_photo",
+            "label": "Hero photo",
+            "kind": "raster_image",
+            "status": "ready",
+            "source": {"kind": "generated", "model": "test", "request_id": null},
+            "media": {
+                "mime_type": "image/webp",
+                "digest": {"algorithm": "sha256", "value": "abc123"},
+                "location": null,
+                "filename": null,
+                "byte_length": null
+            }
+        }))
+        .expect("asset");
+        apply_operations_checked(
+            &mut doc,
+            &[
+                WebOperation::UpsertAsset {
+                    record: record.clone(),
+                },
+                WebOperation::SetNodeProps {
+                    page_id: page_id(),
+                    id: NodeId::from("hero"),
+                    props: WebNodeKind::Section {
+                        tag: SectionTag::Section,
+                        anchor_id: Some("hero".to_owned()),
+                        background: Some(WebBackgroundImage {
+                            asset_id: record.id.clone(),
+                            fit: WebBackgroundFit::Cover,
+                            position: WebBackgroundPosition::Center,
+                            scrim: Some(WebBackgroundScrim {
+                                color: WebScrimColor::Dark,
+                                opacity: 55,
+                            }),
+                        }),
+                    },
+                },
+            ],
+        )
+        .expect("set background");
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::RemoveAsset {
+                asset_id: record.id,
+            }],
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "op.asset_in_use");
+    }
+
+    #[test]
     fn href_to_command_rewire_and_inverse_restores() {
         // A Href→Command rewire (and back) is legal: SetNodeProps checks
         // kind_name only, and both actions live on the same Button kind.
@@ -1026,8 +1192,12 @@ mod tests {
             }],
         )
         .expect("rewire to command");
-        let WebNodeKind::Button { action, .. } =
-            &doc.page(&page_id()).unwrap().node(&NodeId::from("cta")).unwrap().kind
+        let WebNodeKind::Button { action, .. } = &doc
+            .page(&page_id())
+            .unwrap()
+            .node(&NodeId::from("cta"))
+            .unwrap()
+            .kind
         else {
             panic!("button node");
         };

@@ -23,8 +23,9 @@ import type { AssetRecord } from "@/engine/contracts";
 
 interface WebAssetDrawerProps {
   /** "insert" adds a new image node; "replace" swaps the selected image's
-   * asset — copy only (the shell owns the op). */
-  mode: "insert" | "replace";
+   * asset; "background" assigns a section/container background — copy only
+   * (the shell owns the operation batch). */
+  mode: "insert" | "replace" | "background";
   onPick: (record: AssetRecord) => void;
   onClose: () => void;
 }
@@ -99,7 +100,12 @@ export function WebAssetDrawer({ mode, onPick, onClose }: WebAssetDrawerProps): 
   );
 
   const apiBaseUrl = editorApiBaseUrl();
-  const title = mode === "insert" ? "Insert image" : "Replace image";
+  const title =
+    mode === "insert"
+      ? "Insert image"
+      : mode === "replace"
+        ? "Replace image"
+        : "Choose background image";
 
   return (
     <div className="web-drawer" role="dialog" aria-label={title}>
@@ -179,7 +185,11 @@ export function WebAssetDrawer({ mode, onPick, onClose }: WebAssetDrawerProps): 
               hidden
             />
           </label>
-          <p className="web-empty-hint">A picked or uploaded image is placed on the canvas.</p>
+          <p className="web-empty-hint">
+            {mode === "background"
+              ? "A picked or uploaded image becomes the selected element’s background."
+              : "A picked or uploaded image is placed on the canvas."}
+          </p>
           {uploadError ? (
             <p className="web-insp-error" role="alert">
               {uploadError}

@@ -1163,6 +1163,16 @@ class LumenWebTools:
           {kind:"button", label, variant, href:"...", new_tab:false}
           {kind:"button", label, variant, command:"show_modal"|"close",
            command_target:"<dialog node id>"}
+        Container props carry their complete link/background semantics:
+          {kind:"container", href:"/path"|null, new_tab:false,
+           background:{asset_id, fit:"cover"|"contain",
+             position:"center"|"top"|"right"|"bottom"|"left",
+             scrim:{color:"dark"|"light"|"primary"|"accent"|"black"|"white",
+                    opacity:0..100}|null}|null}
+        Section props carry {kind:"section", tag, anchor_id, background} with
+        that same background object. Referenced assets must already be present
+        in the document, and clickable containers may not nest interactive
+        descendants.
         Op JSON uses snake_case ("show_modal") — unlike the authored HTML
         attribute (data-command="show-modal"). Rewiring a CTA to a dialog is
         ONE set_node_props with the trigger form.

@@ -14,6 +14,7 @@ import {
   planCanvasNodeResize,
   replaceAssetOp,
   saveWebTemplate,
+  setNodePropsOp,
   setTextOp,
   upsertAssetOp,
   webDocumentHasContent,
@@ -22,6 +23,7 @@ import {
   type LoadedWebDocument,
   type WebDoc,
   type WebNode,
+  type WebNodeProps,
   type WebPageSummary,
   type WebTheme
 } from "@/engine/webDocuments";
@@ -154,7 +156,8 @@ const SUGGESTION_CHIPS_GLOBAL = [
  * asset of a selected image node. */
 type AssetDrawerState =
   | { mode: "insert" }
-  | { mode: "replace"; pageId: string; nodeId: string };
+  | { mode: "replace"; pageId: string; nodeId: string }
+  | { mode: "background"; pageId: string; nodeId: string };
 
 /** True when keyboard focus sits in an editable field (composer/inspector
  * inputs) or an iframe — where undo/redo shortcuts must defer to the field. */
@@ -428,6 +431,11 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     (nodeId: string) => setAssetDrawer({ mode: "replace", pageId: inspectorPageId, nodeId }),
     [inspectorPageId]
   );
+  const handleChooseBackground = useCallback(
+    (nodeId: string) =>
+      setAssetDrawer({ mode: "background", pageId: inspectorPageId, nodeId }),
+    [inspectorPageId]
+  );
 
   // The asset drawer settled on a record: insert a new Image node, or replace
   // the selected image's asset — prepending upsert_asset when the record isn't
@@ -453,10 +461,46 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
         manualEdits.applyOps(inDoc ? [insert] : [upsertAssetOp(record), insert], "insert_image");
         return;
       }
-      const replace = replaceAssetOp(drawer.pageId, drawer.nodeId, record.id);
-      manualEdits.applyOps(inDoc ? [replace] : [upsertAssetOp(record), replace], "replace_image");
+      if (drawer.mode === "replace") {
+        const replace = replaceAssetOp(drawer.pageId, drawer.nodeId, record.id);
+        manualEdits.applyOps(
+          inDoc ? [replace] : [upsertAssetOp(record), replace],
+          "replace_image"
+        );
+        return;
+      }
+      const targetPage = webDoc?.pages?.find((page) => page.id === drawer.pageId);
+      const target = targetPage?.nodes?.[drawer.nodeId];
+      if (!target || (target.kind !== "container" && target.kind !== "section")) {
+        return;
+      }
+      const background = {
+        asset_id: record.id,
+        fit: target.background?.fit ?? "cover",
+        position: target.background?.position ?? "center",
+        scrim: target.background?.scrim ?? null
+      } as const;
+      const props: WebNodeProps =
+        target.kind === "section"
+          ? {
+              kind: "section",
+              tag: target.tag ?? "section",
+              anchor_id: target.anchor_id ?? null,
+              background
+            }
+          : {
+              kind: "container",
+              href: target.href?.trim() || null,
+              new_tab: target.href ? (target.new_tab ?? false) : false,
+              background
+            };
+      const setBackground = setNodePropsOp(drawer.pageId, drawer.nodeId, props);
+      manualEdits.applyOps(
+        inDoc ? [setBackground] : [upsertAssetOp(record), setBackground],
+        "set_background_image"
+      );
     },
-    [assetDrawer, docHasAsset, inspectorPage, activeNodeId, manualEdits]
+    [assetDrawer, docHasAsset, inspectorPage, activeNodeId, manualEdits, webDoc]
   );
 
   // Keep the latest run events readable inside the hook's onDone callback (which
@@ -991,6 +1035,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                   previewComponent={previewComponent}
                   selectNode={selectNode}
                   onReplaceImage={handleReplaceImage}
+                  onChooseBackground={handleChooseBackground}
                   applyOps={manualEdits.applyOps}
                   busy={manualEdits.busy}
                   note={manualEdits.note}

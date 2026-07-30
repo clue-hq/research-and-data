@@ -23,12 +23,28 @@ the cost and the two copies drift. Copy is written once, inside the markup.
 
 | You write | It becomes | Notes |
 |---|---|---|
-| `<header id="…">` `<section id="…">` `<footer id="…">` | page band | **Top level only.** Always give sections ids (`hero`, `features`) — they are anchors and edit targets. |
-| `<div class="…">` | container | All layout: flex/grid utilities live here. |
+| `<header id="…">` `<section id="…">` `<footer id="…">` | page band | **Top level only.** Always give sections ids (`hero`, `features`) — they are anchors and edit targets. Optional registered-asset background fields are listed below. |
+| `<div class="…">` | container | All layout: flex/grid utilities live here. Optional `data-href`, `data-new-tab="true"` makes the whole container clickable. |
 | `<h1>`…`<h4>`, `<p>` | text | Variant from the tag. Override with `data-variant="display\|small\|overline"`. |
 | `<a data-button="primary\|secondary\|outline\|ghost\|link" href="…">Label</a>` | button | Button styling comes from the theme — do not restyle with classes. |
 | `<img data-asset="ASSET_ID" alt="…">` | image | `ASSET_ID` must already exist (generate/import first). External `src` is rejected. Optional `data-href`, `data-new-tab="true"`. |
 | `<i data-icon="NAME"></i>` | icon | Must be empty. Size/color via classes (`size-6 text-primary`). |
+
+Sections and containers accept a typed image background:
+`data-background-asset="ASSET_ID"` plus optional
+`data-background-fit="cover|contain"` and
+`data-background-position="center|top|right|bottom|left"`. When text needs
+contrast over that image, add
+`data-scrim-color="dark|light|primary|accent|black|white"` and
+`data-scrim-opacity="0..100"` (default color/opacity: dark/50). The asset must
+already be registered. These fields become one renderer-owned layered
+background, so the scrim stays behind all child content in editor and export.
+
+A clickable container becomes one semantic link. It may contain ordinary
+layout, text, and unlinked images, but **must not** contain another clickable
+container, a button/link, a component/embed, a linked image, or inline
+`<a href>` text. Move the interactive child outside or keep the container
+non-clickable; nested interactive HTML is rejected.
 
 Inline, inside text and button labels only: `strong em u s br a[href]
 span[class]` — e.g. accent a phrase with `<span class="text-primary">…</span>`.

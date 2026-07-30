@@ -9,16 +9,19 @@
 //! markup that parsed clean.
 
 use crate::classes::{lint_classes, ClassLintContext};
+use crate::derive::{personalization_key_is_valid, WHEN_PREFIX};
 use crate::doc::{
     calendly_url_is_valid, ButtonAction, ButtonCommand, ButtonVariant, ComponentSpec,
-    EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebDoc, WebNode, WebNodeKind,
+    EmbedProvider, MarqueeDirection, SectionTag, TextVariant, WebBackgroundFit, WebBackgroundImage,
+    WebBackgroundPosition, WebBackgroundScrim, WebDoc, WebNode, WebNodeKind, WebScrimColor,
     MAX_TREE_DEPTH,
 };
-use crate::derive::{personalization_key_is_valid, WHEN_PREFIX};
 use crate::inline::sanitize_inline;
 use crate::theme::WebTheme;
 use crate::util::{href_is_allowed, line_col, normalize_entities, self_close_voids};
-use lumen_core::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, NodeId, PageId, Phase, SlotKey};
+use lumen_core::{
+    Diagnostic, DiagnosticSeverity, DiagnosticSubject, NodeId, PageId, Phase, SlotKey,
+};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use std::collections::BTreeSet;
@@ -156,7 +159,10 @@ pub fn ingest_html(html: &str, theme: &WebTheme) -> IngestOutcome {
             }
             Ok(Event::Text(text)) => {
                 if state.capture.is_none() {
-                    let content = text.unescape().map(|value| value.into_owned()).unwrap_or_default();
+                    let content = text
+                        .unescape()
+                        .map(|value| value.into_owned())
+                        .unwrap_or_default();
                     if !content.trim().is_empty() {
                         let (line, _) = line_col(state.source, pos_before);
                         state.diagnostics.push(
@@ -174,7 +180,10 @@ pub fn ingest_html(html: &str, theme: &WebTheme) -> IngestOutcome {
                     }
                 }
             }
-            Ok(Event::CData(_)) | Ok(Event::Comment(_)) | Ok(Event::Decl(_)) | Ok(Event::PI(_))
+            Ok(Event::CData(_))
+            | Ok(Event::Comment(_))
+            | Ok(Event::Decl(_))
+            | Ok(Event::PI(_))
             | Ok(Event::DocType(_)) => {}
             Ok(Event::Eof) => break,
             Err(err) => {
@@ -229,21 +238,33 @@ pub fn ingest_html_into_page(
 ) -> IngestOutcome {
     let mut outcome = ingest_html(html, theme);
     for node in &outcome.nodes {
-        if let WebNodeKind::Image { asset_id, .. } = &node.kind {
+        let asset_reference = match &node.kind {
+            WebNodeKind::Image { asset_id, .. } => Some(("image", asset_id)),
+            WebNodeKind::Section {
+                background: Some(background),
+                ..
+            }
+            | WebNodeKind::Container {
+                background: Some(background),
+                ..
+            } => Some(("background", &background.asset_id)),
+            _ => None,
+        };
+        if let Some((usage, asset_id)) = asset_reference {
             if !doc.assets.contains_key(asset_id) {
                 outcome.diagnostics.push(
                     Diagnostic::error(
                         Phase::Web,
                         "LUMW0120",
                         format!(
-                            "image node `{}` references unknown asset `{}`",
+                            "{usage} on node `{}` references unknown asset `{}`",
                             node.id, asset_id
                         ),
                         Some(DiagnosticSubject::Node(node.id.clone())),
                     )
                     .with_hint(
                         "Generate or import the asset first (asset tool / import_external_image), \
-                         then reference its id via data-asset.",
+                         then reference its id via data-asset or data-background-asset.",
                     ),
                 );
             }
@@ -355,6 +376,11 @@ impl<'a> IngestState<'a> {
                     | "data-asset"
                     | "data-href"
                     | "data-new-tab"
+                    | "data-background-asset"
+                    | "data-background-fit"
+                    | "data-background-position"
+                    | "data-scrim-color"
+                    | "data-scrim-opacity"
                     | "data-component"
                     | "data-command"
                     | "data-target"
@@ -378,7 +404,9 @@ impl<'a> IngestState<'a> {
                      classes (page-level effects belong in custom_css)."
                 } else {
                     "Recognized attributes: id class href target alt data-variant data-button \
-                     data-icon data-asset data-href data-new-tab data-name data-slot \
+                     data-icon data-asset data-href data-new-tab data-background-asset \
+                     data-background-fit data-background-position data-scrim-color \
+                     data-scrim-opacity data-name data-slot \
                      data-slot-when, plus the Tier-2 component/command/embed data-* attributes \
                      (data-component data-command data-target data-aria-label data-single-open \
                      data-default-open data-speed data-direction data-pause-on-hover data-embed \
@@ -444,9 +472,14 @@ impl<'a> IngestState<'a> {
                 let id = self.mint_id("sec", explicit_id.as_deref());
                 let anchor_id = explicit_id;
                 let slot_key = self.take_slot_key(&attrs, &id, true);
+                let background = self.parse_background(&attrs, &id);
                 let node = WebNode {
                     id: id.clone(),
-                    kind: WebNodeKind::Section { tag, anchor_id },
+                    kind: WebNodeKind::Section {
+                        tag,
+                        anchor_id,
+                        background,
+                    },
                     classes: self.take_classes(&attrs, &id),
                     children: Vec::new(),
                     name: attrs_get(&attrs, "data-name"),
@@ -455,7 +488,10 @@ impl<'a> IngestState<'a> {
                 if is_empty {
                     self.finish_node(node);
                 } else {
-                    self.branch_stack.push(BranchFrame { node, tag_name: name });
+                    self.branch_stack.push(BranchFrame {
+                        node,
+                        tag_name: name,
+                    });
                 }
             }
             "div" => {
@@ -530,15 +566,39 @@ impl<'a> IngestState<'a> {
                     if is_empty {
                         self.finish_node(node);
                     } else {
-                        self.branch_stack.push(BranchFrame { node, tag_name: name });
+                        self.branch_stack.push(BranchFrame {
+                            node,
+                            tag_name: name,
+                        });
                     }
                     return;
                 }
                 let id = self.mint_id("box", attrs_get(&attrs, "id").as_deref());
                 let slot_key = self.take_slot_key(&attrs, &id, true);
+                let href = match attrs_get(&attrs, "data-href") {
+                    Some(value) if value.trim().is_empty() => None,
+                    Some(value) if href_is_allowed(value.trim()) => Some(value.trim().to_owned()),
+                    Some(value) => {
+                        self.error(
+                            "LUMW0108",
+                            format!("container `{id}` data-href has a disallowed scheme: {value}"),
+                            "Allowed: https:// http:// mailto: tel: #anchor /path.",
+                            Some(&id),
+                        );
+                        None
+                    }
+                    None => None,
+                };
+                let new_tab =
+                    href.is_some() && attrs_get(&attrs, "data-new-tab").as_deref() == Some("true");
+                let background = self.parse_background(&attrs, &id);
                 let node = WebNode {
                     id: id.clone(),
-                    kind: WebNodeKind::Container,
+                    kind: WebNodeKind::Container {
+                        href,
+                        new_tab,
+                        background,
+                    },
                     classes: self.take_classes(&attrs, &id),
                     children: Vec::new(),
                     name: attrs_get(&attrs, "data-name"),
@@ -547,7 +607,10 @@ impl<'a> IngestState<'a> {
                 if is_empty {
                     self.finish_node(node);
                 } else {
-                    self.branch_stack.push(BranchFrame { node, tag_name: name });
+                    self.branch_stack.push(BranchFrame {
+                        node,
+                        tag_name: name,
+                    });
                 }
             }
             "h1" | "h2" | "h3" | "h4" | "p" | "span" | "i" => {
@@ -797,7 +860,9 @@ impl<'a> IngestState<'a> {
                     Some(value) => {
                         self.warning(
                             "LUMW0108",
-                            format!("image `{id}` data-href has a disallowed scheme; dropped: {value}"),
+                            format!(
+                                "image `{id}` data-href has a disallowed scheme; dropped: {value}"
+                            ),
                             "Allowed: https:// http:// mailto: tel: #anchor /path.",
                             Some(&id),
                         );
@@ -917,7 +982,9 @@ impl<'a> IngestState<'a> {
                         _ => {
                             self.warning(
                                 "LUMW0124",
-                                format!("invalid value for `data-speed` on component `{id}`: {raw}"),
+                                format!(
+                                    "invalid value for `data-speed` on component `{id}`: {raw}"
+                                ),
                                 "data-speed is seconds in 5..=120; using the default 30.",
                                 Some(id),
                             );
@@ -927,19 +994,21 @@ impl<'a> IngestState<'a> {
                     None => 30,
                 };
                 let direction = match attrs_get(attrs, "data-direction") {
-                    Some(raw) => match raw.trim() {
-                        "left" => MarqueeDirection::Left,
-                        "right" => MarqueeDirection::Right,
-                        _ => {
-                            self.warning(
+                    Some(raw) => {
+                        match raw.trim() {
+                            "left" => MarqueeDirection::Left,
+                            "right" => MarqueeDirection::Right,
+                            _ => {
+                                self.warning(
                                 "LUMW0124",
                                 format!("invalid value for `data-direction` on component `{id}`: {raw}"),
                                 "data-direction is left or right; using left.",
                                 Some(id),
                             );
-                            MarqueeDirection::Left
+                                MarqueeDirection::Left
+                            }
                         }
-                    },
+                    }
                     None => MarqueeDirection::Left,
                 };
                 let pause_on_hover = self.component_bool(attrs, "data-pause-on-hover", true, id);
@@ -953,18 +1022,20 @@ impl<'a> IngestState<'a> {
             "carousel" => {
                 let show_arrows = self.component_bool(attrs, "data-show-arrows", true, id);
                 let autoplay_s = match attrs_get(attrs, "data-autoplay") {
-                    Some(raw) => match raw.trim().parse::<u16>() {
-                        Ok(seconds) if (2..=60).contains(&seconds) => Some(seconds),
-                        _ => {
-                            self.warning(
+                    Some(raw) => {
+                        match raw.trim().parse::<u16>() {
+                            Ok(seconds) if (2..=60).contains(&seconds) => Some(seconds),
+                            _ => {
+                                self.warning(
                                 "LUMW0124",
                                 format!("invalid value for `data-autoplay` on component `{id}`: {raw}"),
                                 "data-autoplay is seconds in 2..=60; omitting autoplay.",
                                 Some(id),
                             );
-                            None
+                                None
+                            }
                         }
-                    },
+                    }
                     None => None,
                 };
                 Some(ComponentSpec::Carousel {
@@ -1028,6 +1099,114 @@ impl<'a> IngestState<'a> {
         }
     }
 
+    fn parse_background(
+        &mut self,
+        attrs: &[(String, String)],
+        id: &NodeId,
+    ) -> Option<WebBackgroundImage> {
+        let asset_raw = attrs_get(attrs, "data-background-asset");
+        let has_scrim = attrs_get(attrs, "data-scrim-color").is_some()
+            || attrs_get(attrs, "data-scrim-opacity").is_some();
+        let Some(asset_raw) = asset_raw else {
+            if has_scrim
+                || attrs_get(attrs, "data-background-fit").is_some()
+                || attrs_get(attrs, "data-background-position").is_some()
+            {
+                self.error(
+                    "LUMW0135",
+                    format!("background controls on `{id}` have no data-background-asset"),
+                    "Set data-background-asset to a registered image asset id, or remove the background controls.",
+                    Some(id),
+                );
+            }
+            return None;
+        };
+        let asset_id = match lumen_core::AssetId::new(asset_raw.trim()) {
+            Ok(asset_id) => asset_id,
+            Err(_) => {
+                self.error(
+                    "LUMW0135",
+                    format!("invalid background asset id `{asset_raw}` on `{id}`"),
+                    "Asset ids are alphanumeric with _ or -.",
+                    Some(id),
+                );
+                return None;
+            }
+        };
+        let fit = match attrs_get(attrs, "data-background-fit").as_deref() {
+            None | Some("") | Some("cover") => WebBackgroundFit::Cover,
+            Some("contain") => WebBackgroundFit::Contain,
+            Some(value) => {
+                self.error(
+                    "LUMW0136",
+                    format!("invalid background fit `{value}` on `{id}`"),
+                    "Valid background fits: cover contain.",
+                    Some(id),
+                );
+                WebBackgroundFit::Cover
+            }
+        };
+        let position = match attrs_get(attrs, "data-background-position").as_deref() {
+            None | Some("") | Some("center") => WebBackgroundPosition::Center,
+            Some("top") => WebBackgroundPosition::Top,
+            Some("right") => WebBackgroundPosition::Right,
+            Some("bottom") => WebBackgroundPosition::Bottom,
+            Some("left") => WebBackgroundPosition::Left,
+            Some(value) => {
+                self.error(
+                    "LUMW0136",
+                    format!("invalid background position `{value}` on `{id}`"),
+                    "Valid positions: center top right bottom left.",
+                    Some(id),
+                );
+                WebBackgroundPosition::Center
+            }
+        };
+        let scrim = if has_scrim {
+            let color = match attrs_get(attrs, "data-scrim-color").as_deref() {
+                None | Some("") | Some("dark") => WebScrimColor::Dark,
+                Some("light") => WebScrimColor::Light,
+                Some("primary") => WebScrimColor::Primary,
+                Some("accent") => WebScrimColor::Accent,
+                Some("black") => WebScrimColor::Black,
+                Some("white") => WebScrimColor::White,
+                Some(value) => {
+                    self.error(
+                        "LUMW0136",
+                        format!("invalid scrim color `{value}` on `{id}`"),
+                        "Valid scrim colors: dark light primary accent black white.",
+                        Some(id),
+                    );
+                    WebScrimColor::Dark
+                }
+            };
+            let opacity = match attrs_get(attrs, "data-scrim-opacity").as_deref() {
+                None | Some("") => 50,
+                Some(value) => match value.parse::<u8>() {
+                    Ok(parsed) if parsed <= 100 => parsed,
+                    _ => {
+                        self.error(
+                            "LUMW0136",
+                            format!("invalid scrim opacity `{value}` on `{id}`"),
+                            "Scrim opacity is an integer from 0 through 100.",
+                            Some(id),
+                        );
+                        50
+                    }
+                },
+            };
+            Some(WebBackgroundScrim { color, opacity })
+        } else {
+            None
+        };
+        Some(WebBackgroundImage {
+            asset_id,
+            fit,
+            position,
+            scrim,
+        })
+    }
+
     fn on_end(&mut self, name: &str, pos_before: usize) {
         if name == ROOT_WRAPPER {
             return;
@@ -1044,7 +1223,11 @@ impl<'a> IngestState<'a> {
             }
             let capture = self.capture.take().expect("capture present");
             let inner = &self.source[capture.start_offset..pos_before.min(self.source.len())];
-            if let PendingLeaf::Discard { warn_if_content, context } = &capture.pending {
+            if let PendingLeaf::Discard {
+                warn_if_content,
+                context,
+            } = &capture.pending
+            {
                 if *warn_if_content && !inner.trim().is_empty() {
                     self.warning(
                         "LUMW0131",
@@ -1069,7 +1252,13 @@ impl<'a> IngestState<'a> {
                 );
             }
             match capture.pending {
-                PendingLeaf::Text { id, variant, classes, name, slot_key } => {
+                PendingLeaf::Text {
+                    id,
+                    variant,
+                    classes,
+                    name,
+                    slot_key,
+                } => {
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Text {
@@ -1082,7 +1271,14 @@ impl<'a> IngestState<'a> {
                         slot_key,
                     });
                 }
-                PendingLeaf::Button { id, action, variant, classes, name, slot_key } => {
+                PendingLeaf::Button {
+                    id,
+                    action,
+                    variant,
+                    classes,
+                    name,
+                    slot_key,
+                } => {
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Button {
@@ -1125,10 +1321,7 @@ impl<'a> IngestState<'a> {
         if !is_section {
             self.error(
                 "LUMW0102",
-                format!(
-                    "top-level <{}> is not a section",
-                    node.kind.kind_name()
-                ),
+                format!("top-level <{}> is not a section", node.kind.kind_name()),
                 "Every top-level element must be <section>, <header>, or <footer>.",
                 Some(&id),
             );
@@ -1294,7 +1487,11 @@ mod tests {
     #[test]
     fn clean_page_ingests_without_errors() {
         let outcome = ingest_html(GOOD_PAGE, &theme());
-        assert!(!outcome.has_errors(), "diagnostics: {:#?}", outcome.diagnostics);
+        assert!(
+            !outcome.has_errors(),
+            "diagnostics: {:#?}",
+            outcome.diagnostics
+        );
         assert_eq!(outcome.roots.len(), 2);
         let header = outcome
             .nodes
@@ -1303,12 +1500,23 @@ mod tests {
             .unwrap();
         assert!(matches!(
             header.kind,
-            WebNodeKind::Section { tag: SectionTag::Header, .. }
+            WebNodeKind::Section {
+                tag: SectionTag::Header,
+                ..
+            }
         ));
         let hero_heading = outcome
             .nodes
             .iter()
-            .find(|node| matches!(&node.kind, WebNodeKind::Text { variant: TextVariant::Display, .. }))
+            .find(|node| {
+                matches!(
+                    &node.kind,
+                    WebNodeKind::Text {
+                        variant: TextVariant::Display,
+                        ..
+                    }
+                )
+            })
             .unwrap();
         if let WebNodeKind::Text { content, .. } = &hero_heading.kind {
             assert!(content.contains("<span class=\"text-primary\">clinicians trust</span>"));
@@ -1317,6 +1525,63 @@ mod tests {
             .nodes
             .iter()
             .any(|node| matches!(&node.kind, WebNodeKind::Icon { icon } if icon == "sparkles")));
+    }
+
+    #[test]
+    fn clickable_container_and_background_attributes_ingest_as_typed_semantics() {
+        let outcome = ingest_html(
+            r#"<section id="hero" data-background-asset="hero_photo" data-background-position="top" data-scrim-color="dark" data-scrim-opacity="60">
+                 <div id="card" data-href="/case-study" data-new-tab="true" data-background-asset="card_photo" data-background-fit="contain">
+                   <p>Read the story</p>
+                 </div>
+               </section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let hero = outcome
+            .nodes
+            .iter()
+            .find(|node| node.id.as_str() == "hero")
+            .unwrap();
+        let WebNodeKind::Section {
+            background: Some(background),
+            ..
+        } = &hero.kind
+        else {
+            panic!("section background");
+        };
+        assert_eq!(background.position, WebBackgroundPosition::Top);
+        assert_eq!(background.scrim.as_ref().unwrap().opacity, 60);
+
+        let card = outcome
+            .nodes
+            .iter()
+            .find(|node| node.id.as_str() == "card")
+            .unwrap();
+        let WebNodeKind::Container {
+            href,
+            new_tab,
+            background: Some(background),
+        } = &card.kind
+        else {
+            panic!("clickable background container");
+        };
+        assert_eq!(href.as_deref(), Some("/case-study"));
+        assert!(*new_tab);
+        assert_eq!(background.fit, WebBackgroundFit::Contain);
+    }
+
+    #[test]
+    fn malformed_background_attributes_are_rejected() {
+        let outcome = ingest_html(
+            r#"<section id="hero" data-background-asset="photo" data-background-fit="stretch" data-scrim-opacity="101"><p>Hi</p></section>"#,
+            &theme(),
+        );
+        assert!(outcome.has_errors());
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0136"));
     }
 
     #[test]
@@ -1579,7 +1844,12 @@ mod tests {
             .find(|node| matches!(&node.kind, WebNodeKind::Embed { .. }))
             .expect("embed node");
         assert!(embed.id.as_str().starts_with("emb"));
-        let WebNodeKind::Embed { provider, url, html } = &embed.kind else {
+        let WebNodeKind::Embed {
+            provider,
+            url,
+            html,
+        } = &embed.kind
+        else {
             panic!("embed");
         };
         assert_eq!(*provider, EmbedProvider::Calendly);
@@ -1649,7 +1919,11 @@ mod tests {
             .find(|node| node.id.as_str() == "car")
             .expect("carousel");
         let WebNodeKind::Component {
-            spec: ComponentSpec::Carousel { show_arrows, autoplay_s },
+            spec:
+                ComponentSpec::Carousel {
+                    show_arrows,
+                    autoplay_s,
+                },
         } = &carousel.kind
         else {
             panic!("carousel");
@@ -1684,7 +1958,14 @@ mod tests {
         let carousel = outcome
             .nodes
             .iter()
-            .find(|node| matches!(&node.kind, WebNodeKind::Component { spec: ComponentSpec::Carousel { .. } }))
+            .find(|node| {
+                matches!(
+                    &node.kind,
+                    WebNodeKind::Component {
+                        spec: ComponentSpec::Carousel { .. }
+                    }
+                )
+            })
             .expect("carousel");
         let WebNodeKind::Component {
             spec: ComponentSpec::Carousel { autoplay_s, .. },
@@ -1786,7 +2067,8 @@ mod tests {
             "source": {"kind": "generated", "model": "test-model", "request_id": null},
         }))
         .unwrap_or_else(|_| panic!("asset record fixture"));
-        doc.assets.insert(lumen_core::AssetId::from("logo_1"), record);
+        doc.assets
+            .insert(lumen_core::AssetId::from("logo_1"), record);
         let theme = theme();
         let outcome = ingest_html_into_page(
             &mut doc,
@@ -1794,6 +2076,10 @@ mod tests {
             r#"<section id="s"><p>Fast&nbsp;&amp; safe&mdash;always</p><img data-asset="logo_1" alt="logo"></section>"#,
             &theme,
         );
-        assert!(!outcome.has_errors(), "diagnostics: {:#?}", outcome.diagnostics);
+        assert!(
+            !outcome.has_errors(),
+            "diagnostics: {:#?}",
+            outcome.diagnostics
+        );
     }
 }

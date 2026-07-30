@@ -86,13 +86,29 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
         ));
         return;
     };
-    if !matches!(root.kind, WebNodeKind::Container) {
+    if !matches!(root.kind, WebNodeKind::Container { .. }) {
         diagnostics.push(Diagnostic::error(
             Phase::Web,
             "LUMW0006",
             format!("page `{}` root must be a container", page.id),
             Some(DiagnosticSubject::Node(root.id.clone())),
         ));
+    }
+    if let WebNodeKind::Container {
+        href, background, ..
+    } = &root.kind
+    {
+        if href.is_some() || background.is_some() {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0029",
+                    format!("page `{}` root cannot be clickable or carry a background", page.id),
+                    Some(DiagnosticSubject::Node(root.id.clone())),
+                )
+                .with_hint("Put the link or background on a visible section/container below the page root."),
+            );
+        }
     }
 
     // Parent multiplicity + child resolution.
@@ -188,6 +204,40 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
     // Reference + content checks.
     for node in page.nodes.values() {
         match &node.kind {
+            WebNodeKind::Section { background, .. } => {
+                validate_background(doc, node, background.as_ref(), diagnostics);
+            }
+            WebNodeKind::Container {
+                href, background, ..
+            } => {
+                validate_background(doc, node, background.as_ref(), diagnostics);
+                if let Some(href) = href {
+                    if !href_is_allowed(href) {
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0016",
+                            format!("container `{}` href is not allowed: {href}", node.id),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                    if let Some(descendant) = first_interactive_descendant(page, node) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                Phase::Web,
+                                "LUMW0028",
+                                format!(
+                                    "clickable container `{}` contains interactive descendant `{descendant}`",
+                                    node.id
+                                ),
+                                Some(DiagnosticSubject::Node(descendant)),
+                            )
+                            .with_hint(
+                                "A clickable container may contain text, images, and layout nodes, but not nested links, buttons, components, or embeds.",
+                            ),
+                        );
+                    }
+                }
+            }
             WebNodeKind::Image { asset_id, href, .. } => {
                 if !doc.assets.contains_key(asset_id) {
                     diagnostics.push(Diagnostic::error(
@@ -256,7 +306,8 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
             } => {
                 for child_id in &node.children {
                     let is_item = page.nodes.get(child_id).is_some_and(|child| {
-                        matches!(child.kind, WebNodeKind::Container) && child.children.len() >= 2
+                        matches!(child.kind, WebNodeKind::Container { .. })
+                            && child.children.len() >= 2
                     });
                     if !is_item {
                         diagnostics.push(Diagnostic::warning(
@@ -348,11 +399,12 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
             } => {
                 for child_id in &node.children {
                     let is_item = page.nodes.get(child_id).is_some_and(|child| {
-                        matches!(child.kind, WebNodeKind::Container)
+                        matches!(child.kind, WebNodeKind::Container { .. })
                             && child.children.len() >= 2
-                            && page.nodes.get(&child.children[0]).is_some_and(|first| {
-                                matches!(first.kind, WebNodeKind::Text { .. })
-                            })
+                            && page
+                                .nodes
+                                .get(&child.children[0])
+                                .is_some_and(|first| matches!(first.kind, WebNodeKind::Text { .. }))
                     });
                     if !is_item {
                         diagnostics.push(Diagnostic::warning(
@@ -367,7 +419,11 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     }
                 }
             }
-            WebNodeKind::Embed { provider, url, html } => match provider {
+            WebNodeKind::Embed {
+                provider,
+                url,
+                html,
+            } => match provider {
                 EmbedProvider::Calendly => {
                     let valid = url.as_deref().is_some_and(calendly_url_is_valid);
                     if !valid {
@@ -425,7 +481,10 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
             );
         }
         if when_gate_key(slot_key).is_some()
-            && !matches!(node.kind, WebNodeKind::Section { .. } | WebNodeKind::Container)
+            && !matches!(
+                node.kind,
+                WebNodeKind::Section { .. } | WebNodeKind::Container { .. }
+            )
         {
             diagnostics.push(
                 Diagnostic::error(
@@ -444,10 +503,97 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
     }
 }
 
+fn validate_background(
+    doc: &WebDoc,
+    node: &crate::doc::WebNode,
+    background: Option<&crate::doc::WebBackgroundImage>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(background) = background else {
+        return;
+    };
+    match doc.assets.get(&background.asset_id) {
+        None => diagnostics.push(Diagnostic::error(
+            Phase::Web,
+            "LUMW0026",
+            format!(
+                "{} `{}` background references unknown asset `{}`",
+                node.kind.kind_name(),
+                node.id,
+                background.asset_id
+            ),
+            Some(DiagnosticSubject::Node(node.id.clone())),
+        )),
+        Some(record) if !record.is_image_compatible() => diagnostics.push(Diagnostic::error(
+            Phase::Web,
+            "LUMW0026",
+            format!(
+                "{} `{}` background asset `{}` is not image-compatible",
+                node.kind.kind_name(),
+                node.id,
+                background.asset_id
+            ),
+            Some(DiagnosticSubject::Node(node.id.clone())),
+        )),
+        Some(_) => {}
+    }
+    if let Some(scrim) = &background.scrim {
+        if scrim.opacity > 100 {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0027",
+                    format!(
+                        "{} `{}` scrim opacity {} is outside 0..=100",
+                        node.kind.kind_name(),
+                        node.id,
+                        scrim.opacity
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Use an integer scrim opacity from 0 through 100."),
+            );
+        }
+    }
+}
+
+fn first_interactive_descendant(
+    page: &crate::doc::WebPage,
+    node: &crate::doc::WebNode,
+) -> Option<NodeId> {
+    let mut stack = node.children.clone();
+    let mut seen = BTreeSet::new();
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        let Some(descendant) = page.nodes.get(&id) else {
+            continue;
+        };
+        let interactive = match &descendant.kind {
+            WebNodeKind::Button { .. }
+            | WebNodeKind::Component { .. }
+            | WebNodeKind::Embed { .. } => true,
+            WebNodeKind::Image { href, .. } => href.is_some(),
+            WebNodeKind::Container { href, .. } => href.is_some(),
+            WebNodeKind::Text { content, .. } => content.contains("<a ") || content.contains("<a>"),
+            _ => false,
+        };
+        if interactive {
+            return Some(id);
+        }
+        stack.extend(descendant.children.iter().cloned());
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::doc::{TextVariant, WebDoc, WebNode, WebThemeRef};
+    use crate::doc::{
+        TextVariant, WebBackgroundFit, WebBackgroundImage, WebBackgroundPosition,
+        WebBackgroundScrim, WebDoc, WebNode, WebScrimColor, WebThemeRef,
+    };
     use crate::ingest::ingest_html_into_page;
     use crate::theme::{compile_web_theme, WebThemeOptions};
     use lumen_core::{DiagnosticSeverity, PageId};
@@ -556,6 +702,52 @@ mod tests {
     }
 
     #[test]
+    fn clickable_container_accepts_plain_content_and_rejects_nested_interaction() {
+        let plain = ingest_doc(
+            r#"<section id="s"><div id="card" data-href="/story"><p>Read it</p></div></section>"#,
+        );
+        assert!(validate_web_doc(&plain)
+            .iter()
+            .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
+
+        let nested = ingest_doc(
+            r#"<section id="s"><div id="card" data-href="/story"><a data-button="primary" href="/buy">Buy</a></div></section>"#,
+        );
+        assert!(validate_web_doc(&nested)
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0028"));
+    }
+
+    #[test]
+    fn background_asset_and_scrim_opacity_are_validated() {
+        let mut doc = clean_doc();
+        let page = doc.pages.get_mut(0).unwrap();
+        let hero = page
+            .nodes
+            .get_mut(&lumen_core::NodeId::from("hero"))
+            .unwrap();
+        let WebNodeKind::Section { background, .. } = &mut hero.kind else {
+            panic!("section");
+        };
+        *background = Some(WebBackgroundImage {
+            asset_id: lumen_core::AssetId::from("missing_photo"),
+            fit: WebBackgroundFit::Cover,
+            position: WebBackgroundPosition::Center,
+            scrim: Some(WebBackgroundScrim {
+                color: WebScrimColor::Dark,
+                opacity: 101,
+            }),
+        });
+        let diagnostics = validate_web_doc(&doc);
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0026"));
+        assert!(diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0027"));
+    }
+
+    #[test]
     fn accordion_item_shape_warns() {
         let doc = ingest_doc(
             r#"<section id="s"><div data-component="accordion" id="faq"><p>lonely</p></div></section>"#,
@@ -596,9 +788,8 @@ mod tests {
     #[test]
     fn slot_key_charset_and_when_placement_are_validated() {
         // A valid data-slot on a text node validates clean.
-        let doc = ingest_doc(
-            r#"<section id="s"><p id="p" data-slot="account.name">x</p></section>"#,
-        );
+        let doc =
+            ingest_doc(r#"<section id="s"><p id="p" data-slot="account.name">x</p></section>"#);
         assert!(validate_web_doc(&doc)
             .iter()
             .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error));
@@ -637,7 +828,11 @@ mod tests {
         let mut doc = clean_doc();
         let page = doc.pages.get_mut(0).unwrap();
         let hero = lumen_core::NodeId::from("hero");
-        page.nodes.get_mut(&hero).unwrap().children.push(lumen_core::NodeId::from("img_x"));
+        page.nodes
+            .get_mut(&hero)
+            .unwrap()
+            .children
+            .push(lumen_core::NodeId::from("img_x"));
         page.nodes.insert(
             lumen_core::NodeId::from("img_x"),
             WebNode {

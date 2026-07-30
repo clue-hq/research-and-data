@@ -9,8 +9,8 @@
 //! layer's styling hooks, not instrumentation.
 
 use crate::doc::{
-    calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, MarqueeDirection, WebDoc,
-    WebNodeKind,
+    calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, MarqueeDirection,
+    WebBackgroundImage, WebDoc, WebNode, WebNodeKind,
 };
 use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS};
 use crate::theme::WebTheme;
@@ -97,7 +97,11 @@ pub fn page_needs_runtime(doc: &WebDoc, page_id: &PageId) -> bool {
                 spec: ComponentSpec::Tabs { .. },
             }) => true,
             Some(WebNodeKind::Component {
-                spec: ComponentSpec::Carousel { show_arrows, autoplay_s },
+                spec:
+                    ComponentSpec::Carousel {
+                        show_arrows,
+                        autoplay_s,
+                    },
             }) => *show_arrows || autoplay_s.is_some(),
             _ => false,
         })
@@ -129,7 +133,16 @@ pub fn render_page(
     let mut diagnostics = Vec::new();
     let mut body = String::new();
     for child in &root.children {
-        render_node(doc, page_id, child, theme, options, &mut body, &mut diagnostics, false);
+        render_node(
+            doc,
+            page_id,
+            child,
+            theme,
+            options,
+            &mut body,
+            &mut diagnostics,
+            false,
+        );
     }
 
     let editor = options.mode == RenderMode::Editor;
@@ -140,6 +153,12 @@ pub fn render_page(
     html.push_str("<meta charset=\"utf-8\">\n");
     html.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
     html.push_str(&format!("<title>{}</title>\n", escape_text(&doc.title)));
+    // A linked Container must keep the block-level behavior it had as a div.
+    // :where() keeps specificity at zero, so authored display utilities
+    // (flex/grid/inline-flex) still override this default.
+    html.push_str(
+        "<style>:where(a[data-lumen-container-link]){display:block;color:inherit;text-decoration:inherit}</style>\n",
+    );
     // Plain :root variables in both modes so the base layer's var()
     // references resolve even before (or without) the Tailwind runtime.
     html.push_str("<style>\n:root {\n");
@@ -182,7 +201,9 @@ pub fn render_page(
     // script exception, inlined in both modes only when a command button or
     // dialog needs it. Never any agent-authored code.
     if needs_runtime {
-        html.push_str(&format!("<script>/* lumen-runtime v2 */ {PLATFORM_RUNTIME_JS}</script>\n"));
+        html.push_str(&format!(
+            "<script>/* lumen-runtime v2 */ {PLATFORM_RUNTIME_JS}</script>\n"
+        ));
     }
     html.push_str("</head>\n<body>\n");
     html.push_str(&body);
@@ -222,7 +243,10 @@ fn render_node(
     let editor = options.mode == RenderMode::Editor;
     let node_attr = |out: &mut String| {
         if editor && !suppress_node_ids {
-            out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(node.id.as_str())));
+            out.push_str(&format!(
+                " data-node-id=\"{}\"",
+                escape_attr(node.id.as_str())
+            ));
         }
     };
     let class_attr = |out: &mut String| {
@@ -232,7 +256,11 @@ fn render_node(
     };
 
     match &node.kind {
-        WebNodeKind::Section { tag, anchor_id } => {
+        WebNodeKind::Section {
+            tag,
+            anchor_id,
+            background,
+        } => {
             let tag = tag.as_str();
             out.push('<');
             out.push_str(tag);
@@ -240,21 +268,56 @@ fn render_node(
             out.push_str(&format!(" id=\"{}\"", escape_attr(anchor)));
             node_attr(out);
             class_attr(out);
+            render_background_attr(doc, node, background.as_ref(), options, out, diagnostics);
             out.push('>');
             for child in &node.children {
-                render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                render_node(
+                    doc,
+                    page_id,
+                    child,
+                    theme,
+                    options,
+                    out,
+                    diagnostics,
+                    suppress_node_ids,
+                );
             }
             out.push_str(&format!("</{tag}>"));
         }
-        WebNodeKind::Container => {
-            out.push_str("<div");
+        WebNodeKind::Container {
+            href,
+            new_tab,
+            background,
+        } => {
+            let tag = if href.is_some() { "a" } else { "div" };
+            out.push('<');
+            out.push_str(tag);
+            if let Some(href) = href {
+                out.push_str(&format!(" href=\"{}\"", escape_attr(href)));
+                out.push_str(" data-lumen-container-link");
+                if *new_tab {
+                    out.push_str(" target=\"_blank\" rel=\"noopener noreferrer\"");
+                }
+            }
             node_attr(out);
             class_attr(out);
+            render_background_attr(doc, node, background.as_ref(), options, out, diagnostics);
             out.push('>');
             for child in &node.children {
-                render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                render_node(
+                    doc,
+                    page_id,
+                    child,
+                    theme,
+                    options,
+                    out,
+                    diagnostics,
+                    suppress_node_ids,
+                );
             }
-            out.push_str("</div>");
+            out.push_str("</");
+            out.push_str(tag);
+            out.push('>');
         }
         WebNodeKind::Text { variant, content } => {
             let tag = variant.render_tag();
@@ -323,7 +386,16 @@ fn render_node(
                     escape_attr(node.id.as_str())
                 ));
                 for child in &node.children {
-                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                    render_node(
+                        doc,
+                        page_id,
+                        child,
+                        theme,
+                        options,
+                        out,
+                        diagnostics,
+                        suppress_node_ids,
+                    );
                 }
                 out.push_str("</dialog>");
             }
@@ -381,7 +453,16 @@ fn render_node(
                 out.push('>');
                 out.push_str("<div class=\"lumen-marquee-track\">");
                 for child in &node.children {
-                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                    render_node(
+                        doc,
+                        page_id,
+                        child,
+                        theme,
+                        options,
+                        out,
+                        diagnostics,
+                        suppress_node_ids,
+                    );
                 }
                 out.push_str("</div>");
                 // The aria-hidden clone repeats the content for a seamless loop;
@@ -405,7 +486,16 @@ fn render_node(
                 // Desktop inline row.
                 out.push_str("<div class=\"lumen-nav-row\">");
                 for child in &node.children {
-                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                    render_node(
+                        doc,
+                        page_id,
+                        child,
+                        theme,
+                        options,
+                        out,
+                        diagnostics,
+                        suppress_node_ids,
+                    );
                 }
                 out.push_str("</div>");
                 // Mobile hamburger dropdown: the same children, node ids
@@ -436,7 +526,16 @@ fn render_node(
                 out.push('>');
                 out.push_str("<div class=\"lumen-carousel-track\">");
                 for child in &node.children {
-                    render_node(doc, page_id, child, theme, options, out, diagnostics, suppress_node_ids);
+                    render_node(
+                        doc,
+                        page_id,
+                        child,
+                        theme,
+                        options,
+                        out,
+                        diagnostics,
+                        suppress_node_ids,
+                    );
                 }
                 out.push_str("</div>");
                 if *show_arrows {
@@ -450,7 +549,17 @@ fn render_node(
                 out.push_str("</div>");
             }
             ComponentSpec::Tabs { default_tab } => {
-                render_tabs(doc, page_id, node, theme, options, out, diagnostics, suppress_node_ids, *default_tab);
+                render_tabs(
+                    doc,
+                    page_id,
+                    node,
+                    theme,
+                    options,
+                    out,
+                    diagnostics,
+                    suppress_node_ids,
+                    *default_tab,
+                );
             }
         },
         WebNodeKind::Image {
@@ -467,7 +576,10 @@ fn render_node(
                 diagnostics.push(Diagnostic::warning(
                     Phase::Web,
                     "LUMW0403",
-                    format!("image `{}` asset `{asset_id}` has no resolvable bytes", node.id),
+                    format!(
+                        "image `{}` asset `{asset_id}` has no resolvable bytes",
+                        node.id
+                    ),
                     Some(DiagnosticSubject::Node(node.id.clone())),
                 ));
             }
@@ -501,7 +613,10 @@ fn render_node(
                 ));
                 node_attr(out);
                 class_attr(out);
-                out.push_str(&format!("><path d=\"{}\"/></svg>", escape_attr(def.path_data)));
+                out.push_str(&format!(
+                    "><path d=\"{}\"/></svg>",
+                    escape_attr(def.path_data)
+                ));
             }
             None => {
                 diagnostics.push(Diagnostic::warning(
@@ -512,7 +627,11 @@ fn render_node(
                 ));
             }
         },
-        WebNodeKind::Embed { provider, url, html } => {
+        WebNodeKind::Embed {
+            provider,
+            url,
+            html,
+        } => {
             // Merged class for a live embed iframe: the platform hook first,
             // then the node's own utilities.
             let embed_class = |out: &mut String| {
@@ -526,7 +645,9 @@ fn render_node(
             let src_iframe = |out: &mut String, url: &str, title: &str| {
                 out.push_str(&format!("<iframe src=\"{}\"", escape_attr(url)));
                 out.push_str(&format!(" title=\"{title}\""));
-                out.push_str(" sandbox=\"allow-scripts allow-same-origin allow-forms allow-popups\"");
+                out.push_str(
+                    " sandbox=\"allow-scripts allow-same-origin allow-forms allow-popups\"",
+                );
                 out.push_str(" loading=\"lazy\"");
                 node_attr(out);
                 embed_class(out);
@@ -591,10 +712,21 @@ fn render_accordion_item(
     let page = doc.page(page_id).expect("page checked by render_page");
     let item_shape = page
         .node(child_id)
-        .map(|child| matches!(child.kind, WebNodeKind::Container) && child.children.len() >= 2)
+        .map(|child| {
+            matches!(child.kind, WebNodeKind::Container { .. }) && child.children.len() >= 2
+        })
         .unwrap_or(false);
     if !item_shape {
-        render_node(doc, page_id, child_id, theme, options, out, diagnostics, suppress_node_ids);
+        render_node(
+            doc,
+            page_id,
+            child_id,
+            theme,
+            options,
+            out,
+            diagnostics,
+            suppress_node_ids,
+        );
         return;
     }
     let child = page.node(child_id).expect("checked present");
@@ -608,17 +740,38 @@ fn render_accordion_item(
         out.push_str(" open");
     }
     if editor && !suppress_node_ids {
-        out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(child.id.as_str())));
+        out.push_str(&format!(
+            " data-node-id=\"{}\"",
+            escape_attr(child.id.as_str())
+        ));
     }
     if !child.classes.trim().is_empty() {
         out.push_str(&format!(" class=\"{}\"", escape_attr(child.classes.trim())));
     }
     out.push('>');
     out.push_str("<summary>");
-    render_node(doc, page_id, &child.children[0], theme, options, out, diagnostics, suppress_node_ids);
+    render_node(
+        doc,
+        page_id,
+        &child.children[0],
+        theme,
+        options,
+        out,
+        diagnostics,
+        suppress_node_ids,
+    );
     out.push_str("</summary>");
     for grandchild in &child.children[1..] {
-        render_node(doc, page_id, grandchild, theme, options, out, diagnostics, suppress_node_ids);
+        render_node(
+            doc,
+            page_id,
+            grandchild,
+            theme,
+            options,
+            out,
+            diagnostics,
+            suppress_node_ids,
+        );
     }
     out.push_str("</details>");
 }
@@ -628,7 +781,7 @@ fn render_accordion_item(
 fn tabs_item_shape(page: &crate::doc::WebPage, child_id: &NodeId) -> bool {
     page.node(child_id)
         .map(|child| {
-            matches!(child.kind, WebNodeKind::Container)
+            matches!(child.kind, WebNodeKind::Container { .. })
                 && child.children.len() >= 2
                 && page
                     .node(&child.children[0])
@@ -674,7 +827,10 @@ fn render_tabs(
     }
     out.push('"');
     if editor && !suppress_node_ids {
-        out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(node.id.as_str())));
+        out.push_str(&format!(
+            " data-node-id=\"{}\"",
+            escape_attr(node.id.as_str())
+        ));
     }
     out.push('>');
 
@@ -691,12 +847,18 @@ fn render_tabs(
             .unwrap_or_default();
         out.push_str("<button type=\"button\" role=\"tab\" class=\"lumen-tab\"");
         out.push_str(&format!(" id=\"{}_tab\"", escape_attr(item.id.as_str())));
-        out.push_str(&format!(" aria-controls=\"{}_panel\"", escape_attr(item.id.as_str())));
+        out.push_str(&format!(
+            " aria-controls=\"{}_panel\"",
+            escape_attr(item.id.as_str())
+        ));
         out.push_str(&format!(
             " aria-selected=\"{}\"",
             if is_selected { "true" } else { "false" }
         ));
-        out.push_str(&format!(" tabindex=\"{}\"", if is_selected { "0" } else { "-1" }));
+        out.push_str(&format!(
+            " tabindex=\"{}\"",
+            if is_selected { "0" } else { "-1" }
+        ));
         out.push('>');
         // The label is the first Text child's inline content, without its <p>
         // wrapper or data-node-id.
@@ -716,14 +878,26 @@ fn render_tabs(
             out.push_str(&format!(" class=\"{}\"", escape_attr(item.classes.trim())));
         }
         if editor && !suppress_node_ids {
-            out.push_str(&format!(" data-node-id=\"{}\"", escape_attr(item.id.as_str())));
+            out.push_str(&format!(
+                " data-node-id=\"{}\"",
+                escape_attr(item.id.as_str())
+            ));
         }
         if index != selected {
             out.push_str(" hidden");
         }
         out.push('>');
         for grandchild in &item.children[1..] {
-            render_node(doc, page_id, grandchild, theme, options, out, diagnostics, suppress_node_ids);
+            render_node(
+                doc,
+                page_id,
+                grandchild,
+                theme,
+                options,
+                out,
+                diagnostics,
+                suppress_node_ids,
+            );
         }
         out.push_str("</div>");
     }
@@ -732,7 +906,16 @@ fn render_tabs(
     // structure (validation warns about them).
     for child_id in &node.children {
         if !tabs_item_shape(page, child_id) {
-            render_node(doc, page_id, child_id, theme, options, out, diagnostics, suppress_node_ids);
+            render_node(
+                doc,
+                page_id,
+                child_id,
+                theme,
+                options,
+                out,
+                diagnostics,
+                suppress_node_ids,
+            );
         }
     }
 
@@ -773,6 +956,62 @@ fn asset_src(record: &lumen_core::AssetRecord, asset_base_url: &str) -> Option<S
         .location
         .as_ref()
         .and_then(|location| location.url.clone())
+}
+
+fn render_background_attr(
+    doc: &WebDoc,
+    node: &WebNode,
+    background: Option<&WebBackgroundImage>,
+    options: &RenderOptions,
+    out: &mut String,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(background) = background else {
+        return;
+    };
+    let src = doc
+        .assets
+        .get(&background.asset_id)
+        .and_then(|record| asset_src(record, &options.asset_base_url));
+    let Some(src) = src else {
+        diagnostics.push(Diagnostic::warning(
+            Phase::Web,
+            "LUMW0404",
+            format!(
+                "{} `{}` background asset `{}` has no resolvable bytes",
+                node.kind.kind_name(),
+                node.id,
+                background.asset_id
+            ),
+            Some(DiagnosticSubject::Node(node.id.clone())),
+        ));
+        out.push_str(" data-missing-background-asset=\"true\"");
+        return;
+    };
+    let css_src = css_single_quoted_string(&src);
+    let image = if let Some(scrim) = &background.scrim {
+        let color = scrim.color.as_css_color();
+        format!(
+            "linear-gradient(color-mix(in srgb,{color} {}%,transparent),color-mix(in srgb,{color} {}%,transparent)),url('{css_src}')",
+            scrim.opacity, scrim.opacity
+        )
+    } else {
+        format!("url('{css_src}')")
+    };
+    let style = format!(
+        "background-image:{image};background-size:{};background-position:{};background-repeat:no-repeat",
+        background.fit.as_css(),
+        background.position.as_css()
+    );
+    out.push_str(&format!(" style=\"{}\"", escape_attr(&style)));
+}
+
+fn css_single_quoted_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\a ")
+        .replace('\r', "\\a ")
 }
 
 #[cfg(test)]
@@ -860,6 +1099,48 @@ mod tests {
     }
 
     #[test]
+    fn clickable_container_and_scrimmed_background_render_in_editor_and_delivery() {
+        let (mut doc, theme) = fixture();
+        let outcome = ingest_html_into_page(
+            &mut doc,
+            &PageId::from("home"),
+            r#"<section id="hero" data-background-asset="hero_img" data-background-position="top" data-scrim-color="dark" data-scrim-opacity="60">
+                 <div id="story" class="p-6" data-href="/story" data-new-tab="true">
+                   <p>Read the story</p>
+                 </div>
+               </section>"#,
+            &theme,
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("delivery");
+        assert!(delivery
+            .html
+            .contains("<a href=\"/story\" data-lumen-container-link target=\"_blank\" rel=\"noopener noreferrer\" class=\"p-6\">"));
+        assert!(delivery.html.contains("background-size:cover"));
+        assert!(delivery.html.contains("background-position:top"));
+        assert!(delivery.html.contains("var(--color-dark) 60%"));
+        assert!(delivery.html.contains("url('/asset-store/abc123')"));
+        assert!(!delivery.html.contains("data-node-id=\"story\""));
+
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::editor("/asset-store"),
+        )
+        .expect("editor");
+        assert!(editor.html.contains("data-node-id=\"story\""));
+        assert!(editor.html.contains("href=\"/story\""));
+    }
+
+    #[test]
     fn inline_markup_renders_verbatim_and_escaped_title() {
         let (mut doc, theme) = fixture();
         doc.title = "A <B> & C".to_owned();
@@ -924,11 +1205,13 @@ mod tests {
         )
         .expect("render");
         // Dialog markup.
-        assert!(output.html.contains("<dialog id=\"dlg_book\" data-lumen-dialog=\"true\""));
+        assert!(output
+            .html
+            .contains("<dialog id=\"dlg_book\" data-lumen-dialog=\"true\""));
         assert!(output.html.contains("aria-label=\"Booking\""));
-        assert!(output.html.contains(
-            "class=\"lumen-dialog-close\" commandfor=\"dlg_book\" command=\"close\""
-        ));
+        assert!(output
+            .html
+            .contains("class=\"lumen-dialog-close\" commandfor=\"dlg_book\" command=\"close\""));
         // Command button markup.
         assert!(output.html.contains("<button type=\"button\""));
         assert!(output.html.contains("commandfor=\"dlg_book\""));
@@ -956,7 +1239,13 @@ mod tests {
             &RenderOptions::delivery("/asset-store"),
         )
         .expect("render");
-        assert_eq!(output.html.matches("<details data-lumen-acc-item=\"true\"").count(), 2);
+        assert_eq!(
+            output
+                .html
+                .matches("<details data-lumen-acc-item=\"true\"")
+                .count(),
+            2
+        );
         assert!(output.html.contains("<summary>"));
         // single_open ⇒ shared name; default_open=1 ⇒ the second item is open.
         assert_eq!(output.html.matches("name=\"faq\"").count(), 2);
@@ -983,8 +1272,13 @@ mod tests {
             &RenderOptions::delivery("/asset-store"),
         )
         .expect("render");
-        assert_eq!(delivery.html.matches("class=\"lumen-marquee-track").count(), 2);
-        assert!(delivery.html.contains("class=\"lumen-marquee-track\" aria-hidden=\"true\""));
+        assert_eq!(
+            delivery.html.matches("class=\"lumen-marquee-track").count(),
+            2
+        );
+        assert!(delivery
+            .html
+            .contains("class=\"lumen-marquee-track\" aria-hidden=\"true\""));
         assert!(delivery.html.contains("--lumen-marquee-duration:20s"));
         assert!(delivery.html.contains("class=\"lumen-marquee py-4\""));
         assert!(delivery.html.contains("data-direction=\"right\""));

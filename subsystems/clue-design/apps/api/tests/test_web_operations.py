@@ -218,6 +218,110 @@ def test_web_operations_applies_and_pushes_undo(client: TestClient) -> None:
     assert tail["batch_id"] == after["undo_stack"][-1]
 
 
+def test_clickable_container_and_background_semantics_persist_render_and_undo(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    page = before["scene"]["pages"][0]
+    hero_container_id = page["nodes"]["hero"]["children"][0]
+    asset = {
+        "id": "hero_background",
+        "label": "Hero background",
+        "kind": "raster_image",
+        "status": "ready",
+        "source": {"kind": "generated", "model": "test", "request_id": None},
+        "media": {
+            "mime_type": "image/webp",
+            "filename": "hero.webp",
+            "byte_length": 16,
+            "digest": None,
+            "location": {
+                "provider": "test",
+                "opaque_ref": "hero",
+                "url": "https://assets.example.test/hero.webp",
+            },
+        },
+    }
+    operations = [
+        {"kind": "upsert_asset", "record": asset},
+        {
+            "kind": "set_node_props",
+            "page_id": "home",
+            "id": "hero",
+            "props": {
+                "kind": "section",
+                "tag": "section",
+                "anchor_id": "hero",
+                "background": {
+                    "asset_id": "hero_background",
+                    "fit": "cover",
+                    "position": "top",
+                    "scrim": {"color": "dark", "opacity": 60},
+                },
+            },
+        },
+        {
+            "kind": "insert_node",
+            "page_id": "home",
+            "parent": hero_container_id,
+            "index": len(page["nodes"][hero_container_id]["children"]),
+            "nodes": [
+                {
+                    "id": "story_text",
+                    "kind": "text",
+                    "variant": "body",
+                    "content": "Read the story",
+                    "classes": "",
+                },
+                {
+                    "id": "story_card",
+                    "kind": "container",
+                    "href": "/story",
+                    "new_tab": True,
+                    "classes": "p-6",
+                    "children": ["story_text"],
+                },
+            ],
+            "root": "story_card",
+        },
+    ]
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": operations,
+            "base_version": before["current_version"],
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    after = get_document(client, document["id"])
+    nodes = after["scene"]["pages"][0]["nodes"]
+    assert nodes["story_card"]["href"] == "/story"
+    assert nodes["story_card"]["new_tab"] is True
+    assert nodes["hero"]["background"]["scrim"] == {
+        "color": "dark",
+        "opacity": 60,
+    }
+
+    rendered = client.get(f"/documents/{document['id']}/web/render")
+    assert rendered.status_code == 200, rendered.text
+    html = rendered.json()["html"]
+    assert 'href="/story"' in html
+    assert 'data-node-id="story_card"' in html
+    assert "background-position:top" in html
+    assert "var(--color-dark) 60%" in html
+
+    undo = client.post(f"/documents/{document['id']}/web/undo")
+    assert undo.status_code == 200, undo.text
+    restored = get_document(client, document["id"])["scene"]
+    restored_nodes = restored["pages"][0]["nodes"]
+    assert "story_card" not in restored_nodes
+    assert restored_nodes["hero"].get("background") is None
+    assert "hero_background" not in restored["assets"]
+
+
 def test_move_node_reorders_siblings_and_undo_restores_order(
     client: TestClient,
 ) -> None:

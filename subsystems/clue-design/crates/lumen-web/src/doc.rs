@@ -73,8 +73,17 @@ pub enum WebNodeKind {
         tag: SectionTag,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         anchor_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background: Option<WebBackgroundImage>,
     },
-    Container,
+    Container {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        href: Option<String>,
+        #[serde(default)]
+        new_tab: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background: Option<WebBackgroundImage>,
+    },
     Text {
         #[serde(default)]
         variant: TextVariant,
@@ -138,9 +147,7 @@ pub fn calendly_url_is_valid(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else {
         return false;
     };
-    let host_end = rest
-        .find(['/', '?', '#'])
-        .unwrap_or(rest.len());
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let host = rest[..host_end].to_ascii_lowercase();
     if host.is_empty() || host.contains('@') || host.contains(':') {
         return false;
@@ -155,6 +162,101 @@ pub enum SectionTag {
     Section,
     Header,
     Footer,
+}
+
+/// A registered document asset painted behind a Section or Container. These
+/// fields are deliberately typed instead of accepting raw style strings: all
+/// writers (AI ingest, operations, and the human inspector) therefore produce
+/// the same safe rendering and export semantics.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WebBackgroundImage {
+    pub asset_id: AssetId,
+    #[serde(default)]
+    pub fit: WebBackgroundFit,
+    #[serde(default)]
+    pub position: WebBackgroundPosition,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scrim: Option<WebBackgroundScrim>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebBackgroundFit {
+    #[default]
+    Cover,
+    Contain,
+}
+
+impl WebBackgroundFit {
+    pub fn as_css(&self) -> &'static str {
+        match self {
+            WebBackgroundFit::Cover => "cover",
+            WebBackgroundFit::Contain => "contain",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebBackgroundPosition {
+    #[default]
+    Center,
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+impl WebBackgroundPosition {
+    pub fn as_css(&self) -> &'static str {
+        match self {
+            WebBackgroundPosition::Center => "center",
+            WebBackgroundPosition::Top => "top",
+            WebBackgroundPosition::Right => "right",
+            WebBackgroundPosition::Bottom => "bottom",
+            WebBackgroundPosition::Left => "left",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WebBackgroundScrim {
+    #[serde(default)]
+    pub color: WebScrimColor,
+    #[serde(default = "default_scrim_opacity")]
+    pub opacity: u8,
+}
+
+fn default_scrim_opacity() -> u8 {
+    50
+}
+
+/// Scrims use the document's semantic theme variables. Keeping this list
+/// finite guarantees that renderer-generated inline style cannot be used as a
+/// CSS injection path while still covering light/dark and brand treatments.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebScrimColor {
+    #[default]
+    Dark,
+    Light,
+    Primary,
+    Accent,
+    Black,
+    White,
+}
+
+impl WebScrimColor {
+    pub fn as_css_color(&self) -> &'static str {
+        match self {
+            WebScrimColor::Dark => "var(--color-dark)",
+            WebScrimColor::Light => "var(--color-light)",
+            WebScrimColor::Primary => "var(--color-primary)",
+            WebScrimColor::Accent => "var(--color-accent)",
+            WebScrimColor::Black => "#000000",
+            WebScrimColor::White => "#ffffff",
+        }
+    }
 }
 
 impl SectionTag {
@@ -317,7 +419,9 @@ impl<'de> Deserialize<'de> for ButtonAction {
                     }
                 };
                 let command_target = raw.command_target.ok_or_else(|| {
-                    D::Error::custom("command button is missing `command_target` (the dialog's node id)")
+                    D::Error::custom(
+                        "command button is missing `command_target` (the dialog's node id)",
+                    )
                 })?;
                 Ok(ButtonAction::Command {
                     command,
@@ -432,7 +536,7 @@ impl WebNodeKind {
     pub fn kind_name(&self) -> &'static str {
         match self {
             WebNodeKind::Section { .. } => "section",
-            WebNodeKind::Container => "container",
+            WebNodeKind::Container { .. } => "container",
             WebNodeKind::Text { .. } => "text",
             WebNodeKind::Button { .. } => "button",
             WebNodeKind::Component { .. } => "component",
@@ -447,7 +551,9 @@ impl WebNodeKind {
     pub fn is_branch(&self) -> bool {
         matches!(
             self,
-            WebNodeKind::Section { .. } | WebNodeKind::Container | WebNodeKind::Component { .. }
+            WebNodeKind::Section { .. }
+                | WebNodeKind::Container { .. }
+                | WebNodeKind::Component { .. }
         )
     }
 }
@@ -469,9 +575,21 @@ impl WebDoc {
     /// An empty web document: one page ("Home", route `/`) whose root is an
     /// empty Container. The root node itself is not a Section; validation
     /// requires every root child to be one.
-    pub fn new(id: impl Into<String>, title: impl Into<String>, brand_kit: Option<BrandKitRef>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        brand_kit: Option<BrandKitRef>,
+    ) -> Self {
         let root_id = NodeId::from("root");
-        let root = WebNode::branch(root_id.clone(), WebNodeKind::Container, "");
+        let root = WebNode::branch(
+            root_id.clone(),
+            WebNodeKind::Container {
+                href: None,
+                new_tab: false,
+                background: None,
+            },
+            "",
+        );
         let mut nodes = BTreeMap::new();
         nodes.insert(root_id.clone(), root);
         Self {
@@ -642,7 +760,10 @@ mod tests {
             ButtonCommand::parse_html_attr("show-modal"),
             Some(ButtonCommand::ShowModal)
         );
-        assert_eq!(ButtonCommand::parse_html_attr("close"), Some(ButtonCommand::Close));
+        assert_eq!(
+            ButtonCommand::parse_html_attr("close"),
+            Some(ButtonCommand::Close)
+        );
         assert_eq!(ButtonCommand::parse_html_attr("show_modal"), None);
     }
 
@@ -677,7 +798,12 @@ mod tests {
         let json = r#"{"kind":"component","component":"marquee"}"#;
         let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
         let WebNodeKind::Component {
-            spec: ComponentSpec::Marquee { speed_s, direction, pause_on_hover },
+            spec:
+                ComponentSpec::Marquee {
+                    speed_s,
+                    direction,
+                    pause_on_hover,
+                },
         } = kind
         else {
             panic!("marquee component");
@@ -691,7 +817,12 @@ mod tests {
     fn legacy_embed_deserializes_as_custom() {
         let json = r#"{"kind":"embed","html":"<iframe src=\"x\"></iframe>"}"#;
         let kind: WebNodeKind = serde_json::from_str(json).expect("deserialize");
-        let WebNodeKind::Embed { provider, url, html } = &kind else {
+        let WebNodeKind::Embed {
+            provider,
+            url,
+            html,
+        } = &kind
+        else {
             panic!("embed node");
         };
         assert_eq!(*provider, EmbedProvider::Custom);
@@ -761,7 +892,11 @@ mod tests {
         let carousel: WebNodeKind =
             serde_json::from_str(r#"{"kind":"component","component":"carousel"}"#).expect("de");
         let WebNodeKind::Component {
-            spec: ComponentSpec::Carousel { show_arrows, autoplay_s },
+            spec:
+                ComponentSpec::Carousel {
+                    show_arrows,
+                    autoplay_s,
+                },
         } = carousel
         else {
             panic!("carousel");
@@ -788,6 +923,42 @@ mod tests {
     }
 
     #[test]
+    fn container_and_section_background_props_round_trip_with_legacy_defaults() {
+        let legacy: WebNodeKind =
+            serde_json::from_str(r#"{"kind":"container"}"#).expect("legacy container");
+        assert_eq!(
+            legacy,
+            WebNodeKind::Container {
+                href: None,
+                new_tab: false,
+                background: None,
+            }
+        );
+
+        let kind = WebNodeKind::Section {
+            tag: SectionTag::Section,
+            anchor_id: Some("hero".to_owned()),
+            background: Some(WebBackgroundImage {
+                asset_id: AssetId::from("hero_photo"),
+                fit: WebBackgroundFit::Contain,
+                position: WebBackgroundPosition::Top,
+                scrim: Some(WebBackgroundScrim {
+                    color: WebScrimColor::Primary,
+                    opacity: 65,
+                }),
+            }),
+        };
+        let value = serde_json::to_value(&kind).expect("serialize");
+        assert_eq!(value["background"]["asset_id"], "hero_photo");
+        assert_eq!(value["background"]["fit"], "contain");
+        assert_eq!(value["background"]["scrim"]["opacity"], 65);
+        assert_eq!(
+            serde_json::from_value::<WebNodeKind>(value).expect("deserialize"),
+            kind
+        );
+    }
+
+    #[test]
     fn reachable_ids_walks_preorder() {
         let mut doc = WebDoc::new("doc_1", "Test", None);
         let page = &mut doc.pages[0];
@@ -796,6 +967,7 @@ mod tests {
             WebNodeKind::Section {
                 tag: SectionTag::Section,
                 anchor_id: None,
+                background: None,
             },
             "",
         );
