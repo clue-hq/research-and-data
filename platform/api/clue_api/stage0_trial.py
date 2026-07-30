@@ -66,6 +66,7 @@ from clue_api.head_of_abm_wiring import (
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
+    load_system_recipe_definitions,
     seed_system_recipes,
 )
 from clue_api.run_composition import build_platform_gateway
@@ -90,6 +91,7 @@ from clue_execution import (
     DbRecipeRepository,
     ExecutionParameterStore,
     ExecutionStatus,
+    RecipeDefinition,
     RecipeExecutor,
     RecipeScopeType,
 )
@@ -264,6 +266,29 @@ def stage0_trial_context_policy() -> ContextAssemblyPolicy:
     )
 
 
+def stage0_trial_settings(settings: Settings) -> Settings:
+    """Supply the CLI-only isolated workspace root when its optional setting is blank."""
+
+    if (settings.agent_workspace_root or "").strip():
+        return settings
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    dedicated_root = Path(tempfile.gettempdir()).resolve() / f"clue-stage0-agent-{uid}"
+    return settings.model_copy(update={"agent_workspace_root": str(dedicated_root)})
+
+
+def stage0_trial_recipe_definitions() -> tuple[RecipeDefinition, ...]:
+    """Return only the recipe family executable by the Stage-0-only toolbelt."""
+
+    definitions = tuple(
+        definition
+        for definition in load_system_recipe_definitions()
+        if definition.recipe_key == "recipe0-stage0"
+    )
+    if not any(definition.version == 3 for definition in definitions):
+        raise RuntimeError("recipe0-stage0@3 definition is not installed")
+    return definitions
+
+
 async def create_stage0_trial_session(
     *,
     paths_root: Path,
@@ -393,13 +418,7 @@ class Stage0Trial:
         settings: Settings | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> Stage0Trial:
-        resolved_settings = settings or load_settings()
-        if resolved_settings.agent_workspace_root is None:
-            uid = os.getuid() if hasattr(os, "getuid") else 0
-            dedicated_root = Path(tempfile.gettempdir()) / f"clue-stage0-agent-{uid}"
-            resolved_settings = resolved_settings.model_copy(
-                update={"agent_workspace_root": str(dedicated_root)}
-            )
+        resolved_settings = stage0_trial_settings(settings or load_settings())
         secrets = Secrets()
         if secrets.openrouter_api_key is None:
             raise RuntimeError(
@@ -430,7 +449,11 @@ class Stage0Trial:
             conn_factory=conn_factory,
             pin_registry=pin_registry,
         )
-        await seed_system_recipes(repository=repository, lifecycle=lifecycle)
+        await seed_system_recipes(
+            repository=repository,
+            lifecycle=lifecycle,
+            definitions=stage0_trial_recipe_definitions(),
+        )
         execution_journal = DbExecutionJournal(transport=ExecutionRunEventWriter())
         parameter_artifacts = StorageParameterArtifactStore(
             storage=storage,
@@ -1118,4 +1141,6 @@ __all__ = [
     "Stage0TrialState",
     "create_stage0_trial_session",
     "stage0_trial_context_policy",
+    "stage0_trial_recipe_definitions",
+    "stage0_trial_settings",
 ]
