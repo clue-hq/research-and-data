@@ -54,7 +54,9 @@ from clue_research.claimstore import (
     insert_claim,
     load_pack,
     record_verification,
+    supersede_claim,
 )
+from clue_research.compliance import build_tombstone
 from clue_research.durable import (
     AccountRunStatus,
     append_subject_activity,
@@ -679,6 +681,174 @@ def test_personalization_cannot_launder_a_support_denied_for_outreach() -> None:
             )
             allowed = (await evaluator.evaluate(request, subject, (candidate,)))[derived.id]
             assert allowed.state.outreach_decision.value == "allowed"
+
+    run_async(scenario())
+
+
+def test_flagged_derived_root_cannot_mask_erased_required_support() -> None:
+    """A redacted dependency outranks the root's otherwise displayable review-required state."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, _WORKSPACE)
+            brand = await create_brand(conn, workspace_id=_WORKSPACE, name="C7 redaction brand")
+            await create_product(
+                conn,
+                workspace_id=_WORKSPACE,
+                brand_id=brand.brand_id,
+                product_id=_PRODUCT,
+                name="C7 redaction product",
+            )
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="C7 Redaction Target",
+                primary_domain="c7-redaction.example",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_WORKSPACE,
+            )
+            contact_id = await insert_contact_entity(
+                conn,
+                account_entity_id=account_id,
+                full_name="Jordan Redaction",
+                status=AccountStatus.ACTIVE,
+            )
+            derived_field = "contact.personalization.erased_support_precedence"
+            await load_pack(
+                conn,
+                (
+                    SeedField(
+                        field_def=FieldDef(
+                            field_key=derived_field,
+                            value_type="str",
+                            pass_kind=PassKind.DEEP,
+                            reuse_scope=ReuseScope.TENANT_PRIVATE,
+                        ),
+                        value_schema={"type": "string"},
+                    ),
+                ),
+            )
+            support = stamp_reuse(
+                contact_claim(
+                    entity_id=contact_id,
+                    field_key="contact.facet.recent_post",
+                    value_json="A support value that must be erased.",
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    confidence=0.9,
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.CONTACT_PROFILING,
+                    identity_binding=IdentityBinding.STRONG,
+                    use_class=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
+                    source_url="https://c7-redaction.example/public-post",
+                    evidence_span="Jordan published the support value.",
+                ),
+                workspace_id=_WORKSPACE,
+            ).model_copy(
+                update={
+                    "reuse_scope": ReuseScope.TENANT_PRIVATE,
+                    "workspace_id": _WORKSPACE,
+                    "product_id": _PRODUCT,
+                }
+            )
+            support_id = await insert_claim(conn, support)
+            await record_verification(
+                conn,
+                support_id,
+                status=VerificationStatus.VERIFIED,
+            )
+            derived = Claim(
+                entity_id=contact_id,
+                entity_type=EntityType.CONTACT,
+                field_key=derived_field,
+                value_json="A benign-looking derived statement.",
+                source_tier=4,
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                confidence=0.75,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.CONTACT_PROFILING,
+                identity_binding=IdentityBinding.STRONG,
+                use_class=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
+                claim_flavor=ClaimFlavor.DERIVED,
+                reuse_scope=ReuseScope.TENANT_PRIVATE,
+                workspace_id=_WORKSPACE,
+                product_id=_PRODUCT,
+                verification_status=VerificationStatus.FLAGGED,
+            )
+            support_ref = ResearchSupportRef(
+                claim_id=support_id,
+                role=ResearchSupportRole.DIRECT_EVIDENCE,
+                ordinal=0,
+            )
+            await DerivationStore().create(
+                conn,
+                derived,
+                ResearchSubjectRef(
+                    entity_id=contact_id,
+                    entity_type=EntityType.CONTACT,
+                    canonical_entity_version=1,
+                    parent_account_id=account_id,
+                ),
+                (support_ref,),
+                workspace_id=_WORKSPACE,
+                operation_id=new_operation_id(),
+                scope=WorkspaceScope.for_workspace(_WORKSPACE),
+            )
+
+            tombstone = build_tombstone(support, run_id=new_run_id())
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO dsar_tombstone (
+                        erased_claim_id, tombstone_claim_id, contact_entity_id,
+                        workspace_id, reason, scope
+                    ) VALUES (
+                        :erased, :tombstone, :contact, :workspace, 'erasure', 'all'
+                    )
+                    """
+                ),
+                {
+                    "erased": support_id,
+                    "tombstone": tombstone.id,
+                    "contact": contact_id,
+                    "workspace": _WORKSPACE,
+                },
+            )
+            await supersede_claim(
+                conn,
+                support_id,
+                tombstone,
+                validate_field=False,
+            )
+
+            request = ResearchViewReadRequest(
+                workspace_id=_WORKSPACE,
+                project_id="project-redaction-precedence",
+                project_run_id=new_project_run_id(),
+                subject_entity_id=contact_id,
+                subject_entity_type=EntityType.CONTACT,
+                product_id=_PRODUCT,
+            )
+            subject = ResearchSubjectRef(
+                entity_id=contact_id,
+                entity_type=EntityType.CONTACT,
+                canonical_entity_version=1,
+                parent_account_id=account_id,
+            )
+            candidate = ResearchStatementCandidate(
+                section_kind=ResearchSectionKind.PERSONALIZATION,
+                claim=derived,
+                supports=await derivation_supports(conn, derived.id),
+            )
+            decision = (
+                await CurrentStatementGovernanceEvaluator(
+                    conn,
+                    member_entity_ids=(contact_id,),
+                ).evaluate(request, subject, (candidate,))
+            )[derived.id]
+
+            assert decision.state.availability.value == "redacted"
+            assert decision.state.reason_codes == ("dependency_erased",)
+            assert decision.evidence_actions == ()
 
     run_async(scenario())
 

@@ -104,3 +104,19 @@ structured output before enabling any scraper or HTTP flag. If accepted, follow
 - Verification: config and C7 activation tests passed (10 tests); changed-surface Ruff, mypy, and
   diff checks passed. Enabling the shadow setting alone is explicitly tested to expose zero HTTP
   routes.
+
+## Follow-up — final residual review fixes
+
+- Added the executable `flagged_derived_erased_dependency` adversarial case and database proof:
+  a live `FLAGGED` derived claim with an erased required support resolves to `redacted`,
+  `dependency_erased`, with no evidence action.
+- Made the legacy review projection resolve the project run's pinned product through a durable
+  production reader. Product filtering now covers raw claims, run-pinned fit/intent scores,
+  current winners, committee membership/profile, conflict references, annotations, and
+  provenance.
+- Review actions now require the target to remain in the live rendered account/contact scope,
+  reject foreign-product targets, and preserve `product_id` on correction/rejection successors.
+- Focused C7/review database suite: 30 passed. Repository mypy: 446 files. Import contracts:
+  24/24 over 508 files. The full repository test run had only the three known order-sensitive
+  logging/toolbelt capture failures; all three passed independently.
+- No C7 flag was enabled. The real governed Exa-first quality trial remains the next task.

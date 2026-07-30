@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from sqlalchemy import bindparam, text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.handoff_wiring import DurableHandoffReadinessReader
@@ -51,10 +52,16 @@ from clue_research.durable import (
     BudgetEngine,
     DbIdempotencyStore,
     DbProjectRunStore,
+    get_project_run,
     register_phase_handler,
 )
 from clue_research.durable.project import CheckpointNotAwaiting, ProjectRun
-from clue_research.review import ReviewProjector, ReviewSurfaceImpl
+from clue_research.review import (
+    ReviewProjector,
+    ReviewProjectScope,
+    ReviewProjectScopeNotFound,
+    ReviewSurfaceImpl,
+)
 
 
 class DbVerificationAnnotationReader:
@@ -151,6 +158,22 @@ class DbVerificationAnnotationReader:
             )
             for r in rows
         )
+
+
+class DurableReviewProjectScopeReader:
+    """Resolve the exact product pinned by the review session's owning project run."""
+
+    async def read_scope(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        workspace_id: str,
+    ) -> ReviewProjectScope:
+        run = await get_project_run(conn, project_run_id)
+        if run is None or run.workspace_id != workspace_id:
+            raise ReviewProjectScopeNotFound(str(project_run_id))
+        return ReviewProjectScope(product_id=run.product_id)
 
 
 def _default_resume_run() -> ProjectRun:
@@ -259,7 +282,10 @@ def build_review_surface(
     action is mirrored into a ``disposition`` at the moment it occurs (the M13.1 ↔ M13.2 seam)."""
     reader = annotation_reader or DbVerificationAnnotationReader(conn_factory=conn_factory)
     return ReviewSurfaceImpl(
-        projector=ReviewProjector(annotation_reader=reader),
+        projector=ReviewProjector(
+            annotation_reader=reader,
+            project_scope_reader=DurableReviewProjectScopeReader(),
+        ),
         session_factory=session_factory,
         resume_hook=ProjectRunResumeHook(
             project_run=project_run,

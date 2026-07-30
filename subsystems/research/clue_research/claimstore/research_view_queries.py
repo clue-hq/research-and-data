@@ -47,13 +47,13 @@ def _coerce_mode(raw: object) -> EqualityMode:
 def _product_pool(
     claims: Sequence[Claim],
     *,
-    route: ResearchViewFieldRoute,
+    product_mode: str,
     product_id: str | None,
 ) -> list[Claim]:
     neutral = [claim for claim in claims if claim.product_id is None]
-    if route.product_mode == "neutral_only":
+    if product_mode == "neutral_only":
         return neutral
-    if route.product_mode == "exact_required":
+    if product_mode == "exact_required":
         return (
             [claim for claim in claims if claim.product_id == product_id]
             if product_id is not None
@@ -65,6 +65,132 @@ def _product_pool(
     # Product-specific truth outranks neutral truth before normal merge ranking. If exact rows are
     # all unpromotable, merge returns None and the caller may safely fall back to neutral.
     return exact or neutral
+
+
+async def _load_product_claims_and_metadata(
+    conn: AsyncConnection,
+    *,
+    entity_ids: Sequence[EntityId],
+    field_keys: Sequence[str],
+    scope: WorkspaceScope,
+    product_id: str | None,
+) -> tuple[tuple[Claim, ...], dict[str, tuple[timedelta | None, EqualityMode]]]:
+    """Load one retention-safe neutral/exact product candidate set and its field merge metadata."""
+
+    entities = tuple(dict.fromkeys(entity_ids))
+    fields = tuple(dict.fromkeys(field_keys))
+    if not entities or not fields:
+        return (), {}
+    scope_sql, scope_params = scope.predicate()
+    retention_sql = _retention_eligible_sql()
+    stmt = text(
+        f"""
+        SELECT {_SELECT_COLUMNS}
+        FROM claim
+        WHERE entity_id IN :entity_ids
+          AND field_key IN :field_keys
+          AND claim_flavor = 'field_claim'
+          AND superseded_by IS NULL
+          AND {retention_sql}
+          AND {scope_sql}
+          AND (product_id IS NULL OR product_id = :product_id)
+        ORDER BY entity_id, field_key, collected_at DESC, id
+        """
+    ).bindparams(
+        bindparam("entity_ids", expanding=True),
+        bindparam("field_keys", expanding=True),
+    )
+    rows = (
+        await conn.execute(
+            stmt,
+            {
+                "entity_ids": list(entities),
+                "field_keys": list(fields),
+                "product_id": product_id,
+                "retention_at": datetime.now(UTC),
+                **scope_params,
+            },
+        )
+    ).mappings()
+    claims = tuple(_row_to_claim(dict(row)) for row in rows)
+    meta_rows = (
+        await conn.execute(
+            text(
+                "SELECT field_key, freshness_ttl, equality_mode "
+                "FROM field_definition WHERE field_key IN :field_keys"
+            ).bindparams(bindparam("field_keys", expanding=True)),
+            {"field_keys": list(fields)},
+        )
+    ).all()
+    metadata = {str(row[0]): (row[1], _coerce_mode(row[2])) for row in meta_rows}
+    return claims, metadata
+
+
+def _merge_product_candidates(
+    claims: Sequence[Claim],
+    *,
+    product_mode: str,
+    product_id: str | None,
+    freshness_ttl: timedelta | None,
+    equality_mode: EqualityMode,
+    policy: MergePolicy,
+    now: datetime,
+) -> tuple[CurrentValue | None, list[Claim]]:
+    pool = _product_pool(
+        claims,
+        product_mode=product_mode,
+        product_id=product_id,
+    )
+    current = merge_claims(pool, freshness_ttl, policy, now, equality_mode)
+    if current is None and product_mode == "neutral_or_exact" and product_id is not None:
+        pool = [claim for claim in claims if claim.product_id is None]
+        current = merge_claims(pool, freshness_ttl, policy, now, equality_mode)
+    return current, pool
+
+
+async def current_values_resolved_for_product(
+    conn: AsyncConnection,
+    *,
+    entity_ids: Sequence[EntityId],
+    field_keys: Sequence[str],
+    scope: WorkspaceScope,
+    product_id: str | None,
+    policy: MergePolicy = DEFAULT_MERGE_POLICY,
+) -> dict[tuple[EntityId, str], CurrentValue]:
+    """Resolve current neutral-or-exact truth without allowing another product to contend.
+
+    Product-specific truth wins before normal merge ranking. Neutral truth is the fail-safe
+    fallback when the requested product has no promotable candidate. The result is grouped per
+    exact entity/field, unlike the canonical-member route reader which intentionally merges member
+    identities into one routed subject.
+    """
+
+    claims, metadata = await _load_product_claims_and_metadata(
+        conn,
+        entity_ids=entity_ids,
+        field_keys=field_keys,
+        scope=scope,
+        product_id=product_id,
+    )
+    grouped: dict[tuple[EntityId, str], list[Claim]] = defaultdict(list)
+    for claim in claims:
+        grouped[(claim.entity_id, str(claim.field_key))].append(claim)
+    now = datetime.now(UTC)
+    resolved: dict[tuple[EntityId, str], CurrentValue] = {}
+    for key, candidates in grouped.items():
+        ttl, equality = metadata.get(key[1], (None, EqualityMode.EXACT))
+        current, _pool = _merge_product_candidates(
+            candidates,
+            product_mode="neutral_or_exact",
+            product_id=product_id,
+            freshness_ttl=ttl,
+            equality_mode=equality,
+            policy=policy,
+            now=now,
+        )
+        if current is not None:
+            resolved[key] = current
+    return resolved
 
 
 async def current_field_claims_resolved_for_product(
@@ -86,54 +212,17 @@ async def current_field_claims_resolved_for_product(
     fields = tuple(dict.fromkeys(route.field_key for route in active_routes))
     if not members or not fields:
         return ()
-    scope_sql, scope_params = scope.predicate()
-    retention_sql = _retention_eligible_sql()
-    stmt = text(
-        f"""
-        SELECT {_SELECT_COLUMNS}
-        FROM claim
-        WHERE entity_id IN :entity_ids
-          AND field_key IN :field_keys
-          AND claim_flavor = 'field_claim'
-          AND superseded_by IS NULL
-          AND {retention_sql}
-          AND {scope_sql}
-          AND (product_id IS NULL OR product_id = :product_id)
-        ORDER BY field_key, collected_at DESC, id
-        """
-    ).bindparams(
-        bindparam("entity_ids", expanding=True),
-        bindparam("field_keys", expanding=True),
+    claims, metadata = await _load_product_claims_and_metadata(
+        conn,
+        entity_ids=members,
+        field_keys=fields,
+        scope=scope,
+        product_id=product_id,
     )
-    rows = (
-        await conn.execute(
-            stmt,
-            {
-                "entity_ids": list(members),
-                "field_keys": list(fields),
-                "product_id": product_id,
-                "retention_at": datetime.now(UTC),
-                **scope_params,
-            },
-        )
-    ).mappings()
     grouped: dict[str, list[Claim]] = defaultdict(list)
-    for row in rows:
-        claim = _row_to_claim(dict(row))
+    for claim in claims:
         grouped[str(claim.field_key)].append(claim)
 
-    meta_rows = (
-        await conn.execute(
-            text(
-                "SELECT field_key, freshness_ttl, equality_mode "
-                "FROM field_definition WHERE field_key IN :field_keys"
-            ).bindparams(bindparam("field_keys", expanding=True)),
-            {"field_keys": list(fields)},
-        )
-    ).all()
-    metadata: dict[str, tuple[timedelta | None, EqualityMode]] = {
-        str(row[0]): (row[1], _coerce_mode(row[2])) for row in meta_rows
-    }
     now = datetime.now(UTC)
     resolved: list[ResolvedCurrentClaim] = []
     for route in active_routes:
@@ -144,17 +233,16 @@ async def current_field_claims_resolved_for_product(
                 for claim in route_claims
                 if allowed_run_ids and str(claim.run_id) in allowed_run_ids
             ]
-        pool = _product_pool(route_claims, route=route, product_id=product_id)
         ttl, equality = metadata.get(route.field_key, (None, EqualityMode.EXACT))
-        current = merge_claims(pool, ttl, policy, now, equality)
-        if current is None and route.product_mode == "neutral_or_exact" and product_id is not None:
-            neutral = [
-                claim
-                for claim in route_claims
-                if claim.product_id is None
-            ]
-            current = merge_claims(neutral, ttl, policy, now, equality)
-            pool = neutral
+        current, pool = _merge_product_candidates(
+            route_claims,
+            product_mode=route.product_mode,
+            product_id=product_id,
+            freshness_ttl=ttl,
+            equality_mode=equality,
+            policy=policy,
+            now=now,
+        )
         if current is None:
             continue
         winner = next(
@@ -243,7 +331,11 @@ async def live_derived_claims_for_research_view(
         for route in routes_by_field[field_key]:
             selected.extend(
                 (route, claim)
-                for claim in _product_pool(claims, route=route, product_id=product_id)
+                for claim in _product_pool(
+                    claims,
+                    product_mode=route.product_mode,
+                    product_id=product_id,
+                )
                 if claim.claim_flavor is ClaimFlavor.DERIVED
                 and claim.verification_status
                 in {VerificationStatus.VERIFIED, VerificationStatus.FLAGGED}
@@ -264,5 +356,6 @@ async def live_derived_claims_for_research_view(
 __all__ = [
     "ResolvedCurrentClaim",
     "current_field_claims_resolved_for_product",
+    "current_values_resolved_for_product",
     "live_derived_claims_for_research_view",
 ]
