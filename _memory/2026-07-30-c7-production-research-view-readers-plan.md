@@ -80,3 +80,15 @@ Persist one normal governed Exa-only run for a chosen account/contact, then exec
 `scripts/07_research_view_trial.py` with its real workspace/project/run/subject IDs. Judge that
 structured output before enabling any scraper or HTTP flag. If accepted, follow
 `docs/runbooks/research-views.md` for the scraper comparison and Postman/API canary.
+
+## Session closeout
+
+- Implementation commit: `b88db2c` (`feat(c7): wire production research-view read stack`).
+- Plan/runbook closeout commit: `c365e1d` (`docs(c7): close production reader activation plan`).
+- Branch: `platform/c7-research-views`; nothing was pushed.
+- Final automated state: changed-surface Ruff, mypy, import contracts, focused C7/adjacent DB
+  tests, 1/25/100 query-scale tests, split full repository DB suite, three standalone
+  order-sensitive observability tests, Postman JSON, one Alembic head, and clean
+  head -> base -> head all passed.
+- Manual state: Exa-first quality trial intentionally remains unrun until a real governed target
+  and credentials are supplied; all C7 flags remain default-off.
