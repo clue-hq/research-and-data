@@ -14,6 +14,7 @@ don't pass one).
 | 04 | `04_account_profiling.py` | M2 account profiling | `profiling.profile_account` |
 | 05 | `05_committee_discovery.py` | M3 committee discovery | `profiling.discover_committee` |
 | 06 | `06_contact_profiling.py` | M4 contact profiling | `profiling.profile_contact` |
+| 07 | `07_research_view_trial.py` | Read-only C7 production research-view inspection | `ProductionResearchViewComposer` |
 
 ## One-time setup
 
@@ -68,3 +69,8 @@ uv run python scripts/06_contact_profiling.py --workspace-id acme --account-id <
 Each script also runs standalone with sensible defaults (04/05/06 seed a demo account/contact
 if you omit the ids), e.g. `uv run python scripts/04_account_profiling.py --tier high`.
 Use `--help` on any script for its arguments.
+
+Script 07 is intentionally different: it never seeds data and never performs acquisition. Supply
+the exact workspace/project/project-run/account-or-contact IDs produced by a normal governed
+research run. It then composes the persisted state through the same production readers used by the
+API. See `docs/runbooks/research-views.md` for the Exa-first inspection sequence.
