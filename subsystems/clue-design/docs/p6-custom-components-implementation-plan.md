@@ -1,6 +1,6 @@
 # P6 custom components — living implementation plan
 
-Status: **IN PROGRESS — P6.3 complete; P6.4 queued**
+Status: **IN PROGRESS — P6.4 complete; P6.5 queued**
 
 Owner branch: `agents/custom-components-v0`
 
@@ -43,7 +43,7 @@ For every completed slice:
 | P6.1 Canonical model and durable registry | ✅ | First-class leaf nodes, immutable version records, checked operations |
 | P6.2 Compiler and security gate | ✅ | TSX-to-artifact compilation, props schema, import/policy validation |
 | P6.3 Sandboxed runtime and editor experience | ✅ | In-canvas rendering, picker, generated props inspector, ordinary editing |
-| P6.4 Deep Agent authoring workflow | ▢ | Persistent source tools, compile-before-attach, custom-component skill |
+| P6.4 Deep Agent authoring workflow | ✅ | Persistent source tools, compile-before-attach, custom-component skill |
 | P6.5 Publish, rollback, and end-to-end hardening | ▢ | Self-contained delivery artifacts, pinned versions, complete live proof |
 
 P6.1 was completed and verified on 2026-07-30.
@@ -534,7 +534,7 @@ failure stays inside its frame with an actionable error.
   - The unrelated legacy editor-suite baseline above remains named and was not
     weakened or changed.
 
-### P6.4 — Deep Agent authoring workflow `▢`
+### P6.4 — Deep Agent authoring workflow `✅`
 
 **Purpose**
 
@@ -593,10 +593,40 @@ reuse the same source. Other pages remain visually and structurally unchanged.
 
 **Completion record**
 
-- Commits: —
-- Automated gates: —
-- Browser evidence: —
-- Residuals: —
+- Commits: `f26eb31` (`feat(web): add deep agent custom component authoring`)
+  plus the plan-close commit containing this record.
+- Automated gates:
+  - Focused P6.4 agent/API suites: 163 passed.
+  - Existing custom-component compiler suite: 28 passed.
+  - Full agent runtime: 546 passed, 2 skipped.
+  - Full API suite: 481 passed, 8 skipped. Four network/DNS-only cases failed
+    in the restricted sandbox and all four passed in the required
+    network-enabled rerun.
+  - Editor lint passed. No crate or `lumen-core` source changed, so the
+    cargo/helper/WASM handshake gates did not apply.
+- Browser evidence:
+  - Verified in the actual website editor with
+    `doc_p64_0a13b079`, backed by the isolated durable registry
+    `acc_p64_0a13b079`.
+  - The agent tool surface recorded the capability gap, rejected a
+    deterministic TypeScript failure, accepted the repaired source as version
+    2, compiled and attached its immutable artifact, then rematerialized the
+    source in a separate run, wrote version 3, compiled a new artifact, and
+    repinned only `cc_7ea6a0ad`.
+  - The browser rendered version 3 inside the sandboxed component runtime with
+    the expected heading, metric, status, and CTA. The inspector exposed source
+    version 3, the complete immutable artifact pin, zero compile warnings,
+    generated properties, computed geometry, and the **Edit with AI** action.
+  - **Edit with AI** preserved the selected node and prefilled a targeted
+    component prompt. A hard reload retained the same runtime and content, with
+    no unavailable placeholder or canvas-handshake banner.
+  - The sibling document remained structurally unchanged, and durable usage
+    inspection reported only the explicitly repinned node.
+- Residuals:
+  - No P6.4 acceptance residual. The live proof exercised the production
+    registry/tool contracts and real editor; the external model provider was
+    deliberately not used as a correctness oracle.
+  - Delivery packaging, rollback, and publish/runtime parity remain P6.5.
 
 ### P6.5 — Publish, rollback, and end-to-end hardening `▢`
 
