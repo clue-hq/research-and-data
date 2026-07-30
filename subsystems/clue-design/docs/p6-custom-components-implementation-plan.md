@@ -1,6 +1,6 @@
 # P6 custom components — living implementation plan
 
-Status: **IN PROGRESS — P6.4 complete; P6.5 queued**
+Status: **COMPLETE — P6.5 verified end to end**
 
 Owner branch: `agents/custom-components-v0`
 
@@ -44,11 +44,13 @@ For every completed slice:
 | P6.2 Compiler and security gate | ✅ | TSX-to-artifact compilation, props schema, import/policy validation |
 | P6.3 Sandboxed runtime and editor experience | ✅ | In-canvas rendering, picker, generated props inspector, ordinary editing |
 | P6.4 Deep Agent authoring workflow | ✅ | Persistent source tools, compile-before-attach, custom-component skill |
-| P6.5 Publish, rollback, and end-to-end hardening | ▢ | Self-contained delivery artifacts, pinned versions, complete live proof |
+| P6.5 Publish, rollback, and end-to-end hardening | ✅ | Self-contained delivery artifacts, pinned versions, complete live proof |
 
 P6.1 was completed and verified on 2026-07-30.
 P6.2 was completed and verified on 2026-07-30.
 P6.3 was completed and verified on 2026-07-30.
+P6.4 was completed and verified on 2026-07-30.
+P6.5 was completed and verified on 2026-07-30.
 
 ## Outcome
 
@@ -628,7 +630,7 @@ reuse the same source. Other pages remain visually and structurally unchanged.
     deliberately not used as a correctness oracle.
   - Delivery packaging, rollback, and publish/runtime parity remain P6.5.
 
-### P6.5 — Publish, rollback, and end-to-end hardening `▢`
+### P6.5 — Publish, rollback, and end-to-end hardening `✅`
 
 **Purpose**
 
@@ -681,10 +683,70 @@ until republish; rollback restores the old rendered version.
 
 **Completion record**
 
-- Commits: —
-- Automated gates: —
-- Browser evidence: —
-- Residuals: —
+- Commits:
+  - `533ed35` — immutable delivery packages, append-only publish revisions,
+    content-addressed assets, manifest/provenance UI, rollback/unpublish
+    semantics, security tests, and end-to-end fixtures.
+  - The plan-close commit containing this record.
+- Automated gates:
+  - `cargo test --workspace` passed and
+    `cargo build -p lumen-api-helper --release` completed successfully. No
+    crate source changed in P6.5, so no WASM rebuild or handshake refresh was
+    required by `AGENTS.md`.
+  - Full agent runtime: `546 passed, 2 skipped`.
+  - Focused P6 custom-component API/runtime/export suites: `42 passed`.
+  - Full API suite: `485 passed, 8 skipped` inside the restricted sandbox.
+    Four unrelated ingestion tests that require public DNS failed there; the
+    exact four passed in the network-enabled rerun.
+  - Editor lint/typecheck and production build passed. Focused publish-client
+    suite: `79 passed`.
+  - Full editor run: `1063 passed`; its `26` failures remain confined to the
+    two pre-existing legacy `EditorApp` suites, which still mock the old canvas
+    while CanvasKit is the default. The failures and missing-CanvasKit
+    test-environment rejections were not weakened or changed.
+  - P6.5 security coverage includes CSP and ambient-network denial, immutable
+    MIME/digest binding, wrong-extension/path-escape rejection, malicious
+    source rejection, bounded graph/resource limits, bridge-forgery coverage,
+    cross-account pin rejection, and append-only publish-record enforcement.
+  - The curated Visx, Motion, GSAP, and `@gsap/react` fixture compiled with its
+    dependency provenance preserved.
+- Browser evidence:
+  - Verified the isolated live fixture `doc_p65_live` in the actual website
+    design editor at `127.0.0.1:3015` and its published delivery at
+    `127.0.0.1:8015/p/p65-interactive`.
+  - The representative `Interactive Counter` rendered inside the built-in
+    dialog with its semantic server first frame, hydrated successfully, and
+    incremented from `4` to `5`. The final rolled-back page served
+    `Artifact version one`.
+  - Compiling artifact v2 did not change either live publish. An explicit
+    single-node repin enabled editor Undo/Redo; Undo restored the exact v1 pin
+    and Redo restored the exact v2 pin. Republish then served v2 only for the
+    target document, while `p65-sibling` remained on v1.
+  - Editor rollback restored the original publish ID
+    `webpub_e48b8fbdd5a1d52b15b67a7efc74decf671cd9c8059ef71496926995453a4291`,
+    manifest/package digests, and visible v1 behavior. Unpublish returned the
+    explicit 404 state; republish followed by rollback reproduced v1 again.
+  - The publish dialog exposed the immutable package ID and live Manifest
+    link. The final manifest pins the v1 artifact, source revision, compiler
+    protocol/version, runtime host, bundle, CSS, dependency artifacts, and
+    semantic first-frame digests.
+  - Delivery passed at `1440x900` with a `528px` intrinsic runtime and at
+    `375x812` with a `311px` runtime, no horizontal overflow, and a responsive
+    dialog. The actual editor's `375` preview measured exactly `375px` and
+    returned cleanly to Fluid.
+  - Immutable assets served with one-year `immutable` caching, SHA-256 ETags,
+    exact MIME types, CORS for the opaque runtime, and `nosniff`; the delivered
+    page exposed deny-by-default CSP with no connect, worker, object, or form
+    capability. Editor and delivery console error/warning logs were empty.
+  - Computer Use independently repeated the final flow in Chrome: opened the
+    published dialog, observed the semantic first frame and v1 label,
+    incremented `4` to `5`, opened the actual editor, confirmed the immutable
+    package and Manifest link, and switched `375` to Fluid preview.
+- Residuals:
+  - No P6.5 acceptance residual.
+  - The two unrelated baseline limitations above remain named: public-DNS
+    tests require a network-enabled runner, and the legacy `EditorApp` test
+    harness needs a separate CanvasKit-default modernization.
 
 ## Verification policy
 
@@ -734,6 +796,9 @@ Browser evidence must cover at minimum:
 | 2026-07-30 | A post-worker source-version check rejects a compile overtaken by a concurrent source write. | The initial optimistic check alone had a time-of-check/time-of-use window that could make an older compile appear newest after a later edit. |
 | 2026-07-30 | P6.3 implementation started with a dedicated nested sandbox per component and the existing outer editor bridge as the only trusted relay to the React shell. | The component must remain unable to address the editor while selection, sizing, runtime state, and canonical operations continue through existing editor-owned seams. |
 | 2026-07-30 | P6.3 completed with one opaque nested frame per component, a checked-in React 18 host, exact pinned dependency-graph resolution, typed generated controls, and the existing outer bridge/history/geometry seams. | Components now execute without ambient network or editor access while humans retain ordinary selection and editing behavior and failures remain component-local. |
+| 2026-07-30 | P6.5 publish output became an immutable package with append-only revisions, content-addressed asset URLs, exact artifact pins, and complete compiler/runtime provenance. | Preview, export, publish, rollback, and audit must resolve stored bytes rather than mutable registry latest state. |
+| 2026-07-30 | Rollback swaps immutable publish revision IDs and unpublish only changes availability; neither operation rebuilds source or artifacts. | Historical pages must reproduce the prior digests and visible behavior exactly, even after newer source versions exist. |
+| 2026-07-30 | P6 completed after full gates plus real editor, delivery-browser, responsive, and Computer Use verification. | The one-account author-create-edit-publish-republish-rollback loop now has reproducible product proof. |
 
 ## Open implementation discoveries
 
@@ -754,5 +819,6 @@ scope:
   navigation. In-frame anchors and form submissions are intercepted. Network
   remains denied until an explicit endpoint contract is designed and reviewed.
 - P6.2 generates and stores the deterministic first frame at successful compile
-  time so it is content-addressed with the pinned artifact. P6.5 still needs to
-  prove packaging and hydration use those exact stored bytes.
+  time so it is content-addressed with the pinned artifact. P6.5 proved export
+  and publish package those exact stored bytes and hydrate the same pinned
+  runtime without consulting mutable latest source.
