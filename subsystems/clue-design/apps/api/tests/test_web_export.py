@@ -156,6 +156,59 @@ def test_export_zip_has_core_files(client: TestClient) -> None:
     assert "manifest.json" in manifest["files"]
 
 
+def test_export_preserves_semantic_structured_body_without_editor_state(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    web_doc = ingest_content(client, document["id"])
+    body_id = next(
+        node_id
+        for node_id, node in web_doc["pages"][0]["nodes"].items()
+        if node.get("kind") == "text" and node.get("variant") == "body"
+    )
+    web_doc["pages"][0]["nodes"][body_id]["content"] = {
+        "schema_version": 1,
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [{"type": "text", "text": "Intro"}],
+            },
+            {
+                "type": "list",
+                "list_type": "unordered",
+                "items": [
+                    {"children": [{"type": "text", "text": "First"}]},
+                    {
+                        "children": [{"type": "text", "text": "Second"}],
+                        "nested": [
+                            {
+                                "type": "list",
+                                "list_type": "ordered",
+                                "items": [
+                                    {
+                                        "children": [
+                                            {"type": "text", "text": "Nested"}
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+    seed_content(client, document["id"], web_doc)
+    _files, html, _manifest = export_zip(client, document["id"])
+    assert (
+        "<p>Intro</p><ul><li>First</li>"
+        "<li>Second<ol><li>Nested</li></ol></li></ul>"
+    ) in html
+    assert "data-lexical" not in html
+    assert "contenteditable" not in html
+    assert "lumen-rich-editor-root" not in html
+
+
 # --- (b) asset round-trip ---------------------------------------------------
 
 

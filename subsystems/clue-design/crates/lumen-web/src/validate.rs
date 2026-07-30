@@ -445,13 +445,27 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     }
                 }
             },
-            WebNodeKind::Text { content, .. } => {
+            WebNodeKind::Text { variant, content } => {
                 for issue in content.validate() {
                     diagnostics.push(Diagnostic::error(
                         Phase::Web,
                         "LUMW0017",
                         format!("text `{}` has invalid rich-text content: {issue}", node.id),
                         Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                }
+                if !variant.allows_structured_rich_text() && !content.is_single_paragraph() {
+                    diagnostics.push(Diagnostic::error(
+                        Phase::Web,
+                        "LUMW0025",
+                        format!(
+                            "text `{}` uses variant `{}` with multiple paragraphs or lists",
+                            node.id,
+                            variant.as_str()
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ).with_hint(
+                        "Display, heading, and overline text must be one paragraph; use body or small for structured content.",
                     ));
                 }
             }

@@ -1,4 +1,8 @@
-import type { RichTextFormat, RichTextFormatValue } from "./webBridge";
+import type {
+  RichTextBlockType,
+  RichTextFormat,
+  RichTextFormatValue
+} from "./webBridge";
 
 /** One source of truth for the four visual-mark controls. Both the inspector
  * and floating toolbar render from this list, so labels, glyphs, shortcuts,
@@ -15,6 +19,19 @@ export const RICH_TEXT_MARK_CONTROLS: readonly RichTextMarkControl[] = [
   { format: "italic", label: "Italic", glyph: "I", shortcut: "⌘I" },
   { format: "underline", label: "Underline", glyph: "U", shortcut: "⌘U" },
   { format: "strikethrough", label: "Strikethrough", glyph: "S", shortcut: "⇧⌘X" }
+] as const;
+
+export interface RichTextBlockControl {
+  block: Exclude<RichTextBlockType, "mixed">;
+  label: string;
+  glyph: string;
+}
+
+/** Shared configuration for semantic paragraph/list controls. */
+export const RICH_TEXT_BLOCK_CONTROLS: readonly RichTextBlockControl[] = [
+  { block: "paragraph", label: "Paragraph", glyph: "¶" },
+  { block: "unordered_list", label: "Bulleted list", glyph: "•≡" },
+  { block: "ordered_list", label: "Numbered list", glyph: "1≡" }
 ] as const;
 
 const WEB_BINDING_KEY_RE = /^[a-z0-9_.-]{1,64}$/;

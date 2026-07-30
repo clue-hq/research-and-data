@@ -134,6 +134,19 @@ export type RichTextInline =
     }
   | { type: "line_break"; link?: RichTextLink };
 
+export function richTextDocumentHasStructure(
+  content: RichTextDocument | string
+): boolean {
+  return (
+    typeof content !== "string" &&
+    (content.blocks.length !== 1 || content.blocks[0]?.type !== "paragraph")
+  );
+}
+
+export function textVariantAllowsStructuredRichText(variant: string): boolean {
+  return variant === "body" || variant === "small";
+}
+
 export interface WebBackgroundImage {
   asset_id: string;
   fit: "cover" | "contain";

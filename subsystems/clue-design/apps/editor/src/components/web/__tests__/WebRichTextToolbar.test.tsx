@@ -26,7 +26,11 @@ const RANGE: RichTextSelectionState = {
   },
   commonClasses: ["text-primary"],
   mixedClasses: ["bg-accent"],
-  link: { state: "off", href: null, newTab: null }
+  link: { state: "off", href: null, newTab: null },
+  blockType: "paragraph",
+  structured: false,
+  canIndent: false,
+  canOutdent: false
 };
 
 function setup(params?: {
@@ -125,6 +129,45 @@ describe("WebRichTextToolbar", () => {
       type: "format",
       format: "underline"
     });
+  });
+
+  it("shows block controls at a body caret and exposes valid list actions", () => {
+    const { command } = setup({
+      selection: {
+        ...RANGE,
+        collapsed: true,
+        selectedText: "",
+        blockType: "unordered_list",
+        structured: true,
+        canIndent: true,
+        canOutdent: true
+      }
+    });
+    expect(
+      screen.getByRole("toolbar", { name: "Selected text formatting" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bulleted list" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Numbered list" }));
+    expect(command).toHaveBeenCalledWith("headline", {
+      type: "set_block",
+      block: "ordered_list"
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Indent list item" }));
+    expect(command).toHaveBeenCalledWith("headline", { type: "indent_list" });
+    fireEvent.click(screen.getByRole("button", { name: "Outdent list item" }));
+    expect(command).toHaveBeenCalledWith("headline", { type: "outdent_list" });
+  });
+
+  it("disables paragraph and list controls for a heading selection", () => {
+    setup();
+    expect(screen.getByRole("button", { name: "Paragraph" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Bulleted list" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Numbered list" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Indent list item" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Outdent list item" })).toBeDisabled();
   });
 
   it("offers only resolved theme tokens for text and highlight colors", () => {

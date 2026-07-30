@@ -17,6 +17,7 @@ use crate::doc::{
     MAX_TREE_DEPTH,
 };
 use crate::inline::sanitize_inline;
+use crate::rich_text::RichTextDocument;
 use crate::theme::WebTheme;
 use crate::util::{href_is_allowed, line_col, normalize_entities, self_close_voids};
 use lumen_core::{
@@ -67,6 +68,7 @@ enum PendingLeaf {
         classes: String,
         name: Option<String>,
         slot_key: Option<SlotKey>,
+        structured: bool,
     },
     Button {
         id: NodeId,
@@ -370,6 +372,7 @@ impl<'a> IngestState<'a> {
                     | "alt"
                     | "src"
                     | "data-name"
+                    | "data-text"
                     | "data-variant"
                     | "data-button"
                     | "data-icon"
@@ -404,7 +407,7 @@ impl<'a> IngestState<'a> {
                      classes (page-level effects belong in custom_css)."
                 } else {
                     "Recognized attributes: id class href target alt data-variant data-button \
-                     data-icon data-asset data-href data-new-tab data-background-asset \
+                     data-icon data-asset data-text data-href data-new-tab data-background-asset \
                      data-background-fit data-background-position data-scrim-color \
                      data-scrim-opacity data-name data-slot \
                      data-slot-when, plus the Tier-2 component/command/embed data-* attributes \
@@ -495,6 +498,57 @@ impl<'a> IngestState<'a> {
                 }
             }
             "div" => {
+                // A data-text div is the structured Body/Small wire format:
+                // one canonical text node whose inner semantic p/ol/ul/li
+                // blocks survive AI subtree edits without becoming sibling
+                // WebNodes.
+                if attrs_get(&attrs, "data-text").is_some() {
+                    let variant = match attrs_get(&attrs, "data-variant").as_deref() {
+                        None | Some("") | Some("body") => TextVariant::Body,
+                        Some("small") => TextVariant::Small,
+                        Some(value) => {
+                            self.error(
+                                "LUMW0137",
+                                format!("structured text cannot use variant `{value}`"),
+                                "Structured text supports data-variant=\"body\" or \"small\" only.",
+                                None,
+                            );
+                            return;
+                        }
+                    };
+                    let id = self.mint_id("txt", attrs_get(&attrs, "id").as_deref());
+                    let classes = self.take_classes(&attrs, &id);
+                    let node_name = attrs_get(&attrs, "data-name");
+                    let slot_key = self.take_slot_key(&attrs, &id, false);
+                    if is_empty {
+                        self.finish_node(WebNode {
+                            id,
+                            kind: WebNodeKind::Text {
+                                variant,
+                                content: RichTextDocument::empty(),
+                            },
+                            classes,
+                            children: Vec::new(),
+                            name: node_name,
+                            slot_key,
+                        });
+                    } else {
+                        self.capture = Some(CaptureFrame {
+                            tag_name: name,
+                            start_offset: reader.buffer_position() as usize,
+                            nested_depth: 0,
+                            pending: PendingLeaf::Text {
+                                id,
+                                variant,
+                                classes,
+                                name: node_name,
+                                slot_key,
+                                structured: true,
+                            },
+                        });
+                    }
+                    return;
+                }
                 // A div carrying data-embed is a sandboxed embed leaf. Checked
                 // before data-component: the only agent-authorable provider is
                 // calendly (custom URL/snippet embeds are a human editor path).
@@ -679,6 +733,7 @@ impl<'a> IngestState<'a> {
                             classes,
                             name: node_name,
                             slot_key,
+                            structured: false,
                         },
                     });
                 }
@@ -1238,19 +1293,6 @@ impl<'a> IngestState<'a> {
                 }
                 return;
             }
-            let sanitized = sanitize_inline(inner);
-            for note in &sanitized.removed {
-                let subject = match &capture.pending {
-                    PendingLeaf::Text { id, .. } | PendingLeaf::Button { id, .. } => id.clone(),
-                    PendingLeaf::Discard { .. } => unreachable!("discard handled above"),
-                };
-                self.warning(
-                    "LUMW0130",
-                    format!("inline content adjusted in `{subject}`: {note}"),
-                    "Allowed inline markup: strong em u s a br span[class].",
-                    Some(&subject),
-                );
-            }
             match capture.pending {
                 PendingLeaf::Text {
                     id,
@@ -1258,13 +1300,18 @@ impl<'a> IngestState<'a> {
                     classes,
                     name,
                     slot_key,
+                    structured,
                 } => {
+                    let content = if structured {
+                        RichTextDocument::from_html(inner)
+                    } else {
+                        let sanitized = sanitize_inline(inner);
+                        self.warn_inline_adjustments(&id, &sanitized.removed);
+                        sanitized.html.into()
+                    };
                     self.finish_node(WebNode {
                         id,
-                        kind: WebNodeKind::Text {
-                            variant,
-                            content: sanitized.html.into(),
-                        },
+                        kind: WebNodeKind::Text { variant, content },
                         classes,
                         children: Vec::new(),
                         name,
@@ -1279,6 +1326,8 @@ impl<'a> IngestState<'a> {
                     name,
                     slot_key,
                 } => {
+                    let sanitized = sanitize_inline(inner);
+                    self.warn_inline_adjustments(&id, &sanitized.removed);
                     self.finish_node(WebNode {
                         id,
                         kind: WebNodeKind::Button {
@@ -1306,6 +1355,17 @@ impl<'a> IngestState<'a> {
         if matches_top {
             let frame = self.branch_stack.pop().expect("checked above");
             self.finish_node(frame.node);
+        }
+    }
+
+    fn warn_inline_adjustments(&mut self, subject: &NodeId, removed: &[String]) {
+        for note in removed {
+            self.warning(
+                "LUMW0130",
+                format!("inline content adjusted in `{subject}`: {note}"),
+                "Allowed inline markup: strong em u s a br span[class].",
+                Some(subject),
+            );
         }
     }
 
@@ -1525,6 +1585,62 @@ mod tests {
             .nodes
             .iter()
             .any(|node| matches!(&node.kind, WebNodeKind::Icon { icon } if icon == "sparkles")));
+    }
+
+    #[test]
+    fn structured_text_wrapper_ingests_as_one_semantic_body_node() {
+        let outcome = ingest_html(
+            r#"<section id="content">
+                 <div id="story" data-text="rich" data-variant="body" class="max-w-prose">
+                   <p>Intro <strong>copy</strong></p>
+                   <ul><li>First<ul><li>Nested</li></ul></li><li>Second</li></ul>
+                   <p>Outro<br>line</p>
+                 </div>
+               </section>"#,
+            &theme(),
+        );
+        assert!(!outcome.has_errors(), "{:#?}", outcome.diagnostics);
+        let node = outcome
+            .nodes
+            .iter()
+            .find(|node| node.id.as_str() == "story")
+            .expect("structured text node");
+        let WebNodeKind::Text { variant, content } = &node.kind else {
+            panic!("story should be one text node");
+        };
+        assert_eq!(*variant, TextVariant::Body);
+        assert_eq!(node.classes, "max-w-prose");
+        assert_eq!(content.blocks.len(), 3);
+        assert_eq!(
+            content.to_semantic_html(),
+            "<p>Intro <strong>copy</strong></p>\
+             <ul><li>First<ul><li>Nested</li></ul></li><li>Second</li></ul>\
+             <p>Outro<br />line</p>"
+        );
+        assert_eq!(
+            outcome
+                .nodes
+                .iter()
+                .filter(|candidate| matches!(candidate.kind, WebNodeKind::Text { .. }))
+                .count(),
+            1,
+            "inner blocks must not become sibling WebNodes"
+        );
+    }
+
+    #[test]
+    fn structured_text_wrapper_rejects_heading_variants() {
+        let outcome = ingest_html(
+            r#"<section id="content">
+                 <div data-text="rich" data-variant="h2"><p>One</p><p>Two</p></div>
+               </section>"#,
+            &theme(),
+        );
+        assert!(outcome.has_errors());
+        assert!(outcome
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "LUMW0137"));
     }
 
     #[test]

@@ -21,7 +21,7 @@ therefore not the one you last wrote. Never assume — diagnose.
 ## The repair ladder — smallest sufficient tool
 
 1. **`web_ops`** — one or a few surgical operations
-   (`set_node_classes`, `set_text`, `set_node_props`). The default for
+   (`set_node_classes`, `set_text`, `set_rich_text`, `set_node_props`). The default for
    "fix this class", "change this wording", "swap this href". Ops apply
    checked and atomically; a batch that would break the document is
    rejected whole.
@@ -36,7 +36,7 @@ if the result looks fine.
 
 Rung choice is a correctness matter, not taste: if the fix is expressible
 as one-to-three ops against EXISTING nodes — `set_node_classes`,
-`set_text`, `set_node_props` (including rewiring a button's action between
+`set_text`, `set_rich_text`, `set_node_props` (including rewiring a button's action between
 link and command, making a container clickable, or changing a section/container
 background and scrim) — then `web_ops` is the ONLY correct rung. Send the FULL
 kind payload: container link/background and section background fields are
@@ -53,6 +53,14 @@ history, selections, and future scoped turns hang off.
   spacing, do not "normalize" it back while fixing something else.
 - Preserve node ids wherever possible — history, selections, and future
   scoped turns hang off them.
+- **Structured body text is authored state.** A Body or Small node can contain
+  multiple paragraph and ordered/unordered list blocks. Before changing its
+  wording, read the node's canonical `content` from `view("doc")` and use
+  `set_rich_text` with the full typed document, changing only the requested
+  inline or block. Never use `set_text` on a structured node: it replaces the
+  whole document and can flatten a human-authored list. Heading variants stay
+  one paragraph; simplify structured content explicitly before changing one
+  into a heading.
 - **Personalization markers are load-bearing.** `data-var` spans, `data-slot`
   keys, and `data-slot-when` gates make the page derivable per account —
   treat them like ids. Never strip one while rewording text or recomposing a

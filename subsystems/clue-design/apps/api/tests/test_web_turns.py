@@ -290,7 +290,13 @@ def test_web_render_bridge_exposes_sandboxed_selected_range_rich_text(
     )
     assert response.status_code == 200, response.text
     html = response.json()["html"]
-    assert 'script.src = "/vendor/web-rich-text-runtime.js"' in html
+    assert (
+        'script.src = "/vendor/web-rich-text-runtime.js?v=structured-blocks-v2"'
+        in html
+    )
+    assert "list-style-type:disc" in html
+    assert "list-style-type:decimal" in html
+    assert "li:has(>ul:only-child,>ol:only-child)" in html
     assert 'post("rich-text-selection"' in html
     assert 'post("rich-text-commit"' in html
     assert 'data.type === "rich-text-command"' in html
@@ -299,6 +305,9 @@ def test_web_render_bridge_exposes_sandboxed_selected_range_rich_text(
     assert "editingSession.command(data.command)" in html
     assert "editingSession.setInteractionActive(editingToolbarActive)" in html
     assert "editingSession.refreshSelection()" in html
+    assert 'textVariant: textVariant' in html
+    assert 'structured ? "div" : "span"' in html
+    assert "lumen-rich-editor-root.is-structured" in html
     assert "event.source !== parent" in html
     assert "session.getDocument()" in html
 

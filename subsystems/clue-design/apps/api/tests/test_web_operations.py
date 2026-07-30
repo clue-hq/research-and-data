@@ -291,6 +291,153 @@ def test_selected_range_rich_text_commits_atomically_and_undoes(
     )
 
 
+def test_structured_body_persists_renders_and_round_trips_undo_redo(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    body = next(
+        node
+        for node in before["scene"]["pages"][0]["nodes"].values()
+        if node.get("kind") == "text" and node.get("variant") == "body"
+    )
+    original = body["content"]
+    structured = {
+        "schema_version": 1,
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [
+                    {"type": "text", "text": "Intro "},
+                    {"type": "text", "text": "copy", "marks": {"bold": True}},
+                ],
+            },
+            {
+                "type": "list",
+                "list_type": "ordered",
+                "items": [
+                    {
+                        "children": [{"type": "text", "text": "First"}],
+                        "nested": [
+                            {
+                                "type": "list",
+                                "list_type": "unordered",
+                                "items": [
+                                    {
+                                        "children": [
+                                            {"type": "text", "text": "Nested"}
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "children": [
+                            {"type": "text", "text": "Second"},
+                            {"type": "line_break"},
+                            {"type": "text", "text": "line"},
+                        ]
+                    },
+                ],
+            },
+        ],
+    }
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "base_version": before["current_version"],
+            "operations": [
+                {
+                    "kind": "set_rich_text",
+                    "page_id": "home",
+                    "id": body["id"],
+                    "content": structured,
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    saved = get_document(client, document["id"])
+    assert (
+        saved["scene"]["pages"][0]["nodes"][body["id"]]["content"]
+        == structured
+    )
+    render = client.get(f"/documents/{document['id']}/web/render?mode=delivery")
+    assert render.status_code == 200, render.text
+    html = render.json()["html"]
+    assert (
+        "<p>Intro <strong>copy</strong></p>"
+        "<ol><li>First<ul><li>Nested</li></ul></li>"
+        "<li>Second<br />line</li></ol>"
+    ) in html
+    assert "data-lexical" not in html
+    assert "contenteditable" not in html
+
+    undo = client.post(f"/documents/{document['id']}/web/undo")
+    assert undo.status_code == 200, undo.text
+    assert (
+        get_document(client, document["id"])["scene"]["pages"][0]["nodes"][
+            body["id"]
+        ]["content"]
+        == original
+    )
+    redo = client.post(f"/documents/{document['id']}/web/redo")
+    assert redo.status_code == 200, redo.text
+    assert (
+        get_document(client, document["id"])["scene"]["pages"][0]["nodes"][
+            body["id"]
+        ]["content"]
+        == structured
+    )
+
+
+def test_heading_rejects_structured_blocks_without_advancing_version(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    heading = next(
+        node
+        for node in before["scene"]["pages"][0]["nodes"].values()
+        if node.get("kind") == "text" and node.get("variant") == "display"
+    )
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "base_version": before["current_version"],
+            "operations": [
+                {
+                    "kind": "set_rich_text",
+                    "page_id": "home",
+                    "id": heading["id"],
+                    "content": {
+                        "schema_version": 1,
+                        "blocks": [
+                            {
+                                "type": "paragraph",
+                                "children": [{"type": "text", "text": "One"}],
+                            },
+                            {
+                                "type": "paragraph",
+                                "children": [{"type": "text", "text": "Two"}],
+                            },
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "must contain exactly one paragraph" in response.text
+    assert (
+        get_document(client, document["id"])["current_version"]
+        == before["current_version"]
+    )
+
+
 def test_rich_text_rejects_unsafe_links_and_missing_variable_fallback(
     client: TestClient,
 ) -> None:

@@ -28,12 +28,13 @@ function renderPanel(params: {
     underline: "on" | "off" | "mixed";
     strikethrough: "on" | "off" | "mixed";
   } | null;
+  node?: WebNode;
 }) {
   const applyOps = vi.fn();
   const formatRichText = vi.fn();
   render(
     <WebInspectorPanel
-      node={NODE}
+      node={params.node ?? NODE}
       nodeInfo={null}
       pageId="home"
       page={null}
@@ -99,5 +100,42 @@ describe("WebInspectorPanel selected-range formatting", () => {
       ],
       "font_weight"
     );
+  });
+
+  it("blocks heading variants while a body node still has structured blocks", () => {
+    renderPanel({
+      editingNodeId: null,
+      richTextFormats: null,
+      node: {
+        ...NODE,
+        variant: "body",
+        content: {
+          schema_version: 1,
+          blocks: [
+            {
+              type: "paragraph",
+              children: [{ type: "text", text: "Intro" }]
+            },
+            {
+              type: "list",
+              list_type: "unordered",
+              items: [
+                { children: [{ type: "text", text: "First" }] }
+              ]
+            }
+          ]
+        }
+      }
+    });
+
+    expect(screen.getByRole("option", { name: "body" })).toBeEnabled();
+    expect(screen.getByRole("option", { name: "small" })).toBeEnabled();
+    expect(screen.getByRole("option", { name: "h1" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: "display" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Convert this text to one paragraph before choosing a heading style."
+      )
+    ).toBeInTheDocument();
   });
 });

@@ -54,6 +54,11 @@ v8 reports the active DOM range rectangle plus mark/class/link state for a
 parent-rendered floating toolbar. Its nonce-scoped command envelope covers theme
 class facets, safe links, typed variables, and clear-formatting. A toolbar-focus
 handshake keeps the iframe selection alive while parent controls own focus.
+
+v9 cache-keys the editor-only runtime at the structured-block protocol version.
+The bridge and runtime are deployed together, but the sandbox loads the runtime
+as a public asset; changing the query key prevents a previously cached inline-
+only bundle from flattening paragraphs and lists after an editor upgrade.
 """
 
 import json
@@ -92,8 +97,19 @@ _BRIDGE_V0_TEMPLATE = """
     "[data-node-id].lumen-hover{outline:1.5px dashed rgba(79,111,255,0.7);outline-offset:2px;}" +
     "[data-node-id].lumen-selected{outline:2px solid rgba(79,111,255,0.95);outline-offset:2px;}" +
     "[data-node-id].lumen-editing{outline:2px solid rgba(34,197,146,0.95);outline-offset:2px;cursor:text;}" +
-    ".lumen-rich-editor-root{display:inline;}" +
-    ".lumen-rich-editor-root>p{display:contents;}";
+    ".lumen-rich-editor-root.is-inline{display:inline;}" +
+    ".lumen-rich-editor-root.is-inline>p{display:contents;}" +
+    ".lumen-rich-editor-root.is-structured{display:block;}" +
+    ".lumen-rich-editor-root.is-structured>p," +
+    ".lumen-rich-editor-root.is-structured>ul," +
+    ".lumen-rich-editor-root.is-structured>ol{margin:0;}" +
+    ".lumen-rich-editor-root.is-structured>*+*{margin-top:.75em;}" +
+    ".lumen-rich-editor-root.is-structured>ul," +
+    ".lumen-rich-editor-root.is-structured>ol{padding-inline-start:1.5em;}" +
+    ".lumen-rich-editor-root.is-structured ul{list-style-type:disc;}" +
+    ".lumen-rich-editor-root.is-structured ol{list-style-type:decimal;}" +
+    ".lumen-rich-editor-root.is-structured li:has(>ul:only-child,>ol:only-child){list-style-type:none;}" +
+    ".lumen-rich-editor-root.is-structured li+li{margin-top:.25em;}";
   document.head.appendChild(style);
 
   function rounded(value) {
@@ -331,7 +347,7 @@ _BRIDGE_V0_TEMPLATE = """
     if (!richTextRuntimePromise) {
       richTextRuntimePromise = new Promise(function (resolve, reject) {
         var script = document.createElement("script");
-        script.src = "/vendor/web-rich-text-runtime.js";
+        script.src = "/vendor/web-rich-text-runtime.js?v=structured-blocks-v2";
         script.async = true;
         script.onload = function () {
           if (window.LumenRichTextRuntime) resolve(window.LumenRichTextRuntime);
@@ -387,8 +403,11 @@ _BRIDGE_V0_TEMPLATE = """
     editingOriginalDocument = "";
     editingSession = null;
     editingToolbarActive = false;
-    editingRoot = document.createElement("span");
-    editingRoot.className = "lumen-rich-editor-root";
+    var textVariant = el.getAttribute("data-tv") || "body";
+    var structured = textVariant === "body" || textVariant === "small";
+    editingRoot = document.createElement(structured ? "div" : "span");
+    editingRoot.className =
+      "lumen-rich-editor-root " + (structured ? "is-structured" : "is-inline");
     el.innerHTML = "";
     el.appendChild(editingRoot);
     el.classList.remove("lumen-hover");
@@ -399,6 +418,7 @@ _BRIDGE_V0_TEMPLATE = """
         if (generation !== editingGeneration || editing !== el || !editingRoot) return;
         editingSession = runtime.mount(editingRoot, {
           initialHtml: editingOriginal,
+          textVariant: textVariant,
           onSelectionStateChange: function (selection) {
             if (editing === el) {
               post("rich-text-selection", {

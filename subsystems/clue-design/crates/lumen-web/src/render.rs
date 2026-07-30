@@ -320,14 +320,22 @@ fn render_node(
             out.push('>');
         }
         WebNodeKind::Text { variant, content } => {
-            let tag = variant.render_tag();
+            let tag = if variant.allows_structured_rich_text() {
+                "div"
+            } else {
+                variant.render_tag()
+            };
             out.push('<');
             out.push_str(tag);
             out.push_str(&format!(" data-tv=\"{}\"", variant.as_str()));
             node_attr(out);
             class_attr(out);
             out.push('>');
-            out.push_str(&content.to_inline_html());
+            if variant.allows_structured_rich_text() {
+                out.push_str(&content.to_semantic_html());
+            } else {
+                out.push_str(&content.to_inline_html());
+            }
             out.push_str(&format!("</{tag}>"));
         }
         WebNodeKind::Button {
@@ -1152,6 +1160,32 @@ mod tests {
         .expect("render");
         assert!(output.html.contains("<title>A &lt;B&gt; &amp; C</title>"));
         assert!(output.html.contains("Hello <strong>world</strong>"));
+    }
+
+    #[test]
+    fn structured_body_delivery_is_semantic_and_editor_independent() {
+        let (doc, theme) = component_fixture(
+            r#"<section id="story">
+                 <div id="story_copy" data-text="rich" data-variant="body">
+                   <p>Intro <strong>copy</strong></p>
+                   <ol><li>First</li><li>Second<ul><li>Nested</li></ul></li></ol>
+                 </div>
+               </section>"#,
+        );
+        let output = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &RenderOptions::delivery("/asset-store"),
+        )
+        .expect("delivery");
+        assert!(output.html.contains(
+            "<div data-tv=\"body\"><p>Intro <strong>copy</strong></p>\
+             <ol><li>First</li><li>Second<ul><li>Nested</li></ul></li></ol></div>"
+        ));
+        assert!(!output.html.contains("data-lexical"));
+        assert!(!output.html.contains("contenteditable"));
+        assert!(!output.html.contains("data-node-id=\"story_copy\""));
     }
 
     #[test]

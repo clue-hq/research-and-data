@@ -412,7 +412,19 @@ fn build_base_css(
          background: var(--color-light); font-size: {}px; line-height: {}; \
          -webkit-font-smoothing: antialiased; }}\n\
          img {{ max-width: 100%; display: block; }}\n\
-         [data-tv] {{ margin: 0; }}\n",
+         [data-tv] {{ margin: 0; }}\n\
+         [data-tv=\"body\"] > :where(p, ul, ol), \
+         [data-tv=\"small\"] > :where(p, ul, ol) {{ margin: 0; }}\n\
+         [data-tv=\"body\"] > :where(p, ul, ol) + :where(p, ul, ol), \
+         [data-tv=\"small\"] > :where(p, ul, ol) + :where(p, ul, ol) {{ margin-top: 0.75em; }}\n\
+         [data-tv=\"body\"] :where(ul, ol), \
+         [data-tv=\"small\"] :where(ul, ol) {{ padding-left: 1.5em; }}\n\
+         [data-tv=\"body\"] :where(ul), \
+         [data-tv=\"small\"] :where(ul) {{ list-style-type: disc; }}\n\
+         [data-tv=\"body\"] :where(ol), \
+         [data-tv=\"small\"] :where(ol) {{ list-style-type: decimal; }}\n\
+         [data-tv=\"body\"] :where(li) + li, \
+         [data-tv=\"small\"] :where(li) + li {{ margin-top: 0.25em; }}\n",
         body.size, body.line_height
     ));
 
@@ -551,6 +563,8 @@ mod tests {
         let (theme, _) = compile_platform();
         assert!(theme.base_css.contains("[data-tv=\"display\"]"));
         assert!(theme.base_css.contains("[data-tv=\"overline\"]"));
+        assert!(theme.base_css.contains("list-style-type: disc"));
+        assert!(theme.base_css.contains("list-style-type: decimal"));
         assert!(theme.base_css.contains("[data-btn=\"primary\"]"));
         assert!(theme.base_css.contains("prefers-reduced-motion"));
     }

@@ -19,6 +19,7 @@ import type {
   WebTheme
 } from "@/engine/webDocuments";
 import {
+  RICH_TEXT_BLOCK_CONTROLS,
   RICH_TEXT_MARK_CONTROLS,
   richTextAriaPressed,
   richTextHrefError
@@ -186,6 +187,7 @@ export function WebRichTextToolbar({
   const textColor = classFacetValue(selection, "text-", tokenNames);
   const highlight = classFacetValue(selection, "bg-", tokenNames);
   const validContext =
+    selection.structured ||
     (!selection.collapsed && selection.selectedText.length > 0) ||
     (selection.collapsed && selection.link.state === "on");
 
@@ -397,6 +399,65 @@ export function WebRichTextToolbar({
       }}
     >
       <div className="web-rich-toolbar-row">
+        {RICH_TEXT_BLOCK_CONTROLS.map((control) => {
+          const state: RichTextFormatValue =
+            selection.blockType === "mixed"
+              ? "mixed"
+              : selection.blockType === control.block
+                ? "on"
+                : "off";
+          return (
+            <button
+              key={control.block}
+              type="button"
+              className={`web-rich-tool${state === "on" ? " is-selected" : ""}${
+                state === "mixed" ? " is-mixed" : ""
+              }`}
+              aria-label={control.label}
+              aria-pressed={richTextAriaPressed(state)}
+              title={
+                selection.structured
+                  ? control.label
+                  : "Paragraphs and lists are available for Body and Small text."
+              }
+              disabled={disabled || !selection.structured}
+              onClick={() =>
+                command(nodeId, { type: "set_block", block: control.block })
+              }
+            >
+              <span aria-hidden="true">{control.glyph}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          className="web-rich-tool"
+          aria-label="Outdent list item"
+          title={
+            selection.structured
+              ? "Outdent list item (Shift+Tab)"
+              : "Lists are available for Body and Small text."
+          }
+          disabled={disabled || !selection.structured || !selection.canOutdent}
+          onClick={() => command(nodeId, { type: "outdent_list" })}
+        >
+          <span aria-hidden="true">⇤</span>
+        </button>
+        <button
+          type="button"
+          className="web-rich-tool"
+          aria-label="Indent list item"
+          title={
+            selection.structured
+              ? "Indent list item (Tab)"
+              : "Lists are available for Body and Small text."
+          }
+          disabled={disabled || !selection.structured || !selection.canIndent}
+          onClick={() => command(nodeId, { type: "indent_list" })}
+        >
+          <span aria-hidden="true">⇥</span>
+        </button>
+        <span className="web-rich-divider" aria-hidden="true" />
         {RICH_TEXT_MARK_CONTROLS.map((control) => (
           <button
             key={control.format}

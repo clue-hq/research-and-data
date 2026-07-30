@@ -7,7 +7,10 @@
 
 use crate::derive::personalization_key_is_valid;
 use crate::inline::sanitize_inline;
-use crate::util::{escape_attr, escape_text, href_is_allowed};
+use crate::util::{
+    escape_attr, escape_stray_lt, escape_text, href_is_allowed, normalize_entities,
+    self_close_voids,
+};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -194,6 +197,19 @@ struct InlineContext {
     variable: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+enum ParsedHtmlNode {
+    Text(String),
+    Element(ParsedHtmlElement),
+}
+
+#[derive(Clone, Debug)]
+struct ParsedHtmlElement {
+    tag: String,
+    attrs: Vec<(String, String)>,
+    children: Vec<ParsedHtmlNode>,
+}
+
 impl RichTextDocument {
     pub fn empty() -> Self {
         Self {
@@ -306,6 +322,28 @@ impl RichTextDocument {
         }
     }
 
+    /// Import semantic rich HTML (`p`, `ol`, `ul`, `li` plus the restricted
+    /// inline vocabulary) into the canonical document. Unsupported elements are
+    /// unwrapped, executable/style subtrees are dropped, attributes are
+    /// allowlisted, and list nesting is bounded before persistence.
+    pub fn from_html(input: &str) -> Self {
+        let Some(nodes) = parse_html_fragment(input) else {
+            return Self::from_inline_html(input);
+        };
+        if !contains_structural_html(&nodes) {
+            return Self::from_inline_html(input);
+        }
+        let blocks = parsed_nodes_to_blocks(&nodes);
+        Self {
+            schema_version: RICH_TEXT_SCHEMA_VERSION,
+            blocks: if blocks.is_empty() {
+                Self::empty().blocks
+            } else {
+                blocks
+            },
+        }
+    }
+
     /// Delivery/editor render projection. The model, not Lexical, owns this
     /// HTML so both render targets remain byte-for-byte semantic peers.
     pub fn to_inline_html(&self) -> String {
@@ -317,6 +355,21 @@ impl RichTextDocument {
             render_block(block, &mut out);
         }
         out
+    }
+
+    /// Semantic block projection for Body/Small text nodes. The containing web
+    /// node owns styling and identity; this projection owns only meaningful
+    /// paragraph/list structure and never emits editor-library attributes.
+    pub fn to_semantic_html(&self) -> String {
+        let mut out = String::new();
+        for block in &self.blocks {
+            render_semantic_block(block, &mut out);
+        }
+        out
+    }
+
+    pub fn is_single_paragraph(&self) -> bool {
+        matches!(self.blocks.as_slice(), [RichTextBlock::Paragraph { .. }])
     }
 
     pub fn plain_text(&self) -> String {
@@ -343,6 +396,12 @@ impl RichTextDocument {
             .any(|inline| matches!(inline, RichTextInline::Variable { .. }))
     }
 
+    pub(crate) fn for_each_variable_mut(&mut self, mut visit: impl FnMut(&str, &mut String)) {
+        for block in &mut self.blocks {
+            visit_block_variables_mut(block, &mut visit);
+        }
+    }
+
     /// Convenience for call sites that previously inspected the canonical
     /// inline-HTML string. New semantic checks should prefer `contains_link`
     /// and `contains_variable`.
@@ -365,10 +424,21 @@ impl RichTextDocument {
             issues.push(format!("rich-text document exceeds {MAX_BLOCKS} blocks"));
         }
 
+        let mut block_count = 0usize;
         let mut inline_count = 0usize;
         let mut char_count = 0usize;
         for block in &self.blocks {
-            validate_block(block, 0, &mut inline_count, &mut char_count, &mut issues);
+            validate_block(
+                block,
+                0,
+                &mut block_count,
+                &mut inline_count,
+                &mut char_count,
+                &mut issues,
+            );
+        }
+        if block_count > MAX_BLOCKS {
+            issues.push(format!("rich-text document exceeds {MAX_BLOCKS} blocks"));
         }
         if inline_count > MAX_INLINES {
             issues.push(format!(
@@ -386,6 +456,292 @@ impl RichTextDocument {
     fn visit_inlines(&self) -> impl Iterator<Item = &RichTextInline> {
         self.blocks.iter().flat_map(block_inlines)
     }
+}
+
+fn parse_html_fragment(input: &str) -> Option<Vec<ParsedHtmlNode>> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Some(Vec::new());
+    }
+    let normalized = self_close_voids(&escape_stray_lt(&normalize_entities(trimmed)));
+    let wrapped = format!("<lumen-rich>{normalized}</lumen-rich>");
+    let mut reader = Reader::from_str(&wrapped);
+    reader.config_mut().trim_text(false);
+    let mut stack: Vec<ParsedHtmlElement> = Vec::new();
+    let mut root: Option<ParsedHtmlElement> = None;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(start)) => {
+                stack.push(ParsedHtmlElement {
+                    tag: String::from_utf8_lossy(start.name().as_ref()).to_ascii_lowercase(),
+                    attrs: parsed_attrs(&start),
+                    children: Vec::new(),
+                });
+            }
+            Ok(Event::Empty(start)) => {
+                let element = ParsedHtmlElement {
+                    tag: String::from_utf8_lossy(start.name().as_ref()).to_ascii_lowercase(),
+                    attrs: parsed_attrs(&start),
+                    children: Vec::new(),
+                };
+                stack
+                    .last_mut()
+                    .map(|parent| parent.children.push(ParsedHtmlNode::Element(element)))?;
+            }
+            Ok(Event::End(end)) => {
+                let tag = String::from_utf8_lossy(end.name().as_ref()).to_ascii_lowercase();
+                let element = stack.pop()?;
+                if element.tag != tag {
+                    return None;
+                }
+                if let Some(parent) = stack.last_mut() {
+                    parent.children.push(ParsedHtmlNode::Element(element));
+                } else {
+                    root = Some(element);
+                }
+            }
+            Ok(Event::Text(text)) => {
+                let value = text
+                    .unescape()
+                    .map(|value| value.into_owned())
+                    .unwrap_or_else(|_| String::from_utf8_lossy(text.as_ref()).into_owned());
+                stack
+                    .last_mut()
+                    .map(|parent| parent.children.push(ParsedHtmlNode::Text(value)))?;
+            }
+            Ok(Event::CData(data)) => {
+                stack.last_mut().map(|parent| {
+                    parent.children.push(ParsedHtmlNode::Text(
+                        String::from_utf8_lossy(data.as_ref()).into_owned(),
+                    ))
+                })?;
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+    let root = root?;
+    (root.tag == "lumen-rich").then_some(root.children)
+}
+
+fn parsed_attrs(start: &BytesStart<'_>) -> Vec<(String, String)> {
+    start
+        .attributes()
+        .with_checks(false)
+        .flatten()
+        .map(|attr| {
+            let name = String::from_utf8_lossy(attr.key.as_ref()).to_ascii_lowercase();
+            let value = attr
+                .unescape_value()
+                .map(|value| value.into_owned())
+                .unwrap_or_else(|_| String::from_utf8_lossy(&attr.value).into_owned());
+            (name, value)
+        })
+        .collect()
+}
+
+fn contains_structural_html(nodes: &[ParsedHtmlNode]) -> bool {
+    nodes.iter().any(|node| match node {
+        ParsedHtmlNode::Text(_) => false,
+        ParsedHtmlNode::Element(element) => {
+            matches!(
+                element.tag.as_str(),
+                "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li"
+            ) || contains_structural_html(&element.children)
+        }
+    })
+}
+
+fn parsed_nodes_to_blocks(nodes: &[ParsedHtmlNode]) -> Vec<RichTextBlock> {
+    let mut blocks = Vec::new();
+    let mut pending_inline = Vec::new();
+    for node in nodes {
+        match node {
+            ParsedHtmlNode::Element(element) if matches!(element.tag.as_str(), "ul" | "ol") => {
+                flush_inline_block(&mut pending_inline, &mut blocks);
+                blocks.push(parsed_list(element, 1));
+            }
+            ParsedHtmlNode::Element(element)
+                if matches!(
+                    element.tag.as_str(),
+                    "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                ) =>
+            {
+                flush_inline_block(&mut pending_inline, &mut blocks);
+                let mut children = Vec::new();
+                collect_parsed_inlines(&element.children, InlineContext::default(), &mut children);
+                blocks.push(RichTextBlock::Paragraph {
+                    alignment: None,
+                    children,
+                });
+            }
+            ParsedHtmlNode::Element(element)
+                if matches!(element.tag.as_str(), "script" | "style") => {}
+            _ => pending_inline.push(node.clone()),
+        }
+    }
+    flush_inline_block(&mut pending_inline, &mut blocks);
+    blocks
+}
+
+fn flush_inline_block(pending: &mut Vec<ParsedHtmlNode>, blocks: &mut Vec<RichTextBlock>) {
+    if pending.is_empty()
+        || pending
+            .iter()
+            .all(|node| matches!(node, ParsedHtmlNode::Text(value) if value.trim().is_empty()))
+    {
+        pending.clear();
+        return;
+    }
+    let mut children = Vec::new();
+    collect_parsed_inlines(pending, InlineContext::default(), &mut children);
+    blocks.push(RichTextBlock::Paragraph {
+        alignment: None,
+        children,
+    });
+    pending.clear();
+}
+
+fn parsed_list(element: &ParsedHtmlElement, depth: usize) -> RichTextBlock {
+    let list_type = if element.tag == "ol" {
+        RichTextListType::Ordered
+    } else {
+        RichTextListType::Unordered
+    };
+    let mut items = Vec::new();
+    for child in &element.children {
+        let ParsedHtmlNode::Element(item) = child else {
+            continue;
+        };
+        if item.tag != "li" {
+            continue;
+        }
+        let mut children = Vec::new();
+        let mut nested = Vec::new();
+        for item_child in &item.children {
+            match item_child {
+                ParsedHtmlNode::Element(nested_list)
+                    if matches!(nested_list.tag.as_str(), "ul" | "ol") =>
+                {
+                    if depth < MAX_LIST_DEPTH {
+                        nested.push(parsed_list(nested_list, depth + 1));
+                    } else {
+                        flatten_parsed_list(nested_list, &mut children);
+                    }
+                }
+                ParsedHtmlNode::Element(block) if matches!(block.tag.as_str(), "p" | "div") => {
+                    if !children.is_empty() {
+                        children.push(RichTextInline::LineBreak { link: None });
+                    }
+                    collect_parsed_inlines(
+                        &block.children,
+                        InlineContext::default(),
+                        &mut children,
+                    );
+                }
+                other => collect_parsed_inlines(
+                    std::slice::from_ref(other),
+                    InlineContext::default(),
+                    &mut children,
+                ),
+            }
+        }
+        items.push(RichTextListItem { children, nested });
+    }
+    RichTextBlock::List { list_type, items }
+}
+
+fn flatten_parsed_list(element: &ParsedHtmlElement, out: &mut Vec<RichTextInline>) {
+    for child in &element.children {
+        let ParsedHtmlNode::Element(item) = child else {
+            continue;
+        };
+        if item.tag != "li" {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(RichTextInline::LineBreak { link: None });
+        }
+        for item_child in &item.children {
+            match item_child {
+                ParsedHtmlNode::Element(nested) if matches!(nested.tag.as_str(), "ul" | "ol") => {
+                    flatten_parsed_list(nested, out);
+                }
+                other => collect_parsed_inlines(
+                    std::slice::from_ref(other),
+                    InlineContext::default(),
+                    out,
+                ),
+            }
+        }
+    }
+}
+
+fn collect_parsed_inlines(
+    nodes: &[ParsedHtmlNode],
+    context: InlineContext,
+    out: &mut Vec<RichTextInline>,
+) {
+    for node in nodes {
+        match node {
+            ParsedHtmlNode::Text(value) => {
+                if !value.is_empty() {
+                    push_text(out, value, context.clone());
+                }
+            }
+            ParsedHtmlNode::Element(element) => {
+                let tag = element.tag.as_str();
+                if matches!(tag, "script" | "style" | "iframe" | "object" | "embed") {
+                    continue;
+                }
+                if tag == "br" {
+                    out.push(RichTextInline::LineBreak {
+                        link: context.link.clone(),
+                    });
+                    continue;
+                }
+                let mut next = context.clone();
+                match tag {
+                    "strong" | "b" => next.marks.bold = true,
+                    "em" | "i" => next.marks.italic = true,
+                    "u" => next.marks.underline = true,
+                    "s" | "strike" => next.marks.strikethrough = true,
+                    "a" => {
+                        if let Some(href) =
+                            parsed_attr(element, "href").filter(|href| href_is_allowed(href))
+                        {
+                            next.link = Some(RichTextLink {
+                                href: href.to_owned(),
+                                new_tab: parsed_attr(element, "target") == Some("_blank"),
+                            });
+                        }
+                    }
+                    "span" => {
+                        if let Some(classes) = parsed_attr(element, "class") {
+                            next.classes.push(classes.to_owned());
+                        }
+                        if let Some(key) = parsed_attr(element, "data-var")
+                            .filter(|key| personalization_key_is_valid(key))
+                        {
+                            next.variable = Some(key.to_owned());
+                        }
+                    }
+                    _ => {}
+                }
+                collect_parsed_inlines(&element.children, next, out);
+            }
+        }
+    }
+}
+
+fn parsed_attr<'a>(element: &'a ParsedHtmlElement, name: &str) -> Option<&'a str> {
+    element
+        .attrs
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
 }
 
 fn context_for_start(
@@ -537,6 +893,36 @@ fn render_block(block: &RichTextBlock, out: &mut String) {
     }
 }
 
+fn render_semantic_block(block: &RichTextBlock, out: &mut String) {
+    match block {
+        RichTextBlock::Paragraph { children, .. } => {
+            out.push_str("<p>");
+            render_inlines(children, out);
+            out.push_str("</p>");
+        }
+        RichTextBlock::List { list_type, items } => {
+            let tag = match list_type {
+                RichTextListType::Unordered => "ul",
+                RichTextListType::Ordered => "ol",
+            };
+            out.push('<');
+            out.push_str(tag);
+            out.push('>');
+            for item in items {
+                out.push_str("<li>");
+                render_inlines(&item.children, out);
+                for nested in &item.nested {
+                    render_semantic_block(nested, out);
+                }
+                out.push_str("</li>");
+            }
+            out.push_str("</");
+            out.push_str(tag);
+            out.push('>');
+        }
+    }
+}
+
 fn render_inlines(inlines: &[RichTextInline], out: &mut String) {
     for inline in inlines {
         match inline {
@@ -668,27 +1054,69 @@ fn block_inlines(block: &RichTextBlock) -> Box<dyn Iterator<Item = &RichTextInli
     }
 }
 
+fn visit_block_variables_mut(block: &mut RichTextBlock, visit: &mut impl FnMut(&str, &mut String)) {
+    match block {
+        RichTextBlock::Paragraph { children, .. } => {
+            visit_inline_variables_mut(children, visit);
+        }
+        RichTextBlock::List { items, .. } => {
+            for item in items {
+                visit_inline_variables_mut(&mut item.children, visit);
+                for nested in &mut item.nested {
+                    visit_block_variables_mut(nested, visit);
+                }
+            }
+        }
+    }
+}
+
+fn visit_inline_variables_mut(
+    inlines: &mut [RichTextInline],
+    visit: &mut impl FnMut(&str, &mut String),
+) {
+    for inline in inlines {
+        if let RichTextInline::Variable { key, fallback, .. } = inline {
+            visit(key, fallback);
+        }
+    }
+}
+
 fn validate_block(
     block: &RichTextBlock,
     list_depth: usize,
+    block_count: &mut usize,
     inline_count: &mut usize,
     char_count: &mut usize,
     issues: &mut Vec<String>,
 ) {
+    *block_count += 1;
     match block {
         RichTextBlock::Paragraph { children, .. } => {
             validate_inlines(children, inline_count, char_count, issues);
         }
         RichTextBlock::List { items, .. } => {
+            if items.is_empty() {
+                issues.push("rich-text list must contain at least one item".to_owned());
+            }
             if list_depth >= MAX_LIST_DEPTH {
                 issues.push(format!(
                     "rich-text list nesting exceeds {MAX_LIST_DEPTH} levels"
                 ));
             }
             for item in items {
+                if item.children.is_empty() && item.nested.is_empty() {
+                    issues.push("rich-text list item must contain content".to_owned());
+                }
                 validate_inlines(&item.children, inline_count, char_count, issues);
                 for nested in &item.nested {
-                    validate_block(nested, list_depth + 1, inline_count, char_count, issues);
+                    validate_block(
+                        nested,
+                        list_depth + 1,
+                        block_count,
+                        inline_count,
+                        char_count,
+                        issues,
+                    );
                 }
             }
         }
@@ -838,5 +1266,71 @@ mod tests {
             .validate()
             .iter()
             .any(|issue| issue.contains("visible fallback text")));
+    }
+
+    #[test]
+    fn imports_and_renders_safe_semantic_paragraphs_and_nested_lists() {
+        let doc = RichTextDocument::from_html(
+            r#"<p style="color:red" onclick="bad()">Intro <strong>copy</strong><script>bad()</script></p>
+               <ul><li>First<ul><li><em>Nested</em></li></ul></li>
+               <li><a href="javascript:alert(1)">safe text</a></li></ul>
+               <p>Outro<br>line</p>"#,
+        );
+
+        assert_eq!(
+            doc.to_semantic_html(),
+            "<p>Intro <strong>copy</strong></p>\
+             <ul><li>First<ul><li><em>Nested</em></li></ul></li>\
+             <li>safe text</li></ul><p>Outro<br />line</p>"
+        );
+        assert_eq!(doc.blocks.len(), 3);
+        assert!(doc.validate().is_empty());
+        assert!(!doc.to_semantic_html().contains("style="));
+        assert!(!doc.to_semantic_html().contains("onclick="));
+        assert!(!doc.to_semantic_html().contains("javascript:"));
+        assert!(!doc.to_semantic_html().contains("script"));
+    }
+
+    #[test]
+    fn structural_import_bounds_excessive_list_nesting() {
+        let mut html = String::new();
+        for depth in 0..8 {
+            html.push_str(if depth % 2 == 0 {
+                "<ul><li>item"
+            } else {
+                "<ol><li>item"
+            });
+        }
+        for depth in (0..8).rev() {
+            html.push_str(if depth % 2 == 0 {
+                "</li></ul>"
+            } else {
+                "</li></ol>"
+            });
+        }
+
+        let doc = RichTextDocument::from_html(&html);
+        assert!(doc.validate().is_empty(), "{:?}", doc.validate());
+        assert_eq!(doc.to_semantic_html().matches("<ul>").count(), 3);
+        assert_eq!(doc.to_semantic_html().matches("<ol>").count(), 3);
+        assert!(doc.plain_text().contains("item"));
+    }
+
+    #[test]
+    fn rejects_empty_typed_list_items() {
+        let doc = RichTextDocument {
+            schema_version: RICH_TEXT_SCHEMA_VERSION,
+            blocks: vec![RichTextBlock::List {
+                list_type: RichTextListType::Unordered,
+                items: vec![RichTextListItem {
+                    children: Vec::new(),
+                    nested: Vec::new(),
+                }],
+            }],
+        };
+        assert!(doc
+            .validate()
+            .iter()
+            .any(|issue| issue.contains("list item must contain content")));
     }
 }

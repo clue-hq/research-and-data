@@ -323,6 +323,13 @@ impl TextVariant {
             TextVariant::Body | TextVariant::Small | TextVariant::Overline => "p",
         }
     }
+
+    /// Body copy can own semantic paragraph/list blocks. Display, headings,
+    /// and overlines remain one block so changing a text variant can never
+    /// produce invalid heading/list HTML.
+    pub fn allows_structured_rich_text(&self) -> bool {
+        matches!(self, TextVariant::Body | TextVariant::Small)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

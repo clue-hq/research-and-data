@@ -22,6 +22,11 @@ export const WEB_BRIDGE_CHANNEL = "lumen-web-bridge";
 export type RichTextFormat = "bold" | "italic" | "underline" | "strikethrough";
 export type RichTextFormatValue = "on" | "off" | "mixed";
 export type RichTextFormatState = Record<RichTextFormat, RichTextFormatValue>;
+export type RichTextBlockType =
+  | "paragraph"
+  | "ordered_list"
+  | "unordered_list"
+  | "mixed";
 
 export interface RichTextLinkSelection {
   state: RichTextFormatValue;
@@ -40,6 +45,10 @@ export interface RichTextSelectionState {
   commonClasses: string[];
   mixedClasses: string[];
   link: RichTextLinkSelection;
+  blockType: RichTextBlockType;
+  structured: boolean;
+  canIndent: boolean;
+  canOutdent: boolean;
 }
 
 export type RichTextCommand =
@@ -54,6 +63,12 @@ export type RichTextCommand =
   | { type: "remove_link" }
   | { type: "insert_variable"; key: string; fallback: string }
   | { type: "clear_formatting" }
+  | {
+      type: "set_block";
+      block: Exclude<RichTextBlockType, "mixed">;
+    }
+  | { type: "indent_list" }
+  | { type: "outdent_list" }
   | { type: "refresh_selection" };
 
 export interface WebNodeRect {
@@ -337,9 +352,17 @@ function coerceRichTextSelectionState(value: unknown): RichTextSelectionState | 
       ? (record.link as Record<string, unknown>)
       : null;
   const linkState = linkRecord?.state;
+  const blockType = record.blockType;
   if (
     typeof record.collapsed !== "boolean" ||
     typeof record.selectedText !== "string" ||
+    (blockType !== "paragraph" &&
+      blockType !== "ordered_list" &&
+      blockType !== "unordered_list" &&
+      blockType !== "mixed") ||
+    typeof record.structured !== "boolean" ||
+    typeof record.canIndent !== "boolean" ||
+    typeof record.canOutdent !== "boolean" ||
     !formats ||
     !commonClasses ||
     !mixedClasses ||
@@ -370,7 +393,11 @@ function coerceRichTextSelectionState(value: unknown): RichTextSelectionState | 
     formats,
     commonClasses,
     mixedClasses,
-    link: { state: linkState, href, newTab }
+    link: { state: linkState, href, newTab },
+    blockType,
+    structured: record.structured,
+    canIndent: record.canIndent,
+    canOutdent: record.canOutdent
   };
 }
 

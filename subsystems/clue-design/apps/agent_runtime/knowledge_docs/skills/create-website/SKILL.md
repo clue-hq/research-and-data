@@ -26,6 +26,7 @@ the cost and the two copies drift. Copy is written once, inside the markup.
 | `<header id="…">` `<section id="…">` `<footer id="…">` | page band | **Top level only.** Always give sections ids (`hero`, `features`) — they are anchors and edit targets. Optional registered-asset background fields are listed below. |
 | `<div class="…">` | container | All layout: flex/grid utilities live here. Optional `data-href`, `data-new-tab="true"` makes the whole container clickable. |
 | `<h1>`…`<h4>`, `<p>` | text | Variant from the tag. Override with `data-variant="display\|small\|overline"`. |
+| `<div data-text="rich" data-variant="body\|small">…</div>` | structured text | One editable text node whose children may be semantic `<p>`, `<ul>`, `<ol>`, and `<li>` blocks. Use it when paragraphs/lists must remain one rich-text field. |
 | `<a data-button="primary\|secondary\|outline\|ghost\|link" href="…">Label</a>` | button | Button styling comes from the theme — do not restyle with classes. |
 | `<img data-asset="ASSET_ID" alt="…">` | image | `ASSET_ID` must already exist (generate/import first). External `src` is rejected. Optional `data-href`, `data-new-tab="true"`. |
 | `<i data-icon="NAME"></i>` | icon | Must be empty. Size/color via classes (`size-6 text-primary`). |
@@ -49,14 +50,22 @@ non-clickable; nested interactive HTML is rejected.
 Inline, inside text and button labels only: `strong em u s br a[href]
 span[class]` — e.g. accent a phrase with `<span class="text-primary">…</span>`.
 
+Inside a `data-text="rich"` wrapper only, use semantic `p`, `ul`, `ol`, and
+`li`. Lists may nest to six levels. The wrapper must use `body` or `small`;
+Display/H1–H4/Overline remain a single paragraph. The wrapper becomes the text
+node itself, so give it an `id` when later scoped edits need stable identity.
+The delivered website preserves only semantic rich-text markup — no editor
+attributes.
+
 Icon names: `circle dot square diamond triangle-up play star heart bolt check x
 plus minus arrow-right arrow-left arrow-up arrow-down shield lock key user
 layers pencil sparkles download chart-bar lightbulb`.
 
-Not in the vocabulary (rejected with hints): `nav ul li button main script
+Not in the vocabulary (rejected with hints): `nav button main script
 style iframe table`, inline `style=` attributes, event handlers, `aria-*`
-(the renderer owns accessibility attributes). Lists are stacked `<div>`s;
-a nav is a `<header>` band with text + buttons.
+(the renderer owns accessibility attributes). `ul`, `ol`, and `li` are valid
+only inside a structured-text wrapper; layout lists remain stacked `<div>`s. A
+nav is a `<header>` band with text + buttons.
 
 ## Class grammar — the brand constraint
 

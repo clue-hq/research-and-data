@@ -9,11 +9,13 @@ import {
   isValidSlotKey,
   moveNodeOp,
   parentOfInPage,
+  richTextDocumentHasStructure,
   removeNodeOp,
   setNodeClassesOp,
   setNodePropsOp,
   setSlotKeyOp,
   slotKeyParts,
+  textVariantAllowsStructuredRichText,
   webNodeButtonAction,
   type WebButtonAction,
   type WebBackgroundImage,
@@ -627,12 +629,14 @@ function PropSelect({
   label,
   value,
   options,
+  disabledOptions = [],
   disabled,
   onChange
 }: {
   label: string;
   value: string;
   options: readonly string[];
+  disabledOptions?: readonly string[];
   disabled: boolean;
   onChange: (value: string) => void;
 }): React.ReactElement {
@@ -641,7 +645,11 @@ function PropSelect({
       <span className="field-label">{label}</span>
       <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
-          <option key={option} value={option}>
+          <option
+            key={option}
+            value={option}
+            disabled={disabledOptions.includes(option)}
+          >
             {option}
           </option>
         ))}
@@ -949,6 +957,12 @@ function TextCard({
 }): React.ReactElement {
   const variant = node.variant ?? "body";
   const content = node.content ?? "";
+  const hasStructuredContent = richTextDocumentHasStructure(content);
+  const disabledVariants = hasStructuredContent
+    ? TEXT_VARIANTS.filter(
+        (candidate) => !textVariantAllowsStructuredRichText(candidate)
+      )
+    : [];
   const size = textSizeFacet.parse(node.classes);
   const align = textAlignFacet.parse(node.classes);
   const weight = fontWeightFacet.parse(node.classes);
@@ -1005,9 +1019,15 @@ function TextCard({
         label="Style"
         value={variant}
         options={TEXT_VARIANTS}
+        disabledOptions={disabledVariants}
         disabled={busy}
         onChange={(next) => applyProps({ kind: "text", variant: next, content }, "text_variant")}
       />
+      {hasStructuredContent ? (
+        <p className="web-insp-hint">
+          Convert this text to one paragraph before choosing a heading style.
+        </p>
+      ) : null}
 
       <FacetSelect
         label="Size"

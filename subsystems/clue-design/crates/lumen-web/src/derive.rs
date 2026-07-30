@@ -623,24 +623,23 @@ fn apply_data_vars(
 ) {
     let ids: Vec<NodeId> = page.nodes.keys().cloned().collect();
     for id in ids {
-        let Some(node) = page.nodes.get(&id) else {
+        let Some(node) = page.nodes.get_mut(&id) else {
             continue;
         };
-        let source = match &node.kind {
-            WebNodeKind::Text { content, .. } => content.to_inline_html(),
-            WebNodeKind::Button { label, .. } => label.clone(),
-            _ => continue,
-        };
-        if !source.contains("data-var") {
-            continue;
-        }
-        let substituted = substitute_vars(&source, values, &id, ctx, diagnostics);
-        if let Some(node) = page.nodes.get_mut(&id) {
-            match &mut node.kind {
-                WebNodeKind::Text { content, .. } => *content = substituted.into(),
-                WebNodeKind::Button { label, .. } => *label = substituted,
-                _ => {}
+        match &mut node.kind {
+            WebNodeKind::Text { content, .. } if content.contains_variable() => {
+                content.for_each_variable_mut(|key, fallback| {
+                    if let VarAction::Substitute(value) =
+                        classify_var(key, values, &id, ctx, diagnostics)
+                    {
+                        *fallback = value;
+                    }
+                });
             }
+            WebNodeKind::Button { label, .. } if label.contains("data-var") => {
+                *label = substitute_vars(label, values, &id, ctx, diagnostics);
+            }
+            _ => {}
         }
     }
 }
@@ -917,6 +916,34 @@ mod tests {
         let content2 = text_content(&second.doc, "head");
         assert!(content2.contains("Sutter"), "{content2}");
         assert!(!content2.contains("Privia"), "{content2}");
+    }
+
+    #[test]
+    fn personalization_preserves_structured_blocks_and_lists() {
+        let tmpl = template(
+            r#"<section id="story">
+                 <div id="copy" data-text="rich" data-variant="body">
+                   <p>Meet <span data-var="account.name"><strong>Acme</strong></span></p>
+                   <ul><li>Keep this item</li><li>For <span data-var="account.name">Acme</span></li></ul>
+                 </div>
+               </section>"#,
+        );
+        let mut values = BTreeMap::new();
+        values.insert("account.name".to_owned(), text_value("Privia"));
+        let derived = derive_web_doc(&tmpl, &values, &[], &opts());
+        assert!(!derived.has_errors(), "{:#?}", derived.diagnostics);
+        let page = derived.doc.page(&PageId::from("home")).unwrap();
+        let WebNodeKind::Text { content, .. } =
+            &page.node(&NodeId::from("copy")).unwrap().kind
+        else {
+            panic!("structured text");
+        };
+        assert_eq!(content.blocks.len(), 2);
+        assert_eq!(
+            content.to_semantic_html(),
+            "<p>Meet <span data-var=\"account.name\"><strong>Privia</strong></span></p>\
+             <ul><li>Keep this item</li><li>For <span data-var=\"account.name\">Privia</span></li></ul>"
+        );
     }
 
     #[test]

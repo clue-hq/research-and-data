@@ -537,6 +537,65 @@ def test_web_ops_set_node_classes_applies(tmp_path: Path):
     assert _subtree(nodes_after, "beta") == beta_before
 
 
+def test_web_ops_set_rich_text_preserves_typed_list_structure(tmp_path: Path):
+    tools = _seed_two_sections(tmp_path)
+    nodes_before = tools._home_page().get("nodes") or {}
+    alpha_title_before = nodes_before["alpha_title"]
+    beta_before = _subtree(nodes_before, "beta")
+    structured = {
+        "schema_version": 1,
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [{"type": "text", "text": "Intro"}],
+            },
+            {
+                "type": "list",
+                "list_type": "unordered",
+                "items": [
+                    {"children": [{"type": "text", "text": "First"}]},
+                    {
+                        "children": [
+                            {
+                                "type": "variable",
+                                "key": "account.name",
+                                "fallback": "Customer",
+                            }
+                        ]
+                    },
+                ],
+            },
+        ],
+    }
+    result = json.loads(
+        tools.web_ops(
+            json.dumps(
+                [
+                    {
+                        "kind": "set_rich_text",
+                        "page_id": "home",
+                        "id": "alpha_body",
+                        "content": structured,
+                    }
+                ]
+            )
+        )
+    )
+    assert result["status"] == "ok", result
+    nodes_after = tools._home_page().get("nodes") or {}
+    assert nodes_after["alpha_body"]["content"] == structured
+    assert nodes_after["alpha_title"] == alpha_title_before
+    assert _subtree(nodes_after, "beta") == beta_before
+    assert tools.operations_ledger[-1]["kind"] == "set_rich_text"
+
+
+def test_web_ops_contract_teaches_structured_text_preservation():
+    contract = LumenWebTools.web_ops.__doc__ or ""
+    assert "set_rich_text" in contract
+    assert "preserve every unaffected block/list/mark/variable" in contract
+    assert "heading variants accept exactly one paragraph" in contract
+
+
 def test_web_ops_rejects_invalid_batch(tmp_path: Path):
     tools = _seed_two_sections(tmp_path)
     version_before = tools._doc_version

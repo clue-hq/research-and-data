@@ -250,7 +250,11 @@ describe("validateBridgeMessage", () => {
       },
       commonClasses: ["text-primary"],
       mixedClasses: ["bg-accent"],
-      link: { state: "on", href: "/story", newTab: false }
+      link: { state: "on", href: "/story", newTab: false },
+      blockType: "unordered_list",
+      structured: true,
+      canIndent: true,
+      canOutdent: false
     };
     const event = makeEvent({
       data: {

@@ -8,7 +8,8 @@
 
 use crate::derive::web_slot_key_is_valid;
 use crate::doc::{
-    calendly_url_is_valid, ButtonAction, EmbedProvider, WebDoc, WebNode, WebNodeKind, WebThemeRef,
+    calendly_url_is_valid, ButtonAction, EmbedProvider, TextVariant, WebDoc, WebNode, WebNodeKind,
+    WebThemeRef,
 };
 use crate::inline::sanitize_inline;
 use crate::rich_text::RichTextDocument;
@@ -183,8 +184,9 @@ pub fn apply_operations_checked(
 /// and hrefs always scheme-checked — no matter which surface authored the op.
 fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> {
     match kind {
-        WebNodeKind::Text { content, .. } => {
+        WebNodeKind::Text { variant, content } => {
             validate_rich_text(content)?;
+            validate_rich_text_variant(*variant, content)?;
         }
         WebNodeKind::Button { label, action, .. } => {
             *label = sanitize_inline(label).html;
@@ -270,6 +272,22 @@ fn validate_rich_text(content: &RichTextDocument) -> Result<(), WebOpError> {
         return Err(WebOpError::new(
             "op.rich_text_invalid",
             format!("rich-text content is invalid: {issue}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_rich_text_variant(
+    variant: TextVariant,
+    content: &RichTextDocument,
+) -> Result<(), WebOpError> {
+    if !variant.allows_structured_rich_text() && !content.is_single_paragraph() {
+        return Err(WebOpError::new(
+            "op.rich_text_variant_invalid",
+            format!(
+                "{} text must contain exactly one paragraph; switch the node to body or small before adding paragraphs or lists",
+                variant.as_str()
+            ),
         ));
     }
     Ok(())
@@ -570,7 +588,8 @@ fn apply_operation_in_place(
                 WebOpError::new("op.node_missing", format!("node `{id}` not found"))
             })?;
             let WebNodeKind::Text {
-                content: existing, ..
+                variant,
+                content: existing,
             } = &mut node.kind
             else {
                 return Err(WebOpError::new(
@@ -578,9 +597,14 @@ fn apply_operation_in_place(
                     format!("node `{id}` is {}, not text", node.kind.kind_name()),
                 ));
             };
-            // Whatever the source (human contenteditable, agent op), stored
-            // content is always canonical sanitized inline markup.
-            let imported = RichTextDocument::from_inline_html(content);
+            // SetText is the HTML import adapter. Body/Small may carry semantic
+            // paragraph/list markup; heading-like variants stay inline-only.
+            let imported = if variant.allows_structured_rich_text() {
+                RichTextDocument::from_html(content)
+            } else {
+                RichTextDocument::from_inline_html(content)
+            };
+            validate_rich_text_variant(*variant, &imported)?;
             let previous = std::mem::replace(existing, imported);
             Ok(WebOperation::SetRichText {
                 page_id: page_id.clone(),
@@ -599,7 +623,8 @@ fn apply_operation_in_place(
                 WebOpError::new("op.node_missing", format!("node `{id}` not found"))
             })?;
             let WebNodeKind::Text {
-                content: existing, ..
+                variant,
+                content: existing,
             } = &mut node.kind
             else {
                 return Err(WebOpError::new(
@@ -607,6 +632,7 @@ fn apply_operation_in_place(
                     format!("node `{id}` is {}, not text", node.kind.kind_name()),
                 ));
             };
+            validate_rich_text_variant(*variant, content)?;
             let previous = std::mem::replace(existing, content.clone());
             Ok(WebOperation::SetRichText {
                 page_id: page_id.clone(),
@@ -733,8 +759,8 @@ mod tests {
     };
     use crate::ingest::ingest_html_into_page;
     use crate::rich_text::{
-        RichTextBlock, RichTextInline, RichTextLink, RichTextMarks,
-        RICH_TEXT_SCHEMA_VERSION,
+        RichTextBlock, RichTextInline, RichTextLink, RichTextListItem, RichTextListType,
+        RichTextMarks, RICH_TEXT_SCHEMA_VERSION,
     };
     use crate::theme::{compile_web_theme, WebThemeOptions};
 
@@ -993,6 +1019,70 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.code, "op.rich_text_invalid");
         assert_eq!(doc, base, "rejected rich-text op must not mutate");
+    }
+
+    #[test]
+    fn structured_rich_text_is_allowed_for_body_and_rejected_for_headings() {
+        let structured = RichTextDocument {
+            schema_version: RICH_TEXT_SCHEMA_VERSION,
+            blocks: vec![
+                RichTextBlock::Paragraph {
+                    alignment: None,
+                    children: vec![RichTextInline::Text {
+                        text: "Intro".to_owned(),
+                        marks: RichTextMarks::default(),
+                        classes: None,
+                        link: None,
+                    }],
+                },
+                RichTextBlock::List {
+                    list_type: RichTextListType::Ordered,
+                    items: vec![RichTextListItem {
+                        children: vec![RichTextInline::Text {
+                            text: "First".to_owned(),
+                            marks: RichTextMarks {
+                                bold: true,
+                                ..RichTextMarks::default()
+                            },
+                            classes: None,
+                            link: None,
+                        }],
+                        nested: Vec::new(),
+                    }],
+                },
+            ],
+        };
+        let mut doc = fixture();
+        let inverses = apply_operations(
+            &mut doc,
+            &[WebOperation::SetRichText {
+                page_id: page_id(),
+                id: NodeId::from("sub"),
+                content: structured.clone(),
+            }],
+        )
+        .expect("body accepts structured content");
+        let WebNodeKind::Text { content, .. } =
+            &doc.page(&page_id()).unwrap().node(&NodeId::from("sub")).unwrap().kind
+        else {
+            panic!("text node");
+        };
+        assert_eq!(content, &structured);
+        apply_operations(&mut doc, &inverses).expect("undo structured edit");
+        assert_eq!(doc, fixture());
+
+        let before = doc.clone();
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::SetRichText {
+                page_id: page_id(),
+                id: NodeId::from("headline"),
+                content: structured,
+            }],
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "op.rich_text_variant_invalid");
+        assert_eq!(doc, before);
     }
 
     #[test]

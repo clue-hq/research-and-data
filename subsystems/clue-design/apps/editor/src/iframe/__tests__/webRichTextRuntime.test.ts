@@ -64,8 +64,41 @@ function mount(initialHtml: string): {
   document.body.appendChild(root);
   return {
     root,
-    session: mountRichTextEditor(root, { initialHtml })
+    session: mountRichTextEditor(root, { initialHtml, textVariant: "h2" })
   };
+}
+
+function mountStructured(initialHtml: string): {
+  root: HTMLElement;
+  session: RichTextSession;
+} {
+  const root = document.createElement("div");
+  document.body.appendChild(root);
+  return {
+    root,
+    session: mountRichTextEditor(root, {
+      initialHtml,
+      textVariant: "body"
+    })
+  };
+}
+
+function paste(
+  root: HTMLElement,
+  payload: { html?: string; plain?: string }
+): void {
+  const event = new Event("paste", {
+    bubbles: true,
+    cancelable: true
+  }) as ClipboardEvent;
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData(type: string) {
+        return type === "text/html" ? payload.html ?? "" : payload.plain ?? "";
+      }
+    }
+  });
+  root.dispatchEvent(event);
 }
 
 describe("web rich-text runtime", () => {
@@ -96,7 +129,7 @@ describe("web rich-text runtime", () => {
     });
 
     expect(html).toBe(
-      'Hello <span data-var="account.name" class="text-primary"><strong>Acme</strong></span><br /><a href="/pricing" target="_blank" rel="noopener noreferrer">pricing</a>'
+      '<p>Hello <span data-var="account.name" class="text-primary"><strong>Acme</strong></span><br /><a href="/pricing" target="_blank" rel="noopener noreferrer">pricing</a></p>'
     );
     expect(html).not.toContain("lexical");
   });
@@ -106,13 +139,14 @@ describe("web rich-text runtime", () => {
     document.body.appendChild(root);
     const session = mountRichTextEditor(root, {
       initialHtml:
-        'Hello <span data-var="account.name" class="text-primary">Acme</span> world'
+        'Hello <span data-var="account.name" class="text-primary">Acme</span> world',
+      textVariant: "h2"
     });
     await Promise.resolve();
 
     expect(root).toHaveAttribute("contenteditable", "true");
     expect(root).toHaveAttribute("role", "textbox");
-    expect(root).toHaveAttribute("aria-multiline", "true");
+    expect(root).toHaveAttribute("aria-multiline", "false");
 
     const textNodes = Array.from(root.querySelectorAll("[data-lexical-text]"))
       .flatMap((element) => Array.from(element.childNodes))
@@ -132,7 +166,7 @@ describe("web rich-text runtime", () => {
     session.format("bold");
     const result = session.getDocument();
     expect(renderRichTextDocument(result)).toBe(
-      'Hello <span data-var="account.name" class="text-primary">Acme</span> <strong>world</strong>'
+      '<p>Hello <span data-var="account.name" class="text-primary">Acme</span> <strong>world</strong></p>'
     );
     session.destroy();
     expect(root).not.toHaveAttribute("contenteditable");
@@ -142,7 +176,8 @@ describe("web rich-text runtime", () => {
     const root = document.createElement("span");
     document.body.appendChild(root);
     const session = mountRichTextEditor(root, {
-      initialHtml: "Format only these words"
+      initialHtml: "Format only these words",
+      textVariant: "h2"
     });
     await Promise.resolve();
 
@@ -295,6 +330,7 @@ describe("web rich-text runtime", () => {
     document.body.appendChild(root);
     const session = mountRichTextEditor(root, {
       initialHtml: '<a href="/old">linked words</a>',
+      textVariant: "h2",
       onSelectionStateChange: (state) => states.push(state)
     });
     await Promise.resolve();
@@ -308,5 +344,270 @@ describe("web rich-text runtime", () => {
     });
     expect(states.length).toBeGreaterThan(0);
     session.destroy();
+  });
+
+  it("round-trips semantic paragraphs and bounded nested lists", async () => {
+    const { root, session } = mountStructured(
+      "<p>Intro <strong>copy</strong></p>" +
+        "<ul><li>First<ul><li>Nested <em>item</em></li></ul></li><li>Second</li></ul>" +
+        "<p>Outro<br />line</p>"
+    );
+    await Promise.resolve();
+
+    expect(root).toHaveAttribute("aria-multiline", "true");
+    expect(session.getDocument()).toEqual({
+      schema_version: 1,
+      blocks: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", text: "Intro " },
+            { type: "text", text: "copy", marks: { bold: true } }
+          ]
+        },
+        {
+          type: "list",
+          list_type: "unordered",
+          items: [
+            {
+              children: [{ type: "text", text: "First" }],
+              nested: [
+                {
+                  type: "list",
+                  list_type: "unordered",
+                  items: [
+                    {
+                      children: [
+                        { type: "text", text: "Nested " },
+                        { type: "text", text: "item", marks: { italic: true } }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            { children: [{ type: "text", text: "Second" }] }
+          ]
+        },
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", text: "Outro" },
+            { type: "line_break" },
+            { type: "text", text: "line" }
+          ]
+        }
+      ]
+    });
+    expect(session.getHtml()).toBe(
+      "<p>Intro <strong>copy</strong></p>" +
+        "<ul><li>First<ul><li>Nested <em>item</em></li></ul></li><li>Second</li></ul>" +
+        "<p>Outro<br />line</p>"
+    );
+    session.destroy();
+  });
+
+  it("converts paragraph and list blocks without losing inline marks", async () => {
+    const { root, session } = mountStructured(
+      "<p><strong>First item</strong></p><p><em>Second paragraph</em></p>"
+    );
+    await Promise.resolve();
+    await selectText(root, "First item");
+
+    session.command({ type: "set_block", block: "unordered_list" });
+    expect(session.getDocument().blocks).toEqual([
+      {
+        type: "list",
+        list_type: "unordered",
+        items: [
+          {
+            children: [
+              { type: "text", text: "First item", marks: { bold: true } }
+            ]
+          }
+        ]
+      },
+      {
+        type: "paragraph",
+        children: [
+          { type: "text", text: "Second paragraph", marks: { italic: true } }
+        ]
+      }
+    ]);
+
+    session.command({ type: "set_block", block: "ordered_list" });
+    expect(session.getDocument().blocks[0]).toMatchObject({
+      type: "list",
+      list_type: "ordered"
+    });
+    expect(session.getHtml()).toContain("<strong>First item</strong>");
+    session.destroy();
+  });
+
+  it("preserves the final character when converting a caret-ended paragraph", async () => {
+    const { root, session } = mountStructured(
+      "<p>Browser-created paragraph<br />Line after break</p>"
+    );
+    await Promise.resolve();
+    await selectText(
+      root,
+      "Line after break",
+      "Line after break".length,
+      "Line after break".length
+    );
+    await new Promise<void>((resolve) =>
+      window.requestAnimationFrame(() => resolve())
+    );
+
+    // A parent toolbar pointer-down is delivered asynchronously after focus
+    // has started moving out of the sandbox. The session must use the stable
+    // selection captured above, not a browser focus-transfer side effect.
+    window.getSelection()?.removeAllRanges();
+    session.setInteractionActive(true);
+    session.command({ type: "set_block", block: "ordered_list" });
+
+    expect(session.getHtml()).toBe(
+      "<ol><li>Browser-created paragraph<br />Line after break</li></ol>"
+    );
+    session.destroy();
+  });
+
+  it("uses Enter for blocks, Shift+Enter for a line break, and list Enter semantics", async () => {
+    const paragraph = mountStructured("<p>First</p>");
+    await Promise.resolve();
+    await selectText(paragraph.root, "First", 5, 5);
+    paragraph.root.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    expect(paragraph.session.getDocument().blocks).toHaveLength(2);
+    paragraph.root.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    expect(paragraph.session.getHtml()).toContain("<p><br /></p>");
+    paragraph.session.destroy();
+
+    const list = mountStructured("<ul><li>One</li></ul>");
+    await Promise.resolve();
+    await selectText(list.root, "One", 3, 3);
+    list.root.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    expect(
+      list.session.getDocument().blocks[0]
+    ).toMatchObject({
+      type: "list",
+      items: [{ children: [{ text: "One" }] }, { children: [] }]
+    });
+    list.root.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    expect(list.session.getDocument().blocks.map((block) => block.type)).toEqual([
+      "list",
+      "paragraph"
+    ]);
+    list.session.destroy();
+  });
+
+  it("indents and outdents list items without exceeding valid nesting", async () => {
+    const { root, session } = mountStructured(
+      "<ul><li>One</li><li>Two</li></ul>"
+    );
+    await Promise.resolve();
+    await selectText(root, "Two", 3, 3);
+    expect(session.getSelectionState()).toMatchObject({
+      blockType: "unordered_list",
+      canIndent: true,
+      canOutdent: false
+    });
+
+    root.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    expect(session.getDocument().blocks[0]).toMatchObject({
+      type: "list",
+      items: [
+        {
+          children: [{ text: "One" }],
+          nested: [
+            {
+              type: "list",
+              items: [{ children: [{ text: "Two" }] }]
+            }
+          ]
+        }
+      ]
+    });
+    expect(session.getSelectionState().canOutdent).toBe(true);
+
+    root.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+    );
+    expect(
+      session.getDocument().blocks[0]
+    ).toMatchObject({
+      type: "list",
+      items: [
+        { children: [{ text: "One" }] },
+        { children: [{ text: "Two" }] }
+      ]
+    });
+    session.destroy();
+  });
+
+  it("normalizes multiline and rich paste into safe typed blocks", async () => {
+    const plain = mountStructured("<p>Replace</p>");
+    await Promise.resolve();
+    await selectText(plain.root, "Replace");
+    paste(plain.root, { plain: "One\nTwo\nThree" });
+    expect(plain.session.getDocument().blocks).toEqual([
+      { type: "paragraph", children: [{ type: "text", text: "One" }] },
+      { type: "paragraph", children: [{ type: "text", text: "Two" }] },
+      { type: "paragraph", children: [{ type: "text", text: "Three" }] }
+    ]);
+    plain.session.destroy();
+
+    const rich = mountStructured("<p>Replace</p>");
+    await Promise.resolve();
+    await selectText(rich.root, "Replace");
+    paste(rich.root, {
+      html:
+        '<p style="color:red" onclick="bad()">Safe<script>unsafe()</script>' +
+        '<strong class="foreign"> bold</strong> ' +
+        '<a href="javascript:alert(1)">bad link</a></p>' +
+        "<ol><li>First</li><li>Second</li></ol>"
+    });
+    const html = rich.session.getHtml();
+    expect(html).toBe(
+      "<p>Safe<strong> bold</strong> bad link</p>" +
+        "<ol><li>First</li><li>Second</li></ol>"
+    );
+    expect(html).not.toMatch(/style=|onclick=|javascript:|script|foreign/);
+    rich.session.destroy();
   });
 });

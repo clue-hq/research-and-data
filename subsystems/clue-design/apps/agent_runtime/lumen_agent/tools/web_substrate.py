@@ -1300,7 +1300,22 @@ class LumenWebTools:
           - set_node_classes {page_id:"home", id, classes} — replace a node's
             class string wholesale (it is NOT merged with the old one).
           - set_text {page_id:"home", id, content} — replace a text node's
-            content (text nodes only).
+            content from plain/constrained HTML (text nodes only). This is
+            convenient for a one-paragraph rewrite, but it replaces the whole
+            rich-text document.
+          - set_rich_text {page_id:"home", id, content:{schema_version:1,
+            blocks:[...]}} — replace a text node with the canonical structured
+            document. Blocks are
+              {type:"paragraph", children:[INLINE,...]} or
+              {type:"list", list_type:"ordered"|"unordered",
+               items:[{children:[INLINE,...], nested:[BLOCK,...]?},...]}.
+            INLINE is {type:"text",text,marks?,classes?,link?},
+            {type:"variable",key,fallback,marks?,classes?,link?}, or
+            {type:"line_break",link?}. Read the current content with
+            view("doc"), preserve every unaffected block/list/mark/variable,
+            and use this operation whenever a human-authored structured body
+            must survive the edit. Body and Small variants allow paragraphs
+            and lists; heading variants accept exactly one paragraph.
           - set_node_props {page_id:"home", id, props:{kind:..., ...}} —
             replace a node's kind object; `props` is the FULL kind object (its
             `kind` tag plus every field), not a partial patch.
