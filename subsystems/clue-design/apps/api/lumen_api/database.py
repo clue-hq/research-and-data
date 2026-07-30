@@ -180,6 +180,13 @@ def run_migrations(database_path: Path) -> None:
         ensure_column(connection, "operation_log", "batch_id", "TEXT")
         ensure_column(connection, "documents", "undo_stack_json", "TEXT")
         ensure_column(connection, "documents", "redo_stack_json", "TEXT")
+        ensure_column(connection, "web_publishes", "publish_id", "TEXT")
+        ensure_column(
+            connection,
+            "web_publishes",
+            "previous_publish_id",
+            "TEXT",
+        )
         # 2e: per-document standing instructions injected into every agent turn.
         ensure_column(connection, "documents", "agent_instructions", "TEXT")
         # Per-document advanced opt-out (0/1): when set, the editor skips the
@@ -1724,6 +1731,70 @@ class Repository:
 
     # --- Website-mode publishes ------------------------------------------- #
 
+    def register_web_publish_revision(
+        self, revision: JsonObject
+    ) -> JsonObject:
+        """Append one immutable, content-identified publish package."""
+
+        self.connection.execute(
+            """
+            INSERT OR IGNORE INTO web_publish_revisions (
+              publish_id, slug, document_id, doc_version, html, html_digest,
+              manifest_json, manifest_digest, package_digest, runtime_version,
+              created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                revision["publish_id"],
+                revision["slug"],
+                revision["document_id"],
+                revision["doc_version"],
+                revision["html"],
+                revision["html_digest"],
+                encode(revision["manifest"]),
+                revision["manifest_digest"],
+                revision["package_digest"],
+                revision.get("runtime_version"),
+                revision.get("created_at") or utc_now(),
+            ),
+        )
+        self.connection.commit()
+        stored = self.require_web_publish_revision(revision["publish_id"])
+        comparable = {
+            key: stored.get(key)
+            for key in (
+                "publish_id",
+                "slug",
+                "document_id",
+                "doc_version",
+                "html",
+                "html_digest",
+                "manifest",
+                "manifest_digest",
+                "package_digest",
+                "runtime_version",
+            )
+        }
+        expected = {
+            key: revision.get(key)
+            for key in comparable
+        }
+        if comparable != expected:
+            raise ValueError(
+                f"publish id {revision['publish_id']} already exists with different content"
+            )
+        return stored
+
+    def require_web_publish_revision(self, publish_id: str) -> JsonObject:
+        row = self.connection.execute(
+            "SELECT * FROM web_publish_revisions WHERE publish_id = ?",
+            (publish_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("web_publish_revision", publish_id)
+        return web_publish_revision_from_row(row)
+
     def upsert_web_publish(
         self,
         slug: str,
@@ -1731,6 +1802,7 @@ class Repository:
         doc_version: int,
         html: str,
         runtime_version: Optional[int],
+        publish_id: Optional[str] = None,
     ) -> JsonObject:
         """Publish (or republish) ``slug``. On an existing row the current
         html/doc_version move into previous_* (the single-step rollback buffer)
@@ -1741,20 +1813,32 @@ class Repository:
             """
             INSERT INTO web_publishes (
               slug, document_id, doc_version, html, previous_html,
-              previous_doc_version, runtime_version, status, created_at, updated_at
+              previous_doc_version, runtime_version, status, created_at, updated_at,
+              publish_id, previous_publish_id
             )
-            VALUES (?, ?, ?, ?, NULL, NULL, ?, 'active', ?, ?)
+            VALUES (?, ?, ?, ?, NULL, NULL, ?, 'active', ?, ?, ?, NULL)
             ON CONFLICT(slug) DO UPDATE SET
               document_id = excluded.document_id,
               doc_version = excluded.doc_version,
               html = excluded.html,
               previous_html = web_publishes.html,
               previous_doc_version = web_publishes.doc_version,
+              previous_publish_id = web_publishes.publish_id,
+              publish_id = excluded.publish_id,
               runtime_version = excluded.runtime_version,
               status = 'active',
               updated_at = excluded.updated_at
             """,
-            (slug, document_id, doc_version, html, runtime_version, now, now),
+            (
+                slug,
+                document_id,
+                doc_version,
+                html,
+                runtime_version,
+                now,
+                now,
+                publish_id,
+            ),
         )
         self.connection.commit()
         return self.require_web_publish(slug)
@@ -1769,7 +1853,24 @@ class Repository:
         row = self.connection.execute(
             "SELECT * FROM web_publishes WHERE slug = ?", (slug,)
         ).fetchone()
-        return web_publish_from_row(row) if row else None
+        if row is None:
+            return None
+        publish = web_publish_from_row(row)
+        publish_id = publish.get("publish_id")
+        if isinstance(publish_id, str):
+            revision = self.require_web_publish_revision(publish_id)
+            publish.update(
+                {
+                    "html": revision["html"],
+                    "doc_version": revision["doc_version"],
+                    "runtime_version": revision["runtime_version"],
+                    "manifest": revision["manifest"],
+                    "manifest_digest": revision["manifest_digest"],
+                    "package_digest": revision["package_digest"],
+                    "html_digest": revision["html_digest"],
+                }
+            )
+        return publish
 
     def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
         row = self.connection.execute(
@@ -1781,7 +1882,7 @@ class Repository:
             """,
             (document_id,),
         ).fetchone()
-        return web_publish_from_row(row) if row else None
+        return self.get_web_publish(row["slug"]) if row else None
 
     def set_web_publish_status(
         self, slug: str, status: str
@@ -1817,6 +1918,8 @@ class Repository:
               doc_version = previous_doc_version,
               previous_html = html,
               previous_doc_version = doc_version,
+              publish_id = previous_publish_id,
+              previous_publish_id = publish_id,
               status = 'active',
               updated_at = ?
             WHERE slug = ?
@@ -2831,7 +2934,7 @@ def document_from_row(row: sqlite3.Row) -> JsonObject:
 
 
 def web_publish_from_row(row: sqlite3.Row) -> JsonObject:
-    return {
+    record = {
         "slug": row["slug"],
         "document_id": row["document_id"],
         "doc_version": row["doc_version"],
@@ -2842,6 +2945,28 @@ def web_publish_from_row(row: sqlite3.Row) -> JsonObject:
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+    }
+    keys = set(row.keys())
+    record["publish_id"] = row["publish_id"] if "publish_id" in keys else None
+    record["previous_publish_id"] = (
+        row["previous_publish_id"] if "previous_publish_id" in keys else None
+    )
+    return record
+
+
+def web_publish_revision_from_row(row: sqlite3.Row) -> JsonObject:
+    return {
+        "publish_id": row["publish_id"],
+        "slug": row["slug"],
+        "document_id": row["document_id"],
+        "doc_version": row["doc_version"],
+        "html": row["html"],
+        "html_digest": row["html_digest"],
+        "manifest": decode(row["manifest_json"]),
+        "manifest_digest": row["manifest_digest"],
+        "package_digest": row["package_digest"],
+        "runtime_version": row["runtime_version"],
+        "created_at": row["created_at"],
     }
 
 

@@ -21,6 +21,7 @@ export fails honestly rather than shipping an unstyled zip.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -28,6 +29,14 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
+
+from .custom_component_runtime import (
+    CustomComponentRuntimeError,
+    build_custom_component_delivery_package,
+    default_runtime_host_path,
+    web_doc_uses_custom_components,
+)
 
 JsonObject = Dict[str, Any]
 
@@ -35,6 +44,7 @@ JsonObject = Dict[str, Any]
 # where scripts/web_static_css.mjs lives and the node compile must run.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STATIC_CSS_SCRIPT = "scripts/web_static_css.mjs"
+PUBLISH_ASSET_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 # The one page every website-mode doc renders (mirrors the render endpoint).
 HOME_PAGE_ID = "home"
@@ -71,12 +81,113 @@ class WebExportCompileError(WebExportError):
         self.stderr = message
 
 
+def persist_publish_assets(
+    store_root: Path,
+    assets: Dict[str, bytes],
+    asset_records: Optional[List[JsonObject]] = None,
+) -> None:
+    """Persist immutable public delivery bytes under their verified digest."""
+
+    root = Path(store_root) / "publish" / "sha256"
+    records_by_digest = {
+        str(record.get("digest")): record
+        for record in (asset_records or [])
+        if isinstance(record, dict)
+        and isinstance(record.get("digest"), str)
+    }
+    for digest, data in assets.items():
+        if not PUBLISH_ASSET_PATTERN.fullmatch(digest):
+            raise WebExportError(f"invalid publish asset digest {digest!r}")
+        if _sha256(data) != digest:
+            raise WebExportError(
+                f"publish asset bytes do not match digest {digest}"
+            )
+        destination = root / digest[:2] / digest
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            if destination.read_bytes() != data:
+                raise WebExportError(
+                    f"publish asset digest collision at {digest}"
+                )
+        else:
+            temporary = destination.with_name(f".{digest}.tmp")
+            temporary.write_bytes(data)
+            temporary.replace(destination)
+        record = records_by_digest.get(digest)
+        if record is None:
+            continue
+        extension = record.get("extension")
+        media_type = record.get("media_type")
+        if extension not in {"js", "css", "html"} or not isinstance(
+            media_type, str
+        ):
+            raise WebExportError(
+                f"publish asset {digest} has invalid media metadata"
+            )
+        metadata = _canonical_json(
+            {"extension": extension, "media_type": media_type}
+        )
+        metadata_path = destination.with_suffix(".meta.json")
+        if metadata_path.exists():
+            if metadata_path.read_bytes() != metadata:
+                raise WebExportError(
+                    f"publish asset {digest} media metadata changed"
+                )
+        else:
+            temporary_metadata = metadata_path.with_name(
+                f".{digest}.meta.tmp"
+            )
+            temporary_metadata.write_bytes(metadata)
+            temporary_metadata.replace(metadata_path)
+
+
+def resolve_publish_asset(
+    store_root: Path, digest: str, extension: str
+) -> Tuple[bytes, str]:
+    """Read and integrity-check one public immutable publish asset."""
+
+    if not PUBLISH_ASSET_PATTERN.fullmatch(digest):
+        raise WebExportError("invalid publish asset digest")
+    path = Path(store_root) / "publish" / "sha256" / digest[:2] / digest
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        raise WebExportError("publish asset is missing") from error
+    if _sha256(data) != digest:
+        raise WebExportError("publish asset failed its integrity check")
+    try:
+        metadata = json.loads(path.with_suffix(".meta.json").read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise WebExportError("publish asset metadata is missing") from error
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("extension") != extension
+        or not isinstance(metadata.get("media_type"), str)
+    ):
+        raise WebExportError("publish asset media type does not match its URL")
+    return data, metadata["media_type"]
+
+
 @dataclass
 class ExportBundle:
     """A ready-to-zip export: ``files`` maps zip-root-relative paths to bytes,
     ``warnings`` are non-fatal build notes (missing blobs, excluded fonts)."""
 
     files: Dict[str, bytes] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class PublishPackage:
+    """One deterministic immutable publish payload and its delivery assets."""
+
+    html: str
+    manifest: JsonObject
+    assets: Dict[str, bytes]
+    package_digest: str
+    manifest_digest: str
+    html_digest: str
+    runtime_version: Optional[int]
     warnings: List[str] = field(default_factory=list)
 
 
@@ -488,6 +599,145 @@ def _resolve_brand_kit(web_doc: JsonObject, database_path: Any) -> Optional[Json
     return brand_kit
 
 
+def _canonical_json(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def _sha256(data: bytes | str) -> str:
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _delivery_override_variables(repo: Any, document: JsonObject) -> Dict[str, str]:
+    account_id = document.get("account_id")
+    if not isinstance(account_id, str):
+        return {}
+    # Lazy import avoids a module-load cycle while preserving the exact
+    # account-value semantics used by editor preview.
+    from .main import account_values
+
+    try:
+        values, _records = account_values(repo.require_web_account(account_id), repo)
+    except Exception:
+        return {}
+    return {
+        str(key): str(value.get("value") or "")
+        for key, value in values.items()
+        if isinstance(key, str)
+        and isinstance(value, dict)
+        and value.get("kind") == "text"
+    }
+
+
+def _custom_component_package(
+    core: Any,
+    repo: Any,
+    document: JsonObject,
+    *,
+    custom_component_store_root: Path,
+    asset_url_for: Any,
+    deterministic_seed: str,
+    embed_runtime_assets: bool,
+    brand_kit: Optional[JsonObject],
+) -> Any:
+    web_doc = document["scene"]
+    if not web_doc_uses_custom_components(web_doc, HOME_PAGE_ID):
+        return build_custom_component_delivery_package(
+            repo,
+            custom_component_store_root,
+            account_id=(
+                document.get("account_id")
+                if isinstance(document.get("account_id"), str)
+                else None
+            ),
+            web_doc=web_doc,
+            page_id=HOME_PAGE_ID,
+            theme=None,
+            override_variables={},
+            runtime_host_path=default_runtime_host_path(),
+            asset_url_for=asset_url_for,
+            deterministic_seed=deterministic_seed,
+            embed_runtime_assets=embed_runtime_assets,
+        )
+    theme_response = core.web_validate(web_doc, brand_kit)
+    try:
+        return build_custom_component_delivery_package(
+            repo,
+            custom_component_store_root,
+            account_id=(
+                document.get("account_id")
+                if isinstance(document.get("account_id"), str)
+                else None
+            ),
+            web_doc=web_doc,
+            page_id=HOME_PAGE_ID,
+            theme=theme_response.get("web_theme"),
+            override_variables=_delivery_override_variables(repo, document),
+            runtime_host_path=default_runtime_host_path(),
+            asset_url_for=asset_url_for,
+            deterministic_seed=deterministic_seed,
+            embed_runtime_assets=embed_runtime_assets,
+        )
+    except CustomComponentRuntimeError as error:
+        raise WebExportError(f"{error.code}: {error}") from error
+
+
+def _delivery_manifest(
+    document: JsonObject,
+    *,
+    kind: str,
+    custom_components: JsonObject,
+    assets: Dict[str, bytes],
+    warnings: List[str],
+) -> JsonObject:
+    return {
+        "schema_version": 2,
+        "kind": kind,
+        "document_id": document["id"],
+        "doc_version": document["current_version"],
+        "page_id": HOME_PAGE_ID,
+        "runtime": {
+            "platform_version": 2,
+            "custom_component_contract_version": custom_components.get(
+                "runtime_contract_version"
+            ),
+        },
+        "custom_components": custom_components,
+        "asset_digests": [
+            {
+                "algorithm": "sha256",
+                "digest": digest,
+                "byte_length": len(assets[digest]),
+            }
+            for digest in sorted(assets)
+        ],
+        "warnings": list(warnings),
+    }
+
+
+def _delivery_csp(public_base: Optional[str] = None) -> str:
+    origin = ""
+    if public_base:
+        parsed = urlsplit(public_base)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            origin = f" {parsed.scheme}://{parsed.netloc}"
+    return (
+        "default-src 'none'; "
+        f"script-src 'unsafe-inline' data:{origin}; "
+        f"style-src 'unsafe-inline'{origin}; "
+        f"img-src data: blob:{origin}; "
+        f"font-src data:{origin}; "
+        "connect-src 'none'; object-src 'none'; worker-src 'none'; "
+        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'self'"
+    )
+
+
 def build_export_bundle(
     core: Any,
     repo: Any,
@@ -504,6 +754,37 @@ def build_export_bundle(
 
     files: Dict[str, bytes] = {}
     warnings: List[str] = []
+    deterministic_seed = (
+        f"export:{document['id']}:{document['current_version']}:"
+        f"{_sha256(_canonical_json(web_doc))}"
+    )
+    component_package = _custom_component_package(
+        core,
+        repo,
+        document,
+        custom_component_store_root=Path(store_root) / "custom-components",
+        asset_url_for=(
+            lambda digest, extension: (
+                f"components/sha256/{digest}.{extension}"
+            )
+        ),
+        deterministic_seed=deterministic_seed,
+        embed_runtime_assets=True,
+        brand_kit=brand_kit,
+    )
+    component_asset_records = {
+        record["digest"]: record
+        for record in component_package.manifest.get("assets", [])
+        if isinstance(record, dict) and isinstance(record.get("digest"), str)
+    }
+    for digest, data in component_package.assets.items():
+        extension = str(
+            component_asset_records.get(digest, {}).get("extension") or "bin"
+        )
+        files[f"components/sha256/{digest}.{extension}"] = data
+    files["components/manifest.json"] = (
+        json.dumps(component_package.manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
 
     # 1. Fonts (license-gated), embedded as relative fonts/<digest12>.<ext>.
     faces, excluded, font_warnings = _gather_fonts(brand_kit, repo, store_root)
@@ -522,6 +803,7 @@ def build_export_bundle(
         asset_base_url="assets",
         font_face_css=font_face_css,
         brand_kit=brand_kit,
+        custom_component_runtimes=component_package.frames,
     )
     html = render.get("html") or ""
 
@@ -560,17 +842,31 @@ def build_export_bundle(
         og_image=og_image,
     )
     head += '<link rel="stylesheet" href="site.css">\n'
+    head += (
+        '<meta http-equiv="Content-Security-Policy" content="'
+        f'{_escape_attr(_delivery_csp())}">\n'
+    )
+    head += '<link rel="lumen-component-manifest" href="components/manifest.json">\n'
     html = _inject_before_head_close(html, head)
 
     # 6. manifest.json — the file list is known now (index/manifest added last).
     file_names = sorted(list(files.keys()) + ["index.html", "manifest.json"])
     runtime_version = _runtime_version(html)
+    delivery_manifest = _delivery_manifest(
+        document,
+        kind="export",
+        custom_components=component_package.manifest,
+        assets=component_package.assets,
+        warnings=warnings,
+    )
     manifest = {
-        "schema_version": 1,
-        "document_id": document["id"],
-        "doc_version": document["current_version"],
+        **delivery_manifest,
         "generated_at": generated_at,
-        "runtime": {"present": runtime_version is not None, "version": runtime_version},
+        "runtime": {
+            **delivery_manifest["runtime"],
+            "present": runtime_version is not None,
+            "version": runtime_version,
+        },
         "files": file_names,
         "font_families_included": sorted({face.family for face in faces}),
         "font_families_excluded": excluded,
@@ -581,7 +877,7 @@ def build_export_bundle(
     return ExportBundle(files=files, warnings=warnings)
 
 
-def build_publish_html(
+def build_publish_package(
     core: Any,
     repo: Any,
     document: JsonObject,
@@ -591,14 +887,36 @@ def build_publish_html(
     slug: str,
     public_base: str,
     node_bin: str = "node",
-) -> Tuple[str, Optional[int], List[str]]:
-    """Build a single self-contained html for same-origin serving at
-    ``/p/{slug}``. Assets + fonts resolve to absolute ``/asset-store/{digest}``
-    urls (the digest route serves the bytes with ``Access-Control-Allow-Origin:
-    *``); the compiled css is inlined; SEO metas carry a canonical + og:url."""
+) -> PublishPackage:
+    """Build one immutable publish package for same-origin delivery.
+
+    The outer HTML, custom-component artifact graph, trusted runtime host, CSS,
+    server first frames, and generated per-node bootstrap modules are all
+    pinned by digest. Runtime asset URLs are immutable and never resolve
+    ``latest`` registry state.
+    """
     web_doc = document["scene"]
     brand_kit = _resolve_brand_kit(web_doc, database_path)
     warnings: List[str] = []
+    base = public_base.rstrip("/")
+    deterministic_seed = (
+        f"publish:{document['id']}:{document['current_version']}:"
+        f"{_sha256(_canonical_json(web_doc))}"
+    )
+    component_package = _custom_component_package(
+        core,
+        repo,
+        document,
+        custom_component_store_root=Path(store_root) / "custom-components",
+        asset_url_for=(
+            lambda digest, extension: (
+                f"{base}/p-assets/{digest}.{extension}"
+            )
+        ),
+        deterministic_seed=deterministic_seed,
+        embed_runtime_assets=False,
+        brand_kit=brand_kit,
+    )
 
     # Fonts (license-gated) as absolute /asset-store urls; no files emitted.
     faces, _excluded, font_warnings = _gather_fonts(brand_kit, repo, store_root)
@@ -615,6 +933,7 @@ def build_publish_html(
         asset_base_url="/asset-store",
         font_face_css=font_face_css,
         brand_kit=brand_kit,
+        custom_component_runtimes=component_package.frames,
     )
     html = render.get("html") or ""
 
@@ -625,7 +944,6 @@ def build_publish_html(
     tokens = _theme_tokens(core, web_doc, brand_kit)
     site_css = _compile_static_css(html, tokens, node_bin)
 
-    base = public_base.rstrip("/")
     og_image = f"{base}/asset-store/{images[0].digest}" if images else None
     head = _seo_snippet(
         title=document["title"],
@@ -635,5 +953,74 @@ def build_publish_html(
         og_url=f"{base}/p/{slug}",
     )
     head += f'<style id="lumen-static-css">{site_css}</style>\n'
+    publish_manifest = {
+        **_delivery_manifest(
+            document,
+            kind="publish",
+            custom_components=component_package.manifest,
+            assets=component_package.assets,
+            warnings=warnings,
+        ),
+        "slug": slug,
+        "canonical_url": f"{base}/p/{slug}",
+    }
+    manifest_digest = _sha256(_canonical_json(publish_manifest))
+    head += (
+        '<meta http-equiv="Content-Security-Policy" content="'
+        f'{_escape_attr(_delivery_csp(base))}">\n'
+    )
+    head += (
+        '<meta name="lumen-publish-manifest-digest" content="'
+        f'{manifest_digest}">\n'
+    )
+    head += (
+        '<link rel="lumen-publish-manifest" href="'
+        f'{_escape_attr(f"{base}/p/{slug}/manifest.json")}">\n'
+    )
     html = _inject_before_head_close(html, head)
-    return html, _runtime_version(html), warnings
+    html_digest = _sha256(html)
+    package_digest = _sha256(
+        _canonical_json(
+            {
+                "manifest_digest": manifest_digest,
+                "html_digest": html_digest,
+                "asset_digests": sorted(component_package.assets),
+            }
+        )
+    )
+    return PublishPackage(
+        html=html,
+        manifest=publish_manifest,
+        assets=component_package.assets,
+        package_digest=package_digest,
+        manifest_digest=manifest_digest,
+        html_digest=html_digest,
+        runtime_version=_runtime_version(html),
+        warnings=warnings,
+    )
+
+
+def build_publish_html(
+    core: Any,
+    repo: Any,
+    document: JsonObject,
+    *,
+    store_root: str,
+    database_path: Any,
+    slug: str,
+    public_base: str,
+    node_bin: str = "node",
+) -> Tuple[str, Optional[int], List[str]]:
+    """Compatibility wrapper for callers that only need the publish HTML."""
+
+    package = build_publish_package(
+        core,
+        repo,
+        document,
+        store_root=store_root,
+        database_path=database_path,
+        slug=slug,
+        public_base=public_base,
+        node_bin=node_bin,
+    )
+    return package.html, package.runtime_version, package.warnings

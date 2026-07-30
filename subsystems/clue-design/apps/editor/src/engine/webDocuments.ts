@@ -1810,6 +1810,10 @@ export interface WebPublishState {
   status: string | null;
   previousAvailable: boolean;
   updatedAt: string | null;
+  publishId: string | null;
+  manifestDigest: string | null;
+  packageDigest: string | null;
+  htmlDigest: string | null;
 }
 
 /** Read the document's publish state. Throws (with the server message) on any
@@ -1834,6 +1838,10 @@ export async function fetchWebPublishInfo(
     status?: unknown;
     previous_available?: unknown;
     updated_at?: unknown;
+    publish_id?: unknown;
+    manifest_digest?: unknown;
+    package_digest?: unknown;
+    html_digest?: unknown;
   };
   return {
     published: payload.published === true,
@@ -1842,7 +1850,11 @@ export async function fetchWebPublishInfo(
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
     status: typeof payload.status === "string" ? payload.status : null,
     previousAvailable: payload.previous_available === true,
-    updatedAt: typeof payload.updated_at === "string" ? payload.updated_at : null
+    updatedAt: typeof payload.updated_at === "string" ? payload.updated_at : null,
+    publishId: typeof payload.publish_id === "string" ? payload.publish_id : null,
+    manifestDigest: typeof payload.manifest_digest === "string" ? payload.manifest_digest : null,
+    packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
+    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null
   };
 }
 
@@ -1854,6 +1866,10 @@ export interface WebPublishResult {
   docVersion: number | null;
   runtimeVersion: string | null;
   previousAvailable: boolean;
+  publishId: string | null;
+  manifestDigest: string | null;
+  packageDigest: string | null;
+  htmlDigest: string | null;
 }
 
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
@@ -1887,14 +1903,27 @@ export async function publishWebDocument(
     doc_version?: unknown;
     runtime_version?: unknown;
     previous_available?: unknown;
+    publish_id?: unknown;
+    manifest_digest?: unknown;
+    package_digest?: unknown;
+    html_digest?: unknown;
   };
   return {
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
     slug: typeof payload.slug === "string" ? payload.slug : "",
     url: typeof payload.url === "string" ? payload.url : "",
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
-    runtimeVersion: typeof payload.runtime_version === "string" ? payload.runtime_version : null,
-    previousAvailable: payload.previous_available === true
+    runtimeVersion:
+      typeof payload.runtime_version === "string"
+        ? payload.runtime_version
+        : typeof payload.runtime_version === "number"
+          ? String(payload.runtime_version)
+          : null,
+    previousAvailable: payload.previous_available === true,
+    publishId: typeof payload.publish_id === "string" ? payload.publish_id : null,
+    manifestDigest: typeof payload.manifest_digest === "string" ? payload.manifest_digest : null,
+    packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
+    htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null
   };
 }
 

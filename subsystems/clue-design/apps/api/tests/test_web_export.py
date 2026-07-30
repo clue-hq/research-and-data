@@ -149,7 +149,7 @@ def test_export_zip_has_core_files(client: TestClient) -> None:
     assert "--color-primary" in css
     assert ".bg-light" in css
 
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == 2
     assert manifest["document_id"] == document["id"]
     assert manifest["doc_version"] == get_document(client, document["id"])["current_version"]
     assert "index.html" in manifest["files"]

@@ -10,12 +10,15 @@ network, navigation, workers, plugins, or child frames.
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import json
 import re
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from .custom_components import resolve_custom_component_artifact_blob
@@ -79,6 +82,62 @@ class CustomComponentRuntimeError(RuntimeError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+@dataclass
+class CustomComponentDeliveryPackage:
+    """One immutable, registry-independent custom-component delivery package.
+
+    ``frames`` is passed to ``lumen-web`` exactly like editor preview frames.
+    ``assets`` contains every byte needed by those frames, keyed by digest.
+    The manifest contains only digests, immutable URLs, artifact pins, and
+    compiler/runtime provenance; it never consults mutable ``latest`` state.
+    """
+
+    frames: Dict[str, JsonObject] = field(default_factory=dict)
+    assets: Dict[str, bytes] = field(default_factory=dict)
+    manifest: JsonObject = field(default_factory=dict)
+
+
+@dataclass
+class _DeliveryAssetCatalog:
+    url_for: Callable[[str, str], str]
+    assets: Dict[str, bytes] = field(default_factory=dict)
+    records: Dict[str, JsonObject] = field(default_factory=dict)
+
+    def add(
+        self,
+        data: bytes | str,
+        *,
+        media_type: str,
+        extension: str,
+        role: str,
+    ) -> JsonObject:
+        raw = data.encode("utf-8") if isinstance(data, str) else data
+        digest = hashlib.sha256(raw).hexdigest()
+        existing = self.assets.get(digest)
+        if existing is not None and existing != raw:
+            raise CustomComponentRuntimeError(
+                "custom_component.delivery_digest_collision",
+                "two delivery assets produced the same content digest",
+            )
+        self.assets[digest] = raw
+        record = self.records.setdefault(
+            digest,
+            {
+                "algorithm": "sha256",
+                "digest": digest,
+                "byte_length": len(raw),
+                "media_type": media_type,
+                "extension": extension,
+                "url": self.url_for(digest, extension),
+                "roles": [],
+            },
+        )
+        if role not in record["roles"]:
+            record["roles"].append(role)
+            record["roles"].sort()
+        return record
 
 
 def default_runtime_host_path() -> Path:
@@ -332,7 +391,7 @@ def _resolve_artifact_graph(
     *,
     account_id: str,
     root_artifact_id: str,
-) -> Tuple[JsonObject, Dict[str, bytes], List[bytes]]:
+) -> Tuple[JsonObject, Dict[str, bytes], List[bytes], List[JsonObject]]:
     by_id: Dict[str, JsonObject] = {}
     slug_pins: Dict[str, str] = {}
     bundles: Dict[str, bytes] = {}
@@ -424,7 +483,8 @@ def _resolve_artifact_graph(
         return artifact
 
     root = visit(root_artifact_id, "lumen:root")
-    return root, bundles, css_parts
+    artifacts = [by_id[artifact_id] for artifact_id in sorted(by_id)]
+    return root, bundles, css_parts, artifacts
 
 
 def _runtime_theme(theme: Optional[JsonObject]) -> JsonObject:
@@ -487,19 +547,9 @@ def _build_runtime_srcdoc(
     theme: JsonObject,
     override_variables: Dict[str, str],
     runtime_nonce: str,
+    delivery_assets: Optional[_DeliveryAssetCatalog] = None,
+    embed_delivery_assets: bool = False,
 ) -> str:
-    imports = {
-        "react": _data_javascript(_react_adapter()),
-        "react/jsx-runtime": _data_javascript(_JSX_ADAPTER),
-        "react/jsx-dev-runtime": _data_javascript(_JSX_DEV_ADAPTER),
-    }
-    imports.update(
-        {
-            specifier: _data_javascript(bundle)
-            for specifier, bundle in sorted(bundles.items())
-            if not specifier.startswith("artifact:")
-        }
-    )
     config = {
         "runtimeNonce": runtime_nonce,
         "nodeId": node_id,
@@ -508,9 +558,6 @@ def _build_runtime_srcdoc(
         "theme": theme,
         "overrideVariables": override_variables,
     }
-    prelude_url = _data_javascript(_runtime_prelude(config))
-    bootstrap_url = _data_javascript(_runtime_bootstrap(config))
-    host_url = _data_javascript(host_javascript)
     component_css = "\n".join(
         part.decode("utf-8") for part in css_parts
     )
@@ -521,26 +568,184 @@ body{font-family:var(--lumen-font-body,system-ui)}
 .lumen-runtime-error{box-sizing:border-box;display:flex;min-height:96px;flex-direction:column;gap:6px;justify-content:center;padding:16px;border:1px solid #dc2626;border-radius:10px;background:#fef2f2;color:#7f1d1d;font:14px/1.4 system-ui}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 """.strip()
+    combined_css = base_css + _theme_css(theme) + component_css
+
+    if delivery_assets is None or embed_delivery_assets:
+        imports = {
+            "react": _data_javascript(_react_adapter()),
+            "react/jsx-runtime": _data_javascript(_JSX_ADAPTER),
+            "react/jsx-dev-runtime": _data_javascript(_JSX_DEV_ADAPTER),
+        }
+        imports.update(
+            {
+                specifier: _data_javascript(bundle)
+                for specifier, bundle in sorted(bundles.items())
+                if not specifier.startswith("artifact:")
+            }
+        )
+        prelude_url = _data_javascript(_runtime_prelude(config))
+        bootstrap_url = _data_javascript(_runtime_bootstrap(config))
+        host_url = _data_javascript(host_javascript)
+        style_markup = f"<style>{_style_text(combined_css)}</style>"
+        script_sources = "'unsafe-inline' data:"
+        style_sources = "'unsafe-inline'"
+        script_crossorigin = ""
+        if delivery_assets is not None:
+            for data, media_type, extension, role in (
+                (
+                    _react_adapter(),
+                    "text/javascript; charset=utf-8",
+                    "js",
+                    "react-adapter",
+                ),
+                (
+                    _JSX_ADAPTER,
+                    "text/javascript; charset=utf-8",
+                    "js",
+                    "react-jsx-runtime-adapter",
+                ),
+                (
+                    _JSX_DEV_ADAPTER,
+                    "text/javascript; charset=utf-8",
+                    "js",
+                    "react-jsx-development-runtime-adapter",
+                ),
+                (
+                    _runtime_prelude(config),
+                    "text/javascript; charset=utf-8",
+                    "js",
+                    f"runtime-prelude:{node_id}",
+                ),
+                (
+                    _runtime_bootstrap(config),
+                    "text/javascript; charset=utf-8",
+                    "js",
+                    f"runtime-bootstrap:{node_id}",
+                ),
+                (
+                    host_javascript,
+                    "text/javascript; charset=utf-8",
+                    "js",
+                    "react-runtime-host",
+                ),
+                (
+                    combined_css,
+                    "text/css; charset=utf-8",
+                    "css",
+                    f"component-styles:{node_id}",
+                ),
+            ):
+                delivery_assets.add(
+                    data,
+                    media_type=media_type,
+                    extension=extension,
+                    role=role,
+                )
+            for specifier, bundle in sorted(bundles.items()):
+                if not specifier.startswith("artifact:"):
+                    delivery_assets.add(
+                        bundle,
+                        media_type="text/javascript; charset=utf-8",
+                        extension="js",
+                        role=(
+                            f"artifact-bundle:{artifact['artifact_id']}:"
+                            f"{specifier}"
+                        ),
+                    )
+    else:
+        def add_javascript(data: bytes | str, role: str) -> str:
+            return str(
+                delivery_assets.add(
+                    data,
+                    media_type="text/javascript; charset=utf-8",
+                    extension="js",
+                    role=role,
+                )["url"]
+            )
+
+        imports = {
+            "react": add_javascript(_react_adapter(), "react-adapter"),
+            "react/jsx-runtime": add_javascript(
+                _JSX_ADAPTER, "react-jsx-runtime-adapter"
+            ),
+            "react/jsx-dev-runtime": add_javascript(
+                _JSX_DEV_ADAPTER, "react-jsx-development-runtime-adapter"
+            ),
+        }
+        imports.update(
+            {
+                specifier: add_javascript(
+                    bundle,
+                    (
+                        f"artifact-bundle:{artifact['artifact_id']}:{specifier}"
+                    ),
+                )
+                for specifier, bundle in sorted(bundles.items())
+                if not specifier.startswith("artifact:")
+            }
+        )
+        prelude_url = add_javascript(
+            _runtime_prelude(config), f"runtime-prelude:{node_id}"
+        )
+        bootstrap_url = add_javascript(
+            _runtime_bootstrap(config), f"runtime-bootstrap:{node_id}"
+        )
+        host_url = add_javascript(host_javascript, "react-runtime-host")
+        css_record = delivery_assets.add(
+            combined_css,
+            media_type="text/css; charset=utf-8",
+            extension="css",
+            role=f"component-styles:{node_id}",
+        )
+        style_markup = (
+            '<link rel="stylesheet" href="'
+            f'{html.escape(str(css_record["url"]), quote=True)}">'
+        )
+        origins = sorted(
+            {
+                f"{parts.scheme}://{parts.netloc}"
+                for url in (
+                    list(imports.values())
+                    + [prelude_url, bootstrap_url, host_url, str(css_record["url"])]
+                )
+                for parts in [urlsplit(url)]
+                if parts.scheme in {"http", "https"} and parts.netloc
+            }
+        )
+        allowed_origins = " ".join(origins)
+        script_sources = (
+            "'unsafe-inline' " + allowed_origins
+        ).strip()
+        style_sources = ("'unsafe-inline' " + allowed_origins).strip()
+        script_crossorigin = ' crossorigin="anonymous"'
+
     first_frame_text = first_frame.decode("utf-8")
+    if delivery_assets is not None:
+        delivery_assets.add(
+            first_frame,
+            media_type="text/html; charset=utf-8",
+            extension="html",
+            role=f"server-first-frame:{node_id}",
+        )
     srcdoc = (
         "<!doctype html><html lang=\"en\"><head>"
         "<meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<meta name=\"referrer\" content=\"no-referrer\">"
         "<meta http-equiv=\"Content-Security-Policy\" content=\""
-        "default-src 'none'; script-src 'unsafe-inline' data:; "
-        "style-src 'unsafe-inline'; img-src data: blob:; font-src data:; "
+        f"default-src 'none'; script-src {script_sources}; "
+        f"style-src {style_sources}; img-src data: blob:; font-src data:; "
         "connect-src 'none'; media-src data: blob:; object-src 'none'; "
         "frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'; "
         "navigate-to 'none'"
         "\">"
-        f"<style>{_style_text(base_css + _theme_css(theme) + component_css)}</style>"
-        f"<script src=\"{host_url}\"></script>"
-        f"<script src=\"{prelude_url}\"></script>"
+        f"{style_markup}"
+        f"<script src=\"{html.escape(host_url, quote=True)}\"{script_crossorigin}></script>"
+        f"<script src=\"{html.escape(prelude_url, quote=True)}\"{script_crossorigin}></script>"
         f"<script type=\"importmap\">{_json_for_html({'imports': imports})}</script>"
         "</head><body>"
         f"<div id=\"lumen-custom-component-root\">{first_frame_text}</div>"
-        f"<script type=\"module\" src=\"{bootstrap_url}\"></script>"
+        f"<script type=\"module\" src=\"{html.escape(bootstrap_url, quote=True)}\"{script_crossorigin}></script>"
         "</body></html>"
     )
     if len(srcdoc.encode("utf-8")) > MAX_RUNTIME_HTML_BYTES:
@@ -598,7 +803,53 @@ def web_doc_uses_custom_components(web_doc: JsonObject, page_id: str) -> bool:
     return bool(_custom_component_nodes(web_doc, page_id))
 
 
-def build_custom_component_runtime_frames(
+def _artifact_publish_record(
+    artifact: JsonObject,
+    catalog: _DeliveryAssetCatalog,
+) -> JsonObject:
+    manifest = artifact.get("manifest")
+    compiler = manifest.get("compiler") if isinstance(manifest, dict) else None
+    dependencies = (
+        manifest.get("dependency_artifacts")
+        if isinstance(manifest, dict)
+        else None
+    )
+
+    def blob_record(name: str) -> Optional[JsonObject]:
+        blob = artifact.get(name)
+        if not isinstance(blob, dict):
+            return None
+        digest = blob.get("value")
+        packaged = catalog.records.get(digest) if isinstance(digest, str) else None
+        return {
+            "algorithm": blob.get("algorithm"),
+            "digest": digest,
+            "byte_length": blob.get("byte_length"),
+            "url": packaged.get("url") if packaged else None,
+        }
+
+    return {
+        "artifact_id": artifact["artifact_id"],
+        "slug": artifact["slug"],
+        "source": blob_record("source"),
+        "bundle": blob_record("bundle"),
+        "css": blob_record("css"),
+        "first_frame": blob_record("first_frame"),
+        "dependency_artifacts": (
+            dict(sorted(dependencies.items()))
+            if isinstance(dependencies, dict)
+            else {}
+        ),
+        "compiler": compiler if isinstance(compiler, dict) else {},
+        "provenance": (
+            artifact.get("provenance")
+            if isinstance(artifact.get("provenance"), dict)
+            else {}
+        ),
+    }
+
+
+def _assemble_custom_component_runtime(
     repository: Repository,
     store_root: Path,
     *,
@@ -608,14 +859,33 @@ def build_custom_component_runtime_frames(
     theme: Optional[JsonObject],
     override_variables: Dict[str, str],
     runtime_host_path: Path,
-) -> Dict[str, JsonObject]:
-    """Resolve every reachable custom-component node into a renderer frame."""
+    delivery_asset_url_for: Optional[Callable[[str, str], str]] = None,
+    deterministic_seed: Optional[str] = None,
+    strict: bool = False,
+    embed_delivery_assets: bool = False,
+) -> CustomComponentDeliveryPackage:
+    """Resolve reachable custom components into frames and optional assets."""
 
-    frames: Dict[str, JsonObject] = {}
+    package = CustomComponentDeliveryPackage()
+    frames = package.frames
     nodes = _custom_component_nodes(web_doc, page_id)
     if not nodes:
-        return frames
+        package.manifest = {
+            "schema_version": 1,
+            "runtime_contract_version": RUNTIME_CONTRACT_VERSION,
+            "components": [],
+            "artifacts": [],
+            "assets": [],
+        }
+        return package
     runtime_theme = _runtime_theme(theme)
+    delivery_assets = (
+        _DeliveryAssetCatalog(delivery_asset_url_for)
+        if delivery_asset_url_for is not None
+        else None
+    )
+    artifact_records: Dict[str, JsonObject] = {}
+    component_records: List[JsonObject] = []
     try:
         host_javascript = _read_runtime_host(str(runtime_host_path.resolve()))
     except (OSError, CustomComponentRuntimeError) as error:
@@ -646,7 +916,7 @@ def build_custom_component_runtime_frames(
             )
         if unavailable is None:
             try:
-                artifact, bundles, css_parts = _resolve_artifact_graph(
+                artifact, bundles, css_parts, artifacts = _resolve_artifact_graph(
                     repository,
                     store_root,
                     account_id=account_id or "",
@@ -668,7 +938,45 @@ def build_custom_component_runtime_frames(
                 name = manifest.get("meta", {}).get("name")
                 if not isinstance(name, str) or not name.strip():
                     name = slug
-                runtime_nonce = uuid4().hex
+                runtime_nonce = (
+                    hashlib.sha256(
+                        (
+                            f"{deterministic_seed}:{node_id}:"
+                            f"{artifact['artifact_id']}"
+                        ).encode("utf-8")
+                    ).hexdigest()[:32]
+                    if deterministic_seed is not None
+                    else uuid4().hex
+                )
+                if delivery_assets is not None:
+                    for graph_artifact in artifacts:
+                        graph_artifact_id = str(graph_artifact["artifact_id"])
+                        for member, media_type, extension in (
+                            (
+                                "bundle",
+                                "text/javascript; charset=utf-8",
+                                "js",
+                            ),
+                            ("css", "text/css; charset=utf-8", "css"),
+                            (
+                                "first_frame",
+                                "text/html; charset=utf-8",
+                                "html",
+                            ),
+                        ):
+                            _, member_bytes = resolve_custom_component_artifact_blob(
+                                repository,
+                                store_root,
+                                account_id=account_id or "",
+                                artifact_id=graph_artifact_id,
+                                member=member,
+                            )
+                            delivery_assets.add(
+                                member_bytes,
+                                media_type=media_type,
+                                extension=extension,
+                                role=f"artifact-{member}:{graph_artifact_id}",
+                            )
                 srcdoc = _build_runtime_srcdoc(
                     host_javascript=host_javascript,
                     node_id=node_id,
@@ -684,6 +992,8 @@ def build_custom_component_runtime_frames(
                     theme=runtime_theme,
                     override_variables=override_variables,
                     runtime_nonce=runtime_nonce,
+                    delivery_assets=delivery_assets,
+                    embed_delivery_assets=embed_delivery_assets,
                 )
                 frames[node_id] = {
                     "state": "ready",
@@ -696,6 +1006,34 @@ def build_custom_component_runtime_frames(
                     ),
                     "warning_count": len(manifest.get("warnings") or []),
                 }
+                component_records.append(
+                    {
+                        "node_id": node_id,
+                        "slug": slug,
+                        "artifact_id": artifact_id,
+                        "props_digest": hashlib.sha256(
+                            json.dumps(
+                                (
+                                    node.get("props")
+                                    if isinstance(node.get("props"), dict)
+                                    else {}
+                                ),
+                                ensure_ascii=True,
+                                separators=(",", ":"),
+                                sort_keys=True,
+                            ).encode("utf-8")
+                        ).hexdigest(),
+                        "runtime_nonce": runtime_nonce,
+                    }
+                )
+                if delivery_assets is not None:
+                    for graph_artifact in artifacts:
+                        artifact_records[str(graph_artifact["artifact_id"])] = (
+                            _artifact_publish_record(
+                                graph_artifact,
+                                delivery_assets,
+                            )
+                        )
                 continue
             except (
                 CustomComponentRuntimeError,
@@ -727,4 +1065,97 @@ def build_custom_component_runtime_frames(
             ),
             "warning_count": 0,
         }
-    return frames
+        if strict:
+            raise unavailable
+
+    if delivery_assets is not None:
+        package.assets = delivery_assets.assets
+        host_digest = hashlib.sha256(host_javascript).hexdigest()
+        package.manifest = {
+            "schema_version": 1,
+            "runtime_contract_version": RUNTIME_CONTRACT_VERSION,
+            "runtime_host": delivery_assets.records.get(host_digest),
+            "components": sorted(
+                component_records, key=lambda record: str(record["node_id"])
+            ),
+            "artifacts": [
+                artifact_records[key] for key in sorted(artifact_records)
+            ],
+            "assets": [
+                delivery_assets.records[key]
+                for key in sorted(delivery_assets.records)
+            ],
+        }
+    else:
+        package.manifest = {
+            "schema_version": 1,
+            "runtime_contract_version": RUNTIME_CONTRACT_VERSION,
+            "components": sorted(
+                component_records, key=lambda record: str(record["node_id"])
+            ),
+            "artifacts": [],
+            "assets": [],
+        }
+    return package
+
+
+def build_custom_component_runtime_frames(
+    repository: Repository,
+    store_root: Path,
+    *,
+    account_id: Optional[str],
+    web_doc: JsonObject,
+    page_id: str,
+    theme: Optional[JsonObject],
+    override_variables: Dict[str, str],
+    runtime_host_path: Path,
+) -> Dict[str, JsonObject]:
+    """Resolve every reachable custom-component node into an editor frame."""
+
+    return _assemble_custom_component_runtime(
+        repository,
+        store_root,
+        account_id=account_id,
+        web_doc=web_doc,
+        page_id=page_id,
+        theme=theme,
+        override_variables=override_variables,
+        runtime_host_path=runtime_host_path,
+    ).frames
+
+
+def build_custom_component_delivery_package(
+    repository: Repository,
+    store_root: Path,
+    *,
+    account_id: Optional[str],
+    web_doc: JsonObject,
+    page_id: str,
+    theme: Optional[JsonObject],
+    override_variables: Dict[str, str],
+    runtime_host_path: Path,
+    asset_url_for: Callable[[str, str], str],
+    deterministic_seed: str,
+    embed_runtime_assets: bool = False,
+) -> CustomComponentDeliveryPackage:
+    """Build a strict immutable delivery package for export or publish.
+
+    Unlike editor preview, delivery fails if any pinned node cannot be
+    assembled. A publish therefore never degrades into a placeholder while
+    claiming success.
+    """
+
+    return _assemble_custom_component_runtime(
+        repository,
+        store_root,
+        account_id=account_id,
+        web_doc=web_doc,
+        page_id=page_id,
+        theme=theme,
+        override_variables=override_variables,
+        runtime_host_path=runtime_host_path,
+        delivery_asset_url_for=asset_url_for,
+        deterministic_seed=deterministic_seed,
+        strict=True,
+        embed_delivery_assets=embed_runtime_assets,
+    )

@@ -116,6 +116,10 @@ export function WebPublishDialog({
   };
 
   const absoluteUrl = info?.url ? new URL(info.url, apiBaseUrl).toString() : null;
+  const manifestUrl =
+    info?.slug && info.status !== "unpublished"
+      ? new URL(`/p/${encodeURIComponent(info.slug)}/manifest.json`, apiBaseUrl).toString()
+      : null;
 
   const onCopy = async () => {
     if (!absoluteUrl) return;
@@ -150,6 +154,20 @@ export function WebPublishDialog({
               >
                 {absoluteUrl}
               </a>
+            ) : null}
+            {info.publishId ? (
+              <p className="web-modal-hint">
+                Immutable package{" "}
+                <code title={info.publishId}>{info.publishId.slice(0, 20)}…</code>
+                {manifestUrl ? (
+                  <>
+                    {" · "}
+                    <a href={manifestUrl} target="_blank" rel="noopener noreferrer">
+                      Manifest
+                    </a>
+                  </>
+                ) : null}
+              </p>
             ) : null}
           </div>
           <div className="web-modal-actions">

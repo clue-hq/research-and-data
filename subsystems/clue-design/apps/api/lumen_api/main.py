@@ -2824,7 +2824,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             )
         public_base = str(request.base_url).rstrip("/")
         try:
-            html, runtime_version, _warnings = web_export.build_publish_html(
+            package = web_export.build_publish_package(
                 app.state.core,
                 repo,
                 document,
@@ -2833,6 +2833,11 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 slug=slug,
                 public_base=public_base,
                 node_bin=app.state.web_export_node_bin,
+            )
+            web_export.persist_publish_assets(
+                Path(asset_store_root()),
+                package.assets,
+                package.manifest["custom_components"].get("assets"),
             )
         except web_export.WebExportCompileError as error:
             raise HTTPException(
@@ -2848,12 +2853,29 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 detail={"code": "web_export.failed", "message": str(error)},
             ) from error
 
+        publish_id = f"webpub_{package.package_digest}"
+        repo.register_web_publish_revision(
+            {
+                "publish_id": publish_id,
+                "slug": slug,
+                "document_id": document_id,
+                "doc_version": document["current_version"],
+                "html": package.html,
+                "html_digest": package.html_digest,
+                "manifest": package.manifest,
+                "manifest_digest": package.manifest_digest,
+                "package_digest": package.package_digest,
+                "runtime_version": package.runtime_version,
+                "created_at": utc_now(),
+            }
+        )
         publish = repo.upsert_web_publish(
             slug,
             document_id,
             document["current_version"],
-            html,
-            runtime_version,
+            package.html,
+            package.runtime_version,
+            publish_id,
         )
         log_event(
             api_logger,
@@ -2869,6 +2891,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "url": f"/p/{slug}",
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
+            "publish_id": publish["publish_id"],
+            "manifest_digest": publish.get("manifest_digest"),
+            "package_digest": publish.get("package_digest"),
+            "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_html"] is not None,
         }
 
@@ -2888,6 +2914,10 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
             "url": f"/p/{publish['slug']}",
             "doc_version": publish["doc_version"],
             "status": publish["status"],
+            "publish_id": publish.get("publish_id"),
+            "manifest_digest": publish.get("manifest_digest"),
+            "package_digest": publish.get("package_digest"),
+            "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_html"] is not None,
             "updated_at": publish["updated_at"],
         }
@@ -2905,6 +2935,14 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "message": f"no publish for slug {slug!r}",
                 },
             )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_publish_unpublished",
+            slug=slug,
+            document_id=publish["document_id"],
+            publish_id=publish.get("publish_id"),
+        )
         return {"schema_version": 1, "slug": slug, "status": publish["status"]}
 
     @app.post("/web/publishes/{slug}/rollback")
@@ -2928,11 +2966,24 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     "message": f"slug {slug!r} has no previous publish to roll back to",
                 },
             )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_publish_rolled_back",
+            slug=slug,
+            document_id=result["document_id"],
+            publish_id=result.get("publish_id"),
+            package_digest=result.get("package_digest"),
+        )
         return {
             "schema_version": 1,
             "slug": slug,
             "doc_version": result["doc_version"],
             "status": result["status"],
+            "publish_id": result.get("publish_id"),
+            "manifest_digest": result.get("manifest_digest"),
+            "package_digest": result.get("package_digest"),
+            "html_digest": result.get("html_digest"),
         }
 
     # --- P5 personalization accounts (D3) --------------------------------- #
@@ -3428,7 +3479,7 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     f"{slug_base}-{web_slugify(account['name'])}",
                     derived["id"],
                 )
-                html, runtime_version, _warnings = web_export.build_publish_html(
+                package = web_export.build_publish_package(
                     app.state.core,
                     repo,
                     derived,
@@ -3438,12 +3489,34 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                     public_base=public_base,
                     node_bin=app.state.web_export_node_bin,
                 )
+                web_export.persist_publish_assets(
+                    Path(asset_store_root()),
+                    package.assets,
+                    package.manifest["custom_components"].get("assets"),
+                )
+                publish_id = f"webpub_{package.package_digest}"
+                repo.register_web_publish_revision(
+                    {
+                        "publish_id": publish_id,
+                        "slug": slug,
+                        "document_id": derived["id"],
+                        "doc_version": derived["current_version"],
+                        "html": package.html,
+                        "html_digest": package.html_digest,
+                        "manifest": package.manifest,
+                        "manifest_digest": package.manifest_digest,
+                        "package_digest": package.package_digest,
+                        "runtime_version": package.runtime_version,
+                        "created_at": utc_now(),
+                    }
+                )
                 repo.upsert_web_publish(
                     slug,
                     derived["id"],
                     derived["current_version"],
-                    html,
-                    runtime_version,
+                    package.html,
+                    package.runtime_version,
+                    publish_id,
                 )
                 row["slug"] = slug
                 row["url"] = f"/p/{slug}"
@@ -3562,9 +3635,59 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
     ) -> JsonObject:
         return web_batch_response(repo.require_web_batch(batch_id))
 
+    @app.get("/p-assets/{asset_name}")
+    def serve_publish_asset(asset_name: str) -> Response:
+        match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
+        if match is None:
+            return Response(status_code=404)
+        digest, extension = match.groups()
+        try:
+            data, media_type = web_export.resolve_publish_asset(
+                Path(asset_store_root()), digest, extension
+            )
+        except web_export.WebExportError:
+            return Response(status_code=404)
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "ETag": f'"sha256-{digest}"',
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @app.get("/p/{slug}/manifest.json")
+    def serve_publish_manifest(
+        slug: str, repo: Repository = Depends(repository)
+    ) -> Response:
+        publish = repo.get_web_publish(slug)
+        if publish is None or publish["status"] != "active":
+            return Response(status_code=404)
+        manifest = publish.get("manifest")
+        if not isinstance(manifest, dict):
+            return Response(status_code=404)
+        return Response(
+            content=json.dumps(
+                manifest,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            media_type="application/json",
+            headers={
+                "Cache-Control": "public, max-age=60, must-revalidate",
+                "ETag": f'"sha256-{publish.get("manifest_digest")}"',
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @app.get("/p/{slug}")
     def serve_published_page(
-        slug: str, repo: Repository = Depends(repository)
+        slug: str,
+        request: Request,
+        repo: Repository = Depends(repository),
     ) -> HTMLResponse:
         publish = repo.get_web_publish(slug)
         if publish is None or publish["status"] != "active":
@@ -3576,7 +3699,19 @@ def create_app(database_path: Optional[Path] = None, migrate: bool = True) -> Fa
                 ),
                 status_code=404,
             )
-        return HTMLResponse(content=publish["html"], status_code=200)
+        return HTMLResponse(
+            content=publish["html"],
+            status_code=200,
+            headers={
+                "Cache-Control": "public, max-age=60, must-revalidate",
+                "ETag": f'"sha256-{publish.get("html_digest")}"',
+                "Content-Security-Policy": web_export._delivery_csp(
+                    str(request.base_url).rstrip("/")
+                ),
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(

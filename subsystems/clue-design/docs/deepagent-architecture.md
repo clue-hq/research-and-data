@@ -1010,3 +1010,40 @@ contract to Lumen's sandbox, theme payload, static class compiler, operation
 envelope, selected-node safety, and endpoint-honesty rules. `create-website`
 climbs to it only after the first three capability rungs fail; `edit-website`
 uses explicit repin instead of rewriting a component's enclosing section.
+
+### P6.5 — immutable custom-component delivery
+
+Preview, export, and publish now resolve custom components through the same
+account-bound pinned-artifact graph. Editor preview keeps the opaque `srcdoc`
+runtime assembled directly from verified registry bytes. Export embeds that
+same runtime so the zip remains self-contained and also includes every runtime
+host, adapter, artifact bundle, CSS file, server first frame, and per-node
+bootstrap under `components/sha256/`, plus
+`components/manifest.json`. Publish uses equivalent content-addressed
+`/p-assets/<sha256>.<type>` URLs with immutable caching, CORS for opaque-origin
+module loading, digest verification, and extension-to-media-type binding.
+
+Publish is an explicit snapshot operation:
+
+1. Resolve the stored WebDoc's exact artifact pins; any unavailable,
+   cross-account, unsupported, oversized, or integrity-failing artifact aborts
+   the publish instead of degrading to an unavailable placeholder.
+2. Build deterministic node nonces from the document version, scene digest,
+   node id, and artifact id. Assemble semantic first frames before hydration,
+   with a reduced-motion stylesheet and a nested CSP that denies connect,
+   worker, frame, form, object, and navigation capabilities.
+3. Persist every delivery byte by SHA-256, then append an immutable
+   `web_publish_revisions` record containing exact HTML, manifest, artifact,
+   compiler/runtime provenance, and their digests.
+4. Atomically move the mutable public slug pointer to the new revision while
+   retaining the previous revision id. Compiling or editing source alone never
+   changes that pointer.
+
+`GET /p/{slug}` serves the immutable HTML selected by the slug pointer;
+`GET /p/{slug}/manifest.json` exposes its audit manifest; and
+`GET /p-assets/{digest}.{js|css|html}` serves only integrity-checked package
+bytes with `nosniff`. Republish appends/selects a new revision only after the
+document itself has been explicitly repinned. Rollback swaps revision ids and
+therefore restores the prior HTML, manifest, artifact pins, and visible
+behavior byte-for-byte. Unpublish changes only public reachability; it neither
+deletes revision records nor consults mutable source.

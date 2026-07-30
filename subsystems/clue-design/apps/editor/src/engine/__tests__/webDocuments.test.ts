@@ -774,7 +774,11 @@ describe("fetchWebPublishInfo", () => {
         doc_version: 7,
         status: "published",
         previous_available: true,
-        updated_at: "2026-07-29T00:00:00Z"
+        updated_at: "2026-07-29T00:00:00Z",
+        publish_id: "webpub_abc",
+        manifest_digest: "manifest-abc",
+        package_digest: "package-abc",
+        html_digest: "html-abc"
       })
     );
     const info = await fetchWebPublishInfo(
@@ -788,7 +792,11 @@ describe("fetchWebPublishInfo", () => {
       docVersion: 7,
       status: "published",
       previousAvailable: true,
-      updatedAt: "2026-07-29T00:00:00Z"
+      updatedAt: "2026-07-29T00:00:00Z",
+      publishId: "webpub_abc",
+      manifestDigest: "manifest-abc",
+      packageDigest: "package-abc",
+      htmlDigest: "html-abc"
     });
   });
 
@@ -810,8 +818,12 @@ describe("publishWebDocument", () => {
         slug: "acme",
         url: "/p/acme",
         doc_version: 2,
-        runtime_version: "v1",
-        previous_available: false
+        runtime_version: 2,
+        previous_available: false,
+        publish_id: "webpub_abc",
+        manifest_digest: "manifest-abc",
+        package_digest: "package-abc",
+        html_digest: "html-abc"
       })
     );
     const result = await publishWebDocument(
@@ -824,8 +836,12 @@ describe("publishWebDocument", () => {
       slug: "acme",
       url: "/p/acme",
       docVersion: 2,
-      runtimeVersion: "v1",
-      previousAvailable: false
+      runtimeVersion: "2",
+      previousAvailable: false,
+      publishId: "webpub_abc",
+      manifestDigest: "manifest-abc",
+      packageDigest: "package-abc",
+      htmlDigest: "html-abc"
     });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web/publish");
