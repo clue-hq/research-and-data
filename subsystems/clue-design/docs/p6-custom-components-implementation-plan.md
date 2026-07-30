@@ -1,6 +1,6 @@
 # P6 custom components — living implementation plan
 
-Status: **PLANNED — implementation not started**
+Status: **IN PROGRESS — P6.1 complete; P6.2 queued**
 
 Owner branch: `agents/custom-components-v0`
 
@@ -40,13 +40,13 @@ For every completed slice:
 
 | Slice | Status | Delivers |
 | --- | --- | --- |
-| P6.1 Canonical model and durable registry | ▢ | First-class leaf nodes, immutable version records, checked operations |
+| P6.1 Canonical model and durable registry | ✅ | First-class leaf nodes, immutable version records, checked operations |
 | P6.2 Compiler and security gate | ▢ | TSX-to-artifact compilation, props schema, import/policy validation |
 | P6.3 Sandboxed runtime and editor experience | ▢ | In-canvas rendering, picker, generated props inspector, ordinary editing |
 | P6.4 Deep Agent authoring workflow | ▢ | Persistent source tools, compile-before-attach, custom-component skill |
 | P6.5 Publish, rollback, and end-to-end hardening | ▢ | Self-contained delivery artifacts, pinned versions, complete live proof |
 
-No product code has been changed for P6 yet.
+P6.1 was completed and verified on 2026-07-30.
 
 ## Outcome
 
@@ -237,7 +237,7 @@ The five slices below are the minimum useful separation. They follow dependency
 boundaries and each has a testable exit; splitting them further would mostly
 create partially usable plumbing.
 
-### P6.1 — Canonical model and durable registry `▢`
+### P6.1 — Canonical model and durable registry `✅`
 
 **Purpose**
 
@@ -289,10 +289,43 @@ page. No picker or live TSX execution is promised in this slice.
 
 **Completion record**
 
-- Commits: —
-- Automated gates: —
-- Browser evidence: —
-- Residuals: —
+- Commits: `70ec527` (`feat(web): add canonical custom component registry`)
+  plus the plan-close commit containing this record.
+- Automated gates:
+  - `cargo test --workspace`: passed, including 148 `lumen-web` unit tests and
+    6 `lumen-web` integration tests.
+  - `cargo build -p lumen-api-helper --release`: passed. `lumen-core` was not
+    changed, so the WASM rebuild/handshake gate did not apply.
+  - Agent runtime: 540 passed, 1 skipped.
+  - API: 472 passed, 3 skipped. A first sandboxed run had four network/DNS-only
+    failures against `example.com`; the required network-enabled rerun passed.
+  - Focused editor suites: 80 passed. Editor lint and production build passed.
+  - Full editor suite: 1,051 passed and 26 failed in two pre-existing legacy
+    `EditorApp` suites whose stale `CanvasSurface` mocks allow CanvasKit to
+    request `/canvaskit/canvaskit.wasm`. P6.1 tests and edited paths are green;
+    the unrelated harness failures were not weakened or hidden.
+- Browser evidence:
+  - Verified in the actual website editor with
+    `doc_p61_custom_component_e19997f0e9f1`: the leaf renders a bounded,
+    semantic **Custom component unavailable** placeholder and exposes its
+    slug, full immutable artifact pin, prop count, leaf constraint, and
+    computed size in inspection.
+  - Generic reorder, physical pointer reparent, class-backed resize, duplicate,
+    delete, Undo, and Redo all worked. Persistence after the physical
+    reparent/Undo/Redo sequence ended at document version 11 with
+    `cc_09e8e5` restored under `slot-right`.
+  - Duplication preserved the artifact pin, typed props, and classes. Resizing
+    produced exact 520-by-200 and 500-by-200 computed bounds in the exercised
+    states.
+  - Deleting the fixture's registry row and reloading retained the node and
+    explicit placeholder without a page error; the missing node remained
+    selectable and resizable. Browser console errors were empty.
+- Residuals:
+  - No P6.1 acceptance residual. Picker, source authoring/compilation, live TSX
+    execution, generated prop controls, and delivery packaging are
+    intentionally owned by P6.2–P6.5.
+  - The 26 unrelated legacy editor harness failures above remain repository
+    test debt and are explicitly carried forward.
 
 ### P6.2 — Compiler and security gate `▢`
 
@@ -561,19 +594,25 @@ Browser evidence must cover at minimum:
 
 | Date | Decision/change | Reason |
 | --- | --- | --- |
-| 2026-07-30 | Created five-slice living plan; implementation remains unstarted. | Preserve the architecture and give each dependency boundary a testable exit without creating plumbing-only micro-slices. |
+| 2026-07-30 | Created five-slice living plan. | Preserve the architecture and give each dependency boundary a testable exit without creating plumbing-only micro-slices. |
 | 2026-07-30 | Durable account-scoped source registry plus immutable artifacts; documents pin artifact IDs. | Adopts Mutiny's proven per-page isolation while preserving our canonical document/history architecture. |
 | 2026-07-30 | Separate `CustomComponent` leaf kind. | Existing built-in `Component` is a branch and `Embed` is human-owned pasted content; overloading either would weaken validation and editing semantics. |
 | 2026-07-30 | Dedicated sandboxed iframe and constrained compiler worker. | Custom TSX is untrusted program code; compile checks and runtime isolation address different risks and both are required. |
 | 2026-07-30 | One-account product scope, but correct account isolation/version pins now. | Avoid premature scale work without creating a migration trap or cross-page mutation hazard. |
+| 2026-07-30 | P6.1 implementation started. | Establish the canonical leaf and immutable registry before compiler, editor-runtime, or agent authoring paths. |
+| 2026-07-30 | P6.1 completed with normalized account-scoped families/artifacts, CAS metadata/blob storage, checked leaf operations, and bounded placeholders. | One immutable identity and persistence model is now established before any compile or execution path can create attachable artifacts. |
+| 2026-07-30 | Removed a forced placeholder width discovered in live browser testing. | Platform placeholder CSS must not override the node's canonical class-backed width; after the fix, inspector and rendered geometry agreed exactly. |
 
 ## Open implementation discoveries
 
 These are investigation points inside the named slices, not unresolved product
 scope:
 
-- Choose the exact registry/object-store table split and retention policy in
-  P6.1 while preserving immutable artifact references.
+- P6.1 resolved the registry split as account-scoped component families plus
+  immutable artifact rows, CAS metadata, and content-addressed blobs. Artifact
+  deletion is allowed for development/retention workflows and deterministically
+  produces the document's explicit missing-artifact state rather than deleting
+  or rewriting nodes.
 - Choose the compiler worker transport and process isolation mechanism in P6.2;
   untrusted code must not execute in the API process.
 - Prove the smallest sandbox capability set for interactive forms in P6.3.
