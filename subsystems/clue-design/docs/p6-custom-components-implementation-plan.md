@@ -1,6 +1,6 @@
 # P6 custom components — living implementation plan
 
-Status: **IN PROGRESS — P6.2 complete; P6.3 queued**
+Status: **IN PROGRESS — P6.3 complete; P6.4 queued**
 
 Owner branch: `agents/custom-components-v0`
 
@@ -42,12 +42,13 @@ For every completed slice:
 | --- | --- | --- |
 | P6.1 Canonical model and durable registry | ✅ | First-class leaf nodes, immutable version records, checked operations |
 | P6.2 Compiler and security gate | ✅ | TSX-to-artifact compilation, props schema, import/policy validation |
-| P6.3 Sandboxed runtime and editor experience | ▢ | In-canvas rendering, picker, generated props inspector, ordinary editing |
+| P6.3 Sandboxed runtime and editor experience | ✅ | In-canvas rendering, picker, generated props inspector, ordinary editing |
 | P6.4 Deep Agent authoring workflow | ▢ | Persistent source tools, compile-before-attach, custom-component skill |
 | P6.5 Publish, rollback, and end-to-end hardening | ▢ | Self-contained delivery artifacts, pinned versions, complete live proof |
 
 P6.1 was completed and verified on 2026-07-30.
 P6.2 was completed and verified on 2026-07-30.
+P6.3 was completed and verified on 2026-07-30.
 
 ## Outcome
 
@@ -421,14 +422,13 @@ Editing the same slug creates a second artifact without modifying the first.
   - No P6.2 acceptance residual. Browser execution of the compiled bundle,
     picker/prop controls, and interactive error states remain intentionally
     compile-gated until the sandboxed P6.3 runtime lands.
-  - Cross-component dependencies are pinned in browser artifacts; constrained
-    first-frame output represents such dependencies with explicit pinned
-    placeholders until the recursive runtime resolver is implemented in
-    P6.3/P6.5.
+  - Resolved in P6.3: the runtime recursively resolves the exact pinned
+    dependency graph and contains missing pins, cycles, graph-size violations,
+    and version conflicts per component.
   - The compiler requires Node 24 or newer so its process permission model is
     enforced consistently in local development and CI.
 
-### P6.3 — Sandboxed runtime and editor experience `▢`
+### P6.3 — Sandboxed runtime and editor experience `✅`
 
 **Purpose**
 
@@ -482,10 +482,57 @@ failure stays inside its frame with an actionable error.
 
 **Completion record**
 
-- Commits: —
-- Automated gates: —
-- Browser evidence: —
-- Residuals: —
+- Commits:
+  - `00eaeb6` — sandboxed runtime, trusted bridge, picker, generated inspector,
+    typed prop persistence, and generic editor integration.
+- Automated gates:
+  - `cargo test --workspace` passed; the release API helper rebuilt.
+  - WASM rebuilt within budget (`813150` bytes gzipped) and
+    `node scripts/verify_handshake.mjs` reported `HANDSHAKE OK` at
+    `7b992f8c6ec8`.
+  - Agent-runtime suite: `539 passed, 2 skipped`.
+  - API suite: `485 passed, 6 skipped`; focused P6.3 runtime suite:
+    `7 passed`.
+  - Compiler suite: `28 passed`; the checked-in React host reproduced
+    byte-for-byte.
+  - Editor lint/typecheck and production build passed. Focused picker,
+    inspector, document, and bridge suites passed (`123` tests).
+  - Full editor run: `1063 passed`; its `26` failures remain confined to the
+    two pre-existing legacy `EditorApp` suites, with the same three
+    missing-CanvasKit test-environment rejections. No P6.3 test failed.
+- Browser evidence:
+  - Verified in the actual website design editor on
+    `doc_p63_live_20260730`, using the account-local `Live Pricing Card`
+    artifact pinned to
+    `ccart_b18b29e73eea8d101435c918e8e331d8a7d082117a56759973ff366ab0ca380a`.
+  - Inserted from the accessible Custom components picker; selected the outer
+    leaf without granting the nested frame editor access; observed the exact
+    pin, source version, compile warning, runtime-ready state, generated props,
+    and ordinary size/spacing/history controls.
+  - Edited string, number, and literal-union props; observed theme-token color
+    changes in the hydrated component; saved/reloaded; and verified persisted
+    values. The boolean path is covered by the generated checkbox test and the
+    four-type API persistence/Undo/Redo round trip.
+  - Duplicated to two independently hydrated frames, reordered them through
+    the generic move operation, resized one to the class-backed `w-[520px]`,
+    deleted it, and verified Undo/Redo counts and reload persistence.
+  - Verified the **Edit with AI** handoff selects Chat, pre-fills the component
+    instruction, and focuses the composer.
+  - Inspected the live nested frame: `sandbox="allow-scripts"` only,
+    `referrerpolicy="no-referrer"`, `credentialless`, a 32-character runtime
+    nonce, exact node/artifact identity, deny-by-default CSP with
+    `connect-src`, `frame-src`, and `worker-src` set to `none`, stored
+    first-frame markup before the hydration module, and reduced-motion CSS.
+  - A deliberately missing runtime host and deleted artifact were separately
+    exercised through the render API: sibling content remained present and
+    each failure produced one bounded `LUMW0410` unavailable state.
+- Residuals:
+  - No P6.3 acceptance residual.
+  - The AI authoring action intentionally remains an entry point until P6.4.
+  - Self-contained published packaging, page-local republish/rollback proof,
+    JavaScript-disabled delivery, and mobile delivery hardening remain P6.5.
+  - The unrelated legacy editor-suite baseline above remains named and was not
+    weakened or changed.
 
 ### P6.4 — Deep Agent authoring workflow `▢`
 
@@ -655,6 +702,8 @@ Browser evidence must cover at minimum:
 | 2026-07-30 | Browser bundles externalize React 18 while curated libraries are bundled; the isolated first-frame build pins the same React version. | Visx's supported peer range and deterministic SSR require one explicit React identity instead of depending on the editor application's mutable package graph. |
 | 2026-07-30 | Dynamic Tailwind class expressions are rejected unless every branch is statically enumerable. | Silently missing generated CSS would produce artifacts that compile successfully but render incorrectly. |
 | 2026-07-30 | A post-worker source-version check rejects a compile overtaken by a concurrent source write. | The initial optimistic check alone had a time-of-check/time-of-use window that could make an older compile appear newest after a later edit. |
+| 2026-07-30 | P6.3 implementation started with a dedicated nested sandbox per component and the existing outer editor bridge as the only trusted relay to the React shell. | The component must remain unable to address the editor while selection, sizing, runtime state, and canonical operations continue through existing editor-owned seams. |
+| 2026-07-30 | P6.3 completed with one opaque nested frame per component, a checked-in React 18 host, exact pinned dependency-graph resolution, typed generated controls, and the existing outer bridge/history/geometry seams. | Components now execute without ambient network or editor access while humans retain ordinary selection and editing behavior and failures remain component-local. |
 
 ## Open implementation discoveries
 
@@ -670,9 +719,10 @@ scope:
   short-lived Node 24 process with memory, time, filesystem, and network
   constraints. Source is parsed and built there and first-frame code executes
   only inside a code-generation-disabled VM, never in the Python API process.
-- Prove the smallest sandbox capability set for interactive forms in P6.3.
-  Network remains denied until an explicit endpoint contract is designed and
-  reviewed.
+- P6.3 proved the smallest runtime capability set as `allow-scripts` without
+  `allow-same-origin`; CSP denies network, frames, workers, objects, forms, and
+  navigation. In-frame anchors and form submissions are intercepted. Network
+  remains denied until an explicit endpoint contract is designed and reviewed.
 - P6.2 generates and stores the deterministic first frame at successful compile
   time so it is content-addressed with the pinned artifact. P6.5 still needs to
   prove packaging and hydration use those exact stored bytes.
