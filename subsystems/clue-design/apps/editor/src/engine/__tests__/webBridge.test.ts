@@ -7,6 +7,7 @@ import {
   webBridgeClearMessage,
   webBridgeComponentPreviewMessage,
   webBridgeInspectNodeMessage,
+  webBridgeRichTextCommandMessage,
   webBridgeSelectNodeMessage,
   type WebSelection
 } from "../webBridge";
@@ -206,23 +207,72 @@ describe("validateBridgeMessage", () => {
     expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
   });
 
-  it("passes a text-commit through with node id + html", () => {
+  it("passes one canonical rich-text commit through", () => {
+    const content = {
+      schema_version: 1,
+      blocks: [
+        {
+          type: "paragraph",
+          children: [{ type: "text", text: "Hello", marks: { bold: true } }]
+        }
+      ]
+    };
     const event = makeEvent({
       data: {
         channel: "lumen-web-bridge",
         nonce: NONCE,
-        type: "text-commit",
+        type: "rich-text-commit",
         nodeId: "headline",
-        html: "Hello <strong>world</strong>"
+        content
       },
       origin: "null",
       source: FRAME
     });
     expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
-      type: "text-commit",
+      type: "rich-text-commit",
       nodeId: "headline",
-      html: "Hello <strong>world</strong>"
+      content
     });
+  });
+
+  it("passes mixed selected-range format state through", () => {
+    const formats = {
+      bold: "mixed",
+      italic: "off",
+      underline: "on",
+      strikethrough: "off"
+    };
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "rich-text-format",
+        nodeId: "headline",
+        formats
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
+      type: "rich-text-format",
+      nodeId: "headline",
+      formats
+    });
+  });
+
+  it("rejects malformed selected-range format state", () => {
+    const event = makeEvent({
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "rich-text-format",
+        nodeId: "headline",
+        formats: { bold: true }
+      },
+      origin: "null",
+      source: FRAME
+    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
   });
 
   it("passes a generic move-node destination through", () => {
@@ -334,27 +384,28 @@ describe("validateBridgeMessage", () => {
     }
   });
 
-  it("defaults a text-commit's missing html to an empty string", () => {
+  it("rejects a rich-text commit without a canonical document", () => {
     const event = makeEvent({
-      data: { channel: "lumen-web-bridge", nonce: NONCE, type: "text-commit", nodeId: "sub" },
+      data: {
+        channel: "lumen-web-bridge",
+        nonce: NONCE,
+        type: "rich-text-commit",
+        nodeId: "sub"
+      },
       origin: "null",
       source: FRAME
     });
-    expect(validateBridgeMessage(event, NONCE, FRAME)).toEqual({
-      type: "text-commit",
-      nodeId: "sub",
-      html: ""
-    });
+    expect(validateBridgeMessage(event, NONCE, FRAME)).toBeNull();
   });
 
-  it("rejects a stale-nonce text-commit", () => {
+  it("rejects a stale-nonce rich-text commit", () => {
     const event = makeEvent({
       data: {
         channel: "lumen-web-bridge",
         nonce: "old-nonce",
-        type: "text-commit",
+        type: "rich-text-commit",
         nodeId: "sub",
-        html: "x"
+        content: { schema_version: 1, blocks: [] }
       },
       origin: "null",
       source: FRAME
@@ -432,6 +483,18 @@ describe("webBridgeInspectNodeMessage", () => {
       nonce: NONCE,
       type: "inspect-node",
       nodeId: "hero-copy"
+    });
+  });
+});
+
+describe("webBridgeRichTextCommandMessage", () => {
+  it("targets one active node and one selected-range mark", () => {
+    expect(webBridgeRichTextCommandMessage(NONCE, "headline", "strikethrough")).toEqual({
+      channel: "lumen-web-bridge",
+      nonce: NONCE,
+      type: "rich-text-command",
+      nodeId: "headline",
+      format: "strikethrough"
     });
   });
 });

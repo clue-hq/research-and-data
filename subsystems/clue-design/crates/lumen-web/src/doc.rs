@@ -10,6 +10,8 @@ use lumen_core::{AssetId, AssetRecord, BrandKitRef, NodeId, PageId, SlotKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::rich_text::RichTextDocument;
+
 pub const WEB_SCHEMA_VERSION: u32 = 1;
 
 /// Maximum tree depth (root exclusive) accepted by validation and ingestion.
@@ -87,9 +89,9 @@ pub enum WebNodeKind {
     Text {
         #[serde(default)]
         variant: TextVariant,
-        /// Sanitized restricted inline markup (see `inline`): only
-        /// `strong em u s a br span[class]` survive ingestion.
-        content: String,
+        /// Canonical semantic rich text. Lexical is only an editor adapter;
+        /// this library-independent document is the persisted source of truth.
+        content: RichTextDocument,
     },
     Button {
         label: String,
@@ -671,7 +673,7 @@ mod tests {
             id: NodeId::from("t1"),
             kind: WebNodeKind::Text {
                 variant: TextVariant::H2,
-                content: "Hello".to_owned(),
+                content: "Hello".to_owned().into(),
             },
             classes: "text-dark".to_owned(),
             children: Vec::new(),
@@ -681,7 +683,9 @@ mod tests {
         let value = serde_json::to_value(&node).expect("serialize");
         assert_eq!(value["kind"], "text");
         assert_eq!(value["variant"], "h2");
-        assert_eq!(value["content"], "Hello");
+        assert_eq!(value["content"]["schema_version"], 1);
+        assert_eq!(value["content"]["blocks"][0]["type"], "paragraph");
+        assert_eq!(value["content"]["blocks"][0]["children"][0]["text"], "Hello");
         assert_eq!(value["classes"], "text-dark");
         let back: WebNode = serde_json::from_value(value).expect("deserialize");
         assert_eq!(back, node);
@@ -975,7 +979,7 @@ mod tests {
             id: NodeId::from("txt_1"),
             kind: WebNodeKind::Text {
                 variant: TextVariant::Body,
-                content: "hi".to_owned(),
+                content: "hi".to_owned().into(),
             },
             classes: String::new(),
             children: Vec::new(),

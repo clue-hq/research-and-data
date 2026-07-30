@@ -10,7 +10,6 @@ use crate::doc::{
     calendly_url_is_valid, ButtonAction, ComponentSpec, EmbedProvider, WebDoc, WebNodeKind,
     MAX_TREE_DEPTH, WEB_SCHEMA_VERSION,
 };
-use crate::inline::sanitize_inline;
 use crate::util::href_is_allowed;
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, Phase};
 use std::collections::{BTreeMap, BTreeSet};
@@ -447,12 +446,11 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                 }
             },
             WebNodeKind::Text { content, .. } => {
-                let canonical = sanitize_inline(content);
-                if canonical.html != *content {
-                    diagnostics.push(Diagnostic::warning(
+                for issue in content.validate() {
+                    diagnostics.push(Diagnostic::error(
                         Phase::Web,
                         "LUMW0017",
-                        format!("text `{}` content is not canonical inline markup", node.id),
+                        format!("text `{}` has invalid rich-text content: {issue}", node.id),
                         Some(DiagnosticSubject::Node(node.id.clone())),
                     ));
                 }
@@ -576,7 +574,7 @@ fn first_interactive_descendant(
             | WebNodeKind::Embed { .. } => true,
             WebNodeKind::Image { href, .. } => href.is_some(),
             WebNodeKind::Container { href, .. } => href.is_some(),
-            WebNodeKind::Text { content, .. } => content.contains("<a ") || content.contains("<a>"),
+            WebNodeKind::Text { content, .. } => content.contains_link(),
             _ => false,
         };
         if interactive {
@@ -642,7 +640,7 @@ mod tests {
                 id: lumen_core::NodeId::from("orphan"),
                 kind: WebNodeKind::Text {
                     variant: TextVariant::Body,
-                    content: "x".to_owned(),
+                    content: "x".to_owned().into(),
                 },
                 classes: String::new(),
                 children: Vec::new(),

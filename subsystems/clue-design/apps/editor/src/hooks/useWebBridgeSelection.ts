@@ -5,10 +5,14 @@ import {
   webBridgeClearMessage,
   webBridgeComponentPreviewMessage,
   webBridgeInspectNodeMessage,
+  webBridgeRichTextCommandMessage,
   webBridgeSelectNodeMessage,
+  type RichTextFormat,
+  type RichTextFormatState,
   type WebNodeInfo,
   type WebSelection
 } from "@/engine/webBridge";
+import type { RichTextDocument } from "@/engine/webDocuments";
 
 /**
  * Owns the website preview's selection state: a single persistent `message`
@@ -19,11 +23,10 @@ import {
  * dropped without re-arming the listener. Workflow policy per
  * docs/frontend-practices.md rule 2; the shell only renders `selection`.
  *
- * The same channel carries the in-iframe contenteditable lifecycle:
+ * The same channel carries the in-iframe rich-text lifecycle:
  * `edit-start` suppresses selection-chip churn while the user types, and
- * `text-commit` fires the shell's `onTextCommit` (which persists a `set_text`
- * op). Esc cancels in-iframe and sends nothing, so a stale `edit-start` is
- * cleared on the next `select` or render.
+ * `rich-text-commit` fires the shell's `onRichTextCommit` (which persists one
+ * `set_rich_text` op). `edit-end` settles both commit and Escape-cancel paths.
  */
 export interface WebBridgeSelection {
   /** The currently selected node, or `null` when nothing is selected. */
@@ -32,6 +35,12 @@ export interface WebBridgeSelection {
   nodeInfo: WebNodeInfo | null;
   /** True after the current iframe render has installed its message listener. */
   ready: boolean;
+  /** Canonical node id of the active iframe-local rich-text session. */
+  editingNodeId: string | null;
+  /** Marks covering the current range (`mixed` when only part is marked). */
+  richTextFormats: RichTextFormatState | null;
+  /** A runtime-load/session failure from the iframe, if any. */
+  richTextError: string | null;
   /** Drop the selection locally AND tell the iframe to clear its highlight
    * (the chip's × button). */
   clearSelection: () => void;
@@ -47,15 +56,17 @@ export interface WebBridgeSelection {
   selectNode: (nodeId: string) => void;
   /** Request a read-only snapshot without changing the canvas selection. */
   inspectNode: (nodeId: string) => void;
+  /** Apply one mark to the active selected range without committing yet. */
+  formatRichText: (nodeId: string, format: RichTextFormat) => void;
 }
 
 export function useWebBridgeSelection(params: {
   iframeRef: RefObject<HTMLIFrameElement | null>;
   nonceRef: RefObject<string>;
   /** Invoked when a text node commits its in-iframe edit — the shell persists
-   * a `set_text` op with `html`. Kept in a ref so a changing callback never
+   * one canonical rich-text operation. Kept in a ref so a changing callback never
    * re-arms the listener. */
-  onTextCommit?: (nodeId: string, html: string) => void;
+  onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   /** Invoked on every inbound `select` message (including a null clear), so the
    * shell can mirror the selection into its persisted inspector id — and, on a
    * null, empty the inspector. NOT called by `resetSelection` (a render rebuild
@@ -74,16 +85,26 @@ export function useWebBridgeSelection(params: {
     heightPx: number | null
   ) => void;
 }): WebBridgeSelection {
-  const { iframeRef, nonceRef, onTextCommit, onSelect, onMoveNode, onResizeNode } = params;
+  const {
+    iframeRef,
+    nonceRef,
+    onRichTextCommit,
+    onSelect,
+    onMoveNode,
+    onResizeNode
+  } = params;
   const [selection, setSelection] = useState<WebSelection | null>(null);
   const [nodeInfo, setNodeInfo] = useState<WebNodeInfo | null>(null);
   const [ready, setReady] = useState(false);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [richTextFormats, setRichTextFormats] = useState<RichTextFormatState | null>(null);
+  const [richTextError, setRichTextError] = useState<string | null>(null);
 
   // While a text node is in contenteditable, the frame keeps posting `select`
   // as the caret moves; suppress that churn until the edit commits/cancels.
   const editingRef = useRef(false);
-  const onTextCommitRef = useRef(onTextCommit);
-  onTextCommitRef.current = onTextCommit;
+  const onRichTextCommitRef = useRef(onRichTextCommit);
+  onRichTextCommitRef.current = onRichTextCommit;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const onMoveNodeRef = useRef(onMoveNode);
@@ -120,11 +141,28 @@ export function useWebBridgeSelection(params: {
       }
       if (message.type === "edit-start") {
         editingRef.current = true;
+        setEditingNodeId(message.nodeId);
+        setRichTextFormats(null);
+        setRichTextError(null);
         return;
       }
-      if (message.type === "text-commit") {
+      if (message.type === "edit-end") {
         editingRef.current = false;
-        onTextCommitRef.current?.(message.nodeId, message.html);
+        setEditingNodeId((current) => (current === message.nodeId ? null : current));
+        setRichTextFormats(null);
+        return;
+      }
+      if (message.type === "edit-error") {
+        setRichTextError(message.message);
+        return;
+      }
+      if (message.type === "rich-text-format") {
+        setEditingNodeId(message.nodeId);
+        setRichTextFormats(message.formats);
+        return;
+      }
+      if (message.type === "rich-text-commit") {
+        onRichTextCommitRef.current?.(message.nodeId, message.content);
         return;
       }
       if (message.type === "move-node") {
@@ -148,6 +186,9 @@ export function useWebBridgeSelection(params: {
   }, [iframeRef, nonceRef]);
 
   const clearSelection = useCallback(() => {
+    editingRef.current = false;
+    setEditingNodeId(null);
+    setRichTextFormats(null);
     setSelection(null);
     setNodeInfo(null);
     const win = iframeRef.current?.contentWindow;
@@ -160,6 +201,9 @@ export function useWebBridgeSelection(params: {
   const resetSelection = useCallback(() => {
     editingRef.current = false;
     setReady(false);
+    setEditingNodeId(null);
+    setRichTextFormats(null);
+    setRichTextError(null);
     setSelection(null);
     setNodeInfo(null);
   }, []);
@@ -197,14 +241,29 @@ export function useWebBridgeSelection(params: {
     [iframeRef, nonceRef]
   );
 
+  const formatRichText = useCallback(
+    (nodeId: string, format: RichTextFormat) => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce && editingRef.current) {
+        win.postMessage(webBridgeRichTextCommandMessage(nonce, nodeId, format), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
   return {
     selection,
     nodeInfo,
     ready,
+    editingNodeId,
+    richTextFormats,
+    richTextError,
     clearSelection,
     resetSelection,
     previewComponent,
     selectNode,
-    inspectNode
+    inspectNode,
+    formatRichText
   };
 }

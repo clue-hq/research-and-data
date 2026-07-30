@@ -15,7 +15,13 @@
  * hook (`useWebBridgeSelection`) owns the listener + nonce lifecycle around it.
  */
 
+import type { RichTextDocument } from "./webDocuments";
+
 export const WEB_BRIDGE_CHANNEL = "lumen-web-bridge";
+
+export type RichTextFormat = "bold" | "italic" | "underline" | "strikethrough";
+export type RichTextFormatValue = "on" | "off" | "mixed";
+export type RichTextFormatState = Record<RichTextFormat, RichTextFormatValue>;
 
 export interface WebNodeRect {
   x: number;
@@ -104,17 +110,19 @@ export type WebSelection = WebNodeInfo;
 /** A validated inbound bridge message.
  *   • `ready` — the bridge is live.
  *   • `select` — the current selection (or `null` when cleared).
- *   • `edit-start` — a text node entered in-iframe contenteditable (dblclick);
- *     the shell suppresses selection-chip churn until it commits.
- *   • `text-commit` — the edited text was committed (blur/Enter); `html` is the
- *     iframe's current inner markup, which the shell persists via a `set_text`
- *     op (the server sanitizes). Esc cancels in-iframe and sends nothing. */
+ *   • `edit-start` / `edit-end` — one local Lexical session lifecycle.
+ *   • `rich-text-format` — current selected-range marks for inspector state.
+ *   • `rich-text-commit` — one canonical RichTextDocument for the whole local
+ *     session; the server validates it before a SetRichText commit. */
 export type WebBridgeInbound =
   | { type: "ready" }
   | { type: "select"; selection: WebSelection | null }
   | { type: "node-info"; node: WebNodeInfo }
   | { type: "edit-start"; nodeId: string }
-  | { type: "text-commit"; nodeId: string; html: string }
+  | { type: "edit-end"; nodeId: string; committed: boolean; changed: boolean }
+  | { type: "edit-error"; nodeId: string; message: string }
+  | { type: "rich-text-format"; nodeId: string; formats: RichTextFormatState }
+  | { type: "rich-text-commit"; nodeId: string; content: RichTextDocument }
   | {
       type: "move-node";
       nodeId: string;
@@ -242,6 +250,41 @@ function coerceNodeInfo(node: unknown): WebNodeInfo | null {
   };
 }
 
+const RICH_TEXT_FORMATS: RichTextFormat[] = [
+  "bold",
+  "italic",
+  "underline",
+  "strikethrough"
+];
+
+function coerceRichTextFormatState(value: unknown): RichTextFormatState | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const entries = RICH_TEXT_FORMATS.map((format) => {
+    const state = record[format];
+    return state === "on" || state === "off" || state === "mixed"
+      ? [format, state]
+      : null;
+  });
+  if (entries.some((entry) => entry === null)) {
+    return null;
+  }
+  return Object.fromEntries(entries as [RichTextFormat, RichTextFormatValue][]) as RichTextFormatState;
+}
+
+function coerceRichTextDocument(value: unknown): RichTextDocument | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.schema_version !== 1 || !Array.isArray(record.blocks)) {
+    return null;
+  }
+  return value as RichTextDocument;
+}
+
 /**
  * Validate a `message` event against the bridge trust checks, in order:
  * source identity → null origin → channel tag → nonce. Only a message passing
@@ -289,12 +332,36 @@ export function validateBridgeMessage(
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
     return nodeId ? { type: "edit-start", nodeId } : null;
   }
-  if (data.type === "text-commit") {
+  if (data.type === "edit-end") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
-    if (!nodeId) {
-      return null;
-    }
-    return { type: "text-commit", nodeId, html: typeof data.html === "string" ? data.html : "" };
+    return nodeId
+      ? {
+          type: "edit-end",
+          nodeId,
+          committed: data.committed === true,
+          changed: data.changed === true
+        }
+      : null;
+  }
+  if (data.type === "edit-error") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    return nodeId
+      ? {
+          type: "edit-error",
+          nodeId,
+          message: typeof data.message === "string" ? data.message : "Rich-text editing failed."
+        }
+      : null;
+  }
+  if (data.type === "rich-text-format") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    const formats = coerceRichTextFormatState(data.formats);
+    return nodeId && formats ? { type: "rich-text-format", nodeId, formats } : null;
+  }
+  if (data.type === "rich-text-commit") {
+    const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
+    const content = coerceRichTextDocument(data.content);
+    return nodeId && content ? { type: "rich-text-commit", nodeId, content } : null;
   }
   if (data.type === "move-node") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
@@ -413,4 +480,26 @@ export function webBridgeInspectNodeMessage(
   nodeId: string;
 } {
   return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "inspect-node", nodeId };
+}
+
+/** Apply one selected-range format inside the active iframe-local edit
+ * session. No WebOperation is emitted until the session settles. */
+export function webBridgeRichTextCommandMessage(
+  nonce: string,
+  nodeId: string,
+  format: RichTextFormat
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "rich-text-command";
+  nodeId: string;
+  format: RichTextFormat;
+} {
+  return {
+    channel: WEB_BRIDGE_CHANNEL,
+    nonce,
+    type: "rich-text-command",
+    nodeId,
+    format
+  };
 }

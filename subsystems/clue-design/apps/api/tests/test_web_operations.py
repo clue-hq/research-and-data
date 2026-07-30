@@ -218,6 +218,79 @@ def test_web_operations_applies_and_pushes_undo(client: TestClient) -> None:
     assert tail["batch_id"] == after["undo_stack"][-1]
 
 
+def test_selected_range_rich_text_commits_atomically_and_undoes(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_content(client, document["id"], ingest_content(client, document["id"]))
+    before = get_document(client, document["id"])
+    page = before["scene"]["pages"][0]
+    headline = next(
+        node
+        for node in page["nodes"].values()
+        if node.get("kind") == "text" and node.get("variant") == "display"
+    )
+    original = headline["content"]
+    rich_content = {
+        "schema_version": 1,
+        "blocks": [
+            {
+                "type": "paragraph",
+                "children": [
+                    {"type": "text", "text": "Ship "},
+                    {
+                        "type": "text",
+                        "text": "faster",
+                        "marks": {
+                            "bold": True,
+                            "italic": True,
+                            "underline": True,
+                            "strikethrough": True,
+                        },
+                    },
+                    {"type": "text", "text": " with Acme"},
+                ],
+            }
+        ],
+    }
+    operation = {
+        "kind": "set_rich_text",
+        "page_id": "home",
+        "id": headline["id"],
+        "content": rich_content,
+    }
+
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [operation], "base_version": before["current_version"]},
+    )
+    assert response.status_code == 200, response.text
+    after = get_document(client, document["id"])
+    assert after["current_version"] == before["current_version"] + 1
+    assert (
+        after["scene"]["pages"][0]["nodes"][headline["id"]]["content"]
+        == rich_content
+    )
+    tail = envelopes(client, document["id"])[-1]
+    assert tail["operations"] == [operation]
+    assert tail["inverse_operations"] == [
+        {
+            "kind": "set_rich_text",
+            "page_id": "home",
+            "id": headline["id"],
+            "content": original,
+        }
+    ]
+
+    undo = client.post(f"/documents/{document['id']}/web/undo")
+    assert undo.status_code == 200, undo.text
+    restored = get_document(client, document["id"])
+    assert (
+        restored["scene"]["pages"][0]["nodes"][headline["id"]]["content"]
+        == original
+    )
+
+
 def test_clickable_container_and_background_semantics_persist_render_and_undo(
     client: TestClient,
 ) -> None:

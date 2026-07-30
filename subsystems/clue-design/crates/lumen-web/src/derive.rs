@@ -364,7 +364,7 @@ fn apply_slots(
                 if let Some(WebNodeKind::Text { content, .. }) =
                     page.nodes.get_mut(&id).map(|node| &mut node.kind)
                 {
-                    *content = sanitize_inline(&escape_text(value)).html;
+                    *content = sanitize_inline(&escape_text(value)).html.into();
                 }
                 ctx.bind(&key);
             }
@@ -506,7 +506,7 @@ fn expand_repeater(
                         .find(|node| node.id == cloned_id)
                         .map(|node| &mut node.kind)
                     {
-                        *content = sanitize_inline(&escape_text(value)).html;
+                        *content = sanitize_inline(&escape_text(value)).html.into();
                     }
                 }
                 None => diagnostics.push(unusable_prototype(
@@ -627,7 +627,7 @@ fn apply_data_vars(
             continue;
         };
         let source = match &node.kind {
-            WebNodeKind::Text { content, .. } => content.clone(),
+            WebNodeKind::Text { content, .. } => content.to_inline_html(),
             WebNodeKind::Button { label, .. } => label.clone(),
             _ => continue,
         };
@@ -637,7 +637,7 @@ fn apply_data_vars(
         let substituted = substitute_vars(&source, values, &id, ctx, diagnostics);
         if let Some(node) = page.nodes.get_mut(&id) {
             match &mut node.kind {
-                WebNodeKind::Text { content, .. } => *content = substituted,
+                WebNodeKind::Text { content, .. } => *content = substituted.into(),
                 WebNodeKind::Button { label, .. } => *label = substituted,
                 _ => {}
             }
@@ -1147,7 +1147,7 @@ mod tests {
         let WebNodeKind::Text { content, .. } = &page.node(&NodeId::from(id)).unwrap().kind else {
             panic!("text node `{id}`");
         };
-        content.clone()
+        content.to_inline_html()
     }
 
     #[test]

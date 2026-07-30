@@ -45,7 +45,7 @@ export interface WebNode {
   name?: string;
   // text
   variant?: string;
-  content?: string;
+  content?: RichTextDocument | string;
   // button — link form (href/new_tab) OR command form (command/command_target)
   label?: string;
   href?: string | null;
@@ -80,6 +80,58 @@ export interface WebNode {
   // personalization hedge — carried by the schema, ignored by every v0 path.
   slot_key?: string | null;
 }
+
+export interface RichTextDocument {
+  schema_version: 1;
+  blocks: RichTextBlock[];
+}
+
+export type RichTextBlock =
+  | {
+      type: "paragraph";
+      alignment?: "start" | "center" | "end" | "justify";
+      children: RichTextInline[];
+    }
+  | {
+      type: "list";
+      list_type: "unordered" | "ordered";
+      items: RichTextListItem[];
+    };
+
+export interface RichTextListItem {
+  children: RichTextInline[];
+  nested?: RichTextBlock[];
+}
+
+export interface RichTextMarks {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+}
+
+export interface RichTextLink {
+  href: string;
+  new_tab?: boolean;
+}
+
+export type RichTextInline =
+  | {
+      type: "text";
+      text: string;
+      marks?: RichTextMarks;
+      classes?: string;
+      link?: RichTextLink;
+    }
+  | {
+      type: "variable";
+      key: string;
+      fallback: string;
+      marks?: RichTextMarks;
+      classes?: string;
+      link?: RichTextLink;
+    }
+  | { type: "line_break"; link?: RichTextLink };
 
 export interface WebBackgroundImage {
   asset_id: string;
@@ -435,7 +487,7 @@ export type WebComponentProps =
 export type WebEmbedProps = { kind: "embed"; provider?: "calendly" | "custom"; url?: string; html: string };
 
 export type WebNodeProps =
-  | { kind: "text"; variant: string; content: string }
+  | { kind: "text"; variant: string; content: RichTextDocument | string }
   | WebButtonProps
   | { kind: "image"; asset_id: string; alt: string; href?: string | null; new_tab: boolean }
   | {
@@ -542,6 +594,7 @@ export function listDialogComponents(webDoc: WebDoc | null): WebDialogOption[] {
 export type WebOperation =
   | { kind: "set_node_classes"; page_id: string; id: string; classes: string }
   | { kind: "set_text"; page_id: string; id: string; content: string }
+  | { kind: "set_rich_text"; page_id: string; id: string; content: RichTextDocument }
   | { kind: "set_node_props"; page_id: string; id: string; props: WebNodeProps }
   | {
       kind: "insert_node";
@@ -565,6 +618,14 @@ export function setNodeClassesOp(pageId: string, id: string, classes: string): W
 
 export function setTextOp(pageId: string, id: string, content: string): WebOperation {
   return { kind: "set_text", page_id: pageId, id, content };
+}
+
+export function setRichTextOp(
+  pageId: string,
+  id: string,
+  content: RichTextDocument
+): WebOperation {
+  return { kind: "set_rich_text", page_id: pageId, id, content };
 }
 
 export function setNodePropsOp(pageId: string, id: string, props: WebNodeProps): WebOperation {

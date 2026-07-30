@@ -299,10 +299,56 @@ def _seo_description(web_doc: JsonObject, fallback: str) -> str:
     page = _home_page(web_doc)
     for node in _walk_nodes(page):
         if node.get("kind") == "text" and node.get("variant") == "body":
-            text = _collapse(_strip_tags(str(node.get("content") or "")))
+            text = _collapse(_rich_text_plain(node.get("content")))
             if text:
                 return _truncate(text, DESCRIPTION_MAX)
     return _truncate(_collapse(fallback), DESCRIPTION_MAX)
+
+
+def _rich_text_plain(content: object) -> str:
+    """Plain-text projection for canonical RichTextDocument JSON, with the
+    previous inline-HTML string accepted only at this API boundary."""
+    if isinstance(content, str):
+        return _strip_tags(content)
+    if not isinstance(content, dict):
+        return ""
+    parts: list[str] = []
+
+    def append_blocks(blocks: object) -> None:
+        if not isinstance(blocks, list):
+            return
+        for block_index, block in enumerate(blocks):
+            if not isinstance(block, dict):
+                continue
+            if block_index:
+                parts.append("\n")
+            append_inlines(block.get("children"))
+            items = block.get("items")
+            if isinstance(items, list):
+                for item_index, item in enumerate(items):
+                    if not isinstance(item, dict):
+                        continue
+                    if item_index:
+                        parts.append("\n")
+                    append_inlines(item.get("children"))
+                    append_blocks(item.get("nested"))
+
+    def append_inlines(inlines: object) -> None:
+        if not isinstance(inlines, list):
+            return
+        for inline in inlines:
+            if not isinstance(inline, dict):
+                continue
+            kind = inline.get("type")
+            if kind == "text":
+                parts.append(str(inline.get("text") or ""))
+            elif kind == "variable":
+                parts.append(str(inline.get("fallback") or ""))
+            elif kind == "line_break":
+                parts.append("\n")
+
+    append_blocks(content.get("blocks"))
+    return "".join(parts)
 
 
 def _strip_tags(value: str) -> str:

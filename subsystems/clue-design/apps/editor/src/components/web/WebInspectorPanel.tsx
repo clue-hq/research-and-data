@@ -61,7 +61,12 @@ import {
   SPACING_STEPS,
   type ClassFacet
 } from "@/engine/webClassFacets";
-import type { WebNodeInfo } from "@/engine/webBridge";
+import type {
+  RichTextFormat,
+  RichTextFormatState,
+  RichTextFormatValue,
+  WebNodeInfo
+} from "@/engine/webBridge";
 
 /**
  * The Inspect-mode panel: reads the selected node from the loaded WebDoc and
@@ -97,6 +102,9 @@ interface WebInspectorPanelProps {
   onReplaceImage: (nodeId: string) => void;
   /** Open the asset drawer to set/replace this section/container background. */
   onChooseBackground: (nodeId: string) => void;
+  editingNodeId: string | null;
+  richTextFormats: RichTextFormatState | null;
+  formatRichText: (nodeId: string, format: RichTextFormat) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
   /** Info note (409 reload) and inline error (422 diagnostic), surfaced in the
@@ -125,6 +133,9 @@ export function WebInspectorPanel({
   selectNode,
   onReplaceImage,
   onChooseBackground,
+  editingNodeId,
+  richTextFormats,
+  formatRichText,
   applyOps,
   busy,
   note,
@@ -174,6 +185,9 @@ export function WebInspectorPanel({
         selectNode={selectNode}
         onReplaceImage={onReplaceImage}
         onChooseBackground={onChooseBackground}
+        editingNodeId={editingNodeId}
+        richTextFormats={richTextFormats}
+        formatRichText={formatRichText}
         applyOps={applyOps}
         busy={busy}
       />
@@ -440,6 +454,9 @@ interface BodyProps {
   selectNode: (nodeId: string) => void;
   onReplaceImage: (nodeId: string) => void;
   onChooseBackground: (nodeId: string) => void;
+  editingNodeId: string | null;
+  richTextFormats: RichTextFormatState | null;
+  formatRichText: (nodeId: string, format: RichTextFormat) => void;
   applyOps: (operations: WebOperation[], intent?: string) => void;
   busy: boolean;
 }
@@ -454,6 +471,9 @@ function WebInspectorBody({
   selectNode,
   onReplaceImage,
   onChooseBackground,
+  editingNodeId,
+  richTextFormats,
+  formatRichText,
   applyOps,
   busy
 }: BodyProps): React.ReactElement {
@@ -476,7 +496,15 @@ function WebInspectorBody({
   return (
     <div className="web-insp-cards">
       {node.kind === "text" ? (
-        <TextCard node={node} busy={busy} applyClasses={applyClasses} applyProps={applyProps} />
+        <TextCard
+          node={node}
+          busy={busy}
+          editing={editingNodeId === node.id}
+          richTextFormats={editingNodeId === node.id ? richTextFormats : null}
+          formatRichText={formatRichText}
+          applyClasses={applyClasses}
+          applyProps={applyProps}
+        />
       ) : null}
       {node.kind === "button" ? (
         <ButtonCard
@@ -901,11 +929,17 @@ function SpacingCard({
 function TextCard({
   node,
   busy,
+  editing,
+  richTextFormats,
+  formatRichText,
   applyClasses,
   applyProps
 }: {
   node: WebNode;
   busy: boolean;
+  editing: boolean;
+  richTextFormats: RichTextFormatState | null;
+  formatRichText: (nodeId: string, format: RichTextFormat) => void;
   applyClasses: (facet: ClassFacet, value: string | null, intent: string) => void;
   applyProps: (props: WebNodeProps, intent: string) => void;
 }): React.ReactElement {
@@ -918,6 +952,48 @@ function TextCard({
   const italic = italicFacet.parse(node.classes) === "italic";
   const underline = underlineFacet.parse(node.classes) === "underline";
   const lineThrough = lineThroughFacet.parse(node.classes) === "line-through";
+  const wholeNodeFormats: RichTextFormatState = {
+    bold: weight === "bold" ? "on" : "off",
+    italic: italic ? "on" : "off",
+    underline: underline ? "on" : "off",
+    strikethrough: lineThrough ? "on" : "off"
+  };
+  const formats = editing && richTextFormats ? richTextFormats : wholeNodeFormats;
+  const applyFormat = (format: RichTextFormat, current: RichTextFormatValue) => {
+    if (editing) {
+      formatRichText(node.id, format);
+      return;
+    }
+    if (format === "bold") {
+      applyClasses(fontWeightFacet, current === "on" ? null : "bold", "font_weight");
+    } else if (format === "italic") {
+      applyClasses(italicFacet, current === "on" ? null : "italic", "font_style");
+    } else if (format === "underline") {
+      applyClasses(
+        underlineFacet,
+        current === "on" ? null : "underline",
+        "text_decoration"
+      );
+    } else {
+      applyClasses(
+        lineThroughFacet,
+        current === "on" ? null : "line-through",
+        "text_decoration"
+      );
+    }
+  };
+  const formatButtonProps = (format: RichTextFormat) => {
+    const current = formats[format];
+    return {
+      className: `web-format-btn${current === "on" ? " is-selected" : ""}${
+        current === "mixed" ? " is-mixed" : ""
+      }`,
+      "aria-pressed": current === "mixed" ? ("mixed" as const) : current === "on",
+      disabled: busy || (editing && richTextFormats === null),
+      onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => event.preventDefault(),
+      onClick: () => applyFormat(format, current)
+    };
+  };
 
   return (
     <Card title="Text">
@@ -956,55 +1032,38 @@ function TextCard({
         <div className="web-align-row" role="group" aria-label="Text formatting">
           <button
             type="button"
-            className={`web-format-btn${weight === "bold" ? " is-selected" : ""}`}
             aria-label="Bold"
-            aria-pressed={weight === "bold"}
-            disabled={busy}
-            onClick={() =>
-              applyClasses(fontWeightFacet, weight === "bold" ? null : "bold", "font_weight")
-            }
+            {...formatButtonProps("bold")}
           >
             <strong>B</strong>
           </button>
           <button
             type="button"
-            className={`web-format-btn${italic ? " is-selected" : ""}`}
             aria-label="Italic"
-            aria-pressed={italic}
-            disabled={busy}
-            onClick={() => applyClasses(italicFacet, italic ? null : "italic", "font_style")}
+            {...formatButtonProps("italic")}
           >
             <em>I</em>
           </button>
           <button
             type="button"
-            className={`web-format-btn${underline ? " is-selected" : ""}`}
             aria-label="Underline"
-            aria-pressed={underline}
-            disabled={busy}
-            onClick={() =>
-              applyClasses(underlineFacet, underline ? null : "underline", "text_decoration")
-            }
+            {...formatButtonProps("underline")}
           >
             <span style={{ textDecoration: "underline" }}>U</span>
           </button>
           <button
             type="button"
-            className={`web-format-btn${lineThrough ? " is-selected" : ""}`}
             aria-label="Strikethrough"
-            aria-pressed={lineThrough}
-            disabled={busy}
-            onClick={() =>
-              applyClasses(
-                lineThroughFacet,
-                lineThrough ? null : "line-through",
-                "text_decoration"
-              )
-            }
+            {...formatButtonProps("strikethrough")}
           >
             <span style={{ textDecoration: "line-through" }}>S</span>
           </button>
         </div>
+        <p className="web-insp-hint">
+          {editing
+            ? "Formatting applies to the current text selection and saves when you finish editing."
+            : "Double-click this text on the canvas to format only a selected range."}
+        </p>
       </div>
 
       <div className="field web-insp-field">

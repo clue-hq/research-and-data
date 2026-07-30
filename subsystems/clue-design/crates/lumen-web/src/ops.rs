@@ -11,6 +11,7 @@ use crate::doc::{
     calendly_url_is_valid, ButtonAction, EmbedProvider, WebDoc, WebNode, WebNodeKind, WebThemeRef,
 };
 use crate::inline::sanitize_inline;
+use crate::rich_text::RichTextDocument;
 use crate::util::href_is_allowed;
 use crate::validate::validate_web_doc;
 use lumen_core::{AssetId, AssetRecord, Diagnostic, DiagnosticSeverity, NodeId, PageId, SlotKey};
@@ -91,6 +92,14 @@ pub enum WebOperation {
         page_id: PageId,
         id: NodeId,
         content: String,
+    },
+    /// Replace a text node's canonical semantic rich-text document. Human
+    /// range edits use this operation; `SetText` remains an HTML-import
+    /// adapter for existing agent/tool callers.
+    SetRichText {
+        page_id: PageId,
+        id: NodeId,
+        content: RichTextDocument,
     },
     ReplaceAsset {
         page_id: PageId,
@@ -175,7 +184,7 @@ pub fn apply_operations_checked(
 fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> {
     match kind {
         WebNodeKind::Text { content, .. } => {
-            *content = sanitize_inline(content).html;
+            validate_rich_text(content)?;
         }
         WebNodeKind::Button { label, action, .. } => {
             *label = sanitize_inline(label).html;
@@ -252,6 +261,16 @@ fn canonicalize_incoming_kind(kind: &mut WebNodeKind) -> Result<(), WebOpError> 
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+fn validate_rich_text(content: &RichTextDocument) -> Result<(), WebOpError> {
+    if let Some(issue) = content.validate().first() {
+        return Err(WebOpError::new(
+            "op.rich_text_invalid",
+            format!("rich-text content is invalid: {issue}"),
+        ));
     }
     Ok(())
 }
@@ -561,9 +580,35 @@ fn apply_operation_in_place(
             };
             // Whatever the source (human contenteditable, agent op), stored
             // content is always canonical sanitized inline markup.
-            let sanitized = sanitize_inline(content);
-            let previous = std::mem::replace(existing, sanitized.html);
-            Ok(WebOperation::SetText {
+            let imported = RichTextDocument::from_inline_html(content);
+            let previous = std::mem::replace(existing, imported);
+            Ok(WebOperation::SetRichText {
+                page_id: page_id.clone(),
+                id: id.clone(),
+                content: previous,
+            })
+        }
+        WebOperation::SetRichText {
+            page_id,
+            id,
+            content,
+        } => {
+            validate_rich_text(content)?;
+            let page = require_page_mut(doc, page_id)?;
+            let node = page.nodes.get_mut(id).ok_or_else(|| {
+                WebOpError::new("op.node_missing", format!("node `{id}` not found"))
+            })?;
+            let WebNodeKind::Text {
+                content: existing, ..
+            } = &mut node.kind
+            else {
+                return Err(WebOpError::new(
+                    "op.not_text",
+                    format!("node `{id}` is {}, not text", node.kind.kind_name()),
+                ));
+            };
+            let previous = std::mem::replace(existing, content.clone());
+            Ok(WebOperation::SetRichText {
                 page_id: page_id.clone(),
                 id: id.clone(),
                 content: previous,
@@ -687,6 +732,10 @@ mod tests {
         WebBackgroundScrim, WebScrimColor, WebThemeRef,
     };
     use crate::ingest::ingest_html_into_page;
+    use crate::rich_text::{
+        RichTextBlock, RichTextInline, RichTextLink, RichTextMarks,
+        RICH_TEXT_SCHEMA_VERSION,
+    };
     use crate::theme::{compile_web_theme, WebThemeOptions};
 
     fn fixture() -> WebDoc {
@@ -722,7 +771,7 @@ mod tests {
             id: NodeId::from("new_txt"),
             kind: WebNodeKind::Text {
                 variant: TextVariant::Body,
-                content: "inserted".to_owned(),
+                content: "inserted".to_owned().into(),
             },
             classes: String::new(),
             children: Vec::new(),
@@ -773,7 +822,7 @@ mod tests {
                 id: NodeId::from("headline"),
                 props: WebNodeKind::Text {
                     variant: TextVariant::Display,
-                    content: "Bigger".to_owned(),
+                    content: "Bigger".to_owned().into(),
                 },
             },
             WebOperation::SetText {
@@ -869,6 +918,84 @@ mod tests {
     }
 
     #[test]
+    fn set_rich_text_is_typed_validated_and_invertible() {
+        let base = fixture();
+        let content = RichTextDocument {
+            schema_version: RICH_TEXT_SCHEMA_VERSION,
+            blocks: vec![RichTextBlock::Paragraph {
+                alignment: None,
+                children: vec![
+                    RichTextInline::Text {
+                        text: "Hello ".to_owned(),
+                        marks: RichTextMarks::default(),
+                        classes: None,
+                        link: None,
+                    },
+                    RichTextInline::Text {
+                        text: "range".to_owned(),
+                        marks: RichTextMarks {
+                            bold: true,
+                            ..RichTextMarks::default()
+                        },
+                        classes: None,
+                        link: None,
+                    },
+                ],
+            }],
+        };
+        let mut doc = base.clone();
+        let inverses = apply_operations(
+            &mut doc,
+            &[WebOperation::SetRichText {
+                page_id: page_id(),
+                id: NodeId::from("headline"),
+                content,
+            }],
+        )
+        .expect("typed rich-text apply");
+        let WebNodeKind::Text { content, .. } = &doc
+            .page(&page_id())
+            .unwrap()
+            .node(&NodeId::from("headline"))
+            .unwrap()
+            .kind
+        else {
+            panic!("text node");
+        };
+        assert_eq!(content.to_inline_html(), "Hello <strong>range</strong>");
+
+        apply_operations(&mut doc, &inverses).expect("rich-text inverse");
+        assert_eq!(doc, base);
+
+        let unsafe_content = RichTextDocument {
+            schema_version: RICH_TEXT_SCHEMA_VERSION,
+            blocks: vec![RichTextBlock::Paragraph {
+                alignment: None,
+                children: vec![RichTextInline::Text {
+                    text: "unsafe".to_owned(),
+                    marks: RichTextMarks::default(),
+                    classes: None,
+                    link: Some(RichTextLink {
+                        href: "javascript:alert(1)".to_owned(),
+                        new_tab: false,
+                    }),
+                }],
+            }],
+        };
+        let error = apply_operations(
+            &mut doc,
+            &[WebOperation::SetRichText {
+                page_id: page_id(),
+                id: NodeId::from("headline"),
+                content: unsafe_content,
+            }],
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "op.rich_text_invalid");
+        assert_eq!(doc, base, "rejected rich-text op must not mutate");
+    }
+
+    #[test]
     fn set_slot_key_round_trips_and_validates() {
         let base = fixture();
 
@@ -947,7 +1074,9 @@ mod tests {
             id: NodeId::from("dirty"),
             kind: WebNodeKind::Text {
                 variant: TextVariant::Body,
-                content: "<script>alert(1)</script>Safe <strong>copy</strong>".to_owned(),
+                content: "<script>alert(1)</script>Safe <strong>copy</strong>"
+                    .to_owned()
+                    .into(),
             },
             classes: String::new(),
             children: Vec::new(),
@@ -1006,7 +1135,7 @@ mod tests {
                 id: NodeId::from("headline"),
                 props: WebNodeKind::Text {
                     variant: TextVariant::H1,
-                    content: "Hi <div onclick=\"x()\">there</div>".to_owned(),
+                    content: "Hi <div onclick=\"x()\">there</div>".to_owned().into(),
                 },
             }],
         )
@@ -1252,7 +1381,7 @@ mod tests {
             id: NodeId::from("stray"),
             kind: WebNodeKind::Text {
                 variant: TextVariant::Body,
-                content: "x".to_owned(),
+                content: "x".to_owned().into(),
             },
             classes: String::new(),
             children: Vec::new(),

@@ -22,6 +22,7 @@ pub mod doc;
 pub mod ingest;
 pub mod inline;
 pub mod ops;
+pub mod rich_text;
 pub mod render;
 pub mod runtime;
 pub mod theme;
@@ -40,6 +41,10 @@ pub use doc::{
 };
 pub use ingest::{ingest_html, ingest_html_into_page, IngestOutcome};
 pub use ops::{apply_operations, apply_operations_checked, WebOpError, WebOperation};
+pub use rich_text::{
+    RichTextAlignment, RichTextBlock, RichTextDocument, RichTextInline, RichTextLink,
+    RichTextListItem, RichTextListType, RichTextMarks, RICH_TEXT_SCHEMA_VERSION,
+};
 pub use render::{render_page, RenderMode, RenderOptions, RenderOutput};
 pub use runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS, PLATFORM_RUNTIME_VERSION};
 pub use theme::{compile_web_theme, WebTheme, WebThemeOptions};

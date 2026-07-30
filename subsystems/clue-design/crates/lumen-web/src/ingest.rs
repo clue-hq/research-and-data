@@ -661,7 +661,7 @@ impl<'a> IngestState<'a> {
                         id,
                         kind: WebNodeKind::Text {
                             variant,
-                            content: String::new(),
+                            content: String::new().into(),
                         },
                         classes,
                         children: Vec::new(),
@@ -1263,7 +1263,7 @@ impl<'a> IngestState<'a> {
                         id,
                         kind: WebNodeKind::Text {
                             variant,
-                            content: sanitized.html,
+                            content: sanitized.html.into(),
                         },
                         classes,
                         children: Vec::new(),

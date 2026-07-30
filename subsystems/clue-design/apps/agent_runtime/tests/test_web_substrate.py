@@ -232,8 +232,10 @@ def test_author_web_subtree_replaces_only_target_section(tmp_path: Path):
     assert _subtree(nodes_after, "beta") != beta_before
     # The new beta copy is present.
     assert any(
-        "Beta reworked" in (node.get("content") or "")
+        child.get("text") == "Beta reworked"
         for node in nodes_after.values()
+        for block in (node.get("content") or {}).get("blocks", [])
+        for child in block.get("children", [])
     )
 
 

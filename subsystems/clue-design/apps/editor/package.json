@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "bash ../../scripts/copy_canvaskit_assets.sh && bash ../../scripts/fetch_fonts.sh && node ../../scripts/preflight_editor_wasm.mjs",
+    "predev": "bash ../../scripts/copy_canvaskit_assets.sh && bash ../../scripts/fetch_fonts.sh && npm run build:web-rich-text && node ../../scripts/preflight_editor_wasm.mjs",
     "dev": "next dev",
-    "prebuild": "bash ../../scripts/copy_canvaskit_assets.sh && bash ../../scripts/fetch_fonts.sh",
+    "prebuild": "bash ../../scripts/copy_canvaskit_assets.sh && bash ../../scripts/fetch_fonts.sh && npm run build:web-rich-text",
     "build": "next build",
     "build:wasm": "bash ../../scripts/build_wasm_core.sh",
     "build:canvaskit": "bash ../../scripts/copy_canvaskit_assets.sh",
     "build:fonts": "bash ../../scripts/fetch_fonts.sh",
+    "build:web-rich-text": "vite build --config vite.web-rich-text.config.ts",
     "lint": "node ../../scripts/check_editor_hex.mjs && tsc --noEmit -p tsconfig.lint.json",
     "lint:css": "node ../../scripts/check_editor_hex.mjs",
     "pretest": "bash ../../scripts/build_wasm_core.sh --if-missing",
@@ -17,11 +18,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@lexical/history": "^0.49.0",
+    "@lexical/html": "^0.49.0",
+    "@lexical/link": "^0.49.0",
+    "@lexical/list": "^0.49.0",
+    "@lexical/rich-text": "^0.49.0",
+    "@lexical/selection": "^0.49.0",
     "@tailwindcss/browser": "^4.3.3",
     "canvaskit-wasm": "0.41.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "konva": "^9.3.20",
+    "lexical": "^0.49.0",
     "lucide-react": "^0.468.0",
     "next": "^15.3.3",
     "react": "^19.1.0",
@@ -42,6 +50,7 @@
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.3.2",
     "typescript": "^5.8.3",
+    "vite": "^8.0.16",
     "vitest": "^4.1.8",
     "wasm-pack": "^0.13.1"
   }

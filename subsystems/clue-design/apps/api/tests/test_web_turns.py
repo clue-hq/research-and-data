@@ -279,6 +279,25 @@ def test_web_render_bridge_exposes_class_backed_resize_capabilities(
     ) in html
 
 
+def test_web_render_bridge_exposes_sandboxed_selected_range_rich_text(
+    client: TestClient,
+) -> None:
+    document = create_web_document(client)
+    seed_web_doc(client, document["id"], ingest_content(client, document["id"]))
+    response = client.get(
+        f"/documents/{document['id']}/web/render"
+        "?bridge=1&nonce=bridge-rich-text-123"
+    )
+    assert response.status_code == 200, response.text
+    html = response.json()["html"]
+    assert 'script.src = "/vendor/web-rich-text-runtime.js"' in html
+    assert 'post("rich-text-format"' in html
+    assert 'post("rich-text-commit"' in html
+    assert 'data.type === "rich-text-command"' in html
+    assert "event.source !== parent" in html
+    assert "session.getDocument()" in html
+
+
 def test_web_render_rejects_scene_document(client: TestClient) -> None:
     scene = create_scene_document(client)
     response = client.get(f"/documents/{scene['id']}/web/render")

@@ -15,12 +15,13 @@ import {
   replaceAssetOp,
   saveWebTemplate,
   setNodePropsOp,
-  setTextOp,
+  setRichTextOp,
   upsertAssetOp,
   webDocumentHasContent,
   webPromptStorageKey,
   type InsertableKind,
   type LoadedWebDocument,
+  type RichTextDocument,
   type WebDoc,
   type WebNode,
   type WebNodeProps,
@@ -298,14 +299,14 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const reload = useCallback(() => setReloadNonce((nonce) => nonce + 1), []);
   const manualEdits = useWebManualEdits({ documentId, baseVersion, onReload: reload });
 
-  // Persist a committed contenteditable edit as a set_text op, targeting the
-  // node's own page (falling back to the default page).
-  const handleTextCommit = useCallback(
-    (nodeId: string, html: string) => {
+  // Persist one settled Lexical session as one versioned SetRichText op. All
+  // range commands remain iframe-local until this boundary.
+  const handleRichTextCommit = useCallback(
+    (nodeId: string, content: RichTextDocument) => {
       const located = findWebNode(webDoc, nodeId);
       manualEdits.applyOps(
-        [setTextOp(located ? located.pageId : defaultPage, nodeId, html)],
-        "text_commit"
+        [setRichTextOp(located ? located.pageId : defaultPage, nodeId, content)],
+        "rich_text_commit"
       );
     },
     [webDoc, defaultPage, manualEdits]
@@ -362,14 +363,18 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     selection,
     nodeInfo,
     ready: bridgeReady,
+    editingNodeId,
+    richTextFormats,
+    richTextError,
     clearSelection,
     resetSelection,
     previewComponent,
-    selectNode
+    selectNode,
+    formatRichText
   } = useWebBridgeSelection({
     iframeRef,
     nonceRef,
-    onTextCommit: handleTextCommit,
+    onRichTextCommit: handleRichTextCommit,
     onSelect: handleBridgeSelect,
     onMoveNode: handleMoveNode,
     onResizeNode: handleResizeNode
@@ -1047,10 +1052,13 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                   selectNode={selectNode}
                   onReplaceImage={handleReplaceImage}
                   onChooseBackground={handleChooseBackground}
+                  editingNodeId={editingNodeId}
+                  richTextFormats={richTextFormats}
+                  formatRichText={formatRichText}
                   applyOps={manualEdits.applyOps}
                   busy={manualEdits.busy}
                   note={manualEdits.note}
-                  error={manualEdits.error}
+                  error={richTextError ?? manualEdits.error}
                 />
               </div>
             ) : (

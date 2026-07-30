@@ -678,6 +678,11 @@
   color: var(--text-primary);
   border-color: var(--border-strong);
 }
+.brand-app .web-format-btn.is-mixed {
+  background: linear-gradient(135deg, var(--bg-card-04) 50%, var(--bg-white) 50%);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
 .brand-app .web-format-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* the same `</>` context, echoed as a quiet prefix inside the user bubble */

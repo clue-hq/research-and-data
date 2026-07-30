@@ -327,8 +327,7 @@ fn render_node(
             node_attr(out);
             class_attr(out);
             out.push('>');
-            // Content is sanitized restricted inline markup, stored canonical.
-            out.push_str(content);
+            out.push_str(&content.to_inline_html());
             out.push_str(&format!("</{tag}>"));
         }
         WebNodeKind::Button {
@@ -862,7 +861,7 @@ fn render_tabs(
         out.push('>');
         // The label is the first Text child's inline content, without its <p>
         // wrapper or data-node-id.
-        out.push_str(&label);
+        out.push_str(&label.to_inline_html());
         out.push_str("</button>");
     }
     out.push_str("</div>");

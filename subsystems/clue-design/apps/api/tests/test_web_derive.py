@@ -187,9 +187,20 @@ def test_derive_without_account_is_identity_copy(client: TestClient) -> None:
         blob["id"] = "X"
         blob["title"] = "T"
     assert json.dumps(src, sort_keys=True) == json.dumps(got, sort_keys=True)
-    derived_blob = json.dumps(derived["scene"])
-    assert "data-var" in derived_blob and "account.name" in derived_blob  # inline marker
-    assert "account.tagline" in derived_blob  # slot marker preserved
+    variables = [
+        child
+        for page in derived["scene"]["pages"]
+        for node in page["nodes"].values()
+        for block in (node.get("content") or {}).get("blocks", [])
+        for child in block.get("children", [])
+        if child.get("type") == "variable"
+    ]
+    assert any(variable.get("key") == "account.name" for variable in variables)
+    assert any(
+        node.get("slot_key") == "account.tagline"
+        for page in derived["scene"]["pages"]
+        for node in page["nodes"].values()
+    )
 
 
 # --- 404s + 422 rejection ----------------------------------------------------

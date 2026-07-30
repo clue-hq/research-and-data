@@ -4,10 +4,10 @@ The renderer's editor mode injects this script into the srcdoc document. It
 does the following and nothing else: hover/selection outlines over
 `data-node-id` elements, click-to-select posted to the parent shell,
 suppression of link navigation AND invoker-command buttons inside the canvas,
-(v1) dblclick contenteditable text editing on Text nodes — commit posts
-`{type:"text-commit", nodeId, html}` and the SERVER canonicalizes the HTML
-through the SetText sanitizer, so the bridge payload is never trusted as
-markup — and two parent-driven inbound actions: component preview
+(v7) double-click rich-text editing on Text nodes — a lazy editor-only Lexical
+session posts one canonical `{type:"rich-text-commit", nodeId, content}` and the
+SERVER validates that RichTextDocument before persistence — and two
+parent-driven inbound actions: component preview
 (`{type:"component-preview", nodeId, action:"open"|"close"}` opens/closes a
 `<dialog>` node) and programmatic selection (`{type:"select-node", nodeId}`
 selects a node as if the user had clicked it, echoing the normal `select`
@@ -43,6 +43,12 @@ selected resizable node gets right, bottom, and corner handles. Inline width /
 height are used only as a transient live preview; mouseup restores them and
 posts `{type:"resize-node", nodeId, widthPx, heightPx}` so the parent can persist
 canonical `w-[Npx]` / `h-[Npx]` classes through the normal versioned op path.
+
+v7 replaces native contenteditable serialization with an editor-only Lexical
+session loaded lazily inside the existing sandbox. The session exports the
+library-independent RichTextDocument, reports selection formatting, and accepts
+nonce-scoped format commands from the inspector. A whole session commits as one
+SetRichText operation; Escape restores the exact pre-session HTML.
 """
 
 import json
@@ -66,6 +72,12 @@ _BRIDGE_V0_TEMPLATE = """
 
   var editing = null;
   var editingOriginal = "";
+  var editingOriginalDocument = "";
+  var editingSession = null;
+  var editingRoot = null;
+  var editingGeneration = 0;
+  var editingBlurTimer = null;
+  var richTextRuntimePromise = null;
   var metricsFrame = null;
   var resizeObserver = null;
 
@@ -73,7 +85,9 @@ _BRIDGE_V0_TEMPLATE = """
   style.textContent =
     "[data-node-id].lumen-hover{outline:1.5px dashed rgba(79,111,255,0.7);outline-offset:2px;}" +
     "[data-node-id].lumen-selected{outline:2px solid rgba(79,111,255,0.95);outline-offset:2px;}" +
-    "[data-node-id].lumen-editing{outline:2px solid rgba(34,197,146,0.95);outline-offset:2px;cursor:text;}";
+    "[data-node-id].lumen-editing{outline:2px solid rgba(34,197,146,0.95);outline-offset:2px;cursor:text;}" +
+    ".lumen-rich-editor-root{display:inline;}" +
+    ".lumen-rich-editor-root>p{display:contents;}";
   document.head.appendChild(style);
 
   function rounded(value) {
@@ -275,9 +289,10 @@ _BRIDGE_V0_TEMPLATE = """
       ) {
         return;
       }
-      // Clicks inside the element being edited belong to the caret, not to
-      // selection; clicking anywhere else blurs (committing) first.
+      // Clicks inside the element being edited belong to the caret. A click on
+      // another canvas node explicitly settles the whole local edit first.
       if (editing && editing.contains(event.target)) return;
+      if (editing) stopEditing(true);
       var el =
         event.target && event.target.closest
           ? event.target.closest("[data-node-id]")
@@ -287,24 +302,125 @@ _BRIDGE_V0_TEMPLATE = """
     true
   );
 
-  // v1: dblclick a Text node (data-tv) to edit its inline content in place.
+  function clearEditingBlurTimer() {
+    if (editingBlurTimer !== null) {
+      window.clearTimeout(editingBlurTimer);
+      editingBlurTimer = null;
+    }
+  }
+
+  function scheduleEditingBlurCommit() {
+    if (!editing) return;
+    clearEditingBlurTimer();
+    editingBlurTimer = window.setTimeout(function () {
+      editingBlurTimer = null;
+      if (editing) stopEditing(true);
+    }, 180);
+  }
+
+  function loadRichTextRuntime() {
+    if (window.LumenRichTextRuntime) {
+      return Promise.resolve(window.LumenRichTextRuntime);
+    }
+    if (!richTextRuntimePromise) {
+      richTextRuntimePromise = new Promise(function (resolve, reject) {
+        var script = document.createElement("script");
+        script.src = "/vendor/web-rich-text-runtime.js";
+        script.async = true;
+        script.onload = function () {
+          if (window.LumenRichTextRuntime) resolve(window.LumenRichTextRuntime);
+          else reject(new Error("rich-text runtime loaded without registering"));
+        };
+        script.onerror = function () {
+          reject(new Error("rich-text runtime failed to load"));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return richTextRuntimePromise;
+  }
+
+  // v7: a whole Lexical edit session remains local until one atomic commit.
   function stopEditing(commit) {
     if (!editing) return;
+    clearEditingBlurTimer();
     var el = editing;
+    var id = el.getAttribute("data-node-id");
+    var session = editingSession;
+    var documentValue = session ? session.getDocument() : null;
+    var changed =
+      Boolean(documentValue) &&
+      JSON.stringify(documentValue) !== editingOriginalDocument;
+    var settledHtml =
+      commit && changed && session ? session.getHtml() : editingOriginal;
+    if (session) session.destroy();
     editing = null;
-    el.removeAttribute("contenteditable");
+    editingSession = null;
+    editingRoot = null;
+    editingGeneration += 1;
     el.classList.remove("lumen-editing");
-    if (commit) {
-      if (el.innerHTML !== editingOriginal) {
-        post("text-commit", {
-          nodeId: el.getAttribute("data-node-id"),
-          html: el.innerHTML
-        });
-      }
-    } else {
-      el.innerHTML = editingOriginal;
+    el.innerHTML = settledHtml;
+    if (commit && changed) {
+      post("rich-text-commit", {
+        nodeId: id,
+        content: documentValue
+      });
     }
     editingOriginal = "";
+    editingOriginalDocument = "";
+    post("edit-end", { nodeId: id, committed: Boolean(commit), changed: changed });
+  }
+
+  function beginEditing(el) {
+    if (!el || editing === el) return;
+    stopEditing(true);
+    var generation = ++editingGeneration;
+    editing = el;
+    editingOriginal = el.innerHTML;
+    editingOriginalDocument = "";
+    editingSession = null;
+    editingRoot = document.createElement("span");
+    editingRoot.className = "lumen-rich-editor-root";
+    el.innerHTML = "";
+    el.appendChild(editingRoot);
+    el.classList.remove("lumen-hover");
+    el.classList.add("lumen-editing");
+    post("edit-start", { nodeId: el.getAttribute("data-node-id") });
+    loadRichTextRuntime()
+      .then(function (runtime) {
+        if (generation !== editingGeneration || editing !== el || !editingRoot) return;
+        editingSession = runtime.mount(editingRoot, {
+          initialHtml: editingOriginal,
+          onFormatStateChange: function (formats) {
+            if (editing === el) {
+              post("rich-text-format", {
+                nodeId: el.getAttribute("data-node-id"),
+                formats: formats
+              });
+            }
+          },
+          onCommitRequest: function () { stopEditing(true); },
+          onCancelRequest: function () { stopEditing(false); }
+        });
+        editingOriginalDocument = JSON.stringify(editingSession.getDocument());
+        editingSession.focus();
+      })
+      .catch(function (error) {
+        if (generation !== editingGeneration || editing !== el) return;
+        var id = el.getAttribute("data-node-id");
+        editing = null;
+        editingRoot = null;
+        editingGeneration += 1;
+        el.classList.remove("lumen-editing");
+        el.innerHTML = editingOriginal;
+        editingOriginal = "";
+        editingOriginalDocument = "";
+        post("edit-error", {
+          nodeId: id,
+          message: String(error && error.message ? error.message : error)
+        });
+        post("edit-end", { nodeId: id, committed: false, changed: false });
+      });
   }
 
   document.addEventListener(
@@ -314,23 +430,16 @@ _BRIDGE_V0_TEMPLATE = """
         event.target && event.target.closest
           ? event.target.closest("[data-node-id][data-tv]")
           : null;
-      if (!el || editing === el) return;
-      stopEditing(true);
-      editing = el;
-      editingOriginal = el.innerHTML;
-      el.classList.remove("lumen-hover");
-      el.classList.add("lumen-editing");
-      el.setAttribute("contenteditable", "true");
-      el.focus();
-      post("edit-start", { nodeId: el.getAttribute("data-node-id") });
+      beginEditing(el);
     },
     true
   );
 
   document.addEventListener(
-    "blur",
+    "focusout",
     function (event) {
-      if (editing && event.target === editing) stopEditing(true);
+      if (!editing || !editing.contains(event.target)) return;
+      scheduleEditingBlurCommit();
     },
     true
   );
@@ -353,13 +462,33 @@ _BRIDGE_V0_TEMPLATE = """
 
   window.addEventListener("message", function (event) {
     var data = event.data || {};
-    if (data.channel !== CHANNEL || data.nonce !== NONCE) return;
-    if (data.type === "clear" && selected) {
-      selected.classList.remove("lumen-selected");
-      selected = null;
-      observeSelected();
-      removeGrip();
-      removeResizeControls();
+    if (event.source !== parent || data.channel !== CHANNEL || data.nonce !== NONCE) return;
+    if (data.type === "rich-text-command") {
+      var validFormat =
+        data.format === "bold" ||
+        data.format === "italic" ||
+        data.format === "underline" ||
+        data.format === "strikethrough";
+      if (
+        editing &&
+        editingSession &&
+        validFormat &&
+        data.nodeId === editing.getAttribute("data-node-id")
+      ) {
+        clearEditingBlurTimer();
+        editingSession.format(data.format);
+        editingSession.focus();
+      }
+    }
+    if (data.type === "clear") {
+      if (editing) stopEditing(true);
+      if (selected) {
+        selected.classList.remove("lumen-selected");
+        selected = null;
+        observeSelected();
+        removeGrip();
+        removeResizeControls();
+      }
     }
     if (data.type === "inspect-node") {
       var inspected = document.querySelector(
@@ -380,7 +509,10 @@ _BRIDGE_V0_TEMPLATE = """
       var target = document.querySelector(
         '[data-node-id="' + CSS.escape(String(data.nodeId || "")) + '"]'
       );
-      if (target) setSelected(target);
+      if (target) {
+        if (editing && target !== editing) stopEditing(true);
+        setSelected(target);
+      }
     }
   });
 
