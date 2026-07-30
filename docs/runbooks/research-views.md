@@ -5,7 +5,7 @@ governed re-check, production handoff, and retained dossier aliases.
 
 ## Activation and rollback
 
-All C7 capabilities default off and are independent:
+All C7 capabilities and developer diagnostic admissions default off and are independent:
 
 | Capability | Environment setting |
 |---|---|
@@ -15,6 +15,7 @@ All C7 capabilities default off and are independent:
 | governed re-check and `recheck_research_view@1` | `CLUE_C7_RECHECK_ENABLED` |
 | real production committee/handoff handler | `CLUE_C7_PRODUCTION_HANDOFF_ENABLED` |
 | deprecated `/dossier` aliases | `CLUE_C7_LEGACY_DOSSIER_ALIAS_ENABLED` |
+| developer governance shadow comparison admission | `CLUE_C7_GOVERNANCE_SHADOW_COMPARE_ENABLED` |
 | optional workspace admission after a global flag | `CLUE_C7_WORKSPACE_CANARY_IDS` |
 
 Enable in this order: shadow-compose internal fixtures; read routes; snapshots; evidence actions;
@@ -24,6 +25,12 @@ legacy alias requires its canonical read/compose capability too.
 `CLUE_C7_WORKSPACE_CANARY_IDS` is a JSON array, for example
 `["trial-workspace"]`. Empty means that a globally enabled capability is available to every
 authorized workspace, which is convenient locally but is not the recommended first deployment.
+
+`CLUE_C7_GOVERNANCE_SHADOW_COMPARE_ENABLED` defaults off and is intentionally not a route,
+governance bypass, or raw-value switch. It reserves admission for a developer-only aggregate
+candidate-versus-governed diagnostic. The comparator/report is not implemented yet, so enabling
+the setting alone has no runtime effect. Any future consumer must keep denied values out of normal
+API responses and remain subject to local-development and workspace-admission guards.
 
 Rollback sets the affected flag to `false` and restarts the process. Do not downgrade migrations,
 delete receipts, rewrite claims, or restore a fake handoff handler. With production handoff off,

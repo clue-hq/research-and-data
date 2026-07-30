@@ -43,6 +43,7 @@ def test_c7_activation_controls_are_independently_default_off() -> None:
     assert settings.c7_recheck_enabled is False
     assert settings.c7_production_handoff_enabled is False
     assert settings.c7_legacy_dossier_alias_enabled is False
+    assert settings.c7_governance_shadow_compare_enabled is False
 
 
 def test_c7_activation_controls_load_from_independent_environment_flags(
@@ -55,6 +56,7 @@ def test_c7_activation_controls_load_from_independent_environment_flags(
         "C7_RECHECK_ENABLED",
         "C7_PRODUCTION_HANDOFF_ENABLED",
         "C7_LEGACY_DOSSIER_ALIAS_ENABLED",
+        "C7_GOVERNANCE_SHADOW_COMPARE_ENABLED",
     )
     for name in names:
         monkeypatch.setenv(f"CLUE_{name}", "true")
@@ -67,5 +69,6 @@ def test_c7_activation_controls_load_from_independent_environment_flags(
             settings.c7_recheck_enabled,
             settings.c7_production_handoff_enabled,
             settings.c7_legacy_dossier_alias_enabled,
+            settings.c7_governance_shadow_compare_enabled,
         )
     )

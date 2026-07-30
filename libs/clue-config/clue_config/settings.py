@@ -136,6 +136,10 @@ class Settings(BaseSettings):
     c7_production_handoff_enabled: bool = False
     # Env: ``CLUE_C7_LEGACY_DOSSIER_ALIAS_ENABLED``.
     c7_legacy_dossier_alias_enabled: bool = False
+    # Developer-only admission for a future governed-vs-candidate diagnostic comparator. This
+    # setting never weakens statement governance or exposes denied values through normal C7 APIs.
+    # Env: ``CLUE_C7_GOVERNANCE_SHADOW_COMPARE_ENABLED``.
+    c7_governance_shadow_compare_enabled: bool = False
     # Optional JSON array of workspace ids admitted after a global C7 capability is enabled.
     # Empty means no additional workspace restriction (useful for local/manual trials).
     # Env: ``CLUE_C7_WORKSPACE_CANARY_IDS``.
