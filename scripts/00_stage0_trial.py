@@ -14,11 +14,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-
-from sqlalchemy.ext.asyncio import AsyncConnection
 
 import clue_obs
 from clue_api.stage0_trial import (
@@ -26,67 +23,14 @@ from clue_api.stage0_trial import (
     Stage0TrialPaths,
     create_stage0_trial_session,
 )
-from clue_config import MemoryCaps, Settings
-from clue_core import AssemblyRequest, ContextAssembly, LLMGateway, MemoryBundle, MemoryWriteSeam
-from clue_db import ConnFactory, db_lifespan
-from clue_memory import Assembly, LLMReconcileJudge, WriteSeam
+from clue_api.trial.stage0_runtime import (
+    memory_assembly_factory,
+    memory_write_factory_builder,
+)
+from clue_db import db_lifespan
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _TRIAL_ROOT = _REPOSITORY_ROOT / ".context" / "stage0-trials"
-
-
-class _TransactionalMemoryAssembly(ContextAssembly):
-    """Bind the memory implementation at the executable composition root."""
-
-    def __init__(
-        self,
-        *,
-        settings: Settings,
-        conn_factory: ConnFactory,
-    ) -> None:
-        self._settings = settings
-        # MemoryCaps is policy-as-data but has not yet been threaded into layered Config.
-        self._caps = MemoryCaps()
-        self._conn_factory = conn_factory
-
-    async def assemble(self, request: AssemblyRequest) -> MemoryBundle | None:
-        async with self._conn_factory() as conn:
-            return await Assembly(
-                conn,
-                settings=self._settings,
-                caps=self._caps,
-            ).assemble(request)
-
-
-def _memory_assembly_factory(
-    settings: Settings,
-    conn_factory: ConnFactory,
-) -> ContextAssembly:
-    return _TransactionalMemoryAssembly(
-        settings=settings,
-        conn_factory=conn_factory,
-    )
-
-
-def _memory_write_factory_builder(
-    settings: Settings,
-    gateway: LLMGateway,
-) -> Callable[[AsyncConnection], MemoryWriteSeam]:
-    caps = MemoryCaps()
-    judge = LLMReconcileJudge(
-        gateway,
-        model=settings.memory_reconcile_model,
-    )
-
-    def factory(conn: AsyncConnection) -> MemoryWriteSeam:
-        return WriteSeam(
-            conn,
-            judge,
-            settings=settings,
-            caps=caps,
-        )
-
-    return factory
 
 
 def _ask(label: str, supplied: str | None, *, default: str | None = None) -> str:
@@ -222,8 +166,8 @@ async def _main(args: argparse.Namespace) -> None:
         trial = await Stage0Trial.build(
             state=state,
             paths=paths,
-            memory_assembly_factory=_memory_assembly_factory,
-            memory_write_factory_builder=_memory_write_factory_builder,
+            memory_assembly_factory=memory_assembly_factory,
+            memory_write_factory_builder=memory_write_factory_builder,
         )
         try:
             await trial.export_report()

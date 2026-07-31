@@ -177,10 +177,13 @@ def test_organization_normalization_produces_direct_fields_and_hard_miss() -> No
     assert [item.value for item in headcount] == [120]
     assert [item.value for item in domain] == ["acme.example"]
     assert headcount[0].source_url == "https://sumble.com/l/org/acme"
-    assert normalize_organization(
-        _fixture("organizations_unmatched.json"),
-        _field("core.employee_count", "int"),
-    ) == []
+    assert (
+        normalize_organization(
+            _fixture("organizations_unmatched.json"),
+            _field("core.employee_count", "int"),
+        )
+        == []
+    )
 
 
 def test_jobs_normalization_is_an_explicit_engineering_activity_proxy() -> None:
@@ -225,9 +228,7 @@ def test_snapshot_resolvers_emit_tier1_api_claims_without_network() -> None:
         estimated_max_credits=2,
         artifact_key="workspace/provider-response",
     )
-    lookup = MappingSumbleSnapshotLookup(
-        {(account.entity_id, ORGANIZATIONS_SOURCE_KEY): snapshot}
-    )
+    lookup = MappingSumbleSnapshotLookup({(account.entity_id, ORGANIZATIONS_SOURCE_KEY): snapshot})
     resolver = build_sumble_resolvers(lookup)[ORGANIZATIONS_SOURCE_KEY]
 
     headcount = resolver.resolve(account, _field("core.employee_count", "int"))

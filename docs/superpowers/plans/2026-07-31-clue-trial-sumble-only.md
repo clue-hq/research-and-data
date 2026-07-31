@@ -1,11 +1,11 @@
 # Clue Trial implementation plan — Sumble-only backend acceptance harness
 
-**Date:** 2026-07-31  
-**Branch:** `platform/clue-trial`  
-**Parent architecture:** [Harness requirements](../../architecture/clue-hq-harness-architecture-and-requirements.md)  
-**Agent contract:** [Platform agent runtime](../../architecture/clue-hq-platform-agent-runtime.md)  
-**Research-view contract:** [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md)  
-**Executable acceptance map:** `tests/fixtures/clue_trial/sumble_acceptance_map.json`  
+**Date:** 2026-07-31
+**Branch:** `platform/clue-trial`
+**Parent architecture:** [Harness requirements](../../architecture/clue-hq-harness-architecture-and-requirements.md)
+**Agent contract:** [Platform agent runtime](../../architecture/clue-hq-platform-agent-runtime.md)
+**Research-view contract:** [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md)
+**Executable acceptance map:** `tests/fixtures/clue_trial/sumble_acceptance_map.json`
 **Status:** APPROVED / IN PROGRESS
 
 ## 1. Outcome
@@ -489,3 +489,21 @@ Gate to Exa:
 12. No live Sumble spend occurs without an explicit user-run canary. Organizations and Jobs are
     covered by a hard credit cap; confirmed Tech Stack is skipped unless the user separately
     approves its documented unbounded per-result credit risk.
+
+## 14. Implementation status — 2026-07-31
+
+- **T0 complete:** contract freeze and executable fixture/acceptance map.
+- **T1 complete:** typed Sumble v9 Organizations, Jobs, and confirmed Tech Stack adapters; bounded
+  credit policy; sanitized fixtures; durable artifact-backed response receipts.
+- **T2 complete:** direct human account admission through M6, production discovery/scoring/tier
+  checkpoint/DEEP/verification/C7 composition, and explicit account-only committee posture.
+- **T3 complete:** default-off loopback HTTP routes, canonical C7 route in the same process,
+  persistent body-aware idempotency, resume/status/events/cost/report endpoints, and readiness
+  pauses.
+- **T4 complete:** `scripts/clue_trial.py` is an HTTP-only client with doctor/new/resume/status/
+  report commands and the planned interactive Stage-0/account/research/view inspection commands.
+- **T5 complete:** JSON/HTML research report, C7-linked claims, verification summary, sanitized
+  Sumble receipt log, explicit failures, and a manual quality scorecard.
+- **T6 intentionally not executed:** the no-spend loopback/create/resume smoke passed, but the
+  environment did not contain `CLUE_SUMBLE_API_KEY`. A live canary remains a founder-authorized
+  manual action after `doctor` reports ready; it is not an automated implementation gate.

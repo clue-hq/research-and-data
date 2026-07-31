@@ -8,6 +8,7 @@ don't pass one).
 | # | Script | Module | Entry point |
 |---|--------|--------|-------------|
 | 00 | `00_stage0_trial.py` | Interactive Stage 0 deepagent trial | Recipe 0 / Head-of-ABM / governed Stage-0 tools |
+| trial | `clue_trial.py` | HTTP-only Sumble acceptance CLI | local trial API + production Stage 0 / project run / C7 |
 | 01 | `01_stage0_onboarding.py` | Stage 0 client onboarding | `stage0.reverse_profile` |
 | 02 | `02_icp_synthesis.py` | ICP synthesis + confirm | `stage0.synthesize_icps` / `confirm_icp` |
 | 03 | `03_find_accounts.py` | Account intake (import + identity), capped | `identity.insert_account_entity` |
@@ -43,6 +44,53 @@ real agent-quality trial and requires `CLUE_OPENROUTER_API_KEY`.
 | `CLUE_REDIS_URL` | optional | In-flight locks; not used by these scripts. |
 
 Set keys in a git-ignored `.env` (see `.env.example`) or export them in your shell.
+
+## Sumble-only end-to-end trial
+
+The trial deliberately uses two terminal windows. The server owns all backend/domain imports and
+durable state; the CLI is an HTTP client only.
+
+Required `.env` entries:
+
+```dotenv
+CLUE_OPENROUTER_API_KEY=<your OpenRouter key>
+CLUE_SUMBLE_API_KEY=<your Sumble key>
+CLUE_TRIAL_ENABLED=true
+CLUE_C7_RESEARCH_VIEW_READ_ENABLED=true
+```
+
+Start the local dependencies and server:
+
+```bash
+make db-up
+make migrate
+make redis-up
+uv run python -m clue_api.trial_main
+```
+
+In the second terminal, verify the exact environment before creating a trial:
+
+```bash
+uv run python scripts/clue_trial.py doctor
+uv run python scripts/clue_trial.py new
+```
+
+`doctor` must report `"ready": true`. Account admission itself is zero-provider-spend. Before the
+first Sumble call the CLI prints Organizations (maximum 2 credits), Jobs (maximum 1 credit), and
+whether confirmed Tech Stack is skipped. Tech Stack has no caller-bounded maximum and runs only
+after its separate explicit opt-in. A second human confirmation admits the direct account to deep
+research after the durable tier checkpoint.
+
+Resume or inspect without repeating provider spend:
+
+```bash
+uv run python scripts/clue_trial.py resume <trial-id>
+uv run python scripts/clue_trial.py status <trial-id>
+uv run python scripts/clue_trial.py report <trial-id> --output /tmp/clue-trial-report.json
+```
+
+The API exports the non-authoritative inspection bundle under
+`.context/sumble-trials/<trial-id>/`; Postgres and artifact storage remain authoritative.
 
 ## Offline vs. live — what you actually see
 
