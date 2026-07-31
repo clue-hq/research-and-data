@@ -67,6 +67,8 @@ from clue_research.discovery_scoring.phases import (
     DiscoveryPhaseHandler,
     ScoringPhaseHandler,
     TierCheckpointPhaseHandler,
+    discovery_run_id,
+    project_discovery_run_id,
 )
 from clue_research.discovery_scoring.score_projection import (
     AmbiguousFitProjection,
@@ -175,4 +177,6 @@ __all__ = [
     "DiscoveryPhaseHandler",
     "ScoringPhaseHandler",
     "TierCheckpointPhaseHandler",
+    "discovery_run_id",
+    "project_discovery_run_id",
 ]

@@ -286,6 +286,7 @@ class ComposingRunDriver:
         execution_journal: DbExecutionJournal | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
         account_agent_profiler: ProfileAccountFn | None = None,
+        profile_account_fn: ProfileAccountFn | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -305,6 +306,7 @@ class ComposingRunDriver:
         self._execution_journal = execution_journal
         self._project_execution_router = project_execution_router
         self._account_agent_profiler = account_agent_profiler
+        self._profile_account_fn = profile_account_fn
         if (controls is None) != (supervisor_actions is None):
             raise ValueError("controls and supervisor_actions must be supplied together")
         if controls is not None and execution_journal is None:
@@ -510,13 +512,17 @@ class ComposingRunDriver:
             high_tier_resolver=high_tier_resolver,
             pre_spend_gate=pre_spend_gate,
             canary_controller=canary_controller,
-            profile_account_fn=RoutedAccountProfiler(
-                router=DbAgentOwnershipRouter(
-                    settings=self._settings,
-                    conn_factory=self._session_factory,
-                ),
-                legacy=profile_account,
-                deepagent=self._account_agent_profiler,
+            profile_account_fn=(
+                self._profile_account_fn
+                if self._profile_account_fn is not None
+                else RoutedAccountProfiler(
+                    router=DbAgentOwnershipRouter(
+                        settings=self._settings,
+                        conn_factory=self._session_factory,
+                    ),
+                    legacy=profile_account,
+                    deepagent=self._account_agent_profiler,
+                )
             ),
         )
         registry.register(deep.handler)

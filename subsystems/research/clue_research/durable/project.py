@@ -651,6 +651,18 @@ class ProjectRun:
         if new_cutoffs is not None or new_cap is not None:
             await self.adjust(project_run_id, tier_cutoffs=new_cutoffs, budget_cap_cents=new_cap)
 
+        # M6.4's tier gate is a secure-input phase: its first invocation computes a review and
+        # pauses, while the submitted decision must be threaded back through the same handler so
+        # it can re-tier, enforce the effective cap, and persist the approved tier claims. Merely
+        # committing the old AWAITING_INPUT payload would advance to DEEP with no tier claims, so
+        # DEEP's fail-closed high-tier resolver would (correctly) select zero accounts.
+        if phase is ProjectPhase.TIER_CHECKPOINT:
+            return await self._submit_tier_checkpoint(
+                run=await self.status(project_run_id),
+                checkpoint=checkpoint,
+                decision=decision,
+            )
+
         merged_payload: dict[str, JsonValue] = {**checkpoint.payload, "decision": decision}
         action = decision.get("action", "approve")
         if action == "approve":
@@ -671,6 +683,90 @@ class ProjectRun:
             payload=merged_payload,
         )
         return await self.status(project_run_id)
+
+    async def _submit_tier_checkpoint(
+        self,
+        *,
+        run: ProjectRunRow,
+        checkpoint: ProjectPhaseCheckpointRow,
+        decision: dict[str, JsonValue],
+    ) -> ProjectRunRow:
+        """Re-enter the M6.4 gate with its human decision before committing it.
+
+        The proposed cutoffs shown in the initial review become the run's durable approved cutoffs
+        when the human does not supply an edit. This keeps the subsequent DEEP resolver pinned to
+        exactly the policy the handler used to write ``account.scoring.tier`` claims.
+        """
+
+        submitted_cutoffs = decision.get("tier_cutoffs")
+        proposed_cutoffs: JsonValue | None = None
+        review = checkpoint.payload.get("review")
+        if isinstance(review, dict):
+            proposed_cutoffs = review.get("proposed_cutoffs")
+        if proposed_cutoffs is None:
+            proposed_cutoffs = checkpoint.payload.get("proposed_cutoffs")
+
+        effective_cutoffs = (
+            submitted_cutoffs
+            if isinstance(submitted_cutoffs, dict) and submitted_cutoffs
+            else proposed_cutoffs
+        )
+        if (
+            isinstance(effective_cutoffs, dict)
+            and effective_cutoffs
+            and effective_cutoffs != run.tier_cutoffs
+        ):
+            await self.adjust(run.id, tier_cutoffs=effective_cutoffs)
+            run = await self.status(run.id)
+
+        forwarded_decision: dict[str, JsonValue] = dict(decision)
+        if "cutoffs" not in forwarded_decision and isinstance(effective_cutoffs, dict):
+            forwarded_decision["cutoffs"] = effective_cutoffs
+        ctx = self._phase_context(run)
+        ctx = ctx.model_copy(
+            update={
+                "params": {
+                    **ctx.params,
+                    "checkpoint_decision": forwarded_decision,
+                }
+            }
+        )
+        handler = self._registry.get(ProjectPhase.TIER_CHECKPOINT)
+        if handler is None:
+            raise NoPhaseHandlerRegistered(ProjectPhase.TIER_CHECKPOINT.value)
+        result = await handler.run(ctx)
+        payload: dict[str, JsonValue] = {**result.payload, "decision": decision}
+        if result.status is PhaseStatus.COMPLETED:
+            return await self._finalize_phase(
+                run,
+                ProjectPhase.TIER_CHECKPOINT,
+                payload=payload,
+                cost_cents=result.cost_cents,
+                resume=True,
+            )
+        if result.status is PhaseStatus.PAUSED:
+            await self._store.put_checkpoint(
+                project_run_id=run.id,
+                phase=ProjectPhase.TIER_CHECKPOINT,
+                idempotency_key=phase_key(run.id, ProjectPhase.TIER_CHECKPOINT),
+                status=PhaseCheckpointStatus.AWAITING_INPUT,
+                payload=payload,
+            )
+            await self._store.mark_status(
+                run.id,
+                status=ProjectRunStatus.PAUSED,
+                stamp_paused=True,
+            )
+            return await self.status(run.id)
+        await self._store.put_checkpoint(
+            project_run_id=run.id,
+            phase=ProjectPhase.TIER_CHECKPOINT,
+            idempotency_key=phase_key(run.id, ProjectPhase.TIER_CHECKPOINT),
+            status=PhaseCheckpointStatus.FAILED,
+            payload=payload,
+        )
+        await self._store.mark_status(run.id, status=ProjectRunStatus.FAILED)
+        return await self.status(run.id)
 
     # -- cost estimate (delegates to M7.5) --
 
