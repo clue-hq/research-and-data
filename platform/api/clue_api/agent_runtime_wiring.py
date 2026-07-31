@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
@@ -18,7 +18,8 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from langchain_core.tools import BaseTool, StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic_core import to_jsonable_python
 from sqlalchemy import text
 
 from clue_agents import (
@@ -302,6 +303,29 @@ def _with_trusted_runtime(
     )
 
 
+def _json_arguments(kwargs: Mapping[str, Any]) -> dict[str, JsonValue]:
+    """Render LangChain-validated tool kwargs as the pure JSON a durable plan step admits.
+
+    ``StructuredTool`` hands the coroutine *validated* values — a nested ``BaseModel`` stays a
+    model instance, an enum stays an enum member, ``UUID``/``Decimal``/``datetime`` stay rich
+    Python objects — while :class:`~clue_agents.contracts.PlanToolStep.arguments` is
+    ``dict[str, JsonValue]``. Without this seam every governed tool carrying a nested model dies
+    with ``input was not a valid JSON value`` on a semantically correct model call.
+
+    The conversion is a pure re-representation, never a repair: ``to_jsonable_python`` raises on
+    a value with no JSON representation, so a malformed argument still fails loudly here instead
+    of being laundered into the plan. Round-tripping through the tool's own args model is
+    deliberately *not* used — that model is the ``_with_trusted_runtime`` subclass carrying the
+    injected, unserializable ``runtime`` object, and dumping it would either fail or leak trusted
+    authority into model-proposed arguments. (``runtime`` binds to the coroutine's own parameter,
+    so it never reaches ``kwargs``; only model-controlled fields are normalized.) The executor
+    re-validates these arguments into the tool's ``input_model``, which accepts the JSON
+    representation.
+    """
+
+    return cast(dict[str, JsonValue], to_jsonable_python(dict(kwargs)))
+
+
 class AgentFinalizationAuthority:
     """The only transition from a model proposal to an authoritative terminal turn."""
 
@@ -502,7 +526,7 @@ class GovernedAgentToolFactory:
                     PlanToolStep(
                         node_key=node_key,
                         tool=pin,
-                        arguments=kwargs,
+                        arguments=_json_arguments(kwargs),
                         purpose=f"Governed direct invocation of {pin.address}.",
                     ),
                 ),
