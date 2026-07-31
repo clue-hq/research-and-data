@@ -1217,6 +1217,21 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                     )
                 )
             if step.tool.address not in effective:
+                # Skipping without an issue would retain the step while leaving it out of
+                # ``trusted_arguments``, and the later unguarded lookups (graph compilation, cost
+                # estimation) key straight off ``plan.steps``. ``review_agent_plan`` happens to
+                # refuse this same shape upstream, but that is a second, independently-editable
+                # authority: this loop states its own precondition so the invariant "every
+                # retained tool step has trusted arguments" holds here, not by inheritance.
+                issues.append(
+                    _agent_issue(
+                        GraphIssue(
+                            "tool_not_effective",
+                            f"plan.steps[{ordinal}].tool",
+                            f"{step.tool.address} is not an effective tool of the bound profile",
+                        )
+                    )
+                )
                 continue
             descriptor = self._tools.descriptor(step.tool.name, step.tool.version)
             if (

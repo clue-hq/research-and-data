@@ -182,6 +182,12 @@ class _PinProvider:
         )
 
 
+class _OtherTool(_Tool):
+    """A second registered tool, so a profile can pin something the plan does not call."""
+
+    name = "write_note"
+
+
 def _profile(pin: ToolPin) -> AgentProfile:
     return AgentProfile(
         name="head-of-abm",
@@ -241,6 +247,7 @@ def _adapter(
     pin_provider: object | None = None,
     dynamic_pin_kinds: tuple[str, ...] = (),
     tool: Tool | None = None,
+    profile_pins_other_tool: bool = False,
 ):
     registry = ToolRegistry()
     registry.register(tool if tool is not None else _Tool(), make_default=True)
@@ -251,7 +258,22 @@ def _adapter(
         input_schema_sha256=descriptor.input_schema_sha256,
         output_schema_sha256=descriptor.output_schema_sha256,
     )
-    runtime_profile = _profile(pin)
+    if profile_pins_other_tool:
+        # The C5 slot allowlist and the profile's effective tool set are two independent
+        # authorities. Pinning the profile to a *different* registered tool produces the one
+        # combination neither test above covers: allowlisted by the slot, absent from the profile.
+        registry.register(_OtherTool(), make_default=True)
+        other = registry.descriptor("write_note", "1")
+        runtime_profile = _profile(
+            ToolPin(
+                name=other.name,
+                version=other.version,
+                input_schema_sha256=other.input_schema_sha256,
+                output_schema_sha256=other.output_schema_sha256,
+            )
+        )
+    else:
+        runtime_profile = _profile(pin)
     profile_ref = AgentResourceRef(
         kind=ResourceKind.PROFILE,
         name=runtime_profile.name,
@@ -358,6 +380,40 @@ def test_agent_path_rejects_resource_pins_outside_the_recipe0_slot_contract() ->
 
     with pytest.raises(AgentPlanRejected, match="c5_pin_kind_not_allowed"):
         run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    assert executor.appended == []
+
+
+def test_compiler_refuses_a_slot_allowlisted_tool_the_profile_does_not_make_effective() -> None:
+    """A not-effective step is refused *by this loop*, not left half-processed for a later lookup.
+
+    The C5 slot allowlist and the profile's effective tool set are independent authorities, so a
+    step can satisfy one and not the other. That branch used to ``continue`` without recording an
+    issue of its own: the step stayed in ``plan.steps`` but never got a ``trusted_arguments``
+    entry, and the two later unguarded lookups (graph compilation and cost estimation) would
+    ``KeyError`` on its node key. Today the shape is caught upstream by ``review_agent_plan``
+    (``tool_not_allowed``), which is what keeps the KeyError latent rather than live — but that
+    is an accident of a second, independently-editable authority agreeing. This loop must state
+    its own precondition, so the ``trusted_arguments`` invariant ("every retained tool step has an
+    entry") holds locally instead of being inherited.
+    """
+
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        profile_pins_other_tool=True,
+    )
+
+    with pytest.raises(AgentPlanRejected) as rejected:
+        run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    codes = [issue.code for issue in rejected.value.review.issues]
+    assert "tool_not_effective" in codes
+    assert [
+        issue.location
+        for issue in rejected.value.review.issues
+        if issue.code == "tool_not_effective"
+    ] == ["plan.steps[0].tool"]
+    # The upstream profile review still fires; the new issue is an added local guarantee.
+    assert "tool_not_allowed" in codes
     assert executor.appended == []
 
 
