@@ -251,6 +251,43 @@ class ModelFinalizeRequest(_ModelInput):
         max_length=128,
     )
 
+    @model_validator(mode="after")
+    def terminal_shape_is_honest(self) -> ModelFinalizeRequest:
+        """Mirror :meth:`AgentFinalizeEnvelope.terminal_shape_is_honest` at the model boundary.
+
+        The model-facing shape must be *at least* as strict as the durable envelope. When it is
+        looser the model gets a green light for a proposal the envelope will refuse, and the turn
+        dies inside envelope construction — the live Stage-0 defect (``awaiting_input`` carrying a
+        ``failure_code``). Every rule the envelope enforces on a field the model actually supplies
+        is restated here so the refusal happens where the model can still see and repair it.
+
+        Two envelope rules are checked against their model-side *source*: the envelope's
+        ``user_message_artifact_ref`` is persisted from ``user_message``, and its
+        ``next_action_refs`` are persisted from ``next_actions`` — or, when a non-terminal turn
+        supplies neither an explicit next action nor an open gate, from the ``user_message`` that
+        already states what the human must do (the deliberate repair in ``_finalize_tool``). Rules
+        over trusted injected fields (``output_refs``, identity, time) stay envelope-only: the
+        model does not supply them, so there is nothing honest to check here.
+        """
+
+        if self.status is FinalizeStatus.FAILED:
+            if self.failure_code is None:
+                raise ValueError("status 'failed' must carry a stable snake_case failure_code")
+        elif self.failure_code is not None:
+            raise ValueError(
+                f"status {self.status.value!r} cannot carry a failure_code; only 'failed' may"
+            )
+        if self.status is FinalizeStatus.COMPLETED and self.user_message is None:
+            raise ValueError("status 'completed' must carry a user_message")
+        if self.status in {FinalizeStatus.AWAITING_INPUT, FinalizeStatus.BLOCKED} and not (
+            self.open_gate_refs or self.next_actions or self.user_message
+        ):
+            raise ValueError(
+                f"status {self.status.value!r} must identify what it is waiting for: supply "
+                "next_actions, open_gate_refs, or a user_message that asks for it"
+            )
+        return self
+
 
 CompletionGuard = Callable[[ModelFinalizeRequest], Awaitable[None]]
 
@@ -836,9 +873,19 @@ class GovernedAgentToolFactory:
             return ref.model_dump_json()
 
         finalize_turn.__name__ = "finalize_turn"
+        # The status rules are stated here, not only enforced in the schema: a plain object
+        # schema cannot express "failure_code iff status='failed'", so the model learns the
+        # contract from the description and is refused (visibly, with one bounded repair) if it
+        # proposes a shape the durable envelope would reject.
         finalize_turn.__doc__ = (
             "Required terminal action. Durably commit the user message, frozen outputs, "
-            "typed references, and honest status. Normal model stop is not success."
+            "typed references, and honest status. Normal model stop is not success. "
+            "Status contract, enforced exactly: "
+            "'completed' requires user_message and must omit failure_code; "
+            "'awaiting_input' and 'blocked' must omit failure_code and must say what is "
+            "needed via next_actions, open_gate_refs, or a user_message that asks for it; "
+            "'failed' requires a stable snake_case failure_code. "
+            "No status other than 'failed' may carry a failure_code."
         )
         return StructuredTool.from_function(
             coroutine=finalize_turn,
