@@ -42,6 +42,24 @@ _FRAMEWORK_TOOL_NAMES = frozenset(
     }
 )
 
+_FINALIZE_TOOL_NAME = "finalize_turn"
+
+# One corrective round trip. A model that proposes a dishonest terminal shape twice has not
+# misread the schema; it is refusing the contract, and the turn must die rather than loop.
+_MAX_FINALIZE_REPAIRS = 1
+
+# The status contract itself is stated once, on the finalize tool's own description, which the
+# model is holding when it reads this. Restating it here would be a second copy free to drift.
+_FINALIZE_CONTRACT_HELP = (
+    "Nothing was committed and this turn is not finished. Call finalize_turn again with a "
+    "terminal shape that satisfies the status contract in its description. Keep the content "
+    "you already wrote; change only what the error above names."
+)
+
+_FINALIZE_REPAIRS_EXHAUSTED = (
+    "Nothing was committed and no further finalize attempt will be accepted for this turn."
+)
+
 
 def _tool_name(tool: BaseTool | dict[str, Any]) -> str:
     if isinstance(tool, BaseTool):
@@ -71,10 +89,12 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
             {
                 *(pin.name for pin in profile.profile.tools),
                 *_FRAMEWORK_TOOL_NAMES,
-                "finalize_turn",
+                _FINALIZE_TOOL_NAME,
                 *(("delegate_specialist",) if profile.profile.delegation_roles else ()),
             }
         )
+        # Per-turn state: one middleware instance is constructed per ``DeepAgentTurnRuntime.run``.
+        self._finalize_rejections = 0
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         by_name = {_tool_name(tool): tool for tool in request.tools}
@@ -140,7 +160,57 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
                 tool_call_id=str(request.tool_call.get("id", "unavailable-tool")),
                 status="error",
             )
-        return await handler(request)
+        if name != _FINALIZE_TOOL_NAME:
+            return await handler(request)
+        return await self._bounded_finalize(request, handler)
+
+    async def _bounded_finalize(self, request: Any, handler: Any) -> Any:
+        """Give a refused finalization back to the model once, then fail the turn closed.
+
+        ``finalize_turn`` is ``return_direct``: the agent graph ends as soon as the tool node
+        produces its message, which is exactly right for a *committed* finalization and exactly
+        wrong for a *refused* one — the model never saw the rejection, so the turn died as
+        ``missing_finalize`` with no feedback (the live Stage-0 defect). A refusal therefore
+        clears ``return_direct`` for that one call so the corrected proposal can come back, and
+        restores it before every attempt so a commit still ends the turn immediately.
+
+        Bounding is by omission, not by a new terminal path: once the single repair is spent the
+        tool stays ``return_direct``, so the second refusal ends the graph the way it always did
+        and the runtime reports the same stable ``missing_finalize``. Nothing was committed, so
+        that remains the honest code.
+        """
+
+        tool = request.tool
+        if isinstance(tool, BaseTool):
+            tool.return_direct = True
+        tool_call_id = str(request.tool_call.get("id", _FINALIZE_TOOL_NAME))
+        try:
+            result = await handler(request)
+        except ValueError as error:
+            # Argument-schema violations are already turned into an error ``ToolMessage`` by the
+            # tool node; a refusal raised *inside* the finalize tool (envelope construction, the
+            # completion guard) would otherwise crash the graph unseen. Both are the same thing
+            # to the model: its proposed terminal shape was not accepted.
+            result = ToolMessage(
+                content=str(error),
+                name=_FINALIZE_TOOL_NAME,
+                tool_call_id=tool_call_id,
+                status="error",
+            )
+        if not (isinstance(result, ToolMessage) and result.status == "error"):
+            return result
+
+        self._finalize_rejections += 1
+        exhausted = self._finalize_rejections > _MAX_FINALIZE_REPAIRS
+        if not exhausted and isinstance(tool, BaseTool):
+            tool.return_direct = False
+        guidance = _FINALIZE_REPAIRS_EXHAUSTED if exhausted else _FINALIZE_CONTRACT_HELP
+        return ToolMessage(
+            content=f"{result.content}\n\n{guidance}",
+            name=_FINALIZE_TOOL_NAME,
+            tool_call_id=tool_call_id,
+            status="error",
+        )
 
 
 def _error_code(exc: BaseException) -> str:
