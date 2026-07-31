@@ -737,15 +737,30 @@ class GovernedAgentToolFactory:
                     for value in model_input.assumptions
                 ]
             )
-            next_action_refs = tuple(
-                [
-                    await self._artifacts.persist_body(
-                        workspace_id=workspace_id,
-                        data=value.encode(),
-                        media_type="text/plain",
-                    )
-                    for value in model_input.next_actions
-                ]
+            # A user-facing question already identifies the requested human action. Providers
+            # occasionally omit the redundant ``next_actions`` array even when they correctly
+            # choose ``awaiting_input``. Preserve that exact message as the action reference so
+            # the honest-finalization envelope remains valid without inventing new content.
+            next_actions = model_input.next_actions
+            message_is_implicit_next_action = (
+                model_input.status in {FinalizeStatus.AWAITING_INPUT, FinalizeStatus.BLOCKED}
+                and not model_input.open_gate_refs
+                and not next_actions
+                and model_input.user_message is not None
+            )
+            next_action_refs = (
+                (final_message_ref,)
+                if message_is_implicit_next_action and final_message_ref is not None
+                else tuple(
+                    [
+                        await self._artifacts.persist_body(
+                            workspace_id=workspace_id,
+                            data=value.encode(),
+                            media_type="text/plain",
+                        )
+                        for value in next_actions
+                    ]
+                )
             )
             output_refs = tuple(await self._lease.backend.snapshot_outputs())
             envelope = AgentFinalizeEnvelope(
