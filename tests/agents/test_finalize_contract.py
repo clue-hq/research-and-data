@@ -22,17 +22,21 @@ from pydantic import ValidationError
 
 from clue_agents import (
     AgentExecutionStatus,
+    AgentFinalizeEnvelope,
     AgentRole,
     AgentTurnRequest,
     ArtifactRef,
     AssembledAgentContext,
     DeepAgentTurnRuntime,
     FinalizeStatus,
+    WorkspaceEntry,
 )
+from clue_agents import runtime as runtime_module
+from clue_agents.contracts import ReasonCode
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory, ModelFinalizeRequest
 from clue_api.toolbelt_wiring import build_toolbelt
-from tests.agents.conftest import NOW, artifact, constitution
+from tests.agents.conftest import EXECUTION_ID, NOW, artifact, constitution
 from tests.agents.test_contracts import context_manifest
 from tests.agents.test_runtime import (
     _DelegationArtifacts,
@@ -114,6 +118,70 @@ def test_failed_needs_no_user_message_because_the_envelope_does_not() -> None:
         {"status": "failed", "failure_code": _LIVE_FAILURE_CODE}
     )
     assert request.status is FinalizeStatus.FAILED
+
+
+# --- the failure_code *value* shape, not just its presence ---------------------------------
+
+
+def _envelope(failure_code: str) -> AgentFinalizeEnvelope:
+    return AgentFinalizeEnvelope(
+        finalization_id=UUID("00000000-0000-0000-0000-0000000006f0"),
+        execution_id=EXECUTION_ID,
+        status=FinalizeStatus.FAILED,
+        failure_code=failure_code,
+        finalized_at=NOW,
+    )
+
+
+def test_the_model_field_reuses_the_envelope_type_instead_of_copying_its_pattern() -> None:
+    # A hand-copied ``StringConstraints`` is how a boundary silently drifts loose again. Pin that
+    # both sides resolve to the *same* annotated type, so tightening one tightens the other.
+    model_field = ModelFinalizeRequest.model_fields["failure_code"]
+    envelope_field = AgentFinalizeEnvelope.model_fields["failure_code"]
+
+    assert model_field.annotation == envelope_field.annotation
+    assert model_field.annotation == (ReasonCode | None)
+
+
+@pytest.mark.parametrize(
+    "failure_code",
+    [
+        "interview_routing_validation_failed",
+        "interview_routing.validation_failed",
+        "routing-failed",
+        "9_failed",
+        "a" * 128,
+        "Interview_Failed",
+        "interview routing failed",
+        "interview_routing_validation_failed!",
+        "a" * 129,
+        "",
+    ],
+)
+def test_the_model_boundary_and_the_envelope_agree_on_every_failure_code(
+    failure_code: str,
+) -> None:
+    """Whatever the envelope refuses, the model boundary must refuse too — and vice versa.
+
+    Presence parity is not enough: a ``failed`` turn whose ``failure_code`` passes the model
+    boundary and then dies in envelope construction is the same defect on the same field.
+    """
+
+    try:
+        _envelope(failure_code)
+    except ValidationError:
+        envelope_accepts = False
+    else:
+        envelope_accepts = True
+
+    try:
+        ModelFinalizeRequest.model_validate({"status": "failed", "failure_code": failure_code})
+    except ValidationError:
+        model_accepts = False
+    else:
+        model_accepts = True
+
+    assert model_accepts == envelope_accepts
 
 
 # --- parity: whatever the model boundary accepts, the durable envelope also accepts --------
@@ -232,7 +300,23 @@ def _finalize_call(call_id: str, **args: Any) -> AIMessage:
     )
 
 
-def _run(responses: tuple[AIMessage, ...]) -> tuple[Any, _FinalizingExecutionAdapter, Any]:
+class _EmptyRequiredOutputBackend(_EmptyOutputBackend):
+    """Workspace whose required role output exists but is empty.
+
+    Drives ``_finalize_tool``'s own ``ValueError`` guard — a refusal raised *inside* the tool
+    coroutine, not by the args schema, so it exercises the exception arm of ``_bounded_finalize``.
+    """
+
+    async def stat_entry(self, path: str) -> WorkspaceEntry:
+        return WorkspaceEntry(path=path, kind="file", byte_count=0, sha256=None, read_only=False)
+
+
+def _run(
+    responses: tuple[AIMessage, ...],
+    *,
+    required_output_path: str | None = None,
+    backend: object | None = None,
+) -> tuple[Any, _FinalizingExecutionAdapter, Any]:
     execution = _FinalizingExecutionAdapter()
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     resolved = registry.resolve(AgentRole.HEAD_OF_ABM)
@@ -251,8 +335,9 @@ def _run(responses: tuple[AIMessage, ...]) -> tuple[Any, _FinalizingExecutionAda
         resolved_profile=resolved,
         registry=build_toolbelt(storage=None, gateway=None),
         execution=cast(Any, execution),
-        lease=cast(Any, SimpleNamespace(backend=_EmptyOutputBackend())),
+        lease=cast(Any, SimpleNamespace(backend=backend or _EmptyOutputBackend())),
         artifacts=cast(Any, _DelegationArtifacts()),
+        required_output_path=required_output_path,
     )
     runtime = DeepAgentTurnRuntime(
         models=_Models(responses),
@@ -326,3 +411,47 @@ def test_two_invalid_finalizations_still_fail_closed() -> None:
     assert execution.envelopes == []
     # Exactly one bounded corrective retry: the model is not asked a third time.
     assert len(calls.batches) == 2
+
+
+# --- refusals raised *inside* the finalize coroutine (the broad ValueError arm) -------------
+
+
+def test_a_guard_raised_inside_the_finalize_tool_reaches_the_model_and_the_operator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A plain ``ValueError`` from a finalize guard is model feedback *and* an operator signal.
+
+    ``ModelFinalizeRequest`` accepts this payload, so the refusal happens in the coroutine, past
+    the args schema. Without the exception arm it crashes the graph unseen; with it, the turn now
+    ends ``missing_finalize`` instead of surfacing the guard's own exception — so the swallowed
+    error must be logged, or the diagnosis is lost.
+    """
+
+    emitted: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        runtime_module,
+        "log",
+        SimpleNamespace(warning=lambda event, **fields: emitted.append((event, fields))),
+    )
+    outcome, execution, calls = _run(
+        (
+            _finalize_call("finalize-guard-1", status="completed", user_message=_QUESTION),
+            _finalize_call("finalize-guard-2", status="completed", user_message=_QUESTION),
+        ),
+        required_output_path="outputs/review-verdict.md",
+        backend=_EmptyRequiredOutputBackend(),
+    )
+
+    # The guard's own words reached the model, which got exactly one corrective attempt.
+    assert len(calls.batches) == 2
+    feedback = str(calls.batches[1][-1].content)
+    assert "non-empty role output file" in feedback
+    # ... and the same error is on the operator's side, not only in the model transcript.
+    assert [event for event, _ in emitted] == ["agent.finalize_refused"] * 2
+    assert emitted[0][1]["error_type"] == "ValueError"
+    assert "non-empty role output file" in emitted[0][1]["error"]
+    assert [fields["rejection"] for _, fields in emitted] == [1, 2]
+    # Fail-closed is unchanged: nothing committed, one stable code.
+    assert outcome.status is AgentExecutionStatus.FAILED
+    assert outcome.failure_code == "missing_finalize"
+    assert execution.envelopes == []

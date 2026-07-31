@@ -42,6 +42,7 @@ from clue_agents.contracts import (
     MODEL_FORBIDDEN_AUTHORITY_KEYS,
     PlanDelegationStep,
     PlanToolStep,
+    ReasonCode,
     normalize_virtual_path,
 )
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
@@ -245,11 +246,11 @@ class ModelFinalizeRequest(_ModelInput):
     open_gate_refs: tuple[DomainObjectRef, ...] = ()
     assumptions: tuple[str, ...] = Field(default=(), max_length=64)
     next_actions: tuple[str, ...] = Field(default=(), max_length=64)
-    failure_code: str | None = Field(
-        default=None,
-        pattern=r"^[a-z0-9_.-]+$",
-        max_length=128,
-    )
+    # The envelope's own alias, not a copy of its pattern. A hand-copied constraint is the exact
+    # drift hazard this contract-parity work exists to close: tightening ``ReasonCode`` would
+    # silently leave the model boundary looser again, and the model would once more be told yes
+    # about a code the durable envelope refuses.
+    failure_code: ReasonCode | None = None
 
     @model_validator(mode="after")
     def terminal_shape_is_honest(self) -> ModelFinalizeRequest:
@@ -884,7 +885,8 @@ class GovernedAgentToolFactory:
             "'completed' requires user_message and must omit failure_code; "
             "'awaiting_input' and 'blocked' must omit failure_code and must say what is "
             "needed via next_actions, open_gate_refs, or a user_message that asks for it; "
-            "'failed' requires a stable snake_case failure_code. "
+            "'failed' requires a stable failure_code matching ^[a-z0-9_.-]+$ (lowercase, at "
+            "most 128 characters). "
             "No status other than 'failed' may carry a failure_code."
         )
         return StructuredTool.from_function(
