@@ -48,8 +48,8 @@ Behavioural probe against the pre-change tree (throwaway DB), zero-evidence clie
 
 ## Verification
 
-- Focused: `tests/stage0` (110), `tests/api` — green on a throwaway Postgres
-  (`clue-postgres-task4`, host port 5441). Full `pytest -q` green after a schema reset.
+- Focused: `tests/stage0` + the trial API suites (131 passed), and all of `tests/api` — green on a
+  throwaway Postgres (`clue-postgres-task4`, host port 5441), never the shared `clue` DB.
 - `ruff check` / `ruff format` clean on changed files; bare `mypy` (the `make typecheck` gate)
   green. No migration needed — `volunteered_statement` already had everything.
 
@@ -59,7 +59,11 @@ Behavioural probe against the pre-change tree (throwaway DB), zero-evidence clie
   `status` there is a pinned tool-contract change (`synthesize_icps@1`) and was left alone.
 - `read_statements` defaults to `route_kind=project_state`; other route kinds are readable but
   unused today.
-- DB test isolation: `tests/sources/test_waterfall.py` and `tests/toolbelt/test_runner.py` fail with
-  `SourceManifestRedefinitionError` on a database that has accumulated committed source manifests
-  from an earlier full-suite run. Reset the schema (`DROP SCHEMA public CASCADE; CREATE SCHEMA
-  public;`) before a full run. Pre-existing harness behaviour, unrelated to this task.
+- **A full `pytest -q` is not green at the base commit either** — pre-existing harness pollution,
+  not a regression. On a freshly reset schema: base `4279930` → 10 failures (`tests/stage0`
+  icp_confirm/icp_handler/icp_synthesis, `tests/toolbelt/test_runner.py`); after this task → 8
+  (`tests/sources/test_waterfall.py`, `tests/toolbelt/test_runner.py`, all
+  `SourceManifestRedefinitionError: source 'crm' is already registered at version 1`). The failing
+  set varies per run: some tests commit instead of rolling back, so later registrations collide.
+  Every affected file passes in isolation. Until someone fixes the isolation, "full suite green" is
+  not an available signal on this branch — verify with focused suites on a throwaway DB.
