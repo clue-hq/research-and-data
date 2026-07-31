@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 import httpx
+import pytest
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -15,12 +16,18 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from clue_config.gateway import GatewayConfig, ModelPrice
 from clue_gateway import OpenRouterAgentModelProvider
-from clue_gateway.agent_model import GovernedAgentChatModel
+from clue_gateway.agent_model import (
+    GovernedAgentChatModel,
+    provider_compatible_tool_schema,
+    unsupported_schema_pattern,
+)
 from clue_obs.otel import SPAN_LLM_GATEWAY_CALL, collect_spans
+from clue_research.proposals.models import SourceManifestDraft
 
 
 class ReadProjectInput(BaseModel):
@@ -352,3 +359,109 @@ def test_agent_model_policy_cannot_exceed_gateway_timeout_or_retries() -> None:
         assert "retries" in str(exc)
     else:
         raise AssertionError("retry escalation must fail")
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$",
+        r"^(?=.*a).*$",
+        r"(?<=x)y",
+        r"(?<!x)y",
+        r"(\w+)\s+\1",
+    ],
+)
+def test_unsupported_schema_pattern_flags_lookaround_and_backreferences(pattern: str) -> None:
+    assert unsupported_schema_pattern(pattern) is True
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"^[a-z][a-z0-9_]*$",
+        r"^\d{4}-\d{2}-\d{2}$",
+        r"^(alpha|beta)$",
+    ],
+)
+def test_supported_schema_patterns_are_kept(pattern: str) -> None:
+    assert unsupported_schema_pattern(pattern) is False
+
+
+def test_provider_compatible_tool_schema_drops_only_unsupported_patterns() -> None:
+    schema = {
+        "type": "function",
+        "function": {
+            "name": "example",
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "amount": {
+                        "anyOf": [
+                            {"type": "number", "minimum": 0.0},
+                            {"type": "string", "pattern": r"^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$"},
+                        ],
+                        "title": "Amount",
+                    },
+                    "slug": {"type": "string", "pattern": r"^[a-z][a-z0-9_]*$"},
+                    "pattern": {"type": "string"},
+                },
+                "required": ["amount", "slug"],
+            },
+        },
+    }
+
+    transformed = provider_compatible_tool_schema(schema)
+
+    assert transformed == {
+        "type": "function",
+        "function": {
+            "name": "example",
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "amount": {
+                        "anyOf": [
+                            {"type": "number", "minimum": 0.0},
+                            {"type": "string"},
+                        ],
+                        "title": "Amount",
+                    },
+                    "slug": {"type": "string", "pattern": r"^[a-z][a-z0-9_]*$"},
+                    "pattern": {"type": "string"},
+                },
+                "required": ["amount", "slug"],
+            },
+        },
+    }
+
+
+def test_decimal_tool_schema_loses_lookahead_while_local_validation_still_rejects_negatives() -> (
+    None
+):
+    raw = json.dumps(convert_to_openai_tool(SourceManifestDraft))
+    assert "(?!" in raw
+
+    model = GovernedAgentChatModel(
+        models=(StreamingChatModel(),),
+        model_ids=("served/streaming-model",),
+        requested_model="requested/model",
+        gateway_config=GatewayConfig(),
+    )
+    bound = model.bind_tools([SourceManifestDraft])
+
+    emitted = json.dumps(bound.kwargs["tools"])
+    assert "(?!" not in emitted
+    assert '"cost_cents"' in emitted
+
+    payload = {
+        "source_key": "example_source",
+        "modality": "text",
+        "entity_scope": "account",
+    }
+    assert SourceManifestDraft.model_validate({**payload, "cost_cents": "1.5"}).cost_cents == (
+        Decimal("1.5")
+    )
+    with pytest.raises(ValidationError):
+        SourceManifestDraft.model_validate({**payload, "cost_cents": "-1"})

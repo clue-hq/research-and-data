@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
@@ -24,7 +25,53 @@ from clue_core.gateway import TokenUsage
 from clue_gateway.tracing import record_model_call
 from clue_obs.otel import ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
 
-__all__ = ["GovernedAgentChatModel", "OpenRouterAgentModelProvider"]
+__all__ = [
+    "GovernedAgentChatModel",
+    "OpenRouterAgentModelProvider",
+    "provider_compatible_tool_schema",
+    "unsupported_schema_pattern",
+]
+
+# The OpenAI/OpenRouter Responses JSON-schema subset rejects lookaround and backreferences; a
+# single offending tool schema fails the whole request (all tools are sent together) with
+# "regex lookaround is not supported". Pydantic emits one for every ``Decimal`` field.
+_UNSUPPORTED_REGEX_CONSTRUCTS = ("(?=", "(?!", "(?<=", "(?<!")
+_BACKREFERENCE = re.compile(r"\\[1-9]")
+
+
+def unsupported_schema_pattern(pattern: str) -> bool:
+    """Report whether a JSON-schema ``pattern`` uses regex the provider subset rejects."""
+
+    if any(construct in pattern for construct in _UNSUPPORTED_REGEX_CONSTRUCTS):
+        return True
+    return _BACKREFERENCE.search(pattern) is not None
+
+
+def provider_compatible_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Drop the ``pattern`` constraints the provider rejects, preserving everything else.
+
+    The provider schema is model *guidance*: every tool argument is re-validated locally against
+    the owning pydantic model before anything durable happens, so dropping a pattern here loosens
+    no platform guarantee. Rejecting the whole request does.
+    """
+
+    transformed = _without_unsupported_patterns(schema)
+    return cast(dict[str, Any], transformed)
+
+
+def _without_unsupported_patterns(node: Any) -> Any:
+    if isinstance(node, dict):
+        return {
+            key: _without_unsupported_patterns(value)
+            for key, value in node.items()
+            if not (
+                key == "pattern" and isinstance(value, str) and unsupported_schema_pattern(value)
+            )
+        }
+    if isinstance(node, list):
+        return [_without_unsupported_patterns(item) for item in node]
+    return node
+
 
 _REQUESTED_MODEL_KEY = "clue_requested_model"
 _ANSWERING_MODEL_KEY = "clue_answering_model"
@@ -71,7 +118,9 @@ class GovernedAgentChatModel(BaseChatModel):
     ) -> Runnable[Any, AIMessage]:
         """Bind standard tool schemas while keeping calls inside this governed wrapper."""
 
-        formatted = [convert_to_openai_tool(tool) for tool in tools]
+        formatted = [
+            provider_compatible_tool_schema(convert_to_openai_tool(tool)) for tool in tools
+        ]
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
         return self.bind(tools=formatted, **kwargs)
