@@ -74,7 +74,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
                 "id": "gen-c6-spike",
                 "object": "chat.completion",
                 "created": 1_775_000_000,
-                "model": "openai/gpt-4.1",
+                "model": "openai/gpt-5.6-terra",
                 "choices": [
                     {
                         "index": 0,
@@ -111,7 +111,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
         timeout_s=30,
         max_retries=2,
         prices={
-            "openai/gpt-4.1": ModelPrice(
+            "openai/gpt-5.6-terra": ModelPrice(
                 prompt_cents_per_1k=Decimal(1),
                 completion_cents_per_1k=Decimal(2),
             )
@@ -124,7 +124,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
         http_async_client=async_client,
     )
     model = provider.build(
-        model_id="openai/gpt-4.1",
+        model_id="openai/gpt-5.6-terra",
         timeout_s=10,
         max_retries=1,
         max_output_tokens=1_024,
@@ -146,15 +146,16 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     assert response.usage_metadata is not None
     assert response.usage_metadata["input_tokens"] == 11
     assert response.usage_metadata["output_tokens"] == 7
-    assert response.response_metadata["clue_requested_model"] == "openai/gpt-4.1"
-    assert response.response_metadata["clue_answering_model"] == "openai/gpt-4.1"
+    assert response.response_metadata["clue_requested_model"] == "openai/gpt-5.6-terra"
+    assert response.response_metadata["clue_answering_model"] == "openai/gpt-5.6-terra"
     assert response.response_metadata["clue_cost_cents"] == "0.025"
     spans = exporter.get_finished_spans()
     assert [span.name for span in spans] == [SPAN_LLM_GATEWAY_CALL]
     assert spans[0].attributes is not None
     assert spans[0].attributes["prompt_tokens"] == 11
     assert spans[0].attributes["completion_tokens"] == 7
-    assert requests[0]["model"] == "openai/gpt-4.1"
+    assert requests[0]["model"] == "openai/gpt-5.6-terra"
+    assert requests[0]["reasoning_effort"] == "none"
     assert requests[0]["max_completion_tokens"] == 1_024
     assert requests[0]["tools"][0]["function"]["name"] == "ReadProjectInput"
 

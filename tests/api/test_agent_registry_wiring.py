@@ -40,19 +40,20 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        AgentRole.HEAD_OF_ABM: "37ec5a2225ee5b8b5085024062df54fece1dcca341843dd9441ffc06918d3bdd",
-        AgentRole.RESEARCH: "410e8dbe943a4d986b2b1a9f16fbab9c16c0d3444612885c0ee7879543c0e9de",
+        AgentRole.HEAD_OF_ABM: "262f445b7d5d102f92c5f6c8bbf6c1de55ce13eae5e98aabf7b8ff0d93268b8f",
+        AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
-            "6ab9f9d10802d6e010b914b1ed3133a82aa553decc4fdefa9cbfdfb4867e512d"
+            "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
         ),
-        AgentRole.REVIEWER: "4a62e67190ae4a396a99332796cf20a833f869498c034ae01e086d0648b1c05e",
+        AgentRole.REVIEWER: "b4859443637154e4e10a6598f17c2f54b0688f6faea2696e9a7ff4cf3a3f0deb",
         AgentRole.ACCOUNT_RESEARCH: (
-            "8eb6b879af314c3cb73051d36e30d98be47d2b5229790aaff183649ca907b33c"
+            "c4aa0f4f8c3d660d0dc5ef2ee85b7e39077c07f918d22118a5800cb63da35b06"
         ),
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
+        assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
         expected_tools = {
             (
                 "research_account_gaps@2"

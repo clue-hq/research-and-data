@@ -38,7 +38,7 @@ real agent-quality trial and requires `CLUE_OPENROUTER_API_KEY`.
 |----------|---------|--------|
 | `CLUE_DATABASE_URL` | optional | DB DSN. Default `postgresql+asyncpg://clue:clue@localhost:5432/clue` (matches `make db-up`). Set only if your DB differs. |
 | `CLUE_OPENROUTER_API_KEY` | optional | Unset → **deterministic stub gateway** (no live LLM). Set → real LLM for ICP synthesis / committee role inference. |
-| `CLUE_SYNTHESIS_MODEL` | optional | OpenRouter model id for ICP synthesis. Unset → `anthropic/claude-opus-4-8`. |
+| `CLUE_SYNTHESIS_MODEL` | optional | OpenRouter model id for ICP synthesis. Unset → `openai/gpt-5.6-terra`. |
 | `CLUE_FIRECRAWL_API_KEY` | optional | Live official-site scrape for Stage 0 / deep fields. Unset → those tiers return nothing. |
 | `CLUE_APOLLO_API_KEY`, `CLUE_ZOOMINFO_API_KEY`, `CLUE_BUILTWITH_API_KEY`, `CLUE_EXA_API_KEY`, `CLUE_PARALLEL_API_KEY`, `CLUE_DUNS_API_KEY`, `CLUE_CRM_API_KEY`, `CLUE_CLAY_API_KEY` | optional | Live deterministic / tier-4 resolvers. Unset → no live data from that provider. |
 | `CLUE_REDIS_URL` | optional | In-flight locks; not used by these scripts. |
