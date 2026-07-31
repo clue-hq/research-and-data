@@ -27,11 +27,11 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v4",
-    AgentRole.RESEARCH: "v3",
-    AgentRole.CONTENT_DRAFTER: "v3",
-    AgentRole.REVIEWER: "v3",
-    AgentRole.ACCOUNT_RESEARCH: "v2",
+    AgentRole.HEAD_OF_ABM: "v5",
+    AgentRole.RESEARCH: "v4",
+    AgentRole.CONTENT_DRAFTER: "v4",
+    AgentRole.REVIEWER: "v4",
+    AgentRole.ACCOUNT_RESEARCH: "v3",
 }
 
 

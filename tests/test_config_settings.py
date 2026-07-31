@@ -16,7 +16,7 @@ def test_synthesis_model_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("CLUE_SYNTHESIS_MODEL", raising=False)
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.synthesis_model == DEFAULT_SYNTHESIS_MODEL
-    assert settings.synthesis_model == "anthropic/claude-opus-4-8"
+    assert settings.synthesis_model == "openai/gpt-5.6-terra"
 
 
 def test_synthesis_model_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:

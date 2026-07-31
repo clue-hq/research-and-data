@@ -18,7 +18,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
-DEFAULT_SYNTHESIS_MODEL: Final = "anthropic/claude-opus-4-8"
+DEFAULT_SYNTHESIS_MODEL: Final = "openai/gpt-5.6-terra"
 
 
 class Settings(BaseSettings):

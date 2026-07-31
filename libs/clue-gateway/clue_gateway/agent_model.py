@@ -438,6 +438,11 @@ class OpenRouterAgentModelProvider:
         max_output_tokens: int,
         temperature: float,
     ) -> BaseChatModel:
+        # This adapter uses Chat Completions with function tools. GPT-5.6 defaults to reasoning,
+        # while that endpoint's function-tool path requires effective reasoning ``none``. Keep
+        # the compatibility policy at the provider boundary so every governed agent call is safe
+        # without weakening or duplicating the immutable role profiles.
+        reasoning_effort = "none" if model_id.startswith("openai/gpt-5.6") else None
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
         return ChatOpenAI(  # type: ignore[call-arg]
             model=model_id,
@@ -450,6 +455,7 @@ class OpenRouterAgentModelProvider:
             stream_usage=True,
             http_client=self._http_client,
             http_async_client=self._http_async_client,
+            reasoning_effort=reasoning_effort,
         )
 
 
