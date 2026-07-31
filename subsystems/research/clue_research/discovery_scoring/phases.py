@@ -34,6 +34,7 @@ from clue_core import (
     PhaseStatus,
     PreSpendGate,
     ProjectPhase,
+    ProjectRunId,
     RunId,
 )
 from clue_db import ConnFactory, transaction
@@ -86,13 +87,28 @@ from clue_research.sources import DEFAULT_CONFIDENCE_THRESHOLDS, ConfidenceThres
 from clue_research.sources.source_yield import record_source_yield
 
 
-def _discovery_run_id(ctx: PhaseContext) -> RunId:
+def discovery_run_id(ctx: PhaseContext) -> RunId:
     """A deterministic discovery run id per ``(project_run, icp_key, icp_version)`` — stable across
     M7 phase replays (so the gate's idempotency holds) and distinct per ICP (D5 multi-ICP)."""
+    return project_discovery_run_id(
+        project_run_id=ctx.project_run_id,
+        icp_key=ctx.icp_key,
+        icp_version=ctx.icp_version,
+    )
+
+
+def project_discovery_run_id(
+    *,
+    project_run_id: ProjectRunId,
+    icp_key: str,
+    icp_version: int,
+) -> RunId:
+    """The shared discovery identity for callers admitting imports before the phase is driven."""
+
     return RunId(
         uuid5(
             NAMESPACE_URL,
-            f"clue:discovery-run:{ctx.project_run_id}:{ctx.icp_key}:{ctx.icp_version}",
+            f"clue:discovery-run:{project_run_id}:{icp_key}:{icp_version}",
         )
     )
 
@@ -120,7 +136,7 @@ class DiscoveryPhaseHandler:
         self._session_factory = session_factory
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        run_id = _discovery_run_id(ctx)
+        run_id = discovery_run_id(ctx)
         async with self._session_factory() as conn:
             spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
@@ -257,7 +273,7 @@ class ScoringPhaseHandler:
         self._pre_spend_gate = pre_spend_gate
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        discovery_run = _discovery_run_id(ctx)
+        discovery_run = discovery_run_id(ctx)
         scoring_run = _scoring_run_id(ctx)
         async with self._session_factory() as conn:
             spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
@@ -505,7 +521,7 @@ class TierCheckpointPhaseHandler:
             # seeded, so the coverage placeholder stays unpopulated — it never fails the gate.
             coverage = await coverage_report(
                 conn,
-                run_id=_discovery_run_id(ctx),
+                run_id=discovery_run_id(ctx),
                 spec=spec,
                 config=self._coverage_config,
             )
@@ -551,4 +567,10 @@ class TierCheckpointPhaseHandler:
             return PhaseResult(status=PhaseStatus.PAUSED, payload=payload)
 
 
-__all__ = ["DiscoveryPhaseHandler", "ScoringPhaseHandler", "TierCheckpointPhaseHandler"]
+__all__ = [
+    "DiscoveryPhaseHandler",
+    "ScoringPhaseHandler",
+    "TierCheckpointPhaseHandler",
+    "discovery_run_id",
+    "project_discovery_run_id",
+]

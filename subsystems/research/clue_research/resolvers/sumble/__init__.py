@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+from threading import RLock
 from typing import Any, Final, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter
@@ -224,6 +225,32 @@ class MappingSumbleSnapshotLookup:
         self, entity_id: EntityId, source_key: SumbleSourceKey
     ) -> SumbleSnapshot | None:
         return self._snapshots.get((entity_id, source_key))
+
+
+class MutableSumbleSnapshotLookup:
+    """Process-local read-through cache populated only from durable Sumble receipts.
+
+    The resolver protocol is synchronous, so it cannot read the async artifact store itself.
+    Composition loads each receipt before driving a phase and places it here. A lock keeps multiple
+    local trial requests from observing a partially-updated mapping; authoritative data remains the
+    receipt artifact, not this cache.
+    """
+
+    def __init__(self) -> None:
+        self._snapshots: dict[tuple[EntityId, SumbleSourceKey], SumbleSnapshot] = {}
+        self._lock = RLock()
+
+    def put(self, entity_id: EntityId, snapshot: SumbleSnapshot) -> None:
+        if snapshot.artifact_key is None:
+            raise ValueError("only durable Sumble snapshots may be bound to resolvers")
+        with self._lock:
+            self._snapshots[(entity_id, snapshot.source_key)] = snapshot
+
+    def snapshot_for(
+        self, entity_id: EntityId, source_key: SumbleSourceKey
+    ) -> SumbleSnapshot | None:
+        with self._lock:
+            return self._snapshots.get((entity_id, source_key))
 
 
 @dataclass
@@ -585,6 +612,7 @@ __all__ = [
     "AUTH_REF",
     "JOBS_SOURCE_KEY",
     "MappingSumbleSnapshotLookup",
+    "MutableSumbleSnapshotLookup",
     "ORGANIZATIONS_SOURCE_KEY",
     "SUMBLE_API_BASE",
     "SUMBLE_API_VERSION",

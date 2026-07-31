@@ -125,7 +125,7 @@ from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.discovery_scoring.phases import (
     DiscoveryPhaseHandler,
     ScoringPhaseHandler,
-    _discovery_run_id,
+    discovery_run_id,
 )
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
@@ -794,7 +794,7 @@ class ScoreAccountsTool(_CapabilityTool):
         # S8: scoring over an empty admitted set is a silent no-op — refuse it. The admitted set is
         # the accounts carrying a ``core.discovery_provenance`` claim for this run's deterministic
         # discovery run-id (the same id + ALL_WORKSPACES scope ScoringPhaseHandler itself reads).
-        discovery_run = _discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
+        discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
         async with self._conn_factory() as conn:
             admitted = await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
         if not admitted:

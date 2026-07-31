@@ -1,5 +1,13 @@
 """Local acceptance-harness composition without a second product control plane."""
 
+from clue_api.trial.spine import (
+    ClueTrialSpine,
+    SumbleAcquisitionResult,
+    TrialAccountNotAdmitted,
+    TrialProjectRun,
+    TrialReadinessOverrideRequired,
+    TrialResearchState,
+)
 from clue_api.trial.sumble import (
     DbSumbleReceiptStore,
     SumbleAcquisitionPending,
@@ -10,10 +18,16 @@ from clue_api.trial.sumble import (
 )
 
 __all__ = [
+    "ClueTrialSpine",
     "DbSumbleReceiptStore",
+    "SumbleAcquisitionResult",
     "SumbleAcquisitionPending",
     "SumbleAcquisitionService",
     "SumbleReceiptPersistenceError",
     "SumbleReceiptStore",
+    "TrialAccountNotAdmitted",
+    "TrialProjectRun",
+    "TrialReadinessOverrideRequired",
+    "TrialResearchState",
     "sumble_acquisition_key",
 ]
