@@ -103,8 +103,11 @@ Both send the assembled text as a **single** conversation turn. Blank lines and 
 the block are preserved; only the outer whitespace is trimmed. A pasted line that starts with `/`
 is content, not a command. `/paste` also ends at Ctrl-D. `/file` accepts a quoted or `~`-prefixed
 path and refuses a missing path, a directory, a non-UTF-8 file, an empty file, or anything larger
-than 64 KB (the per-message guard); either command refusing prints an error and hands the prompt
-back without touching durable state.
+than 16 KB; either command refusing prints an error and hands the prompt back without touching
+durable state. The 16 KB ceiling comes from the routing-honesty guard, not from the API: the agent
+must echo your message byte-identically into `record_interview_answer`, so a turn has to fit the
+profile's output-token budget (8192 for head-of-abm v6) together with the statements it routes.
+Send a longer brief in two or three `/paste` turns.
 
 `/confirm-product`, `/synthesize-icp`, and `/confirm-icp` are explicit human actions; the agent
 cannot perform them. `/synthesize-icp` and `/confirm-icp` both require a confirmed product and

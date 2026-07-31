@@ -20,9 +20,14 @@ from pathlib import Path
 #: A line containing only this (trailing whitespace tolerated) ends a ``/paste`` block.
 PASTE_TERMINATOR = "."
 
-#: Client-side sanity cap for one assembled message. The trial API sets no maximum of its own; this
-#: keeps an accidental ``/file`` of a log or a binary from being shipped as a conversation turn.
-MAX_MESSAGE_BYTES = 64 * 1024
+#: Client-side cap for one assembled message. The trial API sets no maximum of its own, but the real
+#: bound is Stage-0 routing: the turn guard requires the model to echo the whole message
+#: byte-identically into ``record_interview_answer.answer`` (sha compared server-side), so the echo
+#: must fit the active profile's output budget — ``max_output_tokens: 8192`` for head-of-abm v6,
+#: i.e. roughly 25-30 KB of text *including* the statements array and the rest of the tool call.
+#: 16 KB leaves headroom for that overhead; it also keeps an accidental ``/file`` of a log or a
+#: binary from being shipped as a conversation turn.
+MAX_MESSAGE_BYTES = 16 * 1024
 
 
 class MultilineInputError(ValueError):

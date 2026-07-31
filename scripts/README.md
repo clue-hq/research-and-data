@@ -105,8 +105,11 @@ model calls). Two commands send a block as a **single** message:
 
 Blank lines and indentation inside the block are preserved; only the outer whitespace is trimmed. A
 pasted line starting with `/` is content, not a command. `/file` accepts a quoted or `~`-prefixed
-path and refuses a missing path, a directory, a non-UTF-8 file, an empty file, or more than 64 KB —
-a refusal prints an error and returns you to the prompt with durable state untouched. The shared
+path and refuses a missing path, a directory, a non-UTF-8 file, an empty file, or more than 16 KB —
+a refusal prints an error and returns you to the prompt with durable state untouched. The 16 KB cap
+is set by Stage-0 routing, not by the API: the turn guard makes the agent echo your message
+byte-identically into `record_interview_answer`, so it has to fit the agent profile's output-token
+budget alongside the statements it routes. The shared
 implementation is `scripts/cli_multiline.py` (stdlib-only, so `clue_trial.py` stays HTTP-only).
 
 ## Offline vs. live — what you actually see
