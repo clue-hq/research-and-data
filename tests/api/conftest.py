@@ -9,10 +9,16 @@ tests ``pytest.skip`` without a reachable ``CLUE_DATABASE_URL`` so ``make check`
 It also makes the api suite hermetic to ambient **activation flags**: these tests assert
 default-off wiring (which routes/tools a composition root exposes), so an operator's live
 trial/canary configuration (``CLUE_TRIAL_ENABLED``, ``CLUE_C7_*``, ``CLUE_AGENT_*_ROUTING_ENABLED``
-…) must not change what they observe. See ``_hermetic_feature_flags`` below.
+…) must not change what they observe. The autouse ``_hermetic_feature_flags`` covers every test
+body; a **higher-scoped fixture is instantiated before it**, so a module-/session-scoped fixture
+that builds a composition root must enter ``hermetic_flag_env()`` itself (see
+``tests/api/test_agent_registry_wiring.py::registry``).
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 
@@ -45,26 +51,38 @@ FLAG_ENV_VARS: tuple[str, ...] = tuple(
 )
 
 
-@pytest.fixture(autouse=True)
-def _hermetic_feature_flags(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Strip ambient activation flags so the api suite observes documented defaults.
-
-    Two leak channels, both closed here:
+@contextmanager
+def hermetic_flag_env() -> Iterator[None]:
+    """Neutralise both activation-flag channels for the duration of the block.
 
     * the **process environment** — an operator shell with the trial/canary flags exported;
     * the **``.env`` file** — ``Settings`` declares ``env_file=".env"``, and the composition roots
       call the production ``load_settings()`` (no ``_env_file=None``), so a repo-root ``.env``
       reaches them even from an otherwise clean shell. ``tests/api/test_toolbelt_wiring.py::
-      test_out_of_order_matrix`` fails on this channel alone. Detaching ``env_file`` for the
-      duration of a test makes a local run see exactly what CI (which has no ``.env``) sees.
-      Scoped to ``Settings``: ``Secrets`` keeps its own ``.env`` loading, so credentials and
-      ``CLUE_DATABASE_URL`` — hence the DB skip-gate — are untouched.
+      test_out_of_order_matrix`` fails on this channel alone. Detaching ``env_file`` makes a local
+      run see exactly what CI (which has no ``.env``) sees. Scoped to ``Settings``: ``Secrets``
+      keeps its own ``.env`` loading, so credentials and ``CLUE_DATABASE_URL`` — hence the DB
+      skip-gate — are untouched.
 
-    Function-scoped and autouse, so it runs before the test body: a test that *wants* a flag on
-    still sets it (via its own ``monkeypatch.setenv`` or, more commonly here, by passing the value
-    straight to ``load_settings``) after this cleanup, and ``monkeypatch`` restores the operator's
-    environment afterwards.
+    The one policy definition for the package: the autouse fixture below wraps every test in it,
+    and a higher-scoped fixture (which pytest builds *before* any function-scoped fixture) enters
+    it directly rather than re-implementing the neutralisation.
     """
-    for var in FLAG_ENV_VARS:
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    with pytest.MonkeyPatch.context() as mp:
+        for var in FLAG_ENV_VARS:
+            mp.delenv(var, raising=False)
+        mp.setitem(Settings.model_config, "env_file", None)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_feature_flags() -> Iterator[None]:
+    """Strip ambient activation flags so each api test observes documented defaults.
+
+    Function-scoped and autouse, so it runs before the test body and before any other
+    function-scoped fixture: a test that *wants* a flag on still sets it (via its own
+    ``monkeypatch.setenv`` or, more commonly here, by passing the value straight to
+    ``load_settings``) after this cleanup, and the operator's environment is restored afterwards.
+    """
+    with hermetic_flag_env():
+        yield
