@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,45 @@ from clue_api.trial.coordinator import (
 from clue_api.trial_app import create_trial_router
 from clue_api.trial_main import build_application
 from clue_config import Settings
+
+_SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+
+# The single definition of the HTTP-only ban for the trial CLI closure (see
+# ``test_cli_source_is_http_only``). The trial CLI must reach the backend over HTTP only, so it may
+# not import any package that owns durable state or domain logic.
+_BANNED_DOMAIN_PACKAGES = (
+    "clue_research",
+    "clue_execution",
+    "clue_fleet",
+    "clue_memory",
+    "clue_db",
+    "clue_api",
+)
+
+
+def _script_local_imports(source: str) -> set[str]:
+    """Top-level import names in ``source`` that resolve to another module in ``scripts/``."""
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            imported.add(node.module.split(".")[0])
+    return {name for name in imported if (_SCRIPTS / f"{name}.py").is_file()}
+
+
+def _http_only_closure(entry: str) -> list[Path]:
+    """``entry`` plus every ``scripts/``-local module transitively reachable from it."""
+    pending, seen, closure = [entry], set[str](), list[Path]()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        path = _SCRIPTS / f"{name}.py"
+        closure.append(path)
+        pending.extend(_script_local_imports(path.read_text(encoding="utf-8")))
+    return closure
 
 
 class _Coordinator:
@@ -203,17 +243,27 @@ def test_readiness_pause_is_a_structured_conflict() -> None:
 
 
 def test_cli_source_is_http_only() -> None:
-    source = (Path(__file__).parents[2] / "scripts" / "clue_trial.py").read_text(encoding="utf-8")
-    banned = (
-        "clue_research",
-        "clue_execution",
-        "clue_fleet",
-        "clue_memory",
-        "clue_db",
-        "clue_api",
-    )
-    assert all(f"import {name}" not in source and f"from {name}" not in source for name in banned)
-    assert "urllib.request" in source
+    """The trial CLI — and every ``scripts/`` module it reaches — imports no business domain.
+
+    The check walks the closure rather than the entry file alone: ``clue_trial.py`` imports
+    ``scripts/cli_multiline.py``, and a script-local helper that reached a domain package would
+    break the HTTP-only contract just as surely as a direct import. This is the single definition
+    of the ban — no other test may keep its own copy of the list.
+    """
+    closure = _http_only_closure("clue_trial")
+
+    # The walk is transitive, not just the entry file (a broken walker would silently pass).
+    assert _SCRIPTS / "cli_multiline.py" in closure
+
+    for path in closure:
+        source = path.read_text(encoding="utf-8")
+        offenders = [
+            name
+            for name in _BANNED_DOMAIN_PACKAGES
+            if f"import {name}" in source or f"from {name}" in source
+        ]
+        assert not offenders, f"{path.name} breaks the HTTP-only CLI contract: {offenders}"
+    assert "urllib.request" in (_SCRIPTS / "clue_trial.py").read_text(encoding="utf-8")
 
 
 def test_trial_process_includes_trial_and_canonical_c7_routes(tmp_path: Path) -> None:
