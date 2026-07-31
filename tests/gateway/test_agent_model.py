@@ -7,7 +7,13 @@ from typing import Any
 import httpx
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
@@ -64,42 +70,60 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     requests: list[dict[str, Any]] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://openrouter.ai/api/v1/chat/completions"
+        assert request.url == "https://openrouter.ai/api/v1/responses"
         assert request.headers["authorization"] == "Bearer test-openrouter-key"
         payload = json.loads(request.content)
         requests.append(payload)
+        has_tool_output = any(
+            item.get("type") == "function_call_output" for item in payload["input"]
+        )
+        output = (
+            [
+                {
+                    "id": "msg-c6-complete",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "project read",
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ]
+            if has_tool_output
+            else [
+                {
+                    "id": "fc-c6-spike",
+                    "type": "function_call",
+                    "call_id": "call-read-project",
+                    "name": "ReadProjectInput",
+                    "arguments": '{"project_id":"project-1"}',
+                    "status": "completed",
+                }
+            ]
+        )
         return httpx.Response(
             200,
             json={
-                "id": "gen-c6-spike",
-                "object": "chat.completion",
-                "created": 1_775_000_000,
+                "id": "resp-c6-spike",
+                "object": "response",
+                "created_at": 1_775_000_000,
                 "model": "openai/gpt-5.6-terra",
-                "choices": [
-                    {
-                        "index": 0,
-                        "finish_reason": "tool_calls",
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": "call-read-project",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "ReadProjectInput",
-                                        "arguments": '{"project_id":"project-1"}',
-                                    },
-                                }
-                            ],
-                        },
-                    }
-                ],
+                "output": output,
+                "parallel_tool_calls": True,
+                "tool_choice": "auto",
+                "tools": [],
                 "usage": {
-                    "prompt_tokens": 11,
-                    "completion_tokens": 7,
+                    "input_tokens": 11,
+                    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                    "output_tokens": 7,
+                    "output_tokens_details": {"reasoning_tokens": 0},
                     "total_tokens": 18,
                 },
+                "status": "completed",
             },
             request=request,
         )
@@ -155,24 +179,47 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     assert spans[0].attributes["prompt_tokens"] == 11
     assert spans[0].attributes["completion_tokens"] == 7
     assert requests[0]["model"] == "openai/gpt-5.6-terra"
-    assert requests[0]["reasoning_effort"] == "none"
-    assert requests[0]["max_completion_tokens"] == 1_024
-    assert requests[0]["tools"][0]["function"]["name"] == "ReadProjectInput"
+    assert requests[0]["reasoning"] == {"effort": "none"}
+    assert requests[0]["max_output_tokens"] == 1_024
+    assert "messages" not in requests[0]
+    assert "max_completion_tokens" not in requests[0]
+    assert requests[0]["input"][0]["type"] == "message"
+    assert requests[0]["tools"][0]["type"] == "function"
+    assert requests[0]["tools"][0]["name"] == "ReadProjectInput"
 
     async def invoke_async() -> None:
-        async_response = await bound.ainvoke("Read the project asynchronously.")
-        assert async_response.tool_calls[0]["name"] == "ReadProjectInput"
+        async_response = await bound.ainvoke(
+            [
+                HumanMessage(content="Read the project."),
+                response,
+                ToolMessage(content='{"name":"Project One"}', tool_call_id="call-read-project"),
+            ]
+        )
+        assert async_response.text == "project read"
 
     import asyncio
 
     asyncio.run(invoke_async())
     assert len(requests) == 2
+    assert "previous_response_id" not in requests[1]
+    assert [item["type"] for item in requests[1]["input"]] == [
+        "message",
+        "function_call",
+        "function_call_output",
+    ]
+    assert requests[1]["input"][1]["call_id"] == "call-read-project"
+    assert requests[1]["input"][2] == {
+        "type": "function_call_output",
+        "output": '{"name":"Project One"}',
+        "call_id": "call-read-project",
+    }
 
 
 def test_openrouter_agent_model_falls_back_and_records_answering_model() -> None:
     requested_models: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://openrouter.ai/api/v1/responses"
         payload = json.loads(request.content)
         model = payload["model"]
         requested_models.append(model)
@@ -181,22 +228,36 @@ def test_openrouter_agent_model_falls_back_and_records_answering_model() -> None
         return httpx.Response(
             200,
             json={
-                "id": "gen-fallback",
-                "object": "chat.completion",
-                "created": 1_775_000_000,
+                "id": "resp-fallback",
+                "object": "response",
+                "created_at": 1_775_000_000,
                 "model": "fallback/model",
-                "choices": [
+                "output": [
                     {
-                        "index": 0,
-                        "finish_reason": "stop",
-                        "message": {"role": "assistant", "content": "fallback answer"},
+                        "id": "msg-fallback",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "fallback answer",
+                                "annotations": [],
+                            }
+                        ],
                     }
                 ],
+                "parallel_tool_calls": True,
+                "tool_choice": "auto",
+                "tools": [],
                 "usage": {
-                    "prompt_tokens": 4,
-                    "completion_tokens": 2,
+                    "input_tokens": 4,
+                    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                    "output_tokens": 2,
+                    "output_tokens_details": {"reasoning_tokens": 0},
                     "total_tokens": 6,
                 },
+                "status": "completed",
             },
             request=request,
         )
@@ -225,7 +286,7 @@ def test_openrouter_agent_model_falls_back_and_records_answering_model() -> None
     response = model.invoke("Use the fallback.")
 
     assert requested_models == ["primary/model", "fallback/model"]
-    assert response.content == "fallback answer"
+    assert response.text == "fallback answer"
     assert response.response_metadata["clue_requested_model"] == "primary/model"
     assert response.response_metadata["clue_answering_model"] == "fallback/model"
 

@@ -1,4 +1,4 @@
-"""Governed OpenRouter tool-calling model construction and attribution for C6."""
+"""Governed OpenRouter Responses model construction and attribution for C6."""
 
 from __future__ import annotations
 
@@ -438,11 +438,11 @@ class OpenRouterAgentModelProvider:
         max_output_tokens: int,
         temperature: float,
     ) -> BaseChatModel:
-        # This adapter uses Chat Completions with function tools. GPT-5.6 defaults to reasoning,
-        # while that endpoint's function-tool path requires effective reasoning ``none``. Keep
-        # the compatibility policy at the provider boundary so every governed agent call is safe
-        # without weakening or duplicating the immutable role profiles.
-        reasoning_effort = "none" if model_id.startswith("openai/gpt-5.6") else None
+        # OpenRouter's Responses API is stateless. Clue/DeepAgents therefore continues to replay
+        # the complete durable message history and never uses ``previous_response_id``. GPT-5.6's
+        # current governed baseline remains reasoning ``none``; express it in the native Responses
+        # shape so it can be tuned later by eval-backed policy without returning to Chat params.
+        reasoning = {"effort": "none"} if model_id.startswith("openai/gpt-5.6") else None
         # Runtime aliases are intentionally friendlier than ChatOpenAI's generated static type.
         return ChatOpenAI(  # type: ignore[call-arg]
             model=model_id,
@@ -450,12 +450,14 @@ class OpenRouterAgentModelProvider:
             base_url=self._config.base_url,
             timeout=timeout_s,
             max_retries=max_retries,
-            max_completion_tokens=max_output_tokens,
+            max_tokens=max_output_tokens,
             temperature=temperature,
             stream_usage=True,
+            use_responses_api=True,
+            output_version="responses/v1",
             http_client=self._http_client,
             http_async_client=self._http_async_client,
-            reasoning_effort=reasoning_effort,
+            reasoning=reasoning,
         )
 
 
