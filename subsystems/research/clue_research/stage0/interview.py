@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -48,26 +48,123 @@ class InterviewRoute(StrEnum):
 
 
 class InterviewStatement(BaseModel):
-    """One minimal-actor classification; C6 can later produce the same contract."""
+    """One routed part of the captured answer: its species, its exact evidence quote offsets, and
+    the fields that species requires. (One minimal-actor classification; C6 can later produce the
+    same contract.)"""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    route: InterviewRoute
-    route_key: str
-    quote_start: int
-    quote_end: int
-    entity_id: EntityId | None = None
-    entity_type: EntityType | None = None
-    field_key: str | None = None
-    value: JsonValue | None = None
-    route_ref: str | None = None
-    correction_of_statement_id: VolunteeredStatementId | None = None
-    correction_of_claim_id: ClaimId | None = None
-    memory_type: MemoryType | None = None
-    memory_scope_type: MemoryScopeType | None = None
-    memory_scope_id: str | None = None
-    identity_binding: IdentityBinding | None = None
-    use_class: UseClass | None = None
+    route: InterviewRoute = Field(
+        description=(
+            "Which durable species this part of the answer is. `unmapped` is always legal and is "
+            "the honest route when nothing else fits: it preserves the quote as evidence without "
+            "asserting a fact."
+        )
+    )
+    route_key: str = Field(
+        description=(
+            "Short stable label for what this statement is about (the field key, preference "
+            "topic, or project decision). Recorded verbatim on the durable statement."
+        )
+    )
+    quote_start: int = Field(
+        description=(
+            "Start character offset of the evidence quote inside `answer` (0-based, inclusive). "
+            "Offsets outside `answer`, or a blank span, are refused."
+        )
+    )
+    quote_end: int = Field(
+        description=(
+            "End character offset inside `answer` (exclusive). `answer[quote_start:quote_end]` "
+            "must be the exact user words this statement rests on."
+        )
+    )
+    entity_id: EntityId | None = Field(
+        default=None,
+        description=(
+            "Entity this claim is about; required on the `claim` route. Use the supplied client "
+            "entity id for facts about the client."
+        ),
+    )
+    entity_type: EntityType | None = Field(
+        default=None,
+        description=(
+            "`account` or `contact`; required on the `claim` route. A `contact` claim "
+            "additionally requires `identity_binding` and `use_class`."
+        ),
+    )
+    field_key: str | None = Field(
+        default=None,
+        description=(
+            "Already-registered field this claim writes; required on the `claim` route. A novel "
+            "field goes through `propose_field` instead of being invented here."
+        ),
+    )
+    value: JsonValue | None = Field(
+        default=None,
+        description=(
+            "The claim's value; required on the `claim` route and refused unless it appears "
+            "verbatim inside `answer[quote_start:quote_end]`. Facts are evidence-locked to the "
+            "user's exact words, so quote rather than summarize: narrow the offsets to the words "
+            "that state the fact instead of rewording them."
+        ),
+    )
+    route_ref: str | None = Field(
+        default=None,
+        description=(
+            "Reference to the existing `propose_field` / `propose_source` proposal; required on "
+            "the `field_proposal` and `source_proposal` routes."
+        ),
+    )
+    correction_of_statement_id: VolunteeredStatementId | None = Field(
+        default=None,
+        description=(
+            "Prior interview statement this one corrects, when the user restates or contradicts "
+            "something already routed. Recorded as durable correction lineage."
+        ),
+    )
+    correction_of_claim_id: ClaimId | None = Field(
+        default=None,
+        description=(
+            "Prior claim this claim supersedes; refused unless that claim is in this workspace "
+            "with the same entity and the same field key."
+        ),
+    )
+    memory_type: MemoryType | None = Field(
+        default=None,
+        description=(
+            "`preference` or `behavioral_learning`; required on the `memory` route. Memory is "
+            "advisory and never becomes fact."
+        ),
+    )
+    memory_scope_type: MemoryScopeType | None = Field(
+        default=None,
+        description=(
+            "Scope level the memory attaches to; required on the `memory` route. Pick the "
+            "narrowest scope the preference actually holds for."
+        ),
+    )
+    memory_scope_id: str | None = Field(
+        default=None,
+        description=(
+            "Identifier of that scope (product, project, or account id) when the memory scope is "
+            "not workspace-wide."
+        ),
+    )
+    identity_binding: IdentityBinding | None = Field(
+        default=None,
+        description=(
+            "How strongly this personal claim is bound to that exact person; required, with "
+            "`use_class`, on every `contact` claim."
+        ),
+    )
+    use_class: UseClass | None = Field(
+        default=None,
+        description=(
+            "Permitted use class of this personal claim; required, with `identity_binding`, on "
+            "every `contact` claim. A true fact can still be unusable for outreach."
+        ),
+    )
 
     @model_validator(mode="after")
     def _route_shape(self) -> InterviewStatement:

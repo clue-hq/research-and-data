@@ -47,7 +47,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        AgentRole.HEAD_OF_ABM: "4c0f86939c0d23dbcb4e28cfd083f345868582592d10c4cafe5d55a0f88e7676",
+        AgentRole.HEAD_OF_ABM: "d64fe87af513664ac3b296b3cd372eb25958b3e5419a9130b022ea89c3b87d65",
         AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
@@ -134,7 +134,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v4"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v5"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -228,7 +228,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v4")
+    body = head.open_skill("skill:stage0-interview@v5")
 
     assert required_guidance in body
 
@@ -290,7 +290,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v4/SKILL.md"
+                ".deepagent/skills/stage0-interview/v5/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

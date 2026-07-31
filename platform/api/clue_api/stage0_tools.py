@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -214,79 +214,295 @@ async def start_confirmed_project_run(
 
 
 class SubmitOnboardingInput(ToolInput):
-    brand_id: str
-    kind: OnboardingInputKind
-    artifact_key: str
-    content_sha256: str
-    product_id: str | None = None
-    project_id: str | None = None
-    client_entity_id: str | None = None
-    source_ref: str | None = None
+    brand_id: str = Field(
+        description="Brand this input belongs to; it must already exist in this workspace."
+    )
+    kind: OnboardingInputKind = Field(
+        description=(
+            "What was captured: a live human turn is `user_turn`, a supplied page is `website`, "
+            "an uploaded file is `upload`."
+        )
+    )
+    artifact_key: str = Field(
+        description=(
+            "Storage key of an artifact already captured in this workspace; an absent or foreign "
+            "key is refused (`artifact_not_found`). Capture happens outside you, so use a key you "
+            "were given rather than inventing one."
+        )
+    )
+    content_sha256: str = Field(
+        description=(
+            "Hex SHA-256 of the exact captured bytes. It is stored immutably and re-checked "
+            "later: `record_interview_answer` refuses an `answer` that does not hash to it."
+        )
+    )
+    product_id: str | None = Field(
+        default=None,
+        description="Confirmed product this input belongs to, when the project has one.",
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
+    client_entity_id: str | None = Field(
+        default=None,
+        description="Resolved client entity this input describes, when one is already resolved.",
+    )
+    source_ref: str | None = Field(
+        default=None,
+        description="Where the input came from (URL, filename, or channel), for the audit trail.",
+    )
 
 
 class StartReconInput(ToolInput):
-    brand_id: str
-    name: str
-    website: str
-    onboarding_input_ids: list[str]
-    product_id: str | None = None
-    project_id: str | None = None
+    brand_id: str = Field(
+        description="Brand this recon profiles for; it must already exist in this workspace."
+    )
+    name: str = Field(
+        description="Client company name exactly as the human gave it; not an expansion of yours."
+    )
+    website: str = Field(
+        description=(
+            "The client's official website URL. Recon reads official surfaces only, so a guessed "
+            "domain produces wrong Client-KB claims rather than an error."
+        )
+    )
+    onboarding_input_ids: list[str] = Field(
+        description=(
+            "At least one onboarding input id captured in this workspace; an empty list, a "
+            "malformed id, or a foreign id is refused (`onboarding_input_not_found`). These pin "
+            "the captured evidence this recon is grounded in."
+        )
+    )
+    product_id: str | None = Field(
+        default=None, description="Confirmed product this recon profiles for, when one exists."
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class RecordInterviewAnswerInput(ToolInput):
-    brand_id: str
-    onboarding_input_id: str
-    artifact_key: str
-    answer: str
-    client_entity_id: str
-    statements: list[InterviewStatement]
-    product_id: str | None = None
-    project_id: str | None = None
+    brand_id: str = Field(
+        description="Brand this answer belongs to; it must already exist in this workspace."
+    )
+    onboarding_input_id: str = Field(
+        description=(
+            "The onboarding input that captured this turn, as supplied in your turn context. It "
+            "must exist in this workspace and carry the same `artifact_key`; an invented or "
+            "foreign id is refused."
+        )
+    )
+    artifact_key: str = Field(
+        description=(
+            "Artifact key of that captured turn — the same key the onboarding input carries. A "
+            "mismatch is refused."
+        )
+    )
+    answer: str = Field(
+        description=(
+            "The captured user message, byte-identical: its SHA-256 must equal the onboarding "
+            "input's `content_sha256`, and every statement's quote offsets index into this exact "
+            "string. Never retype, trim, re-wrap, or normalize it."
+        )
+    )
+    client_entity_id: str = Field(
+        description="Resolved client entity id for this workspace, as supplied in your context."
+    )
+    statements: list[InterviewStatement] = Field(
+        description=(
+            "One statement per material fact, preference, or project decision in the answer, each "
+            "carrying its own exact quote offsets. A turn with nothing material is routed as one "
+            "`unmapped` statement — routing nothing is never the honest answer."
+        )
+    )
+    product_id: str | None = Field(
+        default=None, description="Confirmed product this answer is about, when one exists."
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class ConfirmProjectProductInput(ToolInput):
-    project_id: str
-    product_id: str
+    project_id: str = Field(
+        description="Project whose product is being confirmed; human-only (`human_required`)."
+    )
+    product_id: str = Field(
+        description=(
+            "Product to bind to the project; both must exist in this workspace and share one "
+            "brand. The binding is immutable once made."
+        )
+    )
 
 
 class EvaluateStage0ReadinessInput(ToolInput):
-    brand_id: str
-    gate: ReadinessGate
-    metrics: dict[str, JsonValue]
-    product_id: str | None = None
-    project_id: str | None = None
-    client_entity_id: str | None = None
-    client_kb_version: int | None = None
-    icp_key: str | None = None
-    icp_version: int | None = None
-    product_context_version_id: str | None = None
-    claim_refs: list[str] = []
-    memory_refs: list[str] = []
-    artifact_refs: list[str] = []
-    gap_refs: list[dict[str, JsonValue]] = []
-    field_proposal_refs: list[str] = []
-    source_proposal_refs: list[str] = []
-    ingestion_refs: list[str] = []
-    agent_sufficiency_status: str = "not_evaluated"
-    agent_sufficiency_ref: str | None = None
+    brand_id: str = Field(
+        description=(
+            "Brand being evaluated; it must exist in this workspace (`stage0_scope_not_found`)."
+        )
+    )
+    gate: ReadinessGate = Field(
+        description=(
+            "Which floor to evaluate. `start_confirmed_project_run` accepts only a "
+            "`discovery_spend` decision."
+        )
+    )
+    metrics: dict[str, JsonValue] = Field(
+        description=(
+            "Measured evidence, never estimates. The floor reads exactly `coverage_ratio` "
+            "(number), `verified_claims` (integer), `open_policy_blocks` (integer), and "
+            "`available_field_keys` (list of registered field keys); an absent key counts as "
+            "zero/empty. A number you inflate records a false readiness decision — it does not "
+            "make the gate pass honestly."
+        )
+    )
+    product_id: str | None = Field(
+        default=None,
+        description=(
+            "Confirmed product. Gates that require a product report `product_not_confirmed` "
+            "while this is absent."
+        ),
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
+    client_entity_id: str | None = Field(
+        default=None,
+        description=(
+            "Resolved client entity this decision is about; part of the lineage a confirmed run "
+            "re-checks."
+        ),
+    )
+    client_kb_version: int | None = Field(
+        default=None,
+        description=(
+            "Client-KB version the decision is made against; part of the lineage a confirmed run "
+            "re-checks, so pin the version you actually read."
+        ),
+    )
+    icp_key: str | None = Field(
+        default=None,
+        description=(
+            "Confirmed ICP key. Gates that require an ICP report `icp_not_confirmed` while this "
+            "or `icp_version` is absent."
+        ),
+    )
+    icp_version: int | None = Field(
+        default=None, description="Confirmed ICP version that goes with `icp_key`."
+    )
+    product_context_version_id: str | None = Field(
+        default=None,
+        description=(
+            "Existing compiled product-context version. Leave it out to compile a new one from "
+            "the refs below (needs product, client entity, and Client-KB version)."
+        ),
+    )
+    claim_refs: list[str] = Field(
+        default=[],
+        description="Claim ids that evidence this readiness; compiled into the product context.",
+    )
+    memory_refs: list[str] = Field(
+        default=[],
+        description="Memory ids that inform this readiness; compiled into the product context.",
+    )
+    artifact_refs: list[str] = Field(
+        default=[],
+        description="Artifact keys backing this readiness; compiled into the product context.",
+    )
+    gap_refs: list[dict[str, JsonValue]] = Field(
+        default=[],
+        description="Named open gaps recorded on the decision; they do not change the verdict.",
+    )
+    field_proposal_refs: list[str] = Field(
+        default=[],
+        description="Open `propose_field` references; a proposal grants no promotion authority.",
+    )
+    source_proposal_refs: list[str] = Field(
+        default=[],
+        description="Open `propose_source` references; a proposal grants no trust authority.",
+    )
+    ingestion_refs: list[str] = Field(
+        default=[], description="`submit_ingestion` references recorded on this decision."
+    )
+    agent_sufficiency_status: str = Field(
+        default="not_evaluated",
+        description=(
+            "Your advisory judgment: `not_evaluated`, `sufficient`, or `insufficient`. Advisory "
+            "only — `insufficient` adds a not-ready reason, but this field can never turn a "
+            "failing deterministic floor into ready."
+        ),
+    )
+    agent_sufficiency_ref: str | None = Field(
+        default=None, description="Reference backing that advisory judgment, when you have one."
+    )
 
 
 class OverrideStage0ReadinessInput(ToolInput):
-    readiness_decision_id: str
-    gate: ReadinessGate
-    reason: str
+    readiness_decision_id: str = Field(
+        description=(
+            "The not-ready decision being overridden; it must exist in this workspace. Human-only "
+            "(`human_required`)."
+        )
+    )
+    gate: ReadinessGate = Field(
+        description="Gate of that decision; a mismatch is refused (`readiness_not_found`)."
+    )
+    reason: str = Field(
+        description="The human's durable justification for proceeding without a ready verdict."
+    )
 
 
 class StartConfirmedProjectRunInput(ToolInput):
-    project_id: str
-    client_entity_id: str
-    client_kb_version: int
-    product_id: str
-    product_context_version_id: str
-    readiness_decision_id: str
-    icp_key: str
-    icp_version: int
-    budget_cap_cents: int | None = None
+    project_id: str = Field(
+        description="Trusted project authority; supplied by the platform, never by you."
+    )
+    client_entity_id: str = Field(
+        description=(
+            "Resolved client entity of the confirmed context; every id here must name one single "
+            "lineage or the run is refused."
+        )
+    )
+    client_kb_version: int = Field(
+        description=(
+            "Client-KB version of that lineage; the ICP, product context, and readiness decision "
+            "must all carry this exact version."
+        )
+    )
+    product_id: str = Field(
+        description=(
+            "Confirmed product; the project must already carry it (a human confirms it through "
+            "`confirm_project_product`)."
+        )
+    )
+    product_context_version_id: str = Field(
+        description=(
+            "Compiled product-context version carrying this brand, product, client entity, and "
+            "Client-KB version; a context outside that lineage is refused."
+        )
+    )
+    readiness_decision_id: str = Field(
+        description=(
+            "A `discovery_spend` readiness decision pinning this exact lineage whose verdict is "
+            "ready, or which carries a durable human override. Anything else is refused — report "
+            "the refusal rather than restating the call."
+        )
+    )
+    icp_key: str = Field(
+        description=(
+            "Confirmed ICP key whose spec carries this client entity, Client-KB version, and "
+            "product; an ICP outside that lineage is refused."
+        )
+    )
+    icp_version: int = Field(
+        description="Confirmed ICP version that goes with `icp_key`, in the same lineage."
+    )
+    budget_cap_cents: int | None = Field(
+        default=None, description="Optional hard spend cap, in cents, for the whole run."
+    )
 
 
 class _Stage0Tool(Tool):
