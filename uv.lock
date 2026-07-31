@@ -788,7 +788,7 @@ requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "langchain-openai", specifier = "==1.4.1" },
-    { name = "openai", specifier = ">=1.40" },
+    { name = "openai", specifier = ">=2.45,<3" },
 ]
 
 [[package]]

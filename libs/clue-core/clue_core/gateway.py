@@ -1,7 +1,7 @@
 """The ``LLMGateway`` protocol + its value types — the model-egress seam (M0.4, conventions §4).
 
 The model analogue of the :class:`~clue_core.resolver.Resolver` seam: every *direct* LLM
-call the subsystem makes itself (chat/completion + embedding) goes through **one** shared gateway
+response-generation or embedding call the subsystem makes goes through **one** shared gateway
 whose provider/model is config, not code. The faithfulness judge (M9.3), the eval rubric scorers
 (M9.6), discovery query-planning (M6.1), ICP synthesis (M5.2), committee role-inference (M8.3) and
 value-narrative positioning (M12.1) all bind to this one contract — "the LLM client from M0" the
@@ -32,7 +32,7 @@ Vector = list[float]
 
 
 class Role(StrEnum):
-    """Chat-message role (the OpenAI-compatible roles the gateway accepts)."""
+    """Provider-neutral message role accepted by the response-generation gateway."""
 
     SYSTEM = "system"
     USER = "user"
@@ -40,7 +40,7 @@ class Role(StrEnum):
 
 
 class Message(BaseModel):
-    """One chat message in a ``complete`` request (provider-neutral)."""
+    """One message in a ``complete`` request (provider-neutral)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -66,11 +66,12 @@ class TokenUsage(BaseModel):
 
 
 class Completion(BaseModel):
-    """The result of a chat/completion call through the gateway.
+    """The result of a response-generation call through the gateway.
 
     ``model`` is the id that *actually* answered (may differ from the requested id if the
     configured fallback was used) — recorded so provenance/observability reflects reality, not the
-    request.
+    request. ``finish_reason`` preserves the provider terminal status (or incomplete reason) behind
+    the stable internal contract.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -100,8 +101,10 @@ class LLMGateway(Protocol):
     ``model`` is a config-supplied id (e.g. ``"anthropic/claude-…"``) resolved per call site, so a
     model swap (or an OpenRouter → another OpenAI-compatible gateway swap) is a config change, never
     a code change in any caller. Implementations wrap one ``OPENROUTER_API_KEY``, emit the
-    ``llm.gateway_call`` span with token usage + ``cost_cents``, and ship a deterministic stub.
-    ``@runtime_checkable`` lets a factory assert conformance structurally; mypy checks signatures.
+    ``llm.gateway_call`` span with token usage + ``cost_cents``, and ship a deterministic stub. The
+    live OpenRouter adapter uses the OpenAI-compatible Responses API; callers stay independent of
+    that wire schema. ``@runtime_checkable`` lets a factory assert conformance structurally; mypy
+    checks signatures.
     """
 
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion: ...
