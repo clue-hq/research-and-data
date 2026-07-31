@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Final, cast
+from typing import Final
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -59,7 +59,7 @@ from clue_research.resolvers.sumble import (
 )
 from clue_research.sources import clear_resolver_bindings
 from clue_research.stage0 import (
-    CLIENT_KNOWLEDGE_FIELDS,
+    client_kb_readiness_metrics,
     compile_product_context,
     evaluate_readiness,
     override_readiness,
@@ -243,22 +243,17 @@ class ClueTrialSpine:
                 client_kb_version=state.client_kb_version,
                 claim_refs=tuple(str(claim.id) for claim in claims.values()),
             )
-            knowledge_fields = set(CLIENT_KNOWLEDGE_FIELDS)
-            available = sorted(knowledge_fields.intersection(claims))
-            coverage_ratio = len(available) / len(knowledge_fields) if knowledge_fields else 1.0
             readiness = await evaluate_readiness(
                 conn,
                 workspace_id=state.workspace_id,
                 brand_id=state.brand_id,
                 gate=ReadinessGate.DISCOVERY_SPEND,
                 spec=DEFAULT_STAGE0_POLICY.readiness,
+                # One shared compilation, so this gate and the Stage-0 per-turn recompute can
+                # never disagree about the same trial's coverage or verified-claim count.
                 metrics={
-                    "coverage_ratio": coverage_ratio,
-                    "verified_claims": sum(
-                        claim.verification_status.value == "verified" for claim in claims.values()
-                    ),
+                    **client_kb_readiness_metrics(claims),
                     "open_policy_blocks": 0,
-                    "available_field_keys": cast(list[JsonValue], available),
                 },
                 created_by_actor="agent",
                 product_id=state.product_id,

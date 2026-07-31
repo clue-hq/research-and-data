@@ -121,6 +121,7 @@ from clue_research.stage0 import (
     ICPSynthesisStatus,
     ProjectStatement,
     VolunteeredMaterial,
+    client_kb_readiness_metrics,
     confirm_icp,
     count_statements_for_input,
     evaluate_readiness,
@@ -959,13 +960,11 @@ class Stage0Trial:
                 workspace_id=self.state.workspace_id,
                 project_id=self.state.project_id,
             )
-            # Plain JSON metrics; the evaluator takes them as ``Mapping[str, JsonValue]``.
+            # One shared compilation of the Client-KB metrics every Stage-0 readiness evaluation
+            # is scored against (the Clue-Trial spine scores the discovery gate through the same
+            # helper), plus this surface's own per-turn interview counters.
             metrics: dict[str, Any] = {
-                "coverage_ratio": (
-                    len(claims) / len(CLIENT_KNOWLEDGE_FIELDS) if CLIENT_KNOWLEDGE_FIELDS else 0.0
-                ),
-                "verified_claims": len(claims),
-                "available_field_keys": sorted(claims),
+                **client_kb_readiness_metrics(claims),
                 "project_state_statements": len(statements),
                 "routed_statements_this_turn": counts.total,
                 "material_statements_this_turn": counts.non_unmapped,

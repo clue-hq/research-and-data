@@ -24,8 +24,9 @@ here).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from decimal import Decimal
+from typing import cast
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -48,6 +49,7 @@ from clue_core import (
     RunId,
     SourceGate,
     SourceManifest,
+    VerificationStatus,
     account_claim,
     new_run_id,
 )
@@ -645,3 +647,42 @@ async def read_client_kb_claims(
         version=version,
         product_id=product_id,
     )
+
+
+def client_kb_readiness_metrics(claims: Mapping[str, Claim]) -> dict[str, JsonValue]:
+    """Compile the one Client-KB metric set every Stage-0 readiness evaluation is scored against.
+
+    :func:`~clue_research.stage0.evaluate_readiness` gates on these exact keys, and the metrics are
+    persisted verbatim into ``readiness_decision.metrics`` — the human-facing, deterministic
+    explanation of a verdict. Two surfaces compiling them independently is how a ledger starts
+    telling two stories about one trial, so this is the single definition and every caller uses it.
+
+    Definitions, each meaning what its name says:
+
+    * ``available_field_keys`` — the pinned claims **intersected with the client-knowledge pack**.
+      A pinned KB may legitimately carry non-pack claims (the ``client.kb_version`` marker itself,
+      for one), and counting those would report coverage of fields the floor never asked for;
+    * ``coverage_ratio`` — that intersection over the pack size, so it cannot exceed 1.0. An empty
+      pack is full coverage (1.0): nothing was required, so nothing is missing;
+    * ``verified_claims`` — pack claims that actually reached
+      :attr:`~clue_core.VerificationStatus.VERIFIED`, never the raw claim count. The floors read
+      this as an *evidence* floor, so counting unverified claims would let unverified work clear
+      it, and counting a non-pack bookkeeping claim would let the version marker clear it.
+
+    All three therefore describe the same set — the pack fields this KB version actually carries —
+    so a reader cannot compose them into a contradiction.
+
+    ``open_policy_blocks`` is deliberately absent rather than asserted as 0: a caller that tracks
+    policy blocks supplies its own count, and the evaluator already defaults a missing key.
+    """
+
+    knowledge_fields = set(CLIENT_KNOWLEDGE_FIELDS)
+    available = sorted(knowledge_fields.intersection(claims))
+    return {
+        "coverage_ratio": (len(available) / len(knowledge_fields) if knowledge_fields else 1.0),
+        "verified_claims": sum(
+            claims[field_key].verification_status is VerificationStatus.VERIFIED
+            for field_key in available
+        ),
+        "available_field_keys": cast(list[JsonValue], available),
+    }
