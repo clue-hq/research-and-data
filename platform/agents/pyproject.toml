@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 license = { text = "Proprietary" }
 dependencies = [
     "clue-core",
+    "clue-obs",
     "deepagents==0.6.12",
     "langchain-core>=1.5,<2",
     "pyyaml>=6,<7",
@@ -20,3 +21,4 @@ packages = ["clue_agents"]
 
 [tool.uv.sources]
 clue-core = { workspace = true }
+clue-obs = { workspace = true }
