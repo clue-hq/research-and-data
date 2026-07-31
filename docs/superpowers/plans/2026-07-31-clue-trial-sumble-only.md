@@ -486,4 +486,6 @@ Gate to Exa:
 9. HTML/JSON inspection export is mandatory.
 10. No Exa until the Sumble baseline is accepted.
 11. No production feature flag is enabled by default.
-12. No live Sumble spend occurs without an explicit user-run canary and hard credit cap.
+12. No live Sumble spend occurs without an explicit user-run canary. Organizations and Jobs are
+    covered by a hard credit cap; confirmed Tech Stack is skipped unless the user separately
+    approves its documented unbounded per-result credit risk.

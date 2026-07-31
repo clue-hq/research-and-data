@@ -223,6 +223,7 @@ def test_snapshot_resolvers_emit_tier1_api_claims_without_network() -> None:
         payload=_fixture("organizations_match.json"),
         cost_cents=Decimal(1),
         estimated_max_credits=2,
+        artifact_key="workspace/provider-response",
     )
     lookup = MappingSumbleSnapshotLookup(
         {(account.entity_id, ORGANIZATIONS_SOURCE_KEY): snapshot}
@@ -234,6 +235,7 @@ def test_snapshot_resolvers_emit_tier1_api_claims_without_network() -> None:
     assert headcount[0].source_tier == 1
     assert headcount[0].extraction_method is ExtractionMethod.API
     assert headcount[0].cost_cents == Decimal(1)
+    assert headcount[0].artifact_key == "workspace/provider-response"
     assert domain[0].cost_cents == Decimal(0)
 
     contact = Entity(entity_id=new_entity_id(), entity_type=EntityType.CONTACT)
