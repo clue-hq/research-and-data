@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -203,8 +203,9 @@ class Stage0RoutingReceiptGuard:
     forced through a write it could not make.
 
     Refusal raises ``ValueError``, which the runtime's bounded finalize repair hands back to the
-    model as visible tool feedback: it gets one corrective attempt (route, then finalize), and a
-    second refusal still ends the turn ``missing_finalize``.
+    model as visible tool feedback: it gets a corrective attempt (route, then finalize) out of the
+    turn's shared repair budget — shared with the finalize *shape* contract, which a converging
+    model may also trip once — and an unrepaired refusal still ends the turn ``missing_finalize``.
     """
 
     def __init__(
@@ -233,6 +234,19 @@ class Stage0RoutingReceiptGuard:
             )
         if counts.total == 0:
             raise ValueError(NO_ROUTING_RECEIPT)
+
+
+@dataclass(frozen=True, slots=True)
+class _StoredProposals:
+    """The saved ICP proposal file read against the *current* trial state.
+
+    ``proposals`` is the offerable set and is empty whenever ``lineage_mismatch`` is set: a
+    superseded file is a reference, never a confirmable candidate. ``lineage_mismatch`` names which
+    lineage keys disagree — reference-only, never the superseded proposal content.
+    """
+
+    proposals: tuple[ICPProposal, ...]
+    lineage_mismatch: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1300,6 +1314,7 @@ class Stage0Trial:
                 """,
                 {"workspace": self.state.workspace_id},
             )
+        stored = self._read_icp_proposals()
         return {
             "trial_boundary": {
                 "manual_conversation_only": True,
@@ -1331,7 +1346,12 @@ class Stage0Trial:
             "interview_statements": statements,
             "readiness_decisions": readiness,
             "icps": icps,
-            "icp_proposals": [item.model_dump(mode="json") for item in self._load_icp_proposals()],
+            # Reference-only. A proposal file from a superseded lineage offers nothing confirmable
+            # and says so, rather than raising and taking every turn, status read, and report
+            # export down with it — /confirm-icp is where lineage drift is still fatal.
+            "icp_proposals": [item.model_dump(mode="json") for item in stored.proposals],
+            "icp_proposals_stale": stored.lineage_mismatch is not None,
+            "icp_proposals_stale_reason": stored.lineage_mismatch,
             "current_turn_input": current_turn,
         }
 
@@ -1431,20 +1451,78 @@ class Stage0Trial:
     async def close(self) -> None:
         self._components.workspaces.close()
 
-    def _load_icp_proposals(self) -> tuple[ICPProposal, ...]:
+    def _read_icp_proposals(self) -> _StoredProposals:
+        """Read the saved proposal file *tolerantly*, reporting drift instead of raising.
+
+        Reading superseded proposals and confirming one are different concerns, and conflating
+        them bricked whole sessions: this used to raise on any lineage drift, while ``snapshot()``
+        — which runs at the start and end of *every* turn, and behind ``/status`` and every report
+        export — called it unconditionally. The first claim-bearing turn after ``/synthesize-icp``
+        publishes the next immutable Client-KB version, so from that turn on every read raised
+        until the human happened to re-synthesize.
+
+        Drift is therefore surfaced, not thrown: no proposals are offered (nothing stale can be
+        confirmed by accident) and the mismatch is named. The name is *reference-only* — which
+        lineage keys disagree, never the superseded content. Authority stays with
+        :meth:`_load_icp_proposals`, which is what confirmation calls.
+        """
+
         if not self.paths.icp_proposals.exists():
-            return ()
-        payload = json.loads(self.paths.icp_proposals.read_text(encoding="utf-8"))
-        if (
-            not isinstance(payload, dict)
-            or payload.get("workspace_id") != self.state.workspace_id
-            or payload.get("client_entity_id") != str(self.state.client_entity_id)
-            or payload.get("client_kb_version") != self.state.client_kb_version
-            or payload.get("product_id") != self.state.product_id
-            or not isinstance(payload.get("proposals"), list)
-        ):
-            raise ValueError("ICP proposal file does not match the current Stage-0 trial lineage")
-        return tuple(ICPProposal.model_validate(item) for item in payload["proposals"])
+            return _StoredProposals(proposals=(), lineage_mismatch=None)
+        try:
+            payload = json.loads(self.paths.icp_proposals.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return _StoredProposals(
+                proposals=(),
+                lineage_mismatch="the saved ICP proposal file is not readable JSON",
+            )
+        if not isinstance(payload, dict) or not isinstance(payload.get("proposals"), list):
+            return _StoredProposals(
+                proposals=(),
+                lineage_mismatch="the saved ICP proposal file is not a proposal record",
+            )
+        drifted = sorted(
+            key
+            for key, current in (
+                ("workspace_id", self.state.workspace_id),
+                ("client_entity_id", str(self.state.client_entity_id)),
+                ("client_kb_version", self.state.client_kb_version),
+                ("product_id", self.state.product_id),
+            )
+            if payload.get(key) != current
+        )
+        if drifted:
+            return _StoredProposals(
+                proposals=(),
+                lineage_mismatch=(
+                    "the saved ICP proposals were synthesized against a different "
+                    f"{', '.join(drifted)}; run /synthesize-icp again"
+                ),
+            )
+        try:
+            proposals = tuple(ICPProposal.model_validate(item) for item in payload["proposals"])
+        except ValidationError:
+            return _StoredProposals(
+                proposals=(),
+                lineage_mismatch="the saved ICP proposals are not valid proposal records",
+            )
+        return _StoredProposals(proposals=proposals, lineage_mismatch=None)
+
+    def _load_icp_proposals(self) -> tuple[ICPProposal, ...]:
+        """The strict read: confirming a proposal is where lineage is authority, so drift raises.
+
+        A confirmation stamps ``self.state.client_kb_version`` onto the confirmed ICP, so a
+        proposal synthesized against an older version would be recorded under a lineage it was
+        never derived from. Empty is a correct outcome here; misattributed is not.
+        """
+
+        stored = self._read_icp_proposals()
+        if stored.lineage_mismatch is not None:
+            raise ValueError(
+                "ICP proposal file does not match the current Stage-0 trial lineage: "
+                f"{stored.lineage_mismatch}"
+            )
+        return stored.proposals
 
     async def _artifact(self, media_type: str, payload: object) -> ArtifactRef:
         return await self._components.artifacts.persist_body(
