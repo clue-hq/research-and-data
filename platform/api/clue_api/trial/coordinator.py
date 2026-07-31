@@ -39,7 +39,6 @@ from clue_config import Secrets, Settings
 from clue_core import EntityId, ProjectRunId
 from clue_db import ConnFactory, transaction
 from clue_locks import get_redis
-from clue_research.stage0 import ICPSynthesisStatus
 from clue_toolbelt import DbIdempotencyStore, body_sha256
 
 _SCHEMA_VERSION = "1"
@@ -420,24 +419,26 @@ class ClueTrialCoordinator:
     async def synthesize_icps(self, trial_id: str) -> dict[str, Any]:
         trial = await self._stage0(trial_id)
         try:
-            result = await trial.synthesize_icp_proposals()
+            outcome = await trial.synthesize_icp_proposals()
         finally:
             await trial.close()
-        grounded = result.status is ICPSynthesisStatus.GROUNDED
         response = {
             "schema_version": _SCHEMA_VERSION,
-            "status": result.status.value,
-            "reason_codes": list(result.reason_codes),
-            # Not-ready synthesis offers no numbered proposal — the ungrounded floor is never
-            # presented as a candidate the human could confirm.
-            "proposals": (
-                [item.model_dump(mode="json") for item in result.proposals] if grounded else []
-            ),
+            "status": outcome.status.value,
+            "reason_codes": list(outcome.reason_codes),
+            # Already the offerable set: a not-ready synthesis offers no numbered proposal, so the
+            # ungrounded floor is never presented as a candidate the human could confirm.
+            "proposals": [item.model_dump(mode="json") for item in outcome.proposals],
+            "excluded_statement_ids": [str(item) for item in outcome.excluded_statement_ids],
         }
         self._event(
             trial_id,
             "stage0.icps.synthesized",
-            {"proposal_count": len(response["proposals"]), "status": result.status.value},
+            {
+                "proposal_count": len(outcome.proposals),
+                "status": outcome.status.value,
+                "excluded_statements": len(outcome.excluded_statement_ids),
+            },
         )
         return response
 

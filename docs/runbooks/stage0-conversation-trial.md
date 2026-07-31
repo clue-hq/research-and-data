@@ -85,6 +85,10 @@ refuse with `run /confirm-product first` until you run `/confirm-product`.
 
 ICP synthesis grounds on **both** evidence species: the versioned Client-KB claims and the
 project-scoped `project_state` interview statements (what you said about who you want to target).
+Corrections win: a statement another statement corrects is superseded and stops steering synthesis
+entirely, though it stays in the append-only audit trail. At most the 40 most recent distinct
+statements enter one synthesis, and a statement whose captured evidence artifact has been erased is
+dropped and listed by id as an exclusion rather than blocking the run.
 If neither exists yet, `/synthesize-icp` prints `Not ready: <missing evidence>` and offers **no**
 numbered proposal — the ungrounded config floor is recorded under `not_ready_floor` for inspection
 but can never be confirmed. Say more about the product and the targets, then try again.

@@ -14,15 +14,17 @@ from __future__ import annotations
 import hashlib
 import json
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import EntityType, OnboardingInputKind
+from clue_core import EntityType, OnboardingInputKind, VolunteeredStatementId
 from clue_core.proposals import ProposalStatus
 from clue_research.proposals import ProposalScope, get_field_proposal
 from clue_research.stage0 import (
+    MAX_PROJECT_STATEMENTS,
     NO_CLIENT_KB_CLAIMS,
     NO_PROJECT_STATEMENTS,
     ClientInput,
@@ -111,14 +113,8 @@ async def _empty_client_kb(conn: AsyncConnection, suffix: str) -> ClientKnowledg
     return result.ref
 
 
-async def _record_project_statement(
-    conn: AsyncConnection,
-    *,
-    suffix: str,
-    client_entity_id: object,
-    answer: str,
-) -> tuple[str, ProjectStatement]:
-    """Route one real ``project_state`` interview statement and return (project_id, evidence)."""
+async def _statement_project(conn: AsyncConnection, suffix: str) -> tuple[str, str, str]:
+    """One brand/product/project triple the interview statements hang off."""
     brand = await create_brand(conn, workspace_id=_CLIENT, name=f"Statement brand {suffix}")
     product = await create_product(
         conn, workspace_id=_CLIENT, brand_id=brand.brand_id, name=f"Statement product {suffix}"
@@ -130,6 +126,20 @@ async def _record_project_statement(
         product_id=product.product_id,
         name=f"Statement project {suffix}",
     )
+    return brand.brand_id, product.product_id, project.project_id
+
+
+async def _record_project_statement(
+    conn: AsyncConnection,
+    *,
+    scope: tuple[str, str, str],
+    client_entity_id: object,
+    answer: str,
+    route_key: str = "target_segment",
+    corrects: VolunteeredStatementId | None = None,
+) -> ProjectStatement:
+    """Route one real ``project_state`` interview statement over its own captured artifact."""
+    brand_id, product_id, project_id = scope
     digest = hashlib.sha256(answer.encode()).hexdigest()
     key = make_artifact_key(_CLIENT, digest)
     await record_artifact(
@@ -143,9 +153,9 @@ async def _record_project_statement(
     captured = await submit_onboarding_input(
         conn,
         workspace_id=_CLIENT,
-        brand_id=brand.brand_id,
-        product_id=product.product_id,
-        project_id=project.project_id,
+        brand_id=brand_id,
+        product_id=product_id,
+        project_id=project_id,
         client_entity_id=client_entity_id,  # type: ignore[arg-type]
         kind=OnboardingInputKind.USER_TURN,
         artifact_key=key,
@@ -155,9 +165,9 @@ async def _record_project_statement(
     routed = await route_interview_answer(
         conn,
         workspace_id=_CLIENT,
-        brand_id=brand.brand_id,
-        product_id=product.product_id,
-        project_id=project.project_id,
+        brand_id=brand_id,
+        product_id=product_id,
+        project_id=project_id,
         client_entity_id=client_entity_id,  # type: ignore[arg-type]
         onboarding_input_id=captured.onboarding_input_id,
         artifact_key=key,
@@ -165,21 +175,18 @@ async def _record_project_statement(
         statements=(
             InterviewStatement(
                 route=InterviewRoute.PROJECT_STATE,
-                route_key="target_segment",
+                route_key=route_key,
                 quote_start=0,
                 quote_end=len(answer),
                 entity_id=client_entity_id,  # type: ignore[arg-type]
                 entity_type=EntityType.ACCOUNT,
+                correction_of_statement_id=corrects,
             ),
         ),
         actor="human",
     )
     (statement_id,) = routed.statement_ids
-    return project.project_id, ProjectStatement(
-        statement_id=statement_id,
-        route_key="target_segment",
-        quote=answer,
-    )
+    return ProjectStatement(statement_id=statement_id, route_key=route_key, quote=answer)
 
 
 def test_project_statements_alone_ground_a_proposal_citing_statement_ids() -> None:
@@ -195,12 +202,14 @@ def test_project_statements_alone_ground_a_proposal_citing_statement_ids() -> No
             assert kb == {}  # the defect's precondition: no versioned client claims at all
 
             answer = "We target neurosurgery practices in the US that run their own imaging."
-            project_id, statement = await _record_project_statement(
+            scope = await _statement_project(conn, "alone")
+            statement = await _record_project_statement(
                 conn,
-                suffix="alone",
+                scope=scope,
                 client_entity_id=ref.client_entity_id,
                 answer=answer,
             )
+            project_id = scope[2]
             # the statement id is durable and queryable at the synthesis seam
             rows = await read_statements(conn, workspace_id=_CLIENT, project_id=project_id)
             assert [row.id for row in rows] == [statement.statement_id]
@@ -228,9 +237,9 @@ def test_statements_reach_the_bounded_synthesis_prompt() -> None:
         async with rollback_conn(workspace_id=_CLIENT) as conn:
             ref = await _empty_client_kb(conn, "prompt")
             answer = "We only sell to neurosurgery practices."
-            _, statement = await _record_project_statement(
+            statement = await _record_project_statement(
                 conn,
-                suffix="prompt",
+                scope=await _statement_project(conn, "prompt"),
                 client_entity_id=ref.client_entity_id,
                 answer=answer,
             )
@@ -248,6 +257,110 @@ def test_statements_reach_the_bounded_synthesis_prompt() -> None:
             user = messages[-1].content
             assert answer in user
             assert str(statement.statement_id) in user
+
+    run_async(_run())
+
+
+def test_a_corrected_statement_stops_steering_synthesis() -> None:
+    """The client changes their mind. The append-only table keeps both statements, but the
+    superseded one must not select a pack, enter the prompt, or be cited as justification."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await _empty_client_kb(conn, "corrected")
+            scope = await _statement_project(conn, "corrected")
+            # the pack matcher keys on whole words in the client's own language
+            retracted = await _record_project_statement(
+                conn,
+                scope=scope,
+                client_entity_id=ref.client_entity_id,
+                answer="We target data infrastructure platforms.",
+            )
+            correction = await _record_project_statement(
+                conn,
+                scope=scope,
+                client_entity_id=ref.client_entity_id,
+                answer="Correction: we target neurosurgery practices instead.",
+                route_key="target_segment_v2",
+                corrects=retracted.statement_id,
+            )
+
+            live = await read_statements(conn, workspace_id=_CLIENT, project_id=scope[2])
+            assert [row.id for row in live] == [correction.statement_id]
+            assert live[0].correction_of_id == retracted.statement_id
+            history = await read_statements(
+                conn, workspace_id=_CLIENT, project_id=scope[2], include_superseded=True
+            )
+            assert {row.id for row in history} == {
+                retracted.statement_id,
+                correction.statement_id,
+            }  # nothing is deleted — the audit trail survives
+
+            quotes = {
+                retracted.statement_id: retracted.quote,
+                correction.statement_id: correction.quote,
+            }
+            statements = tuple(
+                ProjectStatement(
+                    statement_id=row.id,
+                    route_key=row.route_key,
+                    quote=quotes[row.id],
+                )
+                for row in live
+            )
+            (proposal,) = (
+                await synthesize_icps(
+                    conn, ref, workspace_id=_CLIENT, project_statements=statements
+                )
+            ).proposals
+
+            assert _all_justifying_statements(proposal) == {correction.statement_id}
+            assert retracted.statement_id not in _all_justifying_statements(proposal)
+            # the retracted vertical no longer selects its pack
+            assert proposal.source_profile.packs == ()
+            assert proposal.technographic == ()
+
+    run_async(_run())
+
+
+def test_statements_entering_synthesis_are_deduped_and_capped() -> None:
+    """Lineage may only cite what synthesis actually read, so the bound is applied to the input,
+    not to the prompt alone."""
+
+    async def _run() -> None:
+        async with rollback_conn(workspace_id=_CLIENT) as conn:
+            ref = await _empty_client_kb(conn, "bounded")
+            repeated = ProjectStatement(
+                statement_id=VolunteeredStatementId(uuid4()),
+                route_key="target_segment",
+                quote="We target neurosurgery practices.",
+            )
+            duplicate = repeated.model_copy(
+                update={"statement_id": VolunteeredStatementId(uuid4())}
+            )
+            overflow = tuple(
+                ProjectStatement(
+                    statement_id=VolunteeredStatementId(uuid4()),
+                    route_key=f"detail_{index}",
+                    quote=f"Detail number {index}.",
+                )
+                for index in range(MAX_PROJECT_STATEMENTS + 5)
+            )
+
+            result = await synthesize_icps(
+                conn,
+                ref,
+                workspace_id=_CLIENT,
+                project_statements=(repeated, duplicate, *overflow),
+            )
+            (proposal,) = result.proposals
+            cited = _all_justifying_statements(proposal)
+
+            assert len(cited) == MAX_PROJECT_STATEMENTS  # the hard bound holds
+            # the exact repeat collapsed, so the earliest-surviving ids are dropped by the cap
+            assert duplicate.statement_id not in cited
+            assert overflow[-1].statement_id in cited
+            assert overflow[0].statement_id not in cited
 
     run_async(_run())
 

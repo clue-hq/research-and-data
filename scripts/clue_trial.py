@@ -328,6 +328,8 @@ def _interactive(api: TrialApi, trial_id: str) -> None:
                 continue
             if message == "/synthesize-icp":
                 payload = api.post(f"/v1/trials/{trial_id}/icps:synthesize", {})
+                for excluded in payload.get("excluded_statement_ids", []):
+                    print(f"Excluded statement {excluded}: evidence artifact unavailable.")
                 if payload.get("status") != "grounded":
                     reasons = ", ".join(payload.get("reason_codes", []))
                     print(f"Not ready: {reasons}")

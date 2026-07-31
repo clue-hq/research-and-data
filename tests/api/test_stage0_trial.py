@@ -19,22 +19,28 @@ from clue_api.stage0_trial import (
     Stage0Trial,
     Stage0TrialPaths,
     Stage0TrialState,
+    _ResolvedStatements,
     stage0_trial_context_policy,
     stage0_trial_recipe_definitions,
     stage0_trial_settings,
 )
 from clue_config import Settings
-from clue_core import OnboardingInputKind
+from clue_core import AccountStatus, OnboardingInputKind
 from clue_db import db_lifespan
+from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
     NO_CLIENT_KB_CLAIMS,
     NO_PROJECT_STATEMENTS,
     ICPProposal,
     ICPSynthesisResult,
     ICPSynthesisStatus,
+    StatementRoute,
+    read_statements,
+    record_statement,
+    submit_onboarding_input,
 )
-from clue_spine import create_workspace
-from clue_storage import FsStorage
+from clue_spine import create_brand, create_product, create_project, create_workspace
+from clue_storage import FsStorage, mark_erased
 from tests.db.conftest import _db_available, run_async
 
 
@@ -266,9 +272,9 @@ def test_not_ready_synthesis_offers_no_confirmable_proposal(
         del conn, project_id
         return _Project(product_id=trial.state.product_id)
 
-    async def no_statements(self: Stage0Trial, conn: object) -> tuple[object, ...]:
+    async def no_statements(self: Stage0Trial, conn: object) -> _ResolvedStatements:
         del self, conn
-        return ()
+        return _ResolvedStatements(statements=(), excluded_statement_ids=())
 
     async def not_ready(*args: object, **kwargs: object) -> ICPSynthesisResult:
         del args, kwargs
@@ -286,10 +292,11 @@ def test_not_ready_synthesis_offers_no_confirmable_proposal(
     monkeypatch.setattr(Stage0Trial, "_project_statements", no_statements)
     monkeypatch.setattr(Stage0Trial, "export_report", no_report)
 
-    result = run_async(trial.synthesize_icp_proposals())
+    outcome = run_async(trial.synthesize_icp_proposals())
 
-    assert result.status is ICPSynthesisStatus.FLOOR_ONLY
-    assert result.reason_codes == (NO_CLIENT_KB_CLAIMS, NO_PROJECT_STATEMENTS)
+    assert outcome.status is ICPSynthesisStatus.FLOOR_ONLY
+    assert outcome.reason_codes == (NO_CLIENT_KB_CLAIMS, NO_PROJECT_STATEMENTS)
+    assert outcome.proposals == ()  # the offerable set is empty, not the ungrounded floor
     payload = json.loads(trial.paths.icp_proposals.read_text(encoding="utf-8"))
     # the floor is recorded for inspection but is NOT a numbered, confirmable proposal
     assert payload["status"] == "floor_only"
@@ -298,6 +305,232 @@ def test_not_ready_synthesis_offers_no_confirmable_proposal(
     assert trial._load_icp_proposals() == ()
     with pytest.raises(ValueError, match="no grounded ICP proposal is available"):
         run_async(trial.confirm_icp_proposal(1))
+
+
+_ANSWER = "We target neurosurgery practices in the US that run their own imaging."
+
+
+async def _statement_fixture(
+    conn: AsyncConnection,
+    artifacts: DurableAgentArtifactStore,
+    *,
+    state: Stage0TrialState,
+    quote_start: int,
+    quote_end: int,
+    recorded_quote: str,
+) -> None:
+    """Seed one durable ``project_state`` statement over a really-persisted evidence artifact.
+
+    ``recorded_quote`` is what the row hashes; passing something other than
+    ``_ANSWER[quote_start:quote_end]`` reproduces a corrupted/tampered lineage.
+    """
+    await create_workspace(conn, workspace_id=state.workspace_id, name="Statement resolution")
+    brand = await create_brand(
+        conn, workspace_id=state.workspace_id, name="B", brand_id=state.brand_id
+    )
+    product = await create_product(
+        conn,
+        workspace_id=state.workspace_id,
+        brand_id=brand.brand_id,
+        name="P",
+        product_id=state.product_id,
+    )
+    await create_project(
+        conn,
+        workspace_id=state.workspace_id,
+        brand_id=brand.brand_id,
+        product_id=product.product_id,
+        name="Proj",
+        project_id=state.project_id,
+    )
+    client = await insert_account_entity(
+        conn,
+        canonical_name="Statement Client",
+        primary_domain="statements.example",
+        workspace_id=state.workspace_id,
+        status=AccountStatus.ACTIVE,
+    )
+    ref = await artifacts.persist_body(
+        workspace_id=state.workspace_id,
+        data=_ANSWER.encode(),
+        media_type="text/plain",
+    )
+    captured = await submit_onboarding_input(
+        conn,
+        workspace_id=state.workspace_id,
+        brand_id=brand.brand_id,
+        product_id=product.product_id,
+        project_id=state.project_id,
+        client_entity_id=client,
+        kind=OnboardingInputKind.USER_TURN,
+        artifact_key=ref.artifact_key,
+        content_sha256=ref.sha256,
+        actor="human",
+    )
+    await record_statement(
+        conn,
+        onboarding_input_id=captured.onboarding_input_id,
+        workspace_id=state.workspace_id,
+        brand_id=brand.brand_id,
+        product_id=product.product_id,
+        project_id=state.project_id,
+        client_entity_id=client,
+        entity_id=client,
+        route_kind=StatementRoute.PROJECT_STATE,
+        route_key="target_segment",
+        quote=recorded_quote,
+        quote_start=quote_start,
+        quote_end=quote_end,
+        created_by_actor="human",
+    )
+
+
+def _statement_trial(
+    conn: AsyncConnection,
+    tmp_path: Path,
+    artifacts: DurableAgentArtifactStore,
+    state: Stage0TrialState,
+) -> Stage0Trial:
+    trial = object.__new__(Stage0Trial)
+    trial.state = state
+    trial.paths = Stage0TrialPaths.for_session(tmp_path, state.session_slug)
+    trial._components = SimpleNamespace(artifacts=artifacts)  # type: ignore[assignment]
+
+    @asynccontextmanager
+    async def connection_factory() -> AsyncIterator[AsyncConnection]:
+        yield conn
+
+    trial._conn_factory = connection_factory  # type: ignore[assignment]
+    return trial
+
+
+def _run_statement_scenario(
+    tmp_path: Path,
+    stage0_db_available: bool,
+    *,
+    quote_start: int,
+    quote_end: int,
+    recorded_quote: str,
+    erase: bool,
+    check: object,
+) -> None:
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        state = _state(f"stmt-{uuid4().hex[:8]}")
+        async with db_lifespan() as engine:
+            conn = await engine.connect()
+            outer = await conn.begin()
+
+            @asynccontextmanager
+            async def connection_factory() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            try:
+                artifacts = DurableAgentArtifactStore(
+                    storage=FsStorage(tmp_path / "artifacts"),
+                    conn_factory=connection_factory,
+                )
+                await _statement_fixture(
+                    conn,
+                    artifacts,
+                    state=state,
+                    quote_start=quote_start,
+                    quote_end=quote_end,
+                    recorded_quote=recorded_quote,
+                )
+                if erase:
+                    key = (
+                        await conn.execute(
+                            text(
+                                "SELECT artifact_key FROM onboarding_input "
+                                "WHERE workspace_id = :workspace"
+                            ),
+                            {"workspace": state.workspace_id},
+                        )
+                    ).scalar_one()
+                    await mark_erased(conn, key)
+                trial = _statement_trial(conn, tmp_path, artifacts, state)
+                await check(trial, conn)  # type: ignore[operator]
+            finally:
+                await outer.rollback()
+                await conn.close()
+
+    run_async(scenario())
+
+
+def test_project_statements_resolve_the_real_captured_quote(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    async def check(trial: Stage0Trial, conn: AsyncConnection) -> None:
+        resolved = await trial._project_statements(conn)
+        assert [item.quote for item in resolved.statements] == ["neurosurgery practices"]
+        assert [item.route_key for item in resolved.statements] == ["target_segment"]
+        assert resolved.excluded_statement_ids == ()
+
+    _run_statement_scenario(
+        tmp_path,
+        stage0_db_available,
+        quote_start=10,
+        quote_end=32,
+        recorded_quote="neurosurgery practices",
+        erase=False,
+        check=check,
+    )
+
+
+def test_project_statement_that_no_longer_hashes_to_its_evidence_raises(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """Corruption or tampering is fail-closed: the span the row hashed is not the span the
+    artifact now yields, so synthesis must refuse rather than quietly use the wrong words."""
+
+    async def check(trial: Stage0Trial, conn: AsyncConnection) -> None:
+        with pytest.raises(RuntimeError, match="does not match its captured evidence quote"):
+            await trial._project_statements(conn)
+
+    _run_statement_scenario(
+        tmp_path,
+        stage0_db_available,
+        quote_start=0,
+        quote_end=10,  # the offsets select "We target " ...
+        recorded_quote="neurosurgery practices",  # ... but the row hashed something else
+        erase=False,
+        check=check,
+    )
+
+
+def test_erased_evidence_drops_one_statement_instead_of_bricking_synthesis(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """A DSAR erasure of one conversation turn must not permanently disable ICP synthesis: the
+    statement is dropped and surfaced as an exclusion, by id only."""
+
+    async def check(trial: Stage0Trial, conn: AsyncConnection) -> None:
+        rows = await read_statements(
+            conn,
+            workspace_id=trial.state.workspace_id,
+            project_id=trial.state.project_id,
+        )
+        resolved = await trial._project_statements(conn)
+        assert resolved.statements == ()
+        assert resolved.excluded_statement_ids == tuple(row.id for row in rows)
+        # repeatable: erasure is a stable exclusion, not a one-shot failure
+        assert (await trial._project_statements(conn)) == resolved
+
+    _run_statement_scenario(
+        tmp_path,
+        stage0_db_available,
+        quote_start=10,
+        quote_end=32,
+        recorded_quote="neurosurgery practices",
+        erase=True,
+        check=check,
+    )
 
 
 def test_trial_state_round_trips_through_private_report_handle(tmp_path: Path) -> None:

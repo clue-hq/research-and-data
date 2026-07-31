@@ -83,6 +83,7 @@ from clue_core import (
     MemoryWriteSeam,
     OnboardingInputId,
     OnboardingInputKind,
+    VolunteeredStatementId,
     operation_id_from_key,
 )
 from clue_db import ConnFactory, transaction
@@ -106,7 +107,6 @@ from clue_research.stage0 import (
     ClientKnowledgeBaseRef,
     ICPConfirmation,
     ICPProposal,
-    ICPSynthesisResult,
     ICPSynthesisStatus,
     ProjectStatement,
     VolunteeredMaterial,
@@ -126,7 +126,7 @@ from clue_spine import (
     get_project,
     get_workspace,
 )
-from clue_storage import StorageBackend, get_artifact
+from clue_storage import ArtifactNotFound, StorageBackend, get_artifact
 from clue_toolbelt import DbIdempotencyStore, ToolInvoker, ToolRegistry
 
 _SESSION_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -147,6 +147,30 @@ class Stage0ProductNotConfirmed(ValueError):
     def __init__(self, action: str) -> None:
         super().__init__(f"run /confirm-product first: {action} requires a confirmed product")
         self.action = action
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedStatements:
+    """Live project statements plus the ids whose evidence artifact no longer exists."""
+
+    statements: tuple[ProjectStatement, ...]
+    excluded_statement_ids: tuple[VolunteeredStatementId, ...]
+
+
+class Stage0IcpSynthesis(BaseModel):
+    """What the trial hands its callers after one ICP synthesis.
+
+    ``proposals`` is already the *offerable* set: empty whenever ``status`` is not
+    :attr:`~clue_research.stage0.ICPSynthesisStatus.GROUNDED`, so no surface can accidentally
+    present the ungrounded floor as a numbered candidate. ``excluded_statement_ids`` names the
+    statements left out because their captured evidence is gone (reference-only)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: ICPSynthesisStatus
+    reason_codes: tuple[str, ...] = ()
+    proposals: tuple[ICPProposal, ...] = ()
+    excluded_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 def _json_default(value: object) -> str:
@@ -872,7 +896,7 @@ class Stage0Trial:
             raise ValueError("product candidate cannot be confirmed for this trial project")
         await self.export_report()
 
-    async def synthesize_icp_proposals(self) -> ICPSynthesisResult:
+    async def synthesize_icp_proposals(self) -> Stage0IcpSynthesis:
         """Synthesize from the version-pinned Client KB **and** the project's own statements.
 
         Human-gated exactly like confirmation: an unconfirmed product refuses. A result with no
@@ -884,7 +908,7 @@ class Stage0Trial:
             project = await get_project(conn, self.state.project_id)
             if project is None or project.product_id != self.state.product_id:
                 raise Stage0ProductNotConfirmed("ICP synthesis")
-            statements = await self._project_statements(conn)
+            resolved = await self._project_statements(conn)
             result = await synthesize_icps(
                 conn,
                 ClientKnowledgeBaseRef(
@@ -893,7 +917,7 @@ class Stage0Trial:
                     product_id=self.state.product_id,
                 ),
                 workspace_id=self.state.workspace_id,
-                project_statements=statements,
+                project_statements=resolved.statements,
                 gateway=self._gateway,
                 synthesis_model=self._settings.synthesis_model,
             )
@@ -907,7 +931,10 @@ class Stage0Trial:
             "generated_at": datetime.now(UTC),
             "status": result.status.value,
             "reason_codes": list(result.reason_codes),
-            "project_statement_ids": [str(item.statement_id) for item in statements],
+            "project_statement_ids": [str(item.statement_id) for item in resolved.statements],
+            # Statements whose captured evidence artifact is gone (DSAR erasure / tombstone /
+            # purge). Reference-only: the ids record what was left out, never the lost words.
+            "excluded_statement_ids": [str(item) for item in resolved.excluded_statement_ids],
             # An ungrounded floor is recorded for inspection but is deliberately NOT offered as a
             # confirmable proposal — /confirm-icp has nothing to confirm until evidence exists.
             "proposals": (
@@ -920,14 +947,27 @@ class Stage0Trial:
         self.paths.root.mkdir(parents=True, exist_ok=True)
         self.paths.icp_proposals.write_text(_pretty_json(payload) + "\n", encoding="utf-8")
         await self.export_report()
-        return result
+        return Stage0IcpSynthesis(
+            status=result.status,
+            reason_codes=result.reason_codes,
+            proposals=result.proposals if grounded else (),
+            excluded_statement_ids=resolved.excluded_statement_ids,
+        )
 
-    async def _project_statements(self, conn: AsyncConnection) -> tuple[ProjectStatement, ...]:
-        """Resolve this project's durable ``project_state`` statements into synthesis evidence.
+    async def _project_statements(self, conn: AsyncConnection) -> _ResolvedStatements:
+        """Resolve this project's live ``project_state`` statements into synthesis evidence.
 
         The statement row stores only offsets + a sha256 into its captured onboarding artifact, so
-        the exact quote is sliced from the artifact body and verified against that hash — a quote
-        that does not verify is a corrupted lineage, not something to synthesize on.
+        the exact quote is sliced from the artifact body and verified against that hash. The two
+        ways that can fail are **not** the same failure:
+
+        * the evidence artifact is **gone** (erased/tombstoned by DSAR, or its row purged) — the
+          statement is simply dropped and its id is surfaced as an exclusion. Erasing one
+          conversation turn must never permanently disable ICP synthesis for the project;
+        * the artifact is present but the span **does not hash to** the recorded quote, or its
+          durable metadata disagrees with the row — that is corruption or tampering, and it raises.
+
+        A cross-workspace artifact reference is a scoping violation, not an erasure: it raises.
         """
 
         rows = await read_statements(
@@ -936,26 +976,41 @@ class Stage0Trial:
             project_id=self.state.project_id,
         )
         bodies: dict[str, str] = {}
+        missing_artifacts: set[str] = set()
         statements: list[ProjectStatement] = []
+        excluded: list[VolunteeredStatementId] = []
         for row in rows:
+            if row.artifact_key in missing_artifacts:
+                excluded.append(row.id)
+                continue
             body = bodies.get(row.artifact_key)
             if body is None:
                 record = await get_artifact(conn, row.artifact_key)
-                if record is None or record.workspace_id != self.state.workspace_id:
+                if record is not None and record.workspace_id != self.state.workspace_id:
                     raise RuntimeError(
-                        f"interview statement {row.id} cites an artifact this workspace cannot read"
+                        f"interview statement {row.id} cites an artifact owned by another workspace"
                     )
-                body = (
-                    await self._components.artifacts.read(
-                        ArtifactRef(
-                            workspace_id=self.state.workspace_id,
-                            artifact_key=row.artifact_key,
-                            sha256=record.content_sha256,
-                            media_type=record.media_type,
-                            byte_count=record.size_bytes,
+                if record is None:
+                    missing_artifacts.add(row.artifact_key)
+                    excluded.append(row.id)
+                    continue
+                try:
+                    body = (
+                        await self._components.artifacts.read(
+                            ArtifactRef(
+                                workspace_id=self.state.workspace_id,
+                                artifact_key=row.artifact_key,
+                                sha256=record.content_sha256,
+                                media_type=record.media_type,
+                                byte_count=record.size_bytes,
+                            )
                         )
-                    )
-                ).decode()
+                    ).decode()
+                except ArtifactNotFound:
+                    # Erased or tombstoned evidence: honest-empty, never fatal.
+                    missing_artifacts.add(row.artifact_key)
+                    excluded.append(row.id)
+                    continue
                 bodies[row.artifact_key] = body
             quote = body[row.quote_start : row.quote_end]
             if hashlib.sha256(quote.encode()).hexdigest() != row.quote_sha256:
@@ -969,7 +1024,10 @@ class Stage0Trial:
                     quote=quote,
                 )
             )
-        return tuple(statements)
+        return _ResolvedStatements(
+            statements=tuple(statements),
+            excluded_statement_ids=tuple(excluded),
+        )
 
     async def confirm_icp_proposal(self, number: int) -> ICPConfirmation:
         """Apply the human-only confirmation to one numbered proposal."""
@@ -1257,6 +1315,7 @@ class Stage0Trial:
 __all__ = [
     "STAGE0_CONTEXT_BINDING_KIND",
     "STAGE0_USER_MESSAGE_BINDING_KIND",
+    "Stage0IcpSynthesis",
     "Stage0ProductNotConfirmed",
     "Stage0Trial",
     "Stage0TrialPaths",

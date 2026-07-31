@@ -79,6 +79,7 @@ from clue_research.stage0.icp_fields import (
 )
 from clue_research.stage0.icp_handler import IcpConfirmedHandler
 from clue_research.stage0.icp_synthesis import (
+    MAX_PROJECT_STATEMENTS,
     NO_CLIENT_KB_CLAIMS,
     NO_PROJECT_STATEMENTS,
     ICPSynthesisResult,
@@ -186,6 +187,7 @@ __all__ = [
     "ProjectStatement",
     "NO_CLIENT_KB_CLAIMS",
     "NO_PROJECT_STATEMENTS",
+    "MAX_PROJECT_STATEMENTS",
     "DEFAULT_SYNTHESIS_MODEL",
     "confirm_icp",
     "estimate_campaign",
