@@ -16,6 +16,7 @@ the relevant pack is loaded (the core pack for the ``core.*``/``account.*`` keys
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -35,6 +36,7 @@ def _entry(
     cost_cents: Decimal = Decimal(0),
     identity_binding: IdentityBinding | None = None,
     auth_ref: str | None = None,
+    rate_limit: dict[str, Any] | None = None,
     requires_adapter: str | None = None,
     geo_coverage: tuple[str, ...] = (),
     freshness_profile: str | None = None,
@@ -53,6 +55,7 @@ def _entry(
         ),
         provider=provider,
         auth_ref=auth_ref,
+        rate_limit=rate_limit,
         requires_adapter=requires_adapter,
     )
 
@@ -104,6 +107,43 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         cost_cents=Decimal(2),
         auth_ref="CLUE_BUILTWITH_API_KEY",
         freshness_profile="weekly",
+    ),
+    # Sumble's v9 core-data surfaces. Their provider cost is variable and reported as credits on
+    # each response, so ``cost_cents`` stays zero here: the Sumble acquisition receipt records the
+    # exact provider credits and an optional configured money conversion before the snapshot-backed
+    # resolver runs. A fixed manifest price would double-charge multi-field organization snapshots.
+    _entry(
+        "sumble_organizations",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("core.employee_count", "core.primary_domain"),
+        provider="sumble",
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
+    ),
+    _entry(
+        "sumble_jobs",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("account.hiring_velocity_eng",),
+        provider="sumble",
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
+    ),
+    _entry(
+        "sumble_tech_stack",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("core.primary_tech_stack",),
+        provider="sumble",
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
     ),
     # Authoritative registries — deterministic, tier-1, vertical/jurisdiction-flavored. They yield
     # account-level authoritative facts; finer per-vertical field yields (e.g. healthcare.npi) are

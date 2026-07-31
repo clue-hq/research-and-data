@@ -1,0 +1,23 @@
+{
+  "id": "fixture-org-match",
+  "credits_used": 2,
+  "credits_remaining": 998,
+  "organizations": [
+    {
+      "input": {
+        "url": "acme.example"
+      },
+      "attributes": {
+        "id": 1726684,
+        "slug": "acme",
+        "name": "Acme Health",
+        "url": "acme.example",
+        "employee_count": 120,
+        "sumble_url": "https://sumble.com/l/org/acme"
+      },
+      "entities": []
+    }
+  ],
+  "matched_count": 1,
+  "total": 1
+}

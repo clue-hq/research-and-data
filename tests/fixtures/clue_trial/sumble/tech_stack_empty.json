@@ -1,0 +1,13 @@
+{
+  "id": "fixture-tech-empty",
+  "credits_used": 0,
+  "credits_remaining": 997,
+  "organization_id": 1726684,
+  "organization_slug": "acme",
+  "business_functions": [
+    {
+      "business_function": "Engineering",
+      "categories": []
+    }
+  ]
+}

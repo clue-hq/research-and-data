@@ -16,6 +16,7 @@ from clue_research.resolvers import (
     get_json,  # noqa: F401 — imported to assert the shared HTTP wrapper exists (decision 3b)
     register_deterministic_resolvers,
     resolve_credential,  # noqa: F401 — the auth_ref→credential resolver exists (decision 3b)
+    sumble,
     zoominfo,
 )
 from clue_research.resolvers.registries import SPECS
@@ -25,7 +26,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPO_ROOT / "src"
 _RES_SRC = _SRC_ROOT / "clue_research" / "resolvers"
 _RES_TESTS = _REPO_ROOT / "tests" / "resolvers"
-_PROVIDER_PKGS = ("clay", "apollo", "zoominfo", "builtwith", "registries", "crm", "firecrawl")
+_PROVIDER_PKGS = (
+    "clay",
+    "apollo",
+    "zoominfo",
+    "builtwith",
+    "registries",
+    "crm",
+    "firecrawl",
+    "sumble",
+)
 _REDACTED = "***REDACTED***"
 
 # The only string literals that legitimately trip the runtime redactor (see the secret-scan test):
@@ -124,7 +134,13 @@ def test_no_secret_shaped_strings_in_source_or_fixtures() -> None:
 def test_auth_refs_are_clue_references_not_secrets() -> None:
     """Every resolver's declared ``auth_ref`` is a ``CLUE_*`` env-var *reference* (or ``None`` for a
     public registry), never a secret value."""
-    refs = [clay.AUTH_REF, apollo.AUTH_REF, zoominfo.AUTH_REF, builtwith.AUTH_REF]
+    refs = [
+        clay.AUTH_REF,
+        apollo.AUTH_REF,
+        zoominfo.AUTH_REF,
+        builtwith.AUTH_REF,
+        sumble.AUTH_REF,
+    ]
     refs += [spec.auth_ref for spec in SPECS.values() if spec.auth_ref is not None]
     for ref in refs:
         assert ref.startswith("CLUE_"), ref

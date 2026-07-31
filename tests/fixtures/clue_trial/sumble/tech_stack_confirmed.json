@@ -1,0 +1,67 @@
+{
+  "id": "fixture-tech-confirmed",
+  "credits_used": 3,
+  "credits_remaining": 994,
+  "organization_id": 1726684,
+  "organization_slug": "acme",
+  "business_functions": [
+    {
+      "business_function": "Engineering",
+      "categories": [
+        {
+          "category_slug": "cloud-platform",
+          "category_name": "Cloud",
+          "category_name_full": "Cloud Platforms",
+          "technologies": [
+            {
+              "name": "Amazon Web Services",
+              "slug": "amazon-web-services",
+              "job_post_used_count": 8,
+              "domain": "aws.amazon.com"
+            },
+            {
+              "name": "Kubernetes",
+              "slug": "kubernetes",
+              "job_post_used_count": 5,
+              "domain": "kubernetes.io"
+            }
+          ],
+          "evidence": [
+            {
+              "name": "Amazon Web Services",
+              "job_post_used_count": 8
+            },
+            {
+              "name": "Kubernetes",
+              "job_post_used_count": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "business_function": "Sales",
+      "categories": [
+        {
+          "category_slug": "crm",
+          "category_name": "CRM",
+          "category_name_full": "Customer Relationship Management",
+          "technologies": [
+            {
+              "name": "Salesforce",
+              "slug": "salesforce",
+              "job_post_used_count": 3,
+              "domain": "salesforce.com"
+            }
+          ],
+          "evidence": [
+            {
+              "name": "Salesforce",
+              "job_post_used_count": 3
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
