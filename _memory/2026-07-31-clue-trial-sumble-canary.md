@@ -26,7 +26,15 @@
 
 ## Manual canary prerequisite
 
-- Redis and OpenRouter were detected.
-- `CLUE_SUMBLE_API_KEY` was not detected, so the live T6 canary was correctly not run.
+- Redis, OpenRouter, and `CLUE_SUMBLE_API_KEY` were detected by the live doctor.
 - Start with `uv run python -m clue_api.trial_main`, then
   `uv run python scripts/clue_trial.py doctor`; proceed only when doctor reports `ready: true`.
+
+## Clean-slate reset
+
+- Before the first manual canary, the configured local `clue` database was deliberately reset and
+  migrated to `6a7f8eed5b23`; generated Stage-0 and Sumble trial directories were removed.
+- No backward-compatibility path was retained for the pre-Sumble field definitions. A clean
+  database seeds the current field contracts directly, which is appropriate before first testing.
+- The field registry remains fail-closed: redefining a field key with a different contract is still
+  rejected instead of silently mutating the contract.
