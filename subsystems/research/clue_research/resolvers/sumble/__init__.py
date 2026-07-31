@@ -34,6 +34,7 @@ from clue_core import (
     FieldDef,
     ResolverError,
     RetryableResolverError,
+    revalidate_with,
     to_value_json,
 )
 from clue_research.resolvers.base import ResolvedField, build_claim, resolved_field
@@ -198,6 +199,9 @@ class SumbleSnapshot(BaseModel):
     cost_cents: CostCents = Decimal(0)
     estimated_max_credits: int | None = Field(default=None, ge=0)
     unbounded_call_approved: bool = False
+    # Set only after the raw response is durable in clue-storage. Snapshot-backed claims copy this
+    # reference so evidence remains inspectable if Sumble later changes or removes the live record.
+    artifact_key: str | None = Field(default=None, min_length=1)
 
 
 class SumbleSnapshotLookup(Protocol):
@@ -429,6 +433,20 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
     return []
 
 
+def matched_organization_id(payload: Mapping[str, Any]) -> int | None:
+    """Return the sole matched Sumble organization id, or ``None`` for no/ambiguous match."""
+
+    response = SumbleOrganizationsResponse.model_validate(payload)
+    matched = [
+        row.attributes.id
+        for row in response.organizations
+        if row.attributes.id is not None and row.attributes.url
+    ]
+    if len(matched) != 1:
+        return None
+    return matched[0]
+
+
 def normalize_jobs(payload: Mapping[str, Any], field: FieldDef) -> list[ResolvedField]:
     if field.field_key != _HIRING_VELOCITY_FIELD:
         return []
@@ -513,13 +531,18 @@ class SumbleSnapshotResolver:
             return []
         resolved = self._normalize(snapshot.payload, field)
         cost = snapshot.cost_cents if field.field_key == self._charge_field else Decimal(0)
-        return [
+        claims = [
             build_claim(
                 entity,
                 item,
                 cost_cents=cost if index == 0 else Decimal(0),
             )
             for index, item in enumerate(resolved)
+        ]
+        if snapshot.artifact_key is None:
+            return claims
+        return [
+            revalidate_with(claim, artifact_key=snapshot.artifact_key) for claim in claims
         ]
 
 
@@ -583,6 +606,7 @@ __all__ = [
     "SumbleUnboundedCreditRisk",
     "TECH_STACK_SOURCE_KEY",
     "build_sumble_resolvers",
+    "matched_organization_id",
     "normalize_jobs",
     "normalize_organization",
     "normalize_tech_stack",
