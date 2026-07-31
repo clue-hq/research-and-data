@@ -626,6 +626,7 @@ version = "0.0.0"
 source = { editable = "platform/agents" }
 dependencies = [
     { name = "clue-core" },
+    { name = "clue-obs" },
     { name = "deepagents" },
     { name = "langchain-core" },
     { name = "pyyaml" },
@@ -634,6 +635,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "deepagents", specifier = "==0.6.12" },
     { name = "langchain-core", specifier = ">=1.5,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
