@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -531,6 +532,94 @@ def test_erased_evidence_drops_one_statement_instead_of_bricking_synthesis(
         erase=True,
         check=check,
     )
+
+
+def test_a_superseded_icp_proposal_file_marks_itself_stale_instead_of_bricking_the_session(
+    tmp_path: Path,
+    stage0_db_available: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A proposal file from an older Client-KB version must not take the whole session down.
+
+    The live defect: ``_load_icp_proposals`` raised on any lineage drift, and ``snapshot()`` — which
+    runs at the *start and end of every turn*, and behind ``/status`` and every report export —
+    called it unconditionally. So the first claim-bearing turn after ``/synthesize-icp`` published a
+    new Client-KB version and every subsequent turn, status read, report export, and confirmation
+    raised, until the human happened to re-synthesize. Reading superseded proposals is a *reference*
+    concern; only *confirming* one is an authority concern, so tolerance and strictness split there.
+
+    The Client-KB version bump is applied at the same seam the turn applies it
+    (``_refresh_client_kb_from_conversation``'s ``state.model_copy``), because driving a real
+    conversation turn would need a live model call, which this suite must not make.
+    """
+
+    grounded = ICPProposal(icp_key="primary", label="US neurosurgery practices with own imaging")
+
+    async def synthesized(*args: object, **kwargs: object) -> ICPSynthesisResult:
+        del args, kwargs
+        return ICPSynthesisResult(
+            proposals=(grounded,),
+            status=ICPSynthesisStatus.GROUNDED,
+            reason_codes=(),
+        )
+
+    monkeypatch.setattr("clue_api.stage0_trial.synthesize_icps", synthesized)
+
+    def _keys(snapshot: dict[str, object]) -> list[object]:
+        return [
+            item["icp_key"] for item in cast(list[dict[str, object]], snapshot["icp_proposals"])
+        ]
+
+    async def check(trial: Stage0Trial, conn: AsyncConnection) -> None:
+        trial._gateway = cast(Any, SimpleNamespace())
+        trial._settings = Settings(_env_file=None)
+        object.__setattr__(trial._components, "history", SimpleNamespace(load=_no_history))
+        await trial.confirm_product()
+
+        await trial.synthesize_icp_proposals()
+        fresh = await trial.snapshot()
+        assert _keys(fresh) == ["primary"]
+        assert fresh["icp_proposals_stale"] is False
+        assert fresh["icp_proposals_stale_reason"] is None
+
+        # The next claim-bearing turn publishes the next immutable Client-KB version.
+        superseded = trial.state.client_kb_version
+        trial.state = trial.state.model_copy(update={"client_kb_version": superseded + 1})
+
+        # Every read path still works, and says plainly that the saved proposals are superseded.
+        stale = await trial.snapshot()  # the per-turn read, and what /status prints
+        assert stale["icp_proposals"] == []
+        assert stale["icp_proposals_stale"] is True
+        assert "client_kb_version" in str(stale["icp_proposals_stale_reason"])
+        await trial.export_report()  # the end-of-turn export, and /report
+        report = json.loads(trial.paths.report_json.read_text(encoding="utf-8"))
+        assert report["current_truth"]["icp_proposals_stale"] is True
+        assert report["current_truth"]["icp_proposals"] == []
+
+        # Confirming is where lineage is authority, so it still refuses — loudly and specifically.
+        with pytest.raises(ValueError, match="does not match the current Stage-0 trial lineage"):
+            await trial.confirm_icp_proposal(1)
+
+        # Re-synthesizing against the current version clears the marker.
+        await trial.synthesize_icp_proposals()
+        recovered = await trial.snapshot()
+        assert _keys(recovered) == ["primary"]
+        assert recovered["icp_proposals_stale"] is False
+
+    _run_statement_scenario(
+        tmp_path,
+        stage0_db_available,
+        quote_start=10,
+        quote_end=32,
+        recorded_quote="neurosurgery practices",
+        erase=False,
+        check=check,
+    )
+
+
+async def _no_history(**kwargs: object) -> tuple[object, ...]:
+    del kwargs
+    return ()
 
 
 def test_trial_state_round_trips_through_private_report_handle(tmp_path: Path) -> None:

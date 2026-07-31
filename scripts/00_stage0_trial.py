@@ -82,6 +82,9 @@ async def _show_status(trial: Stage0Trial) -> None:
     print(f"  claims         : {len(client_kb['claims'])}")  # type: ignore[index]
     print(f"  memories       : {len(snapshot['memories'])}")  # type: ignore[arg-type]
     print(f"  ICP versions   : {len(snapshot['icps'])}")  # type: ignore[arg-type]
+    if snapshot["icp_proposals_stale"]:
+        # Without this the operator sees no proposals and no reason, then /confirm-icp refuses.
+        print(f"  ICP proposals  : superseded — {snapshot['icp_proposals_stale_reason']}")
     print(f"  report         : {trial.paths.report_markdown}")
 
 
