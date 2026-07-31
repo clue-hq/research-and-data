@@ -23,10 +23,16 @@ from clue_agents import (
     WorkspacePolicy,
 )
 from clue_agents.contracts import PlanToolStep
-from clue_api.agent_execution_wiring import C5AgentExecutionAdapter, _trusted_tool_arguments
+from clue_api.agent_execution_wiring import (
+    _FAILURE_MESSAGE_LIMIT,
+    C5AgentExecutionAdapter,
+    _trusted_tool_arguments,
+)
 from clue_core import ExecutionId
 from clue_execution import InteractionAppend, InteractionSlotView, PinRequest
 from clue_toolbelt import (
+    PreconditionFailed,
+    PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
     Tool,
@@ -169,6 +175,29 @@ class _Executor:
         )
 
 
+class _RefusingExecutor(_Executor):
+    """Executor whose tool refuses the way a real governed tool refuses: by raising.
+
+    The live F7 case: ``record_interview_answer`` raised a domain ``ValueError`` from the
+    interview verifier. The exception is gathered away inside :meth:`execute` (a failed operation
+    must not abort its siblings), so the *reason* has to ride the progress stream or the caller has
+    nothing to hand the model.
+    """
+
+    def __init__(self, *, error: BaseException, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.error = error
+
+    async def invoke_interaction_tool(
+        self,
+        append: InteractionAppend,
+        **kwargs: Any,
+    ) -> ToolResult:
+        del append, kwargs
+        self.effect_count += 1
+        raise self.error
+
+
 class _PinProvider:
     async def pins_for(self, step: object, *, ctx: ToolContext) -> tuple[PinRequest, ...]:
         del step, ctx
@@ -248,6 +277,7 @@ def _adapter(
     dynamic_pin_kinds: tuple[str, ...] = (),
     tool: Tool | None = None,
     profile_pins_other_tool: bool = False,
+    executor: _Executor | None = None,
 ):
     registry = ToolRegistry()
     registry.register(tool if tool is not None else _Tool(), make_default=True)
@@ -290,10 +320,11 @@ def _adapter(
     )
     artifacts = _Artifacts()
     journal = _Journal()
-    executor = _Executor(
-        allowed=allowed,
-        dynamic_pin_kinds=dynamic_pin_kinds,
-    )
+    if executor is None:
+        executor = _Executor(
+            allowed=allowed,
+            dynamic_pin_kinds=dynamic_pin_kinds,
+        )
     adapter = C5AgentExecutionAdapter(
         turn_id=UUID("00000000-0000-0000-0000-000000000645"),
         constitution=trusted,
@@ -457,6 +488,84 @@ def test_agent_boundaries_retry_through_c5_without_duplicate_domain_effect(
 
 async def _collect(iterator: Any) -> list[Any]:
     return [item async for item in iterator]
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_type", "expected_fragment"),
+    [
+        (
+            ValueError("claim value is not textually entailed by the exact interview quote"),
+            "ValueError",
+            "not textually entailed",
+        ),
+        (
+            PreconditionFailed(
+                (
+                    PreconditionFailure(
+                        reason_code="no_active_icp",
+                        message="confirm an ICP before importing accounts",
+                    ),
+                )
+            ),
+            "PreconditionFailed",
+            "no_active_icp: confirm an ICP before importing accounts",
+        ),
+    ],
+)
+def test_a_failed_operation_carries_its_reason_on_the_progress_stream(
+    error: BaseException,
+    expected_type: str,
+    expected_fragment: str,
+) -> None:
+    """The durable record of a failure is a code; the sentence that repairs it is the exception.
+
+    ``execute`` deliberately gathers operation exceptions away — one failed node must not abort its
+    siblings — so before this the reason existed only in the log. The caller (the governed tool
+    wrapper) then had nothing to tell the model beyond "it failed", which is exactly the live F7
+    dead end.
+    """
+
+    adapter, trusted, pin, executor, journal = _adapter(
+        allowed=("read_project@1",),
+        executor=_RefusingExecutor(error=error, allowed=("read_project@1",)),
+    )
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "failed"
+    assert progress[-1].failed_node_keys == ("read",)
+    failure = progress[-1].failures[0]
+    assert failure.node_key == "read"
+    assert failure.address == "read_project@1"
+    assert failure.error_type == expected_type
+    assert expected_fragment in failure.message
+    # The durable side is untouched: the failure event stands, no result row was written.
+    assert journal.results == []
+    assert journal.events[-1] == {
+        "plan_id": validated.plan_id,
+        "workspace_id": trusted.workspace_id,
+        "status": "failed",
+        "reason_code": "operation_failed",
+    }
+    assert executor.effect_count == 1
+
+
+def test_a_failure_message_is_bounded_for_the_next_model_call() -> None:
+    adapter, trusted, pin, _, _ = _adapter(
+        allowed=("read_project@1",),
+        executor=_RefusingExecutor(
+            error=ValueError("refused\n" + "x" * 5_000),
+            allowed=("read_project@1",),
+        ),
+    )
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    message = progress[-1].failures[0].message
+    assert message.startswith("refused x")
+    assert len(message) == _FAILURE_MESSAGE_LIMIT + 1  # the truncation ellipsis
 
 
 class _AuthorityInput(ToolInput):

@@ -49,7 +49,7 @@ from clue_agents.contracts import (
     PlanDelegationStep,
     PlanToolStep,
 )
-from clue_agents.ports import ExecutionProgress
+from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_core import ExecutionId
@@ -66,7 +66,13 @@ from clue_execution import (
     ToolNode,
     validate_graph,
 )
-from clue_toolbelt import ToolContext, ToolInvoker, ToolRegistry, ToolResult
+from clue_toolbelt import (
+    PreconditionFailed,
+    ToolContext,
+    ToolInvoker,
+    ToolRegistry,
+    ToolResult,
+)
 
 __all__ = [
     "AgentExecutionCrashHook",
@@ -103,6 +109,37 @@ async def _no_crash(
 
 
 _DEFAULT_CRASH_HOOK = cast(AgentExecutionCrashHook, _no_crash)
+
+# A refusal sentence is model feedback, not a log dump: enough to name what was wrong, bounded so a
+# pathological traceback-in-a-message cannot dominate the next model call's context.
+_FAILURE_MESSAGE_LIMIT = 600
+
+
+def _failure_message(error: BaseException) -> str:
+    if isinstance(error, PreconditionFailed):
+        # A precondition refusal states its codes in ``str()`` and *what to do about it* only in
+        # the per-failure messages, which is the half a model can act on.
+        text_value = "; ".join(
+            f"{failure.reason_code}: {failure.message}" for failure in error.failures
+        ) or str(error)
+    else:
+        text_value = str(error) or type(error).__name__
+    collapsed = " ".join(text_value.split())
+    if len(collapsed) <= _FAILURE_MESSAGE_LIMIT:
+        return collapsed
+    return f"{collapsed[:_FAILURE_MESSAGE_LIMIT]}…"
+
+
+def _operation_failure(
+    operation: ValidatedOperation,
+    error: BaseException,
+) -> OperationFailure:
+    return OperationFailure(
+        node_key=operation.node_key,
+        address=operation.address,
+        error_type=type(error).__name__,
+        message=_failure_message(error),
+    )
 
 
 class FreshWakeChildRunner(Protocol):
@@ -1519,6 +1556,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         by_key = {operation.node_key: operation for operation in plan.operations}
         completed: set[str] = set()
         failed: set[str] = set()
+        failures: list[OperationFailure] = []
         await self._journal.event(
             plan_id=plan.plan_id,
             workspace_id=self._constitution.workspace_id,
@@ -1551,6 +1589,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             for operation, result in zip(batch, results, strict=True):
                 if isinstance(result, BaseException):
                     failed.add(operation.node_key)
+                    failures.append(_operation_failure(operation, result))
                 else:
                     completed.add(operation.node_key)
             yield ExecutionProgress(
@@ -1558,6 +1597,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 status="failed" if failed else "running",
                 completed_node_keys=tuple(sorted(completed)),
                 failed_node_keys=tuple(sorted(failed)),
+                failures=tuple(failures),
             )
             if failed:
                 break
