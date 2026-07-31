@@ -144,15 +144,8 @@ def test_cap_matches_the_documented_64kb_turn_guard() -> None:
     assert cli_multiline.MAX_MESSAGE_BYTES == 64 * 1024
 
 
-def test_helper_module_is_dependency_free() -> None:
-    source = _MODULE_PATH.read_text(encoding="utf-8")
-    banned = (
-        "clue_research",
-        "clue_execution",
-        "clue_fleet",
-        "clue_memory",
-        "clue_db",
-        "clue_api",
-    )
-
-    assert all(f"import {name}" not in source and f"from {name}" not in source for name in banned)
+# NOTE: this module is imported by the HTTP-only `scripts/clue_trial.py`, so it must stay free of
+# business-domain imports. That ban is NOT re-asserted here — duplicating the banned-package list
+# would let the two copies drift. `tests/api/test_clue_trial_http.py::test_cli_source_is_http_only`
+# owns the single list and walks the CLI's whole scripts/-local import closure, which includes this
+# module.

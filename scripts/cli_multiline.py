@@ -89,12 +89,14 @@ def read_file_message(raw_path: str) -> str:
     binary file is refused rather than loaded into memory.
     """
     path = _resolve(raw_path)
-    size = path.stat().st_size
-    if size > MAX_MESSAGE_BYTES:
-        raise MultilineInputError(
-            f"{path} is {size} bytes; one message is capped at {MAX_MESSAGE_BYTES} bytes."
-        )
+    # stat() is inside the guard with the read: an unreadable/vanished file must refuse this one
+    # command, not raise an OSError through the loop and end the session.
     try:
+        size = path.stat().st_size
+        if size > MAX_MESSAGE_BYTES:
+            raise MultilineInputError(
+                f"{path} is {size} bytes; one message is capped at {MAX_MESSAGE_BYTES} bytes."
+            )
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise MultilineInputError(f"{path} is not UTF-8 text; send a plain-text file.") from exc
