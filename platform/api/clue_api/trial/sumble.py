@@ -88,9 +88,7 @@ class SumbleReceiptStore(Protocol):
         """Return a prior snapshot on replay, or ``None`` when this caller owns execution."""
         ...
 
-    async def succeed(
-        self, operation_key: str, snapshot: SumbleSnapshot
-    ) -> SumbleSnapshot: ...
+    async def succeed(self, operation_key: str, snapshot: SumbleSnapshot) -> SumbleSnapshot: ...
 
     async def fail(self, operation_key: str) -> None: ...
 
@@ -180,9 +178,7 @@ class DbSumbleReceiptStore:
             return None
         return await self._load_snapshot(result.result_ref)
 
-    async def succeed(
-        self, operation_key: str, snapshot: SumbleSnapshot
-    ) -> SumbleSnapshot:
+    async def succeed(self, operation_key: str, snapshot: SumbleSnapshot) -> SumbleSnapshot:
         raw = serialize_value_json(snapshot.payload).encode()
         sink = SnapshotSink(workspace_id=self._workspace_id)
         artifact_key = sink.capture(
@@ -213,9 +209,7 @@ class DbSumbleReceiptStore:
     async def fail(self, operation_key: str) -> None:
         await self._ledger.fail(key=operation_key)
 
-    async def _load_snapshot(
-        self, result_ref: dict[str, JsonValue]
-    ) -> SumbleSnapshot:
+    async def _load_snapshot(self, result_ref: dict[str, JsonValue]) -> SumbleSnapshot:
         if result_ref.get("kind") != "sumble_response_snapshot":
             raise SumbleContractError("Sumble replay ledger contains an unexpected result kind")
         artifact_key = result_ref.get("artifact_key")
@@ -231,9 +225,7 @@ class DbSumbleReceiptStore:
                 "payload": payload,
                 "cost_cents": Decimal(str(result_ref.get("cost_cents", "0"))),
                 "estimated_max_credits": result_ref.get("estimated_max_credits"),
-                "unbounded_call_approved": result_ref.get(
-                    "unbounded_call_approved", False
-                ),
+                "unbounded_call_approved": result_ref.get("unbounded_call_approved", False),
                 "artifact_key": artifact_key,
             }
         )
@@ -260,9 +252,7 @@ class SumbleAcquisitionService:
         self, *, account_run_id: RunId, entity_id: EntityId, organization_id: int
     ) -> SumbleSnapshot:
         return await self._execute(
-            operation_key=sumble_acquisition_key(
-                account_run_id, entity_id, JOBS_SOURCE_KEY
-            ),
+            operation_key=sumble_acquisition_key(account_run_id, entity_id, JOBS_SOURCE_KEY),
             acquire=lambda: self._client.engineering_jobs(organization_id),
         )
 
@@ -275,26 +265,20 @@ class SumbleAcquisitionService:
         allow_unbounded: bool,
     ) -> SumbleSnapshot:
         return await self._execute(
-            operation_key=sumble_acquisition_key(
-                account_run_id, entity_id, TECH_STACK_SOURCE_KEY
-            ),
+            operation_key=sumble_acquisition_key(account_run_id, entity_id, TECH_STACK_SOURCE_KEY),
             acquire=lambda: self._client.tech_stack(
                 organization_id,
                 allow_unbounded=allow_unbounded,
             ),
         )
 
-    async def retry_persistence(
-        self, error: SumbleReceiptPersistenceError
-    ) -> SumbleSnapshot:
+    async def retry_persistence(self, error: SumbleReceiptPersistenceError) -> SumbleSnapshot:
         """Retry only the durable write using the already-returned provider snapshot."""
 
         try:
             return await self._receipts.succeed(error.operation_key, error.snapshot)
         except Exception as exc:
-            raise SumbleReceiptPersistenceError(
-                error.operation_key, error.snapshot
-            ) from exc
+            raise SumbleReceiptPersistenceError(error.operation_key, error.snapshot) from exc
 
     async def _execute(
         self,

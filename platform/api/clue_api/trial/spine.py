@@ -255,8 +255,7 @@ class ClueTrialSpine:
                 metrics={
                     "coverage_ratio": coverage_ratio,
                     "verified_claims": sum(
-                        claim.verification_status.value == "verified"
-                        for claim in claims.values()
+                        claim.verification_status.value == "verified" for claim in claims.values()
                     ),
                     "open_policy_blocks": 0,
                     "available_field_keys": cast(list[JsonValue], available),
@@ -278,9 +277,7 @@ class ClueTrialSpine:
                     {"id": decision_id},
                 )
                 reasons_value = row.scalar_one()
-                reasons = tuple(
-                    item for item in reasons_value if isinstance(item, str)
-                )
+                reasons = tuple(item for item in reasons_value if isinstance(item, str))
                 if not readiness_override_reason:
                     raise TrialReadinessOverrideRequired(reasons)
                 await override_readiness(
@@ -329,9 +326,7 @@ class ClueTrialSpine:
         normalized = _domain(domain)
         candidate = CandidateHypothesis(
             matched_channel="import",
-            source_record_ref=(
-                f"human:clue-trial:{state.session_id}:account:{normalized}"
-            ),
+            source_record_ref=(f"human:clue-trial:{state.session_id}:account:{normalized}"),
             source_url=f"https://{normalized}",
             raw_name=name or normalized,
             candidate_domain=normalized,
@@ -463,10 +458,7 @@ class ClueTrialSpine:
         """Apply explicit human direct-research admission, then drive through REVIEW."""
 
         row = await self._driver.status(project_run_id)
-        if (
-            row.phase is ProjectPhase.TIER_CHECKPOINT
-            and row.status is ProjectRunStatus.PAUSED
-        ):
+        if row.phase is ProjectPhase.TIER_CHECKPOINT and row.status is ProjectRunStatus.PAUSED:
             composed = await self._driver.composed(row)
             row = await composed.run.submit_checkpoint(
                 project_run_id,
@@ -501,6 +493,46 @@ class ClueTrialSpine:
         return TrialResearchState(
             project_run=row,
             account_entity_id=account_entity_id,
+            research_view=view_payload,
+            research_view_error=view_error,
+        )
+
+    async def research_state(
+        self,
+        *,
+        state: Stage0TrialState,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+    ) -> TrialResearchState:
+        """Read the current durable run and C7 projection without advancing either."""
+
+        row = await self._driver.status(project_run_id)
+        checkpoint: dict[str, JsonValue] | None = None
+        if row.phase is ProjectPhase.TIER_CHECKPOINT:
+            composed = await self._driver.composed(row)
+            stored = await composed.run.await_checkpoint(project_run_id)
+            if stored is not None:
+                checkpoint = stored.payload
+        view_payload: dict[str, JsonValue] | None = None
+        view_error: str | None = None
+        try:
+            view = await self._views.compose(
+                ResearchViewReadRequest(
+                    workspace_id=state.workspace_id,
+                    project_id=state.project_id,
+                    project_run_id=project_run_id,
+                    subject_entity_id=account_entity_id,
+                    subject_entity_type=EntityType.ACCOUNT,
+                    product_id=state.product_id,
+                )
+            )
+            view_payload = view.model_dump(mode="json")
+        except ResearchViewCompositionError as exc:
+            view_error = str(exc)
+        return TrialResearchState(
+            project_run=row,
+            account_entity_id=account_entity_id,
+            checkpoint=checkpoint,
             research_view=view_payload,
             research_view_error=view_error,
         )

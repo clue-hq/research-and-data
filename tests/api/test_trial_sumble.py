@@ -67,9 +67,7 @@ class MemoryReceiptStore:
             raise SumbleAcquisitionPending(operation_key)
         return snapshot
 
-    async def succeed(
-        self, operation_key: str, snapshot: SumbleSnapshot
-    ) -> SumbleSnapshot:
+    async def succeed(self, operation_key: str, snapshot: SumbleSnapshot) -> SumbleSnapshot:
         self.succeed_calls += 1
         durable = snapshot.model_copy(update={"artifact_key": "workspace/artifact"})
         self.records[operation_key] = durable
@@ -185,9 +183,7 @@ def test_preflight_failure_releases_operation_for_corrected_retry() -> None:
 
 async def _receipt_write_failure_scenario() -> None:
     class FailOnceReceiptStore(MemoryReceiptStore):
-        async def succeed(
-            self, operation_key: str, snapshot: SumbleSnapshot
-        ) -> SumbleSnapshot:
+        async def succeed(self, operation_key: str, snapshot: SumbleSnapshot) -> SumbleSnapshot:
             if self.succeed_calls == 0:
                 self.succeed_calls += 1
                 raise RuntimeError("storage temporarily unavailable")
@@ -259,9 +255,7 @@ def test_db_receipt_store_commits_artifact_and_replays(
             assert first == replay
             assert first.artifact_key is not None
             assert http.calls == 1
-            assert json.loads((await storage.get(first.artifact_key)).decode())[
-                "credits_used"
-            ] == 2
+            assert json.loads((await storage.get(first.artifact_key)).decode())["credits_used"] == 2
             async with transaction() as conn:
                 assert await get_artifact(conn, first.artifact_key) is not None
                 rows = await conn.execute(

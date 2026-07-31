@@ -145,6 +145,16 @@ class Settings(BaseSettings):
     # Env: ``CLUE_C7_WORKSPACE_CANARY_IDS``.
     c7_workspace_canary_ids: tuple[str, ...] = ()
 
+    # --- local Clue Trial canary ------------------------------------------------------------
+    # The Sumble-only founder acceptance surface is never part of the default production app.
+    # It must be enabled explicitly and binds to loopback by default. Env:
+    # ``CLUE_TRIAL_ENABLED`` / ``CLUE_TRIAL_HOST`` / ``CLUE_TRIAL_PORT`` /
+    # ``CLUE_TRIAL_ROOT``.
+    trial_enabled: bool = False
+    trial_host: str = "127.0.0.1"
+    trial_port: int = Field(default=8010, ge=1, le=65535)
+    trial_root: str = ".context/sumble-trials"
+
     # --- projections HTTP process ----------------------------------------------------------
     # Env: ``CLUE_PROJECTIONS_HOST`` / ``CLUE_PROJECTIONS_PORT``.
     projections_host: str = "127.0.0.1"

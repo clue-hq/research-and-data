@@ -568,9 +568,7 @@ class SumbleSnapshotResolver:
         ]
         if snapshot.artifact_key is None:
             return claims
-        return [
-            revalidate_with(claim, artifact_key=snapshot.artifact_key) for claim in claims
-        ]
+        return [revalidate_with(claim, artifact_key=snapshot.artifact_key) for claim in claims]
 
 
 def build_sumble_resolvers(

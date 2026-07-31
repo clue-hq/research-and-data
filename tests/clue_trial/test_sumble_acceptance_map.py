@@ -6,9 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-_MAP = (
-    Path(__file__).parents[1] / "fixtures" / "clue_trial" / "sumble_acceptance_map.json"
-)
+_MAP = Path(__file__).parents[1] / "fixtures" / "clue_trial" / "sumble_acceptance_map.json"
 _COVERAGE = {"full", "partial", "none"}
 _FIRST_WAVE_SOURCES = {
     "sumble_organizations",
