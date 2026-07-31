@@ -129,6 +129,20 @@ class VolunteeredStatementRow(BaseModel):
     created_at: UtcDatetime
 
 
+class StatementCounts(BaseModel):
+    """How many durable routing receipts one captured input produced.
+
+    ``total`` is every statement written for the input — the structural answer to "did this turn
+    route the human's words anywhere at all?". ``non_unmapped`` excludes the
+    :attr:`StatementRoute.UNMAPPED` escape hatch, which is an honest "nothing here is material" and
+    therefore is *not* new evidence for a readiness recompute."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    total: int
+    non_unmapped: int
+
+
 class ReadinessDecisionRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -581,6 +595,48 @@ async def read_statements(
         .all()
     )
     return tuple(VolunteeredStatementRow.model_validate(dict(row)) for row in rows)
+
+
+async def count_statements_for_input(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    onboarding_input_id: OnboardingInputId,
+) -> StatementCounts:
+    """Count the routing receipts one captured onboarding input produced, by route class.
+
+    This is the durable answer to "did this turn actually record anything?" — the question a
+    caller must be able to ask *without* reading prose. It deliberately spans every route kind
+    (unlike :func:`read_statements`, which serves one route kind under a project) and keys on the
+    onboarding input rather than the project, because the input is what identifies a single
+    captured user turn.
+
+    Superseded statements are counted: a correction is still a receipt for the turn that made it.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT count(*) AS total,
+                           count(*) FILTER (WHERE route_kind <> :unmapped) AS non_unmapped
+                    FROM volunteered_statement
+                    WHERE workspace_id = :workspace_id
+                      AND onboarding_input_id = :onboarding_input_id
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "onboarding_input_id": onboarding_input_id,
+                    "unmapped": StatementRoute.UNMAPPED.value,
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return StatementCounts(total=int(row["total"]), non_unmapped=int(row["non_unmapped"]))
 
 
 def _manifest_hash(payload: Mapping[str, JsonValue]) -> str:
@@ -1045,9 +1101,11 @@ __all__ = [
     "ReadinessDecisionRow",
     "ReconLaneStatus",
     "ReconRunRow",
+    "StatementCounts",
     "StatementRoute",
     "VolunteeredStatementRow",
     "compile_product_context",
+    "count_statements_for_input",
     "ensure_readiness_spec",
     "evaluate_readiness",
     "get_onboarding_input",

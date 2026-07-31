@@ -290,7 +290,15 @@ class ModelFinalizeRequest(_ModelInput):
         return self
 
 
+# A surface-specific veto over a *non-failing* terminal proposal, invoked for ``completed`` and
+# ``awaiting_input`` (the two statuses that tell the human the turn did its job). It receives the
+# whole proposal, so a guard that only governs one of them checks ``status`` itself; ``failed`` and
+# ``blocked`` are never gated, because an honest failure must not be forced through work it could
+# not do. A guard refuses by raising ``ValueError``, which the runtime's bounded finalize repair
+# turns into visible model feedback before the turn fails closed.
 CompletionGuard = Callable[[ModelFinalizeRequest], Awaitable[None]]
+
+_GUARDED_STATUSES = frozenset({FinalizeStatus.COMPLETED, FinalizeStatus.AWAITING_INPUT})
 
 
 class ModelDomainRef(_ModelInput):
@@ -803,10 +811,7 @@ class GovernedAgentToolFactory:
                     raise ValueError(
                         "completed specialist turn requires its non-empty role output file"
                     )
-            if (
-                model_input.status is FinalizeStatus.COMPLETED
-                and self._completion_guard is not None
-            ):
+            if model_input.status in _GUARDED_STATUSES and self._completion_guard is not None:
                 await self._completion_guard(model_input)
             workspace_id = self._request.constitution.workspace_id
             final_message_ref = (

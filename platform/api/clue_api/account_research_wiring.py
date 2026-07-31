@@ -16,6 +16,7 @@ from clue_agents import (
     AgentTurnRequest,
     AssembledAgentContext,
     DeepAgentTurnRuntime,
+    FinalizeStatus,
     WorkspaceSeedFile,
 )
 from clue_agents.workspace import AgentWorkspaceLease
@@ -339,7 +340,12 @@ class GovernedAccountProfiler:
                 cost_already_recorded=True,
             )
 
-        async def require_terminal(_proposal: ModelFinalizeRequest) -> None:
+        async def require_terminal(proposal: ModelFinalizeRequest) -> None:
+            # Account research is gated on `completed` only: an `awaiting_input` account turn is
+            # honestly reporting that it *cannot* finish coverage yet, which is exactly what the
+            # engine-terminal check would otherwise refuse.
+            if proposal.status is not FinalizeStatus.COMPLETED:
+                return
             if not await self._all_terminal(
                 workspace_id=workspace_id,
                 run_id=run_id,
