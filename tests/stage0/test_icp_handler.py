@@ -90,7 +90,7 @@ def test_handler_emits_artifact_for_confirmed_spec() -> None:
                 ref = await build_client_kb(
                     conn, workspace_id=client, suffix=suffix, asserted=_ASSERTED
                 )
-                (proposal,) = await synthesize_icps(conn, ref, workspace_id=client)
+                (proposal,) = (await synthesize_icps(conn, ref, workspace_id=client)).proposals
                 confirmation = await confirm_icp(
                     conn, proposal, workspace_id=client, client_entity_id=ref.client_entity_id
                 )

@@ -28,6 +28,7 @@ from clue_api.trial.stage0_runtime import (
     memory_write_factory_builder,
 )
 from clue_db import db_lifespan
+from clue_research.stage0 import ICPSynthesisStatus
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _TRIAL_ROOT = _REPOSITORY_ROOT / ".context" / "stage0-trials"
@@ -102,37 +103,54 @@ async def _interactive(trial: Stage0Trial) -> None:
             await trial.export_report()
             print(f"\nSaved: {trial.paths.report_markdown}")
             return
-        if message == "/status":
-            await _show_status(trial)
-            continue
-        if message == "/report":
-            await trial.export_report()
-            print(f"\nReport refreshed: {trial.paths.report_markdown}")
-            continue
-        if message == "/confirm-product":
-            await trial.confirm_product()
-            print(f"\nConfirmed product: {trial.state.product_name}")
-            continue
-        if message == "/synthesize-icp":
-            proposals = await trial.synthesize_icp_proposals()
-            print(f"\nGenerated {len(proposals)} ICP proposal(s):")
-            for number, proposal in enumerate(proposals, start=1):
-                print(f"  {number}. {proposal.label or proposal.icp_key} [{proposal.icp_key}]")
-            print(f"Inspect: {trial.paths.icp_proposals}")
-            print("Continue the conversation so the agent can critique them before you confirm.")
-            continue
-        if message.startswith("/confirm-icp "):
-            raw_number = message.removeprefix("/confirm-icp ").strip()
-            try:
-                number = int(raw_number)
-            except ValueError as exc:
-                raise ValueError("/confirm-icp requires a proposal number") from exc
-            confirmation = await trial.confirm_icp_proposal(number)
-            print(f"\nConfirmed ICP: {confirmation.ref.icp_key}@{confirmation.ref.icp_version}")
-            continue
-        outcome, assistant = await trial.run_turn(message)
-        print(f"\nHead of ABM [{outcome.status.value}] >")
-        print(assistant or "(No user-facing message was committed; inspect the report.)")
+        try:
+            await _dispatch(trial, message)
+        except ValueError as exc:
+            # A refused human gate (unconfirmed product, no grounded proposal) is a normal answer
+            # to a normal command, not a crash — keep the session alive so the human can fix it.
+            print(f"\nError: {exc}")
+
+
+async def _dispatch(trial: Stage0Trial, message: str) -> None:
+    """Run one command (or one conversation turn) against the live trial."""
+    if message == "/status":
+        await _show_status(trial)
+        return
+    if message == "/report":
+        await trial.export_report()
+        print(f"\nReport refreshed: {trial.paths.report_markdown}")
+        return
+    if message == "/confirm-product":
+        await trial.confirm_product()
+        print(f"\nConfirmed product: {trial.state.product_name}")
+        return
+    if message == "/synthesize-icp":
+        result = await trial.synthesize_icp_proposals()
+        if result.status is not ICPSynthesisStatus.GROUNDED:
+            print(f"\nNot ready: {', '.join(result.reason_codes)}")
+            print(
+                "Nothing durable grounds an ICP yet. Tell the agent who you want to target "
+                "and what you sell, then try again."
+            )
+            return
+        print(f"\nGenerated {len(result.proposals)} ICP proposal(s):")
+        for number, proposal in enumerate(result.proposals, start=1):
+            print(f"  {number}. {proposal.label or proposal.icp_key} [{proposal.icp_key}]")
+        print(f"Inspect: {trial.paths.icp_proposals}")
+        print("Continue the conversation so the agent can critique them before you confirm.")
+        return
+    if message.startswith("/confirm-icp "):
+        raw_number = message.removeprefix("/confirm-icp ").strip()
+        try:
+            number = int(raw_number)
+        except ValueError as exc:
+            raise ValueError("/confirm-icp requires a proposal number") from exc
+        confirmation = await trial.confirm_icp_proposal(number)
+        print(f"\nConfirmed ICP: {confirmation.ref.icp_key}@{confirmation.ref.icp_version}")
+        return
+    outcome, assistant = await trial.run_turn(message)
+    print(f"\nHead of ABM [{outcome.status.value}] >")
+    print(assistant or "(No user-facing message was committed; inspect the report.)")
 
 
 async def _main(args: argparse.Namespace) -> None:

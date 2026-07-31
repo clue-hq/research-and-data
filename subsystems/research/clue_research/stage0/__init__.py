@@ -54,6 +54,7 @@ from clue_research.stage0.governed import (
     ReconLaneStatus,
     ReconRunRow,
     StatementRoute,
+    VolunteeredStatementRow,
     compile_product_context,
     ensure_readiness_spec,
     evaluate_readiness,
@@ -61,6 +62,7 @@ from clue_research.stage0.governed import (
     get_readiness_decision,
     get_recon,
     override_readiness,
+    read_statements,
     recon_dedupe_hash,
     record_statement,
     start_recon,
@@ -77,7 +79,11 @@ from clue_research.stage0.icp_fields import (
 )
 from clue_research.stage0.icp_handler import IcpConfirmedHandler
 from clue_research.stage0.icp_synthesis import (
+    NO_CLIENT_KB_CLAIMS,
+    NO_PROJECT_STATEMENTS,
     ICPSynthesisResult,
+    ICPSynthesisStatus,
+    ProjectStatement,
     synthesize_icps,
     synthesize_icps_with_proposals,
 )
@@ -176,6 +182,10 @@ __all__ = [
     "synthesize_icps",
     "synthesize_icps_with_proposals",
     "ICPSynthesisResult",
+    "ICPSynthesisStatus",
+    "ProjectStatement",
+    "NO_CLIENT_KB_CLAIMS",
+    "NO_PROJECT_STATEMENTS",
     "DEFAULT_SYNTHESIS_MODEL",
     "confirm_icp",
     "estimate_campaign",
@@ -246,7 +256,9 @@ __all__ = [
     "get_recon",
     "override_readiness",
     "recon_dedupe_hash",
+    "read_statements",
     "record_statement",
+    "VolunteeredStatementRow",
     "start_recon",
     "submit_onboarding_input",
     "transition_recon_lane",

@@ -556,13 +556,16 @@ class SynthesizeIcpsTool(_CapabilityTool):
                 client_kb_version=version,
                 product_id=inputs.product_id,
             )
-            proposals = await synthesize_icps(
+            result = await synthesize_icps(
                 conn, ref, workspace_id=ctx.workspace_id, gateway=self._gateway
             )
         return ToolResult(
             tool=self.name,
             version=self.version,
-            references={"proposal_count": len(proposals), "client_kb_version": version},
+            references={
+                "proposal_count": len(result.proposals),
+                "client_kb_version": version,
+            },
         )
 
 

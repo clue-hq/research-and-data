@@ -11,6 +11,7 @@ what the user says in the conversation. Exa and website acquisition are separate
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -105,9 +106,13 @@ from clue_research.stage0 import (
     ClientKnowledgeBaseRef,
     ICPConfirmation,
     ICPProposal,
+    ICPSynthesisResult,
+    ICPSynthesisStatus,
+    ProjectStatement,
     VolunteeredMaterial,
     confirm_icp,
     read_client_kb_claims,
+    read_statements,
     reverse_profile,
     submit_onboarding_input,
     synthesize_icps,
@@ -121,7 +126,7 @@ from clue_spine import (
     get_project,
     get_workspace,
 )
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, get_artifact
 from clue_toolbelt import DbIdempotencyStore, ToolInvoker, ToolRegistry
 
 _SESSION_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -130,6 +135,18 @@ _EXECUTION_NAMESPACE_LABEL = "stage0-trial-execution@1"
 _WORKER_ID = "stage0-trial-cli"
 STAGE0_USER_MESSAGE_BINDING_KIND = "conversation"
 STAGE0_CONTEXT_BINDING_KIND = "context"
+
+
+class Stage0ProductNotConfirmed(ValueError):
+    """A human-gated Stage-0 step was attempted before the project's product was confirmed.
+
+    Both ICP synthesis and ICP confirmation require the same gate: an ICP is only meaningful for a
+    confirmed product, and the trial must not present proposals compiled against a product the
+    human never chose."""
+
+    def __init__(self, action: str) -> None:
+        super().__init__(f"run /confirm-product first: {action} requires a confirmed product")
+        self.action = action
 
 
 def _json_default(value: object) -> str:
@@ -557,9 +574,7 @@ class Stage0Trial:
             workspace_id=self.state.workspace_id,
             data=message.encode(),
             media_type="text/plain",
-            subject_bindings=(
-                (self.state.client_entity_id, STAGE0_USER_MESSAGE_BINDING_KIND),
-            ),
+            subject_bindings=((self.state.client_entity_id, STAGE0_USER_MESSAGE_BINDING_KIND),),
         )
         async with self._conn_factory() as conn:
             onboarding = await submit_onboarding_input(
@@ -857,11 +872,20 @@ class Stage0Trial:
             raise ValueError("product candidate cannot be confirmed for this trial project")
         await self.export_report()
 
-    async def synthesize_icp_proposals(self) -> tuple[ICPProposal, ...]:
-        """Create inspectable proposals from the current version-pinned Client KB."""
+    async def synthesize_icp_proposals(self) -> ICPSynthesisResult:
+        """Synthesize from the version-pinned Client KB **and** the project's own statements.
+
+        Human-gated exactly like confirmation: an unconfirmed product refuses. A result with no
+        grounding evidence is persisted as a not-ready outcome with **no numbered proposals**, so
+        the ungrounded config floor can never be confirmed as if it were a real candidate.
+        """
 
         async with self._conn_factory() as conn:
-            proposals = await synthesize_icps(
+            project = await get_project(conn, self.state.project_id)
+            if project is None or project.product_id != self.state.product_id:
+                raise Stage0ProductNotConfirmed("ICP synthesis")
+            statements = await self._project_statements(conn)
+            result = await synthesize_icps(
                 conn,
                 ClientKnowledgeBaseRef(
                     client_entity_id=EntityId(self.state.client_entity_id),
@@ -869,9 +893,11 @@ class Stage0Trial:
                     product_id=self.state.product_id,
                 ),
                 workspace_id=self.state.workspace_id,
+                project_statements=statements,
                 gateway=self._gateway,
                 synthesis_model=self._settings.synthesis_model,
             )
+        grounded = result.status is ICPSynthesisStatus.GROUNDED
         payload = {
             "schema_version": "1",
             "workspace_id": self.state.workspace_id,
@@ -879,22 +905,87 @@ class Stage0Trial:
             "client_kb_version": self.state.client_kb_version,
             "product_id": self.state.product_id,
             "generated_at": datetime.now(UTC),
-            "proposals": [item.model_dump(mode="json") for item in proposals],
+            "status": result.status.value,
+            "reason_codes": list(result.reason_codes),
+            "project_statement_ids": [str(item.statement_id) for item in statements],
+            # An ungrounded floor is recorded for inspection but is deliberately NOT offered as a
+            # confirmable proposal — /confirm-icp has nothing to confirm until evidence exists.
+            "proposals": (
+                [item.model_dump(mode="json") for item in result.proposals] if grounded else []
+            ),
+            "not_ready_floor": (
+                None if grounded else [item.model_dump(mode="json") for item in result.proposals]
+            ),
         }
+        self.paths.root.mkdir(parents=True, exist_ok=True)
         self.paths.icp_proposals.write_text(_pretty_json(payload) + "\n", encoding="utf-8")
         await self.export_report()
-        return tuple(proposals)
+        return result
+
+    async def _project_statements(self, conn: AsyncConnection) -> tuple[ProjectStatement, ...]:
+        """Resolve this project's durable ``project_state`` statements into synthesis evidence.
+
+        The statement row stores only offsets + a sha256 into its captured onboarding artifact, so
+        the exact quote is sliced from the artifact body and verified against that hash — a quote
+        that does not verify is a corrupted lineage, not something to synthesize on.
+        """
+
+        rows = await read_statements(
+            conn,
+            workspace_id=self.state.workspace_id,
+            project_id=self.state.project_id,
+        )
+        bodies: dict[str, str] = {}
+        statements: list[ProjectStatement] = []
+        for row in rows:
+            body = bodies.get(row.artifact_key)
+            if body is None:
+                record = await get_artifact(conn, row.artifact_key)
+                if record is None or record.workspace_id != self.state.workspace_id:
+                    raise RuntimeError(
+                        f"interview statement {row.id} cites an artifact this workspace cannot read"
+                    )
+                body = (
+                    await self._components.artifacts.read(
+                        ArtifactRef(
+                            workspace_id=self.state.workspace_id,
+                            artifact_key=row.artifact_key,
+                            sha256=record.content_sha256,
+                            media_type=record.media_type,
+                            byte_count=record.size_bytes,
+                        )
+                    )
+                ).decode()
+                bodies[row.artifact_key] = body
+            quote = body[row.quote_start : row.quote_end]
+            if hashlib.sha256(quote.encode()).hexdigest() != row.quote_sha256:
+                raise RuntimeError(
+                    f"interview statement {row.id} does not match its captured evidence quote"
+                )
+            statements.append(
+                ProjectStatement(
+                    statement_id=row.id,
+                    route_key=row.route_key,
+                    quote=quote,
+                )
+            )
+        return tuple(statements)
 
     async def confirm_icp_proposal(self, number: int) -> ICPConfirmation:
         """Apply the human-only confirmation to one numbered proposal."""
 
         proposals = self._load_icp_proposals()
+        if not proposals:
+            raise ValueError(
+                "no grounded ICP proposal is available — run /synthesize-icp after the "
+                "conversation has produced durable evidence"
+            )
         if number < 1 or number > len(proposals):
             raise ValueError(f"proposal number must be between 1 and {len(proposals)}")
         async with self._conn_factory() as conn:
             project = await get_project(conn, self.state.project_id)
             if project is None or project.product_id != self.state.product_id:
-                raise ValueError("confirm the project product before confirming an ICP")
+                raise Stage0ProductNotConfirmed("ICP confirmation")
             confirmation = await confirm_icp(
                 conn,
                 proposals[number - 1],
@@ -1166,6 +1257,7 @@ class Stage0Trial:
 __all__ = [
     "STAGE0_CONTEXT_BINDING_KIND",
     "STAGE0_USER_MESSAGE_BINDING_KIND",
+    "Stage0ProductNotConfirmed",
     "Stage0Trial",
     "Stage0TrialPaths",
     "Stage0TrialState",
