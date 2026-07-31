@@ -44,6 +44,7 @@ from clue_core import (
     WorkerResult,
     WorkerStatus,
     contact_claim,
+    revalidate_with,
 )
 from clue_db import ConnFactory
 from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
@@ -122,6 +123,7 @@ async def _write_committee_claim(
     run_id: RunId,
     workspace_id: str,
     identity_binding: IdentityBinding,
+    product_id: str | None,
 ) -> ClaimId:
     """Write (idempotently) one tenant-private committee field claim for a contact.
 
@@ -148,7 +150,10 @@ async def _write_committee_claim(
         source_url=source_url,
         evidence_span=evidence_span,
     )
-    claim = stamp_reuse(claim, workspace_id=workspace_id)
+    claim = revalidate_with(
+        stamp_reuse(claim, workspace_id=workspace_id),
+        product_id=product_id,
+    )
     return await insert_claim(conn, claim)
 
 
@@ -161,6 +166,7 @@ async def _write_role_and_persona(
     run_id: RunId,
     workspace_id: str,
     identity_binding: IdentityBinding,
+    product_id: str | None,
 ) -> tuple[ClaimId, ClaimId]:
     """Write the ``contact.role_on_committee`` (with the plausibility verdict) + ``contact.persona``
     claims for one admitted member; returns their claim ids."""
@@ -183,6 +189,7 @@ async def _write_role_and_persona(
         run_id=run_id,
         workspace_id=workspace_id,
         identity_binding=identity_binding,
+        product_id=product_id,
     )
     persona_claim_id = await _write_committee_claim(
         conn,
@@ -197,6 +204,7 @@ async def _write_role_and_persona(
         run_id=run_id,
         workspace_id=workspace_id,
         identity_binding=identity_binding,
+        product_id=product_id,
     )
     return role_claim_id, persona_claim_id
 
@@ -346,6 +354,7 @@ async def discover_committee(
                 run_id=run_id,
                 workspace_id=workspace_id,
                 identity_binding=outcome.identity_binding,
+                product_id=spec.product_id if spec is not None else None,
             )
             members.append(
                 CommitteeMemberRef(

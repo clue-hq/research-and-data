@@ -48,6 +48,7 @@ class AccountScore(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     account_id: EntityId
+    product_id: str | None = None
     rubric_version: int
     fit: Score
     intent: Score

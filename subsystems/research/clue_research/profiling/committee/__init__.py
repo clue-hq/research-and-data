@@ -22,6 +22,7 @@ from clue_research.profiling.committee.coverage import (
 from clue_research.profiling.committee.fields import (
     COMMITTEE_FIELD_KEYS,
     COMMITTEE_PACK,
+    CONTACT_CLASS,
     PERSONA,
     ROLE_ON_COMMITTEE,
     load_committee_pack,
@@ -68,6 +69,7 @@ __all__ = [
     "COMMITTEE_FIELD_KEYS",
     "ROLE_ON_COMMITTEE",
     "PERSONA",
+    "CONTACT_CLASS",
     "load_committee_pack",
     # people-source seam
     "CommitteeSource",

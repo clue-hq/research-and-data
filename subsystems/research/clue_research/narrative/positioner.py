@@ -59,6 +59,7 @@ from clue_core import (
     RunId,
     account_claim,
     is_outreach_promotable,
+    revalidate_with,
 )
 from clue_core.retrieval import ClientKnowledgeChunk, ClientKnowledgeRetriever
 from clue_db import ConnFactory, transaction
@@ -213,6 +214,7 @@ class Positioner:
         run_id: RunId,
         icp_key: str | None = None,
         kb_version: int | None = None,
+        product_id: str | None = None,
     ) -> PositioningResult:
         """Produce the per-persona value narrative for one ``(account, icp)``.
 
@@ -272,6 +274,7 @@ class Positioner:
                     client_entity_id=client_entity_id,
                     run_id=run_id,
                     kb_version=kb_version,
+                    product_id=product_id,
                     scope=scope,
                 )
                 total_cost += cost
@@ -308,6 +311,7 @@ class Positioner:
         client_entity_id: EntityId,
         run_id: RunId,
         kb_version: int | None,
+        product_id: str | None,
         scope: WorkspaceScope,
     ) -> tuple[ValueNarrativeRef | None, CoverageGap | None, CostCents]:
         """Synthesize (or coverage-gap) one persona's narrative. Returns ``(ref, gap, cost)`` —
@@ -394,6 +398,8 @@ class Positioner:
             # The ICP segment (D5: version restarts per icp_key) — stamped so M12.2 reads the right
             # segment's narrative and supersession keys on (persona, icp_key, icp_version).
             value_json["icp_key"] = icp_key
+        if product_id is not None:
+            value_json["product_id"] = product_id
         evidence_span = assemble_evidence_span(
             account_facts, chunks, max_chars=policy.max_evidence_chars
         )
@@ -410,7 +416,10 @@ class Positioner:
             evidence_span=evidence_span,
             cost_cents=cost,
         )
-        claim = stamp_reuse(claim, workspace_id=workspace_id, policy=NARRATIVE_REUSE_POLICY)
+        claim = revalidate_with(
+            stamp_reuse(claim, workspace_id=workspace_id, policy=NARRATIVE_REUSE_POLICY),
+            product_id=product_id,
+        )
 
         client_knowledge_ids = [chunk.client_knowledge_id for chunk in chunks]
         async with self._conn_factory() as conn:
@@ -420,6 +429,7 @@ class Positioner:
                 persona=persona,
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
+                product_id=product_id,
                 scope=scope,
             )
             await write_claim_support(
@@ -450,6 +460,7 @@ class Positioner:
         persona: Persona,
         icp_spec_version: int,
         icp_key: str | None,
+        product_id: str | None,
         scope: WorkspaceScope,
     ) -> ClaimId:
         """Insert the narrative claim, superseding any prior live narrative for the same ``(account,
@@ -464,6 +475,7 @@ class Positioner:
             persona=persona,
             icp_spec_version=icp_spec_version,
             icp_key=icp_key,
+            product_id=product_id,
             scope=scope,
         )
         if not live:
@@ -487,6 +499,7 @@ class Positioner:
         persona: Persona,
         icp_spec_version: int,
         icp_key: str | None,
+        product_id: str | None,
         scope: WorkspaceScope,
     ) -> list[Claim]:
         """The live ``account.value_narrative`` claims for this exact ``(account, persona, icp_key,
@@ -502,6 +515,7 @@ class Positioner:
                 and value.get("persona") == persona.value
                 and value.get("icp_spec_version") == icp_spec_version
                 and (icp_key is None or value.get("icp_key") == icp_key)
+                and claim.product_id == product_id
             ):
                 result.append(claim)
         return result

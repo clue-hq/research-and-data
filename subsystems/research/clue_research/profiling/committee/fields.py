@@ -1,8 +1,7 @@
-"""Committee field-class — ``contact.role_on_committee`` + ``contact.persona`` (M8.3).
+"""Committee field-class — role/persona plus optional ``contact.class`` (M8.3/C7.1).
 
-The two plain ``contact.*`` fields the committee-discovery worker writes per admitted member: the
-inferred buying-committee role (with the role-plausibility verdict) and the persona key that makes
-``(account, persona)`` addressable downstream (substrate §7). They are a small M8.3-owned pack,
+The plain ``contact.*`` fields cover the committee-discovery worker's inferred role/persona and
+C7's optional, workspace-defined contact grouping. They are a small committee-owned pack,
 **separate from the frozen tiny-seed** ``DEEP_PROFILING_PACK`` (resonance/facet only); wire
 :func:`load_committee_pack` at the ``api`` composition root alongside ``load_deep_profiling_pack``.
 
@@ -29,6 +28,10 @@ from clue_research.claimstore import SeedField, load_pack
 # --- field keys (conventions §3: plain contact.* committee facts) -----------
 ROLE_ON_COMMITTEE = "contact.role_on_committee"
 PERSONA = "contact.persona"
+# C7.1 / REQ-16 A3: a pack/workspace-supplied grouping (for example,
+# ``clinical``/``business``). It is not an enum and not an alias for committee persona. No claim
+# means ``unknown``; consumers may not guess a class from title, role, or persona.
+CONTACT_CLASS = "contact.class"
 
 # The canonical persona/role set (conventions §3) — the closed value domain for both fields.
 _PERSONA_VALUES: list[str] = [p.value for p in Persona]
@@ -83,6 +86,15 @@ COMMITTEE_PACK: tuple[SeedField, ...] = (
         value_schema=_PERSONA_VALUE_SCHEMA,
         description="Buying-committee persona key for (account, persona) addressing (M8.3).",
     ),
+    _committee_field(
+        CONTACT_CLASS,
+        value_type="str",
+        value_schema={"type": "string"},
+        description=(
+            "Optional pack/workspace contact-class value (C7.1 / REQ-16 A3). "
+            "Separate from committee persona; an absent claim means unknown."
+        ),
+    ),
 )
 
 # The field keys this pack registers, for consumers/tests that need the set without re-deriving it.
@@ -90,7 +102,7 @@ COMMITTEE_FIELD_KEYS: tuple[str, ...] = tuple(s.field_def.field_key for s in COM
 
 
 async def load_committee_pack(conn: AsyncConnection) -> None:
-    """Register the ``contact.role_on_committee`` + ``contact.persona`` fields (idempotent;
+    """Register the committee role/persona/class fields (idempotent;
     re-loading is a no-op). Additive and namespaced — never collides with ``CORE_PACK``,
     ``DEEP_PROFILING_PACK``, or the icp packs.
 

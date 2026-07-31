@@ -48,7 +48,8 @@ warn-and-proceed placeholder is retired.
 
 Preconditions read through ``ctx.conn_factory``; a malformed id resolves to the same not-found
 refusal (never a raw traceback). The ``compose_handoff`` result surfaces the slice-1
-``narrative_emit_skipped`` gap flag from the run's HANDOFF checkpoint payload, so a gap-completed
+legacy ``narrative_emit_skipped`` gap flag from a pre-C7.6 HANDOFF checkpoint payload, so a
+historical gap-completed
 run is distinguishable from a truly-handed-off one (spec §2 amendment / slice-1 review #10).
 """
 
@@ -78,6 +79,7 @@ from clue_api.proposal_tools import (
     ProposeFieldTool,
     ProposeSourceTool,
 )
+from clue_api.research_view_tools import build_research_view_tools
 from clue_api.stage0_tools import stage0_tools
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_api.tool_outputs import (
@@ -112,6 +114,7 @@ from clue_core import (
     PreSpendGate,
     ProjectPhase,
     ProjectRunId,
+    ResearchViewComposer,
     RunId,
 )
 from clue_db import ConnFactory, transaction
@@ -145,7 +148,11 @@ from clue_research.icp.rubric import TierCutoffs, rubric_from_slot
 from clue_research.icp.spec import get_active_icp, get_icp_version
 from clue_research.identity import get_account, get_contact
 from clue_research.ingestion import IngestionEngine
-from clue_research.narrative import list_handoffs_for_run
+from clue_research.narrative import (
+    ResearchViewRecheckService,
+    ResearchViewSnapshotService,
+    list_handoffs_for_run,
+)
 from clue_research.profiling import (
     CommitteeSource,
     discover_committee,
@@ -1605,6 +1612,9 @@ def build_toolbelt(
     stage0_memory_write: MemoryWriteSeam | None = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
+    research_view_composer: ResearchViewComposer | None = None,
+    research_view_snapshots: ResearchViewSnapshotService | None = None,
+    research_view_recheck: ResearchViewRecheckService | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1727,6 +1737,12 @@ def build_toolbelt(
         scrape_binder=stage0_scrape_binder,
         storage=storage,
         project_execution_router=project_execution_router,
+    ):
+        registry.register(tool, make_default=True)
+    for tool in build_research_view_tools(
+        composer=research_view_composer,
+        snapshots=research_view_snapshots,
+        recheck=research_view_recheck,
     ):
         registry.register(tool, make_default=True)
     return registry

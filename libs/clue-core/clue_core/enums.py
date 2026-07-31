@@ -90,16 +90,167 @@ class IdentityBinding(StrEnum):
 
 
 class ClaimFlavor(StrEnum):
-    """The two structurally different kinds of provenance one substrate carries (staged-flow §9).
+    """The structurally different kinds of provenance one claim substrate carries.
 
     * ``DISCOVERY`` — *discovery-provenance* (modes M1/M3): where an entity was found and why it
       matched (the existence-gate evidence). Carries a :class:`DiscoveryProvenance` envelope; it is
       admission evidence, not a field value, so the merge view (M1.2) never treats it as truth.
     * ``FIELD_CLAIM`` — *field-claim provenance* (modes M2/M4): a value + span + tier (plus
-      ``identity_binding`` + ``use_class`` for contacts). The default flavor."""
+      ``identity_binding`` + ``use_class`` for contacts). The default flavor.
+    * ``DERIVED`` — a C7 interpretation supported by an immutable ordered set of other claims.
+      Its evidence lives in ``claim_derivation`` edges and an entailment verdict, never in a
+      fabricated external URL/evidence span. It is excluded from factual ``current_value``."""
 
     DISCOVERY = "discovery"
     FIELD_CLAIM = "field_claim"
+    DERIVED = "derived"
+
+
+class ResearchStatementKind(StrEnum):
+    """Whether a C7 research-view statement is a direct fact or a supported inference.
+
+    This is the presentation/read-contract taxonomy corresponding to direct field claims and C7
+    derived claims.
+    """
+
+    DIRECT = "direct"
+    DERIVED = "derived"
+
+
+class ResearchAvailability(StrEnum):
+    """What the research-view reader may reveal for an item or section."""
+
+    AVAILABLE = "available"
+    UNKNOWN = "unknown"
+    UNAVAILABLE = "unavailable"
+    REDACTED = "redacted"
+    RESTRICTED = "restricted"
+
+
+class ResearchConflictState(StrEnum):
+    """Whether a statement is clear or requires conflict review."""
+
+    NONE = "none"
+    REVIEW_REQUIRED = "review_required"
+
+
+class DisplayDecision(StrEnum):
+    """Whether a resolved research statement may be displayed to this workspace actor."""
+
+    ALLOWED = "allowed"
+    DENIED = "denied"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class OutreachDecision(StrEnum):
+    """Whether a resolved research statement may drive external outreach."""
+
+    ALLOWED = "allowed"
+    DENIED = "denied"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class ResearchDataSpecies(StrEnum):
+    """The authoritative species aggregated by C7 without changing their ownership."""
+
+    IDENTITY = "identity"
+    EXECUTION = "execution"
+    SCORE = "score"
+    CLAIM_DERIVATION = "claim_derivation"
+    COMMITTEE = "committee"
+    COVERAGE = "coverage"
+    ACTIVITY = "activity"
+
+
+class ResearchSectionKind(StrEnum):
+    """Semantic account/contact sections; frontend labels and layout remain downstream."""
+
+    IDENTITY = "identity"
+    RESEARCH_STATUS = "research_status"
+    SUMMARY = "summary"
+    ABOUT = "about"
+    FIT = "fit"
+    INSIGHTS = "insights"
+    COMMITTEE = "committee"
+    ACTIVITY = "activity"
+    PROFESSIONAL_SIGNALS = "professional_signals"
+    EVIDENCE = "evidence"
+    QUOTES = "quotes"
+    BACKGROUND = "background"
+    CAREER = "career"
+    EDUCATION = "education"
+    PUBLICATIONS = "publications"
+    AWARDS = "awards"
+    PERSONALIZATION = "personalization"
+    VALUE_NARRATIVE = "value_narrative"
+    FEASIBILITY = "feasibility"
+    COVERAGE_GAPS = "coverage_gaps"
+
+
+class DossierBlockKind(StrEnum):
+    """The frozen nine-block compatibility vocabulary from the frontend treaty.
+
+    Blocks are adapters over research-view references, never a canonical dossier document.
+    """
+
+    EXECUTIVE_SUMMARY = "executive_summary"
+    COMPANY_PROFILE = "company_profile"
+    FIT_ASSESSMENT = "fit_assessment"
+    SIGNAL = "signal"
+    COMMITTEE_MEMBER = "committee_member"
+    PERSONALIZATION = "personalization"
+    VALUE_NARRATIVE = "value_narrative"
+    FEASIBILITY = "feasibility"
+    COVERAGE_GAP = "coverage_gap"
+
+
+class EvidenceActionKind(StrEnum):
+    """A safe evidence action descriptor; URLs and storage keys are not contract fields."""
+
+    OPEN_PUBLIC_SOURCE = "open_public_source"
+    VIEW_API_PROVENANCE = "view_api_provenance"
+    REQUEST_ARTIFACT_PREVIEW = "request_artifact_preview"
+    UNAVAILABLE = "unavailable"
+    REDACTED = "redacted"
+
+
+class ResearchSupportRole(StrEnum):
+    """Why a supporting claim is allowed to participate in one derived statement."""
+
+    DIRECT_EVIDENCE = "direct_evidence"
+    CORROBORATION = "corroboration"
+    ACCOUNT_SIGNAL = "account_signal"
+    EMPLOYER_CONTEXT = "employer_context"
+    CLIENT_CAPABILITY = "client_capability"
+
+
+class ResearchReferenceRelation(StrEnum):
+    """How an owner-held reference relates to the research view's exact subject."""
+
+    SUBJECT = "subject"
+    PARENT_ACCOUNT = "parent_account"
+    COMMITTEE_MEMBER = "committee_member"
+
+
+class EntailmentVerdictKind(StrEnum):
+    """The C7 derived-claim judge result. Errors fail closed and never promote."""
+
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+    ERROR = "error"
+
+
+class EntailmentReasonCode(StrEnum):
+    """Bounded audit reasons for entailment; raw model rationale is not persisted."""
+
+    ENTAILED = "entailed"
+    MISSING_SUPPORT = "missing_support"
+    SUBJECT_MISMATCH = "subject_mismatch"
+    PRODUCT_MISMATCH = "product_mismatch"
+    NOT_ENTAILED = "not_entailed"
+    CONTRADICTED = "contradicted"
+    MALFORMED_RESPONSE = "malformed_response"
+    MODEL_ERROR = "model_error"
 
 
 class FreshnessState(StrEnum):

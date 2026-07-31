@@ -7,7 +7,7 @@ DEEP/VERIFICATION handlers (they hold one ``ICPSpec``): two concurrent runs with
 would fight over the DEEP slot, last-write-wins (CLAUDE.md ``[B4×fleet]``). This driver closes that.
 
 **D1 — per-run registries, never the process-global singleton.** On ``advance`` it reads the run
-row and composes (or reuses, from a small LRU keyed ``(workspace_id, icp_key, icp_version)``) a
+row and composes (or reuses, from a small LRU keyed by ``project_run_id``) a
 per-run :class:`~clue_research.durable.PhaseHandlerRegistry` + a per-run ``ProjectRun`` bound to the
 **shared** durable state (one :class:`DbProjectRunStore`, one :class:`DbIdempotencyStore` ledger,
 one :class:`BudgetEngine`). The state-machine object is cheap; the durable state is shared, so two
@@ -29,14 +29,9 @@ account resolver shared by DEEP, VERIFICATION, and the HANDOFF retention sweep.
 * VERIFICATION — :func:`build_verification_phase_handler` over the shared gateway + the high-tier
   resolver.
 * REVIEW — folded in from :func:`register_boot_handlers` (the process-wide-composable handler set).
-* HANDOFF — the M10.5 retention/objection sweep (composes from settings; the load-bearing
-  tombstone-before-merge invariant) over a **documented-gap inner**: the M12 narrative *emit* path
-  is not composable here because **no production ``HandoffCommitteeReader`` exists** until the
-  M8/M10 narrative integration lands (``narrative_wiring.build_handoff_assembler`` needs one; only
-  the in-memory fixture reader exists). The composer therefore registers the sweep over a
-  :class:`_NarrativeGapHandoffHandler` that completes the phase **without emitting narratives**, and
-  logs the gap loudly (``composer.handoff.narrative_emit_skipped``) so a real run's missing emit is
-  never silent. Wiring the production reader is the M12-integration follow-up, out of B4 scope.
+* HANDOFF — the M10.5 retention/objection sweep (the load-bearing tombstone-before-merge
+  invariant) over the real M12 phase handler. C7.6 binds a production committee reader to the
+  exact run/product, materialises the handoff, then emits the existing durable outbox event.
 
 **Reverse-profiling client input (documented ``[M5×M7]`` gap).** The ``ProjectRun`` state machine's
 ``PhaseContext`` threads only ``tier_cutoffs`` into phase ``params`` — it carries **no client
@@ -56,6 +51,10 @@ from dataclasses import dataclass
 
 from clue_api.agent_platform_wiring import DbAgentOwnershipRouter, RoutedAccountProfiler
 from clue_api.composition import build_pre_spend_gate
+from clue_api.contact_eligibility import (
+    build_contact_eligibility_resolver,
+    build_production_handoff_committee_reader,
+)
 from clue_api.deep import ProfileAccountFn
 from clue_api.deep.composition import (
     DeepPhaseComposition,
@@ -68,7 +67,9 @@ from clue_api.fleet_wiring import (
     tier_priority_from_rubric,
 )
 from clue_api.handoff_retention import build_retention_sweeping_handoff_handler
+from clue_api.handoff_wiring import build_handoff_phase_handler
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.narrative_wiring import build_handoff_assembler
 from clue_api.observability_wiring import build_observability_surface
 from clue_api.phase_wiring import (
     build_reverse_profiling_handler,
@@ -96,7 +97,6 @@ from clue_core import (
     PhaseContext,
     PhaseHandler,
     PhaseResult,
-    PhaseStatus,
     ProjectPhase,
     ProjectRunId,
 )
@@ -107,7 +107,6 @@ from clue_gateway import build_gateway
 from clue_obs import get_logger
 from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.durable import (
-    NARRATIVE_EMIT_SKIPPED_KEY,
     BudgetEngine,
     DbIdempotencyStore,
     DbProjectRunStore,
@@ -142,11 +141,6 @@ SpecLoader = Callable[[str, str, int], Awaitable[ICPSpec | None]]
 # The [M5×M7] client-input threading seam (default None → the gap stands).
 ClientInputProvider = Callable[[PhaseContext], Awaitable[ClientInput | None]]
 
-_HANDOFF_GAP_REASON = (
-    "no production HandoffCommitteeReader (M8/M10 narrative integration pending); "
-    "the retention/objection sweep runs, the M12 handoff emit does not"
-)
-
 
 class CompositionUnavailable(RuntimeError):
     """The driver cannot compose a per-run registry — the run's ``ICPSpec`` does not exist for its
@@ -166,40 +160,18 @@ class ClientInputProviderMissing(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class ComposedRun:
-    """One composed, cached per-``(workspace_id, icp_key, icp_version)`` unit: the per-run
-    ``ProjectRun`` the worker advances, its isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it
-    was composed against, the DEEP-phase composition bundle (so a test can read the DEEP handler's
-    *own* spec + assert the composed scheduler is the fleet queue), and the set of phases it can
-    drive. The ``spec``/``registry``/``deep`` are exposed so a test can assert two concurrent runs
-    never cross-talk (the D1 race gate) without reaching into private attributes."""
+    """One composed, cached per-project-run unit: the ``ProjectRun`` the worker advances, its
+    isolated ``PhaseHandlerRegistry``, the ``ICPSpec`` it was composed against, the DEEP-phase
+    composition bundle (so a test can read the DEEP handler's *own* spec + assert the composed
+    scheduler is the fleet queue), and the set of phases it can drive. The
+    ``spec``/``registry``/``deep`` are exposed so a test can assert two concurrent runs never
+    cross-talk (the D1 race gate) without reaching into private attributes."""
 
     run: ProjectRun
     registry: PhaseHandlerRegistry
     spec: ICPSpec
     deep: DeepPhaseComposition
     phases: frozenset[ProjectPhase]
-
-
-class _NarrativeGapHandoffHandler:
-    """The HANDOFF inner the composer registers in place of the (un-composable) M12 narrative emit
-    path: completes the phase **without emitting narratives** and logs the gap loudly, so a real
-    run's missing emit is never a silent success. The retention/objection sweep wraps this, so the
-    load-bearing tombstone-before-merge invariant still runs in production."""
-
-    phase: ProjectPhase = ProjectPhase.HANDOFF
-
-    async def run(self, ctx: PhaseContext) -> PhaseResult:
-        log.warning(
-            "composer.handoff.narrative_emit_skipped",
-            project_run_id=str(ctx.project_run_id),
-            workspace_id=ctx.workspace_id,
-            reason=_HANDOFF_GAP_REASON,
-        )
-        return PhaseResult(
-            status=PhaseStatus.COMPLETED,
-            accounts_processed=0,
-            payload={NARRATIVE_EMIT_SKIPPED_KEY: True, "reason": _HANDOFF_GAP_REASON},
-        )
 
 
 class _ClientInputThreadingHandler:
@@ -280,8 +252,8 @@ _default_gateway = build_platform_gateway
 
 
 class ComposingRunDriver:
-    """The fleet ``RunDriver`` that composes a per-run registry per ``(workspace_id, icp_key,
-    icp_version)`` (D1) and drives a per-run ``ProjectRun`` over the shared durable state (D2).
+    """The fleet ``RunDriver`` that composes a registry per ``project_run_id`` (D1) and drives a
+    per-run ``ProjectRun`` over the shared durable state (D2).
 
     Every collaborator defaults to its production concrete; tests inject a stub gateway
     (``api_key=None``), an empty ``ChannelRegistry``/``committee_sources``, a fake ``store`` /
@@ -354,7 +326,7 @@ class ComposingRunDriver:
         self._cache_size = (
             cache_size if cache_size is not None else self._settings.composer_registry_cache_size
         )
-        self._cache: OrderedDict[tuple[str, str, int], ComposedRun] = OrderedDict()
+        self._cache: OrderedDict[ProjectRunId, ComposedRun] = OrderedDict()
 
     # -- RunDriver protocol --
 
@@ -379,9 +351,13 @@ class ComposingRunDriver:
     # -- composition --
 
     async def composed(self, row: ProjectRunRow) -> ComposedRun:
-        """The cached (LRU) per-run composition for ``row``'s ``(workspace_id, icp_key,
-        icp_version)`` — composing it on first use. Exposed for tests (the D1 isolation checks)."""
-        key = (row.workspace_id, row.icp_key, row.icp_version)
+        """The cached (LRU) composition for ``row.id`` — composing it on first use.
+
+        The old ICP-keyed cache was sufficient while handlers held only an ``ICPSpec``. C7.6 adds
+        a committee reader bound to the exact durable account-run references, so two project runs
+        sharing an ICP must never share a registry.
+        """
+        key = row.id
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)
@@ -423,6 +399,12 @@ class ComposingRunDriver:
             raise CompositionUnavailable(
                 f"no ICP spec for ({row.workspace_id!r}, {row.icp_key!r}, v{row.icp_version}); "
                 "cannot compose the campaign-scoped DEEP/VERIFICATION handlers"
+            )
+        if row.product_id != spec.product_id:
+            raise CompositionUnavailable(
+                f"product pin mismatch for project run {row.id}: run has {row.product_id!r}, "
+                f"ICP spec has {spec.product_id!r}; refusing to compose product-scoped research "
+                "or handoff against an ambiguous product"
             )
         registry = PhaseHandlerRegistry()
         # One per-run high-tier resolver instance, SHARED by DEEP, VERIFICATION, and the HANDOFF
@@ -545,12 +527,24 @@ class ComposingRunDriver:
         )
         registry.register(verification)
 
-        # HANDOFF — the retention/objection sweep (composes from settings) over the documented-gap
-        # inner (no production HandoffCommitteeReader → the M12 emit path is not composable here);
-        # the same high-tier resolver instance scopes the sweep to the run's accounts.
+        # HANDOFF — the C7.6 production committee reader is bound to this exact project run and
+        # product. The real M12 handler materialises before it writes the outbox event; the
+        # retention/objection wrapper remains outside it so every personal read is post-tombstone.
+        contact_eligibility = build_contact_eligibility_resolver(
+            project_run_id=row.id,
+            product_id=row.product_id,
+            conn_factory=self._session_factory,
+        )
+        committee_reader = build_production_handoff_committee_reader(contact_eligibility)
+        real_handoff = build_handoff_phase_handler(
+            assembler=build_handoff_assembler(committee_reader=committee_reader),
+            conn_factory=self._session_factory,
+            product_id=row.product_id,
+        )
         handoff = build_retention_sweeping_handoff_handler(
-            inner=_NarrativeGapHandoffHandler(),
+            inner=real_handoff,
             account_resolver=high_tier_resolver,
+            session_factory=self._session_factory,
             storage=self._storage,
         )
         registry.register(handoff)
@@ -571,8 +565,7 @@ class ComposingRunDriver:
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
             committee_sources=committee_sources,
-            handoff_narrative_emit=False,
-            handoff_narrative_gap=_HANDOFF_GAP_REASON,
+            handoff_narrative_emit=True,
         )
         if committee_sources == 0:
             # Zero committee sources ⇒ DEEP resolves no buying committee ⇒ required output #3 (the

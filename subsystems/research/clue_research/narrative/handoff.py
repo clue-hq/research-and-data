@@ -245,6 +245,7 @@ class HandoffAssembler:
         icp_key: str | None = None,
         project_run_id: ProjectRunId | None = None,
         coverage_confidence: UnitInterval | None = None,
+        product_id: str | None = None,
     ) -> AssembledHandoff:
         """Assemble the ``account_handoff`` for one ``(account_entity_id, icp_spec_version)``.
 
@@ -274,15 +275,27 @@ class HandoffAssembler:
             # 1) decomposed scores for THIS segment (D5: version restarts per icp_key, so match
             # both).
             fit_score, non_fit, fit_scored = await self._read_score(
-                conn, account_entity_id, FIT_FIELD, icp_spec_version, icp_key, scope
+                conn,
+                account_entity_id,
+                FIT_FIELD,
+                icp_spec_version,
+                icp_key,
+                product_id,
+                scope,
             )
             intent_score, _, intent_scored = await self._read_score(
-                conn, account_entity_id, INTENT_FIELD, icp_spec_version, icp_key, scope
+                conn,
+                account_entity_id,
+                INTENT_FIELD,
+                icp_spec_version,
+                icp_key,
+                product_id,
+                scope,
             )
 
             # 2) verified account profile claims (Output 2) + the field-conflict surface.
             profile_claims, field_conflicts = await self._read_account_profile(
-                conn, account_entity_id, scope
+                conn, account_entity_id, product_id, scope
             )
 
             # 3) the governed committee (Output 3) — weak/disallowed facets excluded (AC4). Sorted
@@ -301,7 +314,7 @@ class HandoffAssembler:
             # 4) the value narrative (Output 4) for THIS segment + its judge citations + coverage
             # gaps.
             narrative, citations = await self._read_value_narrative(
-                conn, account_entity_id, icp_spec_version, icp_key, scope
+                conn, account_entity_id, icp_spec_version, icp_key, product_id, scope
             )
             personas_with_narrative = {item.persona for item in narrative}
             coverage_gaps = tuple(
@@ -374,6 +387,7 @@ class HandoffAssembler:
         field_key: str,
         icp_spec_version: int,
         icp_key: str | None,
+        product_id: str | None,
         scope: WorkspaceScope,
     ) -> tuple[Score, bool, bool]:
         """The decomposed score for *this* ICP segment. Filters the live ``account.scoring.*``
@@ -391,13 +405,18 @@ class HandoffAssembler:
                 isinstance(value, dict)
                 and value.get("icp_version") == icp_spec_version
                 and (icp_key is None or value.get("icp_key") == icp_key)
+                and claim.product_id == product_id
             ):
                 score, non_fit = _score_from_value_json(value)
                 return score, non_fit, True
         return Score(value=0.0), False, False
 
     async def _read_account_profile(
-        self, conn: AsyncConnection, account_entity_id: EntityId, scope: WorkspaceScope
+        self,
+        conn: AsyncConnection,
+        account_entity_id: EntityId,
+        product_id: str | None,
+        scope: WorkspaceScope,
     ) -> tuple[tuple[ProfileClaimView, ...], dict[str, tuple[ClaimId, ...]]]:
         """The verified account profile claims (Output 2) + the per-field conflict surface.
 
@@ -422,6 +441,18 @@ class HandoffAssembler:
         for (entity_id, field_key), cv in merged.items():
             if entity_id != account_entity_id:
                 continue
+            winning = await claims_by_ids(
+                conn,
+                (cv.provenance.claim_id,),
+                scope=scope,
+            )
+            winner = winning.get(cv.provenance.claim_id)
+            if winner is None:
+                continue
+            # Target-account facts may be product-neutral. A product-scoped fact is visible only
+            # for its exact product; a no-product request cannot absorb a product-specific value.
+            if winner.product_id is not None and winner.product_id != product_id:
+                continue
             views.append(_profile_view(cv))
             if cv.conflict and cv.conflicting_claim_ids:
                 field_conflicts[field_key] = cv.conflicting_claim_ids
@@ -434,6 +465,7 @@ class HandoffAssembler:
         account_entity_id: EntityId,
         icp_spec_version: int,
         icp_key: str | None,
+        product_id: str | None,
         scope: WorkspaceScope,
     ) -> tuple[tuple[ValueNarrativeItem, ...], dict[str, FaithfulnessCitation]]:
         """The verified value-narrative lines (Output 4) for this ICP segment + their judge
@@ -457,6 +489,8 @@ class HandoffAssembler:
                 continue
             if icp_key is not None and value.get("icp_key") != icp_key:
                 continue  # a different ICP segment (D5)
+            if claim.product_id != product_id:
+                continue  # product-scoped narrative relevance is exact, never inherited
             if claim.verification_status is not VerificationStatus.VERIFIED:
                 continue  # an ungrounded / unpromoted narrative is not handed off
             support = await read_claim_support(conn, claim.id)

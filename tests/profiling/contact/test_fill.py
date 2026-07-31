@@ -7,13 +7,17 @@ resolver-absent field yields a correct flagged-empty output.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import UUID
+
+import pytest
 
 from clue_core import IdentityBinding, ResearchMode, UseClass
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.profiling.contact.fill import fill_contact_field
 from clue_research.profiling.fields import FACET_STATED_INTERESTS
 from clue_research.sources import bind_resolver, clear_resolver_bindings
+from clue_spine import create_brand, create_product
 
 from ..conftest import (
     FakeFacetResolver,
@@ -57,11 +61,17 @@ def test_no_resolver_yields_flagged_empty(require_profiling_db: None) -> None:
     run_async(scenario())
 
 
-def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
+def test_fill_retags_binding_use_class_and_product(
+    require_profiling_db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A religious interest on the contact's verified handle → written STRONG + SENSITIVE, over the
-    resolver's placeholder (WEAK + professional)."""
+    resolver's placeholder (WEAK + professional), and pinned to the exact product."""
 
     async def scenario() -> None:
+        async def planned(*args: object, **kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(tier_plan=lambda: (_FACET_SOURCE,))
+
+        monkeypatch.setattr("clue_research.profiling.contact.fill.plan_sources", planned)
         clear_resolver_bindings()
         resolver = FakeFacetResolver(
             tier=4,
@@ -80,10 +90,24 @@ def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
                 await seed_packs(conn)
                 await register_facet_source(conn)
                 account = await insert_test_account(conn)
+                brand = await create_brand(conn, workspace_id=_TENANT, name="Acme")
+                product = await create_product(
+                    conn,
+                    brand_id=brand.brand_id,
+                    workspace_id=_TENANT,
+                    name="Product A",
+                )
                 contact = await insert_test_contact(conn, account)
                 field = await _field_def(conn, FACET_STATED_INTERESTS)
                 result = await fill_contact_field(
-                    conn, contact, account, field, run_id=_RUN, workspace_id=_TENANT, tier="top"
+                    conn,
+                    contact,
+                    account,
+                    field,
+                    run_id=_RUN,
+                    workspace_id=_TENANT,
+                    tier="top",
+                    spec=icp_spec(product_id=product.product_id),
                 )
                 assert len(result.claim_refs) == 1
                 written = (
@@ -101,6 +125,7 @@ def test_fill_retags_binding_and_use_class(require_profiling_db: None) -> None:
                 assert written.source_key == _FACET_SOURCE
                 assert written.run_id == _RUN
                 assert written.workspace_id == _TENANT
+                assert written.product_id == product.product_id
         finally:
             clear_resolver_bindings()
 

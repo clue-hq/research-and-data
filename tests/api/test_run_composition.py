@@ -16,6 +16,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from clue_api.handoff_retention import RetentionSweepHandoffHandler
+from clue_api.handoff_wiring import HandoffPhaseHandler
 from clue_api.review.composition import ProjectRunResumeHook, _default_resume_run
 from clue_api.run_composition import (
     ClientInputProviderMissing,
@@ -34,6 +36,7 @@ from clue_core import (
     PhaseStatus,
     ProjectPhase,
     ProjectRunId,
+    new_entity_id,
     new_project_run_id,
     phase_key,
 )
@@ -62,17 +65,39 @@ def _stub_gateway() -> object:
     return build_gateway(GatewayConfig(stub=True))
 
 
-def _spec(icp_key: str, *, workspace_id: str = "ws", version: int = 1) -> ICPSpec:
+def _spec(
+    icp_key: str,
+    *,
+    workspace_id: str = "ws",
+    version: int = 1,
+    product_id: str | None = None,
+) -> ICPSpec:
+    lineage = (
+        {
+            "client_entity_id": new_entity_id(),
+            "client_kb_version": 1,
+            "product_id": product_id,
+        }
+        if product_id is not None
+        else {}
+    )
     return ICPSpec(
         workspace_id=workspace_id,
         icp_key=icp_key,
         created_from=ICPCreatedFrom.SYNTHESIS,
         version=version,
         field_keys=(f"core.field_{icp_key}",),
+        **lineage,  # type: ignore[arg-type]
     )
 
 
-def _row(icp_key: str, *, workspace_id: str = "ws", version: int = 1) -> ProjectRunRow:
+def _row(
+    icp_key: str,
+    *,
+    workspace_id: str = "ws",
+    version: int = 1,
+    product_id: str | None = None,
+) -> ProjectRunRow:
     now = datetime.now(UTC)
     return ProjectRunRow(
         id=new_project_run_id(),
@@ -90,6 +115,7 @@ def _row(icp_key: str, *, workspace_id: str = "ws", version: int = 1) -> Project
         resumed_at=None,
         created_at=now,
         updated_at=now,
+        product_id=product_id,
     )
 
 
@@ -119,6 +145,30 @@ def test_composed_registry_holds_every_phase() -> None:
         assert composed.phases == _ALL_PHASES
         assert composed.spec.icp_key == "a"
         assert isinstance(composed.run, ProjectRun)
+
+    run_async(scenario())
+
+
+def test_composed_handoff_is_real_retention_wrapped_m12_handler() -> None:
+    """C7.6 removed the documented-gap HANDOFF stand-in from production composition."""
+
+    async def scenario() -> None:
+        row = _row("a")
+        composed = await _driver({("ws", "a", 1): _spec("a")}).composed(row)
+        handoff = composed.registry.get(ProjectPhase.HANDOFF)
+        assert isinstance(handoff, RetentionSweepHandoffHandler)
+        assert isinstance(handoff._inner, HandoffPhaseHandler)
+
+    run_async(scenario())
+
+
+def test_product_pin_mismatch_fails_closed_before_composition() -> None:
+    """The run and ICP cannot silently select different product-scoped research."""
+
+    async def scenario() -> None:
+        driver = _driver({("ws", "a", 1): _spec("a", product_id="product-a")})
+        with pytest.raises(CompositionUnavailable, match="product pin mismatch"):
+            await driver.composed(_row("a", product_id="product-b"))
 
     run_async(scenario())
 
@@ -158,9 +208,23 @@ def test_two_icps_compose_isolated_registries_no_cross_talk() -> None:
 def test_composition_is_cached_per_key() -> None:
     async def scenario() -> None:
         driver = _driver({("ws", "a", 1): _spec("a")})
-        first = await driver.composed(_row("a"))
-        second = await driver.composed(_row("a"))  # same (ws, icp_key, version) key
+        row = _row("a")
+        first = await driver.composed(row)
+        second = await driver.composed(row)  # same project_run_id
         assert first is second  # LRU hit — not recomposed
+
+    run_async(scenario())
+
+
+def test_two_runs_with_same_icp_do_not_share_run_bound_committee_reader() -> None:
+    """C7.6 makes project-run identity part of composition, even when the ICP is identical."""
+
+    async def scenario() -> None:
+        driver = _driver({("ws", "a", 1): _spec("a")})
+        first = await driver.composed(_row("a"))
+        second = await driver.composed(_row("a"))
+        assert first is not second
+        assert first.registry is not second.registry
 
     run_async(scenario())
 
@@ -169,10 +233,11 @@ def test_lru_evicts_beyond_cache_size() -> None:
     async def scenario() -> None:
         specs = {("ws", k, 1): _spec(k) for k in ("a", "b", "c")}
         driver = _driver(specs, cache_size=2)
-        a1 = await driver.composed(_row("a"))
+        row_a = _row("a")
+        a1 = await driver.composed(row_a)
         await driver.composed(_row("b"))
         await driver.composed(_row("c"))  # evicts "a" (least-recently-used)
-        a2 = await driver.composed(_row("a"))  # recomposed → a fresh object
+        a2 = await driver.composed(row_a)  # recomposed → a fresh object
         assert a1 is not a2
 
     run_async(scenario())

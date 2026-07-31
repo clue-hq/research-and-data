@@ -2,13 +2,15 @@
 
 This is the architecture's one bet made concrete: *verifiability is a property of the
 data model* (substrate §0/§1). A fact is a ``Claim`` row, never a field on a free-text
-dossier. One substrate carries **two provenance flavors** (staged-flow §9), discriminated by
+dossier. One substrate carries distinct provenance flavors, discriminated by
 ``claim_flavor``:
 
 * **field-claim provenance** (``FIELD_CLAIM``, the default) — the value + span + source + tier,
   plus ``identity_binding`` + ``use_class`` for contact claims (modes M2/M4);
 * **discovery-provenance** (``DISCOVERY``) — a :class:`DiscoveryProvenance` envelope recording
   *where an entity was found and why it matched* (modes M1/M3), carried in the same row.
+* **derived provenance** (``DERIVED``) — a C7 inference whose evidence is an immutable ordered
+  support-claim set plus an entailment verdict.
 
 Invariants are enforced at construction (you cannot build an ill-formed claim) and the
 promotion precondition is a pure predicate (:func:`can_be_promoted`). Claims are **frozen**
@@ -148,16 +150,18 @@ class Claim(BaseModel):
         # governed by Doc D / M10); plain ``contact.*`` facts (role_on_committee, persona…) are not
         # personal hooks and do not require it. Account claims do not require it either (D3), nor
         # does a contact *discovery* claim (mode M3 admission evidence) — binding/use-class are
-        # field-claim provenance for personal data (staged-flow §6/§9, Doc D §2).
+        # non-discovery claim provenance for personal data (staged-flow §6/§9, Doc D §2).
+        # C7 derived contact facets remain personal statements and therefore carry the same
+        # born-governed identity/use provenance as direct field claims.
         if (
             self.entity_type is EntityType.CONTACT
-            and self.claim_flavor is ClaimFlavor.FIELD_CLAIM
+            and self.claim_flavor is not ClaimFlavor.DISCOVERY
             and classify_field_key(self.field_key) is FieldClass.CONTACT_FACET
             and (self.identity_binding is None or self.use_class is None)
         ):
             raise ValueError(
-                "contact personal (contact.facet.*) field claims require both identity_binding "
-                "and use_class (field-claim provenance for personal data — staged-flow §6, Doc D)"
+                "contact personal (contact.facet.*) claims require both identity_binding and "
+                "use_class (personal-data provenance — staged-flow §6, Doc D)"
             )
 
         # Tier-4 is LLM synthesis and vice versa (substrate §4 tier table).
@@ -170,7 +174,11 @@ class Claim(BaseModel):
             )
 
         # Web/synthesis claims must cite a source.
-        if self.extraction_method in _URL_REQUIRED_METHODS and not self.source_url:
+        if (
+            self.claim_flavor is not ClaimFlavor.DERIVED
+            and self.extraction_method in _URL_REQUIRED_METHODS
+            and not self.source_url
+        ):
             raise ValueError(f"extraction_method {self.extraction_method} requires a source_url")
 
         # Provenance-flavor coherence (staged-flow §9).
@@ -192,7 +200,20 @@ class Claim(BaseModel):
                     "discovery_provenance entity_id/run_id/research_mode must match the claim's"
                 )
         elif self.discovery_provenance is not None:
-            raise ValueError("a field-claim-flavored claim must not carry discovery_provenance")
+            raise ValueError("a non-discovery claim must not carry discovery_provenance")
+
+        if self.claim_flavor is ClaimFlavor.DERIVED:
+            if (
+                self.source_tier != 4
+                or self.extraction_method is not ExtractionMethod.LLM_SYNTHESIS
+            ):
+                raise ValueError(
+                    "a derived claim must be tier-4/model-authored; its evidence is its support set"
+                )
+            if self.source_url is not None or self.evidence_span is not None:
+                raise ValueError(
+                    "a derived claim uses claim-support edges, not source_url or evidence_span"
+                )
 
         # Reuse-class ⟺ tenant binding (M2.5, substrate §2): a tenant-private claim is always
         # attributed to a tenant; a public-footprint claim never is (so it amortizes across
@@ -229,7 +250,11 @@ def can_be_promoted(claim: Claim) -> bool:
     Returning ``True`` means "eligible", not "verified": corroboration / the faithfulness
     judge (M9) still decide the actual transition.
     """
-    tier4_without_span = claim.source_tier == 4 and not claim.evidence_span
+    tier4_without_span = (
+        claim.source_tier == 4
+        and claim.claim_flavor is not ClaimFlavor.DERIVED
+        and not claim.evidence_span
+    )
     weakly_bound_contact = (
         claim.entity_type is EntityType.CONTACT and claim.identity_binding is IdentityBinding.WEAK
     )

@@ -14,7 +14,7 @@ composition root and *injected* here as an :class:`ObservabilitySurface`, so the
 stays pure and the reader concretes are not duplicated (they are the M13.4 wiring, reused).
 
 The HANDOFF **narrative-gap marker** is read straight from the HANDOFF checkpoint payload
-(``narrative_emit_skipped``, written by the slice-1 composer's documented-gap handler), so
+(``narrative_emit_skipped``, retained only to decode historical pre-C7.6 gap checkpoints), so
 :func:`run_overview` makes a gap-completed run distinguishable from a truly-handed-off one — spec §2
 slice-3 amendment / slice-1 review #10.
 """

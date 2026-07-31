@@ -33,6 +33,17 @@ from clue_research.claimstore.claims import (
     supersede_claim,
     supersede_claims,
 )
+from clue_research.claimstore.derivations import (
+    DerivationDependencyResolution,
+    DerivationDependencyResolver,
+    DerivationDependencyState,
+    DerivationSetRef,
+    DerivationStore,
+    DerivationValidationError,
+    affected_derivations,
+    derivation_supports,
+    support_set_sha256,
+)
 from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
@@ -74,6 +85,16 @@ __all__ = [
     "entities_with_field_claim",
     # verification verdict write (M9.2 — in-place on the trigger-allowlisted columns)
     "record_verification",
+    # C7.2 immutable claim-support substrate
+    "DerivationStore",
+    "DerivationSetRef",
+    "DerivationValidationError",
+    "DerivationDependencyResolver",
+    "DerivationDependencyResolution",
+    "DerivationDependencyState",
+    "support_set_sha256",
+    "derivation_supports",
+    "affected_derivations",
     # merge / current truth (M1.2)
     "current_value",
     "current_values",

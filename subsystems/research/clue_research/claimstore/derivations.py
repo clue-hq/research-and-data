@@ -1,0 +1,723 @@
+"""C7.2 immutable claim-support storage and live dependency resolution.
+
+``DerivationStore`` owns normalized support edges inside the claim substrate. It validates the
+complete ordered set before inserting it, locks support claims deterministically, and returns only
+claim references. ``DerivationDependencyResolver`` re-resolves those references under current
+tenancy, retention, verification, freshness, conflict, supersession, and erasure state; a derived
+claim never stays eligible merely because it was valid when first judged.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import cast
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from sqlalchemy import bindparam, text
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from clue_core import (
+    Claim,
+    ClaimFlavor,
+    ClaimId,
+    EntityId,
+    EntityType,
+    FreshnessState,
+    IdentityBinding,
+    OperationId,
+    ResearchSubjectRef,
+    ResearchSupportRef,
+    ResearchSupportRole,
+    VerificationStatus,
+    canonical_json,
+    reference_time,
+)
+from clue_research.claimstore.claims import claims_by_ids, insert_claim
+from clue_research.claimstore.merge import current_value
+from clue_research.claimstore.tenancy import ALL_WORKSPACES, WorkspaceScope
+
+
+class DerivationValidationError(ValueError):
+    """A proposed support set failed a structural or live-eligibility gate."""
+
+
+class DerivationDependencyState(StrEnum):
+    """Current disposition of a claim used as a derivation dependency."""
+
+    ELIGIBLE_FRESH = "eligible_fresh"
+    STALE_RECHECK_REQUIRED = "stale_recheck_required"
+    REVIEW_REQUIRED = "review_required"
+    UNAVAILABLE = "unavailable"
+    REJECTED = "rejected"
+    REDACTED = "redacted"
+    RESTRICTED = "restricted"
+
+
+class DerivationSetRef(BaseModel):
+    """Reference-only immutable support-set result."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: str
+    derived_claim_id: ClaimId
+    operation_id: OperationId
+    support_set_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    supports: tuple[ResearchSupportRef, ...]
+
+
+class DerivationDependencyResolution(BaseModel):
+    """Bounded live resolution result; it contains references and states, never copied bodies."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    claim_id: ClaimId
+    state: DerivationDependencyState
+    freshness: FreshnessState | None = None
+    reason_codes: tuple[str, ...] = ()
+    support_claim_ids: tuple[ClaimId, ...] = ()
+    traversed_nodes: int = Field(ge=0)
+    max_depth_reached: int = Field(ge=0)
+
+
+_STATE_PRECEDENCE: dict[DerivationDependencyState, int] = {
+    DerivationDependencyState.ELIGIBLE_FRESH: 0,
+    DerivationDependencyState.STALE_RECHECK_REQUIRED: 1,
+    DerivationDependencyState.REVIEW_REQUIRED: 2,
+    DerivationDependencyState.UNAVAILABLE: 3,
+    DerivationDependencyState.REJECTED: 4,
+    DerivationDependencyState.RESTRICTED: 5,
+    DerivationDependencyState.REDACTED: 6,
+}
+
+
+def support_set_sha256(supports: Sequence[ResearchSupportRef]) -> str:
+    """Stable hash of the exact ordered support identity/role/required tuple."""
+    payload = [
+        {
+            "claim_id": str(support.claim_id),
+            "role": support.role.value,
+            "ordinal": support.ordinal,
+            "required": support.required,
+        }
+        for support in supports
+    ]
+    return hashlib.sha256(canonical_json(cast(JsonValue, payload)).encode()).hexdigest()
+
+
+def _validate_support_shape(
+    supports: Sequence[ResearchSupportRef],
+) -> tuple[ResearchSupportRef, ...]:
+    ordered = tuple(supports)
+    if not ordered:
+        raise DerivationValidationError("a derived claim requires at least one support")
+    if not any(support.required for support in ordered):
+        raise DerivationValidationError("a derived claim requires at least one required support")
+    if tuple(support.ordinal for support in ordered) != tuple(range(len(ordered))):
+        raise DerivationValidationError("support ordinals must be contiguous from zero")
+    edge_keys = tuple((support.claim_id, support.role) for support in ordered)
+    if len(edge_keys) != len(set(edge_keys)):
+        raise DerivationValidationError("duplicate supporting claim/role edge")
+    return ordered
+
+
+async def _contact_parent(conn: AsyncConnection, contact_id: EntityId) -> EntityId | None:
+    return (
+        await conn.execute(
+            text("SELECT account_entity_id FROM contact_entity WHERE id = :contact_id"),
+            {"contact_id": contact_id},
+        )
+    ).scalar_one_or_none()
+
+
+async def _validate_relation(
+    conn: AsyncConnection,
+    *,
+    derived: Claim,
+    support: Claim,
+    role: ResearchSupportRole,
+) -> None:
+    if support.entity_type is EntityType.CONTACT:
+        is_weak = support.identity_binding is IdentityBinding.WEAK
+        is_facet = str(support.field_key) == "contact.facet" or str(support.field_key).startswith(
+            "contact.facet."
+        )
+        if is_weak or (is_facet and support.identity_binding is not IdentityBinding.STRONG):
+            raise DerivationValidationError("contact support must be strongly identity-bound")
+
+    if role is ResearchSupportRole.CLIENT_CAPABILITY:
+        if (
+            derived.product_id is None
+            or support.product_id is None
+            or support.product_id != derived.product_id
+        ):
+            raise DerivationValidationError(
+                "client_capability requires support in the exact derived product scope"
+            )
+        return
+
+    if derived.entity_id == support.entity_id:
+        if role is ResearchSupportRole.EMPLOYER_CONTEXT:
+            raise DerivationValidationError(
+                "employer_context requires the contact's parent-account claim"
+            )
+        return
+
+    if (
+        derived.entity_type is EntityType.CONTACT
+        and support.entity_type is EntityType.ACCOUNT
+        and role in {ResearchSupportRole.EMPLOYER_CONTEXT, ResearchSupportRole.ACCOUNT_SIGNAL}
+    ):
+        parent = await _contact_parent(conn, derived.entity_id)
+        if parent != support.entity_id:
+            raise DerivationValidationError(
+                "account support is not the derived contact's resolved employer"
+            )
+        return
+
+    if (
+        derived.entity_type is EntityType.ACCOUNT
+        and support.entity_type is EntityType.CONTACT
+        and role is ResearchSupportRole.ACCOUNT_SIGNAL
+    ):
+        parent = await _contact_parent(conn, support.entity_id)
+        if parent != derived.entity_id:
+            raise DerivationValidationError("contact signal is not bound to the derived account")
+        return
+
+    raise DerivationValidationError(
+        f"support role {role.value} does not permit this cross-subject relation"
+    )
+
+
+async def _would_cycle(
+    conn: AsyncConnection, derived_claim_id: ClaimId, supporting_claim_id: ClaimId
+) -> bool:
+    return bool(
+        (
+            await conn.execute(
+                text(
+                    """
+                    WITH RECURSIVE dependencies(claim_id) AS (
+                        SELECT CAST(:supporting_claim_id AS uuid)
+                        UNION
+                        SELECT edge.supporting_claim_id
+                        FROM claim_derivation edge
+                        JOIN dependencies prior ON edge.derived_claim_id = prior.claim_id
+                    )
+                    SELECT EXISTS (
+                        SELECT 1 FROM dependencies
+                        WHERE claim_id = CAST(:derived_claim_id AS uuid)
+                    )
+                    """
+                ),
+                {
+                    "derived_claim_id": derived_claim_id,
+                    "supporting_claim_id": supporting_claim_id,
+                },
+            )
+        ).scalar_one()
+    )
+
+
+class DerivationDependencyResolver:
+    """Bounded memoized live resolver for direct and nested derived dependencies."""
+
+    def __init__(self, *, max_depth: int = 8, max_nodes: int = 128) -> None:
+        if max_depth < 1 or max_nodes < 1:
+            raise ValueError("derivation resolver limits must be positive")
+        self._max_depth = max_depth
+        self._max_nodes = max_nodes
+
+    async def resolve(
+        self,
+        conn: AsyncConnection,
+        claim_id: ClaimId,
+        *,
+        scope: WorkspaceScope,
+    ) -> DerivationDependencyResolution:
+        memo: dict[ClaimId, DerivationDependencyResolution] = {}
+        visiting: set[ClaimId] = set()
+        counter = [0]
+        return await self._resolve(
+            conn,
+            claim_id,
+            scope=scope,
+            depth=0,
+            memo=memo,
+            visiting=visiting,
+            counter=counter,
+        )
+
+    async def _resolve(
+        self,
+        conn: AsyncConnection,
+        claim_id: ClaimId,
+        *,
+        scope: WorkspaceScope,
+        depth: int,
+        memo: dict[ClaimId, DerivationDependencyResolution],
+        visiting: set[ClaimId],
+        counter: list[int],
+    ) -> DerivationDependencyResolution:
+        if claim_id in memo:
+            return memo[claim_id]
+        if depth > self._max_depth:
+            return DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.UNAVAILABLE,
+                reason_codes=("dependency_depth_limit",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+        if counter[0] >= self._max_nodes:
+            return DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.UNAVAILABLE,
+                reason_codes=("dependency_node_limit",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+        if claim_id in visiting:
+            return DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.UNAVAILABLE,
+                reason_codes=("dependency_cycle",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+
+        counter[0] += 1
+        visible = await claims_by_ids(conn, [claim_id], scope=scope)
+        claim = visible.get(claim_id)
+        if claim is None:
+            resolution = await self._missing_resolution(
+                conn, claim_id, scope=scope, depth=depth, counter=counter[0]
+            )
+            memo[claim_id] = resolution
+            return resolution
+
+        if claim.verification_status is VerificationStatus.REJECTED:
+            resolution = DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.REJECTED,
+                reason_codes=("verification_rejected",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+            memo[claim_id] = resolution
+            return resolution
+        if claim.verification_status is VerificationStatus.FLAGGED:
+            resolution = DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.REVIEW_REQUIRED,
+                reason_codes=("verification_flagged",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+            memo[claim_id] = resolution
+            return resolution
+        if claim.verification_status is not VerificationStatus.VERIFIED:
+            resolution = DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.UNAVAILABLE,
+                reason_codes=("verification_incomplete",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+            memo[claim_id] = resolution
+            return resolution
+
+        local_state, freshness, local_reasons = await self._local_state(conn, claim, scope=scope)
+        if claim.claim_flavor is not ClaimFlavor.DERIVED:
+            resolution = DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=local_state,
+                freshness=freshness,
+                reason_codes=local_reasons,
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+            memo[claim_id] = resolution
+            return resolution
+
+        supports = await derivation_supports(conn, claim_id)
+        if not supports:
+            resolution = DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=DerivationDependencyState.UNAVAILABLE,
+                reason_codes=("support_set_missing",),
+                traversed_nodes=counter[0],
+                max_depth_reached=depth,
+            )
+            memo[claim_id] = resolution
+            return resolution
+
+        visiting.add(claim_id)
+        required_results: list[DerivationDependencyResolution] = []
+        try:
+            for support in supports:
+                child = await self._resolve(
+                    conn,
+                    support.claim_id,
+                    scope=scope,
+                    depth=depth + 1,
+                    memo=memo,
+                    visiting=visiting,
+                    counter=counter,
+                )
+                if support.required:
+                    required_results.append(child)
+        finally:
+            visiting.remove(claim_id)
+
+        states = [local_state, *(child.state for child in required_results)]
+        state = max(states, key=_STATE_PRECEDENCE.__getitem__)
+        reasons = list(local_reasons)
+        for child in required_results:
+            if child.state is not DerivationDependencyState.ELIGIBLE_FRESH:
+                reasons.extend(
+                    f"support_{child.claim_id}_{reason}" for reason in child.reason_codes
+                )
+        resolution = DerivationDependencyResolution(
+            claim_id=claim_id,
+            state=state,
+            freshness=(
+                FreshnessState.STALE
+                if state is DerivationDependencyState.STALE_RECHECK_REQUIRED
+                else freshness
+            ),
+            reason_codes=tuple(dict.fromkeys(reasons)),
+            support_claim_ids=tuple(support.claim_id for support in supports),
+            traversed_nodes=counter[0],
+            max_depth_reached=max(
+                [depth, *(child.max_depth_reached for child in required_results)]
+            ),
+        )
+        memo[claim_id] = resolution
+        return resolution
+
+    async def _missing_resolution(
+        self,
+        conn: AsyncConnection,
+        claim_id: ClaimId,
+        *,
+        scope: WorkspaceScope,
+        depth: int,
+        counter: int,
+    ) -> DerivationDependencyResolution:
+        scoped_audit = await claims_by_ids(conn, [claim_id], scope=scope, include_superseded=True)
+        if claim_id in scoped_audit:
+            erased = bool(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT EXISTS (SELECT 1 FROM dsar_tombstone "
+                            "WHERE erased_claim_id = :claim_id)"
+                        ),
+                        {"claim_id": claim_id},
+                    )
+                ).scalar_one()
+            )
+            return DerivationDependencyResolution(
+                claim_id=claim_id,
+                state=(
+                    DerivationDependencyState.REDACTED
+                    if erased
+                    else DerivationDependencyState.UNAVAILABLE
+                ),
+                reason_codes=("erased_support",) if erased else ("superseded_or_expired",),
+                traversed_nodes=counter,
+                max_depth_reached=depth,
+            )
+        operator_audit = await claims_by_ids(
+            conn, [claim_id], scope=ALL_WORKSPACES, include_superseded=True
+        )
+        return DerivationDependencyResolution(
+            claim_id=claim_id,
+            state=(
+                DerivationDependencyState.RESTRICTED
+                if claim_id in operator_audit
+                else DerivationDependencyState.UNAVAILABLE
+            ),
+            reason_codes=(
+                ("workspace_restricted",) if claim_id in operator_audit else ("claim_missing",)
+            ),
+            traversed_nodes=counter,
+            max_depth_reached=depth,
+        )
+
+    async def _local_state(
+        self,
+        conn: AsyncConnection,
+        claim: Claim,
+        *,
+        scope: WorkspaceScope,
+    ) -> tuple[DerivationDependencyState, FreshnessState, tuple[str, ...]]:
+        ttl = (
+            await conn.execute(
+                text("SELECT freshness_ttl FROM field_definition WHERE field_key = :field_key"),
+                {"field_key": str(claim.field_key)},
+            )
+        ).scalar_one_or_none()
+        freshness = (
+            FreshnessState.STALE
+            if ttl is not None and datetime.now(UTC) - reference_time(claim) > ttl
+            else FreshnessState.FRESH
+        )
+        if claim.claim_flavor is ClaimFlavor.FIELD_CLAIM:
+            current = await current_value(
+                conn,
+                claim.entity_id,
+                claim.field_key,
+                scope=scope,
+            )
+            if current is not None and current.conflict:
+                return (
+                    DerivationDependencyState.REVIEW_REQUIRED,
+                    freshness,
+                    ("support_field_conflict",),
+                )
+        if freshness is FreshnessState.STALE:
+            return (
+                DerivationDependencyState.STALE_RECHECK_REQUIRED,
+                freshness,
+                ("support_stale",),
+            )
+        return DerivationDependencyState.ELIGIBLE_FRESH, freshness, ()
+
+
+async def derivation_supports(
+    conn: AsyncConnection, derived_claim_id: ClaimId
+) -> tuple[ResearchSupportRef, ...]:
+    """Ordered support references for one derived claim."""
+    rows = (
+        await conn.execute(
+            text(
+                """
+                SELECT supporting_claim_id, support_role, ordinal, support_required
+                FROM claim_derivation
+                WHERE derived_claim_id = :derived_claim_id
+                ORDER BY ordinal
+                """
+            ),
+            {"derived_claim_id": derived_claim_id},
+        )
+    ).all()
+    return tuple(
+        ResearchSupportRef(
+            claim_id=ClaimId(row[0]),
+            role=ResearchSupportRole(row[1]),
+            ordinal=int(row[2]),
+            required=bool(row[3]),
+        )
+        for row in rows
+    )
+
+
+async def affected_derivations(
+    conn: AsyncConnection, supporting_claim_ids: Sequence[ClaimId]
+) -> tuple[ClaimId, ...]:
+    """All direct and transitive derived dependents of the supplied claims."""
+    ids = tuple(str(claim_id) for claim_id in supporting_claim_ids)
+    if not ids:
+        return ()
+    stmt = text(
+        """
+        WITH RECURSIVE affected(derived_claim_id) AS (
+            SELECT DISTINCT derived_claim_id
+            FROM claim_derivation
+            WHERE supporting_claim_id IN :supporting_ids
+            UNION
+            SELECT edge.derived_claim_id
+            FROM claim_derivation edge
+            JOIN affected prior ON edge.supporting_claim_id = prior.derived_claim_id
+        )
+        SELECT derived_claim_id FROM affected ORDER BY derived_claim_id
+        """
+    ).bindparams(bindparam("supporting_ids", expanding=True))
+    rows = (await conn.execute(stmt, {"supporting_ids": ids})).scalars().all()
+    return tuple(ClaimId(row) for row in rows)
+
+
+class DerivationStore:
+    """Claimstore-owned transactional writer for one complete immutable support set."""
+
+    def __init__(self, *, resolver: DerivationDependencyResolver | None = None) -> None:
+        self._resolver = resolver or DerivationDependencyResolver()
+
+    async def by_operation(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        operation_id: OperationId,
+    ) -> DerivationSetRef | None:
+        row = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT derived_claim_id
+                    FROM claim_derivation
+                    WHERE workspace_id = :workspace_id AND operation_id = :operation_id
+                    ORDER BY ordinal
+                    LIMIT 1
+                    """
+                ),
+                {"workspace_id": workspace_id, "operation_id": operation_id},
+            )
+        ).first()
+        if row is None:
+            return None
+        derived_id = ClaimId(row[0])
+        supports = await derivation_supports(conn, derived_id)
+        return DerivationSetRef(
+            workspace_id=workspace_id,
+            derived_claim_id=derived_id,
+            operation_id=operation_id,
+            support_set_sha256=support_set_sha256(supports),
+            supports=supports,
+        )
+
+    async def validate(
+        self,
+        conn: AsyncConnection,
+        derived_claim: Claim,
+        target: ResearchSubjectRef,
+        supports: Sequence[ResearchSupportRef],
+        *,
+        workspace_id: str,
+        scope: WorkspaceScope,
+    ) -> DerivationSetRef:
+        ordered = _validate_support_shape(supports)
+        if derived_claim.claim_flavor is not ClaimFlavor.DERIVED:
+            raise DerivationValidationError("derived claim must have claim_flavor=derived")
+        if (
+            derived_claim.entity_id != target.entity_id
+            or derived_claim.entity_type is not target.entity_type
+        ):
+            raise DerivationValidationError("derived claim does not match the exact target")
+        if any(support.claim_id == derived_claim.id for support in ordered):
+            raise DerivationValidationError("a derived claim cannot support itself")
+        if (
+            derived_claim.reuse_scope.value == "tenant_private"
+            and derived_claim.workspace_id != workspace_id
+        ):
+            raise DerivationValidationError("derived claim workspace mismatch")
+
+        support_map = await claims_by_ids(
+            conn, (support.claim_id for support in ordered), scope=scope
+        )
+        missing = [support.claim_id for support in ordered if support.claim_id not in support_map]
+        if missing:
+            raise DerivationValidationError(
+                "support claims are missing, superseded, expired, erased, or out of scope: "
+                f"{missing}"
+            )
+
+        for support_ref in ordered:
+            support = support_map[support_ref.claim_id]
+            if (
+                support.reuse_scope.value == "tenant_private"
+                and support.workspace_id != workspace_id
+            ):
+                raise DerivationValidationError("supporting claim workspace mismatch")
+            if (
+                support.reuse_scope.value == "tenant_private"
+                and derived_claim.reuse_scope.value != "tenant_private"
+            ):
+                raise DerivationValidationError(
+                    "a public derivation cannot depend on tenant-private support"
+                )
+            if support.product_id is not None and support.product_id != derived_claim.product_id:
+                raise DerivationValidationError("supporting claim product mismatch")
+            await _validate_relation(
+                conn, derived=derived_claim, support=support, role=support_ref.role
+            )
+            if await _would_cycle(conn, derived_claim.id, support.id):
+                raise DerivationValidationError("claim derivation cycle detected")
+            resolution = await self._resolver.resolve(conn, support.id, scope=scope)
+            if (
+                support_ref.required
+                and resolution.state is not DerivationDependencyState.ELIGIBLE_FRESH
+            ):
+                raise DerivationValidationError(
+                    f"required support {support.id} is not eligible: {resolution.state.value}"
+                )
+
+        return DerivationSetRef(
+            workspace_id=workspace_id,
+            derived_claim_id=derived_claim.id,
+            operation_id=OperationId(UUID(int=0)),
+            support_set_sha256=support_set_sha256(ordered),
+            supports=ordered,
+        )
+
+    async def create(
+        self,
+        conn: AsyncConnection,
+        derived_claim: Claim,
+        target: ResearchSubjectRef,
+        supports: Sequence[ResearchSupportRef],
+        *,
+        workspace_id: str,
+        operation_id: OperationId,
+        scope: WorkspaceScope,
+    ) -> DerivationSetRef:
+        existing = await self.by_operation(
+            conn, workspace_id=workspace_id, operation_id=operation_id
+        )
+        if existing is not None:
+            return existing
+
+        ordered = _validate_support_shape(supports)
+        support_ids = sorted({str(support.claim_id) for support in ordered})
+        lock_stmt = text("SELECT id FROM claim WHERE id IN :ids ORDER BY id FOR UPDATE").bindparams(
+            bindparam("ids", expanding=True)
+        )
+        await conn.execute(lock_stmt, {"ids": support_ids})
+        # A concurrent request may have committed while this transaction waited on the first
+        # support row. Read again after the deterministic lock boundary so duplicate operations
+        # resolve to the original complete set rather than racing into a duplicate claim insert.
+        existing = await self.by_operation(
+            conn, workspace_id=workspace_id, operation_id=operation_id
+        )
+        if existing is not None:
+            return existing
+
+        prepared = await self.validate(
+            conn,
+            derived_claim,
+            target,
+            ordered,
+            workspace_id=workspace_id,
+            scope=scope,
+        )
+        await insert_claim(conn, derived_claim)
+        for support in ordered:
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO claim_derivation
+                        (workspace_id, derived_claim_id, supporting_claim_id, support_role,
+                         ordinal, support_required, operation_id)
+                    VALUES
+                        (:workspace_id, :derived_claim_id, :supporting_claim_id,
+                         CAST(:support_role AS research_support_role), :ordinal,
+                         :support_required, :operation_id)
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "derived_claim_id": derived_claim.id,
+                    "supporting_claim_id": support.claim_id,
+                    "support_role": support.role.value,
+                    "ordinal": support.ordinal,
+                    "support_required": support.required,
+                    "operation_id": operation_id,
+                },
+            )
+        return prepared.model_copy(update={"operation_id": operation_id})

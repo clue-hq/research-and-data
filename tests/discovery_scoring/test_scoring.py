@@ -63,6 +63,7 @@ from clue_research.sources import (
     register_source,
     unbind_resolver,
 )
+from clue_spine import create_brand, create_product
 
 from .conftest import rollback_conn, run_async
 
@@ -142,7 +143,15 @@ async def _seed_account(
     return eid
 
 
-async def _score(conn, eid, *, rubric, run_id, icp_version: int = 1):
+async def _score(
+    conn,
+    eid,
+    *,
+    rubric,
+    run_id,
+    icp_version: int = 1,
+    product_id: str | None = None,
+):
     return await score_account(
         conn,
         eid,
@@ -152,6 +161,7 @@ async def _score(conn, eid, *, rubric, run_id, icp_version: int = 1):
         workspace_id=CLIENT,
         icp_key=ICP,
         icp_version=icp_version,
+        product_id=product_id,
     )
 
 
@@ -205,6 +215,73 @@ def test_score_account_decomposes_with_evidence() -> None:
             # the evidence index resolves each sub-score field to >=1 claim id
             assert set(score.evidence) == {_EMP, _FUND}
             assert all(len(ids) >= 1 for ids in score.evidence.values())
+
+    run_async(_run())
+
+
+def test_score_claims_are_product_exact_while_input_facts_remain_neutral() -> None:
+    """C7.1: scoring owns per-product fit; C7 will only read its evidence and exact scope."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            eid = await _seed_account(conn)
+            brand = await create_brand(conn, workspace_id=CLIENT, name="Scoring test brand")
+            product_a_row = await create_product(
+                conn,
+                workspace_id=CLIENT,
+                brand_id=brand.brand_id,
+                product_id="product-a",
+                name="Product A",
+            )
+            product_b_row = await create_product(
+                conn,
+                workspace_id=CLIENT,
+                brand_id=brand.brand_id,
+                product_id="product-b",
+                name="Product B",
+            )
+            product_a = await _score(
+                conn,
+                eid,
+                rubric=_rubric(),
+                run_id=new_run_id(),
+                product_id=product_a_row.product_id,
+            )
+            product_b = await _score(
+                conn,
+                eid,
+                rubric=_rubric(),
+                run_id=new_run_id(),
+                product_id=product_b_row.product_id,
+            )
+
+            assert product_a.score.product_id == "product-a"
+            assert product_b.score.product_id == "product-b"
+            fit_claims = await claims_for(
+                conn,
+                eid,
+                FIT_FIELD,
+                scope=WorkspaceScope.for_workspace(CLIENT),
+            )
+            assert {claim.product_id for claim in fit_claims} == {"product-a", "product-b"}
+            assert all(
+                claim.id in {product_a.score.fit_claim_id, product_b.score.fit_claim_id}
+                for claim in fit_claims
+            )
+
+            # The deterministic account facts may support both product-scoped calculations without
+            # being copied or falsely relabelled as product-specific.
+            inputs = await claims_for(
+                conn,
+                eid,
+                _EMP,
+                scope=WorkspaceScope.for_workspace(CLIENT),
+            )
+            assert len(inputs) == 1
+            assert inputs[0].product_id is None
+            assert inputs[0].id in product_a.score.evidence[_EMP]
+            assert inputs[0].id in product_b.score.evidence[_EMP]
 
     run_async(_run())
 

@@ -102,6 +102,16 @@ from clue_api.composition import (
     production_binding_classifier,
     register_profiling_workers,
 )
+from clue_api.contact_eligibility import (
+    ContactEligibilityResolver,
+    GovernedCommitteeContact,
+    GovernedCommitteeViewReader,
+    GovernedContactClaim,
+    ProductionHandoffCommitteeReader,
+    build_contact_eligibility_resolver,
+    build_governed_committee_view_reader,
+    build_production_handoff_committee_reader,
+)
 from clue_api.disposition_wiring import (
     build_disposition_store,
     build_review_disposition_emitter,
@@ -347,6 +357,15 @@ __all__ = [
     "register_narrative_wiring",
     "build_client_knowledge_retriever",
     "build_handoff_assembler",
+    # C7.6 shared governed contact/committee eligibility
+    "ContactEligibilityResolver",
+    "GovernedCommitteeContact",
+    "GovernedContactClaim",
+    "GovernedCommitteeViewReader",
+    "ProductionHandoffCommitteeReader",
+    "build_contact_eligibility_resolver",
+    "build_governed_committee_view_reader",
+    "build_production_handoff_committee_reader",
     # M12.3 handoff API + emit wiring
     "create_handoff_app",
     "create_handoff_router",

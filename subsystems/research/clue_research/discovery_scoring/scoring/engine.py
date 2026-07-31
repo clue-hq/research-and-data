@@ -148,6 +148,7 @@ async def score_account(
     workspace_id: str,
     icp_key: str,
     icp_version: int,
+    product_id: str | None = None,
     budget_envelope: Decimal | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
     pre_spend_gate: PreSpendGate | None = None,
@@ -217,6 +218,7 @@ async def score_account(
         run_id=run_id,
         workspace_id=workspace_id,
         icp_key=icp_key,
+        product_id=product_id,
     )
     intent_claim_id, intent_written = await _write_score_object(
         conn,
@@ -226,11 +228,13 @@ async def score_account(
         run_id=run_id,
         workspace_id=workspace_id,
         icp_key=icp_key,
+        product_id=product_id,
     )
 
     cost = sum((r.total_cost_cents for r in results), Decimal(0))
     score = AccountScore(
         account_id=account_id,
+        product_id=product_id,
         rubric_version=result.rubric_version,
         fit=fit,
         intent=intent,
@@ -348,6 +352,7 @@ async def _write_score_object(
     run_id: RunId,
     workspace_id: str,
     icp_key: str,
+    product_id: str | None,
 ) -> tuple[ClaimId, bool]:
     """Write one score claim idempotently, returning ``(claim_id, written)``.
 
@@ -374,7 +379,7 @@ async def _write_score_object(
             research_mode=ResearchMode.ACCOUNT_PROFILING,
         ),
         workspace_id=workspace_id,
-    )
+    ).model_copy(update={"product_id": product_id})
     return await write_icp_scoped_claim(
         conn,
         score_claim,

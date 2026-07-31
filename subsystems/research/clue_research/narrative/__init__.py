@@ -54,6 +54,7 @@ from clue_research.narrative.handoff_seams import (
     InMemoryHandoffCommitteeReader,
 )
 from clue_research.narrative.handoff_store import (
+    LegacyHandoffErasedSubjectError,
     list_handoffs_for_run,
     read_handoff,
     write_handoff,
@@ -102,6 +103,45 @@ from clue_research.narrative.readiness import (
     InMemoryHandoffReadinessReader,
     RunReadiness,
 )
+from clue_research.narrative.research_view_recheck import (
+    GovernedResearchOperationRequest,
+    GovernedResearchOperationRequester,
+    ResearchViewRecheckConflict,
+    ResearchViewRecheckService,
+    ResearchViewRecheckUnavailable,
+    ResearchViewSectionStalenessService,
+    append_research_view_event,
+)
+from clue_research.narrative.research_view_snapshots import (
+    ResearchViewSnapshotCommand,
+    ResearchViewSnapshotConflict,
+    ResearchViewSnapshotService,
+    SnapshotReachabilityReader,
+    reference_composition_sha256,
+)
+from clue_research.narrative.research_views import (
+    ACCOUNT_SECTION_ORDER,
+    CONTACT_SECTION_ORDER,
+    ActivityReferenceReader,
+    CanonicalSubjectRead,
+    CanonicalSubjectReader,
+    CommitteeViewReader,
+    CoverageViewRead,
+    CoverageViewReader,
+    DerivedClaimReader,
+    DeterministicResearchViewComposer,
+    DirectClaimReader,
+    FitResultReader,
+    NineBlockResearchProjection,
+    ResearchBlockItemRef,
+    ResearchBlockProjection,
+    ResearchSectionSeed,
+    ResearchStatementCandidate,
+    ResearchViewCompositionError,
+    StatementGovernanceReader,
+    StatementGovernanceResult,
+    project_nine_blocks,
+)
 from clue_research.narrative.reuse import NARRATIVE_REUSE_POLICY
 from clue_research.narrative.seams import (
     CommitteeContact,
@@ -145,6 +185,42 @@ __all__ = [
     "load_narrative_pack",
     # reuse stamping
     "NARRATIVE_REUSE_POLICY",
+    # C7.3 deterministic account/contact research views
+    "ResearchViewCompositionError",
+    "ResearchStatementCandidate",
+    "StatementGovernanceResult",
+    "ResearchSectionSeed",
+    "CanonicalSubjectRead",
+    "CoverageViewRead",
+    "CanonicalSubjectReader",
+    "DirectClaimReader",
+    "DerivedClaimReader",
+    "FitResultReader",
+    "CommitteeViewReader",
+    "CoverageViewReader",
+    "ActivityReferenceReader",
+    "StatementGovernanceReader",
+    "DeterministicResearchViewComposer",
+    "ACCOUNT_SECTION_ORDER",
+    "CONTACT_SECTION_ORDER",
+    "ResearchBlockItemRef",
+    "ResearchBlockProjection",
+    "NineBlockResearchProjection",
+    "project_nine_blocks",
+    # C7.4 reference-only saved research views
+    "ResearchViewSnapshotCommand",
+    "ResearchViewSnapshotConflict",
+    "ResearchViewSnapshotService",
+    "SnapshotReachabilityReader",
+    "reference_composition_sha256",
+    # C7.5 additive re-check and reverse-reference staleness
+    "GovernedResearchOperationRequest",
+    "GovernedResearchOperationRequester",
+    "ResearchViewRecheckConflict",
+    "ResearchViewRecheckUnavailable",
+    "ResearchViewRecheckService",
+    "ResearchViewSectionStalenessService",
+    "append_research_view_event",
     # policy-as-data (M12.1 AC8)
     "PositioningPolicy",
     "DEFAULT_POSITIONING_POLICY",
@@ -202,6 +278,7 @@ __all__ = [
     "InMemoryHandoffCommitteeReader",
     # the account_handoff materialization (M12.2)
     "write_handoff",
+    "LegacyHandoffErasedSubjectError",
     "read_handoff",
     "list_handoffs_for_run",
     # verification health (M12.3 — the trust posture that travels with the output)

@@ -27,6 +27,40 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-07-28-phase-c7-7-product-serving.md` — C7.7 complete: exact reference-only tools,
+  account/contact and legacy-alias HTTP surfaces, body-free status projections, transactional
+  canonical/SSE event aggregation, live C6 fetch authority, clean full verification, and C7.8
+  adversarial/DSAR/performance closeout.
+- `2026-07-28-phase-c7-6-production-committee-handoff.md` — C7.6 complete: one run/product-bound
+  governed contact resolver, production C7/M12 adapters, exact product lineage, real
+  retention-wrapped materialize/outbox HANDOFF, run-keyed composition isolation, adversarial
+  eligibility/crash coverage, and the C7.7 serving cutover.
+- `2026-07-28-phase-c7-5-governed-recheck.md` — C7.5 complete: strict additive re-check contract,
+  immutable reference-only change reports/events, deterministic crash replay, reverse-reference
+  section staleness, governed tool delegation, full isolated verification, and the C7.6 handoff.
+- `2026-07-28-phase-c7-4-reference-snapshots-evidence-access.md` — C7.4 complete: append-only
+  body-free snapshot receipts, current-policy live resolution, exact-scope evidence actions,
+  legacy handoff subject indexing/purge/no-resurrection, full isolated verification, and the
+  bounded C7.6/C7.7 payload cutover.
+- `2026-07-27-phase-c7-3-research-view-composition.md` — C7.3 complete: injected owner
+  seams, deterministic account/contact composition, nine-block reference adapter, adversarial
+  state coverage, isolated full-suite verification, and the exact C7.4 handoff.
+- `2026-07-27-phase-c7-2-derivation-entailment.md` — C7.2 complete: derived claim flavor,
+  append-only ordered support graph and entailment ledger, strict no-rationale judge, conservative
+  API-root promotion, bounded live dependency invalidation, transitive DSAR reachability,
+  migration/full-suite verification, and the exact C7.3 handoff.
+- `2026-07-27-phase-c7-1-prerequisite-hardening.md` — C7.1 complete: shared equality
+  consumer parity, fail-closed retention-aware live selection, one-way faithfulness-rationale
+  DSAR redaction, evidence-access authorization/service seams, product-exact score claims, optional
+  registered contact class, isolated-DB migration smoke, and the exact C7.2 handoff.
+- `2026-07-27-phase-c7-0-contract-fixtures.md` — C7.0 complete: frozen account/contact
+  research-view contracts and protocols, executable source-species/nine-block ownership map,
+  sanitized frontend/adversarial fixture manifests, fail-closed contract tests, full tracked-scope
+  verification, and the exact C7.1 boundary.
+- `2026-07-27-phase-c7-planning.md` — C7 planning checkpoint on
+  `platform/c7-research-views`: founder-ratified dossier-as-structured-research-view ruling,
+  account/contact frontend contract, derivation/entailment and reference-only snapshot decisions,
+  C8 prerequisite placement, C7.0–C7.8 slices, verification gates, and next implementation entry.
 - `2026-07-26-phase-c6-8-production-closeout.md` — C6.8 and C6 complete: prepared account
   turn composed in the existing DEEP slot; immutable one-owner routing; default-off flags;
   body-free read API; cache/context/workspace/delegation/finalization telemetry; secure cold

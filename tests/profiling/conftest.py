@@ -47,6 +47,7 @@ from clue_core import (
     SourceManifest,
     UseClass,
     contact_claim,
+    new_entity_id,
     new_run_id,
 )
 from clue_db import db_lifespan
@@ -245,12 +246,22 @@ async def insert_test_contact(
     return contact
 
 
-def icp_spec() -> ICPSpec:
+def icp_spec(*, product_id: str | None = None) -> ICPSpec:
     """A minimal in-memory ICP spec (committee discovery reads org context, not the rubric)."""
+    lineage = (
+        {
+            "client_entity_id": new_entity_id(),
+            "client_kb_version": 1,
+            "product_id": product_id,
+        }
+        if product_id is not None
+        else {}
+    )
     return ICPSpec(
         workspace_id="acme",
         icp_key="default",
         created_from=ICPCreatedFrom.SYNTHESIS,
+        **lineage,  # type: ignore[arg-type]
     )
 
 

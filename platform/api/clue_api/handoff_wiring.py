@@ -177,6 +177,7 @@ class HandoffPhaseHandler:
         conn_factory: ConnFactory = transaction,
         clock: _Clock = _utc_now,
         coverage_confidence: UnitInterval | None = None,
+        product_id: str | None = None,
     ) -> None:
         self._assembler = assembler
         self._readiness_reader = readiness_reader
@@ -184,6 +185,7 @@ class HandoffPhaseHandler:
         self._conn_factory = conn_factory
         self._clock = clock
         self._coverage_confidence = coverage_confidence
+        self._product_id = product_id
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         report = await emit_ready_handoffs(
@@ -195,6 +197,7 @@ class HandoffPhaseHandler:
             workspace_id=ctx.workspace_id,
             assembled_at=self._clock(),
             coverage_confidence=self._coverage_confidence,
+            product_id=self._product_id,
         )
         return PhaseResult(
             status=PhaseStatus.COMPLETED,
@@ -211,6 +214,7 @@ def build_handoff_phase_handler(
     conn_factory: ConnFactory = transaction,
     clock: _Clock = _utc_now,
     require_finalized_review: bool = False,
+    product_id: str | None = None,
 ) -> HandoffPhaseHandler:
     """Construct the handoff phase handler (the emit driver). ``assembler`` is the M12.2 assembler
     (its committee reader injected at this root); ``readiness_reader`` defaults to the
@@ -219,10 +223,14 @@ def build_handoff_phase_handler(
     return HandoffPhaseHandler(
         assembler=assembler,
         readiness_reader=readiness_reader
-        or build_handoff_readiness_reader(require_finalized_review=require_finalized_review),
+        or build_handoff_readiness_reader(
+            conn_factory=conn_factory,
+            require_finalized_review=require_finalized_review,
+        ),
         publisher=publisher,
         conn_factory=conn_factory,
         clock=clock,
+        product_id=product_id,
     )
 
 
