@@ -25,6 +25,7 @@ from sqlalchemy import text
 from clue_agents import (
     AgentFinalizeEnvelope,
     AgentPlan,
+    AgentPlanRejected,
     AgentRole,
     AgentTurnOutcome,
     AgentTurnRequest,
@@ -56,6 +57,7 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_toolbelt import ToolRegistry
 
 __all__ = [
@@ -64,11 +66,27 @@ __all__ = [
     "DurableDeepAgentTurnRunner",
     "DelegateSpecialistRequest",
     "GovernedAgentToolFactory",
+    "GovernedToolFailure",
     "ModelFinalizeRequest",
 ]
 
+log = get_logger("clue_api.agent_runtime_wiring")
+
 _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
+
+# One turn's budget for *refused* governed invocations, shared by every governed tool the model
+# holds. The hard ceiling is already there — ``DeepAgentTurnRuntime`` caps the graph at
+# ``max_rounds * 2 + 4`` supersteps, so a repair loop cannot run forever — but that ceiling is
+# reached only after ~24 further paid model calls. Three refusals is the point past which the model
+# is no longer misreading an argument contract, so the turn stops paying to find out.
+_MAX_GOVERNED_TOOL_FAILURES = 3
+
+_GOVERNED_TOOL_REPAIR_HELP = (
+    "Nothing was recorded: no durable state changed and this operation did not happen. Correct "
+    "exactly what the reasons name and call the tool again, or tell the human what is blocking "
+    "you. Do not report this as captured."
+)
 
 
 def _stable_error_code(error: BaseException) -> str:
@@ -235,6 +253,29 @@ class _ModelInput(BaseModel):
     # fields remain forbidden or injected; accepting JSON representation is not authority
     # coercion.
     model_config = ConfigDict(frozen=True, extra="forbid", strict=False)
+
+
+class GovernedToolFailure(BaseModel):
+    """The refusal of one governed invocation, shaped for the model that must repair it.
+
+    A governed tool returns its :class:`GovernedOperationReceipt` as JSON when the operation
+    commits. A refusal is the same kind of answer — a bounded, typed, reference-only statement of
+    what the platform did — so it is returned the same way rather than raised. Raising killed the
+    LangGraph run and the model was never told why (the live Stage-0 defect: a paraphrased claim
+    value failed the interview verifier and the turn ended ``runtime_error`` in silence).
+
+    ``recorded`` is pinned ``False``: the durable failure record is unchanged, nothing committed,
+    and the model must not describe this operation as having happened.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    error: Literal["plan_rejected", "operation_failed"]
+    address: str
+    node_key: str
+    recorded: Literal[False] = False
+    reasons: tuple[str, ...]
+    guidance: str = _GOVERNED_TOOL_REPAIR_HELP
 
 
 class ModelFinalizeRequest(_ModelInput):
@@ -565,6 +606,9 @@ class GovernedAgentToolFactory:
         self._artifacts = artifacts
         self._required_output_path = required_output_path
         self._completion_guard = completion_guard
+        # Per-turn state: the factory is constructed once per turn, next to the turn's execution
+        # adapter, so this budget is shared across every governed tool the model may call.
+        self._tool_failures = 0
 
     def build(self) -> tuple[BaseTool, ...]:
         tools = tuple(
@@ -607,15 +651,39 @@ class GovernedAgentToolFactory:
                 ),
                 proposed_at=self._request.requested_at,
             )
-            validated = await self._execution.validate_plan(
-                plan=plan,
-                constitution=self._request.constitution,
-            )
+            try:
+                validated = await self._execution.validate_plan(
+                    plan=plan,
+                    constitution=self._request.constitution,
+                )
+            except AgentPlanRejected as rejected:
+                return self._tool_failure(
+                    error="plan_rejected",
+                    address=pin.address,
+                    node_key=node_key,
+                    error_type=type(rejected).__name__,
+                    reasons=tuple(
+                        f"{issue.location}: {issue.code}: {issue.message}"
+                        for issue in rejected.review.issues
+                    ),
+                    raise_when_exhausted=rejected,
+                )
             final_progress = None
             async for progress in self._execution.execute(plan=validated):
                 final_progress = progress
             if final_progress is None or final_progress.status != "completed":
-                raise RuntimeError(f"governed operation {pin.address} failed")
+                failures = final_progress.failures if final_progress is not None else ()
+                return self._tool_failure(
+                    error="operation_failed",
+                    address=pin.address,
+                    node_key=node_key,
+                    error_type=(failures[0].error_type if failures else "RuntimeError"),
+                    reasons=tuple(
+                        f"{failure.error_type}: {failure.message}" for failure in failures
+                    )
+                    or ("the governed operation did not complete",),
+                    raise_when_exhausted=RuntimeError(f"governed operation {pin.address} failed"),
+                )
             recovered = await self._execution.recover(
                 execution_id=self._request.constitution.execution_id
             )
@@ -651,6 +719,50 @@ class GovernedAgentToolFactory:
                 name=f"{descriptor.input_model.__name__}AgentRuntime",
             ),
         )
+
+    def _tool_failure(
+        self,
+        *,
+        error: Literal["plan_rejected", "operation_failed"],
+        address: str,
+        node_key: str,
+        error_type: str,
+        reasons: tuple[str, ...],
+        raise_when_exhausted: BaseException,
+    ) -> str:
+        """Hand one refused governed invocation back to the model, within a per-turn budget.
+
+        The refusal is a tool *result*, not an exception, because an exception raised out of a
+        ``StructuredTool`` coroutine ends the LangGraph run: the operation's durable failure record
+        was written, nothing committed, and the model was told nothing — it could not correct the
+        argument that was refused, and the turn died with no user-facing answer.
+
+        Once the budget is spent the original exception is raised, which is exactly today's
+        behaviour: the turn fails closed with its stable error code and still commits nothing.
+        A repeated refusal is not a misread argument contract, and each further attempt is a paid
+        model call.
+        """
+
+        self._tool_failures += 1
+        exhausted = self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
+        log.warning(
+            "agent.tool_repair",
+            address=address,
+            node_key=node_key,
+            error=error,
+            error_type=error_type,
+            reasons=list(reasons),
+            attempt=self._tool_failures,
+            exhausted=exhausted,
+        )
+        if exhausted:
+            raise raise_when_exhausted
+        return GovernedToolFailure(
+            error=error,
+            address=address,
+            node_key=node_key,
+            reasons=reasons,
+        ).model_dump_json()
 
     def _delegation_tool(self) -> BaseTool:
         output_paths = {
