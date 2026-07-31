@@ -27,8 +27,11 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
+from clue_obs import get_logger
 
 __all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware"]
+
+log = get_logger("clue_agents.runtime")
 
 _FRAMEWORK_TOOL_NAMES = frozenset(
     {
@@ -189,8 +192,22 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         except ValueError as error:
             # Argument-schema violations are already turned into an error ``ToolMessage`` by the
             # tool node; a refusal raised *inside* the finalize tool (envelope construction, the
-            # completion guard) would otherwise crash the graph unseen. Both are the same thing
-            # to the model: its proposed terminal shape was not accepted.
+            # required-output check, the completion guard) would otherwise crash the graph unseen.
+            # Both are the same thing to the model: its proposed terminal shape was not accepted.
+            #
+            # The catch is deliberately the whole ``ValueError`` family, not just pydantic's
+            # ``ValidationError``: the platform's own finalize guards raise plain ``ValueError``
+            # and their messages are precisely what the model needs in order to produce an honest
+            # terminal shape. The cost is that a guard violation now reaches the operator as
+            # ``missing_finalize`` rather than as its own exception, so every swallowed error is
+            # logged here with the exception type and message that would otherwise have surfaced.
+            log.warning(
+                "agent.finalize_refused",
+                tool_call_id=tool_call_id,
+                error_type=type(error).__name__,
+                error=str(error),
+                rejection=self._finalize_rejections + 1,
+            )
             result = ToolMessage(
                 content=str(error),
                 name=_FINALIZE_TOOL_NAME,
