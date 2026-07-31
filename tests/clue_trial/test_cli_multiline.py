@@ -77,7 +77,7 @@ def test_whitespace_only_paste_is_refused() -> None:
 def test_oversize_paste_is_refused_with_the_cap_in_the_message() -> None:
     oversize = "x" * (cli_multiline.MAX_MESSAGE_BYTES + 1)
 
-    with pytest.raises(cli_multiline.MultilineInputError, match="65536 bytes"):
+    with pytest.raises(cli_multiline.MultilineInputError, match="16384 bytes"):
         cli_multiline.read_pasted_message(_reader([oversize, "."]))
 
 
@@ -123,7 +123,7 @@ def test_oversize_file_is_refused_before_it_is_read(tmp_path: Path) -> None:
     path = tmp_path / "huge.md"
     path.write_bytes(b"x" * (cli_multiline.MAX_MESSAGE_BYTES + 1))
 
-    with pytest.raises(cli_multiline.MultilineInputError, match="65536 bytes"):
+    with pytest.raises(cli_multiline.MultilineInputError, match="16384 bytes"):
         cli_multiline.read_file_message(str(path))
 
 
@@ -140,8 +140,12 @@ def test_multiline_input_error_is_a_value_error() -> None:
     assert issubclass(cli_multiline.MultilineInputError, ValueError)
 
 
-def test_cap_matches_the_documented_64kb_turn_guard() -> None:
-    assert cli_multiline.MAX_MESSAGE_BYTES == 64 * 1024
+def test_cap_fits_the_routing_echo_inside_the_model_output_budget() -> None:
+    # The real bound is not the trial API (which caps nothing) but Stage-0 routing: the model must
+    # echo the whole message byte-identically into `record_interview_answer.answer`, inside the
+    # active profile's `max_output_tokens` (8192 for head-of-abm v6) and alongside the statements
+    # array. 16 KB leaves room for that overhead; 64 KB advertised a size routing cannot echo.
+    assert cli_multiline.MAX_MESSAGE_BYTES == 16 * 1024
 
 
 # NOTE: this module is imported by the HTTP-only `scripts/clue_trial.py`, so it must stay free of
