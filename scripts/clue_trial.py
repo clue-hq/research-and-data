@@ -328,6 +328,11 @@ def _interactive(api: TrialApi, trial_id: str) -> None:
                 continue
             if message == "/synthesize-icp":
                 payload = api.post(f"/v1/trials/{trial_id}/icps:synthesize", {})
+                if payload.get("status") != "grounded":
+                    reasons = ", ".join(payload.get("reason_codes", []))
+                    print(f"Not ready: {reasons}")
+                    print("Say more about your product and who you target, then try again.")
+                    continue
                 for index, proposal in enumerate(payload.get("proposals", []), start=1):
                     print(f"{index}. {proposal.get('label') or proposal.get('icp_key')}")
                 continue

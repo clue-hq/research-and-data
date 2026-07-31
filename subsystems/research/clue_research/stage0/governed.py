@@ -105,6 +105,29 @@ class ReconRunRow(BaseModel):
     updated_at: UtcDatetime
 
 
+class VolunteeredStatementRow(BaseModel):
+    """One durable interview statement plus the captured artifact its quote is proven against.
+
+    The quote text itself is deliberately **not** stored — only its offsets and sha256 into the
+    ``onboarding_input`` artifact body — so a reader that wants the words must fetch the captured
+    artifact and can verify the span it sliced."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: VolunteeredStatementId
+    onboarding_input_id: OnboardingInputId
+    artifact_key: str
+    workspace_id: str
+    project_id: str | None
+    route_kind: StatementRoute
+    route_key: str
+    route_ref: str | None
+    quote_start: int
+    quote_end: int
+    quote_sha256: str
+    created_at: UtcDatetime
+
+
 class ReadinessDecisionRow(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -499,6 +522,47 @@ async def record_statement(
         },
     )
     return statement_id
+
+
+async def read_statements(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    route_kind: StatementRoute = StatementRoute.PROJECT_STATE,
+) -> tuple[VolunteeredStatementRow, ...]:
+    """Every statement of one route kind the client volunteered under this project, oldest first.
+
+    This is the read side of the interview seam: ``project_state`` statements are the client's own
+    targeting/strategy words, durable but *not* claim-shaped, and ICP synthesis grounds on them
+    alongside the versioned Client-KB claims."""
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT s.id, s.onboarding_input_id, i.artifact_key, s.workspace_id,
+                           s.project_id, s.route_kind, s.route_key, s.route_ref,
+                           s.quote_start, s.quote_end, s.quote_sha256, s.created_at
+                    FROM volunteered_statement s
+                    JOIN onboarding_input i ON i.id = s.onboarding_input_id
+                    WHERE s.workspace_id = :workspace_id
+                      AND s.project_id = :project_id
+                      AND s.route_kind = :route_kind
+                    ORDER BY s.created_at, s.id
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "route_kind": route_kind.value,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(VolunteeredStatementRow.model_validate(dict(row)) for row in rows)
 
 
 def _manifest_hash(payload: Mapping[str, JsonValue]) -> str:
@@ -964,6 +1028,7 @@ __all__ = [
     "ReconLaneStatus",
     "ReconRunRow",
     "StatementRoute",
+    "VolunteeredStatementRow",
     "compile_product_context",
     "ensure_readiness_spec",
     "evaluate_readiness",
@@ -971,6 +1036,7 @@ __all__ = [
     "get_readiness_decision",
     "get_recon",
     "override_readiness",
+    "read_statements",
     "recon_dedupe_hash",
     "record_statement",
     "start_recon",

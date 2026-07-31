@@ -64,7 +64,7 @@ async def _floor_proposal(
 ) -> tuple[ClientKnowledgeBaseRef, ICPProposal]:
     """Build a KB + synthesize the floor proposal; return (ref, proposal)."""
     ref = await build_client_kb(conn, workspace_id=_CLIENT, suffix=suffix, asserted=_ASSERTED)
-    (proposal,) = await synthesize_icps(conn, ref, workspace_id=_CLIENT)
+    (proposal,) = (await synthesize_icps(conn, ref, workspace_id=_CLIENT)).proposals
     return ref, proposal
 
 

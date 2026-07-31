@@ -39,6 +39,7 @@ from clue_config import Secrets, Settings
 from clue_core import EntityId, ProjectRunId
 from clue_db import ConnFactory, transaction
 from clue_locks import get_redis
+from clue_research.stage0 import ICPSynthesisStatus
 from clue_toolbelt import DbIdempotencyStore, body_sha256
 
 _SCHEMA_VERSION = "1"
@@ -419,17 +420,24 @@ class ClueTrialCoordinator:
     async def synthesize_icps(self, trial_id: str) -> dict[str, Any]:
         trial = await self._stage0(trial_id)
         try:
-            proposals = await trial.synthesize_icp_proposals()
+            result = await trial.synthesize_icp_proposals()
         finally:
             await trial.close()
+        grounded = result.status is ICPSynthesisStatus.GROUNDED
         response = {
             "schema_version": _SCHEMA_VERSION,
-            "proposals": [item.model_dump(mode="json") for item in proposals],
+            "status": result.status.value,
+            "reason_codes": list(result.reason_codes),
+            # Not-ready synthesis offers no numbered proposal — the ungrounded floor is never
+            # presented as a candidate the human could confirm.
+            "proposals": (
+                [item.model_dump(mode="json") for item in result.proposals] if grounded else []
+            ),
         }
         self._event(
             trial_id,
             "stage0.icps.synthesized",
-            {"proposal_count": len(proposals)},
+            {"proposal_count": len(response["proposals"]), "status": result.status.value},
         )
         return response
 

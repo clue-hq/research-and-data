@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -14,6 +15,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_trial import (
     STAGE0_CONTEXT_BINDING_KIND,
     STAGE0_USER_MESSAGE_BINDING_KIND,
+    Stage0ProductNotConfirmed,
     Stage0Trial,
     Stage0TrialPaths,
     Stage0TrialState,
@@ -24,6 +26,13 @@ from clue_api.stage0_trial import (
 from clue_config import Settings
 from clue_core import OnboardingInputKind
 from clue_db import db_lifespan
+from clue_research.stage0 import (
+    NO_CLIENT_KB_CLAIMS,
+    NO_PROJECT_STATEMENTS,
+    ICPProposal,
+    ICPSynthesisResult,
+    ICPSynthesisStatus,
+)
 from clue_spine import create_workspace
 from clue_storage import FsStorage
 from tests.db.conftest import _db_available, run_async
@@ -127,9 +136,7 @@ def test_stage0_turn_and_context_use_frozen_subject_binding_kinds(
 
     artifacts.bindings.clear()
     run_async(trial._artifact("application/json", {"stage": "stage0"}))
-    assert artifacts.bindings == [
-        ((trial.state.client_entity_id, STAGE0_CONTEXT_BINDING_KIND),)
-    ]
+    assert artifacts.bindings == [((trial.state.client_entity_id, STAGE0_CONTEXT_BINDING_KIND),)]
     assert STAGE0_CONTEXT_BINDING_KIND == "context"
 
 
@@ -164,9 +171,7 @@ def test_stage0_subject_bindings_are_accepted_by_the_real_database(
                     workspace_id=state.workspace_id,
                     data=b"user message",
                     media_type="text/plain",
-                    subject_bindings=(
-                        (state.client_entity_id, STAGE0_USER_MESSAGE_BINDING_KIND),
-                    ),
+                    subject_bindings=((state.client_entity_id, STAGE0_USER_MESSAGE_BINDING_KIND),),
                 )
                 await artifacts.persist_body(
                     workspace_id=state.workspace_id,
@@ -187,6 +192,112 @@ def test_stage0_subject_bindings_are_accepted_by_the_real_database(
                 await conn.close()
 
     run_async(scenario())
+
+
+class _Project:
+    def __init__(self, product_id: str | None) -> None:
+        self.product_id = product_id
+        self.workspace_id = "irrelevant"
+
+
+def _gated_trial(tmp_path: Path) -> Stage0Trial:
+    """A trial whose only live seams are the connection factory and the injected synthesis fakes."""
+    trial = object.__new__(Stage0Trial)
+    trial.state = _state()
+    trial.paths = Stage0TrialPaths.for_session(tmp_path, trial.state.session_slug)
+
+    @asynccontextmanager
+    async def connection_factory() -> AsyncIterator[object]:
+        yield object()
+
+    trial._conn_factory = connection_factory  # type: ignore[assignment]
+    trial._gateway = SimpleNamespace()
+    trial._settings = Settings(_env_file=None)
+    return trial
+
+
+def test_synthesis_is_refused_until_the_human_confirms_the_product(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The trial defect: /synthesize-icp ran with project.product_id null while /confirm-icp
+    correctly refused. Both gates must be the same gate."""
+    trial = _gated_trial(tmp_path)
+
+    async def unconfirmed_project(conn: object, project_id: str) -> _Project:
+        del conn, project_id
+        return _Project(product_id=None)
+
+    def refuse_synthesis(*args: object, **kwargs: object) -> None:
+        raise AssertionError("synthesis must not run before the product is confirmed")
+
+    monkeypatch.setattr("clue_api.stage0_trial.get_project", unconfirmed_project)
+    monkeypatch.setattr("clue_api.stage0_trial.synthesize_icps", refuse_synthesis)
+
+    with pytest.raises(Stage0ProductNotConfirmed, match="run /confirm-product first"):
+        run_async(trial.synthesize_icp_proposals())
+
+    # ...and the same refusal still guards confirmation (parity with the pre-existing gate)
+    trial.paths.root.mkdir(parents=True, exist_ok=True)
+    trial.paths.icp_proposals.write_text(
+        json.dumps(
+            {
+                "workspace_id": trial.state.workspace_id,
+                "client_entity_id": str(trial.state.client_entity_id),
+                "client_kb_version": trial.state.client_kb_version,
+                "product_id": trial.state.product_id,
+                "proposals": [{"icp_key": "primary"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(Stage0ProductNotConfirmed, match="run /confirm-product first"):
+        run_async(trial.confirm_icp_proposal(1))
+
+
+def test_not_ready_synthesis_offers_no_confirmable_proposal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trial = _gated_trial(tmp_path)
+    floor = ICPProposal(icp_key="primary", label="Ungrounded baseline (no evidence)")
+
+    async def confirmed_project(conn: object, project_id: str) -> _Project:
+        del conn, project_id
+        return _Project(product_id=trial.state.product_id)
+
+    async def no_statements(self: Stage0Trial, conn: object) -> tuple[object, ...]:
+        del self, conn
+        return ()
+
+    async def not_ready(*args: object, **kwargs: object) -> ICPSynthesisResult:
+        del args, kwargs
+        return ICPSynthesisResult(
+            proposals=(floor,),
+            status=ICPSynthesisStatus.FLOOR_ONLY,
+            reason_codes=(NO_CLIENT_KB_CLAIMS, NO_PROJECT_STATEMENTS),
+        )
+
+    async def no_report(self: Stage0Trial) -> None:
+        del self
+
+    monkeypatch.setattr("clue_api.stage0_trial.get_project", confirmed_project)
+    monkeypatch.setattr("clue_api.stage0_trial.synthesize_icps", not_ready)
+    monkeypatch.setattr(Stage0Trial, "_project_statements", no_statements)
+    monkeypatch.setattr(Stage0Trial, "export_report", no_report)
+
+    result = run_async(trial.synthesize_icp_proposals())
+
+    assert result.status is ICPSynthesisStatus.FLOOR_ONLY
+    assert result.reason_codes == (NO_CLIENT_KB_CLAIMS, NO_PROJECT_STATEMENTS)
+    payload = json.loads(trial.paths.icp_proposals.read_text(encoding="utf-8"))
+    # the floor is recorded for inspection but is NOT a numbered, confirmable proposal
+    assert payload["status"] == "floor_only"
+    assert payload["proposals"] == []
+    assert payload["not_ready_floor"][0]["icp_key"] == "primary"
+    assert trial._load_icp_proposals() == ()
+    with pytest.raises(ValueError, match="no grounded ICP proposal is available"):
+        run_async(trial.confirm_icp_proposal(1))
 
 
 def test_trial_state_round_trips_through_private_report_handle(tmp_path: Path) -> None:

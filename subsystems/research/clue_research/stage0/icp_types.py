@@ -1,5 +1,10 @@
 """Typed proposal / edit / diff / confirmation shapes for ICP synthesis (M5.2).
 
+Lineage is **reference-only and two-species**: every element synthesis emits carries the
+Client-KB ``justifying_claim_ids`` *and* the ``justifying_statement_ids`` of the project-scoped
+interview statements (``volunteered_statement``) it drew on — ids only, never a prose copy of the
+quote. Seeds (:class:`SeedAccount`) are assembled by M5.4 from claims alone and stay claim-keyed.
+
 The platform **suggests, the client confirms** (Doc B §1): synthesis emits structured
 :class:`ICPProposal` hypotheses (never prose), the client edits them (:class:`ICPProposalEdits`),
 and confirmation compiles the edited proposal into a versioned ``ICPSpec`` while recording the
@@ -17,7 +22,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from clue_core import ClaimId, EntityId, Estimate, UnitInterval
+from clue_core import ClaimId, EntityId, Estimate, UnitInterval, VolunteeredStatementId
 
 # --- the six proposal elements (Doc B §3) ----------------------------------
 
@@ -36,6 +41,7 @@ class FirmographicDimensions(BaseModel):
     revenue_band: str | None = None
     field_keys: tuple[str, ...] = ()
     justifying_claim_ids: tuple[ClaimId, ...] = ()
+    justifying_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 class TechnographicDimension(BaseModel):
@@ -49,6 +55,7 @@ class TechnographicDimension(BaseModel):
     pack_key: str
     value_constraint: str | None = None
     justifying_claim_ids: tuple[ClaimId, ...] = ()
+    justifying_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 class CandidateSignal(BaseModel):
@@ -100,6 +107,7 @@ class CandidateSignal(BaseModel):
     proxy_field_keys: tuple[str, ...] = ()
     narrative_field_keys: tuple[str, ...] = ()
     justifying_claim_ids: tuple[ClaimId, ...] = ()
+    justifying_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 class SeedAccount(BaseModel):
@@ -154,6 +162,7 @@ class StartingSourceProfile(BaseModel):
     packs: tuple[str, ...] = ()
     priors: tuple[SourcePrior, ...] = ()
     justifying_claim_ids: tuple[ClaimId, ...] = ()
+    justifying_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 class RubricWeight(BaseModel):
@@ -169,6 +178,7 @@ class RubricWeight(BaseModel):
     transform: str = "boolean"  # ScoringTransform value
     params: dict[str, JsonValue] = {}
     justifying_claim_ids: tuple[ClaimId, ...] = ()
+    justifying_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 class ProposedRubric(BaseModel):
@@ -200,6 +210,8 @@ class ICPProposal(BaseModel):
     source_profile: StartingSourceProfile = StartingSourceProfile()
     rubric: ProposedRubric = ProposedRubric()
     justifying_claim_ids: tuple[ClaimId, ...] = ()  # the Client-KB claims the synthesis read
+    # the project-scoped interview statements the synthesis read (ids only — never a prose copy)
+    justifying_statement_ids: tuple[VolunteeredStatementId, ...] = ()
 
 
 # --- edits + diff ----------------------------------------------------------

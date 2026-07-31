@@ -6,6 +6,16 @@ carries all six Doc B §3 elements (firmographic, technographic/vertical, two-ti
 seed accounts, starting source profile, scoring rubric) and every element links the **Client-KB
 claim ids** that justify it (no element justified by "synthesis thought it was a good idea").
 
+Synthesis reads **two evidence species, both reference-only**: the versioned Client-KB claims and
+the project-scoped interview statements the client volunteered in conversation
+(``volunteered_statement`` rows routed ``project_state`` — the caller supplies them as typed
+:class:`ProjectStatement` inputs with the exact artifact-proven quote). Targeting the client stated
+only in conversation therefore grounds the ICP without first having to become a Client-KB claim.
+With **neither** species present the synthesis is honest about it: the result carries
+``status=floor_only`` plus reason codes, and its single proposal is the explicitly-labelled,
+citation-free config floor — a caller may render "not ready" instead of presenting it as a
+grounded candidate (fabrication, not emptiness, is the failure).
+
 The proposal-generation model is an LLM call through the shared
 :class:`~clue_core.LLMGateway` (M0.4) — injected, **config-bounded** to the offered pack
 catalog + the registered candidate field set (the model may rank/choose/split *within* the bounds
@@ -22,6 +32,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -35,6 +46,7 @@ from clue_core import (
     PassKind,
     ReuseScope,
     Role,
+    VolunteeredStatementId,
     classify_field_key,
     is_valid_field_key,
 )
@@ -78,13 +90,60 @@ _FLOOR_FIRMOGRAPHIC = ("core.employee_count", "core.primary_domain")
 _FLOOR_GROWTH_PROXY = "account.recent_funding"
 _FLOOR_GROWTH_NARRATIVE = "account.hiring_velocity_eng"
 
+# Reason codes for a ``floor_only`` result — exactly the evidence species that were missing.
+NO_CLIENT_KB_CLAIMS = "no_client_kb_claims"
+NO_PROJECT_STATEMENTS = "no_project_statements"
+
+_UNGROUNDED_LABEL = "Ungrounded baseline (no evidence)"
+_UNGROUNDED_RATIONALE = (
+    "No Client-KB claims and no project statements were available, so this baseline cites no "
+    "evidence. It is the config floor, not a grounded ICP candidate."
+)
+_GROUNDED_RATIONALE = (
+    "Deterministic floor proposal derived from the Client Knowledge Base and project statements."
+)
+
+
+class ProjectStatement(BaseModel):
+    """One project-scoped interview statement offered to synthesis as evidence.
+
+    ``statement_id`` is the durable ``volunteered_statement`` id the proposal cites (lineage is
+    reference-only). ``quote`` is the exact span the caller resolved from the statement's captured
+    onboarding artifact — it is prompt/matching *input*, never copied into the proposal."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    statement_id: VolunteeredStatementId
+    route_key: str
+    quote: str
+
+
+class ICPSynthesisStatus(StrEnum):
+    """Whether the synthesis had anything to ground on.
+
+    ``GROUNDED`` — at least one evidence reference existed (Client-KB claims and/or project
+    statements), so every emitted element cites real ids. This says nothing about *which* generator
+    ran: a config-floor proposal over a real Client KB is still grounded.
+
+    ``FLOOR_ONLY`` — there was no evidence at all; the single proposal is the citation-free config
+    floor and the caller should surface "not ready", not a candidate ICP."""
+
+    GROUNDED = "grounded"
+    FLOOR_ONLY = "floor_only"
+
 
 class ICPSynthesisResult(BaseModel):
-    """Co-confirmation payload: bounded ICP candidates plus preserved new-concept references."""
+    """Co-confirmation payload: bounded ICP candidates plus preserved new-concept references.
+
+    ``proposals`` always holds ≥1 complete proposal (the config is always the floor), so a
+    production caller never has to handle "no proposal"; ``status``/``reason_codes`` say whether
+    that proposal is allowed to be presented as grounded."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     proposals: tuple[ICPProposal, ...]
+    status: ICPSynthesisStatus
+    reason_codes: tuple[str, ...] = ()
     field_proposal_refs: tuple[FieldProposalRef, ...] = ()
 
 
@@ -99,29 +158,34 @@ async def synthesize_icps(
     client_kb_ref: ClientKnowledgeBaseRef,
     *,
     workspace_id: str,
+    project_statements: tuple[ProjectStatement, ...] = (),
     gateway: LLMGateway | None = None,
     synthesis_model: str | None = None,
-) -> list[ICPProposal]:
-    """Synthesize ≥1 candidate :class:`ICPProposal` from the client's versioned Knowledge Base.
+) -> ICPSynthesisResult:
+    """Synthesize ≥1 candidate :class:`ICPProposal` from the client's Knowledge Base + statements.
 
-    Reads the Client KB at ``client_kb_ref.client_kb_version`` (the version-correct read — M5.1), so
-    each proposed element can cite the claim ids behind it. With ``gateway`` + ``synthesis_model``
-    set, an LLM proposes structure (and may split into multiple ICPs when customer evidence clusters
-    — D5), **bounded** to the offered packs + registered fields; any out-of-bounds name is dropped.
-    With no gateway (or on any LLM/parse failure), a deterministic floor proposal is returned —
-    there is always ≥1 complete proposal. The synthesis never resolves names or runs discovery: seed
-    accounts are supplied by M5.4 downstream (empty in the floor)."""
-    result = await _synthesize(
+    Reads the Client KB at ``client_kb_ref.client_kb_version`` (the version-correct read — M5.1) and
+    takes the project's ``project_statements`` (Stage-0 ``project_state`` interview statements) as
+    the second evidence species, so each proposed element can cite the claim ids **and** statement
+    ids behind it. With ``gateway`` + ``synthesis_model`` set, an LLM proposes structure (and may
+    split into multiple ICPs when customer evidence clusters — D5), **bounded** to the offered packs
+    + registered fields; any out-of-bounds name is dropped. With no gateway (or on any LLM/parse
+    failure), a deterministic floor proposal is returned — there is always ≥1 complete proposal.
+    When neither evidence species is present the result's ``status`` is
+    :attr:`ICPSynthesisStatus.FLOOR_ONLY` and the floor proposal is explicitly labelled ungrounded.
+    The synthesis never resolves names or runs discovery: seed accounts are supplied by M5.4
+    downstream (empty in the floor)."""
+    return await _synthesize(
         conn,
         client_kb_ref,
         workspace_id=workspace_id,
+        project_statements=project_statements,
         gateway=gateway,
         synthesis_model=synthesis_model,
         proposal_scope=None,
         proposed_by_actor="system",
         proposed_by_ref=None,
     )
-    return list(result.proposals)
 
 
 async def synthesize_icps_with_proposals(
@@ -132,6 +196,7 @@ async def synthesize_icps_with_proposals(
     proposal_scope: ProposalScope,
     proposed_by_actor: str,
     proposed_by_ref: str | None = None,
+    project_statements: tuple[ProjectStatement, ...] = (),
     gateway: LLMGateway | None = None,
     synthesis_model: str | None = None,
 ) -> ICPSynthesisResult:
@@ -142,6 +207,7 @@ async def synthesize_icps_with_proposals(
         conn,
         client_kb_ref,
         workspace_id=workspace_id,
+        project_statements=project_statements,
         gateway=gateway,
         synthesis_model=synthesis_model,
         proposal_scope=proposal_scope,
@@ -155,6 +221,7 @@ async def _synthesize(
     client_kb_ref: ClientKnowledgeBaseRef,
     *,
     workspace_id: str,
+    project_statements: tuple[ProjectStatement, ...],
     gateway: LLMGateway | None,
     synthesis_model: str | None,
     proposal_scope: ProposalScope | None,
@@ -168,6 +235,16 @@ async def _synthesize(
         version=client_kb_ref.client_kb_version,
         product_id=client_kb_ref.product_id,
     )
+    statement_ids = tuple(item.statement_id for item in project_statements)
+    reason_codes = tuple(
+        code
+        for code, missing in (
+            (NO_CLIENT_KB_CLAIMS, not kb_claims),
+            (NO_PROJECT_STATEMENTS, not project_statements),
+        )
+        if missing
+    )
+    grounded = bool(kb_claims) or bool(project_statements)
 
     scoring_keys, deep_keys = await _candidate_field_keys(conn)
     pack_field_keys, pack_priors = await _pack_offerings(conn)
@@ -181,6 +258,7 @@ async def _synthesize(
             gateway,
             synthesis_model,
             kb_claims,
+            project_statements,
             scoring_keys=scoring_keys,
             deep_keys=deep_keys,
             pack_field_keys=pack_field_keys,
@@ -192,6 +270,9 @@ async def _synthesize(
         proposals = [
             _floor_proposal(
                 kb_claims,
+                statement_ids=statement_ids,
+                statement_quotes=tuple(item.quote for item in project_statements),
+                grounded=grounded,
                 scoring_keys=scoring_keys,
                 deep_keys=deep_keys,
                 pack_field_keys=pack_field_keys,
@@ -234,7 +315,12 @@ async def _synthesize(
                     status=proposal.status,
                 )
             )
-    return ICPSynthesisResult(proposals=tuple(proposals), field_proposal_refs=tuple(refs))
+    return ICPSynthesisResult(
+        proposals=tuple(proposals),
+        status=ICPSynthesisStatus.GROUNDED if grounded else ICPSynthesisStatus.FLOOR_ONLY,
+        reason_codes=reason_codes,
+        field_proposal_refs=tuple(refs),
+    )
 
 
 # --- offered bounds (config-bounding the synthesis) -------------------------
@@ -300,15 +386,20 @@ def _justify(
 def _floor_proposal(
     kb_claims: dict[str, Claim],
     *,
+    statement_ids: tuple[VolunteeredStatementId, ...],
+    statement_quotes: tuple[str, ...],
+    grounded: bool,
     scoring_keys: frozenset[str],
     deep_keys: frozenset[str],
     pack_field_keys: dict[str, tuple[str, ...]],
     pack_priors: dict[str, tuple[SourcePrior, ...]],
 ) -> ICPProposal:
-    """The config floor: one ICP straight from the Client KB. A vertical pack is chosen by matching
-    the pack's namespace tokens against the client's own prose (value prop / product / reviews); the
-    rubric scores presence of the firmographic + growth-proxy fields. Honest about thinness — a
-    field or pack with no support is simply absent, never fabricated."""
+    """The config floor: one ICP straight from the Client KB + project statements. A vertical pack
+    is chosen by matching the pack's namespace tokens against the client's own prose (value prop /
+    product / reviews) and the statements' quotes; the rubric scores presence of the firmographic +
+    growth-proxy fields. Honest about thinness — a field or pack with no support is simply absent,
+    never fabricated, and with no evidence at all the proposal is labelled ungrounded and cites
+    nothing."""
     by_field, all_ids = _justifier(kb_claims)
 
     firmo_keys = tuple(k for k in _FLOOR_FIRMOGRAPHIC if k in scoring_keys)
@@ -319,9 +410,10 @@ def _floor_proposal(
         geo=_evidence_str(evidence, "geos"),
         field_keys=firmo_keys,
         justifying_claim_ids=_justify((CLIENT_ICP_EVIDENCE,), by_field, all_ids),
+        justifying_statement_ids=statement_ids,
     )
 
-    pack_key = _match_pack(kb_claims, pack_field_keys)
+    pack_key = _match_pack(kb_claims, statement_quotes, pack_field_keys)
     technographic = (
         tuple(
             TechnographicDimension(
@@ -330,6 +422,7 @@ def _floor_proposal(
                 justifying_claim_ids=_justify(
                     (CLIENT_PRODUCT, CLIENT_VALUE_PROP, CLIENT_DIFFERENTIATOR), by_field, all_ids
                 ),
+                justifying_statement_ids=statement_ids,
             )
             for fk in pack_field_keys.get(pack_key, ())
         )
@@ -349,6 +442,7 @@ def _floor_proposal(
                 justifying_claim_ids=_justify(
                     (CLIENT_DELIVERED_VALUE, CLIENT_ICP_EVIDENCE), by_field, all_ids
                 ),
+                justifying_statement_ids=statement_ids,
             )
         )
     if pack_key is not None:
@@ -363,6 +457,7 @@ def _floor_proposal(
                     justifying_claim_ids=_justify(
                         (CLIENT_PRODUCT, CLIENT_VALUE_PROP), by_field, all_ids
                     ),
+                    justifying_statement_ids=statement_ids,
                 )
             )
 
@@ -371,14 +466,15 @@ def _floor_proposal(
         packs=packs,
         priors=tuple(p for pk in packs for p in pack_priors.get(pk, ())),
         justifying_claim_ids=all_ids,
+        justifying_statement_ids=statement_ids,
     )
 
-    rubric = _floor_rubric(firmo_keys, growth_proxy, all_ids)
+    rubric = _floor_rubric(firmo_keys, growth_proxy, all_ids, statement_ids)
 
     return ICPProposal(
         icp_key="primary",
-        label="Primary ICP (synthesized)",
-        rationale="Deterministic floor proposal derived from the Client Knowledge Base.",
+        label="Primary ICP (synthesized)" if grounded else _UNGROUNDED_LABEL,
+        rationale=_GROUNDED_RATIONALE if grounded else _UNGROUNDED_RATIONALE,
         firmographic=firmographic,
         technographic=technographic,
         candidate_signals=tuple(signals),
@@ -386,6 +482,7 @@ def _floor_proposal(
         source_profile=source_profile,
         rubric=rubric,
         justifying_claim_ids=all_ids,
+        justifying_statement_ids=statement_ids,
     )
 
 
@@ -393,16 +490,27 @@ def _floor_rubric(
     firmo_keys: tuple[str, ...],
     growth_proxy: tuple[str, ...],
     all_ids: tuple[ClaimId, ...],
+    statement_ids: tuple[VolunteeredStatementId, ...],
 ) -> ProposedRubric:
     """A minimal fit + intent rubric over Pass-A scoring fields (presence-based; the client refines
     weights/transforms on edit). Every entry references a scoring field, so it survives
     ``validate_rubric`` at confirm."""
     fit = tuple(
-        RubricWeight(field_key=fk, dimension="fit", justifying_claim_ids=all_ids)
+        RubricWeight(
+            field_key=fk,
+            dimension="fit",
+            justifying_claim_ids=all_ids,
+            justifying_statement_ids=statement_ids,
+        )
         for fk in firmo_keys
     )
     intent = tuple(
-        RubricWeight(field_key=fk, dimension="intent", justifying_claim_ids=all_ids)
+        RubricWeight(
+            field_key=fk,
+            dimension="intent",
+            justifying_claim_ids=all_ids,
+            justifying_statement_ids=statement_ids,
+        )
         for fk in growth_proxy
     )
     return ProposedRubric(weights=fit + intent, fit_threshold=0.5, intent_threshold=0.3)
@@ -427,11 +535,14 @@ _WORD_RE = re.compile(
 
 
 def _match_pack(
-    kb_claims: dict[str, Claim], pack_field_keys: dict[str, tuple[str, ...]]
+    kb_claims: dict[str, Claim],
+    statement_quotes: tuple[str, ...],
+    pack_field_keys: dict[str, tuple[str, ...]],
 ) -> str | None:
-    """Pick the vertical pack whose namespace tokens appear (as whole words) in the client's prose,
-    or ``None`` when nothing matches (a thin/non-vertical client gets no pack — honest)."""
-    haystack: list[str] = []
+    """Pick the vertical pack whose namespace tokens appear (as whole words) in the client's prose
+    or in what the client said in the interview, or ``None`` when nothing matches (a thin or
+    non-vertical client gets no pack — honest)."""
+    haystack: list[str] = [quote.lower() for quote in statement_quotes]
     for claim in kb_claims.values():
         if isinstance(claim.value_json, str):
             haystack.append(claim.value_json.lower())
@@ -452,6 +563,7 @@ def _proposals_from_llm(
     gateway: LLMGateway,
     model: str,
     kb_claims: dict[str, Claim],
+    project_statements: tuple[ProjectStatement, ...],
     *,
     scoring_keys: frozenset[str],
     deep_keys: frozenset[str],
@@ -467,7 +579,9 @@ def _proposals_from_llm(
     try:
         completion = gateway.complete(
             model=model,
-            messages=_synthesis_messages(kb_claims, scoring_keys, deep_keys, pack_field_keys),
+            messages=_synthesis_messages(
+                kb_claims, project_statements, scoring_keys, deep_keys, pack_field_keys
+            ),
         )
     except Exception:  # noqa: BLE001 — any gateway failure degrades to the floor (never raises)
         return [], (), ()
@@ -479,6 +593,7 @@ def _proposals_from_llm(
         return [], (), ()
 
     by_field, all_ids = _justifier(kb_claims)
+    statement_ids = tuple(item.statement_id for item in project_statements)
     proposals: list[ICPProposal] = []
     seen_keys: set[str] = set()
     for index, raw in enumerate(raw_icps):
@@ -490,6 +605,7 @@ def _proposals_from_llm(
             seen_keys=seen_keys,
             by_field=by_field,
             all_ids=all_ids,
+            statement_ids=statement_ids,
             scoring_keys=scoring_keys,
             deep_keys=deep_keys,
             pack_field_keys=pack_field_keys,
@@ -648,6 +764,7 @@ def _proposal_from_raw(
     seen_keys: set[str],
     by_field: dict[str, ClaimId],
     all_ids: tuple[ClaimId, ...],
+    statement_ids: tuple[VolunteeredStatementId, ...],
     scoring_keys: frozenset[str],
     deep_keys: frozenset[str],
     pack_field_keys: dict[str, tuple[str, ...]],
@@ -667,6 +784,7 @@ def _proposal_from_raw(
         revenue_band=_opt_str(firmo_obj.get("revenue_band")),
         field_keys=firmo_keys,
         justifying_claim_ids=_justify((CLIENT_ICP_EVIDENCE,), by_field, all_ids),
+        justifying_statement_ids=statement_ids,
     )
 
     enabled_packs = tuple(pk for pk in _str_list(raw.get("enabled_packs")) if pk in pack_field_keys)
@@ -678,6 +796,7 @@ def _proposal_from_raw(
             justifying_claim_ids=_justify(
                 (CLIENT_PRODUCT, CLIENT_VALUE_PROP, CLIENT_DIFFERENTIATOR), by_field, all_ids
             ),
+            justifying_statement_ids=statement_ids,
         )
         for fk in _str_list(raw.get("technographic_field_keys"))
         if fk in allowed_pack_fields
@@ -701,15 +820,17 @@ def _proposal_from_raw(
                     justifying_claim_ids=_justify(
                         (CLIENT_DELIVERED_VALUE, CLIENT_ICP_EVIDENCE), by_field, all_ids
                     ),
+                    justifying_statement_ids=statement_ids,
                 )
             )
 
-    rubric = _rubric_from_raw(raw.get("rubric"), scoring_keys, all_ids)
+    rubric = _rubric_from_raw(raw.get("rubric"), scoring_keys, all_ids, statement_ids)
 
     source_profile = StartingSourceProfile(
         packs=enabled_packs,
         priors=tuple(p for pk in enabled_packs for p in pack_priors.get(pk, ())),
         justifying_claim_ids=all_ids,
+        justifying_statement_ids=statement_ids,
     )
 
     if not (firmo_keys or technographic or signals or rubric.weights or enabled_packs):
@@ -726,11 +847,15 @@ def _proposal_from_raw(
         source_profile=source_profile,
         rubric=rubric,
         justifying_claim_ids=all_ids,
+        justifying_statement_ids=statement_ids,
     )
 
 
 def _rubric_from_raw(
-    raw: JsonValue, scoring_keys: frozenset[str], all_ids: tuple[ClaimId, ...]
+    raw: JsonValue,
+    scoring_keys: frozenset[str],
+    all_ids: tuple[ClaimId, ...],
+    statement_ids: tuple[VolunteeredStatementId, ...],
 ) -> ProposedRubric:
     """Map the raw rubric (``{fit:[{field_key,weight}], intent:[...], fit_threshold, ...}``) into a
     :class:`ProposedRubric`, keeping only fit/intent entries over **scoring** fields (the rest is
@@ -753,6 +878,7 @@ def _rubric_from_raw(
                     dimension=dimension,
                     weight=_opt_float(entry.get("weight"), default=1.0),
                     justifying_claim_ids=all_ids,
+                    justifying_statement_ids=statement_ids,
                 )
             )
     return ProposedRubric(
@@ -764,19 +890,32 @@ def _rubric_from_raw(
 
 def _synthesis_messages(
     kb_claims: dict[str, Claim],
+    project_statements: tuple[ProjectStatement, ...],
     scoring_keys: frozenset[str],
     deep_keys: frozenset[str],
     pack_field_keys: dict[str, tuple[str, ...]],
 ) -> list[Message]:
-    """The config-bounded synthesis prompt: the client facts + the offered packs / candidate fields,
-    with the hard rules. The model may only choose among the offered names; the runtime guard drops
-    anything else regardless of what it returns."""
+    """The config-bounded synthesis prompt: the client facts + what the client said about targeting
+    in the interview + the offered packs / candidate fields, with the hard rules. The model may only
+    choose among the offered names; the runtime guard drops anything else regardless of what it
+    returns."""
     facts = {fk: claim.value_json for fk, claim in kb_claims.items()}
+    statements: list[JsonValue] = [
+        {
+            "statement_id": str(item.statement_id),
+            "route_key": item.route_key,
+            "quote": item.quote,
+        }
+        for item in project_statements
+    ]
     system = (
         "You are an ICP (ideal customer profile) synthesizer for a B2B research pipeline. Given a "
-        "client's knowledge base and a fixed catalog of packs and candidate field keys, propose "
-        "one or more candidate ICPs as structured hypotheses. Propose MULTIPLE ICPs only when "
-        "the client's customer evidence clearly clusters into distinct segments.\n"
+        "client's knowledge base, the targeting statements the client made in the Stage-0 "
+        "interview, and a fixed catalog of packs and candidate field keys, propose "
+        "one or more candidate ICPs as structured hypotheses. The interview statements are the "
+        "client's own words about who they want to target: treat them as evidence of equal "
+        "standing to the knowledge base, and never contradict them. Propose MULTIPLE ICPs only "
+        "when the client's customer evidence clearly clusters into distinct segments.\n"
         "HARD RULES:\n"
         "1. Existing ICP slots may use ONLY field_keys and pack keys from the provided catalog. "
         "If an important concept is missing, keep it OUT of those slots and describe it under "
@@ -798,6 +937,7 @@ def _synthesis_messages(
     user = json.dumps(
         {
             "client_facts": facts,
+            "project_statements": statements,
             "packs": {pk: list(fks) for pk, fks in pack_field_keys.items()},
             "scoring_field_keys": sorted(scoring_keys),
             "deep_field_keys": sorted(deep_keys),

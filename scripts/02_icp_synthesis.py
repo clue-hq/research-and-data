@@ -20,7 +20,12 @@ from clue_api.composition import load_research_packs
 from clue_config import GatewayConfig, load_settings
 from clue_db import db_lifespan, transaction
 from clue_gateway import build_gateway
-from clue_research.stage0 import ClientKnowledgeBaseRef, confirm_icp, synthesize_icps
+from clue_research.stage0 import (
+    ClientKnowledgeBaseRef,
+    ICPSynthesisStatus,
+    confirm_icp,
+    synthesize_icps,
+)
 
 
 async def main(workspace_id: str, client_entity_id: str, kb_version: int) -> None:
@@ -32,15 +37,16 @@ async def main(workspace_id: str, client_entity_id: str, kb_version: int) -> Non
 
     async with db_lifespan(), transaction() as conn:
         await load_research_packs(conn)
-        proposals = await synthesize_icps(
+        result = await synthesize_icps(
             conn,
             ref,
             workspace_id=workspace_id,
             gateway=gateway,
             synthesis_model=load_settings().synthesis_model,
         )
-        if not proposals:
-            print("no ICP proposals produced")
+        proposals = result.proposals
+        if result.status is not ICPSynthesisStatus.GROUNDED:
+            print(f"ICP synthesis is not ready: {', '.join(result.reason_codes)}")
             return
         confirmation = await confirm_icp(
             conn,
