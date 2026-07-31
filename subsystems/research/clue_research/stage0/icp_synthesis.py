@@ -94,6 +94,14 @@ _FLOOR_GROWTH_NARRATIVE = "account.hiring_velocity_eng"
 NO_CLIENT_KB_CLAIMS = "no_client_kb_claims"
 NO_PROJECT_STATEMENTS = "no_project_statements"
 
+# Hard bound on the statements that may enter one synthesis (prompt size and lineage breadth grow
+# linearly with a long conversation). Deterministic and honest: exact ``(route_key, quote)``
+# duplicates collapse to their first occurrence, then the **most recent** ``MAX_PROJECT_STATEMENTS``
+# survive in conversation order — the newest targeting talk is what an ICP should follow, and
+# corrections have already superseded what they replaced upstream (``read_statements``). Only the
+# statements that actually entered are cited as lineage.
+MAX_PROJECT_STATEMENTS = 40
+
 _UNGROUNDED_LABEL = "Ungrounded baseline (no evidence)"
 _UNGROUNDED_RATIONALE = (
     "No Client-KB claims and no project statements were available, so this baseline cites no "
@@ -235,16 +243,17 @@ async def _synthesize(
         version=client_kb_ref.client_kb_version,
         product_id=client_kb_ref.product_id,
     )
-    statement_ids = tuple(item.statement_id for item in project_statements)
+    statements = _bounded_statements(project_statements)
+    statement_ids = tuple(item.statement_id for item in statements)
     reason_codes = tuple(
         code
         for code, missing in (
             (NO_CLIENT_KB_CLAIMS, not kb_claims),
-            (NO_PROJECT_STATEMENTS, not project_statements),
+            (NO_PROJECT_STATEMENTS, not statements),
         )
         if missing
     )
-    grounded = bool(kb_claims) or bool(project_statements)
+    grounded = bool(kb_claims) or bool(statements)
 
     scoring_keys, deep_keys = await _candidate_field_keys(conn)
     pack_field_keys, pack_priors = await _pack_offerings(conn)
@@ -258,7 +267,7 @@ async def _synthesize(
             gateway,
             synthesis_model,
             kb_claims,
-            project_statements,
+            statements,
             scoring_keys=scoring_keys,
             deep_keys=deep_keys,
             pack_field_keys=pack_field_keys,
@@ -271,7 +280,7 @@ async def _synthesize(
             _floor_proposal(
                 kb_claims,
                 statement_ids=statement_ids,
-                statement_quotes=tuple(item.quote for item in project_statements),
+                statement_quotes=tuple(item.quote for item in statements),
                 grounded=grounded,
                 scoring_keys=scoring_keys,
                 deep_keys=deep_keys,
@@ -321,6 +330,26 @@ async def _synthesize(
         reason_codes=reason_codes,
         field_proposal_refs=tuple(refs),
     )
+
+
+def _bounded_statements(
+    project_statements: tuple[ProjectStatement, ...],
+) -> tuple[ProjectStatement, ...]:
+    """Dedup then cap the statements one synthesis may read (see ``MAX_PROJECT_STATEMENTS``).
+
+    Exact ``(route_key, quote)`` repeats collapse to their first occurrence — a client who says the
+    same thing twice should not weigh twice — and only the most recent ``MAX_PROJECT_STATEMENTS``
+    of what remains survive, in conversation order. Deterministic: the same input always yields the
+    same bounded set, so the cited lineage is exactly what the synthesis read."""
+    seen: set[tuple[str, str]] = set()
+    unique: list[ProjectStatement] = []
+    for item in project_statements:
+        key = (item.route_key, item.quote)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return tuple(unique[-MAX_PROJECT_STATEMENTS:])
 
 
 # --- offered bounds (config-bounding the synthesis) -------------------------

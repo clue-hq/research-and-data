@@ -105,10 +105,12 @@ async def _interactive(trial: Stage0Trial) -> None:
             return
         try:
             await _dispatch(trial, message)
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             # A refused human gate (unconfirmed product, no grounded proposal) is a normal answer
-            # to a normal command, not a crash — keep the session alive so the human can fix it.
-            print(f"\nError: {exc}")
+            # to a normal command, and a refused *integrity* check (a statement that no longer
+            # hashes to its captured evidence) is a loud but recoverable one. Neither should end
+            # the session: durable state is untouched, so print and hand the prompt back.
+            print(f"\nError: {type(exc).__name__}: {exc}")
 
 
 async def _dispatch(trial: Stage0Trial, message: str) -> None:
@@ -125,16 +127,23 @@ async def _dispatch(trial: Stage0Trial, message: str) -> None:
         print(f"\nConfirmed product: {trial.state.product_name}")
         return
     if message == "/synthesize-icp":
-        result = await trial.synthesize_icp_proposals()
-        if result.status is not ICPSynthesisStatus.GROUNDED:
-            print(f"\nNot ready: {', '.join(result.reason_codes)}")
+        outcome = await trial.synthesize_icp_proposals()
+        if outcome.excluded_statement_ids:
+            print(
+                f"\nExcluded {len(outcome.excluded_statement_ids)} statement(s) whose evidence "
+                "artifact is no longer available (erased):"
+            )
+            for statement_id in outcome.excluded_statement_ids:
+                print(f"  - {statement_id}")
+        if outcome.status is not ICPSynthesisStatus.GROUNDED:
+            print(f"\nNot ready: {', '.join(outcome.reason_codes)}")
             print(
                 "Nothing durable grounds an ICP yet. Tell the agent who you want to target "
                 "and what you sell, then try again."
             )
             return
-        print(f"\nGenerated {len(result.proposals)} ICP proposal(s):")
-        for number, proposal in enumerate(result.proposals, start=1):
+        print(f"\nGenerated {len(outcome.proposals)} ICP proposal(s):")
+        for number, proposal in enumerate(outcome.proposals, start=1):
             print(f"  {number}. {proposal.label or proposal.icp_key} [{proposal.icp_key}]")
         print(f"Inspect: {trial.paths.icp_proposals}")
         print("Continue the conversation so the agent can critique them before you confirm.")

@@ -53,6 +53,31 @@ Behavioural probe against the pre-change tree (throwaway DB), zero-evidence clie
 - `ruff check` / `ruff format` clean on changed files; bare `mypy` (the `make typecheck` gate)
   green. No migration needed — `volunteered_statement` already had everything.
 
+## Review round 1 fixes (2026-07-31)
+
+Three Important findings from the task review, all fixed on this branch:
+
+1. **Erased ≠ corrupted evidence.** `_project_statements` conflated them, so one DSAR erasure of a
+   conversation turn permanently bricked `/synthesize-icp` for the project. Now: sha256 mismatch or
+   artifact-metadata disagreement → still raises (fail-closed against tampering); artifact absent or
+   erased/tombstoned (`ArtifactNotFound`) → the statement is dropped and its **id** surfaced via
+   `Stage0IcpSynthesis.excluded_statement_ids` (reference-only) into the CLI, the HTTP response, and
+   `icp-proposals.json`; a foreign-workspace artifact still raises (scoping violation, not erasure).
+   `Stage0Trial.synthesize_icp_proposals` now returns `Stage0IcpSynthesis` whose `proposals` is
+   already the *offerable* set, so no surface can re-derive the not-ready filter incorrectly.
+2. **Sha256 verification had no coverage.** Three DB-backed tests now drive the real
+   `_project_statements` over a really-persisted artifact: happy path, tampered offsets (raise), and
+   `mark_erased` (dropped + surfaced + repeatable).
+3. **Lineage was supersession-blind and unbounded.** `read_statements` selects `correction_of_id`
+   and excludes any statement another statement corrects (latest-correction-wins), with
+   `include_superseded=True` for the audit view. `MAX_PROJECT_STATEMENTS = 40` plus first-seen
+   `(route_key, quote)` dedup is applied in `_synthesize` (so *every* caller is bounded and lineage
+   cites exactly what was read). **Per-element narrowing was deliberately not attempted:** the
+   claims side narrows via `_justify`'s static element→`client.*` field-key map, and statements have
+   no field key — only a model-chosen free-text `route_key`. Any route_key→element mapping would be
+   invented heuristics, i.e. fabricated attribution. Blanket lineage over the *filtered live*
+   set stands; the reviewer ledgered the narrowing for final review.
+
 ## Caveats / follow-ups
 
 - `SynthesizeIcpsOutput` (the agent-facing tool result) still exposes only `proposal_count`; adding

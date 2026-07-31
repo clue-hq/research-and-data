@@ -125,6 +125,7 @@ class VolunteeredStatementRow(BaseModel):
     quote_start: int
     quote_end: int
     quote_sha256: str
+    correction_of_id: VolunteeredStatementId | None
     created_at: UtcDatetime
 
 
@@ -530,25 +531,42 @@ async def read_statements(
     workspace_id: str,
     project_id: str,
     route_kind: StatementRoute = StatementRoute.PROJECT_STATE,
+    include_superseded: bool = False,
 ) -> tuple[VolunteeredStatementRow, ...]:
-    """Every statement of one route kind the client volunteered under this project, oldest first.
+    """The client's **live** statements of one route kind under this project, oldest first.
 
     This is the read side of the interview seam: ``project_state`` statements are the client's own
     targeting/strategy words, durable but *not* claim-shaped, and ICP synthesis grounds on them
-    alongside the versioned Client-KB claims."""
+    alongside the versioned Client-KB claims.
+
+    The table is append-only, so a client who changes their mind lands a **new** statement carrying
+    ``correction_of_id``. Latest-correction-wins: a statement another statement corrects is
+    superseded and is excluded by default — a retracted "we target healthcare" must not keep
+    steering downstream synthesis. Pass ``include_superseded=True`` for the full audit history."""
+    superseded_filter = (
+        ""
+        if include_superseded
+        else """
+                      AND NOT EXISTS (
+                          SELECT 1 FROM volunteered_statement c
+                          WHERE c.correction_of_id = s.id
+                            AND c.workspace_id = s.workspace_id
+                      )"""
+    )
     rows = (
         (
             await conn.execute(
                 text(
-                    """
+                    f"""
                     SELECT s.id, s.onboarding_input_id, i.artifact_key, s.workspace_id,
                            s.project_id, s.route_kind, s.route_key, s.route_ref,
-                           s.quote_start, s.quote_end, s.quote_sha256, s.created_at
+                           s.quote_start, s.quote_end, s.quote_sha256, s.correction_of_id,
+                           s.created_at
                     FROM volunteered_statement s
                     JOIN onboarding_input i ON i.id = s.onboarding_input_id
                     WHERE s.workspace_id = :workspace_id
                       AND s.project_id = :project_id
-                      AND s.route_kind = :route_kind
+                      AND s.route_kind = :route_kind{superseded_filter}
                     ORDER BY s.created_at, s.id
                     """
                 ),
