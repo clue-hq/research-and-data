@@ -47,9 +47,14 @@ _FRAMEWORK_TOOL_NAMES = frozenset(
 
 _FINALIZE_TOOL_NAME = "finalize_turn"
 
-# One corrective round trip. A model that proposes a dishonest terminal shape twice has not
-# misread the schema; it is refusing the contract, and the turn must die rather than loop.
-_MAX_FINALIZE_REPAIRS = 1
+# One corrective round trip per independent rejector. A finalization is refused by two unrelated
+# authorities — the shape contract (``ModelFinalizeRequest``) and the surface's ``CompletionGuard``
+# — and a turn can legitimately trip both once each while converging: the model fixes the shape,
+# then learns from the guard that it must route the human's input first. With a single shared
+# repair the second, honest attempt never happened and the turn died ``missing_finalize`` mid-
+# repair. A model that proposes a dishonest terminal shape a *third* time has not misread the
+# schema; it is refusing the contract, and the turn must die rather than loop.
+_MAX_FINALIZE_REPAIRS = 2
 
 # The status contract itself is stated once, on the finalize tool's own description, which the
 # model is holding when it reads this. Restating it here would be a second copy free to drift.
@@ -177,8 +182,8 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         clears ``return_direct`` for that one call so the corrected proposal can come back, and
         restores it before every attempt so a commit still ends the turn immediately.
 
-        Bounding is by omission, not by a new terminal path: once the single repair is spent the
-        tool stays ``return_direct``, so the second refusal ends the graph the way it always did
+        Bounding is by omission, not by a new terminal path: once the repair budget is spent the
+        tool stays ``return_direct``, so the final refusal ends the graph the way it always did
         and the runtime reports the same stable ``missing_finalize``. Nothing was committed, so
         that remains the honest code.
         """

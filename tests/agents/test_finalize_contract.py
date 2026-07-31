@@ -316,6 +316,7 @@ def _run(
     *,
     required_output_path: str | None = None,
     backend: object | None = None,
+    completion_guard: Any | None = None,
 ) -> tuple[Any, _FinalizingExecutionAdapter, Any]:
     execution = _FinalizingExecutionAdapter()
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
@@ -338,6 +339,7 @@ def _run(
         lease=cast(Any, SimpleNamespace(backend=backend or _EmptyOutputBackend())),
         artifacts=cast(Any, _DelegationArtifacts()),
         required_output_path=required_output_path,
+        completion_guard=completion_guard,
     )
     runtime = DeepAgentTurnRuntime(
         models=_Models(responses),
@@ -387,7 +389,58 @@ def test_an_invalid_finalization_is_repaired_from_visible_tool_feedback() -> Non
     assert "failure_code" in feedback
 
 
-def test_two_invalid_finalizations_still_fail_closed() -> None:
+def test_a_shape_rejection_and_a_guard_rejection_share_one_budget_and_still_commit() -> None:
+    """The two independent finalize rejectors must not be able to starve each other.
+
+    A Stage-0 turn can be refused twice for genuinely different, both-repairable reasons: once by
+    the finalize *shape* contract (``ModelFinalizeRequest``) and once by the surface's
+    ``CompletionGuard`` (the routing-receipt guard). With a single shared repair the model spent
+    its only attempt on the shape error and the honest, guard-corrected finalization never got a
+    turn — the turn died ``missing_finalize`` even though the model was converging.
+    """
+
+    guard_refusals: list[FinalizeStatus] = []
+
+    async def routing_receipt_guard(model_input: ModelFinalizeRequest) -> None:
+        # Refuse only the first guarded proposal, as the real receipt guard does once the model
+        # routes the input on its next attempt.
+        if not guard_refusals:
+            guard_refusals.append(model_input.status)
+            raise ValueError("route the human's message before reporting this turn as done")
+
+    outcome, execution, calls = _run(
+        (
+            _finalize_call(
+                "finalize-shape-invalid",
+                status="awaiting_input",
+                user_message=_QUESTION,
+                failure_code=_LIVE_FAILURE_CODE,
+            ),
+            _finalize_call(
+                "finalize-guard-refused",
+                status="awaiting_input",
+                user_message=_QUESTION,
+            ),
+            _finalize_call(
+                "finalize-valid",
+                status="awaiting_input",
+                user_message=_QUESTION,
+            ),
+        ),
+        completion_guard=routing_receipt_guard,
+    )
+
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert outcome.finalization_ref is not None
+    assert [envelope.status for envelope in execution.envelopes] == [FinalizeStatus.AWAITING_INPUT]
+    assert guard_refusals == [FinalizeStatus.AWAITING_INPUT]
+    # Both rejectors were seen and repaired inside one turn: three model calls, one commit.
+    assert len(calls.batches) == 3
+    assert "failure_code" in str(calls.batches[1][-1].content)
+    assert "route the human's message" in str(calls.batches[2][-1].content)
+
+
+def test_three_invalid_finalizations_still_fail_closed() -> None:
     outcome, execution, calls = _run(
         (
             _finalize_call(
@@ -402,6 +455,12 @@ def test_two_invalid_finalizations_still_fail_closed() -> None:
                 user_message=_QUESTION,
                 failure_code=_LIVE_FAILURE_CODE,
             ),
+            _finalize_call(
+                "finalize-invalid-3",
+                status="blocked",
+                user_message=_QUESTION,
+                failure_code=_LIVE_FAILURE_CODE,
+            ),
         )
     )
 
@@ -409,8 +468,9 @@ def test_two_invalid_finalizations_still_fail_closed() -> None:
     assert outcome.failure_code == "missing_finalize"
     assert outcome.finalization_ref is None
     assert execution.envelopes == []
-    # Exactly one bounded corrective retry: the model is not asked a third time.
-    assert len(calls.batches) == 2
+    # Two bounded corrective retries — one per independent rejector — and no more: a model that
+    # proposes a dishonest terminal shape a third time is refusing the contract, not misreading it.
+    assert len(calls.batches) == 3
 
 
 # --- refusals raised *inside* the finalize coroutine (the broad ValueError arm) -------------
@@ -437,20 +497,21 @@ def test_a_guard_raised_inside_the_finalize_tool_reaches_the_model_and_the_opera
         (
             _finalize_call("finalize-guard-1", status="completed", user_message=_QUESTION),
             _finalize_call("finalize-guard-2", status="completed", user_message=_QUESTION),
+            _finalize_call("finalize-guard-3", status="completed", user_message=_QUESTION),
         ),
         required_output_path="outputs/review-verdict.md",
         backend=_EmptyRequiredOutputBackend(),
     )
 
-    # The guard's own words reached the model, which got exactly one corrective attempt.
-    assert len(calls.batches) == 2
+    # The guard's own words reached the model, which got its two bounded corrective attempts.
+    assert len(calls.batches) == 3
     feedback = str(calls.batches[1][-1].content)
     assert "non-empty role output file" in feedback
     # ... and the same error is on the operator's side, not only in the model transcript.
-    assert [event for event, _ in emitted] == ["agent.finalize_refused"] * 2
+    assert [event for event, _ in emitted] == ["agent.finalize_refused"] * 3
     assert emitted[0][1]["error_type"] == "ValueError"
     assert "non-empty role output file" in emitted[0][1]["error"]
-    assert [fields["rejection"] for _, fields in emitted] == [1, 2]
+    assert [fields["rejection"] for _, fields in emitted] == [1, 2, 3]
     # Fail-closed is unchanged: nothing committed, one stable code.
     assert outcome.status is AgentExecutionStatus.FAILED
     assert outcome.failure_code == "missing_finalize"

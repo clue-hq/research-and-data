@@ -768,13 +768,14 @@ def test_a_receiptless_finalize_is_refused_and_the_model_recovers_by_routing(
     assert [envelope.status for envelope in execution.envelopes] == [FinalizeStatus.AWAITING_INPUT]
 
 
-def test_two_receiptless_finalizations_still_fail_closed(
+def test_three_receiptless_finalizations_still_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     outcome, execution, calls, receipts = _run_guarded(
         (
             _finalize_call("finalize-none-1", status="completed", user_message=_QUESTION),
             _finalize_call("finalize-none-2", status="completed", user_message=_QUESTION),
+            _finalize_call("finalize-none-3", status="completed", user_message=_QUESTION),
         ),
         monkeypatch,
     )
@@ -783,5 +784,6 @@ def test_two_receiptless_finalizations_still_fail_closed(
     assert outcome.failure_code == "missing_finalize"
     assert execution.envelopes == []
     assert receipts.routed == 0
-    # Exactly one bounded corrective retry: the model is not asked a third time.
-    assert len(calls.batches) == 2
+    # Two bounded corrective retries — the shared budget the shape contract and this guard draw
+    # from — and no more: the model is not asked a fourth time.
+    assert len(calls.batches) == 3
