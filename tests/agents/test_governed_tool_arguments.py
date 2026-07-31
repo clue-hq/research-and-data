@@ -20,11 +20,14 @@ from uuid import UUID
 
 import pytest
 from langchain.tools import ToolRuntime
+from langchain_core.messages import AIMessage
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt.tool_node import ToolNode
 from pydantic import BaseModel, ConfigDict
 from pydantic_core import PydanticSerializationError
 
 from clue_agents import AgentRole, AgentTurnRequest
-from clue_agents.contracts import PlanToolStep, ToolPin
+from clue_agents.contracts import MODEL_FORBIDDEN_AUTHORITY_KEYS, PlanToolStep, ToolPin
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory
 from clue_api.stage0_tools import RecordInterviewAnswerInput
@@ -137,13 +140,6 @@ _INTERVIEW_ARGS: dict[str, Any] = {
 }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "defect 2b: LangChain materializes every defaulted field, so the tool input model's "
-        "own project_id=None reaches PlanToolStep and trips the forbidden-authority guard"
-    ),
-)
 def test_record_interview_answer_statements_reach_the_plan_as_json() -> None:
     tool, execution = _record_interview_answer_tool()
 
@@ -192,13 +188,6 @@ def test_record_interview_answer_statements_reach_the_plan_as_json() -> None:
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "defect 2b: LangChain materializes every defaulted field, so the tool input model's "
-        "own project_id=None reaches PlanToolStep and trips the forbidden-authority guard"
-    ),
-)
 def test_record_interview_answer_plan_arguments_revalidate_for_the_executor() -> None:
     tool, execution = _record_interview_answer_tool()
 
@@ -219,13 +208,6 @@ def test_record_interview_answer_plan_arguments_revalidate_for_the_executor() ->
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "defect 2b: LangChain materializes every defaulted field, so the tool input model's "
-        "own project_id=None reaches PlanToolStep and trips the forbidden-authority guard"
-    ),
-)
 def test_governed_plan_arguments_exclude_the_injected_trusted_runtime() -> None:
     tool, execution = _record_interview_answer_tool()
 
@@ -233,7 +215,92 @@ def test_governed_plan_arguments_exclude_the_injected_trusted_runtime() -> None:
 
     arguments = _plan_arguments(execution)
     assert "runtime" not in arguments
-    assert set(arguments) == set(RecordInterviewAnswerInput.model_fields)
+    # Model-controlled fields only: the injected runtime and every trusted-authority field the
+    # tool declares are both absent from what the model proposes.
+    assert set(arguments) == set(RecordInterviewAnswerInput.model_fields) - (
+        MODEL_FORBIDDEN_AUTHORITY_KEYS
+    )
+    assert "project_id" not in arguments
+
+
+# --- trusted authority is hidden from the model, not merely rejected -----------------------
+
+
+def test_the_model_never_sees_a_trusted_authority_field() -> None:
+    tool, _ = _record_interview_answer_tool()
+
+    assert "project_id" in RecordInterviewAnswerInput.model_fields
+    assert "project_id" not in tool.args
+    assert "project_id" not in tool.tool_call_schema.model_fields
+    assert "runtime" not in tool.args
+
+
+def test_hiding_authority_does_not_mutate_the_shared_tool_input_model() -> None:
+    before = set(RecordInterviewAnswerInput.model_fields)
+
+    _record_interview_answer_tool()
+
+    # The model-facing schema is a throwaway subclass; the descriptor's own input model — the one
+    # the executor, the recipes, and the HTTP callers validate against — is untouched.
+    assert set(RecordInterviewAnswerInput.model_fields) == before
+    assert "project_id" in RecordInterviewAnswerInput.model_fields
+
+
+def test_no_pinned_tool_exposes_trusted_authority_to_any_profile() -> None:
+    registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    offenders: list[str] = []
+    for role in AgentRole:
+        resolved = registry.resolve(role)
+        execution = _Execution()
+        factory = GovernedAgentToolFactory(
+            request=_turn_request(resolved),
+            resolved_profile=resolved,
+            registry=build_toolbelt(storage=None, gateway=None),
+            execution=cast(Any, execution),
+            lease=cast(Any, object()),
+            artifacts=cast(Any, object()),
+        )
+        for built in factory.build():
+            leaked = MODEL_FORBIDDEN_AUTHORITY_KEYS & set(built.args)
+            if leaked:
+                offenders.append(f"{role.value}:{built.name}:{sorted(leaked)}")
+
+    assert offenders == []
+
+
+def test_a_model_that_invents_trusted_authority_gets_a_tool_result_not_a_crash() -> None:
+    tool, execution = _record_interview_answer_tool()
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", ToolNode([tool]))
+    builder.add_edge(START, "tools")
+    builder.add_edge("tools", END)
+    graph = builder.compile()
+
+    state = run_async(
+        graph.ainvoke(
+            {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": tool.name,
+                                "args": {**_INTERVIEW_ARGS, "project_id": "project-attacker"},
+                                "id": "call-authority",
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                ]
+            }
+        )
+    )
+
+    message = state["messages"][-1]
+    assert message.status == "error"
+    assert "project_id: Extra inputs are not permitted" in str(message.content)
+    # The model can see and repair it, and nothing was proposed to the governed executor.
+    assert execution.validated_plans == []
 
 
 # --- the type matrix: nested models, nested enums, UUID, Decimal, datetime ------------------

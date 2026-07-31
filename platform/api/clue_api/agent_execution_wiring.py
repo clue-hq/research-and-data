@@ -43,7 +43,11 @@ from clue_agents import (
     operation_id_for_plan_node,
     review_agent_plan,
 )
-from clue_agents.contracts import PlanDelegationStep, PlanToolStep
+from clue_agents.contracts import (
+    MODEL_FORBIDDEN_AUTHORITY_KEYS,
+    PlanDelegationStep,
+    PlanToolStep,
+)
 from clue_agents.ports import ExecutionProgress
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
@@ -167,11 +171,54 @@ def _rewrite_refs(value: object, prefix: str) -> object:
     return value
 
 
+def _trusted_authority(constitution: AgentConstitution) -> dict[str, JsonValue]:
+    """The authority values a tool body may receive, sourced only from the constitution."""
+
+    return {
+        "actor_id": constitution.actor_id,
+        "execution_id": str(constitution.execution_id),
+        "project_id": constitution.project_id,
+        "workspace_id": constitution.workspace_id,
+    }
+
+
+def _trusted_tool_arguments(
+    *,
+    arguments: Mapping[str, JsonValue],
+    input_model: type[BaseModel],
+    constitution: AgentConstitution,
+) -> dict[str, JsonValue]:
+    """Merge trusted authority into the model-proposed arguments of one tool step.
+
+    A tool input model may declare an authority field (the Stage-0 tools declare ``project_id``),
+    but the model neither sees it (the governed wrapper hides it from the model-visible schema)
+    nor may propose it (``PlanToolStep.arguments`` rejects the key). The value therefore comes
+    from exactly one place: the trusted :class:`AgentConstitution` this adapter is bound to.
+
+    Authority the constitution does not carry (``operation_id``, ``parent_execution_id``) is
+    deliberately not synthesized — such a field stays absent and its own model decides whether
+    that is valid.
+    """
+
+    merged = dict(arguments)
+    supplied = MODEL_FORBIDDEN_AUTHORITY_KEYS & set(merged)
+    if supplied:
+        # Defence in depth: PlanToolStep already refuses these keys.
+        raise ValueError(f"plan arguments carry trusted authority: {sorted(supplied)}")
+    authority = _trusted_authority(constitution)
+    for key in MODEL_FORBIDDEN_AUTHORITY_KEYS & set(input_model.model_fields):
+        value = authority.get(key)
+        if value is not None:
+            merged[key] = value
+    return merged
+
+
 def _plan_graph_and_parameters(
     *,
     plan: AgentPlan,
     tools: ToolRegistry,
     slot: InteractionSlotView,
+    arguments: Mapping[str, Mapping[str, JsonValue]],
 ) -> tuple[RecipeGraph, dict[str, JsonValue], dict[str, object]]:
     """Translate the full proposal into C5's closed graph/binding language."""
 
@@ -190,7 +237,8 @@ def _plan_graph_and_parameters(
             )
             continue
         descriptor = tools.descriptor(step.tool.name, step.tool.version)
-        validated = descriptor.input_model.model_validate(step.arguments).model_dump(mode="json")
+        step_arguments = arguments[step.node_key]
+        validated = descriptor.input_model.model_validate(step_arguments).model_dump(mode="json")
         input_schema = descriptor.input_model.model_json_schema()
         input_properties = input_schema.get("properties", {})
         if not isinstance(input_properties, Mapping):
@@ -1151,6 +1199,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 )
             )
         effective = {pin.address for pin in self._resolved_profile.profile.tools}
+        # Model-proposed arguments carry model-controlled fields only; the authority a tool body
+        # declares is merged in here, from the bound constitution, before anything validates or
+        # executes. Every later use of a step's inputs reads this one merged mapping.
+        trusted_arguments: dict[str, dict[str, JsonValue]] = {}
         for ordinal, step in enumerate(plan.steps):
             if not isinstance(step, PlanToolStep):
                 continue
@@ -1182,7 +1234,12 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 )
                 continue
             try:
-                descriptor.input_model.model_validate(step.arguments)
+                merged = _trusted_tool_arguments(
+                    arguments=step.arguments,
+                    input_model=descriptor.input_model,
+                    constitution=constitution,
+                )
+                descriptor.input_model.model_validate(merged)
             except Exception as exc:
                 issues.append(
                     _agent_issue(
@@ -1193,6 +1250,8 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                         )
                     )
                 )
+            else:
+                trusted_arguments[step.node_key] = merged
         if issues:
             from clue_agents import AgentPlanReview
 
@@ -1202,6 +1261,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             plan=plan,
             tools=self._tools,
             slot=slot,
+            arguments=trusted_arguments,
         )
         graph_review = validate_graph(
             graph,
@@ -1305,7 +1365,9 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         for step in plan.steps:
             if isinstance(step, PlanToolStep):
                 tool = self._tools.get(step.tool.name, step.tool.version)
-                inputs = tool.input_model.model_validate(step.arguments)
+                # The executed body is materialized from this artifact, so it must be the
+                # authority-merged arguments, never the raw model proposal.
+                inputs = tool.input_model.model_validate(trusted_arguments[step.node_key])
                 estimate = tool.estimate(inputs)
                 costs[step.node_key] = int(
                     (Decimal(estimate.cost_cents) * 1000).to_integral_value(rounding=ROUND_CEILING)

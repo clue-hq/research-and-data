@@ -38,7 +38,12 @@ from clue_agents import (
     ResolvedAgentProfile,
     SpecialistTaskEnvelope,
 )
-from clue_agents.contracts import PlanDelegationStep, PlanToolStep, normalize_virtual_path
+from clue_agents.contracts import (
+    MODEL_FORBIDDEN_AUTHORITY_KEYS,
+    PlanDelegationStep,
+    PlanToolStep,
+    normalize_virtual_path,
+)
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
@@ -288,19 +293,43 @@ def _with_trusted_runtime(
     *,
     name: str,
 ) -> type[BaseModel]:
-    """Add LangGraph's injected runtime without changing the model-visible schema."""
+    """Add LangGraph's injected runtime and hide trusted authority from the model-visible schema.
+
+    A tool input model may legitimately declare an authority field (the Stage-0 tools declare
+    ``project_id``), but the model never gets to choose one: ``PlanToolStep.arguments`` rejects
+    every :data:`MODEL_FORBIDDEN_AUTHORITY_KEYS` name outright, and the executor serves the value
+    from the trusted :class:`~clue_agents.contracts.AgentConstitution`. Leaving those fields on
+    the model-visible schema is not merely redundant — it breaks the tool, because
+    ``StructuredTool`` materializes *every* defaulted field into the kwargs it hands the
+    coroutine, so an untouched ``project_id=None`` would reach the plan step and trip the
+    forbidden-authority guard on a call the model made correctly.
+
+    Removing them keeps ``extra='forbid'`` doing the honest thing: a model that invents
+    ``project_id`` anyway gets an ordinary validation error it can see and react to, rather than
+    a crash deep in plan construction. Field removal (rather than rebuilding the model from its
+    surviving fields) preserves the source model's own field and model validators.
+    """
 
     config = dict(model.model_config)
     config["arbitrary_types_allowed"] = True
-    return type(
-        name,
-        (model,),
-        {
-            "__module__": __name__,
-            "__annotations__": {"runtime": ToolRuntime},
-            "model_config": cast(ConfigDict, config),
-        },
+    subclass = cast(
+        type[BaseModel],
+        type(
+            name,
+            (model,),
+            {
+                "__module__": __name__,
+                "__annotations__": {"runtime": ToolRuntime},
+                "model_config": cast(ConfigDict, config),
+            },
+        ),
     )
+    hidden = MODEL_FORBIDDEN_AUTHORITY_KEYS & set(subclass.__pydantic_fields__)
+    if hidden:
+        for key in hidden:
+            del subclass.__pydantic_fields__[key]
+        subclass.model_rebuild(force=True)
+    return subclass
 
 
 def _json_arguments(kwargs: Mapping[str, Any]) -> dict[str, JsonValue]:

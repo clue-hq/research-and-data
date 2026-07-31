@@ -23,7 +23,7 @@ from clue_agents import (
     WorkspacePolicy,
 )
 from clue_agents.contracts import PlanToolStep
-from clue_api.agent_execution_wiring import C5AgentExecutionAdapter
+from clue_api.agent_execution_wiring import C5AgentExecutionAdapter, _trusted_tool_arguments
 from clue_core import ExecutionId
 from clue_execution import InteractionAppend, InteractionSlotView, PinRequest
 from clue_toolbelt import (
@@ -240,9 +240,10 @@ def _adapter(
     crash_hook: Any = _no_crash,
     pin_provider: object | None = None,
     dynamic_pin_kinds: tuple[str, ...] = (),
+    tool: Tool | None = None,
 ):
     registry = ToolRegistry()
-    registry.register(_Tool(), make_default=True)
+    registry.register(tool if tool is not None else _Tool(), make_default=True)
     descriptor = registry.descriptor("read_project", "1")
     pin = ToolPin(
         name=descriptor.name,
@@ -400,3 +401,96 @@ def test_agent_boundaries_retry_through_c5_without_duplicate_domain_effect(
 
 async def _collect(iterator: Any) -> list[Any]:
     return [item async for item in iterator]
+
+
+class _AuthorityInput(ToolInput):
+    """A tool body that legitimately needs authority it may never be *told* by the model."""
+
+    query: str
+    project_id: str | None = None
+    workspace_id: str | None = None
+
+
+class _AuthorityTool(_Tool):
+    input_model = _AuthorityInput
+
+
+def test_declared_authority_is_served_from_the_constitution_not_the_model() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        tool=_AuthorityTool(),
+    )
+
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "completed"
+    # The model proposed only ``query``; the executed body carries the trusted values.
+    assert executor.appended[0]["inputs"] == {
+        "query": "current project",
+        "project_id": trusted.project_id,
+        "workspace_id": trusted.workspace_id,
+    }
+
+
+def test_declared_authority_cannot_be_anything_but_the_constitution_value() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        tool=_AuthorityTool(),
+    )
+    other = constitution(profile_ref=trusted.profile_ref, project_id="project-attacker")
+    assert other != trusted
+
+    # A plan offered under any other constitution is refused outright, so the executed authority
+    # can only ever be the bound constitution's.
+    with pytest.raises(ValueError, match="different constitution"):
+        run_async(adapter.validate_plan(plan=_plan(pin), constitution=other))
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    run_async(_collect(adapter.execute(plan=validated)))
+    assert executor.appended[0]["inputs"]["project_id"] == trusted.project_id
+    assert executor.appended[0]["inputs"]["project_id"] != other.project_id
+    # The merge reads the constitution it is handed and nothing else.
+    assert _trusted_tool_arguments(
+        arguments={"query": "current project"},
+        input_model=_AuthorityInput,
+        constitution=other,
+    ) == {
+        "query": "current project",
+        "project_id": other.project_id,
+        "workspace_id": other.workspace_id,
+    }
+
+
+def test_tools_that_declare_no_authority_are_untouched() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(allowed=("read_project@1",))
+
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    run_async(_collect(adapter.execute(plan=validated)))
+
+    assert executor.appended[0]["inputs"] == {"query": "current project"}
+
+
+def test_authority_merge_refuses_plan_arguments_that_already_carry_authority() -> None:
+    # Defence in depth: PlanToolStep refuses these keys, so reaching the merge with one means a
+    # caller bypassed the contract — that must fail loudly, never be silently overwritten.
+    trusted = constitution()
+    with pytest.raises(ValueError, match="trusted authority"):
+        _trusted_tool_arguments(
+            arguments={"query": "x", "project_id": "project-attacker"},
+            input_model=_AuthorityInput,
+            constitution=trusted,
+        )
+
+
+def test_authority_the_constitution_does_not_carry_is_not_synthesized() -> None:
+    class _OperationInput(ToolInput):
+        query: str
+        operation_id: str | None = None
+
+    merged = _trusted_tool_arguments(
+        arguments={"query": "x"},
+        input_model=_OperationInput,
+        constitution=constitution(),
+    )
+
+    assert merged == {"query": "x"}

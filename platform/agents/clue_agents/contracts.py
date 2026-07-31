@@ -48,6 +48,7 @@ __all__ = [
     "DelegationResult",
     "DomainObjectRef",
     "FinalizeStatus",
+    "MODEL_FORBIDDEN_AUTHORITY_KEYS",
     "ModelPolicy",
     "PlanDelegationStep",
     "PlanStep",
@@ -125,7 +126,10 @@ _SOURCE_EXTENSIONS = {
     ".ts",
     ".tsx",
 }
-_MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
+#: Trusted authority a model may never supply. These names are stripped from every model-visible
+#: tool schema and rejected in plan arguments; a tool that declares one is served the value from
+#: the :class:`AgentConstitution` at the execution seam.
+MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
         "actor_id",
         "execution_id",
@@ -470,7 +474,7 @@ class PlanToolStep(FrozenContract):
         cls,
         values: dict[str, JsonValue],
     ) -> dict[str, JsonValue]:
-        forbidden = set(values) & _MODEL_FORBIDDEN_AUTHORITY_KEYS
+        forbidden = set(values) & MODEL_FORBIDDEN_AUTHORITY_KEYS
         if forbidden:
             raise ValueError(
                 f"model plan arguments cannot supply trusted authority: {sorted(forbidden)}"
