@@ -79,9 +79,18 @@ Useful commands:
 /quit
 ```
 
-`/confirm-product` and `/confirm-icp` are explicit human actions; the agent cannot perform them.
-After `/synthesize-icp`, continue the conversation once so the generated proposals enter the next
-turn's frozen context and the agent can critique them before confirmation.
+`/confirm-product`, `/synthesize-icp`, and `/confirm-icp` are explicit human actions; the agent
+cannot perform them. `/synthesize-icp` and `/confirm-icp` both require a confirmed product and
+refuse with `run /confirm-product first` until you run `/confirm-product`.
+
+ICP synthesis grounds on **both** evidence species: the versioned Client-KB claims and the
+project-scoped `project_state` interview statements (what you said about who you want to target).
+If neither exists yet, `/synthesize-icp` prints `Not ready: <missing evidence>` and offers **no**
+numbered proposal — the ungrounded config floor is recorded under `not_ready_floor` for inspection
+but can never be confirmed. Say more about the product and the targets, then try again.
+
+After a grounded `/synthesize-icp`, continue the conversation once so the generated proposals enter
+the next turn's frozen context and the agent can critique them before confirmation.
 
 ## Resume after quitting
 
@@ -109,7 +118,10 @@ After every turn, inspect:
 `report.md` is the quick status page. `transcript.md` is the human-readable conversation.
 `report.json` is the detailed inspection surface and should be used to verify that confident prose
 actually became a supported claim, preference, project statement, or explicit unmapped item.
-`icp-proposals.json` appears only after `/synthesize-icp`.
+`icp-proposals.json` appears only after `/synthesize-icp`; it records the synthesis `status`
+(`grounded` / `floor_only`), its `reason_codes`, and the `project_statement_ids` that grounded it.
+Each proposal element cites both `justifying_claim_ids` and `justifying_statement_ids` — references
+only, never a copy of what you said.
 
 ## Suggested evaluation
 
