@@ -18,6 +18,8 @@ from __future__ import annotations
 import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4, uuid5
@@ -35,6 +37,7 @@ from clue_agents import (
     DeepAgentTurnRuntime,
     FinalizeStatus,
 )
+from clue_api import stage0_trial as stage0_trial_module
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory, ModelFinalizeRequest
 from clue_api.stage0_trial import (
@@ -45,14 +48,37 @@ from clue_api.stage0_trial import (
     is_pure_command,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import AccountStatus, EntityId, OnboardingInputId, OnboardingInputKind
+from clue_api.trial import spine as spine_module
+from clue_core import (
+    AccountStatus,
+    Claim,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    OnboardingInputId,
+    OnboardingInputKind,
+    ResearchMode,
+    RunId,
+    VerificationStatus,
+)
+from clue_research.claimstore import WorkspaceScope, claims_for, record_verification
 from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
+    ClientInput,
     InterviewRoute,
     InterviewStatement,
+    VolunteeredMaterial,
+    client_kb_readiness_metrics,
     count_statements_for_input,
+    reverse_profile,
     route_interview_answer,
     submit_onboarding_input,
+)
+from clue_research.stage0.fields import (
+    CLIENT_KB_VERSION,
+    CLIENT_KNOWLEDGE_FIELDS,
+    CLIENT_PRODUCT,
+    CLIENT_VALUE_PROP,
 )
 from clue_spine import create_brand, create_product, create_project
 from clue_storage import artifact_key as make_artifact_key
@@ -298,6 +324,21 @@ def test_a_failed_or_blocked_finalize_is_not_gated_on_receipts() -> None:
 # --- the deterministic per-turn readiness recompute ---------------------------------------
 
 
+def _claim(field_key: str, status: VerificationStatus) -> Claim:
+    return Claim(
+        entity_id=EntityId(uuid4()),
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json="volunteered",
+        source_tier=1,
+        extraction_method=ExtractionMethod.HUMAN,
+        confidence=1.0,
+        run_id=RunId(uuid4()),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        verification_status=status,
+    )
+
+
 def _trial(conn: AsyncConnection, state: Stage0TrialState, root: Any) -> Stage0Trial:
     trial = object.__new__(Stage0Trial)
     trial.state = state
@@ -311,6 +352,100 @@ def _trial(conn: AsyncConnection, state: Stage0TrialState, root: Any) -> Stage0T
     return trial
 
 
+def test_the_metric_compilation_means_what_its_names_say() -> None:
+    """The one helper both readiness surfaces use, over a claim map it must not miscount.
+
+    Three failure modes are pinned here because they are silent and land in a persisted,
+    human-facing ledger: counting *all* claims as verified, counting a non-pack claim toward
+    coverage (which can push the ratio past 1.0), and listing that non-pack key as an available
+    field. The pack-marker claim ``client.kb_version`` is the real-world non-pack member.
+    """
+
+    claims = {
+        CLIENT_VALUE_PROP: _claim(CLIENT_VALUE_PROP, VerificationStatus.VERIFIED),
+        CLIENT_PRODUCT: _claim(CLIENT_PRODUCT, VerificationStatus.UNVERIFIED),
+        CLIENT_KB_VERSION: _claim(CLIENT_KB_VERSION, VerificationStatus.VERIFIED),
+    }
+
+    metrics = client_kb_readiness_metrics(claims)
+
+    assert metrics["verified_claims"] == 1  # not 2: the non-pack marker is not a pack field
+    assert metrics["available_field_keys"] == [CLIENT_PRODUCT, CLIENT_VALUE_PROP]
+    assert metrics["coverage_ratio"] == 2 / len(CLIENT_KNOWLEDGE_FIELDS)
+    assert isinstance(metrics["coverage_ratio"], float)
+    assert 0.0 <= metrics["coverage_ratio"] <= 1.0
+
+
+def test_both_readiness_surfaces_compile_metrics_through_the_one_helper() -> None:
+    """No second compilation may exist: a ledger that tells two stories about one trial is the
+    defect class this helper was extracted to close."""
+
+    for module in (stage0_trial_module, spine_module):
+        source = Path(module.__file__ or "").read_text(encoding="utf-8")
+        name = module.__name__
+        assert "client_kb_readiness_metrics(claims)" in source, (
+            f"{name} must compile Client-KB readiness metrics through the shared helper"
+        )
+        for token in ('"verified_claims"', '"coverage_ratio"', "verification_status"):
+            assert token not in source, (
+                f"{name} appears to re-derive {token} instead of using "
+                "client_kb_readiness_metrics; there must be exactly one compilation"
+            )
+
+
+async def _seed_client_kb(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    product_id: str,
+    client: EntityId,
+) -> int:
+    """Publish one real Client-KB version carrying two pack claims, one of them verified.
+
+    The published version also carries the ``client.kb_version`` marker — a legitimate non-pack
+    claim — so the metric assertions below are made against a KB shaped like a real one, not a
+    degenerate empty set where every metric is trivially 0.
+    """
+
+    published = await reverse_profile(
+        conn,
+        ClientInput(
+            name="Routing Client",
+            website="https://routing.example",
+            materials=(
+                VolunteeredMaterial(
+                    kind="interview",
+                    label="value prop",
+                    content="Our value proposition is speed.",
+                    asserted_fields={CLIENT_VALUE_PROP: "speed"},
+                ),
+                VolunteeredMaterial(
+                    kind="interview",
+                    label="product",
+                    content="We sell a surgical scheduling platform.",
+                    asserted_fields={CLIENT_PRODUCT: "surgical scheduling platform"},
+                ),
+            ),
+        ),
+        workspace_id=workspace_id,
+        budget_cap_cents=Decimal(0),
+        product_id=product_id,
+        max_source_tier=0,
+    )
+    assert UUID(str(published.ref.client_entity_id)) == UUID(str(client))
+    verified = next(
+        item
+        for item in await claims_for(
+            conn,
+            client,
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+        if item.field_key == CLIENT_VALUE_PROP
+    )
+    await record_verification(conn, verified.id, status=VerificationStatus.VERIFIED)
+    return published.ref.client_kb_version
+
+
 @pytest.mark.usefixtures("require_profiling_db")
 def test_a_material_routed_turn_persists_a_readiness_decision(tmp_path: Any) -> None:
     workspace_id = f"s0-readiness-{uuid4().hex[:8]}"
@@ -319,6 +454,12 @@ def test_a_material_routed_turn_persists_a_readiness_decision(tmp_path: Any) -> 
         async with rollback_conn(workspace_id=workspace_id) as conn:
             brand_id, product_id, client, onboarding_input_id, project_id = await _seed_turn(
                 conn, workspace_id=workspace_id
+            )
+            kb_version = await _seed_client_kb(
+                conn,
+                workspace_id=workspace_id,
+                product_id=product_id,
+                client=client,
             )
             await route_interview_answer(
                 conn,
@@ -351,7 +492,7 @@ def test_a_material_routed_turn_persists_a_readiness_decision(tmp_path: Any) -> 
                 product_id=product_id,
                 project_id=project_id,
                 client_entity_id=UUID(str(client)),
-                client_kb_version=1,
+                client_kb_version=kb_version,
                 company_name="Routing Client",
                 website="https://routing.example",
                 product_name="Routing product",
@@ -382,6 +523,18 @@ def test_a_material_routed_turn_persists_a_readiness_decision(tmp_path: Any) -> 
             )
             assert len(rows) == 1
             assert rows[0]["gate"] == "icp_synthesis"
+            # The persisted, human-facing metrics must mean exactly what their names say. Two
+            # pack claims are pinned and only one of them is verified, so a compilation that
+            # counted every claim (or counted the non-pack `client.kb_version` marker toward
+            # coverage) is caught here rather than in a ledger someone later trusts.
+            metrics = rows[0]["metrics"]
+            assert metrics["verified_claims"] == 1
+            assert metrics["available_field_keys"] == [CLIENT_PRODUCT, CLIENT_VALUE_PROP]
+            assert metrics["coverage_ratio"] == 2 / len(CLIENT_KNOWLEDGE_FIELDS)
+            assert metrics["coverage_ratio"] <= 1.0
+            assert metrics["project_state_statements"] == 1
+            assert metrics["routed_statements_this_turn"] == 1
+            assert metrics["material_statements_this_turn"] == 1
 
             # Re-running the identical turn is idempotent, not a second decision.
             again = await trial._recompute_readiness(

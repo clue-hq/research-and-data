@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from clue_config.settings import DEFAULT_SYNTHESIS_MODEL
 from clue_research.stage0.client_kb import (
+    client_kb_readiness_metrics,
     current_kb_version,
     read_client_kb,
     read_client_kb_claims,
@@ -163,6 +164,7 @@ __all__ = [
     "reverse_profile",
     "read_client_kb",
     "read_client_kb_claims",
+    "client_kb_readiness_metrics",
     "current_kb_version",
     "ReverseProfilingHandler",
     "reverse_profiling_run_id",
