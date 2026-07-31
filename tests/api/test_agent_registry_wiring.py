@@ -27,13 +27,20 @@ from clue_api.agent_registry_wiring import (
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.agents.workspace_helpers import make_workspace
+from tests.api.conftest import hermetic_flag_env
 
 CATALOG_ROOT = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
 
 
 @pytest.fixture(scope="module")
 def registry() -> AgentProfileRegistry:
-    return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    # ``build_toolbelt`` falls back to the production ``load_settings()``, so this registry would
+    # otherwise resolve tools against the operator's live activation flags: pytest builds a
+    # module-scoped fixture *before* the autouse function-scoped ``_hermetic_feature_flags``, so
+    # this one enters the shared neutralisation itself. (Kept module-scoped — rebuilding the
+    # catalog per test costs ~5s across this file.)
+    with hermetic_flag_env():
+        return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
 
 
 def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
