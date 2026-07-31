@@ -40,6 +40,21 @@ Phase-A defect 3 from `_memory/2026-07-31-stage0-structured-output-failure-chain
 exactly as before and the runtime still reports the stable `missing_finalize`. No new failure code,
 no retry loop, nothing committed.
 
+## Review round 1 (commit `f1c1592`)
+
+- **`failure_code` reuses the type instead of copying its pattern.** `ModelFinalizeRequest.failure_code`
+  is now `ReasonCode | None` (the envelope's own alias from `clue_agents.contracts`). Note for future
+  readers: `AgentFinalizeEnvelope.failure_code` resolves to `clue_agents.contracts.ReasonCode`
+  (`^[a-z0-9_.-]+$`, 128) — **not** `clue_core.research_view.ReasonCode` (`^[a-z][a-z0-9_]*$`, 80).
+  They are different types with the same name; a review round was spent on that confusion. Value
+  parity was already exact (only whitespace diverged, in the safe direction); the fork was still a
+  live drift hazard. A 10-value accept/refuse table now pins both sides together.
+- **The broad `except ValueError` is kept, and logged.** Chose diagnostics over narrowing, because
+  the guards' messages are the useful model feedback. Every swallowed coroutine-raised error emits
+  `log.warning("agent.finalize_refused", tool_call_id, error_type, error, rejection)` via
+  `clue_obs.get_logger` (`clue_obs` is outside `clue_agents`' import-linter forbidden list).
+  Covered by a test driving the `_required_output_path` guard.
+
 ## Notes / residuals
 
 - `_bounded_finalize` mutates `BaseTool.return_direct` on the live tool object. Safe today: the
