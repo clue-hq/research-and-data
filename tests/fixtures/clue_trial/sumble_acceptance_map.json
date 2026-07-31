@@ -129,6 +129,13 @@
       "first_wave": true
     },
     {
+      "id": "provider.tech_stack.unbounded_requires_confirmation",
+      "category": "provider_failure",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
       "id": "provider.http.401",
       "category": "provider_failure",
       "cli_coverage": "full",

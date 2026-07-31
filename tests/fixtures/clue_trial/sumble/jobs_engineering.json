@@ -1,0 +1,14 @@
+{
+  "id": "fixture-jobs-engineering",
+  "credits_used": 1,
+  "credits_remaining": 997,
+  "jobs": [
+    {
+      "job_id": 95107725,
+      "sumble_url": "https://sumble.com/l/job/example",
+      "attributes": {}
+    }
+  ],
+  "total": 4,
+  "source_data_url": "https://sumble.com/l/org/acme/jobs"
+}

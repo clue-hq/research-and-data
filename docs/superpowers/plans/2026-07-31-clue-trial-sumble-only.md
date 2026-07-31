@@ -158,7 +158,8 @@ Rules:
 1. `CLUE_SUMBLE_API_KEY` is the only Sumble credential.
 2. Every live request has a deterministic operation key.
 3. A preflight estimate is shown before the first charged request.
-4. `--max-sumble-credits` is a hard provider-unit cap.
+4. `--max-sumble-credits` is a hard provider-unit cap for endpoints with a caller-controlled
+   maximum (`organizations` and `jobs` in this slice).
 5. The provider’s response value is the authoritative realized credit count.
 6. A request response is persisted before any dependent claim write is acknowledged.
 7. Replaying a completed operation reads its persisted response receipt and does not spend again.
@@ -168,6 +169,11 @@ Rules:
 10. HTTP `402` pauses/fails as insufficient provider credits; it is not a hard miss.
 11. A legitimate no-match is a successful empty result and is not converted into a provider error.
 12. Secrets and Authorization headers never enter receipts, artifacts, logs, or reports.
+13. `GET /organizations/{id}/techs` has no caller-controlled result limit and charges per returned
+    technology. A live tech-stack call therefore requires a separate
+    `--allow-unbounded-sumble-tech` confirmation after showing that risk. The ordinary credit cap
+    does not claim to bound this call; omitting the flag skips it visibly. Fixture replay never
+    requires this approval and never spends provider credits.
 
 The first implementation may use a run-scoped response cache for per-field reuse only after the
 response receipt is durable. A process-memory-only cache is insufficient for restart safety.
@@ -481,4 +487,3 @@ Gate to Exa:
 10. No Exa until the Sumble baseline is accepted.
 11. No production feature flag is enabled by default.
 12. No live Sumble spend occurs without an explicit user-run canary and hard credit cap.
-

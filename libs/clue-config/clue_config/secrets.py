@@ -90,6 +90,7 @@ class Secrets(BaseSettings):
     builtwith_api_key: SecretStr | None = None
     duns_api_key: SecretStr | None = None
     exa_api_key: SecretStr | None = None
+    sumble_api_key: SecretStr | None = None
     parallel_api_key: SecretStr | None = None
     firecrawl_api_key: SecretStr | None = None
     crm_api_key: SecretStr | None = None
