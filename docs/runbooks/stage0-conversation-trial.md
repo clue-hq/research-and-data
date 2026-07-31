@@ -76,8 +76,35 @@ Useful commands:
 /confirm-product
 /synthesize-icp
 /confirm-icp 1
+/paste
+/file PATH
 /quit
 ```
+
+## Sending a multi-line brief as one turn
+
+The prompt reads **one line per turn**, so pasting a multi-paragraph brief directly would split it
+into several turns — the agent then re-asks what you already told it and the run burns model calls
+on fragments. Use one of the two explicit block-input commands instead (they are also available in
+`scripts/clue_trial.py`):
+
+```text
+You > /paste
+Paste your text, then a line containing only '.':
+<paste the whole brief, however many lines and blank lines it has>
+.
+```
+
+```text
+You > /file ~/briefs/product-brief.md
+```
+
+Both send the assembled text as a **single** conversation turn. Blank lines and indentation inside
+the block are preserved; only the outer whitespace is trimmed. A pasted line that starts with `/`
+is content, not a command. `/paste` also ends at Ctrl-D. `/file` accepts a quoted or `~`-prefixed
+path and refuses a missing path, a directory, a non-UTF-8 file, an empty file, or anything larger
+than 64 KB (the per-message guard); either command refusing prints an error and hands the prompt
+back without touching durable state.
 
 `/confirm-product`, `/synthesize-icp`, and `/confirm-icp` are explicit human actions; the agent
 cannot perform them. `/synthesize-icp` and `/confirm-icp` both require a confirmed product and

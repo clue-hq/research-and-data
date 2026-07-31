@@ -12,6 +12,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from cli_multiline import (
+    HELP_LINE,
+    PASTE_TERMINATOR,
+    read_file_message,
+    read_pasted_message,
+)
+
 DEFAULT_API = "http://127.0.0.1:8010"
 
 
@@ -290,13 +297,21 @@ def _research(api: TrialApi, trial_id: str, supplied_account: str | None) -> Non
         _print_view(_view(api, trial_id))
 
 
+def _turn(api: TrialApi, trial_id: str, message: str) -> None:
+    """Send one Stage-0 conversation turn and print the agent's reply."""
+    response = api.post(f"/v1/trials/{trial_id}/turns", {"message": message})
+    print(f"\nHead of ABM [{response.get('status')}] >")
+    print(response.get("assistant") or "(No user-facing response was committed.)")
+
+
 def _interactive(api: TrialApi, trial_id: str) -> None:
     print(f"\nResumable Clue trial: {trial_id}")
     print(
         "Commands: /status /jobs /report /confirm-product /synthesize-icp "
         "/confirm-icp N /account add DOMAIN /research [ACCOUNT] /view [ACCOUNT] "
-        "/claims [FIELD] /evidence CLAIM /cost /quit"
+        "/claims [FIELD] /evidence CLAIM /cost /paste /file PATH /quit"
     )
+    print(HELP_LINE)
     print("Anything else is sent as a Stage-0 message to the Head of ABM agent.")
     while True:
         try:
@@ -385,12 +400,16 @@ def _interactive(api: TrialApi, trial_id: str) -> None:
                     )
                 )
                 continue
-            response = api.post(
-                f"/v1/trials/{trial_id}/turns",
-                {"message": message},
-            )
-            print(f"\nHead of ABM [{response.get('status')}] >")
-            print(response.get("assistant") or "(No user-facing response was committed.)")
+            if message == "/paste":
+                print(f"Paste your text, then a line containing only '{PASTE_TERMINATOR}':")
+                # Always a conversation turn: a pasted line that happens to start with "/" is
+                # content, not a command.
+                _turn(api, trial_id, read_pasted_message(input))
+                continue
+            if message == "/file" or message.startswith("/file "):
+                _turn(api, trial_id, read_file_message(message.removeprefix("/file")))
+                continue
+            _turn(api, trial_id, message)
         except (TrialApiError, ValueError) as exc:
             print(f"\nError: {exc}")
 

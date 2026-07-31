@@ -92,6 +92,23 @@ uv run python scripts/clue_trial.py report <trial-id> --output /tmp/clue-trial-r
 The API exports the non-authoritative inspection bundle under
 `.context/sumble-trials/<trial-id>/`; Postgres and artifact storage remain authoritative.
 
+## Sending a multi-line message (both interactive CLIs)
+
+`00_stage0_trial.py` and `clue_trial.py` read **one line per turn**, so pasting a multi-paragraph
+product brief straight into the prompt splits it across several turns (repeated questions, wasted
+model calls). Two commands send a block as a **single** message:
+
+| Command | Behaviour |
+|---------|-----------|
+| `/paste` | Reads lines until a line containing only `.` (or Ctrl-D), then sends them as one turn. |
+| `/file PATH` | Sends the contents of a UTF-8 text file as one turn. |
+
+Blank lines and indentation inside the block are preserved; only the outer whitespace is trimmed. A
+pasted line starting with `/` is content, not a command. `/file` accepts a quoted or `~`-prefixed
+path and refuses a missing path, a directory, a non-UTF-8 file, an empty file, or more than 64 KB —
+a refusal prints an error and returns you to the prompt with durable state untouched. The shared
+implementation is `scripts/cli_multiline.py` (stdlib-only, so `clue_trial.py` stays HTTP-only).
+
 ## Offline vs. live — what you actually see
 
 Offline (no keys) the scripts exercise the **full plumbing** — planning, fan-out, identity

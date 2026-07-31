@@ -17,6 +17,13 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
+from cli_multiline import (
+    HELP_LINE,
+    PASTE_TERMINATOR,
+    read_file_message,
+    read_pasted_message,
+)
+
 import clue_obs
 from clue_api.stage0_trial import (
     Stage0Trial,
@@ -86,8 +93,9 @@ async def _interactive(trial: Stage0Trial) -> None:
     print("call Exa, or scrape the web.")
     print(
         "\nCommands: /status  /report  /confirm-product  /synthesize-icp  "
-        "/confirm-icp NUMBER  /quit"
+        "/confirm-icp NUMBER  /paste  /file PATH  /quit"
     )
+    print(HELP_LINE)
     print(
         "\nStart naturally. For example: “Let me explain our company, product, customers, and what "
         "we are trying to achieve.”"
@@ -115,6 +123,16 @@ async def _interactive(trial: Stage0Trial) -> None:
 
 async def _dispatch(trial: Stage0Trial, message: str) -> None:
     """Run one command (or one conversation turn) against the live trial."""
+    if message == "/paste":
+        print(f"Paste your text, then a line containing only '{PASTE_TERMINATOR}':")
+        # Always a conversation turn: a pasted line that happens to start with "/" is content,
+        # not a command.
+        await _turn(trial, await asyncio.to_thread(read_pasted_message, input))
+        return
+    if message == "/file" or message.startswith("/file "):
+        body = await asyncio.to_thread(read_file_message, message.removeprefix("/file"))
+        await _turn(trial, body)
+        return
     if message == "/status":
         await _show_status(trial)
         return
@@ -157,6 +175,11 @@ async def _dispatch(trial: Stage0Trial, message: str) -> None:
         confirmation = await trial.confirm_icp_proposal(number)
         print(f"\nConfirmed ICP: {confirmation.ref.icp_key}@{confirmation.ref.icp_version}")
         return
+    await _turn(trial, message)
+
+
+async def _turn(trial: Stage0Trial, message: str) -> None:
+    """Send one Stage-0 conversation turn and print the agent's reply."""
     outcome, assistant = await trial.run_turn(message)
     print(f"\nHead of ABM [{outcome.status.value}] >")
     print(assistant or "(No user-facing message was committed; inspect the report.)")
