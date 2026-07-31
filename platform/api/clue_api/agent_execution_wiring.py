@@ -12,6 +12,7 @@ from collections.abc import (
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
+from types import MappingProxyType
 from typing import Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -219,8 +220,17 @@ def _plan_graph_and_parameters(
     tools: ToolRegistry,
     slot: InteractionSlotView,
     arguments: Mapping[str, Mapping[str, JsonValue]],
+    pin_requests: Mapping[str, tuple[PinRequest, ...]] = MappingProxyType({}),
 ) -> tuple[RecipeGraph, dict[str, JsonValue], dict[str, object]]:
-    """Translate the full proposal into C5's closed graph/binding language."""
+    """Translate the full proposal into C5's closed graph/binding language.
+
+    ``pin_requests`` carries the per-step artifact-level pins already resolved for this plan, and
+    they are attached to each ``ToolNode.requirements`` — the same field a recipe's own step pins
+    land on. ``validate_graph`` reads exactly that field when it checks a descriptor's
+    ``pin_requirements``, so a tool whose per-turn pins are dynamic (Stage-0's
+    ``record_interview_answer`` needs an ``artifact_input`` derived from its own arguments) is
+    reviewed against the pins it will actually execute with, not against an empty set.
+    """
 
     nodes: list[ToolNode | BarrierNode] = []
     parameters: dict[str, JsonValue] = {}
@@ -270,6 +280,7 @@ def _plan_graph_and_parameters(
                 input_schema_sha256=step.tool.input_schema_sha256,
                 output_schema_sha256=step.tool.output_schema_sha256,
                 bindings=bindings,
+                requirements=tuple(pin_requests.get(step.node_key, ())),
             )
         )
     parameter_schema: dict[str, object] = {
@@ -1272,33 +1283,11 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
 
             raise AgentPlanRejected(review.model_copy(update={"issues": tuple(issues)}))
 
-        graph, _, parameter_schema = _plan_graph_and_parameters(
-            plan=plan,
-            tools=self._tools,
-            slot=slot,
-            arguments=trusted_arguments,
-        )
-        graph_review = validate_graph(
-            graph,
-            parameter_schema=parameter_schema,
-            tool_catalog=self._tools,
-            max_nodes=self._policy.max_nodes,
-            max_depth=self._policy.max_dependency_depth,
-            max_fanout=self._policy.max_fanout,
-            execution_requirements=slot.requirements,
-        )
-        if not graph_review.valid:
-            from clue_agents import AgentPlanReview
-
-            raise AgentPlanRejected(
-                AgentPlanReview(
-                    proposal_sha256=review.proposal_sha256,
-                    issues=tuple(_agent_issue(item) for item in graph_review.issues),
-                    dependency_depth=review.dependency_depth,
-                    maximum_fanout=review.maximum_fanout,
-                )
-            )
-
+        # Pins are resolved *before* the graph is compiled, because ``validate_graph`` enforces
+        # "every pin kind the descriptor requires is on the node (or execution-wide)" — and for a
+        # governed Stage-0 tool the per-turn kinds (an ``artifact_input`` derived from the step's
+        # own arguments) exist nowhere else. Resolving them afterwards made every such tool
+        # unreachable through the agent path with ``missing_tool_requirement``.
         resolved_pin_requests: dict[str, tuple[PinRequest, ...]] = {}
         if self._pin_provider is not None:
             for step in plan.steps:
@@ -1314,7 +1303,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                             step_id=step.node_key,
                             tool_name=step.tool.name,
                             tool_version=step.tool.version,
-                            input_refs=step.arguments,
+                            # The merged mapping, never ``step.arguments``: pin derivation reads
+                            # authority-injected keys (``project_id``) that the model neither sees
+                            # nor may propose, so the raw proposal silently under-pins.
+                            input_refs=dict(trusted_arguments[step.node_key]),
                             depends_on=step.depends_on,
                         ),
                         ctx=ToolContext(
@@ -1365,6 +1357,34 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                         )
                     )
                 resolved_pin_requests[step.node_key] = pins
+
+        graph, _, parameter_schema = _plan_graph_and_parameters(
+            plan=plan,
+            tools=self._tools,
+            slot=slot,
+            arguments=trusted_arguments,
+            pin_requests=resolved_pin_requests,
+        )
+        graph_review = validate_graph(
+            graph,
+            parameter_schema=parameter_schema,
+            tool_catalog=self._tools,
+            max_nodes=self._policy.max_nodes,
+            max_depth=self._policy.max_dependency_depth,
+            max_fanout=self._policy.max_fanout,
+            execution_requirements=slot.requirements,
+        )
+        if not graph_review.valid:
+            from clue_agents import AgentPlanReview
+
+            raise AgentPlanRejected(
+                AgentPlanReview(
+                    proposal_sha256=review.proposal_sha256,
+                    issues=tuple(_agent_issue(item) for item in graph_review.issues),
+                    dependency_depth=review.dependency_depth,
+                    maximum_fanout=review.maximum_fanout,
+                )
+            )
 
         proposal_ref = await self._artifacts.persist_body(
             workspace_id=constitution.workspace_id,

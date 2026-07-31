@@ -15,9 +15,11 @@ empty for the whole trial. These tests pin the two structural repairs:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,21 +27,38 @@ from typing import Any, cast
 from uuid import UUID, uuid4, uuid5
 
 import pytest
+from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentExecutionStatus,
+    AgentPlanPolicy,
+    AgentPlanRejected,
     AgentRole,
     AgentTurnRequest,
+    ArtifactRef,
     AssembledAgentContext,
     DeepAgentTurnRuntime,
     FinalizeStatus,
 )
+from clue_api import (
+    ExecutionRunEventWriter,
+    StorageParameterArtifactStore,
+    build_tool_invoker,
+)
 from clue_api import stage0_trial as stage0_trial_module
+from clue_api.agent_execution_wiring import C5AgentExecutionAdapter
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_runtime_wiring import GovernedAgentToolFactory, ModelFinalizeRequest
+from clue_api.execution_wiring import StorageExecutionParameterStore
+from clue_api.recipe_wiring import (
+    build_recipe_pin_registry,
+    load_system_recipe_definitions,
+    seed_system_recipes,
+)
+from clue_api.stage0_recipe import Stage0StepPinProvider
 from clue_api.stage0_trial import (
     Stage0RoutingReceiptGuard,
     Stage0Trial,
@@ -49,18 +68,35 @@ from clue_api.stage0_trial import (
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.trial import spine as spine_module
+from clue_config import Settings
 from clue_core import (
     AccountStatus,
     Claim,
     EntityId,
     EntityType,
+    ExecutionId,
     ExtractionMethod,
     OnboardingInputId,
     OnboardingInputKind,
+    PreSpendDecision,
+    PreSpendVerdict,
     ResearchMode,
     RunId,
+    TargetLock,
     VerificationStatus,
 )
+from clue_execution import (
+    CompatibilityLoader,
+    DbExecutionJournal,
+    DbExecutionStarter,
+    DbRecipeReader,
+    DbRecipeRepository,
+    ExecutionStatus,
+    PinRequest,
+    RecipeExecutor,
+    RecipeLifecycle,
+)
+from clue_fleet import WorkId, acquire_work_lease
 from clue_research.claimstore import WorkspaceScope, claims_for, record_verification
 from clue_research.identity import insert_account_entity
 from clue_research.stage0 import (
@@ -83,7 +119,7 @@ from clue_research.stage0.fields import (
 from clue_spine import create_brand, create_product, create_project
 from clue_storage import artifact_key as make_artifact_key
 from clue_storage import record_artifact
-from tests.agents.conftest import NOW, artifact, constitution
+from tests.agents.conftest import NOW, artifact, constitution, domain_ref
 from tests.agents.test_contracts import context_manifest
 from tests.agents.test_finalize_contract import (
     _CountModelCalls,
@@ -93,6 +129,7 @@ from tests.agents.test_finalize_contract import (
 from tests.agents.test_runtime import _DelegationArtifacts, _EmptyOutputBackend, _Models
 from tests.db.conftest import run_async
 from tests.stage0.conftest import rollback_conn
+from tests.toolbelt.conftest import InMemoryStore
 
 _ANSWER = "We target neurosurgery practices in the US, and our value proposition is speed."
 _QUESTION = "Which practices should this project prioritize first?"
@@ -787,3 +824,517 @@ def test_three_receiptless_finalizations_still_fail_closed(
     # Two bounded corrective retries — the shared budget the shape contract and this guard draw
     # from — and no more: the model is not asked a fourth time.
     assert len(calls.batches) == 3
+
+
+# --- F6: a governed Stage-0 tool must be reachable through the agent path ------------------
+#
+# The live defect: Terra proposed a semantically perfect ``record_interview_answer@1`` call and
+# ``C5AgentExecutionAdapter.validate_plan`` rejected it with ``missing_tool_requirement — requires
+# pin kind 'artifact_input'``. The descriptor's per-turn pin kinds are derived from the step's own
+# arguments by the pin provider, but the provider ran *after* ``validate_graph`` had already
+# reviewed a graph whose tool nodes carried no requirements — so every governed Stage-0 tool with
+# per-turn pins was unreachable through the agent path while the recipe path (which attaches its
+# step pins up front) worked. Compounding it, the provider was fed the raw model proposal, which by
+# construction cannot carry the authority-injected ``project_id``.
+
+
+class _MemoryStorage:
+    def __init__(self) -> None:
+        self.blobs: dict[str, bytes] = {}
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self.blobs[key] = data
+
+    async def get(self, key: str) -> bytes:
+        return self.blobs[key]
+
+    async def delete(self, key: str) -> None:
+        self.blobs.pop(key, None)
+
+    async def exists(self, key: str) -> bool:
+        return key in self.blobs
+
+    async def presign(self, key: str, *, expires_in: int = 3600) -> str:
+        return f"memory://{key}"
+
+    async def list_blobs(self) -> AsyncIterator[tuple[str, Any]]:
+        return
+        yield
+
+
+class _PassGate:
+    async def check(self, request: Any) -> PreSpendDecision:
+        del request
+        return PreSpendDecision(verdict=PreSpendVerdict.PASS)
+
+    async def assemble_target_lock(self, entity: Any, field: Any) -> TargetLock:
+        return TargetLock(
+            entity_id=entity.id,
+            no_drift_instruction=f"Remain locked to {entity.id} for {field.field_key}",
+        )
+
+
+class _PlanArtifacts:
+    """Content-addressed in-memory artifact store; ``validate_plan`` only persists bodies."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, bytes] = {}
+
+    async def persist_body(
+        self,
+        *,
+        workspace_id: str,
+        data: bytes,
+        media_type: str,
+        **kwargs: Any,
+    ) -> ArtifactRef:
+        del kwargs
+        digest = hashlib.sha256(data).hexdigest()
+        key = f"{workspace_id}/{digest}"
+        self.data[key] = data
+        return ArtifactRef(
+            workspace_id=workspace_id,
+            artifact_key=key,
+            sha256=digest,
+            media_type=media_type,
+            byte_count=len(data),
+        )
+
+    async def read(self, ref: ArtifactRef) -> bytes:
+        return self.data[ref.artifact_key]
+
+
+class _PlanJournal:
+    def __init__(self) -> None:
+        self.validated: list[dict[str, Any]] = []
+
+    async def record_validated(self, **kwargs: Any) -> None:
+        self.validated.append(kwargs)
+
+    async def event(self, **kwargs: Any) -> None:
+        del kwargs
+
+    async def record_tool_result(self, **kwargs: Any) -> None:
+        del kwargs
+
+    async def load_receipts(self, **kwargs: Any) -> tuple[object, ...]:
+        del kwargs
+        return ()
+
+
+class _RecordingPinProvider:
+    """Wrap the real Stage-0 provider and record the ``input_refs`` it was handed."""
+
+    def __init__(self, inner: Stage0StepPinProvider) -> None:
+        self._inner = inner
+        self.seen: list[dict[str, Any]] = []
+
+    async def pins_for(self, step: Any, *, ctx: Any) -> tuple[PinRequest, ...]:
+        self.seen.append(dict(step.input_refs))
+        return await self._inner.pins_for(step, ctx=ctx)
+
+
+def _tool_runtime(tool_call_id: str) -> ToolRuntime:
+    """LangGraph's injected runtime, exactly as the deepagent graph supplies it."""
+
+    return ToolRuntime(
+        state=cast(Any, None),
+        context=None,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id=tool_call_id,
+        store=None,
+    )
+
+
+class _CapturedPlan(Exception):
+    """Raised by the capture double once the real wrapper has produced its plan."""
+
+    def __init__(self, plan: Any) -> None:
+        super().__init__("captured")
+        self.plan = plan
+
+
+class _CapturingExecution:
+    async def validate_plan(self, *, plan: Any, constitution: Any) -> Any:
+        del constitution
+        raise _CapturedPlan(plan)
+
+
+def _ws_constitution(
+    *,
+    workspace_id: str,
+    project_id: str,
+    brand_id: str,
+    product_id: str,
+    execution_id: ExecutionId,
+    resolved: Any,
+) -> Any:
+    """The shared test constitution, re-homed onto a real workspace/project/execution."""
+
+    return constitution(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        brand_id=brand_id,
+        product_id=product_id,
+        execution_id=execution_id,
+        profile_ref=resolved.profile_ref,
+        resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+        stage_snapshot_ref=artifact("stage.json", workspace_id=workspace_id),
+        readiness_snapshot_ref=artifact("readiness.json", workspace_id=workspace_id),
+        budget_envelope_ref=artifact("budget.json", workspace_id=workspace_id),
+        resource_manifest_ref=artifact("resource-manifest.json", workspace_id=workspace_id),
+        focus_refs=(domain_ref("account-1", workspace_id=workspace_id),),
+    )
+
+
+def _nested_conn_factory(conn: AsyncConnection) -> Any:
+    lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[AsyncConnection]:
+        async with lock:
+            nested = await conn.begin_nested()
+            try:
+                yield conn
+            except BaseException:
+                await nested.rollback()
+                raise
+            else:
+                await nested.commit()
+
+    return factory
+
+
+async def _live_stage0_slot(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> tuple[Any, Any, Any, ExecutionId]:
+    """Start the real Recipe #0 and open its ``stage0_interactions`` slot for real appends."""
+
+    factory = _nested_conn_factory(conn)
+    storage = _MemoryStorage()
+    registry = build_toolbelt(
+        storage=cast(Any, storage),
+        conn_factory=factory,
+        pre_spend_gate=cast(Any, _PassGate()),
+    )
+    pin_registry = build_recipe_pin_registry(tool_registry=registry, conn_factory=factory)
+    compatibility = CompatibilityLoader(pin_registry)
+    repository = DbRecipeRepository(conn_factory=factory)
+    lifecycle = RecipeLifecycle(
+        repository=repository,
+        tool_catalog=registry,
+        compatibility_loader=compatibility,
+    )
+    definitions = tuple(
+        definition
+        for definition in load_system_recipe_definitions()
+        if definition.recipe_key == "recipe0-stage0"
+    )
+    revisions = await seed_system_recipes(
+        repository=repository,
+        lifecycle=lifecycle,
+        definitions=definitions,
+    )
+    latest = max(
+        (
+            (definition.version, revision)
+            for definition, revision in zip(definitions, revisions, strict=True)
+        ),
+        key=lambda item: item[0],
+    )[1]
+    parameters = StorageExecutionParameterStore(
+        StorageParameterArtifactStore(storage=cast(Any, storage), conn_factory=factory)
+    )
+    artifact_key, digest = await parameters.snapshot(workspace_id=workspace_id, parameters={})
+    journal = DbExecutionJournal(transport=ExecutionRunEventWriter())
+    started = await DbExecutionStarter(
+        conn_factory=factory,
+        recipes=DbRecipeReader(conn_factory=factory),
+        compatibility=compatibility,
+        journal=journal,
+    ).start(
+        workspace_id=workspace_id,
+        recipe_revision_id=latest.recipe_revision_id,
+        parameters={},
+        parameter_artifact_key=artifact_key,
+        parameter_manifest_hash=digest,
+        actor="human",
+        project_id=project_id,
+    )
+    invoker = build_tool_invoker(
+        registry=registry,
+        idempotency_store=InMemoryStore(),
+        storage=cast(Any, storage),
+        settings=Settings(_env_file=None),
+        conn_factory=factory,
+    )
+    executor = RecipeExecutor(
+        conn_factory=factory,
+        recipes=DbRecipeReader(conn_factory=factory),
+        compatibility=compatibility,
+        journal=journal,
+        parameters=parameters,
+        tool_invoker=invoker,
+    )
+    lease = await acquire_work_lease(
+        conn,
+        work_id=WorkId(started.execution_id),
+        worker_id="f6-regression",
+        ttl=timedelta(seconds=60),
+    )
+    assert lease is not None
+    opened = await executor.execute(
+        started.execution_id,
+        worker_id="f6-regression",
+        lease_generation=lease.generation,
+    )
+    assert opened.status is ExecutionStatus.AWAITING_INPUT
+    return registry, executor, compatibility, started.execution_id
+
+
+async def _wrapper_built_plan(
+    *,
+    resolved: Any,
+    registry: Any,
+    request: AgentTurnRequest,
+    arguments: dict[str, Any],
+) -> Any:
+    """Return the exact ``AgentPlan`` the production governed wrapper builds for these kwargs.
+
+    The plan is produced by the real :class:`GovernedAgentToolFactory` tool — including its
+    ``_json_arguments`` rendering and its refusal to carry authority keys — so the regression is
+    driven by a wrapper-shaped proposal rather than a hand-written one.
+    """
+
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,
+        registry=registry,
+        execution=cast(Any, _CapturingExecution()),
+        lease=cast(Any, SimpleNamespace(backend=_EmptyOutputBackend())),
+        artifacts=cast(Any, _DelegationArtifacts()),
+    )
+    tool = next(item for item in factory.build() if item.name == "record_interview_answer")
+    try:
+        await tool.ainvoke(
+            {
+                "name": tool.name,
+                "args": {**arguments, "runtime": _tool_runtime("call-f6")},
+                "id": "call-f6",
+                "type": "tool_call",
+            }
+        )
+    except _CapturedPlan as captured:
+        return captured.plan
+    raise AssertionError("the governed wrapper did not reach plan validation")
+
+
+@pytest.mark.usefixtures("require_profiling_db")
+def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() -> None:
+    """RED before the fix: ``missing_tool_requirement — requires pin kind 'artifact_input'``."""
+
+    workspace_id = f"s0-f6-{uuid4().hex[:8]}"
+
+    async def scenario() -> None:
+        async with rollback_conn(workspace_id=workspace_id) as conn:
+            brand_id, product_id, client, onboarding_input_id, project_id = await _seed_turn(
+                conn, workspace_id=workspace_id
+            )
+            registry, executor, compatibility, execution_id = await _live_stage0_slot(
+                conn, workspace_id=workspace_id, project_id=project_id
+            )
+            profiles = build_agent_profile_registry(registry)
+            resolved = profiles.resolve(AgentRole.HEAD_OF_ABM)
+            trusted = _ws_constitution(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                brand_id=brand_id,
+                product_id=product_id,
+                execution_id=execution_id,
+                resolved=resolved,
+            )
+            request = AgentTurnRequest(
+                turn_id=uuid4(),
+                thread_id="thread-f6",
+                constitution=trusted,
+                user_message_artifact_ref=artifact("user-message.json", workspace_id=workspace_id),
+                requested_at=NOW,
+            )
+            # Exactly what the model proposed on the live turn: no ``project_id`` (the governed
+            # wrapper hides it from the model-visible schema), and the interview artifact named
+            # only by key.
+            answer_key = make_artifact_key(
+                workspace_id, hashlib.sha256(_ANSWER.encode()).hexdigest()
+            )
+            plan = await _wrapper_built_plan(
+                resolved=resolved,
+                registry=registry,
+                request=request,
+                arguments={
+                    "brand_id": brand_id,
+                    "onboarding_input_id": str(onboarding_input_id),
+                    "artifact_key": answer_key,
+                    "answer": _ANSWER,
+                    "client_entity_id": str(client),
+                    "statements": [
+                        {
+                            "route": "project_state",
+                            "route_key": "target_segment",
+                            "quote_start": 0,
+                            "quote_end": 41,
+                        }
+                    ],
+                },
+            )
+            assert "project_id" not in plan.steps[0].arguments
+
+            pins = _RecordingPinProvider(
+                Stage0StepPinProvider(
+                    compatibility=compatibility,
+                    conn_factory=_nested_conn_factory(conn),
+                )
+            )
+            adapter = C5AgentExecutionAdapter(
+                turn_id=request.turn_id,
+                constitution=trusted,
+                resolved_profile=resolved,
+                policy=AgentPlanPolicy.from_profile(
+                    resolved.profile,
+                    budget_limit_millicents=10_000_000,
+                    max_fanout=4,
+                    max_parallelism=4,
+                ),
+                slot_key="stage0_interactions",
+                tools=registry,
+                tool_invoker=cast(Any, object()),
+                executor=cast(Any, executor),
+                artifacts=cast(Any, _PlanArtifacts()),
+                journal=cast(Any, _PlanJournal()),
+                checkpointer_factory=cast(Any, lambda _: None),
+                pin_provider=cast(Any, pins),
+                conn_factory=_nested_conn_factory(conn),
+            )
+
+            validated = await adapter.validate_plan(plan=plan, constitution=trusted)
+
+            assert len(validated.operations) == 1
+            assert validated.operations[0].address == "record_interview_answer@1"
+            resolved_pins = adapter._pin_requests[plan.plan_id][plan.steps[0].node_key]
+            by_kind = {pin.kind: pin for pin in resolved_pins}
+            # The pin the live rejection named, derived from the model-supplied artifact_key.
+            assert by_kind["artifact_input"].key == answer_key
+            # ... and the pin that can only come from the MERGED arguments: project_id is
+            # authority-injected, absent from the model proposal above.
+            assert by_kind["project"].key == project_id
+            assert pins.seen[0]["project_id"] == project_id
+
+    run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_profiling_db")
+def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> None:
+    """The two pre-existing rejection shapes move earlier with the loop; they do not weaken."""
+
+    workspace_id = f"s0-f6neg-{uuid4().hex[:8]}"
+
+    async def scenario() -> None:
+        async with rollback_conn(workspace_id=workspace_id) as conn:
+            brand_id, product_id, client, onboarding_input_id, project_id = await _seed_turn(
+                conn, workspace_id=workspace_id
+            )
+            registry, executor, compatibility, execution_id = await _live_stage0_slot(
+                conn, workspace_id=workspace_id, project_id=project_id
+            )
+            profiles = build_agent_profile_registry(registry)
+            resolved = profiles.resolve(AgentRole.HEAD_OF_ABM)
+            trusted = _ws_constitution(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                brand_id=brand_id,
+                product_id=product_id,
+                execution_id=execution_id,
+                resolved=resolved,
+            )
+            request = AgentTurnRequest(
+                turn_id=uuid4(),
+                thread_id="thread-f6-neg",
+                constitution=trusted,
+                user_message_artifact_ref=artifact("user-message.json", workspace_id=workspace_id),
+                requested_at=NOW,
+            )
+            answer_key = make_artifact_key(
+                workspace_id, hashlib.sha256(_ANSWER.encode()).hexdigest()
+            )
+            base_arguments = {
+                "brand_id": brand_id,
+                "onboarding_input_id": str(onboarding_input_id),
+                "artifact_key": answer_key,
+                "answer": _ANSWER,
+                "client_entity_id": str(client),
+                "statements": [
+                    {
+                        "route": "project_state",
+                        "route_key": "target_segment",
+                        "quote_start": 0,
+                        "quote_end": 41,
+                    }
+                ],
+            }
+
+            def _adapter(pin_provider: Any) -> C5AgentExecutionAdapter:
+                return C5AgentExecutionAdapter(
+                    turn_id=request.turn_id,
+                    constitution=trusted,
+                    resolved_profile=resolved,
+                    policy=AgentPlanPolicy.from_profile(
+                        resolved.profile,
+                        budget_limit_millicents=10_000_000,
+                        max_fanout=4,
+                        max_parallelism=4,
+                    ),
+                    slot_key="stage0_interactions",
+                    tools=registry,
+                    tool_invoker=cast(Any, object()),
+                    executor=cast(Any, executor),
+                    artifacts=cast(Any, _PlanArtifacts()),
+                    journal=cast(Any, _PlanJournal()),
+                    checkpointer_factory=cast(Any, lambda _: None),
+                    pin_provider=cast(Any, pin_provider),
+                    conn_factory=_nested_conn_factory(conn),
+                )
+
+            # (1) an artifact_key that names nothing in this workspace cannot be pinned.
+            unknown = await _wrapper_built_plan(
+                resolved=resolved,
+                registry=registry,
+                request=request,
+                arguments={**base_arguments, "artifact_key": f"{workspace_id}/{'0' * 64}"},
+            )
+            with pytest.raises(AgentPlanRejected, match="pin_resolution_failed"):
+                await _adapter(
+                    Stage0StepPinProvider(
+                        compatibility=compatibility,
+                        conn_factory=_nested_conn_factory(conn),
+                    )
+                ).validate_plan(plan=unknown, constitution=trusted)
+
+            # (2) a resolved pin kind the promoted slot never declared is refused.
+            class _OutOfSlot:
+                async def pins_for(self, step: Any, *, ctx: Any) -> tuple[PinRequest, ...]:
+                    del step, ctx
+                    return (PinRequest(kind="not_a_slot_kind", key="x", version="1"),)
+
+            allowed = await _wrapper_built_plan(
+                resolved=resolved,
+                registry=registry,
+                request=request,
+                arguments=base_arguments,
+            )
+            with pytest.raises(AgentPlanRejected, match="c5_pin_kind_not_allowed"):
+                await _adapter(_OutOfSlot()).validate_plan(plan=allowed, constitution=trusted)
+
+    run_async(scenario())
