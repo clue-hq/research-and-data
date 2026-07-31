@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "trial_key": "sumble_account_v1",
+  "source_policy": {
+    "allowed_external_factual_sources": [
+      "sumble_organizations",
+      "sumble_jobs",
+      "sumble_tech_stack"
+    ],
+    "forbidden_first_wave_sources": [
+      "apollo",
+      "builtwith",
+      "clay",
+      "crm",
+      "exa_deep",
+      "firecrawl_site",
+      "parallel_task",
+      "scrapling_site",
+      "zoominfo"
+    ],
+    "model_runtime_is_factual_source": false
+  },
+  "provider_surfaces": [
+    {
+      "source_key": "sumble_organizations",
+      "method": "POST",
+      "path": "/v9/organizations",
+      "field_keys": [
+        "core.employee_count",
+        "core.primary_domain"
+      ],
+      "enabled_in_first_wave": true
+    },
+    {
+      "source_key": "sumble_jobs",
+      "method": "POST",
+      "path": "/v9/jobs",
+      "field_keys": [
+        "account.hiring_velocity_eng"
+      ],
+      "enabled_in_first_wave": true
+    },
+    {
+      "source_key": "sumble_tech_stack",
+      "method": "GET",
+      "path": "/v9/organizations/{organization_id}/techs",
+      "field_keys": [
+        "core.primary_tech_stack"
+      ],
+      "enabled_in_first_wave": true
+    },
+    {
+      "source_key": "sumble_signals",
+      "method": "POST",
+      "path": "/v9/signals",
+      "field_keys": [],
+      "enabled_in_first_wave": false
+    },
+    {
+      "source_key": "sumble_intelligence_brief",
+      "method": "GET",
+      "path": "/v9/organizations/{organization_id}/intelligence-brief",
+      "field_keys": [],
+      "enabled_in_first_wave": false
+    },
+    {
+      "source_key": "sumble_people",
+      "method": "POST",
+      "path": "/v9/people",
+      "field_keys": [],
+      "enabled_in_first_wave": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "provider.organization.match",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.organization.unmatched",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.organization.closed",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.organization.parent_subsidiary_scope",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.jobs.match",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.jobs.empty",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.tech_stack.confirmed",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.tech_stack.empty",
+      "category": "provider",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.http.401",
+      "category": "provider_failure",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.http.402",
+      "category": "provider_failure",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.http.422",
+      "category": "provider_failure",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.http.429",
+      "category": "provider_failure",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "provider.transport.indeterminate_spend",
+      "category": "provider_failure",
+      "cli_coverage": "partial",
+      "companion_surface": "fault-injection integration test",
+      "first_wave": true
+    },
+    {
+      "id": "provider.secret.redaction",
+      "category": "provider_failure",
+      "cli_coverage": "partial",
+      "companion_surface": "automated artifact and log secret scan",
+      "first_wave": true
+    },
+    {
+      "id": "stage0.conversation.routing",
+      "category": "stage0",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "stage0.correction.supersession",
+      "category": "stage0",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "stage0.restart.resume",
+      "category": "stage0",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "icp.human_confirmation",
+      "category": "icp",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "account.direct.identity",
+      "category": "account",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "account.direct.human_admission",
+      "category": "account",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "research.source_policy.exact",
+      "category": "research",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "research.claim.direct_provenance",
+      "category": "research",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "research.claim.derived_support",
+      "category": "research",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "research.claim.unsupported_rejected",
+      "category": "research",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "research.coverage.honest_empty",
+      "category": "research",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "c7.account.production_composition",
+      "category": "research_view",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "c7.scope.product_run_subject",
+      "category": "research_view",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "c7.read.deterministic",
+      "category": "research_view",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "durability.provider.replay_no_duplicate_spend",
+      "category": "durability",
+      "cli_coverage": "partial",
+      "companion_surface": "crash-boundary integration test",
+      "first_wave": true
+    },
+    {
+      "id": "durability.agent_turn.resume",
+      "category": "durability",
+      "cli_coverage": "full",
+      "companion_surface": null,
+      "first_wave": true
+    },
+    {
+      "id": "security.cross_workspace.isolation",
+      "category": "security",
+      "cli_coverage": "partial",
+      "companion_surface": "adversarial database and API test",
+      "first_wave": true
+    },
+    {
+      "id": "privacy.dsar.full_surface",
+      "category": "privacy",
+      "cli_coverage": "partial",
+      "companion_surface": "C7 DSAR executable matrix",
+      "first_wave": false
+    },
+    {
+      "id": "performance.concurrent_runs",
+      "category": "performance",
+      "cli_coverage": "none",
+      "companion_surface": "load and concurrency test",
+      "first_wave": false
+    },
+    {
+      "id": "frontend.dossier.comprehension",
+      "category": "frontend",
+      "cli_coverage": "none",
+      "companion_surface": "production web frontend usability test",
+      "first_wave": false
+    },
+    {
+      "id": "frontend.accessibility",
+      "category": "frontend",
+      "cli_coverage": "none",
+      "companion_surface": "web accessibility audit",
+      "first_wave": false
+    },
+    {
+      "id": "design.brand_kit",
+      "category": "design",
+      "cli_coverage": "none",
+      "companion_surface": "design subsystem integration test",
+      "first_wave": false
+    }
+  ]
+}
