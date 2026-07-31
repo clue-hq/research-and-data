@@ -7,9 +7,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
+from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain.tools import tool
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -23,6 +25,7 @@ from clue_agents import (
     DeepAgentTurnRuntime,
     DelegationRequest,
     DelegationResult,
+    ExactAgentToolSurfaceMiddleware,
     GovernedOperationReceipt,
     ScriptedAgentChatModel,
     SpecialistTaskEnvelope,
@@ -243,6 +246,20 @@ class _DelegationBackend:
         return "Canonical account evidence."
 
 
+class _FinalizingExecution:
+    def __init__(self) -> None:
+        self.envelope: object | None = None
+
+    async def finalize(self, *, envelope: object) -> ArtifactRef:
+        self.envelope = envelope
+        return artifact("finalization-envelope.json")
+
+
+class _EmptyOutputBackend:
+    async def snapshot_outputs(self) -> tuple[ArtifactRef, ...]:
+        return ()
+
+
 def _request() -> tuple[AgentTurnRequest, object]:
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     resolved = registry.resolve(AgentRole.HEAD_OF_ABM)
@@ -264,7 +281,12 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
     request, resolved = _request()
     execution = _Execution()
     runtime = DeepAgentTurnRuntime(
-        models=_Models(AIMessage(content="A polished but uncommitted answer.")),
+        models=_Models(
+            (
+                AIMessage(content="A polished but uncommitted answer."),
+                AIMessage(content="I still refuse to invoke the required finalizer."),
+            )
+        ),
         execution=execution,
         max_runtime_s=5,
     )
@@ -300,6 +322,118 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
         message for message in capture.messages[0] if getattr(message, "type", None) == "system"
     )
     assert str(system.content).endswith("## End resolved resource and capability map")
+
+
+def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> None:
+    request, resolved = _request()
+    execution = _Execution()
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    framework_tools = [
+        {"name": name}
+        for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
+    ]
+    model_request = ModelRequest(
+        model=ScriptedAgentChatModel(responses=(AIMessage(content="unused"),)),
+        messages=[HumanMessage(content="Ask the next useful question.")],
+        system_message=SystemMessage(content="Base prompt."),
+        tools=[*factory.build(), *framework_tools],
+    )
+    observed: dict[str, object] = {}
+
+    async def handler(value: ModelRequest) -> ModelResponse[None]:
+        def name(item: object) -> str:
+            if isinstance(item, dict):
+                return str(item["name"])
+            return str(cast(Any, item).name)
+
+        calls = observed.setdefault("calls", [])
+        assert isinstance(calls, list)
+        calls.append(
+            {
+                "tool_choice": value.tool_choice,
+                "tool_names": tuple(name(tool) for tool in value.tools),
+                "messages": tuple(value.messages),
+            }
+        )
+        if len(calls) == 1:
+            return ModelResponse(result=[AIMessage(content="What problem does the product solve?")])
+        return ModelResponse(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "finalize_turn",
+                            "args": {
+                                "status": "awaiting_input",
+                                "user_message": "What problem does the product solve?",
+                            },
+                            "id": "finalize-recovery",
+                            "type": "tool_call",
+                        }
+                    ],
+                )
+            ]
+        )
+
+    run_async(
+        ExactAgentToolSurfaceMiddleware(profile=resolved).awrap_model_call(
+            model_request,
+            handler,
+        )
+    )
+
+    calls = observed["calls"]
+    assert isinstance(calls, list)
+    assert calls[0]["tool_choice"] == "required"
+    assert "finalize_turn" in calls[0]["tool_names"]
+    assert calls[1]["tool_choice"] == "finalize_turn"
+    assert calls[1]["tool_names"] == ("finalize_turn",)
+    assert "What problem does the product solve?" in str(calls[1]["messages"])
+
+
+def test_finalize_turn_derives_missing_next_action_from_exact_awaiting_input_message() -> None:
+    request, resolved = _request()
+    execution = _FinalizingExecution()
+    artifacts = _DelegationArtifacts()
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, SimpleNamespace(backend=_EmptyOutputBackend())),
+        artifacts=cast(Any, artifacts),
+    )
+    finalizer = factory.build()[-1]
+    assert isinstance(finalizer, StructuredTool)
+    coroutine = finalizer.coroutine
+    assert coroutine is not None
+    message = "Which specialist healthcare practices should this project prioritize?"
+
+    run_async(
+        coroutine(
+            runtime=cast(Any, object()),
+            status="awaiting_input",
+            user_message=message,
+            domain_refs=[],
+            open_gate_refs=[],
+            assumptions=[],
+            next_actions=[],
+            failure_code=None,
+        )
+    )
+
+    envelope = cast(Any, execution.envelope)
+    assert envelope.status.value == "awaiting_input"
+    assert envelope.next_action_refs == (envelope.user_message_artifact_ref,)
+    assert artifacts.data[envelope.next_action_refs[0].artifact_key] == message.encode()
 
 
 def test_real_deepagent_accepts_only_adapter_recovered_durable_finalize() -> None:
@@ -467,6 +601,7 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
                     ],
                 ),
                 AIMessage(content="Tool completed, but I did not finalize."),
+                AIMessage(content="I still did not finalize after the bounded recovery."),
             )
         ),
         execution=execution,
@@ -538,6 +673,7 @@ def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake
                     ],
                 ),
                 AIMessage(content="Delegation returned; parent intentionally did not finalize."),
+                AIMessage(content="Parent still did not finalize after the bounded recovery."),
             )
         ),
         execution=execution,

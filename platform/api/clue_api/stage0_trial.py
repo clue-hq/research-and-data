@@ -80,6 +80,8 @@ from clue_core import (
     LLMGateway,
     MemoryType,
     MemoryWriteSeam,
+    OnboardingInputId,
+    OnboardingInputKind,
     operation_id_from_key,
 )
 from clue_db import ConnFactory, transaction
@@ -107,6 +109,7 @@ from clue_research.stage0 import (
     confirm_icp,
     read_client_kb_claims,
     reverse_profile,
+    submit_onboarding_input,
     synthesize_icps,
 )
 from clue_spine import (
@@ -125,6 +128,8 @@ _SESSION_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 _TURN_NAMESPACE_LABEL = "stage0-trial-turn@1"
 _EXECUTION_NAMESPACE_LABEL = "stage0-trial-execution@1"
 _WORKER_ID = "stage0-trial-cli"
+STAGE0_USER_MESSAGE_BINDING_KIND = "conversation"
+STAGE0_CONTEXT_BINDING_KIND = "context"
 
 
 def _json_default(value: object) -> str:
@@ -552,10 +557,27 @@ class Stage0Trial:
             workspace_id=self.state.workspace_id,
             data=message.encode(),
             media_type="text/plain",
-            subject_bindings=((self.state.client_entity_id, "stage0_user_turn"),),
+            subject_bindings=(
+                (self.state.client_entity_id, STAGE0_USER_MESSAGE_BINDING_KIND),
+            ),
         )
+        async with self._conn_factory() as conn:
+            onboarding = await submit_onboarding_input(
+                conn,
+                workspace_id=self.state.workspace_id,
+                brand_id=self.state.brand_id,
+                product_id=self.state.product_id,
+                project_id=self.state.project_id,
+                client_entity_id=EntityId(self.state.client_entity_id),
+                kind=OnboardingInputKind.USER_TURN,
+                artifact_key=user_ref.artifact_key,
+                content_sha256=user_ref.sha256,
+                actor="human",
+                onboarding_input_id=OnboardingInputId(uuid5(turn_id, "onboarding-input")),
+            )
         current = await self.snapshot(
             current_turn={
+                "onboarding_input_id": str(onboarding.onboarding_input_id),
                 "artifact_key": user_ref.artifact_key,
                 "sha256": user_ref.sha256,
                 "media_type": user_ref.media_type,
@@ -576,10 +598,16 @@ class Stage0Trial:
                 "instruction": (
                     "Use only supplied durable truth and the current user message. Do not call "
                     "start_recon or imply that website, Exa, scraping, or campaign files were "
-                    "read. The human triggers inspectable ICP synthesis with /synthesize-icp; "
-                    "do not call synthesize_icps in this trial because its v1 tool result exposes "
-                    "only a count."
+                    "read. The current user turn is already a captured onboarding input; use its "
+                    "provided onboarding_input_id and do not call submit_onboarding_input again. "
+                    "Treat the user's target-ICP and campaign-strategy choices as project_state, "
+                    "not as an invented claim field. Claims about the client may use only the "
+                    "registered_client_claim_fields below and must include the supplied client "
+                    "entity id with entity_type=account. The human triggers inspectable ICP "
+                    "synthesis with /synthesize-icp; do not call synthesize_icps in this trial "
+                    "because its v1 tool result exposes only a count."
                 ),
+                "registered_client_claim_fields": list(CLIENT_KNOWLEDGE_FIELDS),
                 "current_truth": current,
             },
         )
@@ -1097,7 +1125,7 @@ class Stage0Trial:
             workspace_id=self.state.workspace_id,
             data=_json_bytes(payload),
             media_type=media_type,
-            subject_bindings=((self.state.client_entity_id, "stage0_context"),),
+            subject_bindings=((self.state.client_entity_id, STAGE0_CONTEXT_BINDING_KIND),),
         )
 
     async def _drive(self, execution_id: ExecutionId) -> ExecutionStatus:
@@ -1136,6 +1164,8 @@ class Stage0Trial:
 
 
 __all__ = [
+    "STAGE0_CONTEXT_BINDING_KIND",
+    "STAGE0_USER_MESSAGE_BINDING_KIND",
     "Stage0Trial",
     "Stage0TrialPaths",
     "Stage0TrialState",

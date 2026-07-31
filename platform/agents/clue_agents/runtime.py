@@ -8,9 +8,9 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from deepagents import create_deep_agent
-from langchain.agents.middleware.types import AgentMiddleware
+from langchain.agents.middleware.types import AgentMiddleware, ModelResponse
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
@@ -93,10 +93,42 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         else:
             final_prompt = f"{base_prompt.rstrip()}\n\n{suffix}"
         filtered = [by_name[name] for name in sorted(self._allowed)]
+        governed_request = request.override(
+            tools=filtered,
+            # Every platform turn has a mandatory ``finalize_turn`` authority. Requiring a tool
+            # call asks compatible providers to keep acting until they invoke a governed tool.
+            tool_choice="required",
+            system_message=SystemMessage(content=final_prompt),
+        )
+        response = await handler(governed_request)
+        if not isinstance(response, ModelResponse) or len(response.result) != 1:
+            return response
+        message = response.result[0]
+        if not isinstance(message, AIMessage) or message.tool_calls or not message.text.strip():
+            return response
+
+        # Some OpenAI-compatible gateways/models may still return a plain-text stop despite
+        # ``tool_choice=required``. Give that exact proposed response one bounded finalize-only
+        # recovery call. Authority is not bypassed: the model must still invoke the real governed
+        # finalizer, and a second non-tool stop remains ``missing_finalize`` downstream.
         return await handler(
-            request.override(
-                tools=filtered,
-                system_message=SystemMessage(content=final_prompt),
+            governed_request.override(
+                messages=[
+                    *governed_request.messages,
+                    message,
+                    HumanMessage(
+                        content=(
+                            "Your previous response is not committed because it did not call "
+                            "finalize_turn. Call finalize_turn now and no other tool. Preserve "
+                            "the previous response exactly as user_message. Use awaiting_input "
+                            "when it asks the human for information or confirmation and include "
+                            "one next_actions item describing that requested response; otherwise "
+                            "use completed. Do not add new content."
+                        )
+                    ),
+                ],
+                tools=[by_name["finalize_turn"]],
+                tool_choice="finalize_turn",
             )
         )
 

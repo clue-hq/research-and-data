@@ -38,3 +38,25 @@
   database seeds the current field contracts directly, which is appropriate before first testing.
 - The field registry remains fail-closed: redefining a field key with a different contract is still
   rejected instead of silently mutating the contract.
+
+## Stage-0 first-turn repair
+
+- The first manual turn failed before model execution because the trial used private labels
+  (`stage0_user_turn` / `stage0_context`) where the durable artifact schema accepts the canonical
+  binding kinds `conversation` / `context`. The production call sites now use frozen constants,
+  with a real-Postgres constraint regression.
+- The CLI/API boundary now records every incoming human turn as an idempotent `user_turn`
+  onboarding input before the agent runs and passes that exact id to the Stage-0 context. The
+  trial uses the schema-valid actor `human`; target-ICP/campaign choices are explicitly routed as
+  project state rather than invented claim fields.
+- OpenRouter GPT-4.1 can return a plain-text stop despite mandatory durable finalization. The exact
+  tool middleware now requests tool use and permits one bounded, finalize-only recovery call. A
+  second plain stop still fails closed. If an `awaiting_input` response omits the redundant
+  `next_actions` array, the finalizer reuses the exact durable user-facing message as its action
+  reference instead of inventing content.
+- Isolated live verification crossed the same HTTP route successfully: `awaiting_input` response,
+  one human onboarding row, committed finalization, user+assistant thread history, and the complete
+  `requested -> context_ready -> running -> awaiting_input` event sequence. No Sumble call ran.
+- Focused unit, database, governed Stage-0, Recipe-0, HTTP, and tool-contract regressions passed.
+  One toolbelt matrix test is feature-flag-sensitive and passed when run with its expected C7 read
+  flag disabled.
