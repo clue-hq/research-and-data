@@ -318,7 +318,7 @@ def test_get_hiring_velocity_matches_substrate_example() -> None:
         async with rollback_conn() as conn:
             fd = await get_field(conn, "account.hiring_velocity_eng")
         assert fd is not None
-        assert fd.tier_plan == ("linkedin_jobs", "exa")
+        assert fd.tier_plan == ("sumble_jobs", "linkedin_jobs", "exa")
         assert fd.freshness_ttl == timedelta(days=30)
         assert fd.pass_kind is PassKind.DEEP
         assert fd.gate == "tier>=3"
@@ -354,7 +354,7 @@ def test_two_packs_disjoint_load_and_redefinition_rejected() -> None:
                 FieldDef(
                     field_key="core.employee_count",
                     value_type="int",
-                    tier_plan=("clay", "apollo"),
+                    tier_plan=("clay", "apollo", "sumble_organizations"),
                     freshness_ttl=timedelta(days=90),
                     pass_kind=PassKind.SCORING,
                 ),
