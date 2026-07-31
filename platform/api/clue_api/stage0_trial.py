@@ -41,6 +41,7 @@ from clue_agents import (
     DelegationRequest,
     DelegationResult,
     DomainObjectRef,
+    FinalizeStatus,
     LayerBudget,
 )
 from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
@@ -53,6 +54,7 @@ from clue_api.agent_platform_wiring import (
     build_agent_context_assembler,
     build_agent_platform_components,
 )
+from clue_api.agent_runtime_wiring import ModelFinalizeRequest
 from clue_api.composition import load_research_packs
 from clue_api.execution_wiring import (
     ExecutionRunEventWriter,
@@ -73,7 +75,13 @@ from clue_api.recipe_wiring import (
 from clue_api.run_composition import build_platform_gateway
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_config import Secrets, Settings, default_gateway_config, load_settings
+from clue_config import (
+    DEFAULT_STAGE0_POLICY,
+    Secrets,
+    Settings,
+    default_gateway_config,
+    load_settings,
+)
 from clue_core import (
     ContextAssembly,
     EntityId,
@@ -83,6 +91,9 @@ from clue_core import (
     MemoryWriteSeam,
     OnboardingInputId,
     OnboardingInputKind,
+    ReadinessDecisionId,
+    ReadinessGate,
+    ReadinessSnapshotRef,
     VolunteeredStatementId,
     operation_id_from_key,
 )
@@ -111,6 +122,8 @@ from clue_research.stage0 import (
     ProjectStatement,
     VolunteeredMaterial,
     confirm_icp,
+    count_statements_for_input,
+    evaluate_readiness,
     read_client_kb_claims,
     read_statements,
     reverse_profile,
@@ -130,6 +143,10 @@ from clue_storage import ArtifactNotFound, StorageBackend, get_artifact
 from clue_toolbelt import DbIdempotencyStore, ToolInvoker, ToolRegistry
 
 _SESSION_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+# A pure surface command: one line, a leading slash-command token, and at most three arguments
+# (``/confirm-icp 2``). Deliberately syntactic — the guard below must not judge *content*, and a
+# message that is really prose gets routed like any other turn.
+_PURE_COMMAND = re.compile(r"^/\S+(?:[ \t]+\S+){0,3}$")
 _TURN_NAMESPACE_LABEL = "stage0-trial-turn@1"
 _EXECUTION_NAMESPACE_LABEL = "stage0-trial-execution@1"
 _WORKER_ID = "stage0-trial-cli"
@@ -147,6 +164,74 @@ class Stage0ProductNotConfirmed(ValueError):
     def __init__(self, action: str) -> None:
         super().__init__(f"run /confirm-product first: {action} requires a confirmed product")
         self.action = action
+
+
+NO_ROUTING_RECEIPT = (
+    "This turn has no durable routing receipt, so it cannot be finalized as completed or "
+    "awaiting_input: the human's message was captured as an onboarding input, but nothing was "
+    "routed out of it, and reporting otherwise would claim work the database does not contain. "
+    "Call record_interview_answer for this turn's onboarding_input_id and route every part of the "
+    "message you used — claim, memory, project_state, or a field/source proposal. If nothing in "
+    "the message is material, say so honestly by routing it with route='unmapped' (that route "
+    "needs only a route_key and the exact quote offsets), then finalize again. Never tell the "
+    "human that something was captured, recorded, saved, or stored except by reporting a routing "
+    "receipt you actually received."
+)
+
+
+def is_pure_command(message: str) -> bool:
+    """Structurally decide whether a user turn is only a surface command.
+
+    "Substantive" is defined syntactically on purpose. The guard must not form an opinion about
+    what the human *meant* — a false positive here only means the agent is not forced to route,
+    and a false negative costs one honest ``unmapped`` route. Anything that is not a single-line
+    slash command with at most three arguments is treated as substantive.
+    """
+
+    return _PURE_COMMAND.fullmatch(message.strip()) is not None
+
+
+class Stage0RoutingReceiptGuard:
+    """Refuse a Stage-0 finalize that reports work this turn has no durable receipt for.
+
+    The live defect this closes: the agent told the human "this is now captured as project state"
+    on seven consecutive turns while ``volunteered_statement`` stayed empty. Language policing
+    cannot fix that — the check is structural instead. A ``completed``/``awaiting_input`` finalize
+    of a substantive turn requires at least one routing receipt for *this* turn's captured
+    onboarding input; ``failed``/``blocked`` are never gated, because an honest failure must not be
+    forced through a write it could not make.
+
+    Refusal raises ``ValueError``, which the runtime's bounded finalize repair hands back to the
+    model as visible tool feedback: it gets one corrective attempt (route, then finalize), and a
+    second refusal still ends the turn ``missing_finalize``.
+    """
+
+    def __init__(
+        self,
+        *,
+        workspace_id: str,
+        onboarding_input_id: OnboardingInputId,
+        user_message: str,
+        conn_factory: ConnFactory = transaction,
+    ) -> None:
+        self._workspace_id = workspace_id
+        self._onboarding_input_id = onboarding_input_id
+        self._user_message = user_message
+        self._conn_factory = conn_factory
+
+    async def __call__(self, proposal: ModelFinalizeRequest) -> None:
+        if proposal.status not in {FinalizeStatus.COMPLETED, FinalizeStatus.AWAITING_INPUT}:
+            return
+        if is_pure_command(self._user_message):
+            return
+        async with self._conn_factory() as conn:
+            counts = await count_statements_for_input(
+                conn,
+                workspace_id=self._workspace_id,
+                onboarding_input_id=self._onboarding_input_id,
+            )
+        if counts.total == 0:
+            raise ValueError(NO_ROUTING_RECEIPT)
 
 
 @dataclass(frozen=True, slots=True)
@@ -784,6 +869,12 @@ class Stage0Trial:
                 context=context,
                 lease=lease,
                 execution=execution,
+                completion_guard=Stage0RoutingReceiptGuard(
+                    workspace_id=self.state.workspace_id,
+                    onboarding_input_id=onboarding.onboarding_input_id,
+                    user_message=message,
+                    conn_factory=self._conn_factory,
+                ),
             )
         else:
             outcome = committed
@@ -815,9 +906,96 @@ class Stage0Trial:
                 if completed is not ExecutionStatus.COMPLETED:
                     raise RuntimeError("completed Stage-0 turn did not complete Recipe 0")
         await self._refresh_client_kb_from_conversation()
+        # Readiness is deterministic evidence, not a thing the agent may claim: recompute it from
+        # durable state after any turn that actually routed material information, so the readiness
+        # ledger reflects the conversation instead of staying empty for the whole trial.
+        await self._recompute_readiness(
+            turn_id=turn_id,
+            onboarding_input_id=onboarding.onboarding_input_id,
+        )
         self.paths.save_state(self.state)
         await self.export_report()
         return outcome, assistant_message
+
+    async def _recompute_readiness(
+        self,
+        *,
+        turn_id: UUID,
+        onboarding_input_id: OnboardingInputId,
+    ) -> ReadinessSnapshotRef | None:
+        """Re-run the C4 readiness evaluator over durable truth after a material routed turn.
+
+        Reuses :func:`~clue_research.stage0.evaluate_readiness` — the one Stage-0 readiness
+        implementation — with metrics compiled from the version-pinned Client KB and this
+        project's live statements. A turn whose only receipts are ``unmapped`` routed nothing
+        material, so there is no new evidence to evaluate and no decision is written.
+
+        The decision id is derived from the turn *and* the immutable context the evaluator pins,
+        so replaying the same turn against the same truth is idempotent while a turn re-run after
+        the product or Client-KB version moved records a new, honest decision instead of tripping
+        the evaluator's replay check.
+        """
+
+        async with self._conn_factory() as conn:
+            counts = await count_statements_for_input(
+                conn,
+                workspace_id=self.state.workspace_id,
+                onboarding_input_id=onboarding_input_id,
+            )
+            if counts.non_unmapped == 0:
+                return None
+            project = await get_project(conn, self.state.project_id)
+            if project is None or project.workspace_id != self.state.workspace_id:
+                raise RuntimeError("Stage-0 trial project is missing")
+            claims = await read_client_kb_claims(
+                conn,
+                EntityId(self.state.client_entity_id),
+                workspace_id=self.state.workspace_id,
+                version=self.state.client_kb_version,
+                product_id=self.state.product_id,
+            )
+            statements = await read_statements(
+                conn,
+                workspace_id=self.state.workspace_id,
+                project_id=self.state.project_id,
+            )
+            # Plain JSON metrics; the evaluator takes them as ``Mapping[str, JsonValue]``.
+            metrics: dict[str, Any] = {
+                "coverage_ratio": (
+                    len(claims) / len(CLIENT_KNOWLEDGE_FIELDS) if CLIENT_KNOWLEDGE_FIELDS else 0.0
+                ),
+                "verified_claims": len(claims),
+                "available_field_keys": sorted(claims),
+                "project_state_statements": len(statements),
+                "routed_statements_this_turn": counts.total,
+                "material_statements_this_turn": counts.non_unmapped,
+            }
+            decision_id = ReadinessDecisionId(
+                uuid5(
+                    turn_id,
+                    "stage0-trial-readiness:"
+                    f"{ReadinessGate.ICP_SYNTHESIS.value}:{self.state.brand_id}:"
+                    f"{project.product_id}:{self.state.project_id}:"
+                    f"{self.state.client_entity_id}:{self.state.client_kb_version}",
+                )
+            )
+            return await evaluate_readiness(
+                conn,
+                workspace_id=self.state.workspace_id,
+                brand_id=self.state.brand_id,
+                # The decision records the *confirmed* product (None until the human confirms),
+                # never the unconfirmed candidate the KB read is scoped to.
+                product_id=project.product_id,
+                project_id=self.state.project_id,
+                client_entity_id=EntityId(self.state.client_entity_id),
+                client_kb_version=self.state.client_kb_version,
+                gate=ReadinessGate.ICP_SYNTHESIS,
+                spec=DEFAULT_STAGE0_POLICY.readiness,
+                metrics=metrics,
+                # Deterministic engine work, not an agent claim (the DB pins the actor vocabulary).
+                created_by_actor="system",
+                readiness_decision_id=decision_id,
+            )
 
     async def _refresh_client_kb_from_conversation(self) -> None:
         """Publish new interview truth as the next immutable Client-KB version.
@@ -1313,14 +1491,17 @@ class Stage0Trial:
 
 
 __all__ = [
+    "NO_ROUTING_RECEIPT",
     "STAGE0_CONTEXT_BINDING_KIND",
     "STAGE0_USER_MESSAGE_BINDING_KIND",
     "Stage0IcpSynthesis",
     "Stage0ProductNotConfirmed",
+    "Stage0RoutingReceiptGuard",
     "Stage0Trial",
     "Stage0TrialPaths",
     "Stage0TrialState",
     "create_stage0_trial_session",
+    "is_pure_command",
     "stage0_trial_context_policy",
     "stage0_trial_recipe_definitions",
     "stage0_trial_settings",

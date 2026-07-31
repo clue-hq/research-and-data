@@ -25,6 +25,7 @@ from clue_api.agent_execution_wiring import (
 )
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
+    CompletionGuard,
     DurableDeepAgentTurnRunner,
     GovernedAgentToolFactory,
 )
@@ -137,7 +138,15 @@ class HeadOfAbmStage0Runtime:
         context: AssembledAgentContext,
         lease: AgentWorkspaceLease,
         execution: C5AgentExecutionAdapter,
+        completion_guard: CompletionGuard | None = None,
     ) -> AgentTurnOutcome:
+        """Run one Stage-0 turn.
+
+        ``completion_guard`` is the surface's veto over a non-failing terminal proposal — the seam
+        the Stage-0 routing-receipt honesty check rides. It is optional because the guard needs the
+        captured onboarding input of *this* turn, which only the calling surface knows.
+        """
+
         resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM)
         constitution = request.constitution
         if constitution.role is not AgentRole.HEAD_OF_ABM:
@@ -193,6 +202,7 @@ class HeadOfAbmStage0Runtime:
             execution=execution,
             lease=lease,
             artifacts=self._artifacts,
+            completion_guard=completion_guard,
         ).build()
         runtime = DeepAgentTurnRuntime(
             models=self._models,
