@@ -25,11 +25,16 @@ from clue_core import (
     AccountStatus,
     Claim,
     ClaimId,
+    DisplayDecision,
     EntityId,
     EntityType,
     ExtractionMethod,
     FieldDef,
+    OutreachDecision,
     PassKind,
+    ResearchAvailability,
+    ResearchConflictState,
+    ResearchItemState,
     ResearchMode,
     VerificationStatus,
     new_claim_id,
@@ -521,6 +526,125 @@ def test_two_tier2_sources_disagree_raise_conflict_and_no_silent_pick() -> None:
             # ...and the merge result carries the conflict flag (substrate §1).
             cv = await current_value(conn, entity, "account.lb", scope=ALL_WORKSPACES)
             assert cv is not None and cv.conflict
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+@pytest.mark.parametrize(
+    ("field_key", "equality_mode", "left", "right"),
+    [
+        ("account.c7_headcount", "numeric_tol", 1000, 1024),
+        ("account.c7_tech", "semantic", "Snowflake", "uses Snowflake"),
+    ],
+)
+def test_c7_equality_agreement_aligns_corroboration_merge_and_item_state(
+    field_key: str,
+    equality_mode: str,
+    left: object,
+    right: object,
+) -> None:
+    """C7.1 joint consumer test: canonical differences that agree never become review-required."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = await _account(conn)
+            await _register(
+                conn,
+                field_key,
+                corroboration_min=2,
+                equality_mode=equality_mode,
+                value_type="int" if equality_mode == "numeric_tol" else "str",
+                value_schema={"type": "number" if equality_mode == "numeric_tol" else "string"},
+            )
+            await _add_claim(
+                conn, entity, field_key, left, tier=2, source_key="exa", host="a.example"
+            )
+            await _add_claim(
+                conn, entity, field_key, right, tier=2, source_key="parallel", host="b.example"
+            )
+
+            corroboration = await _corroborator(conn).evaluate(
+                entity, field_key, scope=ALL_WORKSPACES
+            )
+            merged = await current_value(conn, entity, field_key, scope=ALL_WORKSPACES)
+            assert merged is not None
+            assert not corroboration.conflict
+            assert not merged.conflict
+
+            # Provisional C7 item-state adapter: C7.3 will own the full governance projection, but
+            # this locks the prerequisite now so it cannot reinterpret canonical inequality as a
+            # review conflict.
+            state = ResearchItemState(
+                availability=ResearchAvailability.AVAILABLE,
+                verification=VerificationStatus.VERIFIED,
+                freshness=merged.freshness_state,
+                conflict=(
+                    ResearchConflictState.REVIEW_REQUIRED
+                    if merged.conflict
+                    else ResearchConflictState.NONE
+                ),
+                display_decision=DisplayDecision.ALLOWED,
+                outreach_decision=OutreachDecision.NOT_APPLICABLE,
+                reason_codes=("review_required",) if merged.conflict else (),
+            )
+            assert state.conflict is ResearchConflictState.NONE
+            assert "review_required" not in state.reason_codes
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_verification_db")
+def test_c7_equality_disagreement_aligns_corroboration_merge_and_item_state() -> None:
+    """C7.1 converse: genuine mode-aware disagreement remains review-required end to end."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            entity = await _account(conn)
+            field_key = "account.c7_tech_conflict"
+            await _register(
+                conn,
+                field_key,
+                corroboration_min=2,
+                equality_mode="semantic",
+            )
+            await _add_claim(
+                conn,
+                entity,
+                field_key,
+                "Snowflake",
+                tier=2,
+                source_key="exa",
+                host="a.example",
+            )
+            await _add_claim(
+                conn,
+                entity,
+                field_key,
+                "Databricks",
+                tier=2,
+                source_key="parallel",
+                host="b.example",
+            )
+            corroboration = await _corroborator(conn).evaluate(
+                entity, field_key, scope=ALL_WORKSPACES
+            )
+            merged = await current_value(conn, entity, field_key, scope=ALL_WORKSPACES)
+            assert merged is not None
+            assert corroboration.conflict
+            assert merged.conflict
+
+            state = ResearchItemState(
+                availability=ResearchAvailability.AVAILABLE,
+                verification=VerificationStatus.FLAGGED,
+                freshness=merged.freshness_state,
+                conflict=ResearchConflictState.REVIEW_REQUIRED,
+                display_decision=DisplayDecision.ALLOWED,
+                outreach_decision=OutreachDecision.NOT_APPLICABLE,
+                reason_codes=("review_required",),
+            )
+            assert state.conflict is ResearchConflictState.REVIEW_REQUIRED
+            assert state.reason_codes == ("review_required",)
 
     run_async(_run())
 

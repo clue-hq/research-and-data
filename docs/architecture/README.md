@@ -62,8 +62,9 @@ Doc S end-to-end → the substrate doc a task touches → Doc M if memory is inv
 
 ## Standing flags
 
-- **O11 (harness doc):** notify the founder before any upstream implementation binds to the
-  dossier *document shape* — consumers read claims/narrative/block projections, not rendered
-  dossiers.
+- **O11 (harness doc; backend resolved 2026-07-27):** dossier means a structured account/contact
+  research view with provenance/evidence actions and reference-only saved versions. Consumers read
+  claims/narrative/block projections, not a canonical rendered document. Exact frontend layout and
+  any optional downstream renderer remain open.
 - The frontend/product plan pack and the treaty (`08-backend-contract.md`) live outside this
   repo (co-founder side); treaty changes are additive-only (REQ-16/17).

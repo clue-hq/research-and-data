@@ -58,7 +58,11 @@ from clue_core import (
     values_agree,
 )
 from clue_core.field import FieldKey
-from clue_research.claimstore.claims import _SELECT_COLUMNS, _row_to_claim, claims_for
+from clue_research.claimstore.claims import (
+    _SELECT_COLUMNS,
+    _retention_eligible_sql,
+    _row_to_claim,
+)
 from clue_research.claimstore.tenancy import WorkspaceScope
 
 # ``EqualityMode`` / ``values_agree`` come from ``core`` (the substrate's one equality contract):
@@ -124,7 +128,7 @@ def _is_eligible(claim: Claim, policy: MergePolicy) -> bool:
     """Whether a claim may *win* the merge (be emitted as current truth)."""
     # Discovery-provenance claims record where/why an entity was admitted — admission evidence, not
     # a field value — so they are never the "current truth" of a field (staged-flow §9).
-    if claim.claim_flavor is ClaimFlavor.DISCOVERY:
+    if claim.claim_flavor is not ClaimFlavor.FIELD_CLAIM:
         return False
     if policy.exclude_rejected and claim.verification_status is VerificationStatus.REJECTED:
         return False
@@ -361,9 +365,34 @@ async def current_value(
     (``WorkspaceScope.all_workspaces``).
     A tenant scope never returns another tenant's private claim.
     """
-    claims = await claims_for(conn, entity_id, field_key, scope=scope)
+    now = _now()
+    scope_sql, scope_params = scope.predicate()
+    retention_sql = _retention_eligible_sql()
+    rows = (
+        await conn.execute(
+            text(
+                f"""
+                SELECT {_SELECT_COLUMNS}
+                FROM claim
+                WHERE entity_id = :entity_id
+                  AND field_key = :field_key
+                  AND superseded_by IS NULL
+                  AND {retention_sql}
+                  AND {scope_sql}
+                ORDER BY collected_at DESC, id
+                """
+            ),
+            {
+                "entity_id": entity_id,
+                "field_key": field_key,
+                "retention_at": now,
+                **scope_params,
+            },
+        )
+    ).mappings()
+    claims = [_row_to_claim(dict(row)) for row in rows.all()]
     ttl, equality_mode = await _freshness_ttl(conn, str(field_key))
-    return merge_claims(list(claims), ttl, policy, _now(), equality_mode)
+    return merge_claims(claims, ttl, policy, now, equality_mode)
 
 
 async def current_values(
@@ -386,16 +415,29 @@ async def current_values(
     if not entities or not fields:
         return {}
 
+    now = _now()
     scope_sql, scope_params = scope.predicate()
+    retention_sql = _retention_eligible_sql()
     stmt = text(
         f"""
         SELECT {_SELECT_COLUMNS} FROM claim
         WHERE entity_id IN :eids AND field_key IN :fkeys AND superseded_by IS NULL
+          AND {retention_sql}
           AND {scope_sql}
         """
     ).bindparams(bindparam("eids", expanding=True), bindparam("fkeys", expanding=True))
     rows = (
-        (await conn.execute(stmt, {"eids": entities, "fkeys": fields, **scope_params}))
+        (
+            await conn.execute(
+                stmt,
+                {
+                    "eids": entities,
+                    "fkeys": fields,
+                    "retention_at": now,
+                    **scope_params,
+                },
+            )
+        )
         .mappings()
         .all()
     )
@@ -406,7 +448,6 @@ async def current_values(
         grouped[(EntityId(row["entity_id"]), row["field_key"])].append(claim)
 
     meta = await _freshness_ttls(conn, fields)
-    now = _now()
     result: dict[tuple[EntityId, str], CurrentValue] = {}
     for (entity_id, field_key), claim_list in grouped.items():
         ttl, equality_mode = meta.get(field_key, (None, EqualityMode.EXACT))

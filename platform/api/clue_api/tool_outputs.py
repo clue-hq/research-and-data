@@ -123,6 +123,51 @@ class ResearchAccountGapsV2Output(ResearchAccountGapsOutput):
     stop_proposal: bool
 
 
+class ResearchViewChangeReportOutput(ToolOutput):
+    report_id: str
+    operation_id: str
+    old_snapshot_id: str
+    new_snapshot_id: str
+    old_source_state_sha256: str
+    new_source_state_sha256: str
+    old_composition_sha256: str
+    new_composition_sha256: str
+    unchanged_statement_ids: list[str]
+    added_statement_ids: list[str]
+    removed_statement_ids: list[str]
+    stale_statement_ids: list[str]
+    restricted_statement_ids: list[str]
+    requested_operation_ids: list[str]
+    reason_codes: list[str]
+    fetch_ref: str
+
+
+class ResearchViewReceiptOutput(ToolOutput):
+    schema_version: str
+    snapshot_id: str
+    view_id: str
+    workspace_id: str
+    project_id: str
+    project_run_id: str
+    subject: dict[str, object]
+    product_id: str | None
+    source_state_sha256: str
+    composition_sha256: str
+    created_at: str
+    fetch_ref: str
+
+
+class ResearchViewRefOutput(ToolOutput):
+    view_id: str
+    snapshot_id: str | None
+    workspace_id: str
+    project_id: str
+    subject_entity_id: str
+    product_id: str | None
+    source_state_sha256: str
+    fetch_ref: str
+
+
 class FieldProposalOutput(ToolOutput):
     field_proposal_id: str
     field_key: str

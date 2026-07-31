@@ -55,6 +55,11 @@ class RunEventTopic(StrEnum):
     PHASE_COMPLETED = "run.phase.completed"
     STEP_PROGRESS = "run.step.progress"  # A6 minimal phase-level timeline mapping
     DONE = "run.done"
+    RESEARCH_VIEW_UPDATED = "research_view.updated"
+    RESEARCH_VIEW_SECTION_STALE = "research_view.section_stale"
+    RESEARCH_VIEW_RECHECK_COMPLETED = "research_view.recheck_completed"
+    DOSSIER_UPDATED = "dossier.updated"
+    DOSSIER_SECTION_STALE = "dossier.section.stale"
 
 
 # The stored-topic allow-list (kept == the enum by a durable test so a new member cannot silently

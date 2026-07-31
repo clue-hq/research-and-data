@@ -164,7 +164,11 @@ async def fill_contact_field(
         if claim.source_tier >= 4 and binding is IdentityBinding.WEAK:
             return None
         use_class = use_class_tagger.tag(field_def, claim.value_json, claim.evidence_span)
-        return revalidate_with(claim, identity_binding=binding, use_class=use_class)
+        return revalidate_with(
+            claim,
+            identity_binding=binding,
+            use_class=use_class,
+        )
 
     source_gate: SourceGate | None = None
     if pre_spend_gate is not None:
@@ -199,6 +203,7 @@ async def fill_contact_field(
         thresholds=thresholds,
         claim_tagger=tag_claim,
         source_gate=source_gate,
+        product_id=spec.product_id if spec is not None else None,
     )
     refs = list(result.claim_refs)
     return FacetFillResult(

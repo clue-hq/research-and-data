@@ -15,9 +15,10 @@ it?"):
 
 1. **corroboration** (M9.2) per ``(entity, field)`` — promotes a tier≤3 value to ``verified`` once
    enough independent sources agree (a no-op for a tier-4-only field);
-2. **faithfulness** (M9.3) per live tier-4 claim — the judge entails ``value_json`` from the claim's
-   ``evidence_span`` and drives the tier-4 ``verification_status`` to ``verified`` / ``rejected`` (a
-   no-span tier-4 claim is auto-``unsupported`` — structural and free);
+2. **faithfulness** (M9.3) per live direct tier-4 claim — the judge entails ``value_json`` from the
+   claim's ``evidence_span`` and drives the tier-4 ``verification_status`` to ``verified`` /
+   ``rejected`` (a no-span direct claim is auto-``unsupported`` — structural and free); C7
+   derivations use their separate bounded entailment verdict;
 3. **identity-binding** (M9.4) — *not a runtime step here*: it is stamped immutably at claim
    construction (the born-binding) and enforced structurally by the merge's weak-binding exclusion;
 4. **use gate** (M10.3) **last** — for each ``contact.facet.*`` claim, writes the ``use_decision``
@@ -46,6 +47,7 @@ from typing import Protocol, runtime_checkable
 
 from clue_core import (
     Claim,
+    ClaimFlavor,
     CostCents,
     EntityId,
     EntityType,
@@ -226,10 +228,11 @@ class VerificationPhaseHandler:
                 claim.entity_id, claim.field_key, scope=scope, entity_type=claim.entity_type
             )
 
-        # 2. faithfulness (M9.3) — every live tier-4 claim; the judge drives verification_status.
+        # 2. faithfulness (M9.3) — direct tier-4 claims only. C7 derived claims carry their own
+        # bounded entailment verdict and must not be judged again against a nonexistent span.
         cost = Decimal(0)
         for claim in claims:
-            if claim.source_tier == 4:
+            if claim.source_tier == 4 and claim.claim_flavor is not ClaimFlavor.DERIVED:
                 result = await self._judge.judge(claim)
                 cost += result.cost_cents
 

@@ -1,11 +1,13 @@
 """The ``ProjectPhase.VERIFICATION`` handler (integration keystone) — driven entirely by fakes (no
 DB). These prove the handler *policy*: it drives the frozen ``VERIFICATION_GATE_ORDER`` over each
-high-tier account's claims in order — corroboration (per ``(entity, field)``) → faithfulness (every
-live tier-4 claim) → use-gate (``contact.facet.*`` claims) **last** — records per-field
+high-tier account's claims in order — corroboration (per ``(entity, field)``) → faithfulness
+(direct tier-4 claims; C7 derivations use entailment) → use-gate (``contact.facet.*`` claims)
+**last** — records per-field
 verification-health, isolates a single failing account so the batch survives, and is a clean no-op
 on an empty set. The end-to-end "a judge-rejected tier-4 claim is absent from ``current_value``"
 proof is a DB-gated integration test (the merge enforces it via ``require_verified_tier4``); here we
-prove the handler *routes every tier-4 claim through the judge*, so none can bypass it.
+prove the handler routes every direct tier-4 claim through the faithfulness judge without
+double-judging derived claims.
 """
 
 from __future__ import annotations
@@ -26,7 +28,9 @@ from clue_api.verification.handler import (
 )
 from clue_core import (
     Claim,
+    ClaimFlavor,
     EntityId,
+    EntityType,
     ExtractionMethod,
     IdentityBinding,
     PhaseContext,
@@ -204,6 +208,21 @@ def _facet(entity_id: EntityId, *, field_key: str = _FACET) -> Claim:
     )
 
 
+def _derived(entity_id: EntityId) -> Claim:
+    return Claim(
+        entity_id=entity_id,
+        entity_type=EntityType.ACCOUNT,
+        field_key=_MOVES,
+        value_json="a supported interpretation about Acme Corp",
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        confidence=0.8,
+        run_id=new_run_id(),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        claim_flavor=ClaimFlavor.DERIVED,
+    )
+
+
 def _use_gate_provider(use_gate: FakeUseGate | None) -> UseGateProvider | None:
     if use_gate is None:
         return None
@@ -297,6 +316,25 @@ def test_judges_every_tier4_claim_and_no_lower_tier() -> None:
     async def _run() -> None:
         await handler.run(_ctx())
         # the tier-4 synthesis claim is judged; the tier-3 claim is NOT (corroboration's job)
+        assert judge.judged == [_PAIN]
+
+    asyncio.run(_run())
+
+
+def test_faithfulness_skips_derived_claims_owned_by_entailment() -> None:
+    rec = _Recorder()
+    entity_id = new_entity_id()
+    judge = FakeJudge(rec)
+    handler = VerificationPhaseHandler(
+        account_resolver=_resolver((_spec(entity_id),)),
+        load_claims=_loader({entity_id: [_acct(_PAIN, 4, entity_id), _derived(entity_id)]}),
+        corroborator=FakeCorroborator(rec),
+        judge=judge,
+        use_gate_provider=None,
+    )
+
+    async def _run() -> None:
+        await handler.run(_ctx())
         assert judge.judged == [_PAIN]
 
     asyncio.run(_run())

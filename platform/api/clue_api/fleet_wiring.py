@@ -162,17 +162,16 @@ def register_boot_handlers(
       ``gateway`` (buildable from ``GatewayConfig``/settings) **and** a required resolver whose
       production form (``build_high_tier_resolver``) is keyed on the per-``(client, icp)``
       high-tier set (the same reason DEEP is per-campaign). So it is per-run, not boot — skipped.
-    * ``ProjectPhase.HANDOFF`` — both the M12 narrative handler
-      (``register_handoff_phase_handler``, needing an assembler over a production
-      ``HandoffCommitteeReader`` that only exists once M8/M10 integrate — no boot concrete) and the
-      retention-sweep wrapper (``register_retention_sweeping_handoff_handler``, needing that inner
-      handler **and** a per-campaign ``account_resolver``) are not settings-composable — skipped.
+    * ``ProjectPhase.HANDOFF`` — the real M12 narrative handler and its retention-sweep wrapper are
+      now composed per run by :class:`~clue_api.run_composition.ComposingRunDriver` (C7.6). They
+      require the exact run/product-bound governed committee reader and per-run account resolver,
+      so they remain intentionally unavailable to this process-wide boot registry — skipped here.
 
     The M5/M6 phases (``REVERSE_PROFILING`` … ``TIER_CHECKPOINT``) have no ``clue_api`` registration
     surface yet, so there is nothing to compose for them here. Consequently a run whose *current*
     phase has no boot- or run-registered handler fails its drive task with ``outcome=error`` (see
-    :mod:`clue_api.fleet_main`); the per-``(client, icp)`` DEEP/VERIFICATION composition inside the
-    worker is a deliberate open design item (B4 / the delegation contract).
+    :mod:`clue_api.fleet_main`); the per-``(client, icp, product)`` DEEP/VERIFICATION/HANDOFF
+    composition lives in :mod:`clue_api.run_composition`.
 
     ``registry`` defaults to the process-default registry the state machine drives (a fresh registry
     is injectable for tests). ``storage`` is the B2 backend the storage-consuming registrations

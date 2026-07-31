@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "synthetic_research_view_adversarial_v1",
+  "sanitized": true,
+  "cases": [
+    {
+      "case_id": "wrong_person_biography",
+      "category": "subject_contamination",
+      "first_guard_stage": "c7.0_contract",
+      "contract_case": "wrong_statement_subject",
+      "later_guard_stage": "c7.3_target_lock",
+      "expected_reason_code": "subject_mismatch",
+      "expected_outcome": "rejected"
+    },
+    {
+      "case_id": "inconsistent_pronoun_or_identity_signal",
+      "category": "identity_signal_conflict",
+      "first_guard_stage": "c7.3_target_lock",
+      "contract_case": null,
+      "later_guard_stage": "c7.8_adversarial_eval",
+      "expected_reason_code": "identity_signal_conflict",
+      "expected_outcome": "unavailable"
+    },
+    {
+      "case_id": "sensitive_medical_personalization",
+      "category": "governance_violation",
+      "first_guard_stage": "c7.0_contract",
+      "contract_case": "sensitive_outreach",
+      "later_guard_stage": "c7.3_governance_resolver",
+      "expected_reason_code": "sensitive_locked",
+      "expected_outcome": "restricted"
+    },
+    {
+      "case_id": "wrong_account_activity",
+      "category": "subject_contamination",
+      "first_guard_stage": "c7.0_contract",
+      "contract_case": "wrong_subject_reference",
+      "later_guard_stage": "c7.3_activity_reader",
+      "expected_reason_code": "subject_mismatch",
+      "expected_outcome": "rejected"
+    },
+    {
+      "case_id": "cross_product_bleed",
+      "category": "product_scope_violation",
+      "first_guard_stage": "c7.0_contract",
+      "contract_case": "product_mismatch",
+      "later_guard_stage": "c7.3_product_reader",
+      "expected_reason_code": "product_mismatch",
+      "expected_outcome": "rejected"
+    }
+  ]
+}

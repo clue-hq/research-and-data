@@ -26,6 +26,7 @@ M1.4 extends both the ``claim`` table and the INSERT here with the provenance-fl
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -79,6 +80,27 @@ _SELECT_COLUMNS = (
     "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id, "
     "product_id"
 )
+
+
+def _retention_eligible_sql(*, claim_alias: str = "claim") -> str:
+    """SQL predicate for a consumer-visible claim.
+
+    ``lawful_basis_record.retention_until`` is the authoritative retention horizon for personal
+    claims.  The M10 sweep still performs the durable supersession-by-tombstone, but readers must
+    fail closed during the interval between the horizon passing and that maintenance sweep running.
+    Audit/history reads deliberately do not apply this predicate.
+
+    ``claim_alias`` is supplied only by this module and the merge module as a static SQL identifier;
+    it is never derived from request input.
+    """
+    return (
+        "NOT EXISTS ("
+        "SELECT 1 FROM lawful_basis_record retention "
+        f"WHERE retention.claim_id = {claim_alias}.id "
+        "AND retention.retention_until IS NOT NULL "
+        "AND retention.retention_until <= :retention_at"
+        ")"
+    )
 
 
 def _insert_params(claim: Claim) -> dict[str, object]:
@@ -181,9 +203,9 @@ async def insert_claim(
       :func:`~clue_research.claimstore.registry.check_claim_writable`. *Discovery* claims carry
       admission evidence, not a typed field value, so they skip this check. Pass
       ``validate_field=False`` for low-level tests that exercise the table directly.
-    * **structural promotability** — a ``verified`` claim that is not promotable (tier-4 with no
-      span, or a weak-binding contact claim) is refused early with a clear message; the DB CHECK is
-      the backstop.
+    * **structural promotability** — a ``verified`` claim that is not promotable (a direct tier-4
+      claim with no span, or a weak-binding contact claim) is refused early with a clear message;
+      C7 derived claims instead prove support lineage in their deferred DB constraint.
     """
     if validate_field and claim.claim_flavor is not ClaimFlavor.DISCOVERY:
         await check_claim_writable(
@@ -195,7 +217,8 @@ async def insert_claim(
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
             "cannot insert a 'verified' claim that is not promotable "
-            "(tier-4 without evidence_span, or weak-binding contact claim) — substrate §1/§6"
+            "(direct tier-4 without evidence_span, or weak-binding contact claim) — "
+            "substrate §1/§6"
         )
     result = await conn.execute(_INSERT_SQL, _insert_params(claim))
     return ClaimId(result.scalar_one())
@@ -348,27 +371,37 @@ async def claims_by_ids(
     claims + their two-sided support — and resolves them to their source provenance in one round
     trip).
 
-    Live (``superseded_by IS NULL``) by default — the handoff's "every value points at a real,
-    *non-superseded* claim" invariant; pass ``include_superseded=True`` for audit. ``scope`` is
-    **required** (M2.5, fail-closed), like :func:`claims_for`. A requested id **absent** from the
-    returned map (unknown, superseded, or out of scope) lets the caller detect a dangling reference
-    and fail the build rather than silently drop it.
+    Live and retention-eligible by default — the handoff's "every value points at a real,
+    *non-superseded*, non-expired claim" invariant. A recorded retention horizon is enforced at
+    read time even if the maintenance sweep has not tombstoned the claim yet. Pass
+    ``include_superseded=True`` for audit/history, which also includes retention-expired rows.
+    ``scope`` is **required** (M2.5, fail-closed), like :func:`claims_for`. A requested id
+    **absent** from the returned map (unknown, superseded, expired, or out of scope) lets the caller
+    detect a dangling reference and fail the build rather than silently drop it.
     """
     ids = [str(cid) for cid in claim_ids]
     if not ids:
         return {}
     scope_sql, scope_params = scope.predicate()
+    retention_sql = _retention_eligible_sql()
     stmt = text(
         f"""
         SELECT {_SELECT_COLUMNS}
         FROM claim
         WHERE id IN :ids
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {retention_sql})
           AND {scope_sql}
         """
     ).bindparams(bindparam("ids", expanding=True))
     result = await conn.execute(
-        stmt, {"ids": ids, "include_superseded": include_superseded, **scope_params}
+        stmt,
+        {
+            "ids": ids,
+            "include_superseded": include_superseded,
+            "retention_at": datetime.now(UTC),
+            **scope_params,
+        },
     )
     out: dict[ClaimId, Claim] = {}
     for row in result.mappings().all():

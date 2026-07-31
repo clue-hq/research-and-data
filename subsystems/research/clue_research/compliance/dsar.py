@@ -69,7 +69,6 @@ from clue_core import (
     FieldClass,
     Freshness,
     IdentityBinding,
-    ResearchMode,
     RunId,
     UseClass,
     UtcDatetime,
@@ -90,6 +89,9 @@ from clue_obs.otel import (
 )
 from clue_research.claimstore import (
     ALL_WORKSPACES,
+    WorkspaceScope,
+    affected_derivations,
+    claims_by_ids,
     claims_for,
     supersede_claim,
     supersede_claims,
@@ -233,12 +235,13 @@ def build_tombstone(target: Claim, *, run_id: RunId) -> Claim:
         extraction_method=ExtractionMethod.HUMAN,  # PF-5 — existing enum value, no parity change
         confidence=0.0,
         run_id=run_id,
-        research_mode=ResearchMode.CONTACT_PROFILING,
+        research_mode=target.research_mode,
         verification_status=VerificationStatus.REJECTED,  # never wins the merge (_is_eligible)
         identity_binding=IdentityBinding.WEAK if is_facet else target.identity_binding,
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
         workspace_id=target.workspace_id,
+        product_id=target.product_id,
     )
 
 
@@ -295,6 +298,28 @@ async def _apply_tombstone(
         # Already tombstoned (UNIQUE conflict, incl. a concurrent winner): no claim row is written,
         # so there is no orphan; report it as already-tombstoned (the caller's count stays honest).
         return None
+    # A faithfulness rationale may repeat attacker-controlled evidence or personal claim text.
+    # Preserve the bounded verdict/model/prompt/cost audit, but erase that free-form body in the
+    # same transaction as the claim tombstone. Reachability is the existing
+    # faithfulness_verdict.claim_id -> claim.entity_id relation; no subject/body copy is added.
+    # COALESCE keeps this one-way and idempotent if a future caller reaches an already-redacted row.
+    await conn.execute(
+        text(
+            """
+            UPDATE faithfulness_verdict
+            SET rationale = NULL,
+                rationale_redacted_at = COALESCE(rationale_redacted_at, now()),
+                rationale_redaction_reason =
+                    COALESCE(rationale_redaction_reason, :redaction_reason)
+            WHERE claim_id = :claim_id
+              AND rationale IS NOT NULL
+            """
+        ),
+        {
+            "claim_id": str(target.id),
+            "redaction_reason": reason.value,
+        },
+    )
     # validate_field=False: the redaction sentinel is intentionally not a valid field value (the
     # tombstone is REJECTED, so it never wins the merge regardless). This is one of the sanctioned
     # compliance redaction callers documented on claimstore.supersede_claim.
@@ -344,6 +369,42 @@ async def _purge_marked(
             "next purge/retention sweep will converge (keys=%s)",
             list(keys),
         )
+
+
+async def _purge_legacy_handoff_payloads(
+    conn: AsyncConnection,
+    *,
+    contact_entity_id: EntityId,
+    workspace_id: str,
+) -> None:
+    """Remove copied M12.2 bodies reachable from a subject while retaining row identity.
+
+    C7.4 receipts need no special erasure mutation because they contain references only and replay
+    under current claim/policy state. ``account_handoff`` predates that contract and copied
+    personal values into JSONB, so its exact subject index is the bounded compatibility bridge.
+    """
+
+    await conn.execute(
+        text(
+            """
+            UPDATE account_handoff h
+            SET payload = NULL,
+                legacy_payload_purged_at = COALESCE(legacy_payload_purged_at, now())
+            WHERE h.workspace_id = :workspace_id
+              AND h.payload IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM account_handoff_subject s
+                  WHERE s.account_handoff_id = h.id
+                    AND s.subject_entity_id = :contact_entity_id
+              )
+            """
+        ),
+        {
+            "workspace_id": workspace_id,
+            "contact_entity_id": str(contact_entity_id),
+        },
+    )
 
 
 # --- the data-subject rights service (controller-scoped) --------------------
@@ -482,6 +543,11 @@ class DataSubjectRightsImpl:
                     run_id=run_id,
                     erased_keys=erased_keys,
                 )
+                await _purge_legacy_handoff_payloads(
+                    conn,
+                    contact_entity_id=contact_entity_id,
+                    workspace_id=self._workspace_id,
+                )
             # Phase 2 — the physical blob deletes, only now that the tombstones committed.
             await _purge_marked(
                 self._conn_factory,
@@ -544,6 +610,11 @@ class DataSubjectRightsImpl:
                     run_id=run_id,
                     erased_keys=erased_keys,
                 )
+                await _purge_legacy_handoff_payloads(
+                    conn,
+                    contact_entity_id=contact_entity_id,
+                    workspace_id=self._workspace_id,
+                )
             await _purge_marked(
                 self._conn_factory,
                 self._storage,
@@ -580,9 +651,22 @@ class DataSubjectRightsImpl:
     ) -> tuple[list[ClaimId], int]:
         tombstoned: list[ClaimId] = []
         already = 0
+        # A derived value may repeat personal material from one of this contact's claims while
+        # targeting an account or another registered field. Reachability therefore follows the
+        # immutable support graph transitively before any target is superseded. C7.2 forbids a
+        # public derivation from depending on private support, so every reachable dependent belongs
+        # to this same controller and can be loaded through its private scope.
+        dependent_ids = await affected_derivations(conn, [target.id for target in targets])
+        dependents = await claims_by_ids(
+            conn,
+            dependent_ids,
+            scope=WorkspaceScope.private_for_workspace(self._workspace_id),
+        )
+        expanded: dict[ClaimId, Claim] = {target.id: target for target in targets}
+        expanded.update(dependents)
         # Stable-sorted by artifact ref so two concurrent erasures acquire the artifact row
         # locks in the same order (no lock-order deadlock across shared snapshots).
-        for target in sorted(targets, key=lambda c: c.artifact_key or ""):
+        for target in sorted(expanded.values(), key=lambda c: (c.artifact_key or "", str(c.id))):
             workspace_id = target.workspace_id or self._workspace_id
             tombstone_id = await _apply_tombstone(
                 conn,

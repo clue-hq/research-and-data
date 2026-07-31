@@ -11,9 +11,8 @@ Own module so M10 / M11 / M12 never co-edit ``api/composition.py``. M12.1 fills
   ``NARRATIVE_REUSE_POLICY`` + ``identity.stamp_reuse``, so a client-tuned narrative never
   amortizes cross-tenant.
 
-Deferred to integration (constructed here once the sibling impls exist, exactly like the M9.4
-binding-classifier injection): the :class:`~clue_research.narrative.Positioner` with its injected
-seams —
+C7.6 supplies the production committee implementation at this composition root. The
+:class:`~clue_research.narrative.Positioner` retains its injected seams —
 
 * the ``core.retrieval.ClientKnowledgeRetriever`` (a stub over ``stage0.read_client_kb_claims``
   until the pgvector retriever lands — ``api`` may import ``stage0``; ``narrative`` may not);
@@ -108,13 +107,7 @@ def build_handoff_assembler(*, committee_reader: HandoffCommitteeReader) -> Hand
 
     The assembler is a pure store read; its one injected dependency is the
     :class:`~clue_research.narrative.HandoffCommitteeReader` (the M12 ↔ M8/M10 seam). The
-    **production** reader — which reads ``profiling``'s committee/contact results (via the M8A.5
-    ``build_handoff_skeleton``) and ``compliance``'s ``use_decision`` per facet — needs the M8/M10
-    packages, so it is constructed at this root **when M8/M10 integrate** (the deferred-injection
-    pattern, exactly like the M12.1 positioner's committee reader). Until then a caller injects the
-    in-memory fake (``InMemoryHandoffCommitteeReader``) or an M8A.5-skeleton-backed adapter; M12.2's
-    own code is unchanged by the swap (the seam is the contract).
-
-    Materialising the assembled handoff (``narrative.write_handoff``) and serving / emitting it
-    (M12.3) are wired here later; M12.2 stops at the assembler + the ``account_handoff`` table."""
+    production reader is :class:`clue_api.contact_eligibility.ProductionHandoffCommitteeReader`.
+    It is constructed per project run from the exact account-run references and product scope,
+    keeping M12 independent of identity, durable execution, profiling, and compliance."""
     return HandoffAssembler(committee_reader=committee_reader)

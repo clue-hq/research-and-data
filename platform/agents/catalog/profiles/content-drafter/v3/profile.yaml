@@ -1,0 +1,46 @@
+schema_version: "1"
+kind: profile
+name: content-drafter
+version: v3
+status: active
+role: content_drafter
+prompt:
+  name: content-drafter
+  version: v2
+  sha256: 73e7db7d3a87e2762fa72b772a42b92c1a57eab4bf400c623710fbad3f104170
+skills:
+  - name: content-exemplar
+    version: v1
+    sha256: 19c9bb2a98df9bd7091affa74f5b7c2b4b25081e6c6c4ab0e7cb51948b164b00
+tools:
+  - name: compose_handoff
+    version: "1"
+    input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+    output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+  - name: get_research_view
+    version: "1"
+    input_schema_sha256: 0ce6ad0eaa0d4e2dd91461d53119be6dcb1129d36923c3fb720a23c87ad8ee35
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+model:
+  model_id: openai/gpt-4.1
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 6144
+  temperature: 0.2
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 6291456
+  max_file_bytes: 1048576
+  max_file_count: 120
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 16
+turn_timeout_s: 120.0
+max_model_rounds: 12

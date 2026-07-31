@@ -1,4 +1,4 @@
-"""Current C6 replay/authority audit over the complete 32-tool C4 registry."""
+"""Current C6 replay/authority audit over the complete 35-tool C7 registry."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ _C65_CERTIFIED = {
 def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(C6_AGENT_TOOL_AUTHORITY) == set(registry.names())
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 32
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 35
 
     for descriptor in registry.all_descriptors():
         roles = c6_roles_for_tool(descriptor.address)
