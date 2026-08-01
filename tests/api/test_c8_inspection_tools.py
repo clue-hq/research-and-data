@@ -859,23 +859,26 @@ def test_the_inspection_tools_write_nothing(
     run_async(scenario())
 
 
-def test_the_inspection_tools_are_registered_but_granted_to_no_role() -> None:
-    """The 1.5/1.4 hand-off, asserted rather than only commented.
+def test_the_inspection_tools_are_granted_to_the_head_of_abm_and_nobody_else() -> None:
+    """The 1.5/1.4 hand-off, now landed — this is the tripwire's designed post-grant form.
 
-    Task 1.4 is re-versioning the head-of-abm profile in parallel, so these two land *registered
-    and addressable* but structurally absent from every model surface; the grants ride 1.4's one
-    coordinated catalog/profile bump in a post-merge commit. If this test starts failing, the
-    grant landed — which is fine, and the test is the place to record that it was deliberate.
+    While task 1.4 was re-versioning the head-of-abm profile in parallel these two shipped
+    *registered and addressable* but granted to nobody, and this test asserted that empty state so
+    the grant could not land unnoticed. It has now landed, on profile v10, in the slice-1 closing
+    round: the tripwire flips to the shape it was always meant to end at rather than being deleted,
+    because "granted to exactly one role" is the claim worth keeping under guard — a second role
+    picking these up is a decision, not a detail.
     """
 
+    from clue_agents import AgentRole
     from clue_api.agent_registry_wiring import C6_AGENT_TOOL_AUTHORITY, c6_roles_for_tool
     from clue_api.toolbelt_wiring import build_toolbelt
 
     registry = build_toolbelt(storage=None, gateway=None)
     for name in ("inspect_statement_history", "inspect_readiness_history"):
         assert name in registry.names()
-        assert C6_AGENT_TOOL_AUTHORITY[name] == ()
-        assert c6_roles_for_tool(f"{name}@1") == ()
+        assert C6_AGENT_TOOL_AUTHORITY[name] == (AgentRole.HEAD_OF_ABM,)
+        assert c6_roles_for_tool(f"{name}@1") == (AgentRole.HEAD_OF_ABM,)
 
 
 def test_a_storageless_composition_still_builds_the_readiness_tool() -> None:

@@ -394,7 +394,20 @@ MemoryWriteFactoryBuilder = Callable[
 
 
 class _DelegationDisabled:
-    """Fail honestly if the conversational pilot tries to leave its declared scope."""
+    """Unreachable backstop: the trial surface withholds every delegable role (PC-C8 §8).
+
+    This used to be the *restriction* — the trial pinned a profile that still delegated to the
+    three specialists, still installed `delegate_specialist`, and still advertised all of it in the
+    generated capability map; only this runner's exception stood between the model and a research
+    specialist. That is restriction by crash, which ruling §2.4 rejects for exactly the reason the
+    withheld tools exist: a capability the model is shown and then denied is fake agency, and the
+    map contradicted the surface's own "no external research" framing while it lasted.
+
+    `C6_SURFACE_POLICIES` now withholds the delegation roles, so `delegation_roles` is empty here,
+    `delegate_specialist` is not in the middleware's allowed set, and nothing can construct a
+    delegation to hand this runner. It stays because `HeadOfAbmStage0Runtime` requires a child
+    runner and "there is no runner" is not expressible — but it is a backstop now, not the fence.
+    """
 
     async def run(
         self,

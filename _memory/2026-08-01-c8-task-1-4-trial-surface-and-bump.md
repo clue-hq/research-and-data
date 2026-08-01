@@ -97,8 +97,12 @@ New `interview.resolve_claim_entity(...)` (public, exported) owns both rules:
 - **existence check** — the resolved id must be a live `account_entity`/`contact_entity` **in this
   workspace**; otherwise `InterviewClaimEntityRefused(reason_code=...)`.
 
-**Chosen typed outcome: refuse.** `interview_entity_not_found` (unresolvable id) and
-`interview_entity_required` (contact with no id). The behaviour it replaces accepted any well-formed
+**Chosen typed outcome: refuse.** `interview_entity_not_found` (unresolvable id). A second code,
+`interview_entity_required` (contact with no id), exists but is **defence in depth, not a live
+path** — `InterviewStatement._route_shape` refuses that shape first and both callers construct the
+model before calling, so no caller can reach it today (corrected in the slice-1 closing round; an
+earlier draft of this note presented it as live). It stays because `resolve_claim_entity` is public
+and the invariant is its own. The behaviour it replaces accepted any well-formed
 UUID and expressed its doubt as a *silent* `source_tier=3` downgrade — a durable claim about an
 entity that does not exist, signalled only by a tier the model never saw. Tiering is now an
 explicit statement about a **verified** entity: tier 1 = the client about itself, tier 3 = the

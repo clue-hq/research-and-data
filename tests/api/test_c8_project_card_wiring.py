@@ -49,6 +49,7 @@ from clue_api.agent_execution_wiring import _trusted_tool_arguments
 from clue_api.agent_platform_wiring import build_agent_context_assembler
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
+from clue_api.stage0_tools import RecordInterviewAnswerInput, RecordInterviewAnswerTool
 from clue_api.stage0_trial import Stage0Trial, Stage0TrialPaths, stage0_trial_context_policy
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
@@ -61,23 +62,26 @@ from clue_core import (
     ProjectRunId,
     RunId,
     UseClass,
+    new_operation_id,
 )
 from clue_db import db_lifespan
 from clue_projections import STAGE0_PROJECT_CARD_MEDIA_TYPE, Stage0ProjectCard
 from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.durable import ResearchPlan
-from clue_research.identity import insert_account_entity
+from clue_research.identity import insert_account_entity, mark_merged
 from clue_research.stage0 import (
     InterviewClaimEntityRefused,
     InterviewRoute,
     InterviewStatement,
     load_client_knowledge_pack,
+    resolve_claim_entity,
     route_interview_answer,
     submit_onboarding_input,
 )
 from clue_research.stage0.fields import CLIENT_PRODUCT
 from clue_spine import Project, create_brand, create_product, create_project, create_workspace
 from clue_storage import FsStorage
+from clue_toolbelt import ToolContext
 from tests.agents.conftest import constitution
 from tests.api.test_c8_slice0_evidence import (
     _ANSWER,
@@ -562,6 +566,244 @@ def test_an_account_claim_defaults_its_entity_and_an_unknown_one_is_refused(
                     identity_binding=IdentityBinding.STRONG,
                     use_class=UseClass.PROFESSIONAL_PUBLIC,
                 )
+
+    run_async(scenario())
+
+
+def _claim_statement(entity_id: EntityId | None) -> InterviewStatement:
+    return InterviewStatement(
+        route=InterviewRoute.CLAIM,
+        route_key=CLIENT_PRODUCT,
+        quote_start=0,
+        quote_end=len(_ANSWER),
+        entity_id=entity_id,
+        entity_type=EntityType.ACCOUNT,
+        field_key=CLIENT_PRODUCT,
+        value=_ANSWER,
+    )
+
+
+def test_a_merged_away_entity_is_refused_and_its_survivor_is_accepted(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """A claim may only be keyed to a *canonical* entity (slice-1 closing round, M2).
+
+    ``get_account``/``get_contact`` deliberately do not follow ``merged_into`` — chasing the
+    pointer is ``surviving_id``'s job — so an existence check alone happily accepted a row identity
+    resolution had already retired. That is the documented M9.4×M2.3 read-side hazard, except worse
+    here: the mis-keyed claim is **durable** and outlives the read that made it.
+
+    Refusal rather than silent redirection, deliberately. ``resolve_claim_entity``'s contract is "a
+    live entity", and quietly moving a client's own words onto a different entity than the caller
+    named is not a repair anyone asked for; the reason code carries the survivor so the caller can
+    re-route on purpose. The survivor half is the control — it proves the refusal is about the
+    merge, not about the merge's fixture.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"merged-{uuid4().hex[:8]}") as (
+            trial,
+            conn,
+            artifacts,
+            _factory,
+        ):
+            await load_client_knowledge_pack(conn)
+            survivor = await insert_account_entity(
+                conn,
+                canonical_name="Aura AI (canonical)",
+                primary_domain="aura-canonical.invalid",
+                workspace_id=trial.state.workspace_id,
+                status=AccountStatus.ACTIVE,
+            )
+            loser = await insert_account_entity(
+                conn,
+                canonical_name="Aura AI (duplicate)",
+                primary_domain="aura-duplicate.invalid",
+                workspace_id=trial.state.workspace_id,
+                status=AccountStatus.ACTIVE,
+            )
+            await mark_merged(conn, EntityType.ACCOUNT, loser, survivor)
+
+            user_ref = await artifacts.persist_body(
+                workspace_id=trial.state.workspace_id,
+                data=_ANSWER.encode(),
+                media_type="text/plain",
+            )
+            captured = await submit_onboarding_input(
+                conn,
+                workspace_id=trial.state.workspace_id,
+                brand_id=trial.state.brand_id,
+                product_id=trial.state.product_id,
+                project_id=trial.state.project_id,
+                client_entity_id=EntityId(trial.state.client_entity_id),
+                kind=OnboardingInputKind.USER_TURN,
+                artifact_key=user_ref.artifact_key,
+                content_sha256=user_ref.sha256,
+                actor="human",
+            )
+
+            async def route(statement: InterviewStatement) -> Any:
+                return await route_interview_answer(
+                    conn,
+                    workspace_id=trial.state.workspace_id,
+                    brand_id=trial.state.brand_id,
+                    product_id=trial.state.product_id,
+                    project_id=trial.state.project_id,
+                    client_entity_id=EntityId(trial.state.client_entity_id),
+                    onboarding_input_id=captured.onboarding_input_id,
+                    artifact_key=user_ref.artifact_key,
+                    answer=_ANSWER,
+                    statements=(statement,),
+                    actor="agent",
+                )
+
+            before = await _claim_count(conn, trial.state.workspace_id)
+            with pytest.raises(InterviewClaimEntityRefused) as refused:
+                await route(_claim_statement(loser))
+            assert refused.value.reason_code == "interview_entity_merged"
+            assert str(survivor) in str(refused.value)
+            assert await _claim_count(conn, trial.state.workspace_id) == before
+
+            accepted = await route(_claim_statement(survivor))
+            written = await claims_by_ids(
+                conn,
+                accepted.claim_refs,
+                scope=WorkspaceScope.private_for_workspace(trial.state.workspace_id),
+            )
+            claim = written[accepted.claim_refs[0]]
+            assert claim.entity_id == survivor
+            # Not the client entity, so tier 3 — explicitly, about a *verified* other entity.
+            assert claim.source_tier == 3
+
+    run_async(scenario())
+
+
+def test_a_foreign_workspaces_entity_is_not_found_and_the_tool_says_so_typed(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """Two gaps the first round left (slice-1 closing round, M3).
+
+    (a) The existence check is workspace-scoped, but every prior fixture refused an id that existed
+    *nowhere* — which a check that forgot the workspace clause would also have refused. An entity
+    that genuinely exists, in another workspace, is the case that discriminates.
+
+    (b) The typed refusal was only ever asserted at the substrate. The reason the tool re-runs the
+    same resolver in ``preconditions`` is so the model reads a reason code instead of a stack
+    trace, and nothing proved that path returned one.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"foreign-{uuid4().hex[:8]}") as (
+            trial,
+            conn,
+            artifacts,
+            connection_factory,
+        ):
+            await load_client_knowledge_pack(conn)
+            other_workspace = f"{trial.state.workspace_id}-b"
+            await create_workspace(conn, workspace_id=other_workspace, name="C8 foreign workspace")
+            foreign = await insert_account_entity(
+                conn,
+                canonical_name="Somebody Else Ltd",
+                primary_domain="somebody-else.invalid",
+                workspace_id=other_workspace,
+                status=AccountStatus.ACTIVE,
+            )
+
+            # (a) The substrate: it exists, just not here.
+            with pytest.raises(InterviewClaimEntityRefused) as refused:
+                await resolve_claim_entity(
+                    conn,
+                    classified=_claim_statement(foreign),
+                    workspace_id=trial.state.workspace_id,
+                    client_entity_id=EntityId(trial.state.client_entity_id),
+                )
+            assert refused.value.reason_code == "interview_entity_not_found"
+            # Control: the same id resolves fine from its own workspace, so the refusal is scope,
+            # not a broken fixture.
+            assert (
+                await resolve_claim_entity(
+                    conn,
+                    classified=_claim_statement(foreign),
+                    workspace_id=other_workspace,
+                    client_entity_id=foreign,
+                )
+                == foreign
+            )
+
+            # (b) The model-facing path: a typed reason code, not an exception out of a spend path.
+            user_ref = await artifacts.persist_body(
+                workspace_id=trial.state.workspace_id,
+                data=_ANSWER.encode(),
+                media_type="text/plain",
+            )
+            captured = await submit_onboarding_input(
+                conn,
+                workspace_id=trial.state.workspace_id,
+                brand_id=trial.state.brand_id,
+                product_id=trial.state.product_id,
+                project_id=trial.state.project_id,
+                client_entity_id=EntityId(trial.state.client_entity_id),
+                kind=OnboardingInputKind.USER_TURN,
+                artifact_key=user_ref.artifact_key,
+                content_sha256=user_ref.sha256,
+                actor="human",
+            )
+            # `preconditions` never reaches the gate — it refuses before any spend path — so a
+            # bare stand-in is honest here rather than a mock pretending to decide something.
+            tool = RecordInterviewAnswerTool(
+                conn_factory=connection_factory,
+                pre_spend_gate=cast(Any, object()),
+            )
+            failures = await tool.preconditions(
+                RecordInterviewAnswerInput(
+                    brand_id=trial.state.brand_id,
+                    onboarding_input_id=str(captured.onboarding_input_id),
+                    artifact_key=user_ref.artifact_key,
+                    answer=_ANSWER,
+                    client_entity_id=str(trial.state.client_entity_id),
+                    product_id=trial.state.product_id,
+                    project_id=trial.state.project_id,
+                    statements=[_claim_statement(foreign)],
+                ),
+                ToolContext(
+                    workspace_id=trial.state.workspace_id,
+                    actor="agent",
+                    conn_factory=connection_factory,
+                    operation_id=new_operation_id(),
+                ),
+            )
+            assert [item.reason_code for item in failures] == ["interview_entity_not_found"]
+            # And the honest control: the same call with the defaulted client entity passes.
+            assert (
+                await tool.preconditions(
+                    RecordInterviewAnswerInput(
+                        brand_id=trial.state.brand_id,
+                        onboarding_input_id=str(captured.onboarding_input_id),
+                        artifact_key=user_ref.artifact_key,
+                        answer=_ANSWER,
+                        client_entity_id=str(trial.state.client_entity_id),
+                        product_id=trial.state.product_id,
+                        project_id=trial.state.project_id,
+                        statements=[_claim_statement(None)],
+                    ),
+                    ToolContext(
+                        workspace_id=trial.state.workspace_id,
+                        actor="agent",
+                        conn_factory=connection_factory,
+                        operation_id=new_operation_id(),
+                    ),
+                )
+                == ()
+            )
 
     run_async(scenario())
 

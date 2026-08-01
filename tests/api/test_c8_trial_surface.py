@@ -103,6 +103,102 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
     assert f"surface={STAGE0_CONVERSATION_TRIAL_SURFACE}" in generated
 
 
+_ADVERTISING_SECTIONS = (
+    "Governed platform tools available to this role:",
+    "Delegation:",
+)
+
+
+def _advertised_capabilities(generated: str) -> set[str]:
+    """Parse the generated map into the set of capabilities it tells the model it *has*.
+
+    Structural, not a substring scan: the map deliberately also *names* what is unavailable (that
+    is the honest half), and a plain `in` test cannot tell "research is withheld" from
+    "get_research_view is available". Each bullet under an advertising heading contributes the
+    identifier it names — a tool name for the available list, a role for the delegation block —
+    plus `delegate_specialist` when the capability line says it is available.
+    """
+
+    advertised: set[str] = set()
+    section: str | None = None
+    for line in generated.splitlines():
+        stripped = line.strip()
+        if stripped.endswith(":") and not stripped.startswith("-"):
+            section = stripped
+            continue
+        if not stripped.startswith("- "):
+            continue
+        body = stripped[2:]
+        if body.startswith("delegate_specialist: available"):
+            advertised.add("delegate_specialist")
+        if section not in _ADVERTISING_SECTIONS or body == "none":
+            continue
+        head = body.split(" ", 1)[0].rstrip(":")
+        advertised.add(head.partition("@")[0])
+    return advertised
+
+
+def test_the_map_never_advertises_anything_the_surface_withholds(
+    registry: AgentProfileRegistry,
+) -> None:
+    """The general property, not one instance of it.
+
+    The first version of this file checked only that three tool *addresses* were missing from the
+    available list. That passed while the very same map still rendered a Delegation block naming
+    `delegate_specialist` and the three specialist roles — one of which is the research role the
+    surface's own framing promises it does not use. The map contradicted its own first paragraph,
+    and the only thing preventing the delegation was a child runner raising at call time.
+
+    So this derives what is withheld from the policy itself and asserts none of it is advertised —
+    which means a future withheld capability rendered through a new path is covered the day it is
+    added, without anyone remembering to extend this test.
+    """
+
+    trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
+    policy = trial.surface_policy
+    assert policy is not None
+
+    advertised = _advertised_capabilities(trial.generated_resource_map)
+    withheld = set(policy.withheld_tools) | {
+        role.value for role in policy.withheld_delegation_roles
+    }
+    if policy.withheld_delegation_roles >= set(
+        registry.resolve(policy.role).profile.delegation_roles
+    ):
+        withheld.add("delegate_specialist")
+
+    assert sorted(advertised & withheld) == []
+    # Positive control: the parser really does find things, so the assertion above is not passing
+    # because `_advertised_capabilities` returned an empty set.
+    assert {"record_interview_answer", "inspect_statement_history"} <= advertised
+    # And the same parser over the *unrestricted* role does see everything the surface removed —
+    # otherwise this test would keep passing if the map stopped advertising anything at all.
+    assert withheld <= _advertised_capabilities(
+        registry.resolve(AgentRole.HEAD_OF_ABM).generated_resource_map
+    )
+
+
+def test_the_trial_surface_withholds_delegation_rather_than_crashing_on_it(
+    registry: AgentProfileRegistry,
+) -> None:
+    """`_DelegationDisabled` must be an unreachable backstop, not the restriction (ruling §2.4)."""
+
+    base = registry.resolve(AgentRole.HEAD_OF_ABM)
+    trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
+
+    assert base.profile.delegation_roles, "the full role must still delegate"
+    assert trial.profile.delegation_roles == ()
+    assert trial.delegation_tool_grants == {}
+    # A surface with nobody to delegate to has no delegation budget to advertise either.
+    assert trial.profile.max_delegation_depth == 0
+    assert trial.profile.max_delegations == 0
+    # ExactAgentToolSurfaceMiddleware installs `delegate_specialist` iff `delegation_roles`.
+    assert "delegate_specialist: unavailable" in trial.generated_resource_map
+
+    with pytest.raises(AgentCatalogError, match="is not delegated by"):
+        registry.resolve_delegation(parent=trial, child_role=AgentRole.RESEARCH, current_depth=0)
+
+
 def test_the_stage0_skill_survives_the_narrowed_surface(
     registry: AgentProfileRegistry,
 ) -> None:
@@ -144,7 +240,8 @@ def test_the_runtime_middleware_refuses_a_withheld_tool_on_the_trial_surface(
         "write_file",
         "edit_file",
         "finalize_turn",
-        "delegate_specialist",
+        # No `delegate_specialist`: the surface withholds every delegable role, so the framework
+        # tool is not part of the allowed set either. Installing it is one of the smuggle cases.
     )
 
     async def handler(_request: Any) -> Any:
@@ -153,11 +250,15 @@ def test_the_runtime_middleware_refuses_a_withheld_tool_on_the_trial_surface(
     ok = _ModelRequest(installed)
     _run(middleware.awrap_model_call(ok, handler))
     assert ok.overrides is not None
-    assert set(ok.overrides["tool_names"]) & _WITHHELD == set()
+    filtered = set(ok.overrides["tool_names"])
+    assert filtered & _WITHHELD == set()
+    # Delegation is withheld too, so the framework tool that reaches a specialist is not installed.
+    assert "delegate_specialist" not in filtered
 
-    smuggled = _ModelRequest((*installed, "start_recon"))
-    with pytest.raises(RuntimeError, match="undeclared runtime tools were installed"):
-        _run(middleware.awrap_model_call(smuggled, handler))
+    for smuggled_name in ("start_recon", "delegate_specialist"):
+        smuggled = _ModelRequest((*installed, smuggled_name))
+        with pytest.raises(RuntimeError, match="undeclared runtime tools were installed"):
+            _run(middleware.awrap_model_call(smuggled, handler))
 
 
 def test_a_surface_policy_cannot_withhold_a_tool_the_profile_never_pinned() -> None:
@@ -192,7 +293,19 @@ def test_a_surface_policy_cannot_withhold_a_tool_the_profile_never_pinned() -> N
             )
         )
 
-    with pytest.raises(AgentCatalogError, match="withholds no tool"):
+    with pytest.raises(AgentCatalogError, match="does not delegate"):
+        build(
+            AgentSurfacePolicy(
+                surface="undelegated",
+                role=AgentRole.HEAD_OF_ABM,
+                withheld_tools=frozenset({"start_recon"}),
+                withheld_delegation_roles=frozenset({AgentRole.ACCOUNT_RESEARCH}),
+                withheld_reason_code="undelegated",
+                framing="undelegated",
+            )
+        )
+
+    with pytest.raises(AgentCatalogError, match="withholds nothing"):
         build(
             AgentSurfacePolicy(
                 surface="empty",
@@ -219,6 +332,41 @@ def test_every_declared_surface_policy_resolves_at_composition(
         resolved = registry.resolve(policy.role, surface=policy.surface)
         assert resolved.surface_policy == policy
         assert {pin.name for pin in resolved.profile.tools} & policy.withheld_tools == set()
+        assert set(resolved.profile.delegation_roles) & policy.withheld_delegation_roles == set()
+
+
+def test_the_operator_projection_reports_the_narrowed_surface_not_just_the_full_role(
+    registry: AgentProfileRegistry,
+) -> None:
+    """`/agent/registry` is what an operator reads to answer "what can this agent do".
+
+    Reporting only the role's full authority would tell them the trial can call `start_recon` and
+    delegate to the research specialist. It cannot, and the projection is now the only place that
+    difference is legible without reading the composition root.
+    """
+
+    entries = {entry.role: entry for entry in registry.projection().roles}
+    head = entries[AgentRole.HEAD_OF_ABM]
+
+    assert head.profile is not None
+    assert [item.surface for item in head.surfaces] == [STAGE0_CONVERSATION_TRIAL_SURFACE]
+    trial = head.surfaces[0]
+
+    assert trial.reason_code == "trial_manual_conversation_only"
+    assert set(trial.withheld_tool_names) == _WITHHELD
+    assert {address.partition("@")[0] for address in trial.tool_addresses} & _WITHHELD == set()
+    assert trial.delegation_roles == ()
+    assert set(trial.withheld_delegation_roles) == set(head.profile.delegation_roles)
+    # The digest an operator can compare against a turn's constitution.
+    assert trial.resource_manifest_sha256 != head.profile.resource_manifest_sha256
+    assert (
+        trial.resource_manifest_sha256
+        == registry.resolve(
+            AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE
+        ).resource_manifest.aggregate_sha256
+    )
+    # Roles with no declared surface report none rather than an empty-ish placeholder.
+    assert entries[AgentRole.RESEARCH].surfaces == ()
 
 
 class _Response:

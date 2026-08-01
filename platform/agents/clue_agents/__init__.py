@@ -104,6 +104,7 @@ from clue_agents.registry import (
     RoleRegistryEntry,
     RoleRegistryStatus,
     SkillDisclosure,
+    SurfaceRegistryEntry,
     ToolCapabilityDisclosure,
 )
 from clue_agents.resources import (
@@ -244,6 +245,7 @@ __all__ = [
     "SpecialistTaskEnvelope",
     "SkillDescriptor",
     "SkillDisclosure",
+    "SurfaceRegistryEntry",
     "ToolCapabilityDisclosure",
     "SkillResource",
     "AgentReplayUnavailable",

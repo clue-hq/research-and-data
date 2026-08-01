@@ -107,10 +107,29 @@ READINESS_CURSOR_KIND = "readiness_history"
 
 class Stage0InspectionInput(ToolInput):
     """Shared scope + position. ``project_id`` is engine-injected trusted authority, not model
-    input; ``cursor`` is opaque and only ever came from a card omission or a previous page."""
+    input; ``cursor`` is opaque and only ever came from a card omission or a previous page.
 
-    project_id: str = Field(min_length=1)
-    cursor: str | None = Field(default=None, min_length=1)
+    Field descriptions matter here in a way they did not while these tools were granted to nobody
+    (task 1.5): a governed tool's model-visible description is generated boilerplate, so the input
+    fields carry the *entire* prose surface. In particular they are the only place the model can
+    learn that a card ``omissions`` cursor is resolved by *this* tool — the card deliberately names
+    no tool (spec §3), and the resource map lists addresses, not what they answer.
+    """
+
+    project_id: str = Field(
+        min_length=1,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
+    cursor: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Opaque position marker: either an `omissions[].cursor` from the project card (to read "
+            "exactly what the card left out) or a previous page's `next_cursor` (to continue). "
+            "Leave it out to start at the newest row. Never build or edit one — a cursor from "
+            "another tool or another view is refused, not reinterpreted."
+        ),
+    )
 
 
 class InspectStatementHistoryInput(Stage0InspectionInput):
@@ -120,12 +139,49 @@ class InspectStatementHistoryInput(Stage0InspectionInput):
     caller bug, and an intersection would quietly return a narrower answer than either asked for.
     """
 
-    statement_id: UUID | None = None
-    route_key: str | None = Field(default=None, min_length=1)
+    statement_id: UUID | None = Field(
+        default=None,
+        description=(
+            "One statement to read, with its whole correction lineage in both directions. Refused "
+            "together with `route_key`: two selectors that disagree is a bug, not an intersection."
+        ),
+    )
+    route_key: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Read every statement under one route key instead of one statement. Refused together "
+            "with `statement_id`."
+        ),
+    )
+    cursor: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Opaque position marker. This is the tool that resolves the card's "
+            "`statements_over_cap` and `excluded_statement_evidence_missing` omissions — pass "
+            "their `cursor` verbatim to read exactly the rows the card could not carry. A "
+            "`next_cursor` from a previous page continues that walk; leave it out to start at the "
+            "newest row. Never build or edit one."
+        ),
+    )
 
 
 class InspectReadinessHistoryInput(Stage0InspectionInput):
-    gate: ReadinessGate | None = None
+    gate: ReadinessGate | None = Field(
+        default=None,
+        description="Narrow the ledger to one gate. Leave it out for every gate, newest first.",
+    )
+    cursor: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Opaque position marker. This is the tool that resolves the card's "
+            "`readiness_history` omission — pass that entry's `cursor` verbatim to read the "
+            "decisions the card summarized away. A `next_cursor` from a previous page continues "
+            "the walk; leave it out to start at the newest decision. Never build or edit one."
+        ),
+    )
 
 
 def _fail(reason_code: str, message: str) -> tuple[PreconditionFailure, ...]:
