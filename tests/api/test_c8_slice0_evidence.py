@@ -25,11 +25,13 @@ The five defects, and what happens to each:
 * **Linear required growth** — the ledger is re-serialized in full, twice, on every turn, so
   required L3 grows with conversation length regardless of message content. → 1.1: the card is
   hard-bounded, so growth flattens.
-* **Turn authority round-trip** — the model-facing ``record_interview_answer`` schema requires the
-  model to author the byte-identical ``answer`` plus the trusted ``onboarding_input_id`` and
-  ``artifact_key`` (``stage0_tools.py:286``), while ``project_id`` on the same input is already
-  engine-injected. → 1.2 moves the three engine-side; this test flips to "absent from the
-  model-facing schema".
+* **Turn authority round-trip — FLIPPED by task 1.2.** The model-facing
+  ``record_interview_answer`` schema used to require the model to author the byte-identical
+  ``answer`` plus the trusted ``onboarding_input_id`` and ``artifact_key``
+  (``stage0_tools.py:286``), while ``project_id`` on the same input was already engine-injected.
+  1.2 extended that same seam to the turn, so the test now asserts the three are **absent** from
+  the model-facing schema. The engine-side half (binding, injection, fail-closed refusal) is
+  covered by ``tests/api/test_c8_turn_binding.py``.
 * **Identity injected twice** — the L1 context candidate body is the resolved profile's system
   prompt (``context.py:209-217``) *and* the runtime separately hands
   ``resolved_profile.prompt_body`` to ``create_deep_agent`` (``runtime.py:297``), which the
@@ -88,6 +90,7 @@ from clue_api.stage0_trial import (
     stage0_trial_context_policy,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.turn_binding import trusted_turn_fields
 from clue_config import DEFAULT_STAGE0_POLICY
 from clue_core import (
     AccountStatus,
@@ -630,30 +633,42 @@ def test_required_l3_bytes_grow_with_every_material_turn(
     run_async(_scenario(tmp_path, slug=f"growth-{uuid4().hex[:8]}", body=body))
 
 
-def test_record_interview_answer_still_makes_the_model_author_the_answer_and_trusted_ids() -> None:
-    """The model round-trips the captured bytes and two trusted identifiers it should never author.
+def test_record_interview_answer_no_longer_lets_the_model_author_the_answer_or_trusted_ids() -> (
+    None
+):
+    """Flipped by task 1.2: the captured bytes and the turn's two ids left the model surface.
 
-    ``project_id`` on the same input is already engine-injected — ``_with_trusted_runtime`` strips
-    every ``MODEL_FORBIDDEN_AUTHORITY_KEYS`` name from the model-facing schema — which is the seam
-    task 1.2 extends to ``answer``/``onboarding_input_id``/``artifact_key``: the engine loads the
-    captured body from the artifact store and applies the model's offsets against those exact
-    bytes. When that lands, this flips to asserting the three are absent from the model-facing
-    schema and that a forged id is refused at the execution seam (spec AC-6).
+    Pre-C8 the model round-tripped the byte-identical ``answer`` and authored
+    ``onboarding_input_id``/``artifact_key`` — while ``project_id`` on the same input was already
+    engine-injected. 1.2 extended exactly that seam (``_with_trusted_runtime`` strips, the
+    execution seam injects) to per-turn authority, so the engine now loads the captured body from
+    the artifact store and applies the model's offsets against those exact bytes.
+
+    What the model still authors is the classification: route kind/key, quote offsets, correction
+    lineage, proposed typed values (spec AC-6, first clause).
     """
 
     parameters = _model_facing_parameters(RecordInterviewAnswerTool)
     properties = parameters["properties"]
     required = set(parameters["required"])
+    turn_authority = {"answer", "onboarding_input_id", "artifact_key"}
 
-    # Authority the model must author today, and must not after 1.2.
-    assert {"answer", "onboarding_input_id", "artifact_key"} <= required
-    assert "byte-identical" in properties["answer"]["description"].casefold()
-    # The model authors only offsets into that body; the body itself is the round-trip.
+    # Gone from the model surface entirely — not merely optional.
+    assert turn_authority.isdisjoint(properties)
+    assert turn_authority.isdisjoint(required)
+    # Still declared on the tool's own input model: the C4 recipe path supplies them directly, and
+    # the execution seam serves them there from the captured-turn binding.
+    assert turn_authority <= set(RecordInterviewAnswerTool.input_model.model_fields)
+    assert turn_authority == set(trusted_turn_fields(RecordInterviewAnswerTool.input_model))
+    # The model authors only offsets into the body the platform loads.
     statement = properties["statements"]["items"]["properties"]
     assert {"quote_start", "quote_end"} <= set(statement)
-    # The seam 1.2 extends already exists — and already covers project_id on this same input.
+    assert "captured user message" in statement["quote_start"]["description"].casefold()
+    # The pre-existing half of the same seam is unchanged.
     assert "project_id" in RecordInterviewAnswerTool.input_model.model_fields
     assert "project_id" not in properties
+    # What survives is the classification surface, plus the scope ids the model still names.
+    assert set(properties) == {"brand_id", "client_entity_id", "product_id", "statements"}
 
 
 def test_the_identity_prompt_is_injected_into_every_model_call_twice() -> None:

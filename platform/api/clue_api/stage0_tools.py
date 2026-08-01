@@ -21,6 +21,7 @@ from clue_api.tool_outputs import (
     Stage0OverrideOutput,
     Stage0ReadinessOutput,
 )
+from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
     AccountEntity,
@@ -284,28 +285,41 @@ class StartReconInput(ToolInput):
 
 
 class RecordInterviewAnswerInput(ToolInput):
+    """Route one captured turn. The model classifies; the platform supplies the turn itself.
+
+    ``onboarding_input_id``, ``artifact_key`` and ``answer`` are trusted turn authority (PC-C8
+    §6a): they are stripped from the model-visible schema and served at the execution seam from
+    the binding compiled off this turn's own artifact and capture record
+    (:mod:`clue_api.turn_binding`). They stay declared here because the C4 recipe path supplies
+    them directly — only the *agent* surface loses them.
+    """
+
     brand_id: str = Field(
         description="Brand this answer belongs to; it must already exist in this workspace."
     )
     onboarding_input_id: str = Field(
+        json_schema_extra={TRUSTED_TURN_FIELD: True},
         description=(
-            "The onboarding input that captured this turn, as supplied in your turn context. It "
-            "must exist in this workspace and carry the same `artifact_key`; an invented or "
-            "foreign id is refused."
-        )
+            "The onboarding input that captured this turn. Trusted turn authority: supplied by "
+            "the platform from the captured turn, never by you. It must exist in this workspace "
+            "and carry the same `artifact_key`."
+        ),
     )
     artifact_key: str = Field(
+        json_schema_extra={TRUSTED_TURN_FIELD: True},
         description=(
-            "Artifact key of that captured turn — the same key the onboarding input carries. A "
-            "mismatch is refused."
-        )
+            "Artifact key of that captured turn — the same key the onboarding input carries. "
+            "Trusted turn authority: supplied by the platform, never by you."
+        ),
     )
     answer: str = Field(
+        json_schema_extra={TRUSTED_TURN_FIELD: True},
         description=(
-            "The captured user message, byte-identical: its SHA-256 must equal the onboarding "
-            "input's `content_sha256`, and every statement's quote offsets index into this exact "
-            "string. Never retype, trim, re-wrap, or normalize it."
-        )
+            "The captured user message, byte-identical. Trusted turn authority: the platform "
+            "loads these exact bytes from the captured artifact and verifies their SHA-256 "
+            "against the onboarding input's `content_sha256`, so there is nothing here for you "
+            "to retype. Every statement's quote offsets index into this exact string."
+        ),
     )
     client_entity_id: str = Field(
         description="Resolved client entity id for this workspace, as supplied in your context."
@@ -868,11 +882,13 @@ class RecordInterviewAnswerTool(_Stage0Tool):
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
     )
     effect_class = ToolEffectClass.SPEND
+    # The turn-authority fields are deliberately absent: a journal display is a summary of what
+    # the *caller* asked for, and since PC-C8 §6a nothing about the turn's identity is asked for —
+    # it is served from the binding. The durable receipt still carries them in the full validated
+    # body; they just stop being displayed as if the caller had chosen them.
     parameter_policy = JournalParameterPolicy(
         safe_display_fields=(
             "brand_id",
-            "onboarding_input_id",
-            "artifact_key",
             "client_entity_id",
             "product_id",
             "project_id",

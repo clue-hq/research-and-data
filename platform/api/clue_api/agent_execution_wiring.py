@@ -52,6 +52,12 @@ from clue_agents.contracts import (
 from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
+from clue_api.turn_binding import (
+    CapturedTurn,
+    CapturedTurnSource,
+    CapturedTurnUnavailable,
+    trusted_turn_fields,
+)
 from clue_core import ExecutionId
 from clue_db import ConnFactory, database_url, transaction
 from clue_execution import (
@@ -225,6 +231,7 @@ def _trusted_tool_arguments(
     arguments: Mapping[str, JsonValue],
     input_model: type[BaseModel],
     constitution: AgentConstitution,
+    captured_turn: CapturedTurn | None = None,
 ) -> dict[str, JsonValue]:
     """Merge trusted authority into the model-proposed arguments of one tool step.
 
@@ -236,6 +243,13 @@ def _trusted_tool_arguments(
     Authority the constitution does not carry (``operation_id``, ``parent_execution_id``) is
     deliberately not synthesized — such a field stays absent and its own model decides whether
     that is valid.
+
+    Per-turn authority (PC-C8 §6) merges the same way from a different trusted source: a field
+    marked :data:`~clue_api.turn_binding.TRUSTED_TURN_FIELD` is served from ``captured_turn``, the
+    binding compiled from this turn's own artifact and capture record. A tool that declares such a
+    field and reaches an execution with no binding is refused here rather than executed against
+    whatever the model happened to send — which is the point: a forged or foreign
+    ``onboarding_input_id`` has no path into the call.
     """
 
     merged = dict(arguments)
@@ -243,11 +257,22 @@ def _trusted_tool_arguments(
     if supplied:
         # Defence in depth: PlanToolStep already refuses these keys.
         raise ValueError(f"plan arguments carry trusted authority: {sorted(supplied)}")
+    turn_fields = trusted_turn_fields(input_model)
+    proposed_turn = set(turn_fields) & set(merged)
+    if proposed_turn:
+        raise ValueError(f"plan arguments carry trusted turn authority: {sorted(proposed_turn)}")
     authority = _trusted_authority(constitution)
     for key in MODEL_FORBIDDEN_AUTHORITY_KEYS & set(input_model.model_fields):
         value = authority.get(key)
         if value is not None:
             merged[key] = value
+    for key in turn_fields:
+        if captured_turn is None:
+            raise CapturedTurnUnavailable(
+                f"{key!r} is served from this turn's captured input, which is unavailable",
+                reason_code="no_binding",
+            )
+        merged[key] = captured_turn.value_for(key)
     return merged
 
 
@@ -1183,6 +1208,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         checkpointer_factory: CheckpointerFactory,
         pin_provider: StepPinProvider | None = None,
         delegation: DbAgentDelegationRuntime | None = None,
+        captured_turn: CapturedTurnSource | None = None,
         crash_hook: AgentExecutionCrashHook = _DEFAULT_CRASH_HOOK,
         conn_factory: ConnFactory = transaction,
     ) -> None:
@@ -1199,11 +1225,28 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         self._checkpointer_factory = checkpointer_factory
         self._pin_provider = pin_provider
         self._delegation = delegation
+        self._captured_turn = captured_turn
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
         self._validated: dict[UUID, ValidatedPlan] = {}
         self._proposals: dict[UUID, AgentPlan] = {}
         self._pin_requests: dict[UUID, dict[str, tuple[PinRequest, ...]]] = {}
+
+    async def _resolve_captured_turn(self) -> CapturedTurn:
+        """Serve this turn's binding, or refuse loudly enough for the model to see it.
+
+        The refusal is a ``ValueError`` on purpose: the caller turns it into a
+        ``turn_binding_unavailable`` plan issue, so a step needing turn authority on an execution
+        that has none is rejected with visible feedback instead of running unbound.
+        """
+
+        if self._captured_turn is None:
+            raise CapturedTurnUnavailable(
+                "this execution carries no captured-turn binding, so the platform cannot supply "
+                "the turn's captured input, artifact, or body",
+                reason_code="no_binding",
+            )
+        return await self._captured_turn.captured_turn()
 
     async def validate_plan(
         self,
@@ -1301,8 +1344,28 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                     arguments=step.arguments,
                     input_model=descriptor.input_model,
                     constitution=constitution,
+                    captured_turn=(
+                        await self._resolve_captured_turn()
+                        if trusted_turn_fields(descriptor.input_model)
+                        else None
+                    ),
                 )
                 descriptor.input_model.model_validate(merged)
+            except CapturedTurnUnavailable as exc:
+                # Attribution matters: this step is unrunnable because the *platform* cannot bind
+                # the turn, not because the model's arguments are wrong. Reporting it as
+                # ``tool_input_invalid`` on ``.arguments`` sends the model into a repair loop over
+                # arguments it did not get wrong and cannot fix. Same fail-closed outcome, honest
+                # cause — and the location names the step, not the model's proposal.
+                issues.append(
+                    _agent_issue(
+                        GraphIssue(
+                            "turn_binding_unavailable",
+                            f"plan.steps[{ordinal}]",
+                            str(exc),
+                        )
+                    )
+                )
             except Exception as exc:
                 issues.append(
                     _agent_issue(

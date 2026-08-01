@@ -56,6 +56,7 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
 from clue_toolbelt import ToolRegistry
@@ -391,6 +392,13 @@ def _with_trusted_runtime(
     coroutine, so an untouched ``project_id=None`` would reach the plan step and trip the
     forbidden-authority guard on a call the model made correctly.
 
+    The same removal covers per-turn authority: a field marked
+    :data:`~clue_api.turn_binding.TRUSTED_TURN_FIELD` is
+    served from the captured-turn binding at the execution seam (``clue_api.turn_binding``), so
+    ``record_interview_answer``'s ``onboarding_input_id``, ``artifact_key`` and captured ``answer``
+    body leave the model surface entirely. The two sets differ only in where the trusted value
+    comes from — the constitution for the whole execution, the captured turn for this one turn.
+
     Removing them keeps ``extra='forbid'`` doing the honest thing: a model that invents
     ``project_id`` anyway gets an ordinary validation error it can see and react to, rather than
     a crash deep in plan construction. Field removal (rather than rebuilding the model from its
@@ -411,7 +419,8 @@ def _with_trusted_runtime(
             },
         ),
     )
-    hidden = MODEL_FORBIDDEN_AUTHORITY_KEYS & set(subclass.__pydantic_fields__)
+    trusted = MODEL_FORBIDDEN_AUTHORITY_KEYS | set(trusted_turn_fields(model))
+    hidden = trusted & set(subclass.__pydantic_fields__)
     if hidden:
         for key in hidden:
             del subclass.__pydantic_fields__[key]
