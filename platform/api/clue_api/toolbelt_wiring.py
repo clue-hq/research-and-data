@@ -1748,10 +1748,12 @@ def build_toolbelt(
     ):
         registry.register(tool, make_default=True)
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
-    # resolve. NOTE — deliberately granted on **no** profile: `C6_AGENT_TOOL_AUTHORITY` maps both
-    # to `()` so they are registered and addressable but structurally absent from every model
-    # surface. Task 1.4 owns the coordinated profile/catalog bump; the grants land in a post-merge
-    # commit against that version, never by editing an already-reviewed profile in place.
+    # resolve. Both are granted to `AgentRole.HEAD_OF_ABM` in `C6_AGENT_TOOL_AUTHORITY` (the
+    # deferred grant landed against profile v10) and are *not* withheld by the trial's
+    # `C6_SURFACE_POLICIES` entry — §7 sanctions them on that surface explicitly, because they are
+    # read-only, effect-free, page-bounded and fail-closed on workspace/project scope, and a card
+    # that emits an omission kind no installed tool can resolve is what
+    # `test_c8_omission_resolution_contract.py` refuses to let ship.
     # Without a storage backend the evidence reader cannot exist, so the statement tool refuses
     # `statement_evidence_not_configured` rather than serving quote-less rows.
     for tool in build_stage0_inspection_tools(

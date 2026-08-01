@@ -63,7 +63,7 @@ from clue_config import DEFAULT_STAGE0_POLICY
 from clue_core import AccountStatus, EntityId, OnboardingInputId, OnboardingInputKind, OperationId
 from clue_db import db_lifespan
 from clue_research.identity import insert_account_entity
-from clue_research.stage0 import submit_onboarding_input
+from clue_research.stage0 import load_client_knowledge_pack, submit_onboarding_input
 from clue_spine import create_brand, create_product, create_project, create_workspace
 from clue_storage import FsStorage
 from clue_toolbelt import ToolContext
@@ -127,11 +127,17 @@ def _request(
     ref: ArtifactRef,
     *,
     project_id: str | None = None,
+    turn: str | None = None,
 ) -> AgentTurnRequest:
-    """A turn request shaped exactly like the one the Stage-0 trial builds."""
+    """A turn request shaped exactly like the one the Stage-0 trial builds.
+
+    ``turn`` names a second (third, …) turn of the *same* project, which is how a trial actually
+    runs: one binder, many turns.
+    """
 
     project = project_id or scope.project_id
-    turn_id = uuid5(NAMESPACE_URL, f"c8-turn-binding:{scope.workspace_id}:{project}")
+    suffix = f":{turn}" if turn else ""
+    turn_id = uuid5(NAMESPACE_URL, f"c8-turn-binding:{scope.workspace_id}:{project}{suffix}")
     return AgentTurnRequest(
         turn_id=turn_id,
         thread_id=f"thread-{project}",
@@ -419,6 +425,66 @@ def test_two_projects_answering_identically_each_bind_their_own_capture_record(
     run_async(_scenario(tmp_path, body=body))
 
 
+def test_a_second_turn_repeating_the_first_ones_bytes_binds_its_own_capture_record(
+    tmp_path: Path,
+    db_available: bool,
+) -> None:
+    """One binder lives for the whole trial, so its cache must be keyed on the *turn*.
+
+    A user who answers "confirm" (or re-sends any earlier message) produces byte-identical bytes,
+    hence the same content-addressed artifact key — while the capture record, which is what the
+    binding actually carries, is a new row per turn. A binder caching on
+    ``(workspace, project, artifact_key)`` hands turn 2 turn 1's ``onboarding_input_id``: the
+    preconditions still pass (same artifact, same digest), the statements land under the previous
+    turn's input, ``Stage0RoutingReceiptGuard`` counts zero for *this* turn, and the turn dies in
+    an unrepairable repair loop (the ``uuid5`` statement ids dedupe across the two turns as well).
+    """
+
+    if not db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def body(
+        *,
+        scope: _Scope,
+        conn: AsyncConnection,
+        artifacts: DurableAgentArtifactStore,
+        connection_factory: Any,
+        ref: ArtifactRef,
+        captured_id: OnboardingInputId | None,
+        **_: Any,
+    ) -> None:
+        binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
+        first = await binder.bind(_request(scope, ref, turn="1"))
+        assert first.onboarding_input_id == str(captured_id)
+
+        # Turn 2: the same bytes, so the same artifact key — captured as its own row, as the
+        # trial's capture surface does on every turn.
+        second_capture = await submit_onboarding_input(
+            conn,
+            workspace_id=scope.workspace_id,
+            brand_id=scope.brand_id,
+            product_id=scope.product_id,
+            project_id=scope.project_id,
+            client_entity_id=scope.client_entity_id,
+            kind=OnboardingInputKind.USER_TURN,
+            artifact_key=ref.artifact_key,
+            content_sha256=ref.sha256,
+            actor="human",
+            onboarding_input_id=OnboardingInputId(HIGHEST_ID),
+        )
+        assert second_capture.artifact_key == ref.artifact_key
+
+        second = await binder.bind(_request(scope, ref, turn="2"))
+
+        assert second.onboarding_input_id == str(second_capture.onboarding_input_id)
+        assert second.onboarding_input_id != first.onboarding_input_id
+        # Only the attribution moved: the bytes really are identical on both turns.
+        assert second.answer == first.answer == ANSWER
+        assert second.sha256 == first.sha256 == ref.sha256
+
+    run_async(_scenario(tmp_path, body=body))
+
+
 def test_a_turn_that_is_not_a_captured_input_binds_nothing(
     tmp_path: Path,
     db_available: bool,
@@ -586,6 +652,9 @@ def test_a_governed_call_of_offsets_alone_lands_the_statement_on_engine_loaded_b
         captured_id: OnboardingInputId | None,
         **_: Any,
     ) -> None:
+        # The ``client`` field-class is seeded, not migrated, so a freshly-migrated database has
+        # no source profile for it and the write refuses before it reaches the assertions here.
+        await load_client_knowledge_pack(conn)
         request = _request(scope, ref)
         source = RequestCapturedTurn(
             binder=CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory),
@@ -677,6 +746,7 @@ def test_a_governed_quote_after_a_multi_byte_character_lands_the_characters_not_
         assert ANSWER.index("🎯") < start
         assert ANSWER.encode()[start:end] != ANSWER[start:end].encode()
 
+        await load_client_knowledge_pack(conn)
         request = _request(scope, ref)
         binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
         merged = _trusted_tool_arguments(
@@ -734,6 +804,7 @@ def test_an_offset_past_the_captured_message_is_refused_and_writes_nothing(
         ref: ArtifactRef,
         **_: Any,
     ) -> None:
+        await load_client_knowledge_pack(conn)
         request = _request(scope, ref)
         binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
         merged = _trusted_tool_arguments(
@@ -783,11 +854,13 @@ def test_a_claim_value_the_engine_loaded_quote_does_not_entail_is_refused(
     async def body(
         *,
         scope: _Scope,
+        conn: AsyncConnection,
         artifacts: DurableAgentArtifactStore,
         connection_factory: Any,
         ref: ArtifactRef,
         **_: Any,
     ) -> None:
+        await load_client_knowledge_pack(conn)
         request = _request(scope, ref)
         binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
         merged = _trusted_tool_arguments(
