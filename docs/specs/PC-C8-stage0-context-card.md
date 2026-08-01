@@ -148,12 +148,13 @@ Root causes, each owned somewhere in this spec:
 | aggregate quoted text | 16,000 bytes | reduce statement count below 40 until it fits (newest-first survives) |
 | single KB `brief_value` | 256 bytes | truncate with marker; full claim via claim ref |
 | KB `known_fields` aggregate | 4,000 bytes | field-registry order, overflow to omissions |
-| `omissions` entries | 12 entries; counts + one cursor each, **never id lists** | collapse to a single `omissions_truncated` entry |
-| **whole serialized card** | **24,000 bytes, asserted in tests** | compile-time invariant violation = bug, not a runtime path |
+| per-gate readiness `metrics` + `reason_codes` | 1,000 bytes | truncate to the compiled summary keys with a marker — readiness must never starve the interview section (v2.1 addition: reviewer measured that uncapped metrics invert the shed order) |
+| `omissions` entries | 12 entries; counts + one cursor each, **never id lists** | collapse to a single `omissions_truncated` entry (note: the v1 kind enum has ~5 members, so 12 is forward-capacity, not a reachable bound) |
+| **whole serialized card** | **24,000 bytes — enforced by construction** | deterministic shedding: oldest included statements first, then trailing KB fields, omission counts recomputed each round; `Stage0CardTooLarge` remains only as the genuine-bug backstop |
 
 Selection order, priorities, and caps are data (policy-is-data), versioned via `compiler_policy_version`, which participates in the card bytes — a policy change is a visible card change. Slice 2 converts the *layer budget* to model tokens; these *content* caps stay byte-denominated (they bound storage and serialization, not tokenization).
 
-Size arithmetic: 40 statements × ≤(1,000 quote + ~120 envelope) bounded by the 16,000 aggregate ⇒ interview ≤ ~21KB worst case, typical ~5KB; card cap 24,000 + budget envelope 140 sits at half the 48,000 L3 budget even in the worst case. AC-1 becomes enforceable: the card cannot exceed 24,000 bytes at any ledger size, by construction.
+Size arithmetic (**corrected in v2.1** — the original assumed ~120 B statement envelopes; measured reality is 144–222 B, and the fixed sections cost ~1.9 KB): the per-dimension caps are deliberately generous **pre-filters** and do *not* sum under 24,000 B when every dimension maxes simultaneously (16,000 quotes + 40 × ~220 envelopes + 4,000 KB + ~1.9 KB fixed ≈ 30 KB). The binding constraint is the whole-card cap, **enforced by deterministic shedding** (order above), which the Slice-0-derived adversarial fixtures prove: 400 statements × 4,000 B quotes with a 500-row ledger compiles to ~22.9 KB with honest omission counts. Typical cards remain ~5 KB; card + 140 B budget envelope sits at under half the 48,000 L3 budget even worst-case. AC-1 is enforceable: the card cannot exceed 24,000 bytes at any ledger size, by construction.
 
 ---
 
