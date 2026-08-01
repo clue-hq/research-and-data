@@ -35,7 +35,11 @@ _C65_CERTIFIED = {
 def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(C6_AGENT_TOOL_AUTHORITY) == set(registry.names())
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 35
+    # 35 → 37 with PC-C8 task 1.5's two inspection tools, both deliberately granted to no role
+    # (task 1.4 owns the coordinated profile bump the grants must ride).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 37
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == ()
 
     for descriptor in registry.all_descriptors():
         roles = c6_roles_for_tool(descriptor.address)

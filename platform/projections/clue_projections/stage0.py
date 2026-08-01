@@ -863,11 +863,11 @@ _GATE_SUMMARY_METRIC_KEYS = (
 )
 
 
-def _bounded_gate_evidence(
+def bounded_gate_evidence(
     metrics: Mapping[str, JsonValue],
     reason_codes: Sequence[str],
     *,
-    policy: Stage0CardPolicy,
+    policy: Stage0CardPolicy = STAGE0_CARD_POLICY_V1,
 ) -> tuple[dict[str, JsonValue], tuple[str, ...], bool]:
     """Bound one gate's ``metrics`` + ``reason_codes`` to ``max_gate_evidence_bytes``.
 
@@ -875,6 +875,11 @@ def _bounded_gate_evidence(
     is *skipped*, not a stop, so one oversized metric cannot hide every smaller one behind it. The
     caller marks the gate ``evidence_truncated`` whenever anything was left out — the full row
     stays reachable through the readiness-history cursor.
+
+    Public because the PC-C8 §7 ``inspect_readiness_history`` tool bounds a *paged ledger row* the
+    same way the card bounds a *current-gate* row. Prompt bloat must not simply migrate from the
+    opening context into a tool result, and two independent notions of "a bounded readiness row"
+    is exactly how the two surfaces would start disagreeing about what was truncated.
     """
 
     ordered = [key for key in _GATE_SUMMARY_METRIC_KEYS if key in metrics]
@@ -1067,7 +1072,7 @@ def _gate_readiness(
         # even when two decisions share a timestamp.
         latest = current[-1]
         override_ref = overrides.get(str(latest.id))
-        metrics, reason_codes, evidence_truncated = _bounded_gate_evidence(
+        metrics, reason_codes, evidence_truncated = bounded_gate_evidence(
             latest.metrics, latest.reason_codes, policy=policy
         )
         entries.append(
@@ -1324,6 +1329,7 @@ __all__ = [
     "Stage0ProjectCard",
     "Stage0ReadinessView",
     "StatementEvidenceReader",
+    "bounded_gate_evidence",
     "compile_stage0_project_card",
     "decode_card_cursor",
     "effective_readiness_verdict",
