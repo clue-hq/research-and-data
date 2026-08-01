@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v9",
+    AgentRole.HEAD_OF_ABM: "v10",
     AgentRole.RESEARCH: "v4",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
@@ -61,13 +61,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.ACCOUNT_RESEARCH,
     ),
     "import_accounts": (),
-    # NOTE (PC-C8 task 1.5): the two bounded Stage-0 inspection tools are registered but granted
-    # on NO profile — task 1.4 is re-versioning the head-of-abm profile in parallel, and a grant
-    # must ride that one coordinated catalog/profile bump. Empty here means "structurally absent
-    # from every current model surface", which is the honest state until then. The grants land in
-    # a post-merge commit against the bumped profile version.
-    "inspect_readiness_history": (),
-    "inspect_statement_history": (),
+    # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10). These are the tools the
+    # card's `omissions` cursors are resolvable *through*: read-only, effect-free, page-bounded,
+    # and fail-closed on workspace/project scope. They are granted on the base role *and* stay
+    # installed on the trial surface — §7 sanctions them there explicitly, and a card that emits an
+    # omission kind no installed tool can resolve is the contract
+    # `test_c8_omission_resolution_contract.py` now refuses to let ship.
+    "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
+    "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (AgentRole.RESEARCH,),
@@ -121,7 +122,17 @@ STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
 #:   misleading provenance. Defence in depth is unchanged — 1.2's lookup scoping stays.
 #:
 #: ``submit_ingestion`` is deliberately **kept**: it ingests an already-captured workspace artifact
-#: and performs no external research, so it does not cross this surface's boundary.
+#: and performs no external research, so it does not cross this surface's boundary. So are the two
+#: §7 inspection tools: read-only, effect-free, and the only way a card omission cursor resolves.
+#:
+#: **Delegation is withheld too, and for the same sentence.** A tool ceiling alone left the trial's
+#: own map promising "no external research" while still advertising ``delegate_specialist`` and the
+#: three specialist roles under it — one of which is *the research role*. The only thing preventing
+#: a delegation was ``stage0_trial._DelegationDisabled.run`` raising at call time, i.e. restriction
+#: by crash, which is exactly what ruling §2.4 rejects and what the withheld tools fixed for tools.
+#: Withholding the roles empties ``delegation_roles``, so ``delegate_specialist`` leaves the
+#: middleware's allowed set, the Delegation block stops naming anyone, and the child runner's
+#: refusal becomes an unreachable backstop rather than the mechanism.
 C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
     AgentSurfacePolicy(
         surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
@@ -133,11 +144,18 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "synthesize_icps",
             }
         ),
+        withheld_delegation_roles=frozenset(
+            {
+                AgentRole.RESEARCH,
+                AgentRole.CONTENT_DRAFTER,
+                AgentRole.REVIEWER,
+            }
+        ),
         withheld_reason_code="trial_manual_conversation_only",
         framing=(
             "This surface is a manual-conversation-only Stage-0 trial: it does no external "
             "research, and the platform captures every turn before you see it, so you never "
-            "capture, fetch, or synthesize outside this conversation."
+            "capture, fetch, delegate, or synthesize outside this conversation."
         ),
     ),
 )

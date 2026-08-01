@@ -17,6 +17,7 @@ sent (post trusted-runtime strip, post provider transform, ``$defs`` resolved).
 from __future__ import annotations
 
 from collections.abc import Iterator
+from copy import deepcopy
 from typing import Any
 
 from langchain_core.tools import StructuredTool
@@ -91,13 +92,36 @@ def test_no_model_facing_tool_schema_carries_trusted_authority_at_any_depth() ->
 
 
 def test_the_walk_actually_descends_into_nested_definitions() -> None:
-    """Guard the guard: a structural walk that silently stopped at depth 1 would pass forever."""
+    """Guard the guard: a structural walk that silently stopped at depth 1 would pass forever.
+
+    Observing that *some* nested path exists is weaker than it looks — a walk could find the paths
+    it happens to reach and still miss the container form a future tool uses. So this plants a real
+    forbidden name inside a `$defs` sub-model of a real tool schema and asserts the walk catches it
+    exactly where it was planted. The gate above is only as good as this.
+    """
 
     registry = build_toolbelt(storage=None, gateway=None, settings=Settings(_env_file=None))
     schema = _model_facing_schema(registry, "submit_ingestion", "1")
     paths = set(_property_paths(schema))
 
     assert ("declared_context",) in paths
-    nested = {path for path in paths if len(path) > 1}
-    assert nested, "the walk found no property below the top level"
-    assert ("declared_context", "document_context") in nested
+    assert ("declared_context", "document_context") in paths
+
+    planted = deepcopy(schema)
+    nested = planted["function"]["parameters"]["properties"]["declared_context"]
+    assert isinstance(nested, dict)
+    # Depth 2, through `properties`.
+    nested["properties"]["project_id"] = {"type": "string"}
+    # Depth 3, through an `items` container — a different code path in the walk, and the one a
+    # list-of-sub-models tool would use.
+    nested["properties"]["targets"]["items"]["properties"]["workspace_id"] = {"type": "string"}
+
+    caught = sorted(
+        ".".join(path)
+        for path in _property_paths(planted)
+        if path[-1] in MODEL_FORBIDDEN_AUTHORITY_KEYS
+    )
+    assert caught == [
+        "declared_context.project_id",
+        "declared_context.targets.workspace_id",
+    ]

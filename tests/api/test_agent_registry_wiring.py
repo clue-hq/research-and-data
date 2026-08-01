@@ -47,10 +47,11 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v9 / stage0-interview@v7 — PC-C8 task 1.4's one coordinated bump:
+        # head-of-abm@v10 / stage0-interview@v7 — PC-C8 slice 1's closing bump (the §7
+        # inspection-tool grants + delegation withholding) on top of task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: "48a2abd0d2031db67625e58f8eb62b19ef1ddae2fdc627a7f97636a6b544270d",
+        AgentRole.HEAD_OF_ABM: "d6ccc354b796729941fdeed249b2bf962478e8d393af30f90c5ac15d10cc185c",
         AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
@@ -105,19 +106,18 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         if item.status is AgentCapabilityStatus.AVAILABLE
     }
 
-    # 36 → 38 with PC-C8 task 1.5's two inspection tools. They appear in the *disclosure* map as
-    # ROLE_UNAVAILABLE (registered, granted to nobody) and stay out of `available` below — the
-    # honest state until task 1.4's coordinated profile bump carries the grants.
+    # 36 → 38 with PC-C8 task 1.5's two inspection tools, granted to this role in the slice-1
+    # closing bump (profile v10). They are the tools the card's `omissions` cursors resolve
+    # through, so `test_c8_omission_resolution_contract.py` fails the build if either leaves the
+    # effective surface while the card can still emit its kind.
     assert len(by_address) == 38
-    assert (
-        by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    )
-    assert (
-        by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    )
+    assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
         "evaluate_stage0_readiness@1",
         "get_research_view@1",
+        "inspect_readiness_history@1",
+        "inspect_statement_history@1",
         "propose_field@1",
         "propose_source@1",
         "record_interview_answer@1",
