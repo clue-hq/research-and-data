@@ -44,6 +44,19 @@ const ICONS: &[(&str, &str)] = &[
     ("arrow-left", "M20 10H10V6L3 12L10 18V14H20Z"),
     ("arrow-up", "M10 20V10H6L12 3L18 10H14V20Z"),
     ("arrow-down", "M10 4V14H6L12 21L18 14H14V4Z"),
+    // — domain pictograms (trust/security, process steps, product) —
+    // Same authoring rules as above: solid filled forms, no holes; overlapping
+    // same-direction subpaths union under nonzero winding.
+    ("shield", "M12 2L20 5V11C20 16.55 16.6 20.74 12 22C7.4 20.74 4 16.55 4 11V5Z"),
+    ("lock", "M12 3C8.69 3 6 5.69 6 9V10H9V9C9 7.34 10.34 6 12 6C13.66 6 15 7.34 15 9V10H18V9C18 5.69 15.31 3 12 3ZM5 11H19V21H5Z"),
+    ("key", "M12.65 10C11.83 7.67 9.61 6 7 6C3.69 6 1 8.69 1 12C1 15.31 3.69 18 7 18C9.61 18 11.83 16.33 12.65 14H17V18H21V14H23V10H12.65Z"),
+    ("user", "M12 4C14.21 4 16 5.79 16 8C16 10.21 14.21 12 12 12C9.79 12 8 10.21 8 8C8 5.79 9.79 4 12 4ZM12 14C16.42 14 20 15.79 20 18V20H4V18C4 15.79 7.58 14 12 14Z"),
+    ("layers", "M12 2L22 8L12 14L2 8ZM4.7 11.1L12 15.5L19.3 11.1L22 12.7L12 18.7L2 12.7Z"),
+    ("pencil", "M3 17.25V21H6.75L17.81 9.94L14.06 6.19ZM20.71 7.04C21.1 6.65 21.1 6.02 20.71 5.63L18.37 3.29C17.98 2.9 17.35 2.9 16.96 3.29L15.13 5.12L18.88 8.87Z"),
+    ("sparkles", "M12 2L13.9 8.1L20 10L13.9 11.9L12 18L10.1 11.9L4 10L10.1 8.1ZM19 14L19.9 16.6L22.5 17.5L19.9 18.4L19 21L18.1 18.4L15.5 17.5L18.1 16.6Z"),
+    ("download", "M10 3H14V11H18.5L12 17.5L5.5 11H10ZM4 19H20V22H4Z"),
+    ("chart-bar", "M4 10H8V20H4ZM10 4H14V20H10ZM16 13H20V20H16Z"),
+    ("lightbulb", "M12 2C8.13 2 5 5.13 5 9C5 11.38 6.19 13.47 8 14.74V17H16V14.74C17.81 13.47 19 11.38 19 9C19 5.13 15.87 2 12 2ZM9 19H15V21H9Z"),
 ];
 
 /// Resolve a curated icon by name (e.g. `"check"`), or `None` if unknown.

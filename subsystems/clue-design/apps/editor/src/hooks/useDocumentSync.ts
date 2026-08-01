@@ -85,6 +85,18 @@ export function useDocumentSync(deps: UseDocumentSyncDeps) {
       onReconcile: (event) => {
         if (event.serverScene) {
           replaceScene(event.serverScene);
+          // The local scene has been replaced by authoritative server state
+          // (a rejected batch — e.g. a stale base_version 409 after some other
+          // write bumped the revision — or a drain-time divergence). The local
+          // undo/redo frames describe scenes that are no longer reachable from
+          // here, so keeping them is the desync bug: an undo issued next would
+          // pop a frame that does not match the server. Drop both stacks and
+          // re-arm the queue's base_version to the server's, so subsequent
+          // edits are not rejected in turn. The diagnostic still surfaces in
+          // the topbar error pill.
+          setUndoStack([]);
+          setRedoStack([]);
+          editQueueRef.current?.resync(event.serverVersion);
         }
         setDiagnostics([event.diagnostic]);
       }

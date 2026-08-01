@@ -77,8 +77,11 @@
         {
           "id": "paint_ad_surface",
           "paint": {
-            "kind": "token",
-            "token": "surface.brand"
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#fffaf2"
+            }
           }
         }
       ]
@@ -162,8 +165,11 @@
         {
           "id": "paint_account_text",
           "paint": {
-            "kind": "token",
-            "token": "text.primary"
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#111827"
+            }
           }
         }
       ],
@@ -271,8 +277,11 @@
         {
           "id": "paint_cta_text",
           "paint": {
-            "kind": "token",
-            "token": "text.inverse"
+            "kind": "solid",
+            "color": {
+              "kind": "hex",
+              "value": "#ffffff"
+            }
           }
         }
       ],

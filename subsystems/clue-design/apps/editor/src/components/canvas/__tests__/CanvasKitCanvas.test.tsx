@@ -28,7 +28,8 @@ vi.mock("../SelectionOverlay", () => ({
     showRotateHandle,
     guides,
     insertionIndicator,
-    marginGuides
+    marginGuides,
+    reveal
   }: {
     hover: unknown;
     slotKeys: string[];
@@ -38,7 +39,8 @@ vi.mock("../SelectionOverlay", () => ({
     showRotateHandle?: boolean;
     guides?: unknown[];
     insertionIndicator?: { axis: string; position: number; from: number; to: number } | null;
-    marginGuides?: { safeArea: unknown; bleed: unknown } | null;
+    marginGuides?: { safeArea: unknown; bleed: unknown; trim?: unknown } | null;
+    reveal?: { drawMode: string; label: string } | null;
   }) => (
     <div
       data-testid="selection-overlay"
@@ -50,9 +52,12 @@ vi.mock("../SelectionOverlay", () => ({
       data-show-rotate-handle={showRotateHandle ? "yes" : "no"}
       data-guides-count={(guides ?? []).length}
       data-indicator={insertionIndicator ? JSON.stringify(insertionIndicator) : ""}
+      data-reveal-draw-mode={reveal?.drawMode ?? ""}
+      data-reveal-label={reveal?.label ?? ""}
     >
       {marginGuides?.safeArea ? <div data-role="margin-guide-safe-area" /> : null}
       {marginGuides?.bleed ? <div data-role="margin-guide-bleed" /> : null}
+      {marginGuides?.trim ? <div data-role="margin-guide-trim" /> : null}
     </div>
   )
 }));
@@ -170,6 +175,46 @@ describe("CanvasKitCanvas polish chrome wiring", () => {
       const overlay = screen.getByTestId("selection-overlay");
       expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).toBeNull();
       expect(overlay.querySelector('[data-role="margin-guide-bleed"]')).toBeNull();
+    });
+  });
+
+  describe("W3: Print & bleed", () => {
+    it("renders the Print & bleed toggle button, reflecting aria-pressed", () => {
+      const onTogglePrintFeature = vi.fn();
+      renderCanvasKit({ selectedNodeId: null, printFeatureEnabled: false, onTogglePrintFeature });
+
+      const button = screen.getByRole("button", { name: "Print & bleed" });
+      expect(button).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(button);
+      expect(onTogglePrintFeature).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks the Print & bleed toggle active when the feature is on", () => {
+      renderCanvasKit({ selectedNodeId: null, printFeatureEnabled: true });
+      const button = screen.getByRole("button", { name: "Print & bleed" });
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(button.className).toContain("active");
+    });
+
+    it("emits a trim guide only when the print feature is on and margins are shown", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: true, printFeatureEnabled: true });
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-trim"]')).not.toBeNull();
+      // safe-area still shows; the fixture page has no bleed rect.
+      expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+    });
+
+    it("does not emit a trim guide when the print feature is off (margins unchanged)", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: true, printFeatureEnabled: false });
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-trim"]')).toBeNull();
+      expect(overlay.querySelector('[data-role="margin-guide-safe-area"]')).not.toBeNull();
+    });
+
+    it("does not emit a trim guide when margins are hidden even with the feature on", () => {
+      renderCanvasKit({ selectedNodeId: null, showMarginGuides: false, printFeatureEnabled: true });
+      const overlay = screen.getByTestId("selection-overlay");
+      expect(overlay.querySelector('[data-role="margin-guide-trim"]')).toBeNull();
     });
   });
 
@@ -612,6 +657,167 @@ function stackManagedTwoChildScene(): Scene {
   return next;
 }
 
+describe("(g) S2 reveal-theater viewport auto-follow", () => {
+  function twoPageScene(): Scene {
+    const next = JSON.parse(JSON.stringify(minimalScene)) as Scene;
+    next.pages.page_b = {
+      ...(JSON.parse(JSON.stringify(next.pages.page_a4)) as Scene["pages"]["page_a4"]),
+      id: "page_b",
+      name: "Page B",
+      children: []
+    };
+    return next;
+  }
+
+  const reveal = (pageId: string, seq: number) => ({
+    seq,
+    kind: "insert_node",
+    nodeId: null,
+    pageId,
+    bounds: null,
+    label: "designing…",
+    travelMs: 200,
+    drawMs: 300,
+    materializeFadeMs: 250,
+    reducedMotion: false
+  });
+
+  function renderFollow(agentReveal: ReturnType<typeof reveal>) {
+    const twoPage = twoPageScene();
+    const onWorkspaceViewportChange = vi.fn();
+    const onWorkspaceFitTargetChange = vi.fn();
+    const commonProps = {
+      activePageId: "page_a4" as const,
+      selectedNodeId: null,
+      onSelectNode: () => {},
+      onOperations: () => {},
+      engine: null,
+      diagnostics: [],
+      workspaceModel: createWorkspaceModel(twoPage, "page_a4", []),
+      workspaceViewport: defaultWorkspaceViewport(),
+      onWorkspaceViewportChange,
+      workspaceTool: "select" as const,
+      onWorkspaceToolChange: () => {},
+      workspaceFitTarget: "manual" as const,
+      onWorkspaceFitTargetChange
+    };
+    const utils = render(
+      <CanvasKitCanvas scene={twoPage} {...commonProps} agentReveal={agentReveal} />
+    );
+    // The built-in pan-clamp effect passes a FUNCTION updater; only auto-follow
+    // passes a viewport OBJECT. Count the object calls to isolate the follow.
+    const fitCount = () =>
+      onWorkspaceViewportChange.mock.calls.filter((call) => typeof call[0] !== "function").length;
+    const rerenderFollow = (nextReveal: ReturnType<typeof reveal>) =>
+      utils.rerender(
+        <CanvasKitCanvas scene={twoPage} {...commonProps} agentReveal={nextReveal} />
+      );
+    return { ...utils, fitCount, rerenderFollow };
+  }
+
+  it("fits the viewport on the first reveal and on each page change, but not within the same page", () => {
+    const { fitCount, rerenderFollow } = renderFollow(reveal("page_a4", 1));
+    expect(fitCount()).toBe(1); // first reveal → fit page_a4
+
+    rerenderFollow(reveal("page_a4", 2)); // same page, next element → no re-fit
+    expect(fitCount()).toBe(1);
+
+    rerenderFollow(reveal("page_b", 3)); // page change → fit page_b
+    expect(fitCount()).toBe(2);
+  });
+
+  it("is suppressed permanently for the run once the user pans (user wins)", () => {
+    const { container, fitCount, rerenderFollow } = renderFollow(reveal("page_a4", 1));
+    expect(fitCount()).toBe(1);
+
+    // The user pans mid-run — auto-follow must never fire again this run.
+    const layer = container.querySelector('[data-testid="canvaskit-interaction-layer"]')!;
+    fireEvent.wheel(layer, { deltaY: 120 });
+
+    rerenderFollow(reveal("page_b", 2)); // page change that would normally fit
+    expect(fitCount()).toBe(1); // suppressed — user override latched
+  });
+
+  it("is suppressed permanently for the run once the user clicks a Fit button (user wins)", () => {
+    const { fitCount, rerenderFollow } = renderFollow(reveal("page_a4", 1));
+    expect(fitCount()).toBe(1); // first reveal → fit page_a4
+
+    // A Fit-button click mid-run is an explicit manual viewport action (D4:
+    // "user wins"); it must latch the override exactly like wheel/pan. The
+    // click itself fits (count grows to 2), but the NEXT page reveal must not.
+    fireEvent.click(screen.getByRole("button", { name: "Fit current artboard" }));
+    expect(fitCount()).toBe(2);
+
+    rerenderFollow(reveal("page_b", 2)); // page change that would normally fit
+    expect(fitCount()).toBe(2); // suppressed — the fit click latched the override
+  });
+});
+
+describe("(h) S2.1 reveal-chrome mapping", () => {
+  const renderReveal = (agentReveal: {
+    seq: number;
+    kind: string;
+    nodeId: string | null;
+    pageId: string;
+    bounds: null;
+    label: string;
+  }) =>
+    render(
+      <CanvasKitCanvas
+        scene={minimalScene}
+        activePageId="page_a4"
+        selectedNodeId={null}
+        onSelectNode={() => {}}
+        onOperations={() => {}}
+        engine={null}
+        diagnostics={[]}
+        workspaceModel={createWorkspaceModel(minimalScene, "page_a4", [])}
+        workspaceViewport={defaultWorkspaceViewport()}
+        onWorkspaceViewportChange={() => {}}
+        workspaceTool="select"
+        onWorkspaceToolChange={() => {}}
+        workspaceFitTarget="manual"
+        onWorkspaceFitTargetChange={() => {}}
+        agentReveal={{
+          ...agentReveal,
+          travelMs: 200,
+          drawMs: 300,
+          materializeFadeMs: 250,
+          reducedMotion: false
+        }}
+      />
+    );
+
+  it("maps an insert_node reveal to a corner-drag box and passes the reveal's OWN label through", () => {
+    renderReveal({
+      seq: 1,
+      kind: "insert_node",
+      nodeId: "node_contact_name",
+      pageId: "page_a4",
+      bounds: null,
+      label: "text · Contact Name"
+    });
+    const overlay = screen.getByTestId("selection-overlay");
+    expect(overlay).toHaveAttribute("data-reveal-draw-mode", "corner");
+    // Review fix (S2.1): the label rides the reveal (derived from the APPLIED
+    // scene at publish time) — the displayed scene lags the engine during the
+    // draw window, so the mapping layer must NOT look the node up itself.
+    expect(overlay).toHaveAttribute("data-reveal-label", "text · Contact Name");
+  });
+
+  it("maps an add_page reveal to a whole-artboard placeholder", () => {
+    renderReveal({
+      seq: 2,
+      kind: "add_page",
+      nodeId: null,
+      pageId: "page_a4",
+      bounds: null,
+      label: "artboard · A4"
+    });
+    expect(screen.getByTestId("selection-overlay")).toHaveAttribute("data-reveal-draw-mode", "artboard");
+  });
+});
+
 function renderCanvasKit({
   scene: canvasScene = scene,
   selectedNodeId,
@@ -622,7 +828,9 @@ function renderCanvasKit({
   onStructuredEdit,
   layoutManagedEditing,
   showMarginGuides,
-  onToggleMarginGuides
+  onToggleMarginGuides,
+  printFeatureEnabled,
+  onTogglePrintFeature
 }: {
   scene?: Scene;
   selectedNodeId: string | null;
@@ -634,6 +842,8 @@ function renderCanvasKit({
   layoutManagedEditing?: boolean;
   showMarginGuides?: boolean;
   onToggleMarginGuides?: () => void;
+  printFeatureEnabled?: boolean;
+  onTogglePrintFeature?: () => void;
 }) {
   return render(
     <CanvasKitCanvas
@@ -656,6 +866,8 @@ function renderCanvasKit({
       layoutManagedEditing={layoutManagedEditing}
       showMarginGuides={showMarginGuides}
       onToggleMarginGuides={onToggleMarginGuides}
+      printFeatureEnabled={printFeatureEnabled}
+      onTogglePrintFeature={onTogglePrintFeature}
     />
   );
 }

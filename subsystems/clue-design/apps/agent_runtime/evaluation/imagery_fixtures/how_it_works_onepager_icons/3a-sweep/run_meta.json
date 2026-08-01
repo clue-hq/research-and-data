@@ -1,0 +1,7 @@
+{
+  "run_id": "run_121c8c8d064341d28bf25a06c5e35b79",
+  "run_status": "accepted",
+  "model": "openai:anthropic/claude-opus-4.8",
+  "tag": "3a-sweep",
+  "brief_id": "how_it_works_onepager_icons"
+}

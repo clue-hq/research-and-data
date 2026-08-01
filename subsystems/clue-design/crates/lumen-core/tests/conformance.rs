@@ -353,6 +353,7 @@ impl ExportAdapter for MockExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -472,6 +473,7 @@ fn phase_name(phase: &Phase) -> &'static str {
         Phase::Dsl => "dsl",
         Phase::Layout => "layout",
         Phase::Export => "export",
+        Phase::Web => "web",
     }
 }
 
@@ -657,12 +659,7 @@ fn linkedin_ad_page() -> Page {
             width: 1104.0,
             height: 531.0,
         }),
-        background: vec![Fill {
-            id: PaintId::from("paint_ad_surface"),
-            paint: Paint::Token {
-                token: "surface.brand".to_owned(),
-            },
-        }],
+        background: vec![solid_fill("paint_ad_surface", "#fffaf2")],
     }
 }
 
@@ -713,12 +710,7 @@ fn account_name_node() -> Node {
         700,
         TextAlign::Left,
     );
-    node.fills = vec![Fill {
-        id: PaintId::from("paint_account_text"),
-        paint: Paint::Token {
-            token: "text.primary".to_owned(),
-        },
-    }];
+    node.fills = vec![solid_fill("paint_account_text", "#111827")];
     node
 }
 
@@ -735,12 +727,7 @@ fn cta_node() -> Node {
         700,
         TextAlign::Center,
     );
-    node.fills = vec![Fill {
-        id: PaintId::from("paint_cta_text"),
-        paint: Paint::Token {
-            token: "text.inverse".to_owned(),
-        },
-    }];
+    node.fills = vec![solid_fill("paint_cta_text", "#ffffff")];
     node
 }
 
@@ -901,6 +888,10 @@ fn print_pdf_profile() -> ExportProfile {
         raster: None,
         include_bleed: true,
         embed_fonts: true,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     }
 }
 
@@ -915,6 +906,10 @@ fn agent_png_profile() -> ExportProfile {
         }),
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     }
 }
 

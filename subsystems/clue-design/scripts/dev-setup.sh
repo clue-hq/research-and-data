@@ -86,6 +86,13 @@ wasm_hash() {
   shasum -a 256 apps/editor/public/wasm/lumen_wasm_bg.wasm | awk '{print $1}'
 }
 
+# The engine_commit baked into the built browser WASM. This is a content hash
+# of the shared engine sources (not git HEAD), so it is the value the API
+# helper must match for the handshake to hold.
+engine_stamp() {
+  wasm_version | "$VENV_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["engine_commit"])'
+}
+
 verify_local() {
   cd "$ROOT_DIR"
   local head
@@ -156,7 +163,7 @@ backend() {
   echo "Backend: http://$HOST:$API_PORT"
   echo "Log: $BACKEND_LOG"
   echo "CORS origins: $LUMEN_API_CORS_ORIGINS"
-  PYTHONPATH=apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
+  PYTHONPATH=.:apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
     --host "$HOST" \
     --port "$API_PORT" \
     2>&1 | tee "$BACKEND_LOG"
@@ -178,7 +185,7 @@ up() {
     echo "backend already running on :$API_PORT — reusing it"
   else
     backend_env
-    PYTHONPATH=apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
+    PYTHONPATH=.:apps/api:apps/agent_runtime "$VENV_PYTHON" -m uvicorn lumen_api.main:app \
       --host "$HOST" --port "$API_PORT" >"$BACKEND_LOG" 2>&1 &
     backend_pid=$!
     # shellcheck disable=SC2064
@@ -202,11 +209,12 @@ up() {
   # The engine the API serves must be the engine the browser will load —
   # a reused stale backend would put the editor straight back into
   # server-only (uneditable) mode.
-  local api_commit
+  local api_commit engine_commit
   api_commit="$(curl -fsS "http://$HOST:$API_PORT/build-info" \
     | "$VENV_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["build_info"]["engine_commit"])')"
-  if [[ "$api_commit" != "$(git_head)" ]]; then
-    echo "ENGINE MISMATCH: backend on :$API_PORT serves $api_commit, checkout is $(git_head)." >&2
+  engine_commit="$(engine_stamp)"
+  if [[ "$api_commit" != "$engine_commit" ]]; then
+    echo "ENGINE MISMATCH: backend on :$API_PORT serves $api_commit, browser WASM engine is $engine_commit." >&2
     echo "Stop the stale backend (lsof -ti tcp:$API_PORT | xargs kill) and rerun: $(basename "$0") up" >&2
     exit 1
   fi
@@ -315,8 +323,8 @@ run_fixture() {
   echo "$prompt" > "$out_dir/prompt.txt"
   LUMEN_AGENT_TRACE_DIR="$FIXTURE_TRACE_DIR" \
   LUMEN_AGENT_MAX_ITERATIONS="$AGENT_MAX_ITERATIONS" \
-  PYTHONPATH=apps/api:apps/agent_runtime \
-    "$VENV_PYTHON" -m lumen_deepagent.cli --mode "$AGENT_MODE" "$prompt" \
+  PYTHONPATH=.:apps/api:apps/agent_runtime \
+    "$VENV_PYTHON" -m lumen_agent.cli "$prompt" \
     | tee "$output_json"
   run_id="$(extract_run_id "$output_json")"
   if [[ -z "$run_id" ]]; then

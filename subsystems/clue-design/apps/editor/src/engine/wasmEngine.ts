@@ -11,7 +11,8 @@ import type {
   PageId,
   Scene,
   Slot,
-  SlotId
+  SlotId,
+  TextSpan
 } from "./contracts";
 import { editorApiBaseUrl } from "./editorConfig";
 import type { StructuredEdit } from "./structuredEdits";
@@ -64,6 +65,24 @@ export interface TextMeasurement {
   direction: "ltr" | "rtl" | "auto";
   max_width?: number;
   max_height?: number;
+  /** A6a: geometry-affecting typography fields. They enter the engine's
+   * `measure_key`, so an override for a node using them must carry them or the
+   * layout lookup misses. Optional so pre-A6a payloads deserialize unchanged. */
+  text_transform?: "none" | "uppercase" | "lowercase" | "title";
+  truncate?: boolean;
+  paragraph_spacing?: number;
+  /** A7b: block italic — a `measure_key` input (italic changes glyph advances),
+   * so a node using it MUST carry the flag or the engine's layout lookup misses
+   * and falls back to the heuristic. Optional so pre-A7b payloads deserialize
+   * unchanged (the engine's `ProvidedMeasurement.italic` is `#[serde(default)]`). */
+  italic?: boolean;
+  /** A6b review fix: the raw node spans, matching the Rust `TextSpan` serde
+   * shape. They enter the engine's `measure_key` (spans digest), so a spanned
+   * node's override MUST carry them or the layout lookup misses and the node
+   * silently falls back to the heuristic (which does not soft-wrap spans).
+   * Omitted for spanless nodes (serde `#[serde(default)]` → empty), keeping
+   * pre-A6b payloads byte-identical. */
+  spans?: TextSpan[];
   width: number;
   height: number;
 }

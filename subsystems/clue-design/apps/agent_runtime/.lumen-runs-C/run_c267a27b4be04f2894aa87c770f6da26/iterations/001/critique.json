@@ -1,0 +1,51 @@
+{
+  "status": "ok",
+  "critique": {
+    "accepted": false,
+    "summary": "Strong bones \u2014 the 4.2x hero clearly dominates, the request is fully satisfied (coverage-by-stage bar chart + 4.2x on $18M + one takeaway line), imagery was correctly omitted for a data slide, and brand ink/teal usage is consistent. But two measured defects keep it below a professional bar: (1) the Commit bar fill (#CFFAFE pale cyan) on a white page is roughly ~1.1:1 luminance contrast \u2014 it barely reads as a bar and it breaks the otherwise all-dark bar family, making the smallest/most-important 'Commit' stage the least visible. (2) The stage NAME labels are 14pt sitting above 24pt dollar values, an inverted hierarchy where the category identifier is the least legible text on a 1920-wide slide viewed at distance. Fix these two and it ships.",
+    "issues": [
+      {
+        "severity": "blocker",
+        "category": "contrast",
+        "target": {
+          "page_id": null,
+          "node_id": "row4_fill",
+          "slot_key": null
+        },
+        "message": "The Commit row bar (bar rect 284x44, fill #CFFAFE pale cyan) sits on the white page (#FFFFFF) at roughly ~1.1:1 luminance contrast \u2014 below the ~3:1 large-object floor. It barely reads as a filled bar, so the smallest stage effectively disappears, and it inconsistently breaks the dark-fill (#111827) family used by the other three bars.",
+        "suggested_repair": "Set the Commit bar fill to $surface.brand to match the other bars (or a brand accent if a highlight is intended); do not leave it pale cyan on white."
+      },
+      {
+        "severity": "error",
+        "category": "hierarchy",
+        "target": {
+          "page_id": null,
+          "node_id": "row1_name",
+          "slot_key": null
+        },
+        "message": "Inverted type hierarchy in each chart row: the stage NAME labels (Discovery/Evaluation/Proposal/Commit) are 14pt bold while the dollar values beside them are 24pt. The category identifier is the smallest, least-legible text on a 1920-wide slide, hard to read at viewing distance and subordinate to its own value.",
+        "suggested_repair": "Increase the four stage name labels from 14pt to ~18pt (keep bold) so the category label is at least as legible as its value."
+      },
+      {
+        "severity": "info",
+        "category": "visual_balance",
+        "target": {
+          "page_id": null,
+          "node_id": "chart",
+          "slot_key": null
+        },
+        "message": "Chart column spans y\u2248416\u2013756 while the hero column is vertically centered ~y468\u2013704; the chart top sits slightly higher than the hero block. Currently acceptable.",
+        "suggested_repair": "Optional: nudge chart optical center to align with the hero column."
+      }
+    ],
+    "repair_instruction": "1) Change the Commit bar fill from pale cyan to the same $surface.brand ink as the other three bars. 2) Raise the four stage name labels from 14pt to ~18pt so the category label is not smaller than the 24pt value.",
+    "acceptance_notes": [],
+    "requirement_coverage_notes": [
+      "Coverage-by-stage: 4 stage bars present with proportional widths and dollar values \u2014 satisfied.",
+      "4.2x on $18M target: hero '4.2x' dominant + label \u2014 satisfied.",
+      "One supporting takeaway line: present, legible \u2014 satisfied.",
+      "Imagery correctly omitted \u2014 no imagery failure."
+    ],
+    "confidence": 0.82
+  }
+}

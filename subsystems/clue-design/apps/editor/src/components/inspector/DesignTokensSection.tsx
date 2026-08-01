@@ -9,7 +9,7 @@ import type {
   Stroke
 } from "@/engine/contracts";
 import { clear, nodePatch, set, updateNodeFills, updateNodeStrokes } from "@/engine/operations";
-import { colorToCss } from "@/engine/renderAdapter";
+import { colorToCss, tokenSwatchCss } from "@/engine/renderAdapter";
 import { TokenSelect, roundForEditor, tokenFill, tokenFromFill } from "./fields";
 
 /** BrandKit token bindings for the selected node, plus the token-vs-raw
@@ -202,7 +202,10 @@ function paintStyleItem(label: string, fill: Fill | undefined, brandTokens: Bran
     return rawStyleItem(label, "none");
   }
   if (fill.paint.kind === "token") {
-    return tokenStyleItem(label, fill.paint.token, tokenUniverse(brandTokens));
+    return {
+      ...tokenStyleItem(label, fill.paint.token, tokenUniverse(brandTokens)),
+      swatch: tokenSwatchCss(fill.paint.token)
+    };
   }
   if (fill.paint.kind === "solid") {
     return {
@@ -218,7 +221,10 @@ function strokeStyleItem(stroke: Stroke | undefined, brandTokens: BrandTokenCata
     return rawStyleItem("Stroke", "none");
   }
   if (stroke.paint.kind === "token") {
-    return tokenStyleItem("Stroke", stroke.paint.token, tokenUniverse(brandTokens));
+    return {
+      ...tokenStyleItem("Stroke", stroke.paint.token, tokenUniverse(brandTokens)),
+      swatch: tokenSwatchCss(stroke.paint.token)
+    };
   }
   if (stroke.paint.kind === "solid") {
     return {

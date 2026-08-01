@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { BrandTokenCatalog, Fill, Node } from "@/engine/contracts";
+import { setTokenColorMap } from "@/engine/renderAdapter";
 import { ColorSwatchControl, isGradientGuarded } from "../ColorSwatchControl";
 
 const baseTextNode = minimalScene.nodes.node_contact_name;
@@ -125,5 +126,54 @@ describe("ColorSwatchControl", () => {
   it("disables the trigger on a locked node", () => {
     render(<ColorSwatchControl node={node({ locked: true })} onEdit={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Fill color" })).toBeDisabled();
+  });
+
+  describe("real resolved swatch colors (R1d)", () => {
+    afterEach(() => {
+      setTokenColorMap({});
+    });
+
+    it("paints token chips and the token trigger preview with the resolved color", () => {
+      setTokenColorMap({ "text.primary": "#112233", "surface.brand": "#445566" });
+      render(
+        <ColorSwatchControl node={node({ fills: [tokenFillValue("text.primary")] })} brandTokens={catalog} onEdit={vi.fn()} />
+      );
+
+      // Trigger preview: inline background = exactly what the canvas paints.
+      const preview = document.querySelector(".color-swatch-preview.token") as HTMLElement;
+      expect(preview).toBeInTheDocument();
+      expect(preview.style.background).toBe("rgb(17, 34, 51)");
+      expect(preview.title).toBe("$text.primary");
+
+      // Popover chips carry the resolved inline background too.
+      fireEvent.click(screen.getByRole("button", { name: "Fill color" }));
+      const chip = screen.getByTitle("$surface.brand") as HTMLElement;
+      expect(chip.style.background).toBe("rgb(68, 85, 102)");
+
+      // The token name survives for assistive tech, visually hidden.
+      const badge = chip.querySelector(".color-swatch-token-badge");
+      expect(badge?.textContent).toBe("surface.brand");
+    });
+
+    it("a token missing from the map falls back to the paint path's heuristic color", () => {
+      render(
+        <ColorSwatchControl node={node({ fills: [tokenFillValue("text.primary")] })} brandTokens={catalog} onEdit={vi.fn()} />
+      );
+      const preview = document.querySelector(".color-swatch-preview.token") as HTMLElement;
+      expect(preview.style.background).toBe("rgb(39, 35, 29)"); // #27231d — the "text" heuristic bucket
+    });
+
+    it("empty and mixed states carry no inline background and keep their classes", () => {
+      const { unmount } = render(<ColorSwatchControl node={node({ fills: [] })} onEdit={vi.fn()} />);
+      const empty = document.querySelector(".color-swatch-preview.empty") as HTMLElement;
+      expect(empty).toBeInTheDocument();
+      expect(empty.getAttribute("style")).toBeNull();
+      unmount();
+
+      render(<ColorSwatchControl node={node({ fills: [gradientFill()] })} onEdit={vi.fn()} />);
+      const mixed = document.querySelector(".color-swatch-preview.mixed") as HTMLElement;
+      expect(mixed).toBeInTheDocument();
+      expect(mixed.getAttribute("style")).toBeNull();
+    });
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ImageIcon, RefreshCw, Sparkles } from "lucide-react";
+import { Check, Eraser, ImageIcon, RefreshCw, Sparkles, Wand2, X } from "lucide-react";
 
 import type {
   AssetPlacement,
@@ -11,7 +11,15 @@ import type {
   Operation
 } from "@/engine/contracts";
 import { nodePatch, set } from "@/engine/operations";
-import { buildNodePlacementOperations, generateAsset } from "@/engine/assetLibrary";
+import {
+  assetThumbnailUrl,
+  buildNodePlacementOperations,
+  editAsset,
+  generateAsset
+} from "@/engine/assetLibrary";
+
+/** The fixed instruction the one-click remove-background affordance sends. */
+const REMOVE_BACKGROUND_INSTRUCTION = "Remove the background completely";
 
 /**
  * Step 5 (E0.2–E0.5): the image node's controls — Fit, focal point, alt text, and
@@ -33,6 +41,9 @@ export interface ImageInspectorSectionProps {
   apiBaseUrl: string;
   disabled?: boolean;
   onOperations: (operations: Operation[]) => void;
+  /** Data-refresh signal: a user KEPT an edited asset (Accept / Save as new),
+   * so the asset library should refetch. Reject deliberately does not fire. */
+  onAssetLibraryChanged?: () => void;
 }
 
 export function ImageInspectorSection({
@@ -40,7 +51,8 @@ export function ImageInspectorSection({
   asset,
   apiBaseUrl,
   disabled = false,
-  onOperations
+  onOperations,
+  onAssetLibraryChanged
 }: ImageInspectorSectionProps) {
   const placement = node.asset_placement ?? {};
   const fit: ImageFitMode = placement.fit ?? "cover";
@@ -51,6 +63,19 @@ export function ImageInspectorSection({
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase 3b image-edit gate: an edit produces a CANDIDATE asset that the user
+  // reviews Before/After — nothing swaps into the node until Accept.
+  const [instruction, setInstruction] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState<AssetRecord | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const hasImage = node.kind.kind === "image" && Boolean(node.kind.asset_id);
+  const sourceAssetId = node.kind.kind === "image" ? node.kind.asset_id ?? null : null;
+  // Editing needs a source with real, ready pixels in the store.
+  const canEdit = hasImage && Boolean(sourceAssetId) && (asset?.status ?? "ready") === "ready";
 
   const emitPlacement = (next: AssetPlacement) => {
     onOperations([
@@ -93,7 +118,67 @@ export function ImageInspectorSection({
     }
   };
 
-  const hasImage = node.kind.kind === "image" && Boolean(node.kind.asset_id);
+  // Run an edit (or remove-background) against the current asset. Success does
+  // NOT swap the node — it stages a candidate for Before/After review.
+  const runEdit = async (editInstruction: string, options: { transparentBackground?: boolean } = {}) => {
+    const trimmed = editInstruction.trim();
+    if (!trimmed) {
+      setEditError("Enter an instruction to edit the image.");
+      return;
+    }
+    if (!sourceAssetId) {
+      setEditError("Generate or place an image before editing.");
+      return;
+    }
+    setEditing(true);
+    setEditError(null);
+    setSavedNotice(null);
+    try {
+      const result = await editAsset(apiBaseUrl, {
+        sourceAssetId,
+        prompt: trimmed,
+        transparentBackground: options.transparentBackground,
+        label: trimmed.slice(0, 60)
+      });
+      setCandidate(result.asset);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  // Accept: swap the node to the candidate via the SAME placement-carrying path
+  // Regenerate uses — exactly one history step, preserving fit/focal/alt.
+  const acceptCandidate = () => {
+    if (!candidate) {
+      return;
+    }
+    onOperations(buildNodePlacementOperations(candidate, node.id, currentPlacement(placement)));
+    setCandidate(null);
+    setInstruction("");
+    setSavedNotice(null);
+    onAssetLibraryChanged?.();
+  };
+
+  // Reject: discard the candidate UI state; zero scene mutations.
+  const rejectCandidate = () => {
+    setCandidate(null);
+    setSavedNotice(null);
+  };
+
+  // Save as new: no scene change — the candidate is already registered in the
+  // asset library by the API; just confirm and clear the review panel.
+  const saveCandidateAsNew = () => {
+    if (!candidate) {
+      return;
+    }
+    setSavedNotice(`Saved ${candidate.label ?? candidate.id} to the asset library.`);
+    setCandidate(null);
+    setInstruction("");
+    onAssetLibraryChanged?.();
+  };
+
   const status = generating
     ? "pending"
     : error
@@ -108,7 +193,7 @@ export function ImageInspectorSection({
       </div>
 
       <div className="field-row">
-        <label className="field">
+        <label className="field inline">
           <span>Fit</span>
           <select
             aria-label="Image fit"
@@ -153,7 +238,7 @@ export function ImageInspectorSection({
           onChange={(event) => setPrompt(event.target.value)}
         />
       </div>
-      <div className="field-row">
+      <div className="field-row image-edit-actions">
         <button
           type="button"
           data-testid="image-generate"
@@ -164,6 +249,111 @@ export function ImageInspectorSection({
           {generating ? "Generating…" : hasImage ? "Regenerate" : "Generate"}
         </button>
       </div>
+
+      {canEdit ? (
+        <div className="image-edit field-group" data-testid="image-edit">
+          <span className="eyebrow">Edit image</span>
+          <label className="field">
+            <textarea
+              aria-label="Image edit instruction"
+              rows={2}
+              value={instruction}
+              placeholder="e.g. make the sky warmer, remove the person on the left"
+              disabled={disabled || editing || Boolean(candidate)}
+              onChange={(event) => setInstruction(event.target.value)}
+            />
+          </label>
+          {editing ? (
+            <span
+              className="image-edit-status-pill"
+              data-testid="image-edit-status"
+              data-status="pending"
+            >
+              Applying edit…
+            </span>
+          ) : (
+            <div className="field-row image-edit-actions">
+              <button
+                type="button"
+                data-testid="image-edit-submit"
+                disabled={disabled || Boolean(candidate) || !instruction.trim()}
+                onClick={() => void runEdit(instruction)}
+              >
+                <Wand2 aria-hidden size={14} />
+                Edit
+              </button>
+              <button
+                type="button"
+                data-testid="image-remove-bg"
+                disabled={disabled || Boolean(candidate)}
+                onClick={() => void runEdit(REMOVE_BACKGROUND_INSTRUCTION, { transparentBackground: true })}
+              >
+                <Eraser aria-hidden size={14} />
+                Remove background
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {candidate ? (
+        <div className="image-edit-review field-group" data-testid="image-edit-review">
+          <div className="image-edit-compare">
+            <figure className="image-edit-preview" data-testid="image-edit-before">
+              <figcaption className="eyebrow">Before</figcaption>
+              <img
+                alt="Current image"
+                src={sourceAssetId ? assetThumbnailUrl(apiBaseUrl, sourceAssetId) : undefined}
+              />
+            </figure>
+            <figure className="image-edit-preview" data-testid="image-edit-after">
+              <figcaption className="eyebrow">After</figcaption>
+              <img alt="Edited candidate" src={assetThumbnailUrl(apiBaseUrl, candidate.id)} />
+            </figure>
+          </div>
+          <div className="field-row image-edit-review-actions">
+            <button
+              type="button"
+              className="image-edit-accept"
+              data-testid="image-edit-accept"
+              disabled={disabled}
+              onClick={acceptCandidate}
+            >
+              <Check aria-hidden size={14} />
+              Accept
+            </button>
+            <button
+              type="button"
+              className="image-edit-reject"
+              data-testid="image-edit-reject"
+              disabled={disabled}
+              onClick={rejectCandidate}
+            >
+              <X aria-hidden size={14} />
+              Reject
+            </button>
+            <button
+              type="button"
+              className="image-edit-save-new"
+              data-testid="image-edit-save-new"
+              disabled={disabled}
+              onClick={saveCandidateAsNew}
+            >
+              Save as new
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {editError ? (
+        <p className="muted" data-testid="image-edit-status" data-status="failed">
+          {`Edit failed: ${editError}`}
+        </p>
+      ) : savedNotice && !editing ? (
+        <span className="status-pill is-approved" data-testid="image-edit-status" data-status="saved">
+          {savedNotice}
+        </span>
+      ) : null}
 
       <p className="muted" data-testid="image-status" data-status={status}>
         {generating
@@ -190,7 +380,7 @@ function FocalField({
   onCommit: (value: number) => void;
 }) {
   return (
-    <label className="field">
+    <label className="field inline">
       <span>{label}</span>
       <input
         type="number"

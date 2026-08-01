@@ -106,19 +106,49 @@ describe("buildTokenColorMap", () => {
     expect(map["b.token"]).toBeUndefined();
   });
 
-  it("passes oklch tokens through as CSS oklch()", () => {
+  it("converts oklch tokens to sRGB hex (CanvasKit's parseColor cannot paint oklch strings)", () => {
+    // Oracle: the real Insight Health kit's `surface.brand` aliases to this
+    // exact oklch triple, which the ENGINE resolves to #00525C — the canvas
+    // must paint the same pixel the export/agent preview renders.
     const kit: BrandKitDetailPayload = {
       tokens: {
         colors: {
-          "palette.primary.500": {
-            value: { default: { kind: "oklch", l: 0.58, c: 0.14, h: 149.6, alpha: 1 } }
+          "surface.brand": {
+            value: { default: { kind: "alias", token: "palette.primary.700" } }
+          },
+          "palette.primary.700": {
+            value: {
+              default: {
+                kind: "oklch",
+                l: 0.4,
+                c: 0.07382381488920986,
+                h: 207.87981654900904,
+                alpha: 1
+              }
+            }
           }
         }
       }
     };
 
     const map = buildTokenColorMap(kit);
-    expect(map["palette.primary.500"]).toBe("oklch(0.58 0.14 149.6 / 1)");
+    expect(map["palette.primary.700"]).toBe("#00525c");
+    expect(map["surface.brand"]).toBe("#00525c");
+  });
+
+  it("emits 8-digit hex for oklch with alpha < 1", () => {
+    const kit: BrandKitDetailPayload = {
+      tokens: {
+        colors: {
+          "overlay.scrim": {
+            value: { default: { kind: "oklch", l: 0.4, c: 0.0738, h: 207.88, alpha: 0.5 } }
+          }
+        }
+      }
+    };
+
+    const map = buildTokenColorMap(kit);
+    expect(map["overlay.scrim"]).toMatch(/^#[0-9a-f]{6}80$/);
   });
 
   it("resolves the top-level tokens.aliases map to the aliased color", () => {

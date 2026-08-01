@@ -72,14 +72,25 @@ export function useExportPreflight(deps: UseExportPreflightDeps) {
     pageIds: PageId[] = activePageId ? [activePageId] : []
   ) => runExportForScene(scene, profile, pageIds, { openPreviewTab: true });
 
+  /**
+   * Returns the export result (with preflight diagnostics folded in) so
+   * callers can act on THEIR OWN export's outcome — e.g. the topbar menu
+   * downloads the artifacts it requested. Aborted or failed requests
+   * return null; per-call intent must never outlive the call (the old
+   * ambient download flag leaked across exports when a request aborted).
+   */
   const runExportForScene = async (
     sceneForExport: Scene,
     profile = defaultEditorExportProfile(),
     pageIds: PageId[] = activePageId ? [activePageId] : [],
-    options: { openPreviewTab?: boolean } = {}
-  ) => {
+    options: { openPreviewTab?: boolean; focusExportPanel?: boolean } = {}
+  ): Promise<EditorExportResult | null> => {
     const previewWindow = options.openPreviewTab ? openBlankArtifactPreviewWindow() : null;
-    setEditorPanelMode("export");
+    // The topbar export menu runs "silently" (no panel switch, no preview
+    // tab) and downloads the artifacts instead.
+    if (options.focusExportPanel !== false) {
+      setEditorPanelMode("export");
+    }
     if (pageIds.length === 0) {
       previewWindow?.close();
       setDiagnostics([
@@ -92,7 +103,7 @@ export function useExportPreflight(deps: UseExportPreflightDeps) {
           hint: "Choose an artboard in the left rail or export all artboards from the Export panel."
         }
       ]);
-      return;
+      return null;
     }
 
     setIsExporting(true);
@@ -147,6 +158,7 @@ export function useExportPreflight(deps: UseExportPreflightDeps) {
                 }
               ]
       );
+      return resultWithPreflightDiagnostics;
     } catch (error) {
       previewWindow?.close();
       setExportResult(null);
@@ -160,6 +172,7 @@ export function useExportPreflight(deps: UseExportPreflightDeps) {
           hint: "Check the editor API connection and retry export."
         }
       ]);
+      return null;
     } finally {
       setIsExporting(false);
     }

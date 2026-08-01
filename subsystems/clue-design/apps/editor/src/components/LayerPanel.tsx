@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ArrowDown, ArrowUp, Layers3 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Image as ImageIcon,
+  Layers3,
+  PenTool,
+  Slash,
+  Type
+} from "lucide-react";
 import type { Node, NodeId, Operation, PageId, Scene } from "@/engine/contracts";
 import { moveNodeToParent } from "@/engine/operations";
+import { colorToCss, tokenSwatchCss } from "@/engine/renderAdapter";
 import { nodeDisplayName, parentInfoForNode } from "@/engine/sceneQueries";
 
 interface LayerPanelProps {
@@ -104,18 +114,21 @@ function LayerRow({
       <div
         ref={rowRef}
         className={selected ? "layer-row active" : "layer-row"}
+        data-depth={depth}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
         <button
           type="button"
           className="layer-select"
           aria-label={`Select layer ${name}`}
+          title={detail}
           onClick={(event) =>
             onSelectNode(node.id, event.shiftKey || event.metaKey || event.ctrlKey)
           }
         >
+          <LayerKindIcon node={node} />
           <span>{name}</span>
-          <small>{detail}</small>
+          <small className="visually-hidden">{detail}</small>
         </button>
         <button
           type="button"
@@ -160,6 +173,47 @@ function LayerRow({
       ))}
     </div>
   );
+}
+
+/** The moda layers-sidebar kind glyph: T for text, image glyph for images,
+ * chevron for containers, a tiny fill swatch (via the R1d resolution path)
+ * for solid/token shapes, diagonal for lines. Decorative — the row's
+ * accessible name stays "Select layer {name}". */
+function LayerKindIcon({ node }: { node: Node }) {
+  return (
+    <span className="layer-kind-icon" aria-hidden>
+      {layerKindGlyph(node)}
+    </span>
+  );
+}
+
+function layerKindGlyph(node: Node) {
+  switch (node.kind.kind) {
+    case "text":
+      return <Type size={14} />;
+    case "image":
+      return <ImageIcon size={14} />;
+    case "frame":
+    case "group":
+    case "auto_layout":
+    case "instance":
+      return <ChevronRight size={14} />;
+    case "line":
+      return <Slash size={14} />;
+    case "vector":
+      return <PenTool size={14} />;
+    case "rect":
+    case "ellipse": {
+      const paint = node.fills[0]?.paint;
+      const fill =
+        paint?.kind === "token"
+          ? tokenSwatchCss(paint.token)
+          : paint?.kind === "solid"
+            ? colorToCss(paint.color)
+            : undefined;
+      return <span className="layer-kind-swatch" style={fill ? { background: fill } : undefined} />;
+    }
+  }
 }
 
 function layerDetailLabel(node: Node, parentNode: Node | null): string {

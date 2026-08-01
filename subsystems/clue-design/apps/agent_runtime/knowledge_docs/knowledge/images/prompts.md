@@ -31,6 +31,11 @@ Write them as one or two natural sentences, not a comma list. Prose beats keywor
 - **No in-image text.** Models garble lettering, and all real copy comes from the
   design layer (it must be editable + on-brand). End every prompt with *"no text, no
   words, no letters, no logos, no watermarks."*
+- **No readable screens.** The trap version of in-image text: "show the product" makes
+  the model render a monitor/phone with a garbled fake UI — that fails review the same
+  way. For product-in-context shots, prompt the screen *away*: angled/side view,
+  distant, screen dimmed, or *"screen showing abstract soft-colored shapes"* — never a
+  legible UI close-up.
 - **Brand tone goes in `brand_notes`, not the prompt.** Pass palette + mood as
   `brand_notes` (e.g. `["deep navy + teal palette", "calm clinical confidence",
   "premium, uncluttered"]`). The model conditions on them; the prompt stays about the
@@ -41,6 +46,13 @@ Write them as one or two natural sentences, not a comma list. Prose beats keywor
   read cleanly (see `knowledge/images/placement`).
 - **Aspect comes from the frame, not the prompt.** `asset(action="generate_image")` derives
   the aspect ratio from the target node's geometry — don't hardcode a ratio that fights the frame.
+- **References condition generation automatically.** When the turn has attached
+  reference images, `generate_image` conditions the model on them by default — their
+  palette/texture/mood/edge-character arrive as a STYLE anchor (alongside
+  `brand_notes`, the prose channel). So keep the prompt about the **subject**; do
+  *not* describe the reference's style in words — it's redundant and can fight the
+  pixels. Opt out with `condition_on_references=false` only when the brief deliberately
+  wants imagery that diverges from the references.
 
 ## Per-use-case templates
 

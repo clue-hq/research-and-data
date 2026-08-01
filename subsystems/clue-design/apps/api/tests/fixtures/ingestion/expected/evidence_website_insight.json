@@ -1,0 +1,2504 @@
+{
+  "brand_kit": {
+    "approval_status": "draft",
+    "assets": {
+      "fonts": {
+        "brand": {
+          "faces": [
+            {
+              "asset_id": null,
+              "source_url": "https://www.insighthealth.example/fonts/aeonik-regular.woff2",
+              "style": "normal",
+              "weight": 400
+            },
+            {
+              "asset_id": null,
+              "source_url": "https://www.insighthealth.example/fonts/aeonik-medium.woff2",
+              "style": "normal",
+              "weight": 600
+            }
+          ],
+          "fallback_stack": [
+            "Helvetica Neue",
+            "Arial",
+            "sans-serif"
+          ],
+          "family": "Aeonik",
+          "license": {
+            "embeddable": false,
+            "name": "self-hosted",
+            "restrictions": [
+              "License not verified at ingestion; do not embed in print exports without confirmation."
+            ],
+            "source_url": null,
+            "subsettable": false
+          },
+          "provenance": {
+            "confidence": 0.7,
+            "source": "website:https://www.insighthealth.example :: @font-face"
+          },
+          "scripts": [
+            "latin"
+          ],
+          "source": {
+            "kind": "url",
+            "url": "https://www.insighthealth.example/fonts/aeonik-regular.woff2"
+          }
+        }
+      },
+      "images": {
+        "img.1": {
+          "allowed_contexts": [],
+          "asset_id": "asset_insight_hero",
+          "crop_allowed": true,
+          "license": null,
+          "mime_type": null,
+          "preferred_color_tokens": [],
+          "provenance": {
+            "confidence": 0.6,
+            "source": "website:https://www.insighthealth.example :: hero image"
+          },
+          "recolor_allowed": false,
+          "role": "photo",
+          "style_tags": []
+        },
+        "img.2": {
+          "allowed_contexts": [],
+          "asset_id": "asset_insight_illustration",
+          "crop_allowed": true,
+          "license": null,
+          "mime_type": null,
+          "preferred_color_tokens": [],
+          "provenance": {
+            "confidence": 0.6,
+            "source": "website:https://www.insighthealth.example :: feature illustration"
+          },
+          "recolor_allowed": false,
+          "role": "illustration",
+          "style_tags": []
+        },
+        "img.3": {
+          "allowed_contexts": [],
+          "asset_id": "asset_insight_og",
+          "crop_allowed": true,
+          "license": null,
+          "mime_type": null,
+          "preferred_color_tokens": [],
+          "provenance": {
+            "confidence": 0.6,
+            "source": "website:https://www.insighthealth.example :: og:image"
+          },
+          "recolor_allowed": false,
+          "role": "og_image",
+          "style_tags": []
+        }
+      },
+      "logos": {
+        "mark": {
+          "allowed_backgrounds": [
+            "surface.page",
+            "surface.card"
+          ],
+          "clearspace": 16.0,
+          "license": null,
+          "min_size": null,
+          "provenance": {
+            "confidence": 0.7,
+            "source": "website:https://www.insighthealth.example :: favicon"
+          },
+          "usage": "mark",
+          "variants": [
+            {
+              "asset_id": "asset_insight_logo_mark",
+              "color_mode": "full_color",
+              "height": 32.0,
+              "name": "full_color",
+              "width": 32.0
+            }
+          ]
+        },
+        "primary": {
+          "allowed_backgrounds": [
+            "surface.page",
+            "surface.card"
+          ],
+          "clearspace": 16.0,
+          "license": null,
+          "min_size": null,
+          "provenance": {
+            "confidence": 0.7,
+            "source": "website:https://www.insighthealth.example :: header logo"
+          },
+          "usage": "primary",
+          "variants": [
+            {
+              "asset_id": "asset_insight_logo_primary",
+              "color_mode": "full_color",
+              "height": 32.0,
+              "name": "full_color",
+              "width": 148.0
+            }
+          ]
+        }
+      }
+    },
+    "constraints": {
+      "accessibility_notes": [],
+      "allow_gradients": true,
+      "contrast_pairs": [
+        {
+          "background": "surface.page",
+          "foreground": "text.primary",
+          "min_ratio": 4.5
+        },
+        {
+          "background": "surface.brand",
+          "foreground": "text.primary",
+          "min_ratio": 4.5
+        },
+        {
+          "background": "surface.inverse",
+          "foreground": "text.inverse",
+          "min_ratio": 4.5
+        }
+      ],
+      "iconography": [],
+      "imagery": [],
+      "print_constraints": [
+        "Font licensing was not verified at ingestion; confirm embeddability before print export."
+      ],
+      "tone": [
+        "Warm, human, and clinically credible."
+      ]
+    },
+    "description": null,
+    "id": "brand_kit_ingest_evidence_website_insight",
+    "modes": {
+      "axes": {
+        "accessibility": [
+          "standard",
+          "high_contrast",
+          "large_text"
+        ],
+        "density": [
+          "comfortable",
+          "compact"
+        ],
+        "theme": [
+          "light",
+          "dark"
+        ]
+      },
+      "defaults": {
+        "accessibility": "standard",
+        "density": "comfortable",
+        "theme": "light"
+      }
+    },
+    "name": "Ingested evidence_website_insight",
+    "provenance": {
+      "confidence": 0.6964,
+      "created_at": "2026-07-05",
+      "created_by": "lumen_ingestion",
+      "notes": [
+        "Ingested from website evidence.",
+        "Dark colorway synthesized from the light palette."
+      ],
+      "updated_at": null
+    },
+    "sources": [
+      {
+        "captured_at": "2026-07-05",
+        "confidence": 0.7,
+        "kind": "website",
+        "url": "https://www.insighthealth.example"
+      }
+    ],
+    "tokens": {
+      "aliases": {
+        "Aqua": {
+          "description": "ingestion alias",
+          "token": "palette.extra.aqua"
+        },
+        "accent.primary": {
+          "description": "ingestion alias",
+          "token": "surface.accent"
+        }
+      },
+      "assets": {
+        "logo.mark": {
+          "description": "Ingested logo.mark asset",
+          "provenance": {
+            "confidence": 0.7,
+            "source": "upload:asset"
+          },
+          "value": {
+            "default": {
+              "asset_id": "asset_insight_logo_mark",
+              "kind": "asset"
+            },
+            "modes": {}
+          }
+        },
+        "logo.primary": {
+          "description": "Ingested logo.primary asset",
+          "provenance": {
+            "confidence": 0.7,
+            "source": "upload:asset"
+          },
+          "value": {
+            "default": {
+              "asset_id": "asset_insight_logo_primary",
+              "kind": "asset"
+            },
+            "modes": {}
+          }
+        }
+      },
+      "colors": {
+        "border.brand": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:border.brand"
+          },
+          "role": "border",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#009E76"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#009E76"
+              }
+            }
+          }
+        },
+        "border.default": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:border.default"
+          },
+          "role": "border",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#C1C1C1"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#2D493E"
+              }
+            }
+          }
+        },
+        "border.strong": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:border.strong"
+          },
+          "role": "border",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#868686"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#486559"
+              }
+            }
+          }
+        },
+        "border.subtle": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:border.subtle"
+          },
+          "role": "border",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#DBDBDB"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#18342A"
+              }
+            }
+          }
+        },
+        "focus.ring": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:focus.ring"
+          },
+          "role": "focus",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#009E76"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#19C092"
+              }
+            }
+          }
+        },
+        "palette.extra.aqua": {
+          "description": "Aqua",
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: link hover"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#00E3E1"
+            },
+            "modes": {}
+          }
+        },
+        "palette.extra.soft-indigo": {
+          "description": "Soft Indigo",
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: illustration"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#8080F9"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.100": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.100)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#EFF0F2"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.200": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.200)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#DDDEDF"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.300": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.300)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#C3C4C5"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.400": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.400)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#A3A5A6"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.50": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.50)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#F9FAFC"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.500": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.500)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#858687"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.600": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.600)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#6B6C6D"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.700": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.700)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#545557"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.800": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.800)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#414244"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.900": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.900)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#2D2E2F"
+            },
+            "modes": {}
+          }
+        },
+        "palette.neutral.950": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.neutral.950)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#1D1C1D"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.100": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.100)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#D6FAEA"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.200": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.200)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#ADEFD4"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.300": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.300)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#12EAB1"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.400": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.400)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#19C092"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.50": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.50)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#EEFFF7"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.500": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.500)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#009E76"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.600": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.600)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#007F5E"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.700": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.700)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#00654A"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.800": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.800)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#004F3A"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.900": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.900)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#003727"
+            },
+            "modes": {}
+          }
+        },
+        "palette.primary.950": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:ramp(palette.primary.950)"
+          },
+          "role": "palette",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#002116"
+            },
+            "modes": {}
+          }
+        },
+        "surface.accent": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:accent(primary-400)"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#19C092"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#12EAB1"
+              }
+            }
+          }
+        },
+        "surface.brand": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: primary CTA"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#12EAB1"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#19C092"
+              }
+            }
+          }
+        },
+        "surface.brand.subtle": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:surface.brand.subtle"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#D6FAEA"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#003223"
+              }
+            }
+          }
+        },
+        "surface.canvas": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:surface.canvas"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#F7F7F7"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#000F08"
+              }
+            }
+          }
+        },
+        "surface.card": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: body background"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#F5F5F5"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#042017"
+              }
+            }
+          }
+        },
+        "surface.elevated": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:surface.elevated"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#F5F5F5"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#0D2A20"
+              }
+            }
+          }
+        },
+        "surface.inverse": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:surface.inverse"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#121212"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#F5F5F5"
+              }
+            }
+          }
+        },
+        "surface.muted": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:surface.muted"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#E4E4E4"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#08251B"
+              }
+            }
+          }
+        },
+        "surface.page": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: body background"
+          },
+          "role": "surface",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#F5F5F5"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#00170E"
+              }
+            }
+          }
+        },
+        "text.accent": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:text.accent"
+          },
+          "role": "text",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#00654A"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#12EAB1"
+              }
+            }
+          }
+        },
+        "text.brand": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:text.brand"
+          },
+          "role": "text",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#00654A"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#12EAB1"
+              }
+            }
+          }
+        },
+        "text.inverse": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:text.inverse"
+          },
+          "role": "text",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#1D1C1D"
+              }
+            }
+          }
+        },
+        "text.muted": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:text.muted"
+          },
+          "role": "text",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#6C6B6C"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#7B8A84"
+              }
+            }
+          }
+        },
+        "text.primary": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: body copy"
+          },
+          "role": "text",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#1D1C1D"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#E3F3EC"
+              }
+            }
+          }
+        },
+        "text.secondary": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:text.secondary"
+          },
+          "role": "text",
+          "value": {
+            "default": {
+              "kind": "hex",
+              "value": "#504F50"
+            },
+            "modes": {
+              "theme.dark": {
+                "kind": "hex",
+                "value": "#ACBCB5"
+              }
+            }
+          }
+        }
+      },
+      "effects": {},
+      "numbers": {
+        "type.size.2xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 32.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.3xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 36.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.4xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.5xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.6xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.7xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 80.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.8xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 96.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.9xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 128.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.lg": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.md": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.sm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 14.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "type.size.xs": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:type-size-ramp (reference values; no measurable brand x-height)"
+          },
+          "role": "font_size",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        }
+      },
+      "opacity": {
+        "opacity.disabled": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:opacity-scale"
+          },
+          "role": "visibility",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.4
+            },
+            "modes": {}
+          }
+        },
+        "opacity.emphasis": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:opacity-scale"
+          },
+          "role": "visibility",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.88
+            },
+            "modes": {}
+          }
+        },
+        "opacity.muted": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:opacity-scale"
+          },
+          "role": "visibility",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.56
+            },
+            "modes": {}
+          }
+        },
+        "opacity.overlay": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:opacity-scale"
+          },
+          "role": "visibility",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.48
+            },
+            "modes": {}
+          }
+        },
+        "opacity.scrim": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:opacity-scale"
+          },
+          "role": "visibility",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.64
+            },
+            "modes": {}
+          }
+        },
+        "opacity.subtle": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:opacity-scale"
+          },
+          "role": "visibility",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "ratio",
+              "value": 0.72
+            },
+            "modes": {}
+          }
+        }
+      },
+      "radii": {
+        "radius.badge": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 9999.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.button": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.card": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.full": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 9999.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.lg": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.md": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.none": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.sm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "radius.xs": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:radius-scale"
+          },
+          "role": "radius",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 2.0
+            },
+            "modes": {}
+          }
+        }
+      },
+      "shadows": {},
+      "spacing": {
+        "space.0": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.0
+            },
+            "modes": {}
+          }
+        },
+        "space.1": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
+            },
+            "modes": {}
+          }
+        },
+        "space.10": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 40.0
+            },
+            "modes": {}
+          }
+        },
+        "space.12": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            },
+            "modes": {}
+          }
+        },
+        "space.16": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            },
+            "modes": {}
+          }
+        },
+        "space.2": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            },
+            "modes": {}
+          }
+        },
+        "space.3": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        },
+        "space.4": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "space.5": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 20.0
+            },
+            "modes": {}
+          }
+        },
+        "space.6": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "space.8": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 32.0
+            },
+            "modes": {}
+          }
+        },
+        "space.card.padding": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "space.lg": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "space.md": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 12.0
+            },
+            "modes": {}
+          }
+        },
+        "space.page.margin": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 48.0
+            },
+            "modes": {}
+          }
+        },
+        "space.section": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 64.0
+            },
+            "modes": {}
+          }
+        },
+        "space.sm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            },
+            "modes": {}
+          }
+        },
+        "space.stack.default": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 16.0
+            },
+            "modes": {}
+          }
+        },
+        "space.stack.loose": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "space.stack.tight": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 8.0
+            },
+            "modes": {}
+          }
+        },
+        "space.xl": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 24.0
+            },
+            "modes": {}
+          }
+        },
+        "space.xs": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:spacing-scale"
+          },
+          "role": "spacing",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 4.0
+            },
+            "modes": {}
+          }
+        }
+      },
+      "stroke_widths": {
+        "stroke.width.bold": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 3.0
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.card": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.default": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.divider": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.firm": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 2.0
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.focus": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 2.0
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.hairline": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 0.5
+            },
+            "modes": {}
+          }
+        },
+        "stroke.width.thin": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.6,
+            "source": "derived:stroke-scale"
+          },
+          "role": "stroke",
+          "value": {
+            "default": {
+              "kind": "number",
+              "unit": "px",
+              "value": 1.0
+            },
+            "modes": {}
+          }
+        }
+      },
+      "typography": {
+        "type.body": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "body",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 16.0,
+              "font_weight": 400,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.5
+            },
+            "modes": {}
+          }
+        },
+        "type.body.small": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "body.small",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 14.0,
+              "font_weight": 400,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.4
+            },
+            "modes": {}
+          }
+        },
+        "type.caption": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "caption",
+          "value": {
+            "default": {
+              "color": "text.secondary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 12.0,
+              "font_weight": 500,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.35
+            },
+            "modes": {}
+          }
+        },
+        "type.cta": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "cta",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 16.0,
+              "font_weight": 600,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.2
+            },
+            "modes": {}
+          }
+        },
+        "type.display": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "display",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 77.0,
+              "font_weight": 700,
+              "kind": "style",
+              "letter_spacing": -0.02,
+              "line_height": 1.05
+            },
+            "modes": {}
+          }
+        },
+        "type.eyebrow": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "eyebrow",
+          "value": {
+            "default": {
+              "color": "text.brand",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 12.0,
+              "font_weight": 600,
+              "kind": "style",
+              "letter_spacing": 0.08,
+              "line_height": 1.2
+            },
+            "modes": {}
+          }
+        },
+        "type.headline": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "headline",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 48.0,
+              "font_weight": 600,
+              "kind": "style",
+              "letter_spacing": -0.01,
+              "line_height": 1.1
+            },
+            "modes": {}
+          }
+        },
+        "type.label": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "label",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 13.0,
+              "font_weight": 600,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.2
+            },
+            "modes": {}
+          }
+        },
+        "type.legal": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "legal",
+          "value": {
+            "default": {
+              "color": "text.muted",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 11.0,
+              "font_weight": 400,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.3
+            },
+            "modes": {}
+          }
+        },
+        "type.stat": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "stat",
+          "value": {
+            "default": {
+              "color": "text.brand",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 60.0,
+              "font_weight": 700,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.0
+            },
+            "modes": {}
+          }
+        },
+        "type.subtitle": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "subtitle",
+          "value": {
+            "default": {
+              "color": "text.secondary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 20.0,
+              "font_weight": 500,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.3
+            },
+            "modes": {}
+          }
+        },
+        "type.title": {
+          "description": null,
+          "provenance": {
+            "confidence": 0.9,
+            "source": "website:https://www.insighthealth.example :: hero h1"
+          },
+          "role": "title",
+          "value": {
+            "default": {
+              "color": "text.primary",
+              "font_asset": "brand",
+              "font_family": "Aeonik",
+              "font_size": 32.0,
+              "font_weight": 600,
+              "kind": "style",
+              "letter_spacing": 0.0,
+              "line_height": 1.15
+            },
+            "modes": {}
+          }
+        }
+      }
+    },
+    "version": 1
+  },
+  "diagnostics": [
+    {
+      "code": "LUMI0210",
+      "message": "dark colorway synthesized from light palette",
+      "severity": "info"
+    },
+    {
+      "code": "LUMI0220",
+      "message": "asset token logo.reversed not populated",
+      "severity": "info"
+    },
+    {
+      "code": "LUMI0220",
+      "message": "asset token logo.wordmark not populated",
+      "severity": "info"
+    },
+    {
+      "code": "LUMI0220",
+      "message": "asset token asset.illustration.primary not populated",
+      "severity": "info"
+    },
+    {
+      "code": "LUMI0220",
+      "message": "asset token asset.texture.subtle not populated",
+      "severity": "info"
+    },
+    {
+      "code": "LUMI0220",
+      "message": "asset token asset.icon.primary not populated",
+      "severity": "info"
+    }
+  ],
+  "ingestion_report": {
+    "dark_colorway": "synthesized",
+    "gaps": [
+      "asset.icon.primary",
+      "asset.illustration.primary",
+      "asset.texture.subtle",
+      "logo.reversed",
+      "logo.wordmark"
+    ],
+    "narrative": {
+      "brand_name": "Insight Health",
+      "summary_facts": [
+        "Digital-first primary care.",
+        "Founded 2021."
+      ],
+      "tagline": "Care that keeps up with you.",
+      "text_excerpt": "Insight Health brings warm, proactive primary care to everyone.",
+      "url": "https://www.insighthealth.example"
+    },
+    "role_assignments": [
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: body background",
+        "token": "surface.page",
+        "value": "#F5F5F5"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:surface.canvas",
+        "token": "surface.canvas",
+        "value": "#F7F7F7"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: body background",
+        "token": "surface.card",
+        "value": "#F5F5F5"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:surface.elevated",
+        "token": "surface.elevated",
+        "value": "#F5F5F5"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: primary CTA",
+        "token": "surface.brand",
+        "value": "#12EAB1"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:surface.brand.subtle",
+        "token": "surface.brand.subtle",
+        "value": "#D6FAEA"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:accent(primary-400)",
+        "token": "surface.accent",
+        "value": "#19C092"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:surface.muted",
+        "token": "surface.muted",
+        "value": "#E4E4E4"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:surface.inverse",
+        "token": "surface.inverse",
+        "value": "#121212"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: body copy",
+        "token": "text.primary",
+        "value": "#1D1C1D"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:text.secondary",
+        "token": "text.secondary",
+        "value": "#504F50"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:text.muted",
+        "token": "text.muted",
+        "value": "#6C6B6C"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:text.inverse",
+        "token": "text.inverse",
+        "value": "#FFFFFF"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:text.brand",
+        "token": "text.brand",
+        "value": "#00654A"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:text.accent",
+        "token": "text.accent",
+        "value": "#00654A"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:border.subtle",
+        "token": "border.subtle",
+        "value": "#DBDBDB"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:border.default",
+        "token": "border.default",
+        "value": "#C1C1C1"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:border.strong",
+        "token": "border.strong",
+        "value": "#868686"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:border.brand",
+        "token": "border.brand",
+        "value": "#009E76"
+      },
+      {
+        "basis": "derived",
+        "pointer": "derived:focus.ring",
+        "token": "focus.ring",
+        "value": "#009E76"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.display",
+        "value": "Aeonik 77.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.headline",
+        "value": "Aeonik 48.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.title",
+        "value": "Aeonik 32.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.subtitle",
+        "value": "Aeonik 20.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.body",
+        "value": "Aeonik 16.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.body.small",
+        "value": "Aeonik 14.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.caption",
+        "value": "Aeonik 12.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.eyebrow",
+        "value": "Aeonik 12.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.label",
+        "value": "Aeonik 13.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.cta",
+        "value": "Aeonik 16.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.stat",
+        "value": "Aeonik 60.0"
+      },
+      {
+        "basis": "evidence",
+        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "token": "type.legal",
+        "value": "Aeonik 11.0"
+      }
+    ],
+    "rules": [
+      {
+        "kind": "clearspace",
+        "text": "Maintain clearspace of 16px around the logo."
+      },
+      {
+        "kind": "tone",
+        "text": "Warm, human, and clinically credible."
+      }
+    ],
+    "schema_version": 1,
+    "source": {
+      "captured_at": "2026-07-05",
+      "confidence": 0.7,
+      "kind": "website",
+      "url": "https://www.insighthealth.example"
+    },
+    "stats": {
+      "clusters": 5,
+      "colors_observed": 5,
+      "fonts": 1,
+      "images": 3,
+      "logos": 2,
+      "rules": 2
+    }
+  }
+}

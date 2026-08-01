@@ -26,6 +26,18 @@ and `knowledge/assets/asset-placement` (the asset-registry rules + the
 - Clip the frame (`clip(true)`) and round it (`rd($radius.card)`) when the design wants
   rounded imagery; the image is clipped to the frame.
 
+## Edit in place vs. full regenerate
+
+When a placed image is **right-but-flawed** — the composition, subject, and role are
+correct but the warmth is off, a colour clashes the brand, or the background is
+distracting (or should be transparent) — prefer `asset(action="edit_image",
+node_id=…, prompt=…)` over a full `generate_image`. It edits the *current* pixels
+with your instruction and re-places the result into the same node, preserving the
+placement (fit / focal point / alt) so the composition is untouched — cheaper, and it
+never churns a good frame. Reserve a full regenerate for a **wrong** image (wrong
+subject, or still a placeholder). Set `transparent_background=True` on `edit_image` to
+strip the background.
+
 ## The scrim rule — text over image is ALWAYS scrimmed
 
 A scrim is a semi-transparent rectangle **between the image and the text**, using the

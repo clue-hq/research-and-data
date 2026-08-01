@@ -35,6 +35,33 @@ pub struct ExportProfile {
     pub raster: Option<RasterScale>,
     pub include_bleed: bool,
     pub embed_fonts: bool,
+    /// Print W2/W3: draw crop marks in a margin outside the bleed and
+    /// grow the MediaBox accordingly. Only meaningful with `include_bleed`
+    /// on a PDF profile. Serialized only when true so pre-print scene
+    /// fixtures stay byte-identical (the schema-compat contract).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_marks: bool,
+    /// Print W4 (D2): optional imposition mode for PDF exports. Reader-order
+    /// single pages stay the default deliverable; `"booklet"` arranges pages
+    /// 2-up onto duplex saddle-stitch sheets (front [N,1], back [2,3], …).
+    /// Unknown values fail loudly at export. Serialized only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imposition: Option<String>,
+    /// Print W7: proof-export mode — a margin with crop marks, a slug line
+    /// (document · profile · page n/N · PROOF), and an sRGB control strip.
+    /// For the soft-proof/contract-proof workflow; never for production
+    /// runs. Serialized only when true (schema-compat contract).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub proof: bool,
+    /// Print W5 stage B: output color conversion. `Some("cmyk")` converts
+    /// the rendered PDF to DeviceCMYK through a target press ICC profile
+    /// (Ghostscript post-process, black text/vector preserved as pure K).
+    /// Only valid on print-intent PDF profiles — electronic-distribution
+    /// PDFs stay sRGB; any other combination fails loudly at export.
+    /// `None` (default) = today's sRGB passthrough. Serialized only when
+    /// set (schema-compat contract).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -63,10 +90,38 @@ pub struct ExportArtifact {
     pub sidecar_json: Option<String>,
 }
 
+/// One rule outcome inside a [`PrintReadyReport`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PrintReadyRule {
+    pub id: String,
+    /// "pass" | "warn" | "fail" — string, not an enum, so report consumers
+    /// (editor, agent loop, bulk gate) stay decoupled from rule evolution.
+    pub status: String,
+    pub detail: String,
+}
+
+/// Print W6: the structured preflight verdict attached to print-intent PDF
+/// exports. `status` is the worst rule status; a "fail" gates bulk runs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PrintReadyReport {
+    pub ruleset: String,
+    pub status: String,
+    pub rules: Vec<PrintReadyRule>,
+}
+
+impl PrintReadyReport {
+    pub fn failed(&self) -> bool {
+        self.status == "fail"
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExportResult {
     pub artifacts: Vec<ExportArtifact>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Present on print-intent PDF exports (print W6 preflight).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub print_ready: Option<PrintReadyReport>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

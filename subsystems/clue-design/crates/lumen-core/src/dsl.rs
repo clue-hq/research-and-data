@@ -1,9 +1,10 @@
 #![allow(clippy::result_large_err)]
 
 use crate::editing::{ExportProfileEditPatch, StackEntryEdit};
-use crate::scene::{BrandKitRef, ColorStop, Medium};
+use crate::scene::{parse_hex_rgba, BrandKitRef, ColorStop, Medium};
 use crate::{
-    build_archive_asset, build_clone_subtree, build_delete_export_profile, build_hard_delete_asset,
+    build_archive_asset, build_clone_subtree, build_delete_export_profile,
+    build_detach_to_freehand, build_hard_delete_asset,
     build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
     build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
     build_ungroup, normalize_page_size, page_size_for_preset, resolve_edit_target, AssetEditPatch,
@@ -15,7 +16,8 @@ use crate::{
     PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, PositionMode,
     RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
     Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
-    TextDirection, TextEditPatch, TextNode, TextWrap, Unit, VectorNode,
+    TextDirection, TextEditPatch, TextNode, TextSpan, TextTransform, TextWrap, Unit, VectorNode,
+    VerticalAlign,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -60,11 +62,29 @@ pub fn compile_dsl_into_scene_with_session(
     scene: &mut Scene,
     session_snapshot: Option<DslCompileSessionSnapshot>,
 ) -> DslSceneCompileOutput {
+    compile_dsl_into_scene_with_session_and_protected(
+        source,
+        scene,
+        session_snapshot,
+        BTreeSet::new(),
+    )
+}
+
+/// Slice 3 protected-aware compile: `protected_node_ids` are seed-born / human
+/// nodes that a `reconcile(...)` block must KEEP when omitted (LUMD0262). All
+/// other behavior is identical to [`compile_dsl_into_scene_with_session`].
+pub fn compile_dsl_into_scene_with_session_and_protected(
+    source: &str,
+    scene: &mut Scene,
+    session_snapshot: Option<DslCompileSessionSnapshot>,
+    protected_node_ids: BTreeSet<NodeId>,
+) -> DslSceneCompileOutput {
     let mut session = session_snapshot
         .map(|snapshot| DslCompileSession::from_snapshot(scene.clone(), snapshot))
         .unwrap_or_else(|| DslCompileSession::new(scene.clone()));
     let previous_snapshot = session.snapshot();
-    let compile_output = session.compile_block(source);
+    let compile_output =
+        session.compile_block_with_options(source, None, protected_node_ids);
 
     if compile_output.has_errors() {
         return DslSceneCompileOutput {
@@ -131,11 +151,17 @@ impl DslCompileSession {
             .map(|slot| (slot.key.clone(), slot.id.clone()))
             .collect();
         emitted_slots.extend(snapshot.emitted_slots);
+        let known_page_ids = scene
+            .pages
+            .keys()
+            .map(|page_id| page_id.as_str().to_owned())
+            .collect();
         let mut session = Self {
             parser_context: DslParserContext {
                 seen_node_ids: snapshot.seen_node_ids,
                 previous_structural_depth: snapshot.previous_structural_depth,
                 previous_can_have_children: snapshot.previous_can_have_children,
+                known_page_ids,
             },
             scene,
             parent_stack: snapshot
@@ -164,6 +190,19 @@ impl DslCompileSession {
         source: &str,
         history: Option<&dyn DslHistoryAdapter>,
     ) -> DslCompileOutput {
+        self.compile_block_with_options(source, history, BTreeSet::new())
+    }
+
+    /// Compile a block with a caller-supplied `protected_node_ids` set (Slice
+    /// 3). Protected nodes omitted from a `reconcile(...)` block are KEPT
+    /// (LUMD0262) rather than removed. An empty set = pure declarative
+    /// semantics (unseeded runs).
+    pub fn compile_block_with_options(
+        &mut self,
+        source: &str,
+        history: Option<&dyn DslHistoryAdapter>,
+        protected_node_ids: BTreeSet<NodeId>,
+    ) -> DslCompileOutput {
         let starting_context = self.parser_context.clone();
         let (parse, parsed_context) =
             DslParser::new_with_context(source, starting_context.clone()).parse_with_context();
@@ -174,6 +213,7 @@ impl DslCompileSession {
             &mut self.parent_stack,
             &mut self.emitted_slots,
             history,
+            protected_node_ids,
         );
         let output = compiler.compile(parse.halted_at.clone());
 
@@ -210,6 +250,13 @@ impl DslCompileSession {
             .slots
             .values()
             .map(|slot| (slot.key.clone(), slot.id.clone()))
+            .collect();
+        // Keep the parser's known-page-id set fresh so a follow-up block can
+        // bare-reference a page created by an earlier block (F1 / LUMD0259).
+        self.parser_context.known_page_ids = scene
+            .pages
+            .keys()
+            .map(|page_id| page_id.as_str().to_owned())
             .collect();
         self.scene = scene;
         self.parent_stack
@@ -356,6 +403,13 @@ pub enum DslProperty {
     PageBackground(DslFill),
     Stroke(DslStroke),
     Shadow(DslShadow),
+    /// Outer glow — zero-offset shadow semantics (A4).
+    Glow(DslGlow),
+    /// Gaussian blur of the node's own rendering (A4).
+    Blur(DslBlur),
+    /// Inner shadow — same channel surface as `shadow(...)`, drawn over and
+    /// clipped to the node's alpha (A4).
+    InnerShadow(DslShadow),
     RemoveEffect(EffectId),
     Font(DslFont),
     FontSize(DslScalar),
@@ -382,15 +436,38 @@ pub enum DslProperty {
     Tracking(DslScalar),
     MaxLines(u16),
     TextDirection(TextDirection),
+    /// A6a D1: display-time case transform.
+    TextTransform(TextTransform),
+    /// A6a D2: underline decoration.
+    Underline(bool),
+    /// A6a D2: strikethrough decoration.
+    Strikethrough(bool),
+    /// A7b D1: italic style. A geometry channel (measurement input), authored
+    /// like `Underline`.
+    Italic(bool),
+    /// A6a D3: ellipsis truncation.
+    Truncate(bool),
+    /// A6a D4: extra vertical gap (px) at each `\n` paragraph break.
+    ParagraphSpacing(f64),
+    /// A6b D2: one `span(...)` property — the Nth styles the Nth `[[…]]` run.
+    Span(DslSpan),
     Grow(DslScalar),
     TextStyleToken(String),
     TextAlignment(TextAlign),
+    /// A7a: vertical alignment of text within its box.
+    VerticalAlignment(VerticalAlign),
     LayoutAnchor {
         axis: DslLayoutAxis,
         anchor: DslLayoutAnchor,
     },
     SafeArea(Rect),
+    /// Page print-bleed rectangle: `bleed(x,y,width,height)` (4 args).
     Bleed(Rect),
+    /// Per-node declared bleed intent: `bleed(true|false)` (1 bool arg). A4.
+    BleedIntent(bool),
+    /// Per-corner radius `rd(tl,tr,br,bl)` (A4 LUMD0230 debt). The uniform
+    /// form `rd(r)` still lowers through `Radius`.
+    CornerRadius([f64; 4]),
     SlotLabel(String),
     SlotRequired(bool),
     SlotPlaceholder(String),
@@ -451,6 +528,20 @@ pub struct DslFill {
     pub paint: Paint,
 }
 
+/// A6b D2: one parsed `span(...)` property — the override channels for the Nth
+/// `[[…]]` run. `None` channels inherit the node. Reconciled with the content
+/// markers in `apply_properties` once the final content is known.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DslSpan {
+    pub fill: Option<Paint>,
+    pub font_weight: Option<u16>,
+    pub underline: Option<bool>,
+    pub strikethrough: Option<bool>,
+    /// A7b D1: override italic. Merge is OVERRIDE (`unwrap_or(block)`), unlike
+    /// the union-merged decoration channels.
+    pub italic: Option<bool>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DslStroke {
     pub id: Option<PaintId>,
@@ -487,6 +578,26 @@ pub struct DslShadow {
     pub y: f64,
     pub blur: f64,
     pub spread: f64,
+}
+
+/// Outer glow surface of the grammar:
+/// `glow(id?,#color,o(0.8),blur(24),spread(4))`. Same channel style as
+/// `shadow(...)` but with no x/y offset (glow is centered).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslGlow {
+    pub id: Option<EffectId>,
+    pub color: Color,
+    pub opacity: f64,
+    pub blur: f64,
+    pub spread: f64,
+}
+
+/// Layer-blur surface of the grammar: `blur(id?,r(12))` or the one-arg
+/// shorthand `blur(12)`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DslBlur {
+    pub id: Option<EffectId>,
+    pub radius: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -542,9 +653,25 @@ pub enum DslDirective {
         target: NodeId,
         slot_policy: ReplaceSlotPolicy,
     },
+    /// Slice 3 declarative reconcile: `reconcile(container)` followed by an
+    /// indented block that is the container's FULL intended child subtree. The
+    /// staged elements never apply to the scene — they materialize into a
+    /// detached tree at close, the engine diffs it against the container's live
+    /// subtree, and only the minimal ops are emitted. Block form only.
+    Reconcile {
+        target: NodeId,
+    },
     Ungroup {
         target: NodeId,
         allow_layout: bool,
+    },
+    /// D12: pin a managed node at its solved box (`position_mode: absolute`).
+    /// Detached nodes join the page-level freehand paint pass, which paints
+    /// after all in-flow content — so managed content can layer ABOVE a
+    /// pre-existing pinned human node (the P1r6 doppelganger class). Lowers to
+    /// the core `StructuredEditInstruction::DetachToFreehand` builder verbatim.
+    DetachToFreehand {
+        target: NodeId,
     },
     Undo {
         label: Option<String>,
@@ -596,6 +723,14 @@ struct DslParserContext {
     seen_node_ids: BTreeSet<NodeId>,
     previous_structural_depth: Option<usize>,
     previous_can_have_children: bool,
+    /// Page ids that already exist in the scene. Populated from the scene at
+    /// session construction (and refreshed on scene sync). A leading line
+    /// whose first token equals one of these is a bare page reference —
+    /// normalized into a `#page:<id>` modification (F1 / LUMD0259) rather than
+    /// failing LUMD0206. The parser is otherwise scene-free; this is the same
+    /// established channel `seen_node_ids` uses to carry scene state across
+    /// block boundaries.
+    known_page_ids: BTreeSet<String>,
 }
 
 impl Default for DslParserContext {
@@ -604,6 +739,7 @@ impl Default for DslParserContext {
             seen_node_ids: BTreeSet::new(),
             previous_structural_depth: None,
             previous_can_have_children: true,
+            known_page_ids: BTreeSet::new(),
         }
     }
 }
@@ -614,6 +750,11 @@ impl DslParserContext {
             seen_node_ids: scene.nodes.keys().cloned().collect(),
             previous_structural_depth: None,
             previous_can_have_children: true,
+            known_page_ids: scene
+                .pages
+                .keys()
+                .map(|page_id| page_id.as_str().to_owned())
+                .collect(),
         }
     }
 
@@ -638,6 +779,13 @@ struct DslParser {
     diagnostics: Vec<DslDiagnostic>,
     halted_at: Option<DslHalt>,
     context: DslParserContext,
+    /// Slice 3: the indent of the currently open `reconcile(...)` directive, if
+    /// any. Element lines indented deeper than this belong to the reconcile
+    /// block, where re-emitting existing ids is the POINT — so the LUMD0401
+    /// duplicate-id halt is suspended for them (the block stages detached and
+    /// never reaches the scene). The block closes at the next line whose indent
+    /// is at or below the directive's.
+    reconcile_block_indent: Option<usize>,
 }
 
 impl DslParser {
@@ -650,6 +798,7 @@ impl DslParser {
             lines: normalized_lines(source),
             diagnostics: Vec::new(),
             halted_at: None,
+            reconcile_block_indent: None,
             context,
         }
     }
@@ -661,6 +810,17 @@ impl DslParser {
     fn parse_with_context(mut self) -> (DslParseOutput, DslParserContext) {
         let mut document = DslDocument::default();
 
+        // F2 bounds state (leading-narration tolerance). A leading line that
+        // fails LUMD0206 before ANY line has parsed successfully is skipped as
+        // narration with a LUMD0260 warning — at most 3 per block, and only if
+        // the block still yields at least one parsed line (structural OR
+        // modification: a narration-led repair block of `#node prop(...)` lines
+        // is the single most common leak site). `first_skipped_diag` holds the
+        // original LUMD0206 so a pure-garbage block restores the halt loudly.
+        let mut leading_skips: usize = 0;
+        let mut first_skipped_diag: Option<DslDiagnostic> = None;
+        const MAX_LEADING_SKIPS: usize = 3;
+
         for line in self.lines.clone() {
             let Some((indent, trimmed)) = self.parse_indent(&line) else {
                 break;
@@ -669,10 +829,110 @@ impl DslParser {
             let parsed = match self.parse_line(line.line_number, indent, trimmed) {
                 Ok(kind) => kind,
                 Err(diagnostic) => {
+                    // Compiler-ergonomics recovery for the LUMD0206 double-trap.
+                    // Every other parse error halts exactly as before.
+                    if diagnostic.diagnostic.code == "LUMD0206" && indent == 0 {
+                        let first_token = split_top_level_whitespace(trimmed)
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
+
+                        // F1 — bare known-page-id normalization. Runs BEFORE
+                        // F2's narration skip. Rewrites `<id> <rest>` into a
+                        // `#page:<id> <rest>` modification so it routes through
+                        // the existing empty-page compose path, and warns
+                        // (LUMD0259) so the rewrite is never silent.
+                        if self.context.known_page_ids.contains(&first_token) {
+                            let rest = trimmed[first_token.len()..].trim_start();
+                            let rewritten = if rest.is_empty() {
+                                format!("#page:{first_token}")
+                            } else {
+                                format!("#page:{first_token} {rest}")
+                            };
+                            // The rewrite only holds when the rest of the line
+                            // is real page-modification DSL. Narration that
+                            // merely BEGINS with a page id (e.g. "page_x is
+                            // empty …") won't parse — fall through to F2's
+                            // narration skip rather than forcing a page edit.
+                            if let Ok(kind) = self.parse_modification(line.line_number, &rewritten) {
+                                self.diagnostics.push(warning_diag(
+                                    line.line_number,
+                                    1,
+                                    first_token.len(),
+                                    "LUMD0259",
+                                    format!(
+                                        "normalized bare page reference: `{trimmed}` was interpreted as `{rewritten}`"
+                                    ),
+                                    "Write page modifications as `#page:<page_id> …` explicitly.",
+                                ));
+                                let parsed_line = DslLine {
+                                    line_number: line.line_number,
+                                    indent,
+                                    raw: rewritten,
+                                    kind,
+                                };
+                                self.context.advance_with_line(&parsed_line);
+                                document.lines.push(parsed_line);
+                                continue;
+                            }
+                        }
+
+                        // F2 — leading-narration tolerance. A LUMD0206 line at
+                        // indent 0 before any structural line is skipped with a
+                        // LUMD0260 warning, up to 3 in a row. A 4th consecutive
+                        // failure halts with the original LUMD0206.
+                        if document.lines.is_empty() && leading_skips < MAX_LEADING_SKIPS {
+                            if first_skipped_diag.is_none() {
+                                first_skipped_diag = Some(diagnostic.clone());
+                            }
+                            leading_skips += 1;
+                            let preview: String = trimmed.chars().take(80).collect();
+                            self.diagnostics.push(warning_diag(
+                                line.line_number,
+                                1,
+                                trimmed.len().max(1),
+                                "LUMD0260",
+                                format!(
+                                    "leading line skipped as narration: {preview} — DSL blocks contain only DSL"
+                                ),
+                                "Remove prose from DSL blocks; author only DSL lines.",
+                            ));
+                            continue;
+                        }
+                    }
+                    // A block that skipped leading lines but then halts (e.g.
+                    // the 4th consecutive narration line, or a real error) is a
+                    // genuine failure: drop the tentative LUMD0260 skip warnings
+                    // so it fails cleanly with the halting error, exactly as a
+                    // pre-F2 block would have.
+                    if first_skipped_diag.is_some() {
+                        self.diagnostics
+                            .retain(|diag| diag.diagnostic.code != "LUMD0260");
+                    }
                     self.halt(diagnostic);
                     break;
                 }
             };
+
+            // Slice 3: close an open reconcile block when a line dedents to or
+            // below the directive's indent, then open one when this line IS the
+            // reconcile directive. Inside the block (indent strictly greater),
+            // duplicate-id re-emission is legitimate and its LUMD0401 halt is
+            // suspended below.
+            if let Some(block_indent) = self.reconcile_block_indent {
+                if indent <= block_indent {
+                    self.reconcile_block_indent = None;
+                }
+            }
+            let inside_reconcile_block = self
+                .reconcile_block_indent
+                .is_some_and(|block_indent| indent > block_indent);
+            if matches!(
+                &parsed,
+                DslLineKind::Directive(DslDirective::Reconcile { .. })
+            ) {
+                self.reconcile_block_indent = Some(indent);
+            }
 
             let is_structural = matches!(parsed, DslLineKind::Page(_) | DslLineKind::Element(_));
             if is_structural {
@@ -702,7 +962,7 @@ impl DslParser {
                 }
 
                 if let DslLineKind::Element(element) = &parsed {
-                    if self.context.seen_node_ids.contains(&element.id) {
+                    if !inside_reconcile_block && self.context.seen_node_ids.contains(&element.id) {
                         self.halt(error_diag(
                             line.line_number,
                             1,
@@ -724,6 +984,21 @@ impl DslParser {
             };
             self.context.advance_with_line(&parsed_line);
             document.lines.push(parsed_line);
+        }
+
+        // A block that skipped leading lines but yielded ZERO parsed lines of
+        // any kind is pure garbage: restore the halt with the first skipped
+        // line's original LUMD0206 so it fails loudly, never "succeeds" empty.
+        // (A narration-led block of ONLY `#node prop(...)` modifications — the
+        // repair-iteration shape — parses lines, so it compiles with the skip
+        // warning instead of dying here.) Drop the tentative skip warnings so
+        // the failure reads exactly as pre-F2.
+        if self.halted_at.is_none() && document.lines.is_empty() {
+            if let Some(diagnostic) = first_skipped_diag.take() {
+                self.diagnostics
+                    .retain(|diag| diag.diagnostic.code != "LUMD0260");
+                self.halt(diagnostic);
+            }
         }
 
         (
@@ -874,7 +1149,7 @@ impl DslParser {
                 tokens[0].len(),
                 "LUMD0206",
                 format!("unknown element kind in line: {trimmed}"),
-                "If this line is narration or explanation rather than an element, delete it — DSL blocks contain only DSL. Otherwise use frame/fr, group/gr, autolayout/al, rect/r, ellipse/e, line/l, text/t, image/img, vector/v, or instance.",
+                "If this line is narration or explanation rather than an element, delete it — DSL blocks contain only DSL. Otherwise use frame/fr, group/gr, autolayout/al, rect/r, ellipse/e, line/l, text/t, image/img, vector/v, or instance. To target an existing page use `#page:<page_id> …`.",
             ));
         };
 
@@ -1115,6 +1390,24 @@ impl DslParser {
                     slot_policy,
                 }
             }
+            "reconcile" => {
+                // Block form only: exactly one container-id argument. An inline
+                // form (a second argument) is an error — the intended subtree is
+                // authored in the indented block.
+                if call.args.len() != 1 {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        trimmed.len(),
+                        "LUMD0207",
+                        "reconcile(...) expects exactly one container id",
+                        "Use reconcile(container) followed by the container's full intended child subtree, indented.",
+                    ));
+                }
+                DslDirective::Reconcile {
+                    target: parse_node_id(&call.args[0], line_number, 1)?,
+                }
+            }
             "ungroup" => {
                 if call.args.is_empty() || call.args.len() > 2 {
                     return Err(error_diag(
@@ -1144,6 +1437,12 @@ impl DslParser {
                 DslDirective::Ungroup {
                     target: parse_node_id(&call.args[0], line_number, 1)?,
                     allow_layout,
+                }
+            }
+            "detach_to_freehand" => {
+                expect_arg_count(&call, 1, line_number)?;
+                DslDirective::DetachToFreehand {
+                    target: parse_node_id(&call.args[0], line_number, 1)?,
                 }
             }
             "undo" => DslDirective::Undo {
@@ -1220,6 +1519,25 @@ struct ReplaceBlockState {
     stack_depth: usize,
 }
 
+/// Active reconcile block (Slice 3). Unlike `ReplaceBlockState`, the staged
+/// elements NEVER apply to the scene — they accumulate here (with their
+/// indents, so a detached tree can be rebuilt at close) and nested
+/// `delete(id)` directives are collected. At close the tree materializes, the
+/// engine diffs it against the container's live subtree, and only the minimal
+/// reconciler ops are emitted through the ordinary checked path.
+struct ReconcileBlockState {
+    /// The reconcile directive's own indent; the block closes when a line
+    /// dedents to or below it.
+    directive_indent: usize,
+    target: NodeId,
+    /// Staged `(indent, element)` pairs in source order — the intended child
+    /// subtree of the target, authored declaratively.
+    staged: Vec<(usize, DslElement)>,
+    /// Explicit `delete(id)` directives nested in the block (the human-content
+    /// deletion path stays explicit even under reconcile).
+    deletes: Vec<NodeId>,
+}
+
 struct DslCompiler<'a> {
     document: DslDocument,
     operations: Vec<Operation>,
@@ -1230,6 +1548,10 @@ struct DslCompiler<'a> {
     /// target the root or its descendants until a flat line ends the group.
     override_root: Option<NodeId>,
     replace_block: Option<ReplaceBlockState>,
+    reconcile_block: Option<ReconcileBlockState>,
+    /// Node ids the caller marks protected (seed-born / human): omitting them
+    /// from a reconcile block KEEPS them (LUMD0262) instead of removing.
+    protected_node_ids: BTreeSet<NodeId>,
     history: Option<&'a dyn DslHistoryAdapter>,
     scene: &'a mut Scene,
     parent_stack: &'a mut Vec<ParentFrame>,
@@ -1244,6 +1566,7 @@ impl<'a> DslCompiler<'a> {
         parent_stack: &'a mut Vec<ParentFrame>,
         emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
         history: Option<&'a dyn DslHistoryAdapter>,
+        protected_node_ids: BTreeSet<NodeId>,
     ) -> Self {
         Self {
             document,
@@ -1253,6 +1576,8 @@ impl<'a> DslCompiler<'a> {
             checkpoint_label: None,
             override_root: None,
             replace_block: None,
+            reconcile_block: None,
+            protected_node_ids,
             history,
             scene,
             parent_stack,
@@ -1273,6 +1598,9 @@ impl<'a> DslCompiler<'a> {
 
             if let Err(diagnostic) = self.lower_line(&line) {
                 self.rollback_replace_block();
+                // A reconcile block stages detached (nothing applied), so an
+                // error just discards the staged buffer — no scene rollback.
+                self.reconcile_block = None;
                 self.halted_at = Some(DslHalt {
                     line: diagnostic.span.line,
                     code: diagnostic.diagnostic.code.clone(),
@@ -1284,6 +1612,15 @@ impl<'a> DslCompiler<'a> {
 
         if self.halted_at.is_none() && parse_halt.is_none() {
             if let Err(diagnostic) = self.finalize_replace_block(last_line_number, 1) {
+                self.halted_at = Some(DslHalt {
+                    line: diagnostic.span.line,
+                    code: diagnostic.diagnostic.code.clone(),
+                });
+                self.diagnostics.push(diagnostic);
+            }
+        }
+        if self.halted_at.is_none() && parse_halt.is_none() {
+            if let Err(diagnostic) = self.finalize_reconcile_block(last_line_number, 1) {
                 self.halted_at = Some(DslHalt {
                     line: diagnostic.span.line,
                     code: diagnostic.diagnostic.code.clone(),
@@ -1307,6 +1644,45 @@ impl<'a> DslCompiler<'a> {
         if line.indent == 0 {
             self.override_root = None;
             self.finalize_replace_block(line.line_number, line.raw.len().max(1))?;
+        }
+        // A reconcile block closes when a line dedents to or below the
+        // directive's indent (comments/checkpoints excluded — they carry no
+        // structural indent meaning). The closing line is then processed
+        // normally below.
+        if let Some(state) = &self.reconcile_block {
+            let closes = line.indent <= state.directive_indent
+                && !matches!(
+                    &line.kind,
+                    DslLineKind::Comment(_) | DslLineKind::Checkpoint(_)
+                );
+            if closes {
+                self.finalize_reconcile_block(line.line_number, line.raw.len().max(1))?;
+            }
+        }
+        // While a reconcile block is open, indented element / nested delete
+        // lines stage into it instead of applying to the scene.
+        if let Some(state) = &self.reconcile_block {
+            if line.indent > state.directive_indent {
+                match &line.kind {
+                    DslLineKind::Element(element) => {
+                        return self.stage_reconcile_element(line, element);
+                    }
+                    DslLineKind::Directive(DslDirective::Delete { target, .. }) => {
+                        return self.stage_reconcile_delete(line, target);
+                    }
+                    DslLineKind::Comment(_) | DslLineKind::Checkpoint(_) => {}
+                    _ => {
+                        return Err(error_diag(
+                            line.line_number,
+                            1,
+                            line.raw.len().max(1),
+                            "LUMD0264",
+                            "only element lines and delete(id) directives are allowed inside a reconcile block",
+                            "Author the container's full intended child subtree; use delete(id) to remove a protected node explicitly.",
+                        ));
+                    }
+                }
+            }
         }
         match &line.kind {
             DslLineKind::Comment(_) => Ok(()),
@@ -1415,7 +1791,12 @@ impl<'a> DslCompiler<'a> {
                     line.raw.len().max(1),
                     "LUMD0402",
                     "node appears before or outside a page/container",
-                    "Create a top-level page(...) and indent nodes under it.",
+                    concat!(
+                        "Create a top-level page(...) and indent nodes under it. ",
+                        "To add elements inside an existing container use ",
+                        "`reconcile(<container>)` (indent the container's full intended ",
+                        "child subtree); to fill an empty page use `#page:<page_id>` then indent."
+                    ),
                 )
             })?;
 
@@ -1644,11 +2025,73 @@ impl<'a> DslCompiler<'a> {
                 self.parent_stack.push(ParentFrame { indent: 0, parent });
                 Ok(())
             }
+            DslDirective::Reconcile { target } => {
+                // The target must exist and be a container (Frame/Group/
+                // AutoLayout) — else LUMD0264 with a container hint.
+                let node = self.scene.nodes.get(target).ok_or_else(|| {
+                    error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0264",
+                        format!("reconcile target {} does not exist", target),
+                        reconcile_container_hint(self.scene),
+                    )
+                })?;
+                if !node.kind.can_have_children() {
+                    return Err(error_diag(
+                        line.line_number,
+                        1,
+                        line.raw.len().max(1),
+                        "LUMD0264",
+                        format!(
+                            "reconcile target {} is not a container (frame/group/autolayout)",
+                            target
+                        ),
+                        reconcile_container_hint(self.scene),
+                    ));
+                }
+                self.reconcile_block = Some(ReconcileBlockState {
+                    directive_indent: line.indent,
+                    target: target.clone(),
+                    staged: Vec::new(),
+                    deletes: Vec::new(),
+                });
+                Ok(())
+            }
             DslDirective::Ungroup {
                 target,
                 allow_layout,
             } => {
                 let batch = build_ungroup(self.scene, target.clone(), *allow_layout)
+                    .map_err(|error| edit_error_diag(line, &error))?;
+                self.emit_edit_batch(line, batch.operations)?;
+                self.prune_parent_stack();
+                Ok(())
+            }
+            DslDirective::DetachToFreehand { target } => {
+                // An already-absolute/pinned target is a loud no-op, not a
+                // halt: the model asked for a state the scene already holds, so
+                // warn (LUMD0265) and emit nothing. An unknown id still falls
+                // through to the builder's TargetNotFound → the standard
+                // unknown-target diagnostic via `edit_error_diag`.
+                if let Some(node) = self.scene.nodes.get(target) {
+                    if node.position_mode == PositionMode::Absolute {
+                        self.diagnostics.push(warning_diag(
+                            line.line_number,
+                            1,
+                            line.raw.len().max(1),
+                            "LUMD0265",
+                            format!(
+                                "detach_to_freehand({}) is a no-op: node is already freehand (absolute/pinned)",
+                                target
+                            ),
+                            "Drop the directive — the node already paints in the page-level freehand pass. Use it only on a managed (solver-owned) node you need to layer above a pin.",
+                        ));
+                        return Ok(());
+                    }
+                }
+                let batch = build_detach_to_freehand(self.scene, target.clone())
                     .map_err(|error| edit_error_diag(line, &error))?;
                 self.emit_edit_batch(line, batch.operations)?;
                 self.prune_parent_stack();
@@ -1744,11 +2187,93 @@ impl<'a> DslCompiler<'a> {
                 ));
             }
         }
-        let patch =
+        let page_target = match &target {
+            EditTargetRef::Page(page_id) => Some(page_id.clone()),
+            _ => None,
+        };
+        let mut patch =
             edit_patch_from_properties(self.scene, &target, &modification.properties, line)?;
+        // D1 — DSL-scoped graceful degradation for an image-asset SWAP to an
+        // asset the scene has not registered yet (a kit asset the runtime's K2
+        // auto-register will later heal). The declaration path already tolerates
+        // such a dangling reference at compile; the modify path lowers to
+        // PlaceAssetInNode, which hard-requires the record in `scene.assets` and
+        // so halts before the runtime can register it. Rather than fail, we
+        // strip the placement and reproduce the declaration's dangling-reference
+        // state ourselves — but ONLY for a childless (leaf) node, mirroring the
+        // placement path's leaf rule; a node with children keeps today's hard
+        // error by routing through `build_modify_operations` unchanged.
+        let mut dangling_swap: Option<(NodeId, AssetId)> = None;
+        if let (EditTargetRef::Node(node_id), EditPatch::Node(node_patch)) = (&target, &mut patch) {
+            if let OptionalFieldPatch::Set(asset_id) = &node_patch.image_asset_id {
+                if !self.scene.assets.contains_key(asset_id) {
+                    let has_children = self
+                        .scene
+                        .nodes
+                        .get(node_id)
+                        .map(|node| !node.children.is_empty())
+                        .unwrap_or(false);
+                    if !has_children {
+                        let node_id = node_id.clone();
+                        let asset_id = asset_id.clone();
+                        node_patch.image_asset_id = OptionalFieldPatch::Unchanged;
+                        dangling_swap = Some((node_id, asset_id));
+                    }
+                }
+            }
+        }
         let batch = build_modify_operations(self.scene, target, patch)
             .map_err(|error| edit_error_diag(line, &error))?;
-        self.emit_edit_batch(line, batch.operations)
+        self.emit_edit_batch(line, batch.operations)?;
+        if let Some((node_id, asset_id)) = dangling_swap {
+            // Set the node's kind to Image with a fresh dangling reference and
+            // clear stale placement provenance — exactly the state a fresh
+            // `photo image asset(X)` declaration produces (alt None: the old
+            // alt described the previous image).
+            self.emit_operation(
+                line,
+                Operation::UpdateNode {
+                    node_id: node_id.clone(),
+                    patch: crate::NodePatch {
+                        kind: FieldPatch::Set(NodeKind::Image(ImageNode {
+                            asset_id: asset_id.clone(),
+                            alt: None,
+                        })),
+                        source_asset_id: OptionalFieldPatch::Clear,
+                        asset_placement: OptionalFieldPatch::Clear,
+                        ..crate::NodePatch::default()
+                    },
+                },
+            )?;
+            self.diagnostics.push(warning_diag(
+                line.line_number,
+                1,
+                line.raw.len().max(1),
+                "LUMD0261",
+                format!(
+                    "swapped image to unregistered asset {} as a dangling reference",
+                    asset_id
+                ),
+                "The reference resolves when a brand kit or library registers the asset \
+                 (auto-registered for kit assets); an unresolved reference warns LUME0211 at export.",
+            ));
+        }
+        // Empty-page compose gap: a top-level `#page:<id>` modification opens
+        // the page as a parent context exactly like a fresh `page` line, so
+        // indented element lines under it APPEND to the existing page. Before
+        // this, children under a page-modify line found no parent frame and
+        // were silently dropped — a continuation block had no working way to
+        // fill an existing EMPTY page (two live agent turns burned on it).
+        if line.indent == 0 {
+            if let Some(page_id) = page_target {
+                self.parent_stack.clear();
+                self.parent_stack.push(ParentFrame {
+                    indent: line.indent,
+                    parent: ParentRef::Page(page_id),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn emit_slot_binding(
@@ -1881,6 +2406,148 @@ impl<'a> DslCompiler<'a> {
         if let Some(state) = self.replace_block.take() {
             self.restore_replace_snapshot(state);
         }
+    }
+
+    /// Stage an element line inside an open reconcile block: record it (with
+    /// its indent) into the detached buffer. Nothing applies to the scene.
+    fn stage_reconcile_element(
+        &mut self,
+        _line: &DslLine,
+        element: &DslElement,
+    ) -> Result<(), DslDiagnostic> {
+        if let Some(state) = &mut self.reconcile_block {
+            state.staged.push((_line.indent, element.clone()));
+        }
+        Ok(())
+    }
+
+    /// Collect a nested `delete(id)` directive inside a reconcile block. Only
+    /// node targets are supported here (the human-content deletion path).
+    fn stage_reconcile_delete(
+        &mut self,
+        line: &DslLine,
+        target: &EditTargetRef,
+    ) -> Result<(), DslDiagnostic> {
+        let EditTargetRef::Node(node_id) = target else {
+            return Err(error_diag(
+                line.line_number,
+                1,
+                line.raw.len().max(1),
+                "LUMD0264",
+                "reconcile blocks only accept delete(node_id)",
+                "Use delete(node_id) to remove a node explicitly inside a reconcile block.",
+            ));
+        };
+        if let Some(state) = &mut self.reconcile_block {
+            state.deletes.push(node_id.clone());
+        }
+        Ok(())
+    }
+
+    /// Close an active reconcile block: materialize the staged elements into a
+    /// detached intended subtree, diff it against the container's live subtree,
+    /// honor nested explicit deletes, and emit the minimal ops through the
+    /// ordinary checked path. Nothing was ever applied to the scene during
+    /// staging, so on error we simply discard the buffer (no scene rollback).
+    fn finalize_reconcile_block(
+        &mut self,
+        line_number: usize,
+        length: usize,
+    ) -> Result<(), DslDiagnostic> {
+        let Some(state) = self.reconcile_block.take() else {
+            return Ok(());
+        };
+
+        // Materialize the staged (indent, element) list into a detached tree.
+        let intended =
+            materialize_reconcile_subtree(&state.staged, line_number, length)?;
+
+        // The protection set for THIS reconcile: the caller-supplied protected
+        // ids, MINUS any the block explicitly deletes (explicit delete beats
+        // protection — it is the deliberate human-content deletion path).
+        let mut protected = self.protected_node_ids.clone();
+        for deleted in &state.deletes {
+            protected.remove(deleted);
+        }
+        // An explicit delete of a node the intended tree does NOT re-emit is
+        // an omission from the block; with the node removed from `protected`,
+        // the reconciler's omit-delete removes it. A delete of a node the tree
+        // DOES re-emit is contradictory — reject it loudly rather than guess.
+        for deleted in &state.deletes {
+            if intended.nodes.contains_key(deleted) {
+                return Err(error_diag(
+                    line_number,
+                    1,
+                    length,
+                    "LUMD0264",
+                    format!(
+                        "reconcile block both re-emits and deletes node {}",
+                        deleted
+                    ),
+                    "Either re-emit the node to keep/update it, or delete(id) and omit it — not both.",
+                ));
+            }
+        }
+
+        let (operations, notes) = crate::reconcile::reconcile_subtree(
+            self.scene,
+            &state.target,
+            &intended,
+            &protected,
+        );
+
+        // Emit reconciler ops through the checked path (ledger/Accept unchanged).
+        let line = DslLine {
+            line_number,
+            indent: 0,
+            raw: format!("reconcile({})", state.target),
+            kind: DslLineKind::Comment(String::new()),
+        };
+        self.emit_edit_batch(&line, operations)?;
+
+        // Surface every note as a diagnostic — never silent.
+        for note in notes {
+            match note {
+                crate::reconcile::ReconcileNote::ProtectedKept(node_id) => {
+                    self.diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        length,
+                        "LUMD0262",
+                        format!("protected node {} kept", node_id),
+                        "omission does not delete human content; use delete(<id>) explicitly.",
+                    ));
+                }
+                crate::reconcile::ReconcileNote::Summary {
+                    container,
+                    updated,
+                    inserted,
+                    removed,
+                    moved,
+                    kept_protected,
+                } => {
+                    self.diagnostics.push(DslDiagnostic {
+                        diagnostic: Diagnostic::advice(
+                            Phase::Dsl,
+                            "LUMD0263",
+                            format!(
+                                "reconciled {}: {} updated, {} inserted, {} removed, {} moved, {} kept-protected",
+                                container, updated, inserted, removed, moved, kept_protected
+                            ),
+                            None,
+                        ),
+                        span: SourceSpan {
+                            line: line_number,
+                            column: 1,
+                            length,
+                        },
+                    });
+                }
+            }
+        }
+
+        self.prune_parent_stack();
+        Ok(())
     }
 
     fn prune_parent_stack(&mut self) {
@@ -2256,13 +2923,14 @@ fn parse_medium(source: &str, line_number: usize, column: usize) -> Result<Mediu
         "email" => Ok(Medium::Email),
         "direct_mail" => Ok(Medium::DirectMail),
         "ad" => Ok(Medium::Ad),
+        "web" => Ok(Medium::Web),
         other => Err(error_diag(
             line_number,
             column,
             other.len().max(1),
             "LUMD0211",
             format!("unknown medium {other}"),
-            "Use medium(print|digital|email|direct_mail|ad).",
+            "Use medium(print|digital|email|direct_mail|ad|web).",
         )),
     }
 }
@@ -2336,6 +3004,9 @@ fn node_edit_patch_from_properties(
     let mut fill_index = 0;
     let mut stroke_index = 0;
     let mut shadow_index = 0;
+    let mut glow_index = 0;
+    let mut blur_index = 0;
+    let mut inner_shadow_index = 0;
     let mut text_patch = TextEditPatch::default();
     let mut has_text_patch = false;
 
@@ -2476,6 +3147,62 @@ fn node_edit_patch_from_properties(
                     });
                 }
             }
+            DslProperty::InnerShadow(shadow) => {
+                let id = shadow.id.clone().unwrap_or_else(|| {
+                    inner_shadow_index += 1;
+                    EffectId::from(format!("effect_{}_inner_shadow_{}", node_id, inner_shadow_index))
+                });
+                let effect = effect_from_dsl_inner_shadow(id.clone(), shadow);
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::Glow(glow) => {
+                let id = glow.id.clone().unwrap_or_else(|| {
+                    glow_index += 1;
+                    EffectId::from(format!("effect_{}_glow_{}", node_id, glow_index))
+                });
+                let effect = effect_from_dsl_glow(id.clone(), glow);
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::Blur(blur) => {
+                let id = blur.id.clone().unwrap_or_else(|| {
+                    blur_index += 1;
+                    EffectId::from(format!("effect_{}_blur_{}", node_id, blur_index))
+                });
+                let effect = effect_from_dsl_blur(id.clone(), blur);
+                if current.effects.iter().any(|existing| existing.id == id) {
+                    effect_edits.push(StackEntryEdit::Set { id, value: effect });
+                } else {
+                    effect_edits.push(StackEntryEdit::Add {
+                        entry: effect,
+                        index: None,
+                    });
+                }
+            }
+            DslProperty::BleedIntent(value) => {
+                patch.bleed = FieldPatch::Set(*value);
+            }
+            DslProperty::CornerRadius([tl, tr, br, bl]) => {
+                next_corner.top_left = *tl;
+                next_corner.top_right = *tr;
+                next_corner.bottom_right = *br;
+                next_corner.bottom_left = *bl;
+                next_corner.token = None;
+                corner_changed = true;
+            }
             DslProperty::RemoveEffect(effect_id) => {
                 effect_edits.push(StackEntryEdit::Remove {
                     id: effect_id.clone(),
@@ -2514,6 +3241,10 @@ fn node_edit_patch_from_properties(
             }
             DslProperty::TextAlignment(align) => {
                 text_patch.align = FieldPatch::Set(align.clone());
+                has_text_patch = true;
+            }
+            DslProperty::VerticalAlignment(valign) => {
+                text_patch.valign = FieldPatch::Set(*valign);
                 has_text_patch = true;
             }
             DslProperty::LineHeight(line_height) => {
@@ -2563,6 +3294,30 @@ fn node_edit_patch_from_properties(
             }
             DslProperty::TextDirection(direction) => {
                 text_patch.direction = FieldPatch::Set(direction.clone());
+                has_text_patch = true;
+            }
+            DslProperty::TextTransform(transform) => {
+                text_patch.text_transform = FieldPatch::Set(*transform);
+                has_text_patch = true;
+            }
+            DslProperty::Underline(on) => {
+                text_patch.underline = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::Strikethrough(on) => {
+                text_patch.strikethrough = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::Italic(on) => {
+                text_patch.italic = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::Truncate(on) => {
+                text_patch.truncate = FieldPatch::Set(*on);
+                has_text_patch = true;
+            }
+            DslProperty::ParagraphSpacing(spacing) => {
+                text_patch.paragraph_spacing = FieldPatch::Set(*spacing);
                 has_text_patch = true;
             }
             DslProperty::Asset(asset_id) => {
@@ -2642,10 +3397,27 @@ fn node_edit_patch_from_properties(
                 }
                 layout_changed = true;
             }
-            DslProperty::PageSize(_)
+            DslProperty::Bleed(_) => {
+                // Misplaced page print-bleed rect on a node target: name the
+                // per-node form (bleed(true)) explicitly rather than a generic
+                // "unsupported property" halt.
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0269",
+                    "bleed(x,y,width,height) is a page's print-bleed rectangle, not a node property",
+                    "For a node's declared off-canvas intent use bleed(true); set the print bleed on a #page:page_id modify line.",
+                ));
+            }
+            // A6b: span() authoring is a create-line feature (D2 reconciles the
+            // [[…]] content markers when the node is first materialized). On a
+            // modify line the content/marker relationship is ambiguous, so span
+            // editing via DSL modify is deferred (ops carry span edits directly).
+            DslProperty::Span(_)
+            | DslProperty::PageSize(_)
             | DslProperty::PageBackground(_)
             | DslProperty::SafeArea(_)
-            | DslProperty::Bleed(_)
             | DslProperty::Slot(_)
             | DslProperty::SlotLabel(_)
             | DslProperty::SlotRequired(_)
@@ -2743,6 +3515,51 @@ fn effect_from_dsl_shadow(id: EffectId, shadow: &DslShadow) -> Effect {
     }
 }
 
+fn effect_from_dsl_inner_shadow(id: EffectId, shadow: &DslShadow) -> Effect {
+    let color_token = match &shadow.color {
+        Color::Token { token } => Some(token.clone()),
+        _ => None,
+    };
+    Effect {
+        id,
+        kind: EffectKind::InnerShadow {
+            color: shadow.color.clone(),
+            opacity: shadow.opacity,
+            x: shadow.x,
+            y: shadow.y,
+            blur: shadow.blur,
+            spread: shadow.spread,
+            color_token,
+        },
+    }
+}
+
+fn effect_from_dsl_glow(id: EffectId, glow: &DslGlow) -> Effect {
+    let color_token = match &glow.color {
+        Color::Token { token } => Some(token.clone()),
+        _ => None,
+    };
+    Effect {
+        id,
+        kind: EffectKind::Glow {
+            color: glow.color.clone(),
+            opacity: glow.opacity,
+            blur: glow.blur,
+            spread: glow.spread,
+            color_token,
+        },
+    }
+}
+
+fn effect_from_dsl_blur(id: EffectId, blur: &DslBlur) -> Effect {
+    Effect {
+        id,
+        kind: EffectKind::LayerBlur {
+            radius: blur.radius,
+        },
+    }
+}
+
 fn page_edit_patch_from_properties(
     properties: &[DslProperty],
     line: &DslLine,
@@ -2773,6 +3590,16 @@ fn page_edit_patch_from_properties(
             }
             DslProperty::SafeArea(rect) => patch.safe_area = OptionalFieldPatch::Set(rect.clone()),
             DslProperty::Bleed(rect) => patch.bleed = OptionalFieldPatch::Set(rect.clone()),
+            DslProperty::BleedIntent(_) => {
+                return Err(error_diag(
+                    line.line_number,
+                    1,
+                    line.raw.len().max(1),
+                    "LUMD0269",
+                    "bleed(true|false) is a per-node bleed intent, not a page property",
+                    "Set a page's print bleed with bleed(x,y,width,height); use bleed(true) on an element.",
+                ));
+            }
             _ => {
                 return Err(error_diag(
                     line.line_number,
@@ -3182,6 +4009,36 @@ fn parse_property_token(
                 token,
                 line_number,
                 column,
+                "LUMD0257",
+                "Use shadow(shadow_soft,#000000,o(0.18),x(0),y(8),blur(24),spread(0)).",
+                "shadow",
+            )?)]
+        }
+        "inner_shadow" => {
+            vec![DslProperty::InnerShadow(parse_shadow_property(
+                &call,
+                token,
+                line_number,
+                column,
+                "LUMD0268",
+                "Use inner_shadow(inner_soft,#000000,o(0.4),x(0),y(4),blur(8),spread(0)).",
+                "inner_shadow",
+            )?)]
+        }
+        "glow" => {
+            vec![DslProperty::Glow(parse_glow_property(
+                &call,
+                token,
+                line_number,
+                column,
+            )?)]
+        }
+        "blur" => {
+            vec![DslProperty::Blur(parse_blur_property(
+                &call,
+                token,
+                line_number,
+                column,
             )?)]
         }
         "remove_effect" => {
@@ -3228,6 +4085,17 @@ fn parse_property_token(
             // hug width — the robust way to center glyphs in chips/buttons/cells.
             expect_arg_count(&call, 1, line_number)?;
             vec![DslProperty::TextAlignment(parse_text_align(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "valign" => {
+            // A7a: vertical alignment of text within its box. Single-arg,
+            // order-independent trailing op like `align(...)`. No aliases (D2) —
+            // `middle` or any non-{top|center|bottom} value fails loudly.
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::VerticalAlignment(parse_valign(
                 &call.args[0],
                 line_number,
                 column,
@@ -3281,6 +4149,60 @@ fn parse_property_token(
                 line_number,
                 column,
             )?)]
+        }
+        "case" | "text_transform" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::TextTransform(parse_text_transform(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "underline" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Underline(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "strike" | "strikethrough" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Strikethrough(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "italic" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Italic(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "truncate" | "ellipsis" => {
+            expect_arg_count(&call, 1, line_number)?;
+            vec![DslProperty::Truncate(parse_bool(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "para_spacing" | "paragraph_spacing" => {
+            expect_arg_count(&call, 1, line_number)?;
+            // Non-negative px gap (0 allowed); finiteness is enforced by the
+            // LUMV0900 layout gate. Reuses the shared non-negative helper
+            // (LUMD0255) rather than a new negative-value code.
+            vec![DslProperty::ParagraphSpacing(parse_non_negative_f64(
+                &call.args[0],
+                line_number,
+                column,
+            )?)]
+        }
+        "span" => {
+            vec![DslProperty::Span(parse_span(&call, line_number, column)?)]
         }
         "slot" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -3376,12 +4298,38 @@ fn parse_property_token(
             )?)]
         }
         "rd" | "radius" => {
-            expect_arg_count(&call, 1, line_number)?;
-            vec![DslProperty::Radius(parse_scalar(
-                &call.args[0],
-                line_number,
-                column,
-            )?)]
+            // Uniform `rd(r)` (number or token) stays `Radius`; per-corner
+            // `rd(tl,tr,br,bl)` (CSS clockwise from top-left) lowers to
+            // `CornerRadius`. Any other arity is the generic LUMD0230.
+            match call.args.len() {
+                1 => vec![DslProperty::Radius(parse_scalar(
+                    &call.args[0],
+                    line_number,
+                    column,
+                )?)],
+                // Corners are magnitudes where zero is meaningful (a square
+                // corner) — e.g. rd(12,12,0,0) rounds only the top. Reject
+                // only negatives.
+                4 => vec![DslProperty::CornerRadius([
+                    parse_non_negative_f64(&call.args[0], line_number, column)?,
+                    parse_non_negative_f64(&call.args[1], line_number, column)?,
+                    parse_non_negative_f64(&call.args[2], line_number, column)?,
+                    parse_non_negative_f64(&call.args[3], line_number, column)?,
+                ])],
+                _ => {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        call.name.len(),
+                        "LUMD0230",
+                        format!(
+                            "rd(...) expects 1 or 4 argument(s), got {}",
+                            call.args.len()
+                        ),
+                        "Use rd(8) for a uniform radius or rd(tl,tr,br,bl) for per-corner radii.",
+                    ));
+                }
+            }
         }
         "o" | "opacity" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -3428,13 +4376,33 @@ fn parse_property_token(
             })]
         }
         "bleed" => {
-            expect_arg_count(&call, 4, line_number)?;
-            vec![DslProperty::Bleed(Rect {
-                x: parse_f64(&call.args[0], line_number, column)?,
-                y: parse_f64(&call.args[1], line_number, column)?,
-                width: parse_positive_f64(&call.args[2], line_number, column)?,
-                height: parse_positive_f64(&call.args[3], line_number, column)?,
-            })]
+            // The designer word `bleed` is deliberately shared: the 4-arg form
+            // is a page's print-bleed rectangle; the 1-arg bool is a per-node
+            // declared bleed intent (A4). Any other arity is LUMD0269 naming
+            // both forms.
+            match call.args.len() {
+                4 => vec![DslProperty::Bleed(Rect {
+                    x: parse_f64(&call.args[0], line_number, column)?,
+                    y: parse_f64(&call.args[1], line_number, column)?,
+                    width: parse_positive_f64(&call.args[2], line_number, column)?,
+                    height: parse_positive_f64(&call.args[3], line_number, column)?,
+                })],
+                1 => vec![DslProperty::BleedIntent(parse_bool(
+                    &call.args[0],
+                    line_number,
+                    column,
+                )?)],
+                _ => {
+                    return Err(error_diag(
+                        line_number,
+                        1,
+                        call.name.len(),
+                        "LUMD0269",
+                        format!("bleed(...) expects 1 or 4 argument(s), got {}", call.args.len()),
+                        "Use bleed(true) on a node for declared off-canvas intent, or bleed(x,y,width,height) on a page for the print-bleed rectangle.",
+                    ));
+                }
+            }
         }
         "g" | "gap" => {
             expect_arg_count(&call, 1, line_number)?;
@@ -3597,13 +4565,30 @@ fn parse_property_token(
         }
         "token" | "ds" | "color" => vec![DslProperty::Token(token.to_owned())],
         _ => {
+            // Slice 3 phase B: the exact grammar guesses that burned probe
+            // round 3. `parent`/`after`/`before`/`delete` are STANDALONE
+            // directives, never node properties — and the natural way to
+            // add/move/restructure children is a `reconcile(container)` block.
+            let hint = match call.name.as_str() {
+                "parent" | "after" | "before" | "delete" | "detach_to_freehand" => concat!(
+                    "`parent`/`after`/`before`/`delete`/`detach_to_freehand` are standalone ",
+                    "directives, not node properties. To add, move, or restructure elements inside ",
+                    "an existing container, reconcile it: `reconcile(<container>)` then ",
+                    "indent the container's full intended child subtree (re-emit kept ",
+                    "children verbatim). To re-home or reorder one node, use the ",
+                    "top-level `parent(id, parent:pid)` / `after(id, anchor)` directives; ",
+                    "to remove one, `delete(id)`; to pin one at its solved box so it ",
+                    "paints above a freehand human pin, `detach_to_freehand(id)`."
+                ),
+                _ => "Unsupported constructs are errors in the DSL compiler, not silently ignored.",
+            };
             return Err(error_diag(
                 line_number,
                 column,
                 token.len(),
                 "LUMD0212",
                 format!("unknown property {}", call.name),
-                "Unsupported constructs are errors in the DSL compiler, not silently ignored.",
+                hint,
             ));
         }
     };
@@ -3633,6 +4618,7 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
             font_size_token: None,
             line_height_token: None,
             letter_spacing_token: None,
+            ..TextNode::default()
         }),
         DslElementKind::Image { asset_id } => NodeKind::Image(ImageNode {
             asset_id: asset_id
@@ -3711,6 +4697,99 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
     Ok(Node::new(element.id.clone(), kind))
 }
 
+/// Materialize a reconcile block's staged `(indent, element)` list into a
+/// detached [`IntendedSubtree`]. Reuses `node_from_element` + `apply_properties`
+/// (the fresh-authoring materializer) so a staged element becomes the same
+/// `Node` it would as a fresh declaration; nesting is reconstructed from the
+/// indent ladder. Duplicate ids WITHIN the block are an error (the intended
+/// tree must be a well-formed tree, even though re-emitting LIVE ids is fine).
+fn materialize_reconcile_subtree(
+    staged: &[(usize, DslElement)],
+    line_number: usize,
+    length: usize,
+) -> Result<crate::reconcile::IntendedSubtree, DslDiagnostic> {
+    let mut nodes: BTreeMap<NodeId, Node> = BTreeMap::new();
+    let mut container_children: Vec<NodeId> = Vec::new();
+    // Stack of (indent, parent_id) — the open ancestor chain, mirroring the
+    // parent_stack mechanism the fresh-authoring path uses.
+    let mut stack: Vec<(usize, NodeId)> = Vec::new();
+
+    for (indent, element) in staged {
+        // A materialized node reuses the fresh-authoring builder.
+        let mut node = node_from_element(element, line_number)?;
+        let mut property_diagnostics = Vec::new();
+        apply_properties(
+            &mut node,
+            &element.properties,
+            line_number,
+            &mut property_diagnostics,
+        );
+        // Property diagnostics inside a reconcile block are surfaced by the
+        // caller path only when they are errors; a materialized node that
+        // failed to parse would have errored above, so warnings here are
+        // non-fatal metadata and intentionally dropped (mirrors the way the
+        // reconciler only needs the final field values).
+        let _ = property_diagnostics;
+
+        if nodes.contains_key(&element.id) {
+            return Err(error_diag(
+                line_number,
+                1,
+                length,
+                "LUMD0401",
+                format!("duplicate node id {} inside reconcile block", element.id),
+                "Each id may appear at most once in a reconcile block's intended subtree.",
+            ));
+        }
+
+        // Pop ancestors that are not shallower than this line.
+        while stack.last().is_some_and(|(pi, _)| *pi >= *indent) {
+            stack.pop();
+        }
+
+        match stack.last() {
+            Some((_, parent_id)) => {
+                if let Some(parent) = nodes.get_mut(parent_id) {
+                    parent.children.push(element.id.clone());
+                }
+            }
+            None => container_children.push(element.id.clone()),
+        }
+
+        let can_have_children = element.kind.can_have_children();
+        nodes.insert(element.id.clone(), node);
+        if can_have_children {
+            stack.push((*indent, element.id.clone()));
+        }
+    }
+
+    Ok(crate::reconcile::IntendedSubtree {
+        container_children,
+        nodes,
+    })
+}
+
+/// The container hint for LUMD0264: names the containers (Frame/Group/
+/// AutoLayout) that currently exist in the scene so the author can pick a
+/// valid reconcile target.
+fn reconcile_container_hint(scene: &Scene) -> String {
+    let mut containers: Vec<String> = scene
+        .nodes
+        .values()
+        .filter(|node| node.kind.can_have_children())
+        .map(|node| node.id.as_str().to_owned())
+        .collect();
+    containers.sort();
+    if containers.is_empty() {
+        "reconcile(target) needs an existing frame, group, or autolayout container; this scene has none.".to_owned()
+    } else {
+        format!(
+            "reconcile(target) needs a frame/group/autolayout; valid containers: {}.",
+            containers.join(", ")
+        )
+    }
+}
+
 fn property_asset_id(properties: &[DslProperty]) -> Option<AssetId> {
     properties.iter().find_map(|property| {
         if let DslProperty::Asset(asset_id) = property {
@@ -3750,6 +4829,9 @@ fn apply_properties(
     let mut fill_index = 0;
     let mut stroke_index = 0;
     let mut shadow_index = 0;
+    let mut glow_index = 0;
+    let mut blur_index = 0;
+    let mut inner_shadow_index = 0;
 
     for property in properties {
         match property {
@@ -3820,6 +4902,40 @@ fn apply_properties(
                     EffectId::from(format!("effect_{}_shadow_{}", node.id, shadow_index))
                 });
                 node.effects.push(effect_from_dsl_shadow(id, shadow));
+            }
+            DslProperty::InnerShadow(shadow) => {
+                let id = shadow.id.clone().unwrap_or_else(|| {
+                    inner_shadow_index += 1;
+                    EffectId::from(format!(
+                        "effect_{}_inner_shadow_{}",
+                        node.id, inner_shadow_index
+                    ))
+                });
+                node.effects.push(effect_from_dsl_inner_shadow(id, shadow));
+            }
+            DslProperty::Glow(glow) => {
+                let id = glow.id.clone().unwrap_or_else(|| {
+                    glow_index += 1;
+                    EffectId::from(format!("effect_{}_glow_{}", node.id, glow_index))
+                });
+                node.effects.push(effect_from_dsl_glow(id, glow));
+            }
+            DslProperty::Blur(blur) => {
+                let id = blur.id.clone().unwrap_or_else(|| {
+                    blur_index += 1;
+                    EffectId::from(format!("effect_{}_blur_{}", node.id, blur_index))
+                });
+                node.effects.push(effect_from_dsl_blur(id, blur));
+            }
+            DslProperty::BleedIntent(value) => {
+                node.bleed = *value;
+            }
+            DslProperty::CornerRadius([tl, tr, br, bl]) => {
+                node.corner.top_left = *tl;
+                node.corner.top_right = *tr;
+                node.corner.bottom_right = *br;
+                node.corner.bottom_left = *bl;
+                node.corner.token = None;
             }
             DslProperty::RemoveEffect(_) => {
                 diagnostics.push(warning_diag(
@@ -3909,6 +5025,20 @@ fn apply_properties(
                     ));
                 }
             }
+            DslProperty::VerticalAlignment(valign) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.valign = *valign;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "valign(...) only applies to text nodes",
+                        "Move valign(top|center|bottom) to a text/t element.",
+                    ));
+                }
+            }
             DslProperty::TextStyleToken(token) => {
                 if let NodeKind::Text(text) = &mut node.kind {
                     text.style_token = Some(token.clone());
@@ -3969,14 +5099,26 @@ fn apply_properties(
                 node.transform.flip_y = *y;
             }
             DslProperty::Clip(clip) => node.clip = *clip,
-            DslProperty::SafeArea(_) | DslProperty::Bleed(_) => {
+            DslProperty::Bleed(_) => {
+                // A 4-arg bleed rect is a page's print bleed; on an element the
+                // author meant the per-node intent bleed(true).
+                diagnostics.push(warning_diag(
+                    line_number,
+                    1,
+                    node.id.as_str().len(),
+                    "LUMD0269",
+                    "bleed(x,y,width,height) is a page's print-bleed rectangle, not a node property",
+                    "For a node's declared off-canvas intent use bleed(true); set the print bleed on a #page:page_id modify line.",
+                ));
+            }
+            DslProperty::SafeArea(_) => {
                 diagnostics.push(warning_diag(
                     line_number,
                     1,
                     node.id.as_str().len(),
                     "LUMD0612",
-                    "safe_area(...)/bleed(...) only apply to page modify targets",
-                    "Use these properties on #page:page_id modify lines.",
+                    "safe_area(...) only applies to page modify targets",
+                    "Use safe_area(...) on #page:page_id modify lines.",
                 ));
             }
             DslProperty::Gap(gap) => match gap {
@@ -4098,6 +5240,90 @@ fn apply_properties(
                     text.direction = direction.clone();
                 }
             }
+            DslProperty::TextTransform(transform) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.text_transform = *transform;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "case(...) only applies to text nodes",
+                        "Move case(upper|lower|title|none) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Underline(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.underline = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "underline(...) only applies to text nodes",
+                        "Move underline(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Strikethrough(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.strikethrough = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "strike(...) only applies to text nodes",
+                        "Move strike(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Italic(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.italic = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "italic(...) only applies to text nodes",
+                        "Move italic(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::Truncate(on) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.truncate = *on;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "truncate(...) only applies to text nodes",
+                        "Move truncate(true) to a text/t element.",
+                    ));
+                }
+            }
+            DslProperty::ParagraphSpacing(spacing) => {
+                if let NodeKind::Text(text) = &mut node.kind {
+                    text.paragraph_spacing = *spacing;
+                } else {
+                    diagnostics.push(warning_diag(
+                        line_number,
+                        1,
+                        node.id.as_str().len(),
+                        "LUMD0607",
+                        "para_spacing(...) only applies to text nodes",
+                        "Move para_spacing(n) to a text/t element.",
+                    ));
+                }
+            }
             DslProperty::Grow(grow) => {
                 if let Some(grow) = scalar_to_number(
                     grow,
@@ -4165,6 +5391,9 @@ fn apply_properties(
                 ));
             }
             DslProperty::Slot(_) => {}
+            // A6b D2: span() properties are reconciled with the content markers
+            // in a post-pass below (once the final content is known).
+            DslProperty::Span(_) => {}
             DslProperty::TextAppend(_) | DslProperty::TextPrepend(_) => {
                 diagnostics.push(warning_diag(
                     line_number,
@@ -4194,6 +5423,11 @@ fn apply_properties(
             }
         }
     }
+
+    // A6b D2: reconcile [[…]] content markers with span() properties in a
+    // post-pass, so the marker strip sees the final content and the offsets
+    // are computed on the stored string. No span() ⇒ no-op (literal [[).
+    apply_text_spans(node, properties, line_number, diagnostics);
 }
 
 fn ensure_layout(node: &mut Node) -> &mut AutoLayoutProps {
@@ -4585,19 +5819,28 @@ fn parse_paint(source: &str, line_number: usize, column: usize) -> Result<Paint,
                 "Use solid(#ffffff).",
             ));
         }
-        if call.args.len() > 1 {
+        let color = parse_color(&call.args[0], line_number, column)?;
+        // `solid(color, opacity)` (A4, retires LUMD0241): the second arg —
+        // either a bare number `0.5` or a channel `o(0.5)` — multiplies into
+        // the color's alpha at model-build time. The canonical representation
+        // stays `Paint::Solid` with an #RRGGBBAA (or oklch) color, so no
+        // exporter changes are needed.
+        if call.args.len() == 2 {
+            let opacity = parse_solid_opacity(&call.args[1], line_number, column)?;
+            let color = compose_color_opacity(color, opacity, source, line_number, column)?;
+            return Ok(Paint::Solid { color });
+        }
+        if call.args.len() > 2 {
             return Err(error_diag(
                 line_number,
                 column,
                 source.len(),
-                "LUMD0241",
-                "solid(...) opacity arguments are parsed but not lowered by this workstream",
-                "Use #RRGGBBAA/#AARRGGBB-compatible assets after color semantics are finalized, or use node opacity o(...).",
+                "LUMD0270",
+                format!("solid(...) accepts a color and an optional opacity, got {} arguments", call.args.len()),
+                "Use solid(#ffffff) or solid(#ffffff,0.5).",
             ));
         }
-        return Ok(Paint::Solid {
-            color: parse_color(&call.args[0], line_number, column)?,
-        });
+        return Ok(Paint::Solid { color });
     }
 
     Ok(Paint::Solid {
@@ -5130,6 +6373,26 @@ fn parse_text_align(
     }
 }
 
+fn parse_valign(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<VerticalAlign, DslDiagnostic> {
+    match source {
+        "top" => Ok(VerticalAlign::Top),
+        "center" => Ok(VerticalAlign::Center),
+        "bottom" => Ok(VerticalAlign::Bottom),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len(),
+            "LUMD0275",
+            format!("unknown vertical alignment {other}"),
+            "valign takes top|center|bottom",
+        )),
+    }
+}
+
 fn parse_text_direction(
     source: &str,
     line_number: usize,
@@ -5149,6 +6412,212 @@ fn parse_text_direction(
         )),
     }
 }
+
+fn parse_text_transform(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<TextTransform, DslDiagnostic> {
+    match source.trim() {
+        "none" => Ok(TextTransform::None),
+        "upper" | "uppercase" => Ok(TextTransform::Uppercase),
+        "lower" | "lowercase" => Ok(TextTransform::Lowercase),
+        "title" => Ok(TextTransform::Title),
+        other => Err(error_diag(
+            line_number,
+            column,
+            other.len().max(1),
+            "LUMD0271",
+            format!("unknown text transform {other}"),
+            "Use none, upper|uppercase, lower|lowercase, or title.",
+        )),
+    }
+}
+
+/// A6b D2: parse one `span(...)` property into its override channels. Args are
+/// nested calls: `fill(#hex)`/`fill($token)`, `weight(n)`, `underline(bool)`,
+/// `strike(bool)`. Empty `span()` is LUMD0273; an unknown nested call is
+/// LUMD0212 (the shared unknown-property code).
+fn parse_span(call: &Call, line_number: usize, column: usize) -> Result<DslSpan, DslDiagnostic> {
+    let has_arg = call.args.iter().any(|arg| !arg.trim().is_empty());
+    if !has_arg {
+        return Err(error_diag(
+            line_number,
+            column,
+            "span".len(),
+            "LUMD0273",
+            "span(...) needs at least one channel",
+            "Use span(fill(#hex)), span(fill($token)), span(weight(700)), span(underline(true)), span(strike(true)), or span(italic(true)).",
+        ));
+    }
+    let mut span = DslSpan::default();
+    for arg in &call.args {
+        let arg = arg.trim();
+        if arg.is_empty() {
+            continue;
+        }
+        let nested = parse_call(arg).ok_or_else(|| {
+            error_diag(
+                line_number,
+                column,
+                arg.len().max(1),
+                "LUMD0273",
+                format!("malformed span channel {arg}"),
+                "Each span channel is a call: fill(#hex), weight(700), underline(true), strike(true), italic(true).",
+            )
+        })?;
+        match nested.name.as_str() {
+            "fill" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.fill = Some(parse_paint(&nested.args[0], line_number, column)?);
+            }
+            "weight" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.font_weight = Some(parse_u16(&nested.args[0], line_number, column)?);
+            }
+            "underline" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.underline = Some(parse_bool(&nested.args[0], line_number, column)?);
+            }
+            "strike" | "strikethrough" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.strikethrough = Some(parse_bool(&nested.args[0], line_number, column)?);
+            }
+            "italic" => {
+                expect_arg_count(&nested, 1, line_number)?;
+                span.italic = Some(parse_bool(&nested.args[0], line_number, column)?);
+            }
+            other => {
+                return Err(error_diag(
+                    line_number,
+                    column,
+                    other.len().max(1),
+                    "LUMD0212",
+                    format!("unknown span channel {other}(...)"),
+                    "Span channels are fill(...), weight(...), underline(...), strike(...), italic(...).",
+                ));
+            }
+        }
+    }
+    Ok(span)
+}
+
+/// A6b D2: strip `[[…]]` run markers from `content`, returning the clean string
+/// and each run's byte range in it (in order). Nesting `[[` inside a run, or an
+/// unclosed `[[`, is a compile error (`Err`). Markers are only parsed by the
+/// caller when the element carries a `span(...)` property — without one, `[[`
+/// stays literal content.
+fn parse_span_markers(content: &str) -> Result<(String, Vec<(usize, usize)>), &'static str> {
+    let mut clean = String::with_capacity(content.len());
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut rest = content;
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("[[") {
+            if run_start.is_some() {
+                return Err("nested [[ inside a run");
+            }
+            run_start = Some(clean.len());
+            rest = after;
+        } else if run_start.is_some() && rest.starts_with("]]") {
+            let start = run_start.take().expect("run open");
+            runs.push((start, clean.len()));
+            rest = &rest["]]".len()..];
+        } else {
+            let ch = rest.chars().next().expect("non-empty");
+            clean.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    if run_start.is_some() {
+        return Err("unclosed [[ marker");
+    }
+    Ok((clean, runs))
+}
+
+/// A6b D2: reconcile the `[[…]]` content markers with the parsed `span(...)`
+/// properties for a text node once its final content is known. Only runs when
+/// at least one `span()` is present, so existing scenes with literal `[[` are
+/// untouched. A run/span count mismatch is a LUMD0274 WARNING (authors
+/// iterate): surplus runs render base, surplus spans are ignored.
+fn apply_text_spans(
+    node: &mut Node,
+    properties: &[DslProperty],
+    line_number: usize,
+    diagnostics: &mut Vec<DslDiagnostic>,
+) {
+    let span_props: Vec<&DslSpan> = properties
+        .iter()
+        .filter_map(|property| match property {
+            DslProperty::Span(span) => Some(span),
+            _ => None,
+        })
+        .collect();
+    if span_props.is_empty() {
+        return;
+    }
+
+    let NodeKind::Text(text) = &mut node.kind else {
+        diagnostics.push(warning_diag(
+            line_number,
+            1,
+            node.id.as_str().len(),
+            "LUMD0607",
+            "span(...) only applies to text nodes",
+            "Move span(...) to a text/t element carrying [[…]] run markers.",
+        ));
+        return;
+    };
+
+    let (clean, runs) = match parse_span_markers(&text.content) {
+        Ok(result) => result,
+        Err(reason) => {
+            diagnostics.push(error_diag(
+                line_number,
+                1,
+                node.id.as_str().len(),
+                "LUMD0272",
+                format!("malformed [[…]] span markers: {reason}"),
+                "Each run is a single [[…]] range; runs cannot nest and every [[ must close with ]].",
+            ));
+            return;
+        }
+    };
+    text.content = clean;
+
+    if runs.len() != span_props.len() {
+        diagnostics.push(warning_diag(
+            line_number,
+            1,
+            node.id.as_str().len(),
+            "LUMD0274",
+            format!(
+                "text has {} [[…]] run(s) but {} span() propert(ies); surplus runs render base and surplus span() are ignored",
+                runs.len(),
+                span_props.len()
+            ),
+            "Author one span(...) per [[…]] run, in order.",
+        ));
+    }
+
+    let mut spans = Vec::new();
+    for (index, (start, end)) in runs.iter().enumerate() {
+        let Some(span_prop) = span_props.get(index) else {
+            break;
+        };
+        spans.push(TextSpan {
+            start: *start,
+            end: *end,
+            fill: span_prop.fill.clone(),
+            font_weight: span_prop.font_weight,
+            underline: span_prop.underline,
+            strikethrough: span_prop.strikethrough,
+            italic: span_prop.italic,
+        });
+    }
+    text.spans = spans;
+}
+
 
 #[derive(Clone, Debug)]
 struct Call {
@@ -5559,19 +7028,13 @@ fn parse_shadow_property(
     token: &str,
     line_number: usize,
     column: usize,
+    code: &'static str,
+    hint: &'static str,
+    keyword: &str,
 ) -> Result<DslShadow, DslDiagnostic> {
-    let shadow_error = |message: String| {
-        error_diag(
-            line_number,
-            column,
-            token.len(),
-            "LUMD0257",
-            message,
-            "Use shadow(shadow_soft,#000000,o(0.18),x(0),y(8),blur(24),spread(0)).",
-        )
-    };
+    let shadow_error = |message: String| error_diag(line_number, column, token.len(), code, message, hint);
     if call.args.is_empty() {
-        return Err(shadow_error("shadow(...) expects a color".to_owned()));
+        return Err(shadow_error(format!("{keyword}(...) expects a color")));
     }
 
     // Compatibility alias for the CSS `box-shadow` ordering models reach for out
@@ -5623,7 +7086,7 @@ fn parse_shadow_property(
     } else {
         let id = parse_effect_id(first, line_number, column)?;
         let color = args.next().ok_or_else(|| {
-            shadow_error("shadow(...) with an id still expects a color".to_owned())
+            shadow_error(format!("{keyword}(...) with an id still expects a color"))
         })?;
         (Some(id), parse_color(color, line_number, column)?)
     };
@@ -5639,7 +7102,7 @@ fn parse_shadow_property(
     };
     for arg in args {
         let Some(option) = parse_call(arg.trim()) else {
-            return Err(shadow_error(format!("unknown shadow argument {arg}")));
+            return Err(shadow_error(format!("unknown {keyword} argument {arg}")));
         };
         if option.args.len() != 1 {
             return Err(shadow_error(format!(
@@ -5655,11 +7118,132 @@ fn parse_shadow_property(
             "blur" => shadow.blur = value,
             "spread" => shadow.spread = value,
             other => {
-                return Err(shadow_error(format!("unknown shadow option {other}(...)")));
+                return Err(shadow_error(format!("unknown {keyword} option {other}(...)")));
             }
         }
     }
     Ok(shadow)
+}
+
+/// Outer glow parse — mirrors `parse_shadow_property` but rejects x/y offsets
+/// (a glow is centered). LUMD0266.
+fn parse_glow_property(
+    call: &Call,
+    token: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslGlow, DslDiagnostic> {
+    const HINT: &str = "Use glow(glow_soft,#7c3aed,o(0.8),blur(24),spread(4)).";
+    let glow_error =
+        |message: String| error_diag(line_number, column, token.len(), "LUMD0266", message, HINT);
+    if call.args.is_empty() {
+        return Err(glow_error("glow(...) expects a color".to_owned()));
+    }
+
+    let mut args = call.args.iter();
+    let first = args.next().expect("non-empty checked above");
+    let (id, color) = if paint_like(first) {
+        (None, parse_color(first, line_number, column)?)
+    } else {
+        let id = parse_effect_id(first, line_number, column)?;
+        let color = args
+            .next()
+            .ok_or_else(|| glow_error("glow(...) with an id still expects a color".to_owned()))?;
+        (Some(id), parse_color(color, line_number, column)?)
+    };
+
+    let mut glow = DslGlow {
+        id,
+        color,
+        opacity: 1.0,
+        blur: 0.0,
+        spread: 0.0,
+    };
+    for arg in args {
+        let Some(option) = parse_call(arg.trim()) else {
+            return Err(glow_error(format!("unknown glow argument {arg}")));
+        };
+        if option.args.len() != 1 {
+            return Err(glow_error(format!(
+                "{}(...) expects exactly one numeric value",
+                option.name
+            )));
+        }
+        let value = parse_f64(&option.args[0], line_number, column)?;
+        match option.name.as_str() {
+            "o" | "opacity" => glow.opacity = value,
+            "blur" => glow.blur = value,
+            "spread" => glow.spread = value,
+            "x" | "y" => {
+                return Err(glow_error(
+                    "glow(...) has no x/y offset; a glow is centered — use shadow(...) for an offset shadow".to_owned(),
+                ));
+            }
+            other => {
+                return Err(glow_error(format!("unknown glow option {other}(...)")));
+            }
+        }
+    }
+    Ok(glow)
+}
+
+/// Layer-blur parse: `blur(id?,r(12))` or the one-arg shorthand `blur(12)`.
+/// LUMD0267.
+fn parse_blur_property(
+    call: &Call,
+    token: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<DslBlur, DslDiagnostic> {
+    const HINT: &str = "Use blur(12) or blur(blur_soft,r(12)).";
+    let blur_error =
+        |message: String| error_diag(line_number, column, token.len(), "LUMD0267", message, HINT);
+    if call.args.is_empty() || call.args.len() > 2 {
+        return Err(blur_error(format!(
+            "blur(...) expects 1 or 2 arguments, got {}",
+            call.args.len()
+        )));
+    }
+
+    let mut args = call.args.iter().peekable();
+    let mut id: Option<EffectId> = None;
+    // A leading non-`r(...)`, non-numeric argument is a stable id.
+    let first = args.peek().expect("non-empty checked above");
+    let first_trimmed = first.trim();
+    let first_is_radius =
+        parse_call(first_trimmed).is_some_and(|c| c.name == "r" || c.name == "radius");
+    let first_is_number = parse_call(first_trimmed).is_none() && parse_f64(first, 0, 0).is_ok();
+    if !first_is_radius && !first_is_number {
+        id = Some(parse_effect_id(args.next().unwrap(), line_number, column)?);
+    }
+
+    let radius_arg = args
+        .next()
+        .ok_or_else(|| blur_error("blur(...) with an id still expects a radius".to_owned()))?;
+    let radius = match parse_call(radius_arg.trim()) {
+        Some(option) => {
+            if option.name != "r" && option.name != "radius" {
+                return Err(blur_error(format!(
+                    "unknown blur argument {}(...); use r(...)",
+                    option.name
+                )));
+            }
+            if option.args.len() != 1 {
+                return Err(blur_error(
+                    "r(...) expects exactly one numeric value".to_owned(),
+                ));
+            }
+            parse_f64(&option.args[0], line_number, column)?
+        }
+        None => parse_f64(radius_arg, line_number, column)?,
+    };
+    if args.next().is_some() {
+        return Err(blur_error(
+            "blur(...) accepts at most an id and a radius".to_owned(),
+        ));
+    }
+
+    Ok(DslBlur { id, radius })
 }
 
 fn parse_asset_id(
@@ -5717,6 +7301,27 @@ fn parse_positive_f64(
             "LUMD0255",
             "numeric value must be positive",
             "Use a positive decimal numeric value.",
+        ));
+    }
+    Ok(value)
+}
+
+/// Like `parse_positive_f64` but zero is allowed — for magnitudes where zero
+/// is meaningful (per-corner radii: a zero corner is a square corner).
+fn parse_non_negative_f64(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<f64, DslDiagnostic> {
+    let value = parse_f64(source, line_number, column)?;
+    if value < 0.0 {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0255",
+            "numeric value must be non-negative",
+            "Use a decimal numeric value of 0 or greater.",
         ));
     }
     Ok(value)
@@ -5839,6 +7444,83 @@ fn parse_usize(source: &str, line_number: usize, column: usize) -> Result<usize,
             "Use an insertion index such as 0 or 1.",
         )
     })
+}
+
+/// The opacity argument of `solid(color, opacity)` — a bare number `0.5` or a
+/// channel `o(0.5)`/`opacity(0.5)`.
+fn parse_solid_opacity(
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<f64, DslDiagnostic> {
+    let trimmed = source.trim();
+    if let Some(call) = parse_call(trimmed) {
+        if (call.name == "o" || call.name == "opacity") && call.args.len() == 1 {
+            return parse_f64(&call.args[0], line_number, column);
+        }
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0270",
+            format!("solid(...) opacity must be a number or o(...), got {trimmed}"),
+            "Use solid(#ffffff,0.5) or solid(#ffffff,o(0.5)).",
+        ));
+    }
+    parse_f64(source, line_number, column)
+}
+
+/// Multiply a fill opacity into a color's alpha at model-build time. Hex and
+/// oklch compose exactly; an unresolved token color cannot (loud LUMD0270).
+fn compose_color_opacity(
+    color: Color,
+    opacity: f64,
+    source: &str,
+    line_number: usize,
+    column: usize,
+) -> Result<Color, DslDiagnostic> {
+    if !(0.0..=1.0).contains(&opacity) {
+        return Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0270",
+            format!("solid(...) opacity {opacity} is out of range 0..=1"),
+            "Use an opacity between 0 and 1, e.g. solid(#ffffff,0.5).",
+        ));
+    }
+    match color {
+        Color::Hex { value } => {
+            let (r, g, b, a) = parse_hex_rgba(&value).ok_or_else(|| {
+                error_diag(
+                    line_number,
+                    column,
+                    source.len().max(1),
+                    "LUMD0270",
+                    format!("solid(...) could not read hex color {value} to apply opacity"),
+                    "Use a #RGB, #RRGGBB, or #RRGGBBAA color with the opacity argument.",
+                )
+            })?;
+            let new_a = ((a as f64) * opacity).round().clamp(0.0, 255.0) as u8;
+            Ok(Color::Hex {
+                value: format!("#{r:02x}{g:02x}{b:02x}{new_a:02x}"),
+            })
+        }
+        Color::Oklch { l, c, h, alpha } => Ok(Color::Oklch {
+            l,
+            c,
+            h,
+            alpha: alpha * opacity,
+        }),
+        Color::Token { token } => Err(error_diag(
+            line_number,
+            column,
+            source.len().max(1),
+            "LUMD0270",
+            format!("solid(...) cannot apply opacity to unresolved token color {token}"),
+            "Bake the alpha into the token, or use a #RRGGBBAA color with solid(...).",
+        )),
+    }
 }
 
 fn parse_bool(source: &str, line_number: usize, column: usize) -> Result<bool, DslDiagnostic> {

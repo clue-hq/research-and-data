@@ -1,0 +1,2241 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 41,
+    "operation_count": 41,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "add_page",
+      "page": {
+        "background": [],
+        "bleed": null,
+        "children": [],
+        "id": "pipeline_slide",
+        "name": "pipeline_slide",
+        "safe_area": null,
+        "size": {
+          "height": 1080.0,
+          "orientation": "landscape",
+          "output": {
+            "raster": {
+              "height_px": 1080,
+              "width_px": 1920
+            }
+          },
+          "preset": "custom",
+          "source": {
+            "height": 1080.0,
+            "unit": "px",
+            "width": 1920.0
+          },
+          "unit": "pt",
+          "width": 1920.0
+        }
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": true,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_artboard_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.page"
+            }
+          }
+        ],
+        "id": "artboard",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.section",
+          "grow": 0.0,
+          "padding": [
+            100.0,
+            120.0,
+            100.0,
+            120.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "pipeline_slide",
+        "kind": "page"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "header",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.sm",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1680.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_mark_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "mark",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "center",
+          "align_y": "center",
+          "gap": 0.0,
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 44.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 44.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "mark_glyph",
+        "kind": {
+          "align": "center",
+          "content": "P",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "no_wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "mark",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "eyebrow",
+        "kind": {
+          "align": "left",
+          "content": "Q3 PIPELINE REVIEW",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.eyebrow",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 560.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "header",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Q3 PIPELINE REVIEW",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "eyebrow",
+      "slot_id": "slot_campaign_eyebrow_92252b6be2914522"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "main",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "space_between",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.section",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fill",
+            "value": {
+              "weight": 1.0
+            }
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 1680.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "artboard",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "hero",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.stack.default",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 680.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "hero_value",
+        "kind": {
+          "align": "left",
+          "content": "4.2x",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_size_token": "type.size.9xl",
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.0,
+          "max_lines": 1,
+          "style_token": "type.stat",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 680.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "hero_label",
+        "kind": {
+          "align": "left",
+          "content": "pipeline coverage on an $18M target",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.25,
+          "max_lines": 2,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 600.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_hero_label_356fde88465ace82",
+        "image_policy": null,
+        "key": "campaign.hero_label",
+        "label": "campaign.hero_label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "pipeline coverage on an $18M target",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "hero_label",
+      "slot_id": "slot_campaign_hero_label_356fde88465ace82"
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "takeaway",
+        "kind": {
+          "align": "left",
+          "content": "Coverage is healthy across every stage, with committed pipeline alone covering 59% of the $18M target.",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.4,
+          "max_lines": 3,
+          "style_token": "type.body",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 600.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "hero",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_takeaway_b38ce68e16257f66",
+        "image_policy": null,
+        "key": "campaign.takeaway",
+        "label": "campaign.takeaway",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Coverage is healthy across every stage, with committed pipeline alone covering 59% of the $18M target.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [],
+          "worst_case": null
+        }
+      }
+    },
+    {
+      "kind": "bind_node_to_slot",
+      "node_id": "takeaway",
+      "slot_id": "slot_campaign_takeaway_b38ce68e16257f66"
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "chart",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.stack.loose",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "main",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row1",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.tight",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "chart",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row1_name",
+        "kind": {
+          "align": "left",
+          "content": "Discovery",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row1",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row1_bar",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.sm",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row1",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_row1_fill_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "row1_fill",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 44.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 760.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row1_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row1_value",
+        "kind": {
+          "align": "left",
+          "content": "$28.4M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.0,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 120.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row1_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row2",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.tight",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "chart",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row2_name",
+        "kind": {
+          "align": "left",
+          "content": "Evaluation",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row2",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row2_bar",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.sm",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row2",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_row2_fill_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "row2_fill",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 44.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 562.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row2_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row2_value",
+        "kind": {
+          "align": "left",
+          "content": "$21.0M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.0,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 120.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row2_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 2,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row3",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.tight",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "chart",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row3_name",
+        "kind": {
+          "align": "left",
+          "content": "Proposal",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row3",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row3_bar",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.sm",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row3",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_row3_fill_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand"
+            }
+          }
+        ],
+        "id": "row3_fill",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 44.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 417.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row3_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row3_value",
+        "kind": {
+          "align": "left",
+          "content": "$15.6M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.0,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 120.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row3_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 3,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row4",
+        "kind": {
+          "direction": "column",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "start",
+          "gap": 0.0,
+          "gap_token": "space.stack.tight",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "chart",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row4_name",
+        "kind": {
+          "align": "left",
+          "content": "Commit",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "max_lines": 1,
+          "style_token": "type.label",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row4",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row4_bar",
+        "kind": {
+          "direction": "row",
+          "kind": "auto_layout",
+          "wrap": false
+        },
+        "layout": {
+          "align_x": "start",
+          "align_y": "center",
+          "gap": 0.0,
+          "gap_token": "space.sm",
+          "grow": 0.0,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 900.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row4",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 0,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "token": "radius.badge",
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [
+          {
+            "id": "paint_row4_fill_fill_1",
+            "paint": {
+              "kind": "token",
+              "token": "surface.brand.subtle"
+            }
+          }
+        ],
+        "id": "row4_fill",
+        "kind": {
+          "kind": "rect"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "fixed",
+            "value": 44.0
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 284.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row4_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "index": 1,
+      "kind": "insert_node",
+      "node": {
+        "children": [],
+        "clip": false,
+        "computed": null,
+        "corner": {
+          "bottom_left": 0.0,
+          "bottom_right": 0.0,
+          "top_left": 0.0,
+          "top_right": 0.0
+        },
+        "fills": [],
+        "id": "row4_value",
+        "kind": {
+          "align": "left",
+          "content": "$10.6M",
+          "direction": "ltr",
+          "font_family": "Inter",
+          "font_size": 16.0,
+          "font_weight": 400,
+          "kind": "text",
+          "letter_spacing": 0.0,
+          "line_height": 1.0,
+          "max_lines": 1,
+          "style_token": "type.subtitle",
+          "wrap": "wrap"
+        },
+        "layout": null,
+        "locked": false,
+        "name": null,
+        "opacity": 1.0,
+        "size": {
+          "height": {
+            "kind": "hug"
+          },
+          "width": {
+            "kind": "fixed",
+            "value": 120.0
+          }
+        },
+        "strokes": [],
+        "transform": {
+          "flip_x": false,
+          "flip_y": false,
+          "rotation": 0.0,
+          "skew_x": 0.0,
+          "skew_y": 0.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "parent": {
+        "id": "row4_bar",
+        "kind": "node"
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "eyebrow"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_eyebrow_92252b6be2914522",
+        "image_policy": null,
+        "key": "campaign.eyebrow",
+        "label": "campaign.eyebrow",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Q3 PIPELINE REVIEW",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Q3 PIPELINE REVIEW"
+          ],
+          "worst_case": "Q3 PIPELINE REVIEW"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "hero_label"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_hero_label_356fde88465ace82",
+        "image_policy": null,
+        "key": "campaign.hero_label",
+        "label": "campaign.hero_label",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "pipeline coverage on an $18M target",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "pipeline coverage on an $18M target"
+          ],
+          "worst_case": "pipeline coverage on an $18M target"
+        }
+      }
+    },
+    {
+      "kind": "upsert_slot",
+      "slot": {
+        "binding_hints": [],
+        "bound_nodes": [
+          "takeaway"
+        ],
+        "cardinality": {
+          "max_items": 1,
+          "min_items": 1
+        },
+        "conditional": null,
+        "content_type": "text_short",
+        "editability": "template_and_instance",
+        "formatting": {
+          "allowed_pattern": null,
+          "max_length": null,
+          "preserve_case": true
+        },
+        "id": "slot_campaign_takeaway_b38ce68e16257f66",
+        "image_policy": null,
+        "key": "campaign.takeaway",
+        "label": "campaign.takeaway",
+        "overflow": {
+          "kind": "error"
+        },
+        "placeholder": "Coverage is healthy across every stage, with committed pipeline alone covering 59% of the $18M target.",
+        "repeater": null,
+        "required": true,
+        "scope": {
+          "kind": "document"
+        },
+        "validation": {
+          "max_length": null,
+          "samples": [
+            "Coverage is healthy across every stage, with committed pipeline alone covering 59% of the $18M target."
+          ],
+          "worst_case": "Coverage is healthy across every stage, with committed pipeline alone covering 59% of the $18M target."
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "campaign.eyebrow": "slot_campaign_eyebrow_92252b6be2914522",
+      "campaign.hero_label": "slot_campaign_hero_label_356fde88465ace82",
+      "campaign.takeaway": "slot_campaign_takeaway_b38ce68e16257f66"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "pipeline_slide",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "main",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 3,
+        "parent": {
+          "id": "chart",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 4,
+        "parent": {
+          "id": "row4",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 5,
+        "parent": {
+          "id": "row4_bar",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 6,
+    "seen_node_ids": [
+      "artboard",
+      "chart",
+      "eyebrow",
+      "header",
+      "hero",
+      "hero_label",
+      "hero_value",
+      "main",
+      "mark",
+      "mark_glyph",
+      "row1",
+      "row1_bar",
+      "row1_fill",
+      "row1_name",
+      "row1_value",
+      "row2",
+      "row2_bar",
+      "row2_fill",
+      "row2_name",
+      "row2_value",
+      "row3",
+      "row3_bar",
+      "row3_fill",
+      "row3_name",
+      "row3_value",
+      "row4",
+      "row4_bar",
+      "row4_fill",
+      "row4_name",
+      "row4_value",
+      "takeaway"
+    ]
+  },
+  "checkpoint_label": null
+}

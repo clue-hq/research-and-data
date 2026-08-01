@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CanvasKit, Image, Surface, TypefaceFontProvider } from "canvaskit-wasm";
-import type { AssetRecord, Node, Scene } from "../../contracts";
+import type { AssetRecord, Node, Scene, TextSpan } from "../../contracts";
 import { minimalScene } from "@/fixtures/minimalScene";
 import { nodeDescriptor, pageDescriptor, type RenderPageDescriptor } from "../../renderAdapter";
 import { drawDescriptorTree, type DrawNode } from "../drawDescriptors";
@@ -294,6 +294,56 @@ describe.skipIf(!present)("CanvasKit descriptor interpreter (Wave 3 C2)", () => 
     expect(rb).toBeGreaterThan(150); // focal x=1 → blue side visible
     expect(rr).toBeLessThan(100);
   });
+
+  // A4 Effects v1: the general effect pipeline draws glow / layer blur / inner
+  // shadow via CanvasKit image filters, mirroring the lumen-skia recipes.
+  it("draws an outer glow that bleeds color beyond the node box", () => {
+    const base = rect("r", 40, 20, 20, 20, "#000000");
+    const glow: Node = {
+      ...base,
+      effects: [{ id: "fx", kind: { kind: "glow", color: { kind: "hex", value: "#ff0000" }, opacity: 1, blur: 20, spread: 0 } }]
+    };
+    const withGlow = render(pxScene({ r: glow }, ["r"]), "page_a4", 100, 60);
+    const without = render(pxScene({ r: base }, ["r"]), "page_a4", 100, 60);
+
+    // A pixel 2px left of the box (box left edge x=40): white with no glow,
+    // reddened by the glow bleed with it.
+    expect(pixel(without, 38, 30, 100)).toEqual([255, 255, 255, 255]);
+    const [r1, g1, b1] = pixel(withGlow, 38, 30, 100);
+    expect(g1).toBeLessThan(255);
+    expect(b1).toBeLessThan(255);
+    expect(r1).toBeGreaterThan(g1); // red glow tint
+  });
+
+  it("blurs the node's own rendering with a layer blur", () => {
+    const base = rect("r", 40, 20, 20, 20, "#000000");
+    const blurred: Node = {
+      ...base,
+      effects: [{ id: "fx", kind: { kind: "layer_blur", radius: 12 } }]
+    };
+    const soft = render(pxScene({ r: blurred }, ["r"]), "page_a4", 100, 60);
+    const sharp = render(pxScene({ r: base }, ["r"]), "page_a4", 100, 60);
+
+    // Just outside the left edge: the sharp box leaves it white, the layer blur
+    // bleeds the black body across the boundary.
+    expect(pixel(sharp, 38, 30, 100)[0]).toBe(255);
+    expect(pixel(soft, 38, 30, 100)[0]).toBeLessThan(220);
+  });
+
+  it("draws an inner shadow darkening the node's inner edge", () => {
+    const node = rect("r", 20, 10, 60, 40, "#ffffff");
+    node.effects = [
+      { id: "fx", kind: { kind: "inner_shadow", color: { kind: "hex", value: "#000000" }, opacity: 1, x: 0, y: 0, blur: 10, spread: 0 } }
+    ];
+    const out = render(pxScene({ r: node }, ["r"]), "page_a4", 100, 60);
+
+    // Box x 20..80, y 10..50. The center stays near white; a pixel just inside
+    // the top edge is darkened by the inner shadow ring.
+    const center = pixel(out, 50, 30, 100)[0];
+    const edge = pixel(out, 50, 13, 100)[0];
+    expect(center).toBeGreaterThan(200);
+    expect(edge).toBeLessThan(center);
+  });
 });
 
 const SYSTEM_FONT = "/Library/Fonts/Arial Unicode.ttf";
@@ -422,5 +472,113 @@ describe.skipIf(!present || !existsSync(SYSTEM_FONT))("CanvasKit text rendering 
     }
     expect(center).toBeGreaterThan(left);
     expect(right).toBeGreaterThan(center);
+  });
+
+  // A6b D7: a span with a distinct fill paints a two-color headline — the base
+  // run keeps the node fill (black) and the span run paints its own color (red).
+  it("paints a two-color headline: base run node fill, span run span fill", () => {
+    const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+    const text: Node = {
+      ...base,
+      id: "t",
+      kind: {
+        kind: "text",
+        content: "HELLO WORLD",
+        font_family: family,
+        font_size: 36,
+        font_weight: 700,
+        align: "left",
+        line_height: 1.2,
+        letter_spacing: 0,
+        wrap: "no_wrap",
+        direction: "ltr",
+        // "WORLD" (bytes 6..11) painted red; "HELLO " stays the node fill.
+        spans: [{ start: 6, end: 11, fill: { kind: "solid", color: { kind: "hex", value: "#ff0000" } } }]
+      },
+      fills: [{ id: "t_fill", paint: { kind: "solid", color: { kind: "hex", value: "#000000" } } }],
+      strokes: [],
+      transform: { ...base.transform, x: 0, y: 0 },
+      size: { width: { kind: "fixed", value: 400 }, height: { kind: "fixed", value: 50 } },
+      computed: {
+        layout_bounds: { x: 0, y: 0, width: 400, height: 50 },
+        render_bounds: { x: 0, y: 0, width: 400, height: 50 }
+      }
+    };
+    const pixels = render(pxScene({ t: text }, ["t"]), "page_a4", 400, 50, fontProvider);
+
+    let blackGlyphs = 0;
+    let redGlyphs = 0;
+    for (let y = 5; y < 45; y++) {
+      for (let x = 0; x < 400; x++) {
+        const [r, g, b] = pixel(pixels, x, y, 400);
+        if (r < 80 && g < 80 && b < 80) {
+          blackGlyphs++; // dark = base "HELLO" glyphs
+        } else if (r > 150 && g < 90 && b < 90) {
+          redGlyphs++; // red = span "WORLD" glyphs
+        }
+      }
+    }
+    // Both colors present: the base run is black, the span run is red.
+    expect(blackGlyphs).toBeGreaterThan(20);
+    expect(redGlyphs).toBeGreaterThan(20);
+  });
+
+  // A7b: exercise the italic slant plumbing through BOTH paragraph builders.
+  // The system test font carries no separate italic face, so Skia snaps to
+  // upright (D2 — no synthetic slant): the assertion is that the block-italic
+  // path AND the spanned per-run override path (an italic block with a
+  // de-italicizing span) both render glyphs without error. Real slant fidelity
+  // is the review gate's job (a provisioned italic face + gate.py/browser).
+  const italicScene = (spans?: TextSpan[]): Node => {
+    const base = JSON.parse(JSON.stringify(minimalScene.nodes.node_contact_name)) as Node;
+    return {
+      ...base,
+      id: "t",
+      kind: {
+        kind: "text",
+        content: "HELLO WORLD",
+        font_family: family,
+        font_size: 36,
+        font_weight: 400,
+        align: "left",
+        line_height: 1.2,
+        letter_spacing: 0,
+        wrap: "no_wrap",
+        direction: "ltr",
+        italic: true,
+        ...(spans ? { spans } : {})
+      },
+      fills: [{ id: "t_fill", paint: { kind: "solid", color: { kind: "hex", value: "#000000" } } }],
+      strokes: [],
+      transform: { ...base.transform, x: 0, y: 0 },
+      size: { width: { kind: "fixed", value: 400 }, height: { kind: "fixed", value: 50 } },
+      computed: {
+        layout_bounds: { x: 0, y: 0, width: 400, height: 50 },
+        render_bounds: { x: 0, y: 0, width: 400, height: 50 }
+      }
+    };
+  };
+
+  const darkGlyphCount = (node: Node): number => {
+    const pixels = render(pxScene({ t: node }, ["t"]), "page_a4", 400, 50, fontProvider);
+    let dark = 0;
+    for (let y = 5; y < 45; y++) {
+      for (let x = 0; x < 400; x++) {
+        if (pixel(pixels, x, y, 400)[0] < 80) {
+          dark++;
+        }
+      }
+    }
+    return dark;
+  };
+
+  it("renders a block-italic text node (slant plumbed to the base builder)", () => {
+    expect(darkGlyphCount(italicScene())).toBeGreaterThan(20);
+  });
+
+  it("renders an italic block with a de-italicizing span (override merge path)", () => {
+    // "WORLD" (bytes 6..11) carries italic:false inside the italic block — the
+    // spanned builder resolves `span.italic ?? block` per run and must render.
+    expect(darkGlyphCount(italicScene([{ start: 6, end: 11, italic: false }]))).toBeGreaterThan(20);
   });
 });

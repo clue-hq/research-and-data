@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { BrandTokenCatalog, Fill, Node } from "@/engine/contracts";
-import { colorToCss } from "@/engine/renderAdapter";
+import { colorToCss, tokenSwatchCss } from "@/engine/renderAdapter";
 import { fillTokensForNode } from "./inspector/DesignTokensSection";
 import { tokenFill, tokenFromFill } from "./inspector/fields";
 
@@ -97,8 +97,13 @@ function ColorSwatchPreview({ node, guarded }: { node: Node; guarded: boolean })
   }
   if (fill.paint.kind === "token") {
     return (
-      <span className="color-swatch-preview token" aria-hidden title={`$${fill.paint.token}`}>
-        <span className="color-swatch-token-badge">{tokenBadgeText(fill.paint.token)}</span>
+      <span
+        className="color-swatch-preview token"
+        aria-hidden
+        title={`$${fill.paint.token}`}
+        style={{ background: tokenSwatchCss(fill.paint.token) }}
+      >
+        <span className="color-swatch-token-badge">{fill.paint.token}</span>
       </span>
     );
   }
@@ -151,9 +156,10 @@ function TokenGroups({
                   aria-selected={activeToken === token}
                   className={`color-swatch-chip${activeToken === token ? " active" : ""}`}
                   title={`$${token}`}
+                  style={{ background: tokenSwatchCss(token) }}
                   onClick={() => onPick(token)}
                 >
-                  <span className="color-swatch-token-badge">{tokenBadgeText(token)}</span>
+                  <span className="color-swatch-token-badge">{token}</span>
                 </button>
               ))}
             </div>
@@ -201,11 +207,6 @@ function tokenGroupsForNode(node: Node, brandTokens?: BrandTokenCatalog | null):
   groups.push({ label: "Palette", tokens: dedupe(paletteTokens) });
 
   return groups;
-}
-
-function tokenBadgeText(token: string): string {
-  const parts = token.split(".");
-  return parts[parts.length - 1]?.slice(0, 2).toUpperCase() ?? token.slice(0, 2).toUpperCase();
 }
 
 function fillSummaryLabel(fill: Fill): string {

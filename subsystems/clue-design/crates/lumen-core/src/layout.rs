@@ -76,6 +76,17 @@ pub fn layout_scene(scene: &Scene, options: LayoutOptions) -> LayoutResult {
         .map(|measurer| measurer as &dyn TextMeasurer)
         .unwrap_or(&FALLBACK_MEASURER);
     let mut engine = LayoutEngine::new(scene, measurer);
+    // Loud, never-silent signal that this pass measured text without font
+    // shaping (LUMS0102): the heuristic measurer approximates glyph advances,
+    // so every text box, wrap, and overflow verdict below is geometry-
+    // approximate. Server paths inject a shaping (Skia) measurer, so they
+    // report `shaping() == true` and never emit this. Modeled on LUMS0101's
+    // "degraded but never silent" pattern.
+    if !measurer.shaping() {
+        engine
+            .diagnostics
+            .push(crate::text_measure::heuristic_measurement_diagnostic());
+    }
     engine.layout_pages();
     engine.validate_artboard_bounds();
     engine.validate_layout_anchors();
@@ -844,6 +855,27 @@ impl<'a> LayoutEngine<'a> {
             return;
         }
 
+        // Declared-bleed carve-out (A4): a node the author flagged bleed(true)
+        // deliberately washes past the page — downgrade to a warning with a
+        // distinct message. Never silent: the warning always appears.
+        if self.is_declared_bleed(node_id) {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Layout,
+                    "LUMV0800",
+                    format!(
+                        "node {} exceeds exportable bounds for page {}",
+                        node_id, page.id
+                    ),
+                    Some(DiagnosticSubject::Node(node_id.clone())),
+                )
+                .with_hint(
+                    "node off-canvas extent declared as bleed; content outside the page is not exported.",
+                ),
+            );
+            return;
+        }
+
         // Freehand clip policy (Phase 1b, user decision 2026-07-03):
         // freehand overflow is explicit intent, so it warns instead of
         // blocking — the canvas shows the true clipped consequence.
@@ -901,12 +933,15 @@ impl<'a> LayoutEngine<'a> {
             // the canvas shows the clipped result. Managed content keeps
             // the fail-closed error under a clipping parent.
             let freehand = self.is_freehand(node_id);
-            let severity = if !freehand && self.parent_clips(node_id) {
+            let declared_bleed = self.is_declared_bleed(node_id);
+            let severity = if !freehand && !declared_bleed && self.parent_clips(node_id) {
                 DiagnosticSeverity::Error
             } else {
                 DiagnosticSeverity::Warning
             };
-            let hint = if freehand {
+            let hint = if declared_bleed {
+                "node off-canvas extent declared as bleed; content outside the page is not exported."
+            } else if freehand {
                 "Freehand node extends beyond its parent; the overflow is cut off wherever the parent clips content."
             } else {
                 "Move, resize, wrap, or change the parent layout so the child fits."
@@ -951,6 +986,15 @@ impl<'a> LayoutEngine<'a> {
                 .unwrap_or(false),
             Some(crate::scene::ParentRef::Page(_)) | None => true,
         }
+    }
+
+    /// A node whose author declared `bleed(true)` — deliberate off-canvas
+    /// intent (A4). Per-node, never inherited.
+    fn is_declared_bleed(&self, node_id: &NodeId) -> bool {
+        self.scene
+            .nodes
+            .get(node_id)
+            .is_some_and(|node| node.bleed)
     }
 
     /// A node a human freehands directly: pinned Absolute, or a child of a
@@ -1018,6 +1062,8 @@ impl<'a> LayoutEngine<'a> {
                 || !text.line_height.is_finite()
                 || text.line_height <= 0.0
                 || !text.letter_spacing.is_finite()
+                || !text.paragraph_spacing.is_finite()
+                || text.paragraph_spacing < 0.0
             {
                 self.diagnostics.push(Diagnostic::error(
                     Phase::Layout,
@@ -1026,6 +1072,78 @@ impl<'a> LayoutEngine<'a> {
                     Some(DiagnosticSubject::Node(node.id.clone())),
                 ));
                 continue;
+            }
+
+            // A6a D3: `truncate(true)` on freely-wrapping text with no
+            // max_lines can never fire — nothing ever cuts the copy. Teach,
+            // don't block (advisory), so the author knows the flag is inert.
+            if text.truncate
+                && text.max_lines.is_none()
+                && matches!(text.wrap, TextWrap::Wrap)
+            {
+                self.diagnostics.push(
+                    Diagnostic::warning(
+                        Phase::Layout,
+                        "LUMV0905",
+                        format!(
+                            "text node {} sets truncate but wraps freely with no max_lines; the ellipsis can never fire",
+                            node.id
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    )
+                    .with_hint(
+                        "Set max_lines(n) or wrap(false) so truncation has a cut point, or drop truncate.",
+                    ),
+                );
+            }
+
+            // A6b D3: reject invalid ops-injected spans BEFORE measurement so a
+            // scene with an out-of-bounds / overlapping / non-char-boundary /
+            // gradient-filled span never reaches partial rendering. DSL-authored
+            // spans are valid by construction; only the empty guard runs there.
+            if !text.spans.is_empty() {
+                let errors = crate::span_validation_errors(&text.content, &text.spans);
+                if !errors.is_empty() {
+                    for error in errors {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                Phase::Layout,
+                                "LUMV0906",
+                                format!(
+                                    "text node {} has an invalid span (#{}): {}",
+                                    node.id, error.index, error.reason
+                                ),
+                                Some(DiagnosticSubject::Node(node.id.clone())),
+                            )
+                            .with_hint(
+                                "Span offsets index the content bytes: keep them in-bounds, char-aligned, start<end, sorted, non-overlapping, and solid/token-filled.",
+                            ),
+                        );
+                    }
+                    continue;
+                }
+                // A6b v1 limitation, loud not silent (review fix): the
+                // segmented span path hard-breaks on `\n` but does not apply
+                // the extra paragraph gap — authored paragraph_spacing is
+                // ignored on spanned text. Advise so the author knows.
+                if text.paragraph_spacing > 0.0
+                    && (text.content.contains('\n') || text.content.contains("\\n"))
+                {
+                    self.diagnostics.push(
+                        Diagnostic::warning(
+                            Phase::Layout,
+                            "LUMV0907",
+                            format!(
+                                "text node {} combines spans with paragraph_spacing; the paragraph gap is not applied to spanned text in v1",
+                                node.id
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint(
+                            "Split the stanzas into separate text nodes, or drop the spans/para_spacing combination.",
+                        ),
+                    );
+                }
             }
 
             if geometry.layout_bounds.width <= 0.0 || geometry.layout_bounds.height <= 0.0 {
@@ -1041,6 +1159,32 @@ impl<'a> LayoutEngine<'a> {
             let measured = self.measurer.measure(
                 &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
             );
+            // Taffy rounds computed geometry to whole pixels, so a hug box can
+            // legitimately sit up to half a pixel under the fractional measured
+            // height (e.g. stacked paragraph gaps or fractional line heights).
+            // A sub-pixel "overflow" is that rounding contract, not content
+            // loss — re-derive the overflow flags with the rounding tolerance
+            // so hug-sized text never trips a phantom LUMV0902/0903.
+            const ROUNDING_TOLERANCE: f64 = 0.5 + 0.01;
+            let overflow_x = measured.overflow_x
+                && measured.width > geometry.layout_bounds.width + ROUNDING_TOLERANCE;
+            let overflow_y = measured.overflow_y
+                && measured.height > geometry.layout_bounds.height + ROUNDING_TOLERANCE;
+            // Fold measurement-time font diagnostics (LUMS0100 whole-family
+            // fallback, LUMS0103 per-glyph substitution) into the layout
+            // result so missing fonts surface at preflight, not only at
+            // export. Re-subject them to this node (the measurer reports them
+            // document-scoped) so they match the render path's emission and
+            // dedupe against it.
+            for diagnostic in &measured.diagnostics {
+                let diagnostic = Diagnostic {
+                    subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                    ..diagnostic.clone()
+                };
+                if !self.diagnostics.contains(&diagnostic) {
+                    self.diagnostics.push(diagnostic);
+                }
+            }
             // Freehand text-fit policy (Phase 1d, user decision): a human
             // resizing a pinned text box below its content is explicit
             // intent — the canvas shows the true truncation, so text-fit
@@ -1071,14 +1215,14 @@ impl<'a> LayoutEngine<'a> {
                     "Increase max_lines, shorten the copy, or enlarge the text box.",
                 );
             }
-            if measured.overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
+            if overflow_x && matches!(text.wrap, TextWrap::NoWrap) {
                 push(
                     "LUMV0902",
                     format!("non-wrapping text node {} overflows horizontally", node.id),
                     "Use wrap(true), s(fill,hug), a smaller style, or a wider text box.",
                 );
             }
-            if measured.overflow_y {
+            if overflow_y {
                 push(
                     "LUMV0903",
                     format!("text node {} exceeds available height", node.id),
@@ -1781,6 +1925,8 @@ fn text_fit(
         font_family: text.font_family.clone(),
         font_size,
         font_weight: text.font_weight,
+        // Italic selects a different face, changing advances → a fit input.
+        italic: text.italic,
         // Measure the fixture with the node's OWN line height, not a hardcoded 1.2.
         // The hardcode made a hug-height (or any lh < 1.2) slotted text node report a
         // false LUMV0810 overflow — the fixture was measured taller than the box the
@@ -1797,6 +1943,16 @@ fn text_fit(
         direction: crate::TextDirection::Ltr,
         max_width: Some(bounds.width.max(0.0)),
         max_height: Some(bounds.height.max(0.0)),
+        // The node's own case transform and paragraph spacing change the
+        // fixture's measured geometry, so fit validation must see them.
+        // Truncation is a lossy RESPONSE to overflow, not a fit input — keep
+        // it off so a too-long fixture still reports the true overflow.
+        text_transform: text.text_transform,
+        truncate: false,
+        paragraph_spacing: text.paragraph_spacing,
+        // Slot fixtures substitute a different string than node.content, so the
+        // node's span byte-offsets don't apply to the fixture — measure base.
+        spans: Vec::new(),
     });
 
     TextFit {

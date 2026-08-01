@@ -49,10 +49,15 @@ filler element.
 - **Never make an empty spacer frame.** Express free space with sizing/alignment.
 - **`y(sb)` (space-between) is for exactly TWO anchored blocks** (header top + footer
   bottom). With 3+ light blocks it scatters the slack into dead bands — don't.
-- **The poster idiom (one focal block on a big canvas):** a `fill`-height content
-  region absorbs the slack and centers its content; the header pins top and the
-  footer is pushed to the bottom. Verified: header `y=96`, footer `y=944`, hero
-  centered `y=500` on a 1080² canvas.
+- **The `fill`-region mechanic (used by the vertical-poster archetype, and any
+  archetype with slack to absorb):** a `fill`-height content region absorbs the
+  slack and centers its content; the header pins top and the footer is pushed to
+  the bottom. Verified: header `y=96`, footer `y=944`, hero centered `y=500` on a
+  1080² canvas. This is *distribution*, not *the* composition — the vertical
+  poster is ONE of six archetypes (`knowledge/design/layout-recipes`); banded uses
+  a `fill` band the same way, and image-hero/split-panel/emblem distribute by
+  full-bleed or centered overlap instead. Choose the archetype first, then apply
+  whichever distribution keeps free space reading as margin, not dead bands.
   ```text
   artboard al(v, x(s), y(s), g($space.section), pad(96)) s(fill,fill)
     header ...                       s(888,hug)          # pins top
@@ -92,11 +97,28 @@ filler element.
 
 ## Avoid the AI clichés
 
+The target is the **clichéd USE**, never the construct. Gradients, washes,
+shadows, and plates are first-class vocabulary (`knowledge/design/layout-recipes`
+surface treatments, `skills/effects`) — a design is banned from the *lazy* move,
+not from the tool.
+
 - **Eyebrows:** the tinted pill above the headline is the #1 tell. Vary it — a
   plain overline, a short accent rule + label, or none. Reserve the pill for a
   genuine status badge ("NOW IN BETA").
-- **Color:** skip blue→purple gradients, neon-on-dark, all-white-with-one-safe-
-  accent, and low-opacity circles drifting behind sections.
+- **Gradients — encouraged when brand-derived, banned when default.** A gradient
+  between two *brand* colors, a soft radial wash bleeding off-canvas, a gradient
+  fill on a hero numeral are strong moves — reach for them. What's clichéd is the
+  UNMOTIVATED gradient: the stock blue→purple that belongs to no brand, neon-on-dark
+  for its own sake. Derive the stops from the palette or don't use one.
+- **Decorative shapes — banned when they're confetti.** Low-opacity circles (or
+  blobs) drifting behind the content to "fill space" are the tell. The moda rec-2
+  minimal aesthetic failed exactly here: scattered pale blobs read as noise, not
+  design. If a shape isn't structural (a scrim, a plate, an accent rule, a stat
+  bar), cut it — claim the space with alignment and scale instead.
+- **Shadows & plates — encouraged with intent.** A shadowed plate that lifts a
+  seal, quote, or stat is the emblem archetype's whole point. What's clichéd is
+  boxing *everything* in identical drop-shadowed cards; prefer information on
+  surfaces (below) with one deliberate lifted element.
 - **Layout:** avoid three equal cards in a row as the default answer; avoid
   centering everything; avoid a lonely small headline stranded in a sea of white.
   If you've seen the move in three AI designs, drop it.

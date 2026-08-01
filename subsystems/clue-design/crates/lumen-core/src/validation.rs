@@ -599,22 +599,44 @@ fn validate_node_paint_stacks(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) 
                     Some(DiagnosticSubject::Node(node.id.clone())),
                 ));
             }
-            let EffectKind::DropShadow {
-                opacity,
-                x,
-                y,
-                blur,
-                spread,
-                ..
-            } = &effect.kind;
-            let fields = [
-                ("opacity", *opacity),
-                ("x", *x),
-                ("y", *y),
-                ("blur", *blur),
-                ("spread", *spread),
-            ];
-            for (field, value) in fields {
+            // (field name, value, must_be_non_negative). Offsets (x/y) are
+            // signed; blur/radius/spread are magnitudes and must be ≥ 0.
+            let fields: Vec<(&str, f64, bool)> = match &effect.kind {
+                EffectKind::DropShadow {
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                }
+                | EffectKind::InnerShadow {
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => vec![
+                    ("opacity", *opacity, false),
+                    ("x", *x, false),
+                    ("y", *y, false),
+                    ("blur", *blur, true),
+                    ("spread", *spread, true),
+                ],
+                EffectKind::Glow {
+                    opacity,
+                    blur,
+                    spread,
+                    ..
+                } => vec![
+                    ("opacity", *opacity, false),
+                    ("blur", *blur, true),
+                    ("spread", *spread, true),
+                ],
+                EffectKind::LayerBlur { radius } => vec![("radius", *radius, true)],
+            };
+            for (field, value, non_negative) in fields {
                 if !value.is_finite() {
                     diagnostics.push(Diagnostic::error(
                         Phase::Validation,
@@ -622,6 +644,16 @@ fn validate_node_paint_stacks(scene: &Scene, diagnostics: &mut Vec<Diagnostic>) 
                         format!(
                             "node {} effect {} has non-finite {} value",
                             node.id, effect.id, field
+                        ),
+                        Some(DiagnosticSubject::Node(node.id.clone())),
+                    ));
+                } else if non_negative && value < 0.0 {
+                    diagnostics.push(Diagnostic::error(
+                        Phase::Validation,
+                        "LUMV0704",
+                        format!(
+                            "node {} effect {} has negative {} value {}",
+                            node.id, effect.id, field, value
                         ),
                         Some(DiagnosticSubject::Node(node.id.clone())),
                     ));

@@ -1,0 +1,229 @@
+{
+ "dark_colorway": "captured",
+ "gaps": [
+  "asset.icon.primary",
+  "asset.illustration.primary",
+  "asset.texture.subtle",
+  "logo.reversed",
+  "logo.wordmark"
+ ],
+ "narrative": {
+  "brand_name": "Cursor",
+  "summary_facts": [
+   "Built to make you extraordinarily productive, Cursor is the best AI coding agent."
+  ],
+  "tagline": null,
+  "text_excerpt": "(self.__next_s=self.__next_s||[]).push([0,{\"children\":\"window.ConceptualAnalytics='ca';window.ca=window.ca||function(){(window.ca.q=window.ca.q||[]).push(arguments)};window.ca.l=Date.now();\",\"id\":\"conceptual-analytics-stub\"}]) (self.__next_s=self.__next_s||[]).push([0,{\"children\":\"\\n(function(){\\n try {\\n var nav = window.navigator || {};\\n var ua = (nav.userAgent || '').toLowerCase();\\n var platform = (nav.platform || '').toLowerCase();\\n var isIOS = /ipad|iphone|ipod/.test(ua) || (platform === 'macintel' && nav.maxTouchPoints > 1);\\n var os = 'mac';\\n if (/windows/.test(ua)) {\\n os = 'windows';\\n } else if (!/android/.test(ua) && /linux/.test(ua)) {\\n os = 'linux';\\n } else if (isIOS) {\\n os = 'mac';\\n } else if (/mac/.test(ua) || platform === 'macintel') {\\n os = 'mac';\\n }\\n document.documentElement.dataset.os = os;\\n document.documentElement.dataset.device = isIOS ? 'ios' : 'default';\\n } catch (error) {\\n if (!document.documentElement.dataset.os) {\\n document.documentElement.dataset.os = 'mac';\\n }\\n }\\n})();\\n \",\"id\":\"web-new-frontend-os-detector\"}]) {\"@context\":\"https://schema.org\",\"@type\":\"Organization\",\"@id\":\"https://cursor.com/#org\",\"name\":\"Cursor\",\"description\":\"Cursor is the best AI coding agent.\",\"url\":\"https://cursor.com\",\"logo\":{\"@type\":\"ImageObject\",\"url\":\"https://ptht05hbb1ssoooe.public.blob.vercel-storage.com/assets/og/opengraph-default.png\",\"width\":200,\"height\":60},\"sameAs\":[\"https://x.com/cursor_ai\",\"https://www.linkedin.com/company/cursorai\",\"https://www.youtube.com/@cursor_ai\",\"https://github.com/cursor\"],\"contactPoint\":{\"@type\":\"ContactPoint\",\"contactType\":\"customer service\",\"url\":\"https://cursor.com/contact-sales\"},\"foundingDate\":\"2023\"} {\"@context\":\"https://schema.org\",\"@type\":\"WebSite\",\"@id\":\"https://cursor.com/#website\",\"name\":\"Cursor\",\"description\":\"Cursor is the best AI coding agent.\",\"url\":\"https://cursor.com\",\"publisher\":{\"@type\":\"Organization\",\"@id\":\"https://cursor.com/#org\"}} requestAnimationFrame(function(){$RT=performance.now()}); $RB=[];$RV=function(a){$RT=performance.now();for(var b=0;b<a.length;b+=2){var c=a[b],e=a[b+1];null!==e.parentNode&&e.parentNode.removeChild(e);var f=c.parentNode;if(f){var g=c.previousSibling,h=0;do{if(c&&8===c.nodeType){var d=c.data;if(\"/$\"===d||\"/&\"===d)if(0===h)break;else h--;else\"$\"!==d&&\"$?\"!==d&&\"$~\"!==d&&\"$!\"!==d&&\"&\"!==d||h++}d=c.nextSibling;f.removeChild(c);c=d}while(c);for(;e.firstChild;)f.insertBefore(e.firstChild,c);g.data=\"$\";g._reactRetry&&requestAnimationFrame(g._reactRetry)}}a.length=0}; $RC=function(a,b){if(b=document.getElementById(b))(a=document.getElementById(a))?(a.previousSibling.data=\"$~\",$RB.push(a,b),2===$RB.length&&(\"number\"!==typeof $RT?requestAnimationFrame($RV.bind(null,$RB)):(a=performance.now(),setTimeout($RV.bind(null,$RB),2300>a&&2E3<a?2300-a:$RT+300-a)))):b.parentNode.removeChild(b)};$RC(\"B:6\",\"S:6\") $RX=function(b,c,d,e,f){var a=document.getElementById(b);a&&(b=a.previousSibling,b.data=\"$!\",a=a.dataset,c&&(a.dgst=c),d&&(a.msg=d),e&&(a.stck=e),f&&(a.c",
+  "url": "https://cursor.com/"
+ },
+ "role_assignments": [
+  {
+   "basis": "evidence",
+   "pointer": "website:rendered :: body",
+   "token": "surface.page",
+   "value": "#F7F7F4"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:surface.canvas",
+   "token": "surface.canvas",
+   "value": "#F9F9F6"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:rendered :: body",
+   "token": "surface.card",
+   "value": "#F7F7F4"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:surface.elevated",
+   "token": "surface.elevated",
+   "value": "#F7F7F7"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:css :: --color-accent",
+   "token": "surface.brand",
+   "value": "#F54E00"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:surface.brand.subtle",
+   "token": "surface.brand.subtle",
+   "value": "#FFEBE5"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:css :: --color-success",
+   "token": "surface.accent",
+   "value": "#1F8A65"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:surface.muted",
+   "token": "surface.muted",
+   "value": "#E6E6E3"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:surface.inverse",
+   "token": "surface.inverse",
+   "value": "#121210"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:rendered :: body",
+   "token": "text.primary",
+   "value": "#26251E"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:text.secondary",
+   "token": "text.secondary",
+   "value": "#57564E"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:text.muted",
+   "token": "text.muted",
+   "value": "#73726A"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:text.inverse",
+   "token": "text.inverse",
+   "value": "#FFFFFF"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:text.brand",
+   "token": "text.brand",
+   "value": "#952C00"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:text.accent",
+   "token": "text.accent",
+   "value": "#952C00"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:border.subtle",
+   "token": "border.subtle",
+   "value": "#DDDDDA"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:border.default",
+   "token": "border.default",
+   "value": "#C3C3C0"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:border.strong",
+   "token": "border.strong",
+   "value": "#888885"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:border.brand",
+   "token": "border.brand",
+   "value": "#F54E00"
+  },
+  {
+   "basis": "derived",
+   "pointer": "derived:focus.ring",
+   "token": "focus.ring",
+   "value": "#F54E00"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.display",
+   "value": "CursorGothic 41.5"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.headline",
+   "value": "CursorGothic 26.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.title",
+   "value": "CursorGothic 14.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.subtitle",
+   "value": "CursorGothic 15.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.body",
+   "value": "CursorGothic 12.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.body.small",
+   "value": "CursorGothic 10.5"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.caption",
+   "value": "CursorGothic 9.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.eyebrow",
+   "value": "CursorGothic 9.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.label",
+   "value": "CursorGothic 10.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.cta",
+   "value": "CursorGothic 14.0"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.stat",
+   "value": "CursorGothic 32.5"
+  },
+  {
+   "basis": "evidence",
+   "pointer": "website:https://cursor.com/marketing-static/_next/static/chunks/0n3w.msyn~5aj.css?dpl=dpl_HH6a5prQZrH8WHpwyEWXTDfK8RBx :: .prose-column h3",
+   "token": "type.legal",
+   "value": "CursorGothic 8.0"
+  }
+ ],
+ "rules": [],
+ "schema_version": 1,
+ "source": {
+  "captured_at": "2026-07-05T19:28:11.319793+00:00",
+  "confidence": 0.7,
+  "kind": "website",
+  "url": "https://cursor.com"
+ },
+ "stats": {
+  "clusters": 20,
+  "colors_observed": 1543,
+  "fonts": 19,
+  "images": 46,
+  "logos": 4,
+  "rules": 0
+ }
+}

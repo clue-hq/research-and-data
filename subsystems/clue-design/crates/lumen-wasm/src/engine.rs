@@ -13,7 +13,7 @@ use lumen_core::{
     build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
     measure_key, preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId,
     PreflightOptions, ProvidedTextMeasurer, Scene, SharedTextMeasurer, StructuredEditInstruction,
-    TextDirection, TextMeasureInput, TextWrap,
+    TextDirection, TextMeasureInput, TextTransform, TextWrap,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -24,6 +24,23 @@ use std::sync::Arc;
 /// wasm32, so the in-browser engine measures with the heuristic fallback.
 /// Server-computed geometry stays authoritative for text-dependent layout.
 pub const TEXT_MEASUREMENT: &str = "heuristic";
+
+/// Drop the LUMS0102 "measured heuristically" notice from wasm read-only
+/// diagnostics. In the browser, heuristic measurement is the DECLARED,
+/// documented mode (`text_measurement: "heuristic"` rides every payload), and
+/// the editor already synthesizes its own loud client-side
+/// EDITOR_HEURISTIC_MEASUREMENT signal from that field. Surfacing LUMS0102 here
+/// too would double-report the identical fact. lumen-core still emits it — this
+/// suppression is scoped to the wasm boundary, where it is redundant, not to
+/// the diagnostic itself.
+fn without_heuristic_measurement_notice(
+    diagnostics: Vec<lumen_core::Diagnostic>,
+) -> Vec<lumen_core::Diagnostic> {
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.code != "LUMS0102")
+        .collect()
+}
 
 /// Version handshake payload (Track E Decision 4). The editor compares this
 /// against the API's build info and downgrades to server-only mode on any
@@ -44,6 +61,10 @@ struct ProvidedMeasurement {
     font_family: String,
     font_size: f64,
     font_weight: u16,
+    // A7b: italic is a geometry input (selects the italic face). Defaulted so
+    // pre-A7b editor payloads deserialize unchanged; the key mirrors layout.
+    #[serde(default)]
+    italic: bool,
     line_height: f64,
     letter_spacing: f64,
     wrap: TextWrap,
@@ -54,6 +75,20 @@ struct ProvidedMeasurement {
     max_width: Option<f64>,
     #[serde(default)]
     max_height: Option<f64>,
+    // A6a: geometry-affecting typography fields; defaulted so pre-A6a editor
+    // payloads deserialize unchanged. The key must mirror the layout side.
+    #[serde(default)]
+    text_transform: TextTransform,
+    #[serde(default)]
+    truncate: bool,
+    #[serde(default)]
+    paragraph_spacing: f64,
+    /// A6b review fix: the bridge carries raw spans so the editor's
+    /// SkParagraph measurement can key spanned nodes — without this the
+    /// engine-side spans digest can never match and spanned text silently
+    /// falls back to the heuristic (which does not soft-wrap spans).
+    #[serde(default)]
+    spans: Vec<lumen_core::TextSpan>,
     width: f64,
     height: f64,
 }
@@ -65,6 +100,7 @@ impl ProvidedMeasurement {
             font_family: self.font_family.clone(),
             font_size: self.font_size,
             font_weight: self.font_weight,
+            italic: self.italic,
             line_height: self.line_height,
             letter_spacing: self.letter_spacing,
             wrap: self.wrap.clone(),
@@ -72,6 +108,10 @@ impl ProvidedMeasurement {
             direction: self.direction.clone(),
             max_width: self.max_width,
             max_height: self.max_height,
+            text_transform: self.text_transform,
+            truncate: self.truncate,
+            paragraph_spacing: self.paragraph_spacing,
+            spans: self.spans.clone(),
         }
     }
 }
@@ -321,7 +361,7 @@ impl Engine {
         let result = layout_scene(&self.scene, LayoutOptions::default());
         json!({
             "geometry": result.geometry,
-            "diagnostics": result.diagnostics,
+            "diagnostics": without_heuristic_measurement_notice(result.diagnostics),
             "text_measurement": TEXT_MEASUREMENT,
         })
         .to_string()
@@ -334,7 +374,7 @@ impl Engine {
         let result = preflight_scene(self.scene.clone(), None, PreflightOptions::default());
         json!({
             "has_errors": result.has_errors(),
-            "diagnostics": result.diagnostics,
+            "diagnostics": without_heuristic_measurement_notice(result.diagnostics),
             "text_measurement": TEXT_MEASUREMENT,
         })
         .to_string()

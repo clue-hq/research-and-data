@@ -1371,6 +1371,13 @@ pub struct FontAsset {
     pub scripts: Vec<String>,
     pub license: FontLicense,
     pub provenance: Option<TokenProvenance>,
+    /// Measured font metrics extracted at ingestion (units-per-em ratios:
+    /// x-height, cap-height, average char width, vertical metrics). Producers
+    /// write it, downstream consumers (perceptual size normalization, copy-fit
+    /// estimation, evals) read it; the engine itself never interprets it —
+    /// the field exists so the block survives the typed validation round trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1409,6 +1416,17 @@ pub struct LogoAsset {
     pub allowed_backgrounds: Vec<String>,
     pub license: Option<AssetLicense>,
     pub provenance: Option<TokenProvenance>,
+    // Human/AI-authored library metadata (brandkit ingestion v1 slice 3).
+    // skip_serializing_if keeps pre-slice-3 kit serializations byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Design-usage guidance ("use on dark backgrounds…") — its own field so
+    /// downstream caps on `description` can never eat it (imagery slice 1).
+    /// Distinct from `usage: LogoUsage`, which is the slot kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1455,6 +1473,16 @@ pub struct BrandAsset {
     pub preferred_color_tokens: Vec<String>,
     pub recolor_allowed: Option<bool>,
     pub crop_allowed: Option<bool>,
+    // Human/AI-authored library metadata (brandkit ingestion v1 slice 3).
+    // skip_serializing_if keeps pre-slice-3 kit serializations byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Design-usage guidance ("use on dark backgrounds…") — its own field so
+    /// downstream caps on `description` can never eat it (imagery slice 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_note: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1679,6 +1707,31 @@ pub fn validate_scene_brand_governance(
                         suggested_fill_token(brand_kit, node)
                     )),
                 );
+            }
+        }
+        // A6b D8: a span's raw (non-token) fill is un-governed exactly like a
+        // node fill — same LUMB0804 semantics.
+        if let NodeKind::Text(text) = &node.kind {
+            for (index, span) in text.spans.iter().enumerate() {
+                if let Some(paint) = &span.fill {
+                    if paint_is_bare(paint) {
+                        diagnostics.push(
+                            brand_governance_diag(
+                                severity_is_error,
+                                "LUMB0804",
+                                format!(
+                                    "node {} span {} fill uses a raw paint outside the Brand Kit",
+                                    node.id, index
+                                ),
+                                subject.clone(),
+                            )
+                            .with_hint(format!(
+                                "Use span(fill(${})) for the accent color.",
+                                suggested_fill_token(brand_kit, node)
+                            )),
+                        );
+                    }
+                }
             }
         }
         for stroke in &node.strokes {
@@ -2264,6 +2317,18 @@ pub fn collect_scene_token_references(scene: &Scene) -> Vec<SceneTokenReference>
                     &text.font_family,
                 );
             }
+            // A6b D8: a span's token fill is a scene token reference, exactly
+            // like a node fill's.
+            for (index, span) in text.spans.iter().enumerate() {
+                if let Some(paint) = &span.fill {
+                    collect_paint_token_references(
+                        &mut references,
+                        subject.clone(),
+                        format!("span {index} fill paint"),
+                        paint,
+                    );
+                }
+            }
         }
     }
 
@@ -2756,6 +2821,7 @@ fn generated_font_assets(font_family: &str) -> BTreeMap<String, FontAsset> {
                 source: "brand_seed".to_owned(),
                 confidence: 0.7,
             }),
+            metrics: None,
         },
     )])
 }
@@ -2801,6 +2867,9 @@ fn generated_logo_assets(seed: &BrandSeed) -> BTreeMap<String, LogoAsset> {
                     source: "brand_seed".to_owned(),
                     confidence: 0.75,
                 }),
+                title: None,
+                description: None,
+                usage_note: None,
             });
     }
     logos
@@ -3264,6 +3333,24 @@ impl<'a> TokenResolver<'a> {
                 }
             }
 
+            // A6b D8: a span's bare fill is un-governed in strict mode too.
+            if let NodeKind::Text(text) = &node.kind {
+                for (index, span) in text.spans.iter().enumerate() {
+                    if let Some(paint) = &span.fill {
+                        if paint_is_bare(paint) {
+                            self.diagnostics.push(node_brand_error(
+                                "LUMB0500",
+                                format!(
+                                    "node {} span {} fill uses a bare paint in token-strict mode",
+                                    node.id, index
+                                ),
+                                &node.id,
+                            ));
+                        }
+                    }
+                }
+            }
+
             for stroke in &node.strokes {
                 if paint_is_bare(&stroke.paint) || stroke.width_token.is_none() {
                     self.diagnostics.push(node_brand_error(
@@ -3464,6 +3551,14 @@ impl<'a> TokenResolver<'a> {
         }
 
         if let NodeKind::Text(text) = &mut node.kind {
+            // A6b D8: span fills resolve like node fills — a $token/solid-token
+            // span fill becomes Solid (bindings consumed by design); an
+            // unresolved span token keeps the loud sentinel path at raster.
+            for span in &mut text.spans {
+                if let Some(paint) = &mut span.fill {
+                    self.resolve_paint(paint, subject.clone());
+                }
+            }
             if let Some(token) = text.line_height_token.clone() {
                 if let Some(line_height) =
                     self.resolve_number_ref(&token, NumberDomain::Dimension, subject.clone())
@@ -4628,9 +4723,10 @@ fn token_options_for_governance(scene: &Scene) -> TokenResolutionOptions {
 fn brand_medium_for_scene_medium_for_governance(medium: &crate::scene::Medium) -> &'static str {
     match medium {
         crate::scene::Medium::Print | crate::scene::Medium::DirectMail => "print",
-        crate::scene::Medium::Digital | crate::scene::Medium::Email | crate::scene::Medium::Ad => {
-            "digital"
-        }
+        crate::scene::Medium::Digital
+        | crate::scene::Medium::Email
+        | crate::scene::Medium::Ad
+        | crate::scene::Medium::Web => "digital",
     }
 }
 
@@ -5372,6 +5468,7 @@ fn compile_font_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
                 restrictions: Vec::new(),
             },
             provenance: None,
+            metrics: None,
         },
     );
     Ok(())
@@ -5426,6 +5523,9 @@ fn compile_logo_directive(name: &str, value: &str, kit: &mut BrandKit) -> Result
             allowed_backgrounds: vec!["surface.page".to_owned(), "surface.brand".to_owned()],
             license: None,
             provenance: None,
+            title: None,
+            description: None,
+            usage_note: None,
         },
     );
 
@@ -5576,6 +5676,9 @@ fn compile_brand_asset_directive(
             preferred_color_tokens,
             recolor_allowed,
             crop_allowed,
+            title: None,
+            description: None,
+            usage_note: None,
         },
     );
 

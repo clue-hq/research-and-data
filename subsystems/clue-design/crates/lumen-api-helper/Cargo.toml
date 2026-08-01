@@ -10,9 +10,19 @@ lumen-assets = { path = "../lumen-assets" }
 lumen-core = { path = "../lumen-core" }
 lumen-export = { path = "../lumen-export" }
 lumen-skia = { path = "../lumen-skia" }
+lumen-web = { path = "../lumen-web" }
 serde.workspace = true
 serde_json.workspace = true
 
+[build-dependencies]
+# Content-hash of the shared engine sources for the W5 handshake stamp
+# (crates/build_support/engine_stamp.rs). Already in the workspace lockfile.
+sha2 = "0.10"
+
 [dev-dependencies]
+base64 = "0.22"
+# Box-structure assertions on bulk print PDFs (already in the workspace
+# lockfile via lumen-export).
+lopdf = "0.36"
 lumen-wasm = { path = "../lumen-wasm" }
 tempfile = "3"

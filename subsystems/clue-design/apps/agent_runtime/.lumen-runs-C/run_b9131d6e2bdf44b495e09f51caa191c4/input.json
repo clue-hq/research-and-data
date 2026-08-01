@@ -1,0 +1,20 @@
+{
+  "run_id": "run_b9131d6e2bdf44b495e09f51caa191c4",
+  "prompt": "Design a 1080x1080 feature-drop announcement: real-time collaboration. Comment, resolve, and version together. Make it friendly and modern; lead with a single clear visual idea and the feature name.",
+  "seeded_from_initial_scene": false,
+  "scene_summary": {
+    "document_id": "run_b9131d6e2bdf44b495e09f51caa191c4",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": null,
+    "effective_brand": null,
+    "page_count": 0,
+    "node_count": 0,
+    "slot_count": 0,
+    "asset_count": 0,
+    "pages": [],
+    "slots": []
+  }
+}

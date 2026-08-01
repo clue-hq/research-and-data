@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import { SNAP_GUIDE_COLOR, SNAP_GUIDE_DASH, type SnapGuide } from "@/engine/canvasOperations";
 import { handlePoint, type Box, type ResizeHandle } from "@/engine/transformerMath";
 
@@ -74,8 +80,33 @@ export interface SelectionOverlayProps {
   /** Phase 4d: the active page's safe-area/bleed rects, in descriptor space
    * (null when the "Show margins" toggle is off or there is no active
    * page). Either rect may itself be null. Page guides, not selection
-   * chrome — rendered independent of `selection`. */
-  marginGuides?: { safeArea: Box | null; bleed: Box | null } | null;
+   * chrome — rendered independent of `selection`. W3 adds `trim` (the page
+   * box / cut line), emitted only when the print feature is on. */
+  marginGuides?: { safeArea: Box | null; bleed: Box | null; trim?: Box | null } | null;
+  /** Live-design-streaming S2.1: the draw-the-box chrome for the element the
+   * agent is revealing, already mapped to SCREEN px by the host (computed in
+   * workspace space so it stays correct across pages). Ephemeral; pure DOM/SVG so
+   * it never triggers a wasm repaint. Null when nothing is streaming. */
+  reveal?: {
+    /** The reveal's run-event seq — keys the chrome so each reveal restarts it.*/
+    seq: number;
+    /** The revealed node/artboard box, in screen px. */
+    flashBox: { x: number; y: number; width: number; height: number };
+    /** The element-name label chip copy ("text · headline"). */
+    label: string;
+    /** `corner` = drag the outline from the top-left (insert_node); `artboard` =
+     * a whole-artboard placeholder outline that appears (add_page). */
+    drawMode: "corner" | "artboard";
+    /** Phase timing (ms), already compression/reduced-motion adjusted. */
+    travelMs: number;
+    drawMs: number;
+    materializeFadeMs: number;
+    /** prefers-reduced-motion: render a static outline (no travel/draw). */
+    reducedMotion: boolean;
+    /** The previous reveal's bottom-right corner (screen px) the cursor glides in
+     * from, or null on the run's first reveal (the cursor just appears). */
+    cursorFrom: { x: number; y: number } | null;
+  } | null;
 }
 
 export function SelectionOverlay({
@@ -97,7 +128,8 @@ export function SelectionOverlay({
   focal = null,
   onFocalChange,
   insertionIndicator = null,
-  marginGuides = null
+  marginGuides = null,
+  reveal = null
 }: SelectionOverlayProps) {
   const toScreen = (p: { x: number; y: number }) => ({
     x: pageOrigin.x + p.x * zoom,
@@ -115,11 +147,15 @@ export function SelectionOverlay({
       style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
     >
       {marginGuides?.safeArea ? (
-        <MarginGuideRect box={marginGuides.safeArea} toScreen={toScreen} zoom={zoom} role="margin-guide-safe-area" stroke={SNAP_GUIDE_COLOR} />
+        <MarginGuideRect box={marginGuides.safeArea} toScreen={toScreen} zoom={zoom} role="margin-guide-safe-area" stroke="var(--guide-safe)" />
       ) : null}
 
       {marginGuides?.bleed ? (
-        <MarginGuideRect box={marginGuides.bleed} toScreen={toScreen} zoom={zoom} role="margin-guide-bleed" stroke="#e5484d" />
+        <MarginGuideRect box={marginGuides.bleed} toScreen={toScreen} zoom={zoom} role="margin-guide-bleed" stroke="var(--guide-bleed)" />
+      ) : null}
+
+      {marginGuides?.trim ? (
+        <MarginGuideRect box={marginGuides.trim} toScreen={toScreen} zoom={zoom} role="margin-guide-trim" stroke="var(--guide-trim)" />
       ) : null}
 
       {containerChildren.map((child, index) => {
@@ -249,7 +285,123 @@ export function SelectionOverlay({
       {insertionIndicator ? (
         <InsertionIndicatorLine indicator={insertionIndicator} toScreen={toScreen} />
       ) : null}
+
+      {reveal ? <RevealChrome key={reveal.seq} reveal={reveal} /> : null}
     </svg>
+  );
+}
+
+/**
+ * Live-design-streaming S2.1 draw-the-box choreography. Per element the accent
+ * outline is DRAGGED out from the element's top-left corner to its full bbox, a
+ * design-cursor arrow riding the moving bottom-right corner, a label chip naming
+ * the element at the top-left. Only when the box completes does the host
+ * materialize the content (the pump's held setScene); the outline then fades.
+ *
+ * The component is keyed on the reveal seq at the call site, so each reveal
+ * remounts and restarts the machine. The phase machine (`travel → draw →
+ * materialize`) toggles the `is-drawn` / `is-fading` classes and moves the
+ * cursor; agentStreaming.css owns every visual declaration and consumes the
+ * per-element duration vars set here. Geometry is already SCREEN px (mapped by
+ * the host), so it renders directly with no toScreen.
+ */
+function RevealChrome({
+  reveal
+}: {
+  reveal: NonNullable<SelectionOverlayProps["reveal"]>;
+}) {
+  const { flashBox, label, drawMode, travelMs, drawMs, materializeFadeMs, reducedMotion, cursorFrom } =
+    reveal;
+  const topLeft = { x: flashBox.x, y: flashBox.y };
+  const bottomRight = { x: flashBox.x + flashBox.width, y: flashBox.y + flashBox.height };
+  const enterFrom = cursorFrom ?? topLeft;
+
+  // Phase machine. Reduced motion skips straight to the settled state (a static
+  // outline, cursor parked at the drag corner). Under motion: `travel` (cursor
+  // glides to the top-left, box collapsed) → `draw` (box drags out to full,
+  // cursor rides the bottom-right) → `materialize` (content lands, outline
+  // fades). `glided` flips one frame after mount so the cursor's first move (the
+  // glide in from the previous corner) actually transitions.
+  const [stage, setStage] = useState<"travel" | "draw" | "materialize">(
+    reducedMotion ? "materialize" : "travel"
+  );
+  const [glided, setGlided] = useState(reducedMotion);
+  useEffect(() => {
+    if (reducedMotion) {
+      return;
+    }
+    const enter = window.setTimeout(() => setGlided(true), 0);
+    const toDraw = window.setTimeout(() => setStage("draw"), travelMs);
+    const toMaterialize = window.setTimeout(() => setStage("materialize"), travelMs + drawMs);
+    return () => {
+      window.clearTimeout(enter);
+      window.clearTimeout(toDraw);
+      window.clearTimeout(toMaterialize);
+    };
+  }, [reducedMotion, travelMs, drawMs]);
+
+  const drawn = stage !== "travel";
+  // Reduced motion keeps the outline as a static, visible marker (never fades to
+  // nothing) — it disappears only when the next reveal remounts the chrome.
+  const fading = stage === "materialize" && !reducedMotion;
+  // Cursor: enters at the previous element's corner, glides to this element's
+  // top-left, then rides the bottom-right drag corner as the box draws.
+  const cursorPoint = drawn ? bottomRight : glided ? topLeft : enterFrom;
+  const cursorMs = stage === "travel" ? travelMs : drawMs;
+
+  const boxClass = [
+    "agent-reveal-box",
+    drawMode === "artboard" ? "is-artboard" : "is-corner",
+    drawn ? "is-drawn" : "",
+    fading ? "is-fading" : "",
+    reducedMotion ? "is-static" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const groupStyle = {
+    pointerEvents: "none",
+    "--reveal-draw-ms": `${drawMs}ms`,
+    "--reveal-fade-ms": `${materializeFadeMs}ms`
+  } as CSSProperties;
+
+  const labelWidth = Math.max(44, Math.min(220, label.length * 6.4 + 16));
+
+  return (
+    <g data-role="agent-reveal" data-draw-mode={drawMode} data-stage={stage} style={groupStyle}>
+      <rect
+        data-role="agent-reveal-box"
+        className={boxClass}
+        x={flashBox.x}
+        y={flashBox.y}
+        width={flashBox.width}
+        height={flashBox.height}
+        rx={4}
+      />
+
+      <g data-role="agent-reveal-label" transform={`translate(${topLeft.x}, ${topLeft.y})`}>
+        <rect className="agent-reveal-label-bg" x={0} y={-20} width={labelWidth} height={16} rx={4} />
+        <text className="agent-reveal-label-text" x={7} y={-8}>
+          {label}
+        </text>
+      </g>
+
+      {drawMode === "corner" ? (
+        <g
+          data-role="agent-reveal-cursor"
+          className={reducedMotion ? "agent-reveal-cursor is-static" : "agent-reveal-cursor"}
+          style={
+            {
+              "--reveal-cursor-x": `${cursorPoint.x}px`,
+              "--reveal-cursor-y": `${cursorPoint.y}px`,
+              "--reveal-cursor-ms": `${cursorMs}ms`
+            } as CSSProperties
+          }
+        >
+          <polygon className="agent-reveal-cursor-glyph" points="0,0 0,15 4,11 7,18 10,17 7,10 12,10" />
+        </g>
+      ) : null}
+    </g>
   );
 }
 

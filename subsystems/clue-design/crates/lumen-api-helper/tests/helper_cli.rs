@@ -393,6 +393,75 @@ fn exports_svg_preview_through_core_bridge() {
     );
 }
 
+// Print W2: interactive PDF export renders VECTOR by default through the
+// Skia PDF backend — live text, embedded subset fonts (LUME0427), print
+// boxes written — instead of the early Helvetica-only vector writer
+// (whose LUME0401 warning must be gone).
+#[test]
+fn exports_vector_pdf_preview_through_core_bridge() {
+    let response = helper(json!({
+        "action": "export_preview",
+        "scene": minimal_scene(),
+        "format": "pdf",
+        "page_ids": ["page_a4"]
+    }));
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifact = &response["export"]["artifacts"][0];
+    assert_eq!(artifact["format"], "pdf");
+    assert_eq!(artifact["mime_type"], "application/pdf");
+    let bytes: Vec<u8> = artifact["bytes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_u64().unwrap() as u8)
+        .collect();
+    assert!(bytes.starts_with(b"%PDF"), "not a PDF header");
+    let raw = String::from_utf8_lossy(&bytes);
+    assert!(raw.contains("FontFile2"), "vector PDF must embed fonts");
+    assert!(raw.contains("/TrimBox"), "print boxes must be written");
+
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|diagnostic| diagnostic["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUME0427"), "missing vector advice: {codes:?}");
+    assert!(
+        !codes.contains(&"LUME0401") && !codes.contains(&"LUME0402"),
+        "stub-only fidelity warnings leaked into the seam path: {codes:?}"
+    );
+}
+
+// D5 baseline: LUMEN_PDF_RENDERER=flattened selects the W0 raster-flattened
+// renderer (LUME0426) for comparison runs.
+#[test]
+fn flattened_pdf_baseline_selectable_via_env() {
+    let output = helper_output(
+        json!({
+            "action": "export_preview",
+            "scene": minimal_scene(),
+            "format": "pdf",
+            "page_ids": ["page_a4"]
+        }),
+        &[("LUMEN_PDF_RENDERER", "flattened")],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let response: Value =
+        serde_json::from_slice(&output.stdout).expect("helper response should be JSON");
+
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let codes: Vec<&str> = response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|diagnostic| diagnostic["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"LUME0426"), "missing flatten advice: {codes:?}");
+    assert!(!codes.contains(&"LUME0427"), "vector advice on flattened path: {codes:?}");
+}
+
 #[test]
 fn rejects_invalid_operation_batch_without_scene() {
     let response = helper(json!({
@@ -1184,21 +1253,37 @@ fn derive_instance_bulk_export_stores_artifacts_per_the_b3_verdict() {
         );
     }
 
-    // PDF follows the B3 verdict: raster-flattened pages at 300dpi, DL
-    // mailer 210x105mm => 595.3x297.6pt => 2480x1240px.
+    // Bulk PDF = the SAME vector print-intent deliverable interactive
+    // downloads produce (adapter pipeline: live text, embedded fonts, X-4,
+    // print-ready report). The W0-era "B3" raster-flattened default is
+    // superseded; flattened remains only as the LUMEN_PDF_RENDERER
+    // comparison baseline.
     let pdf = artifacts
         .iter()
         .find(|artifact| artifact["format"] == "pdf")
         .expect("pdf artifact");
-    assert_eq!(pdf["flattened_raster_dpi"], 300);
-    let page = &pdf["pages"][0];
-    assert_eq!(page["width_px"], 2480, "{page:#?}");
-    assert_eq!(page["height_px"], 1240, "{page:#?}");
+    assert_eq!(pdf["profile_name"], "instance_pdf", "{pdf:#?}");
+    assert!(pdf["page_id"].is_null(), "one document artifact: {pdf:#?}");
+    let report = &pdf["print_ready"];
+    assert!(
+        report["rules"].is_array(),
+        "print-intent bulk PDF carries the print-ready report: {pdf:#?}"
+    );
+    assert_ne!(report["status"], "fail", "{report:#?}");
     let pdf_path = store_dir
         .path()
         .join(pdf["relative_path"].as_str().unwrap());
     let pdf_bytes = std::fs::read(&pdf_path).expect("pdf bytes");
     assert!(pdf_bytes.starts_with(b"%PDF-"), "stored bytes are a PDF");
+    // Vector path with live text: subset fonts are embedded (FontFile2)
+    // and the print finalize declared a TrimBox — neither existed in the
+    // raster-flattened output.
+    let haystack = String::from_utf8_lossy(&pdf_bytes);
+    assert!(
+        haystack.contains("FontFile2"),
+        "embedded subset fonts expected in the vector bulk PDF"
+    );
+    assert!(haystack.contains("/TrimBox"), "print finalize expected");
 
     // Determinism: re-deriving and re-exporting produces identical digests
     // for every artifact (the store reports dedup hits).
@@ -1213,6 +1298,183 @@ fn derive_instance_bulk_export_stores_artifacts_per_the_b3_verdict() {
         );
         assert_eq!(b["deduplicated"], true, "{b:#?}");
     }
+}
+
+/// Read a PDF box from the first page (values in pt).
+fn pdf_page_box(bytes: &[u8], key: &str) -> (f64, f64, f64, f64) {
+    let document = lopdf::Document::load_mem(bytes).expect("artifact parses as PDF");
+    let (_, page_id) = document.get_pages().into_iter().next().expect("a page");
+    let page = document.get_dictionary(page_id).expect("page dict");
+    let values: Vec<f64> = page
+        .get(key.as_bytes())
+        .unwrap_or_else(|_| panic!("page carries {key}"))
+        .as_array()
+        .expect("box array")
+        .iter()
+        .map(|value| value.as_float().expect("box number") as f64)
+        .collect();
+    (values[0], values[1], values[2], values[3])
+}
+
+#[test]
+fn derive_instance_print_profile_drives_the_full_print_pipeline() {
+    // The whole point of the bulk print slice: a saved/inline print profile
+    // (bleed + marks) produces the SAME press-ready deliverable through the
+    // same adapter pipeline as an interactive download — grown MediaBox for
+    // the mark margin, BleedBox inside it, TrimBox at the finished size.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    // export_formats requests a pdf too: the custom profile must OWN the
+    // pdf artifact (exactly one, not a default duplicate).
+    request["export_formats"] = json!(["pdf"]);
+    request["export_profile"] = json!({
+        "name": "print_run",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": null,
+        "include_bleed": true,
+        "include_marks": true,
+        "embed_fonts": true
+    });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifacts = response["instance"]["artifacts"].as_array().unwrap();
+    let pdfs: Vec<&Value> = artifacts
+        .iter()
+        .filter(|artifact| artifact["format"] == "pdf")
+        .collect();
+    assert_eq!(pdfs.len(), 1, "custom profile owns the pdf: {artifacts:#?}");
+    let pdf = pdfs[0];
+    assert_eq!(pdf["profile_name"], "print_run", "{pdf:#?}");
+    assert!(pdf.get("error").is_none(), "{pdf:#?}");
+    assert_ne!(pdf["print_ready"]["status"], "fail", "{pdf:#?}");
+
+    let bytes = std::fs::read(
+        store_dir
+            .path()
+            .join(pdf["relative_path"].as_str().unwrap()),
+    )
+    .expect("pdf bytes");
+
+    // DL mailer: trim 210x105mm = 595.28x297.64pt, bleed 3mm, marks
+    // margin 14pt. MediaBox = bleed + 2*14pt; boxes strictly nested.
+    let media = pdf_page_box(&bytes, "MediaBox");
+    let bleed = pdf_page_box(&bytes, "BleedBox");
+    let trim = pdf_page_box(&bytes, "TrimBox");
+    let width = |b: (f64, f64, f64, f64)| b.2 - b.0;
+    let height = |b: (f64, f64, f64, f64)| b.3 - b.1;
+    assert!((width(trim) - 595.28).abs() < 0.1, "trim width {trim:?}");
+    assert!((height(trim) - 297.64).abs() < 0.1, "trim height {trim:?}");
+    let mm3 = 3.0 * 72.0 / 25.4;
+    assert!(
+        (width(bleed) - (width(trim) + 2.0 * mm3)).abs() < 0.1,
+        "bleed box = trim + 3mm each side: {bleed:?}"
+    );
+    assert!(
+        (width(media) - (width(bleed) + 28.0)).abs() < 0.1,
+        "media box = bleed + 14pt mark margin each side: {media:?}"
+    );
+    assert!(
+        (height(media) - (height(bleed) + 28.0)).abs() < 0.1,
+        "media box = bleed + 14pt mark margin each side: {media:?}"
+    );
+}
+
+#[test]
+fn derive_instance_print_profile_gate_blocks_unready_templates() {
+    // include_bleed requested against a bleed-less template: bleed_present
+    // FAILs and the bulk gate must block the artifact — one bad template
+    // fails loudly instead of printing a 400-copy run with no cutting
+    // tolerance.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["scene"]["pages"]["page_mailer"]["bleed"] = Value::Null;
+    request["export_profile"] = json!({
+        "name": "print_run",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": null,
+        "include_bleed": true,
+        "include_marks": true,
+        "embed_fonts": true
+    });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifacts = response["instance"]["artifacts"].as_array().unwrap();
+    let pdf = artifacts
+        .iter()
+        .find(|artifact| artifact["format"] == "pdf")
+        .expect("pdf row");
+    assert_eq!(pdf["error"]["code"], "export.print_not_ready", "{pdf:#?}");
+    assert_eq!(pdf["print_ready"]["status"], "fail", "{pdf:#?}");
+    assert!(
+        pdf.get("relative_path").is_none(),
+        "gated artifacts must not be stored: {pdf:#?}"
+    );
+}
+
+#[test]
+fn derive_instance_png_profile_controls_resolution() {
+    // "Various PNG export resolutions" for bulk: a custom png profile's
+    // raster scale/dpi drives the artifact pixels. DL mailer at 150dpi
+    // scale 2 => 210mm = 8.2677in * 150 * 2 = 2480px wide, 1240px tall.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["export_profile"] = json!({
+        "name": "instance_png_2x",
+        "format": "png",
+        "pdf_intent": null,
+        "raster": { "scale": 2.0, "dpi": 150 },
+        "include_bleed": false,
+        "embed_fonts": false
+    });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], true, "{response:#?}");
+    let artifacts = response["instance"]["artifacts"].as_array().unwrap();
+    let png = artifacts
+        .iter()
+        .find(|artifact| artifact["format"] == "png")
+        .expect("png row");
+    assert_eq!(png["profile_name"], "instance_png_2x");
+    let bytes = std::fs::read(
+        store_dir
+            .path()
+            .join(png["relative_path"].as_str().unwrap()),
+    )
+    .expect("png bytes");
+    // IHDR: width/height as big-endian u32 at offsets 16/20.
+    let dimension = |offset: usize| {
+        u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ])
+    };
+    assert_eq!(dimension(16), 2480, "png width");
+    assert_eq!(dimension(20), 1240, "png height");
+}
+
+#[test]
+fn derive_instance_rejects_malformed_export_profiles() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+
+    let mut request = derive_request(&store_root);
+    request["export_profile"] = json!({ "format": "pdf", "name": 7 });
+
+    let response = helper(request);
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "profile.invalid", "{response:#?}");
 }
 
 #[test]
@@ -1238,4 +1500,310 @@ fn derive_instance_export_skips_failed_instances() {
         0,
         "failed instances never produce artifacts"
     );
+}
+
+// --- Font library (Track B) -------------------------------------------------
+//
+// The library rides the same {store_root, faces:[{digest, family}]} spec as
+// brand fonts but loads LAZILY: a face's bytes are read only when its declared
+// family appears in the request's scene/kit JSON. These tests pin both halves
+// of that contract end-to-end through the binary: a referenced family shapes
+// without the LUMS0100 fallback, and an unreferenced face is never touched
+// (observable because a bogus digest only raises LUMS0101 once referenced).
+
+const LIBRARY_FONT_BYTES: &[u8] = include_bytes!("../../../fonts/Inter-SemiBold.ttf");
+const BOGUS_DIGEST: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+fn ingest_library_font(store_root: &str) -> String {
+    use base64::Engine as _;
+    let response = helper(json!({
+        "action": "ingest_asset",
+        "store_root": store_root,
+        "bytes_base64": base64::engine::general_purpose::STANDARD.encode(LIBRARY_FONT_BYTES),
+        "asset_id": "asset_font_lib_test_w600",
+        "label": "Test Grotesk SemiBold (font library)"
+    }));
+    assert_eq!(response["ok"], true, "{response:#?}");
+    response["asset"]["digest_value"]
+        .as_str()
+        .expect("ingest returns the digest")
+        .to_owned()
+}
+
+fn scene_with_family(family: &str) -> Value {
+    let mut scene = minimal_scene();
+    scene["nodes"]["node_contact_name"]["kind"]["font_family"] = json!(family);
+    scene
+}
+
+fn diagnostic_codes(response: &Value) -> Vec<String> {
+    response["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|diagnostic| diagnostic["code"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+#[test]
+fn preflight_loads_scene_referenced_library_faces_cleanly() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+
+    // NOTE: preflight cannot prove family RESOLUTION — the measurer seam
+    // drops FamilyResolution::diagnostic() today (the loud-text-measurer
+    // slice owns that). This pins what preflight can show: the referenced
+    // face's bytes load without LUMS0101. Resolution is proven by the PNG
+    // export test below, whose rasterizer does surface LUMS0100.
+    let with_library = helper(json!({
+        "action": "preflight_scene",
+        "scene": scene_with_family("Test Grotesk"),
+        "brand_kit": Value::Null,
+        "library_fonts": {
+            "store_root": store_root,
+            "faces": [{ "digest": digest, "family": "Test Grotesk" }]
+        }
+    }));
+    assert_eq!(with_library["ok"], true);
+    assert!(
+        !diagnostic_codes(&with_library).contains(&"LUMS0101".to_owned()),
+        "library face bytes must load cleanly at preflight: {with_library:#?}"
+    );
+}
+
+#[test]
+fn library_faces_load_only_when_the_scene_references_their_family() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+    let library_fonts = json!({
+        "store_root": store_root,
+        "faces": [
+            { "digest": digest, "family": "Test Grotesk" },
+            { "digest": BOGUS_DIGEST, "family": "Unused Family" }
+        ]
+    });
+
+    // The bogus face's family is not referenced: its digest must never be
+    // read, so no LUMS0101 — the lazy filter is what this pins.
+    let unreferenced = helper(json!({
+        "action": "preflight_scene",
+        "scene": scene_with_family("Test Grotesk"),
+        "brand_kit": Value::Null,
+        "library_fonts": library_fonts
+    }));
+    assert_eq!(unreferenced["ok"], true);
+    assert!(
+        !diagnostic_codes(&unreferenced).contains(&"LUMS0101".to_owned()),
+        "unreferenced library face must not be loaded: {unreferenced:#?}"
+    );
+
+    // Once the scene references the family, the missing bytes surface loudly.
+    let referenced = helper(json!({
+        "action": "preflight_scene",
+        "scene": scene_with_family("Unused Family"),
+        "brand_kit": Value::Null,
+        "library_fonts": library_fonts
+    }));
+    assert_eq!(referenced["ok"], true);
+    assert!(
+        diagnostic_codes(&referenced).contains(&"LUMS0101".to_owned()),
+        "referenced-but-unreadable library face must warn: {referenced:#?}"
+    );
+}
+
+#[test]
+fn png_export_rasterizes_library_family_without_silent_fallback() {
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+
+    // Control: without the library the family is unknown and the rasterizer
+    // reports the LUMS0100 fallback. The declared family deliberately
+    // differs from the bytes' intrinsic name ("Inter") — the K3 alias
+    // contract must hold for library faces too.
+    let without_library = helper(json!({
+        "action": "export_preview",
+        "scene": scene_with_family("Test Grotesk"),
+        "format": "png",
+        "page_ids": ["page_a4"]
+    }));
+    assert_eq!(without_library["ok"], true, "{without_library:#?}");
+    assert!(
+        diagnostic_codes(&without_library).contains(&"LUMS0100".to_owned()),
+        "unknown family must fall back loudly in raster export: {without_library:#?}"
+    );
+
+    let with_library = helper(json!({
+        "action": "export_preview",
+        "scene": scene_with_family("Test Grotesk"),
+        "format": "png",
+        "page_ids": ["page_a4"],
+        "library_fonts": {
+            "store_root": store_root,
+            "faces": [{ "digest": digest, "family": "Test Grotesk" }]
+        }
+    }));
+    assert_eq!(with_library["ok"], true, "{with_library:#?}");
+    let codes = diagnostic_codes(&with_library);
+    assert!(
+        !codes.contains(&"LUMS0100".to_owned()) && !codes.contains(&"LUMS0101".to_owned()),
+        "library family must rasterize without fallback: {with_library:#?}"
+    );
+}
+
+#[test]
+fn derive_instance_shapes_and_renders_with_request_fonts() {
+    // The bulk/instance path was the one shaping action with NO font
+    // fields: every personalized artifact silently rendered in bundled
+    // Inter regardless of the template's typography. This pins the seam
+    // end-to-end: derive + PNG artifact render must consume the request's
+    // font spec exactly like preflight/export_preview do.
+    let store_dir = tempfile::tempdir().expect("tempdir");
+    let store_root = store_dir.path().to_string_lossy().to_string();
+    let digest = ingest_library_font(&store_root);
+
+    let mut scene = mailer_revision();
+    scene["nodes"]["node_headline"]["kind"]["font_family"] = json!("Test Grotesk");
+
+    // Control: without a font spec the artifact render falls back loudly.
+    let mut request = derive_request(&store_root);
+    request["scene"] = scene.clone();
+    request["export_formats"] = json!(["png"]);
+    let without_fonts = helper(request.clone());
+    assert_eq!(without_fonts["ok"], true, "{without_fonts:#?}");
+    assert!(
+        diagnostic_codes(&without_fonts).contains(&"LUMS0100".to_owned()),
+        "unknown family must fall back loudly in the instance artifact render: {without_fonts:#?}"
+    );
+
+    // With the library spec the same derivation renders the real face.
+    request["library_fonts"] = json!({
+        "store_root": store_root,
+        "faces": [{ "digest": digest, "family": "Test Grotesk" }]
+    });
+    let with_fonts = helper(request);
+    assert_eq!(with_fonts["ok"], true, "{with_fonts:#?}");
+    let codes = diagnostic_codes(&with_fonts);
+    assert!(
+        !codes.contains(&"LUMS0100".to_owned()) && !codes.contains(&"LUMS0101".to_owned()),
+        "instance artifacts must shape and render with the request fonts: {with_fonts:#?}"
+    );
+    assert!(
+        with_fonts["instance"]["artifacts"]
+            .as_array()
+            .is_some_and(|artifacts| !artifacts.is_empty()),
+        "the run must actually produce artifacts: {with_fonts:#?}"
+    );
+}
+
+// --- Web derivation (Phase 5 personalization) -------------------------------
+
+/// Build a real web document (through the ingest action) carrying inline
+/// `data-var`, node `data-slot`, and a `data-slot-when` presence gate.
+fn web_template_with_markers() -> Value {
+    let base = helper(json!({
+        "action": "web_new_doc",
+        "document_id": "tmpl_1",
+        "title": "Template",
+    }));
+    assert_eq!(base["ok"], true, "{base:#?}");
+    let ingested = helper(json!({
+        "action": "web_ingest_html",
+        "doc": base["web_doc"].clone(),
+        "page_id": "home",
+        "html": r#"<section id="hero" data-slot-when="account.name">
+                     <h1 id="head">Meet <span data-var="account.name">Acme Health</span></h1>
+                     <p id="tag" data-slot="account.tagline">A better way to work</p>
+                   </section>"#,
+    }));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+    ingested["web_doc"].clone()
+}
+
+#[test]
+fn web_derive_substitutes_reports_coverage_and_is_deterministic() {
+    let doc = web_template_with_markers();
+    let request = json!({
+        "action": "web_derive",
+        "doc": doc,
+        "values": {
+            "account.name": { "kind": "text", "value": "Privia Health" },
+            "account.tagline": { "kind": "text", "value": "AI scribing that clinicians trust" },
+            "account.unused": { "kind": "text", "value": "referenced nowhere" }
+        },
+        "new_doc_id": "derived_privia",
+        "new_title": "Privia Health"
+    });
+
+    let first = helper(request.clone());
+    assert_eq!(first["ok"], true, "{first:#?}");
+    assert_eq!(first["web_doc"]["id"], "derived_privia");
+    assert_eq!(first["web_doc"]["title"], "Privia Health");
+
+    // The account name (inline var) and tagline (node slot) are substituted;
+    // the template fallbacks are gone.
+    let serialized = first["web_doc"].to_string();
+    assert!(serialized.contains("Privia Health"), "{serialized}");
+    assert!(serialized.contains("AI scribing that clinicians trust"), "{serialized}");
+    assert!(!serialized.contains("Acme Health"), "fallback should be gone: {serialized}");
+
+    // Coverage names applied keys and flags the unused value.
+    let bound: Vec<&str> = first["coverage"]["bound"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
+    assert!(bound.contains(&"account.name"), "{bound:?}");
+    assert!(bound.contains(&"account.tagline"), "{bound:?}");
+    let unused: Vec<&str> = first["coverage"]["unused_values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
+    assert!(unused.contains(&"account.unused"), "{unused:?}");
+
+    // Determinism: identical inputs → byte-identical derived doc.
+    let second = helper(request);
+    assert_eq!(first["web_doc"], second["web_doc"], "derive must be deterministic");
+}
+
+#[test]
+fn web_derive_rejects_atomically_on_missing_asset() {
+    // Seed a logo asset, then ingest an image carrying a data-slot marker.
+    let base = helper(json!({
+        "action": "web_new_doc",
+        "document_id": "tmpl_logo",
+        "title": "Template",
+    }));
+    let mut doc = base["web_doc"].clone();
+    doc["assets"]["asset_acme_logo"] = binding_logo_record();
+    let ingested = helper(json!({
+        "action": "web_ingest_html",
+        "doc": doc,
+        "page_id": "home",
+        "html": r#"<section id="s"><img id="logo" data-slot="account.logo" data-asset="asset_acme_logo" alt="logo"></section>"#,
+    }));
+    assert_eq!(ingested["ok"], true, "{ingested:#?}");
+
+    // Bind account.logo to an asset whose record is NOT supplied → LUMW0605.
+    let response = helper(json!({
+        "action": "web_derive",
+        "doc": ingested["web_doc"].clone(),
+        "values": {
+            "account.logo": { "kind": "asset", "asset_id": "ghost_asset" }
+        },
+        "assets": [],
+        "new_doc_id": "derived_x"
+    }));
+    assert_eq!(response["ok"], false, "{response:#?}");
+    assert_eq!(response["error"]["code"], "web_derive.rejected");
+    // The rejected derive returns no doc but still reports coverage.
+    assert!(response["web_doc"].is_null(), "{response:#?}");
+    assert!(response["coverage"].is_object(), "{response:#?}");
+    let codes: Vec<String> = diagnostic_codes(&response);
+    assert!(codes.contains(&"LUMW0605".to_owned()), "{codes:?}");
 }

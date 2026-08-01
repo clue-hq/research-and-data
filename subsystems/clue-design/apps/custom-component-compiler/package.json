@@ -1,0 +1,31 @@
+{
+  "name": "@lumen/custom-component-compiler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build:runtime-host": "node scripts/build-runtime-host.mjs",
+    "check:runtime-host": "node scripts/build-runtime-host.mjs --check",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@gsap/react": "2.1.2",
+    "@types/react": "18.3.23",
+    "@types/react-dom": "18.3.7",
+    "@visx/curve": "3.12.0",
+    "@visx/group": "3.12.0",
+    "@visx/scale": "3.12.0",
+    "@visx/shape": "3.12.0",
+    "esbuild": "0.25.8",
+    "gsap": "3.13.0",
+    "motion": "12.23.12",
+    "postcss": "8.5.25",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.8.3"
+  }
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Images } from "lucide-react";
+import { Images, Upload } from "lucide-react";
 
 import type { AssetPlacement, AssetRecord, NodeId, Operation } from "../engine/contracts";
 import {
@@ -18,6 +18,7 @@ export function AssetBrowserPanel({
   apiBaseUrl,
   selectedNodeId,
   selectedNodePlacement = null,
+  refreshToken,
   onOperations
 }: {
   apiBaseUrl: string;
@@ -25,6 +26,9 @@ export function AssetBrowserPanel({
   /** Existing placement on the selected node — carried forward on Replace so fit /
    * focal / slot binding survive swapping the image, instead of resetting to {}. */
   selectedNodePlacement?: AssetPlacement | null;
+  /** Data-refresh signal: bumping the token refetches the library (a kept
+   * image edit registered a new asset). */
+  refreshToken?: number;
   onOperations: (operations: Operation[]) => void;
 }) {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -52,7 +56,7 @@ export function AssetBrowserPanel({
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshToken]);
 
   const handleUpload = useCallback(
     async (file: File) => {
@@ -119,19 +123,23 @@ export function AssetBrowserPanel({
           <option value="vector">Vectors</option>
           <option value="logo">Logos</option>
         </select>
-        <input
-          ref={fileInputRef}
-          type="file"
-          aria-label="Upload asset"
-          accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
-          disabled={busy}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              void handleUpload(file);
-            }
-          }}
-        />
+        <label className="asset-upload-control">
+          <Upload aria-hidden size={14} />
+          {busy ? "Uploading…" : "Upload image"}
+          <input
+            ref={fileInputRef}
+            type="file"
+            aria-label="Upload asset"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleUpload(file);
+              }
+            }}
+          />
+        </label>
       </div>
       {error ? <p className="muted asset-browser-error">{error}</p> : null}
       {notice ? <p className="muted asset-browser-notice">{notice}</p> : null}

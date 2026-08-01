@@ -1,0 +1,114 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 1,
+    "operation_count": 1,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "update_node",
+      "node_id": "accent_rule",
+      "patch": {
+        "asset_placement": {
+          "kind": "unchanged"
+        },
+        "clip": {
+          "kind": "unchanged"
+        },
+        "computed": {
+          "kind": "clear"
+        },
+        "corner": {
+          "kind": "unchanged"
+        },
+        "fills": {
+          "kind": "set",
+          "value": [
+            {
+              "id": "paint_accent_rule_fill_1",
+              "paint": {
+                "kind": "token",
+                "token": "accent.primary"
+              }
+            }
+          ]
+        },
+        "kind": {
+          "kind": "unchanged"
+        },
+        "layout": {
+          "kind": "unchanged"
+        },
+        "locked": {
+          "kind": "unchanged"
+        },
+        "name": {
+          "kind": "unchanged"
+        },
+        "opacity": {
+          "kind": "unchanged"
+        },
+        "opacity_token": {
+          "kind": "unchanged"
+        },
+        "size": {
+          "kind": "unchanged"
+        },
+        "source_asset_id": {
+          "kind": "unchanged"
+        },
+        "strokes": {
+          "kind": "unchanged"
+        },
+        "transform": {
+          "kind": "unchanged"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "author.name": "slot_author_name_f9a0feeadcb7d80b",
+      "author.role": "slot_author_role_010479915523a918",
+      "quote.text": "slot_quote_text_1d2493413643852c"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "quote_card",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "main",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 3,
+    "seen_node_ids": [
+      "accent_rule",
+      "artboard",
+      "author_name",
+      "author_role",
+      "main",
+      "quote",
+      "quote_mark"
+    ]
+  },
+  "checkpoint_label": null
+}

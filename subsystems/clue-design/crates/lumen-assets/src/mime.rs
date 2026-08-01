@@ -12,6 +12,10 @@ pub const MIME_GIF: &str = "image/gif";
 pub const MIME_WEBP: &str = "image/webp";
 pub const MIME_SVG: &str = "image/svg+xml";
 pub const MIME_PDF: &str = "application/pdf";
+pub const MIME_TTF: &str = "font/ttf";
+pub const MIME_OTF: &str = "font/otf";
+pub const MIME_WOFF: &str = "font/woff";
+pub const MIME_WOFF2: &str = "font/woff2";
 
 /// Sniff a MIME type from leading magic bytes. Returns `None` for content
 /// that matches no supported signature.
@@ -30,6 +34,21 @@ pub fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
     }
     if bytes.starts_with(b"%PDF-") {
         return Some(MIME_PDF);
+    }
+    // Fonts previously sniffed as nothing and ingested as `Other` with a
+    // spurious LUMA0602 on every kit webfont; the library track made honest
+    // font records load-bearing.
+    if bytes.starts_with(&[0x00, 0x01, 0x00, 0x00]) || bytes.starts_with(b"true") {
+        return Some(MIME_TTF);
+    }
+    if bytes.starts_with(b"OTTO") {
+        return Some(MIME_OTF);
+    }
+    if bytes.starts_with(b"wOFF") {
+        return Some(MIME_WOFF);
+    }
+    if bytes.starts_with(b"wOF2") {
+        return Some(MIME_WOFF2);
     }
     if looks_like_svg(bytes) {
         return Some(MIME_SVG);
@@ -91,6 +110,16 @@ pub fn mime_compatible(declared: &str, sniffed: &str) -> bool {
             "image/svg" | "text/xml" | "application/xml"
         ),
         MIME_JPEG => declared == "image/jpg",
+        MIME_TTF => matches!(
+            declared.as_str(),
+            "application/x-font-ttf" | "application/font-sfnt" | "font/sfnt"
+        ),
+        MIME_OTF => matches!(
+            declared.as_str(),
+            "application/x-font-otf" | "application/font-sfnt" | "font/sfnt"
+        ),
+        MIME_WOFF => declared == "application/font-woff",
+        MIME_WOFF2 => declared == "application/font-woff2",
         _ => false,
     }
 }
@@ -111,6 +140,7 @@ pub fn default_kind_for_mime(mime: &str) -> AssetKind {
         MIME_PNG | MIME_JPEG | MIME_GIF | MIME_WEBP => AssetKind::RasterImage,
         MIME_SVG => AssetKind::Vector,
         MIME_PDF => AssetKind::Document,
+        MIME_TTF | MIME_OTF | MIME_WOFF | MIME_WOFF2 => AssetKind::Font,
         _ => AssetKind::Other,
     }
 }
@@ -137,6 +167,20 @@ mod tests {
         assert_eq!(sniff_mime(b"<html><body>nope</body></html>"), None);
         assert_eq!(sniff_mime(b"<svgnot an svg>"), None);
         assert_eq!(sniff_mime(b"plain text"), None);
+    }
+
+    #[test]
+    fn sniffs_font_signatures() {
+        assert_eq!(sniff_mime(&[0x00, 0x01, 0x00, 0x00, 0x00, 0x12]), Some(MIME_TTF));
+        assert_eq!(sniff_mime(b"true\x00\x12rest"), Some(MIME_TTF));
+        assert_eq!(sniff_mime(b"OTTO\x00\x0Erest"), Some(MIME_OTF));
+        assert_eq!(sniff_mime(b"wOFFrest"), Some(MIME_WOFF));
+        assert_eq!(sniff_mime(b"wOF2rest"), Some(MIME_WOFF2));
+        assert_eq!(default_kind_for_mime(MIME_TTF), AssetKind::Font);
+        assert_eq!(default_kind_for_mime(MIME_WOFF2), AssetKind::Font);
+        assert!(mime_compatible("font/ttf", MIME_TTF));
+        assert!(mime_compatible("application/x-font-ttf", MIME_TTF));
+        assert!(!mime_compatible("font/ttf", MIME_OTF));
     }
 
     #[test]

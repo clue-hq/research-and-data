@@ -1,0 +1,16 @@
+{
+  "computed_samples": null,
+  "custom_props": null,
+  "diagnostics": [],
+  "downloads": [],
+  "fetched_at": "2026-07-05T00:00:00+00:00",
+  "final_url": "https://app.example.com/",
+  "html": "<!doctype html><html><head><title>App</title>\n<script src=\"/bundle.js\"></script></head>\n<body><div id=\"root\"></div></body></html>",
+  "meta": {
+    "title": "App"
+  },
+  "requested_url": "https://app.example.com/",
+  "schema_version": 1,
+  "stylesheets": [],
+  "tier": "static"
+}

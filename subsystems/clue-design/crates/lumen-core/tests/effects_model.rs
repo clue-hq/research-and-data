@@ -127,7 +127,9 @@ fn effect_serde_round_trips_with_optional_color_token() {
     let reparsed: Effect = serde_json::from_value(value).unwrap();
     assert_eq!(reparsed, effect);
 
-    let EffectKind::DropShadow { color_token, .. } = &mut effect.kind;
+    let EffectKind::DropShadow { color_token, .. } = &mut effect.kind else {
+        panic!("expected drop shadow");
+    };
     *color_token = Some("shadow.soft".to_owned());
     let value = serde_json::to_value(&effect).unwrap();
     assert_eq!(value["kind"]["color_token"], "shadow.soft");
@@ -154,7 +156,9 @@ fn validation_rejects_duplicate_effect_ids() {
 fn validation_rejects_non_finite_effect_values() {
     let mut scene = scene_with_card();
     let mut effect = drop_shadow("shadow_soft");
-    let EffectKind::DropShadow { blur, .. } = &mut effect.kind;
+    let EffectKind::DropShadow { blur, .. } = &mut effect.kind else {
+        panic!("expected drop shadow");
+    };
     *blur = f64::NAN;
     scene.nodes.get_mut(&NodeId::from("card")).unwrap().effects = vec![effect];
 
@@ -226,5 +230,126 @@ fn effects_apply_through_update_node_and_survive_checked_apply() {
     assert_eq!(
         scene.nodes[&NodeId::from("card")].effects,
         vec![drop_shadow("shadow_soft")]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A4: glow / layer blur / inner shadow validation
+// ---------------------------------------------------------------------------
+
+fn set_effects(scene: &mut Scene, effects: Vec<Effect>) {
+    scene.nodes.get_mut(&NodeId::from("card")).unwrap().effects = effects;
+}
+
+fn glow(id: &str, blur: f64, spread: f64) -> Effect {
+    Effect {
+        id: EffectId::from(id),
+        kind: EffectKind::Glow {
+            color: Color::Hex {
+                value: "#a855f7".to_owned(),
+            },
+            opacity: 0.8,
+            blur,
+            spread,
+            color_token: None,
+        },
+    }
+}
+
+fn layer_blur(id: &str, radius: f64) -> Effect {
+    Effect {
+        id: EffectId::from(id),
+        kind: EffectKind::LayerBlur { radius },
+    }
+}
+
+fn inner_shadow(id: &str, blur: f64, spread: f64) -> Effect {
+    Effect {
+        id: EffectId::from(id),
+        kind: EffectKind::InnerShadow {
+            color: Color::Hex {
+                value: "#101828".to_owned(),
+            },
+            opacity: 0.6,
+            x: 0.0,
+            y: 6.0,
+            blur,
+            spread,
+            color_token: None,
+        },
+    }
+}
+
+#[test]
+fn a4_effect_kinds_serde_round_trip_with_tags() {
+    for (effect, tag) in [
+        (glow("g", 20.0, 4.0), "glow"),
+        (layer_blur("lb", 8.0), "layer_blur"),
+        (inner_shadow("is", 10.0, 2.0), "inner_shadow"),
+    ] {
+        let value = serde_json::to_value(&effect).unwrap();
+        assert_eq!(value["kind"]["kind"], tag, "serde tag for {tag}");
+        let reparsed: Effect = serde_json::from_value(value).unwrap();
+        assert_eq!(reparsed, effect);
+    }
+}
+
+#[test]
+fn validation_rejects_negative_layer_blur_radius() {
+    let mut scene = scene_with_card();
+    set_effects(&mut scene, vec![layer_blur("lb", -4.0)]);
+    let diagnostics = validate_scene(&scene);
+    assert!(
+        diagnostics.iter().any(|d| d.code == "LUMV0704"),
+        "negative layer-blur radius is rejected: {diagnostics:#?}"
+    );
+}
+
+#[test]
+fn validation_rejects_negative_glow_blur_and_spread() {
+    for effect in [glow("g", -2.0, 4.0), glow("g", 2.0, -4.0)] {
+        let mut scene = scene_with_card();
+        set_effects(&mut scene, vec![effect]);
+        let diagnostics = validate_scene(&scene);
+        assert!(
+            diagnostics.iter().any(|d| d.code == "LUMV0704"),
+            "negative glow blur/spread is rejected: {diagnostics:#?}"
+        );
+    }
+}
+
+#[test]
+fn validation_rejects_non_finite_inner_shadow_and_allows_signed_offset() {
+    // Non-finite blur -> LUMV0701.
+    let mut scene = scene_with_card();
+    set_effects(&mut scene, vec![inner_shadow("is", f64::INFINITY, 2.0)]);
+    let diagnostics = validate_scene(&scene);
+    assert!(
+        diagnostics.iter().any(|d| d.code == "LUMV0701"),
+        "non-finite inner-shadow blur is rejected: {diagnostics:#?}"
+    );
+
+    // A negative y offset is legal (offsets are signed); no LUMV0704.
+    let mut ok = scene_with_card();
+    let mut effect = inner_shadow("is", 10.0, 0.0);
+    if let EffectKind::InnerShadow { y, .. } = &mut effect.kind {
+        *y = -6.0;
+    }
+    set_effects(&mut ok, vec![effect]);
+    let clean = validate_scene(&ok);
+    assert!(
+        !clean.iter().any(|d| d.code == "LUMV0704"),
+        "signed inner-shadow offset must not trip the non-negative check: {clean:#?}"
+    );
+}
+
+#[test]
+fn validation_rejects_duplicate_ids_across_effect_kinds() {
+    let mut scene = scene_with_card();
+    set_effects(&mut scene, vec![glow("fx", 20.0, 4.0), layer_blur("fx", 8.0)]);
+    let diagnostics = validate_scene(&scene);
+    assert!(
+        diagnostics.iter().any(|d| d.code == "LUMV0700"),
+        "a duplicate id across effect kinds is rejected: {diagnostics:#?}"
     );
 }

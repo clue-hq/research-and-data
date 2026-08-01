@@ -15,6 +15,8 @@ const MANIFEST: &str = include_str!("../fixtures/visual_regression/manifest.json
 const VALID_MULTI_PAGE_SLOTS: &str =
     include_str!("../fixtures/conformance/valid_multi_page_slots.json");
 const EFFECTS_CARD: &str = include_str!("../fixtures/effects/effects_card.json");
+const TYPOGRAPHY_V1: &str = include_str!("../fixtures/typography/typography_v1.json");
+const TYPOGRAPHY_SPANS: &str = include_str!("../fixtures/typography/typography_spans.json");
 const BASELINES: [(&str, &[u8]); 2] = [
     (
         "valid_multi_page_slots_agent_png_linkedin_ad",
@@ -101,6 +103,12 @@ fn scene_for_case(case: &Value) -> Scene {
         }
         Some("crates/lumen-core/fixtures/effects/effects_card.json") => {
             serde_json::from_str(EFFECTS_CARD).expect("effects scene fixture decodes")
+        }
+        Some("crates/lumen-core/fixtures/typography/typography_v1.json") => {
+            serde_json::from_str(TYPOGRAPHY_V1).expect("typography scene fixture decodes")
+        }
+        Some("crates/lumen-core/fixtures/typography/typography_spans.json") => {
+            serde_json::from_str(TYPOGRAPHY_SPANS).expect("typography spans scene fixture decodes")
         }
         other => panic!("unwired visual scene fixture: {other:?}"),
     }

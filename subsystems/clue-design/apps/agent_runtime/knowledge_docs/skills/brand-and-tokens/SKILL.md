@@ -34,6 +34,13 @@ Avoid guessed primitives in branded designs: `fill(#2463eb)`,
 `font("Inter",57,791,left)`, `g(17)`, `rd(13)`. Primitive palette stops may exist,
 but prefer role tokens unless a repair explicitly asks for a low-level token.
 
+**Kit fonts first, library second.** The kit's declared families are the brand
+voice — for any text a kit type role covers, use the role token. The curated
+font library (`knowledge/design/font-library`) is for roles the kit does NOT
+cover (e.g. a poster needs a condensed impact face and the kit only ships a
+text sans) — pick a library neighbor that matches the kit's tone, and say so
+in your notes so the reviewer can judge the call.
+
 ## When there is / isn't a Brand Kit
 
 - **Effective Brand Kit present** (uploaded, generated, or platform default): use

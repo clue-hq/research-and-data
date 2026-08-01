@@ -1,5 +1,42 @@
 import type { Color, Diagnostic, DiagnosticSubject, Dimension, Node, PageId, Paint, Scene } from "./contracts";
+import type { TextMeasurementStatus } from "./canvaskit/loadCanvasKit";
+import { resolveTokenNumber, tokenPaintResolves, tokenTextStyleResolves } from "./renderAdapter";
 import { flattenPageNodeIds } from "./sceneQueries";
+
+/**
+ * Loud, renderer-state (not scene) diagnostic: the on-canvas text-measurement
+ * path is degraded. When CanvasKit or its fonts fail to load there is no font
+ * provider, so the CanvasKit measure-then-inject pass never runs and the wasm
+ * engine silently keeps its heuristic measurer — text can misfit or vanish
+ * with no signal. Emitted whenever the live measurement status is `heuristic`;
+ * returns `null` while measurement is exact (`skia`) or not yet resolved
+ * (`pending`). Unlike the advisories below this reflects the live renderer, so
+ * the editor feeds it the status observed in `loadCanvasKit`.
+ */
+export function heuristicMeasurementDiagnostic(
+  status: TextMeasurementStatus
+): Diagnostic | null {
+  if (status !== "heuristic") {
+    return null;
+  }
+  return {
+    severity: "error",
+    phase: "validation",
+    code: "EDITOR_HEURISTIC_MEASUREMENT",
+    message:
+      "Text measurement degraded — canvas geometry is approximate (font engine unavailable). " +
+      "The CanvasKit text engine or its fonts failed to load, so on-canvas text is laid out with a " +
+      "heuristic estimate and may misfit or not appear as it will on export.",
+    subject: { kind: "document" },
+    hint: "Reload the editor; if it persists, rebuild CanvasKit/font assets (npm run build:canvaskit && npm run build:fonts) and hard-refresh. Use export preview as the fidelity baseline meanwhile."
+  };
+}
+
+/** K1.5: a number token (radius/stroke-width/opacity/size-step) that the kit
+ * map resolves is genuinely previewed — no fallback to report. */
+function numberTokenUnresolved(token: string | null | undefined): token is string {
+  return typeof token === "string" && token.length > 0 && resolveTokenNumber(token) === null;
+}
 
 export function editorRenderDiagnostics(scene: Scene, pageId: PageId | null): Diagnostic[] {
   if (!pageId || !scene.pages[pageId]) {
@@ -42,7 +79,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
   }
   for (const stroke of node.strokes) {
     collectPaintDiagnostics(stroke.paint, diagnostics, subject, `${nodeDisplay(node)} stroke`);
-    if (stroke.width_token) {
+    if (numberTokenUnresolved(stroke.width_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -53,7 +90,11 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
       );
     }
   }
-  if (node.corner.token) {
+  // A4 / D6 note: effect spread carries NO approximation diagnostic — the
+  // CanvasKit pipeline renders outer-effect spread faithfully via
+  // MakeDilate/MakeErode (gate-R upgrade; the D7 "no dilate in CanvasKit"
+  // premise was wrong) and inner-shadow spread via the erode recipe.
+  if (numberTokenUnresolved(node.corner.token)) {
     diagnostics.push(
       diagnostic(
         "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -63,7 +104,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
       )
     );
   }
-  if (node.opacity_token) {
+  if (numberTokenUnresolved(node.opacity_token)) {
     diagnostics.push(
       diagnostic(
         "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -74,7 +115,9 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
     );
   }
   if (node.kind.kind === "text") {
-    if (node.kind.style_token) {
+    // K1.5: a style token the kit map resolves is measured AND painted with
+    // the kit's values — the preview is no longer "the current text fields".
+    if (node.kind.style_token && !tokenTextStyleResolves(node.kind.style_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -84,7 +127,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
         )
       );
     }
-    if (node.kind.line_height_token) {
+    if (numberTokenUnresolved(node.kind.line_height_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -94,7 +137,7 @@ function collectNodeDiagnostics(scene: Scene, node: Node, diagnostics: Diagnosti
         )
       );
     }
-    if (node.kind.letter_spacing_token) {
+    if (numberTokenUnresolved(node.kind.letter_spacing_token)) {
       diagnostics.push(
         diagnostic(
           "EDITOR_RENDER_TOKEN_FALLBACK",
@@ -183,14 +226,20 @@ function collectPaintDiagnostics(
 ): void {
   switch (paint.kind) {
     case "token":
-      diagnostics.push(
-        diagnostic(
-          "EDITOR_RENDER_TOKEN_FALLBACK",
-          `${label} uses unresolved paint token ${paint.token}; canvas preview uses a local fallback color.`,
-          subject,
-          "Run preflight or select a Brand Kit so paint tokens resolve before approval."
-        )
-      );
+      // K0.5 honesty: this fired unconditionally for every token paint — even
+      // when the canvas painted the real kit value from the token map — so
+      // the panel reported "fallback" on a correctly-rendered document. Only
+      // an actual map miss is a fallback.
+      if (!tokenPaintResolves(paint.token)) {
+        diagnostics.push(
+          diagnostic(
+            "EDITOR_RENDER_TOKEN_FALLBACK",
+            `${label} uses unresolved paint token ${paint.token}; canvas preview uses a local fallback color.`,
+            subject,
+            "Run preflight or select a Brand Kit so paint tokens resolve before approval."
+          )
+        );
+      }
       break;
     case "solid":
       collectColorDiagnostics(paint.color, diagnostics, subject, label);
@@ -218,7 +267,7 @@ function collectColorDiagnostics(
   subject: DiagnosticSubject,
   label: string
 ): void {
-  if (color.kind === "token") {
+  if (color.kind === "token" && !tokenPaintResolves(color.token)) {
     diagnostics.push(
       diagnostic(
         "EDITOR_RENDER_TOKEN_FALLBACK",

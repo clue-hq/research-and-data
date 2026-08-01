@@ -1501,6 +1501,10 @@ fn critique_export_request(options: &AgentLoopOptions, page_ids: Vec<PageId>) ->
             },
             include_bleed: options.include_bleed,
             embed_fonts: options.embed_fonts,
+            include_marks: false,
+            imposition: None,
+            proof: false,
+            color: None,
         },
         page_ids,
         purpose: ExportPurpose::AgentCritique,
@@ -1688,6 +1692,7 @@ fn phase_name(phase: &lumen_core::Phase) -> &'static str {
         lumen_core::Phase::Dsl => "dsl",
         lumen_core::Phase::Layout => "layout",
         lumen_core::Phase::Export => "export",
+        lumen_core::Phase::Web => "web",
     }
 }
 

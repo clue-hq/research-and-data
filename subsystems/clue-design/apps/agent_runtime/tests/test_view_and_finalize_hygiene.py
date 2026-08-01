@@ -1,0 +1,329 @@
+"""Runtime-hygiene regressions for the living deepagent (sweep A1/A2/A3).
+
+Covers three failures traced in .context/deepagent-v0/archetype-baseline-sweep:
+  * A2 — a view() on an 8x8 asset thumbnail hit grok-4.5's <512px vision
+    minimum; the provider rejection killed the turn unfinalized. Fixed by
+    containment (no exception escapes view()) + normalization (upscale sub-512
+    images before they are ever attached).
+  * A3 — view("preview") served a stale black frame after the scene had been
+    re-authored without a re-render; the loop burned rounds trusting it. Fixed
+    by a staleness contract (refuse when the scene changed since the render).
+  * A3 — `brand_logo_auto` was re-injected after the author removed it, because
+    the deterministic placement re-ran every preflight. Fixed by place-once.
+  * A1 — a leftover zero-children page shipped in the final scene. Fixed by
+    finalize_run pruning empty pages with an announced note.
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import json
+from dataclasses import replace
+from pathlib import Path
+
+from PIL import Image
+
+from lumen_agent.tools.substrate import LumenDesignTools
+from lumen_agent.tools import view as view_mod
+
+from agent_fixtures import FakeCoreClient, runtime_config
+
+
+# --- helpers ----------------------------------------------------------------
+
+
+def _png_bytes(size) -> bytes:
+    if isinstance(size, int):
+        size = (size, size)
+    buffer = io.BytesIO()
+    Image.new("RGB", size, (10, 20, 30)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _tools(tmp_path, monkeypatch, kit=None):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = runtime_config(tmp_path)
+    if kit is not None:
+        config = replace(config, brand_kit=kit, brand_kit_source="document")
+    return LumenDesignTools(config, "Make a poster")
+
+
+def _logo_kit() -> dict:
+    return {
+        "id": "brand_kit_test",
+        "version": "1",
+        "name": "Test",
+        "approval_status": "approved",
+        "modes": {
+            "defaults": {
+                "theme": "light",
+                "density": "comfortable",
+                "accessibility": "standard",
+                "medium": "digital",
+            }
+        },
+        "tokens": {},
+        "assets": {
+            "logos": {
+                "primary": {
+                    "variants": [
+                        {"asset_id": "asset_logo_1", "width": 240, "height": 48}
+                    ]
+                }
+            }
+        },
+    }
+
+
+class _ApplyingCoreClient(FakeCoreClient):
+    """A FakeCoreClient whose apply_operations actually mutates the scene for the
+    ops these tests exercise (remove_page, insert_node) — the base fake only
+    stamps a flag, which is enough for most tests but not for asserting the
+    pruned/placed scene structure."""
+
+    def apply_operations(self, scene, operations, scope=None):
+        self.applied_operations.extend(operations)
+        updated = json.loads(json.dumps(scene))
+        pages = updated.setdefault("pages", {})
+        nodes = updated.setdefault("nodes", {})
+        for op in operations:
+            kind = op.get("kind")
+            if kind == "remove_page":
+                pages.pop(op.get("page_id"), None)
+            elif kind == "insert_node":
+                node = op.get("node") or {}
+                node_id = node.get("id")
+                if node_id:
+                    nodes[node_id] = node
+                    parent = op.get("parent") or {}
+                    if parent.get("kind") == "page":
+                        page = pages.get(parent.get("id"))
+                        if page is not None:
+                            page.setdefault("children", []).append(node_id)
+        return {"scene": updated, "applied_operations": len(operations), "diagnostics": []}
+
+
+# --- Task 1: view containment ----------------------------------------------
+
+
+def test_view_contains_provider_error_as_string(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes(640))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 640, "height": 640}],
+    }
+
+    # Simulate any failure while building the image block (a provider rejection,
+    # a corrupt image, an unreadable file): view() must NOT raise — it returns
+    # an honest error string so the agent adapts and the turn continues.
+    def _boom(_path):
+        raise RuntimeError("Image has 64 total pixels (8x8), below the minimum")
+
+    monkeypatch.setattr(view_mod, "_image_block", _boom)
+
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"})
+    assert isinstance(msg.content, str)
+    assert msg.content.startswith("view failed:")
+    assert "below the minimum" in msg.content
+
+
+def test_view_contains_corrupt_image_bytes(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(b"not a real png")
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 8, "height": 8}],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"})
+    # Undecodable bytes -> contained into an error string, no raise.
+    assert isinstance(msg.content, str)
+    assert msg.content.startswith("view failed:")
+
+
+# --- Task 1: tiny-image normalization --------------------------------------
+
+
+def test_view_upscales_sub_minimum_image(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes(8))  # the exact A2 failure: an 8x8 thumbnail
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 8, "height": 8}],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"})
+    image_blocks = [b for b in msg.content if b["type"] == "image"]
+    assert len(image_blocks) == 1
+    emitted = Image.open(io.BytesIO(base64.b64decode(image_blocks[0]["data"])))
+    assert min(emitted.size) >= 512
+
+
+def test_view_upscale_preserves_aspect_ratio(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes((8, 16)))  # 1:2 portrait thumbnail
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 8, "height": 16}],
+    }
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"})
+    emitted = Image.open(io.BytesIO(base64.b64decode(
+        [b for b in msg.content if b["type"] == "image"][0]["data"]
+    )))
+    w, h = emitted.size
+    assert min(w, h) >= 512
+    assert abs((w / h) - 0.5) < 0.05  # aspect preserved
+
+
+def test_normalize_leaves_large_images_untouched(tmp_path, monkeypatch):
+    raw = _png_bytes(600)
+    out, mime = view_mod._normalize_image_bytes(raw)
+    assert out == raw
+    assert mime == "image/png"
+
+
+# --- Task 2: preview staleness contract ------------------------------------
+
+
+def test_view_preview_refuses_when_scene_changed_since_render(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes(640))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 640, "height": 640}],
+    }
+    # Render was captured at the current mutation count.
+    tools._stamp_preview_rendered()
+
+    view = view_mod.make_view_tool(tools)
+    # Fresh render -> served with an image block.
+    fresh = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"})
+    assert any(b["type"] == "image" for b in fresh.content)
+
+    # The scene mutates (a compile/edit) without a re-render.
+    tools.scene_update_sources.append("compile_dsl_block")
+    stale = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c2", "type": "tool_call"})
+    assert isinstance(stale.content, list)
+    assert len(stale.content) == 1
+    assert "STALE" in stale.content[0]["text"]
+    assert "render_preview" in stale.content[0]["text"]
+
+
+def test_view_preview_fresh_after_rerender(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes(640))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "width": 640, "height": 640}],
+    }
+    tools._stamp_preview_rendered()
+    tools.scene_update_sources.append("compile_dsl_block")  # scene changed
+    tools._stamp_preview_rendered()  # ... then re-rendered
+
+    view = view_mod.make_view_tool(tools)
+    msg = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c1", "type": "tool_call"})
+    assert any(b["type"] == "image" for b in msg.content)
+
+
+# --- Task 3: finalize prunes empty pages -----------------------------------
+
+
+def test_finalize_prunes_empty_pages_with_announced_note(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _ApplyingCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Make a poster")
+    tools.scene = {
+        "meta": {"id": "doc", "title": "t"},
+        "pages": {
+            "keep": {"id": "keep", "children": ["n1"], "size": {"width": 1080.0, "height": 1080.0}},
+            "empty": {"id": "empty", "children": [], "size": {"width": 1080.0, "height": 1080.0}},
+        },
+        "nodes": {"n1": {"id": "n1", "kind": {"kind": "text", "content": "hi"}, "children": []}},
+        "slots": {},
+        "assets": {},
+    }
+
+    result = json.loads(tools.finalize_run("succeeded", "done", "Delivered the ad."))
+
+    assert "empty" not in tools.scene["pages"]
+    assert "keep" in tools.scene["pages"]
+    assert "Pruned 1 empty page" in result["summary"]
+    assert "empty" in result["summary"]
+    # The prune rides the operations ledger so Accept drops it too.
+    assert any(
+        e["operation"]["kind"] == "remove_page" and e["operation"]["page_id"] == "empty"
+        for e in tools.operations_ledger
+    )
+
+
+def test_finalize_keeps_a_single_empty_page(tmp_path, monkeypatch):
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", _ApplyingCoreClient)
+    tools = LumenDesignTools(runtime_config(tmp_path), "Make a poster")
+    tools.scene = {
+        "meta": {"id": "doc", "title": "t"},
+        "pages": {"only": {"id": "only", "children": [], "size": {"width": 1080.0, "height": 1080.0}}},
+        "nodes": {},
+        "slots": {},
+        "assets": {},
+    }
+    result = json.loads(tools.finalize_run("succeeded", "done", "Delivered."))
+    # Never strip to zero pages: a lone empty page is kept, no prune note.
+    assert "only" in tools.scene["pages"]
+    assert "Pruned" not in result["summary"]
+
+
+# --- Task 3: brand_logo_auto place-once (no re-injection) -------------------
+
+
+def test_logo_placed_once_not_reinjected_after_removal(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch, kit=_logo_kit())
+    tools.compile_dsl_block("page page_test")  # gives a non-empty page to host the mark
+
+    tools.preflight_design()
+    first_placements = [
+        op for op in tools.core.applied_operations
+        if op.get("kind") == "insert_node" and (op.get("node") or {}).get("id") == "brand_logo_auto"
+    ]
+    assert len(first_placements) == 1
+    assert tools._brand_logo_seen is True
+
+    # Simulate the author removing the auto-placed mark (the base fake never
+    # actually inserted it, so the scene already lacks brand_logo_auto — the
+    # exact transient-absence that used to trigger re-injection every preflight).
+    tools.preflight_design()
+    all_placements = [
+        op for op in tools.core.applied_operations
+        if op.get("kind") == "insert_node" and (op.get("node") or {}).get("id") == "brand_logo_auto"
+    ]
+    # PLACE-ONCE: still exactly one placement across two preflights.
+    assert len(all_placements) == 1
+
+
+def test_no_auto_logo_when_author_placed_kit_logo(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch, kit=_logo_kit())
+    tools.compile_dsl_block("page page_test")
+    # Author placed the kit's own logo asset — the deterministic overlay must
+    # not compete with it.
+    tools.scene["nodes"]["author_logo"] = {
+        "id": "author_logo",
+        "kind": {"kind": "image", "asset_id": "asset_logo_1"},
+        "children": [],
+    }
+    tools.scene["pages"]["page_test"]["children"].append("author_logo")
+
+    tools.preflight_design()
+    placements = [
+        op for op in tools.core.applied_operations
+        if op.get("kind") == "insert_node" and (op.get("node") or {}).get("id") == "brand_logo_auto"
+    ]
+    assert placements == []
+    assert tools._brand_logo_seen is True

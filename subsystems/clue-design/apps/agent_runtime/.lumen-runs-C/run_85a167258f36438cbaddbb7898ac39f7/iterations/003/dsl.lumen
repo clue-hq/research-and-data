@@ -1,0 +1,2 @@
+#cta_rm fill($surface.page)
+#cta_text_rm fill($text.primary)

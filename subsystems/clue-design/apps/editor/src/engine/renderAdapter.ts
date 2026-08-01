@@ -13,10 +13,17 @@ import type {
   Stroke,
   StrokeCap,
   StrokeJoin,
-  Unit
+  Unit,
+  VerticalAlign
 } from "./contracts";
 import { isNodeLayoutManaged } from "./sceneQueries";
-import { resolveTokenColor, type TokenColorMap } from "./tokenColors";
+import {
+  oklchToHexCss,
+  resolveTokenColor,
+  type KitTokenMaps,
+  type TokenColorMap,
+  type TokenTextStyle
+} from "./tokenColors";
 
 /**
  * Konva-ready paint description (Effects Contract V0). Gradients carry the
@@ -64,6 +71,44 @@ export interface ShadowDescriptor {
   spreadApproximated: boolean;
 }
 
+/**
+ * A4 Effects v1: the full effect stack in declaration order (first entry =
+ * topmost of its class), resolved to canvas units and CSS colors — the input
+ * to the CanvasKit general effect pipeline (`drawDescriptors.generalEffectFilter`).
+ * Colors are CSS; opacity is a 0..1 multiplier the renderer folds into alpha.
+ * All lengths are already scaled into canvas units.
+ */
+export type EffectDescriptor =
+  | {
+      type: "drop_shadow";
+      color: string;
+      opacity: number;
+      offsetX: number;
+      offsetY: number;
+      blur: number;
+      spread: number;
+    }
+  | {
+      type: "glow";
+      color: string;
+      opacity: number;
+      blur: number;
+      spread: number;
+    }
+  | {
+      type: "layer_blur";
+      radius: number;
+    }
+  | {
+      type: "inner_shadow";
+      color: string;
+      opacity: number;
+      offsetX: number;
+      offsetY: number;
+      blur: number;
+      spread: number;
+    };
+
 export interface RenderPageDescriptor {
   id: string;
   name: string;
@@ -99,6 +144,14 @@ export interface RenderNodeDescriptor {
    * the Konva renderer ignores it.
    */
   allShadows: ShadowDescriptor[];
+  /**
+   * A4 Effects v1: the full effect stack (drop shadow, glow, layer blur, inner
+   * shadow) in declaration order. `allShadows` stays the drop-shadow-only view
+   * the Konva path and the pre-A4 CanvasKit shadow chain consume; the CanvasKit
+   * renderer switches to the general pipeline over `effects` when any advanced
+   * (glow / layer blur / inner shadow) entry is present.
+   */
+  effects: EffectDescriptor[];
   cornerRadius: number | [number, number, number, number];
   /**
    * Wave 3 C1: the node's outline as SVG path data in LOCAL space (origin
@@ -117,11 +170,30 @@ export interface RenderNodeDescriptor {
     fontSize: number;
     fontWeight: number;
     align: "left" | "center" | "right" | "justify";
+    /** A7a: vertical placement within the box; always present ("top" default).
+     * Consumed by {@link valignOffset} on both the CanvasKit and DOM legs. */
+    valign: "top" | "center" | "bottom";
     lineHeight: number;
     letterSpacing: number;
     maxLines: number | null;
     wrap: "no_wrap" | "wrap";
     direction: "ltr" | "rtl" | "auto";
+    /** A6a typography fields (defaults mirror the model). */
+    textTransform: "none" | "uppercase" | "lowercase" | "title";
+    underline: boolean;
+    strikethrough: boolean;
+    /** A7b: block italic (always present; false default). Unlike the decoration
+     * flags it drives glyph geometry — the CanvasKit legs map it to a
+     * `fontStyle.slant`, and the measurer keys on it. */
+    italic: boolean;
+    truncate: boolean;
+    /** Extra vertical gap at each `\n` break, already scaled into canvas units. */
+    paragraphSpacing: number;
+    /** A6b: rich-text spans, present only when the node carries any. Offsets are
+     * the raw model BYTE offsets into `content` (the painter relocates them onto
+     * the normalized string); `fill` is already resolved to a CSS color (Solid
+     * or Token), `null` = inherit the node fill. */
+    spans?: TextSpanDescriptor[];
   };
   line?: {
     points: number[];
@@ -147,6 +219,22 @@ export interface RenderNodeDescriptor {
     /** Asset's natural width/height ratio (for cover/contain/focal math). */
     naturalAspectRatio: number | null;
   };
+}
+
+/** A6b: one rich-text span in render form. Offsets are the raw model BYTE
+ * offsets into `content`; `fill` is resolved to a CSS color (or `null` to
+ * inherit the node fill). Weight/decoration `null` inherit the node. */
+export interface TextSpanDescriptor {
+  start: number;
+  end: number;
+  fill: string | null;
+  fontWeight: number | null;
+  underline: boolean | null;
+  strikethrough: boolean | null;
+  /** A7b: override italic. `null` inherits the block; `false` de-italicizes the
+   * run (OVERRIDE merge, not union) — the painter/measurer resolve
+   * `span.italic ?? block.italic`, and `??` treats `null` as inherit. */
+  italic: boolean | null;
 }
 
 export interface ParentComputedOrigin {
@@ -176,6 +264,10 @@ export function nodeDescriptor(
   const position = nodePositionForRender(node, page, parentComputedOrigin, scene);
   const stroke = node.strokes[0] ? strokeDescriptor(node.strokes[0]) : null;
   const shadows = shadowDescriptors(node.effects ?? [], scale);
+  // K1.5: kit-resolved corner radius / opacity when their tokens resolve;
+  // otherwise the node's numeric values (the pre-existing behavior).
+  const cornerToken = node.corner.token ? resolveTokenNumber(node.corner.token) : null;
+  const opacityToken = node.opacity_token ? resolveTokenNumber(node.opacity_token) : null;
   const descriptor: RenderNodeDescriptor = {
     id: node.id,
     kind: node.kind.kind,
@@ -184,7 +276,7 @@ export function nodeDescriptor(
     width: size.width,
     height: size.height,
     rotation: node.transform.rotation,
-    opacity: node.opacity,
+    opacity: opacityToken ?? node.opacity,
     fill: paintFromFill(node.fills[0]) ?? defaultFillForNode(node),
     stroke: stroke?.color ?? null,
     strokeWidth: (stroke?.width ?? 0) * scale,
@@ -195,29 +287,57 @@ export function nodeDescriptor(
     shadow: shadows[0] ?? null,
     extraShadowCount: Math.max(0, shadows.length - 1),
     allShadows: shadows,
-    cornerRadius: [
-      node.corner.top_left * scale,
-      node.corner.top_right * scale,
-      node.corner.bottom_right * scale,
-      node.corner.bottom_left * scale
-    ],
+    effects: effectDescriptors(node.effects ?? [], scale),
+    cornerRadius:
+      cornerToken !== null
+        ? [cornerToken * scale, cornerToken * scale, cornerToken * scale, cornerToken * scale]
+        : [
+            node.corner.top_left * scale,
+            node.corner.top_right * scale,
+            node.corner.bottom_right * scale,
+            node.corner.bottom_left * scale
+          ],
     contourPath: contourPathForNode(node, size.width, size.height, scale),
     slotKeys: slotKeysForNode(scene, node.id)
   };
 
   if (node.kind.kind === "text") {
+    // K1.5: paint what the kit's type roles say, not the skeleton literals —
+    // same resolution the measurement pass uses, so pixels match layout.
+    const styled = resolvedTextFields(node.kind);
     descriptor.text = {
       content: node.kind.content,
-      fontFamily: node.kind.font_family,
-      fontSize: node.kind.font_size * scale,
-      fontWeight: node.kind.font_weight,
+      fontFamily: styled.fontFamily,
+      fontSize: styled.fontSize * scale,
+      fontWeight: styled.fontWeight,
       align: node.kind.align,
-      lineHeight: node.kind.line_height ?? 1.2,
-      letterSpacing: (node.kind.letter_spacing ?? 0) * scale,
+      valign: node.kind.valign ?? "top",
+      lineHeight: styled.lineHeight,
+      letterSpacing: styled.letterSpacing * scale,
       maxLines: node.kind.max_lines ?? null,
       wrap: node.kind.wrap ?? "no_wrap",
-      direction: node.kind.direction ?? "ltr"
+      direction: node.kind.direction ?? "ltr",
+      textTransform: node.kind.text_transform ?? "none",
+      underline: node.kind.underline ?? false,
+      strikethrough: node.kind.strikethrough ?? false,
+      italic: node.kind.italic ?? false,
+      truncate: node.kind.truncate ?? false,
+      paragraphSpacing: (node.kind.paragraph_spacing ?? 0) * scale
     };
+    // A6b: resolve span fills to CSS here (Solid/Token → hex, mirroring the
+    // engine's fill resolution); offsets stay the raw model byte offsets so the
+    // painter can relocate them onto the normalized content.
+    if (node.kind.spans && node.kind.spans.length > 0) {
+      descriptor.text.spans = node.kind.spans.map((span) => ({
+        start: span.start,
+        end: span.end,
+        fill: span.fill ? paintToCss(span.fill) : null,
+        fontWeight: span.font_weight ?? null,
+        underline: span.underline ?? null,
+        strikethrough: span.strikethrough ?? null,
+        italic: span.italic ?? null
+      }));
+    }
   }
 
   if (node.kind.kind === "line") {
@@ -294,6 +414,19 @@ export function sizeFromCanvas(width: number, height: number, page: Page): SizeS
   };
 }
 
+/**
+ * A7a: the shared clamped valign formula — THE single source both editor legs
+ * (CanvasKit `drawDescriptors` fast/stacked/spanned + the Konva DOM leg) derive
+ * their vertical offset from, byte-mirroring the engine's `valign_offset`
+ * (`crates/lumen-core/src/scene.rs`): `max(box - content, 0) * factor`, factor
+ * top=0 / center=0.5 / bottom=1. Slack is clamped at zero so an overflowing box
+ * never paints above its top edge (valign degrades to a no-op).
+ */
+export function valignOffset(boxHeight: number, contentHeight: number, valign: VerticalAlign): number {
+  const factor = valign === "center" ? 0.5 : valign === "bottom" ? 1 : 0;
+  return Math.max(boxHeight - contentHeight, 0) * factor;
+}
+
 export function fixedSize(size: SizeSpec, scale = 1): { width: number; height: number } {
   return {
     width: dimensionToNumber(size.width) * scale,
@@ -333,7 +466,11 @@ export function colorToCss(color: Color): string {
     case "hex":
       return normalizeHexForCss(color.value);
     case "oklch":
-      return `oklch(${color.l} ${color.c} ${color.h} / ${color.alpha})`;
+      // Hex, not an oklch() string: the CanvasKit paint path's parseColor
+      // handles hex/rgb only — an oklch string silently erased the paint
+      // (the C2 follow-up this closes). Same converter the token map uses,
+      // so both paths match the engine's own oklch->hex resolution.
+      return oklchToHexCss(color.l, color.c, color.h, color.alpha);
     case "token":
       return resolveTokenColor(tokenColorMap, color.token) ?? tokenFallback(color.token);
   }
@@ -342,8 +479,19 @@ export function colorToCss(color: Color): string {
 function strokeDescriptor(stroke: Stroke): { color: string; width: number } {
   return {
     color: paintToCss(stroke.paint),
-    width: stroke.width
+    width: resolvedStrokeWidth(stroke)
   };
+}
+
+/** K1.5: the stroke's kit width when its token resolves, else the literal. */
+function resolvedStrokeWidth(stroke: Stroke): number {
+  if (stroke.width_token) {
+    const resolved = resolveTokenNumber(stroke.width_token);
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+  return stroke.width;
 }
 
 export function fillLayerDescriptor(fill: Fill, width: number, height: number): FillLayerDescriptor {
@@ -362,7 +510,7 @@ export function strokeLayerDescriptor(
   return {
     id: stroke.id,
     paint: paintDescriptor(stroke.paint, width, height),
-    width: stroke.width * scale,
+    width: resolvedStrokeWidth(stroke) * scale,
     dash: stroke.dash?.length ? stroke.dash.map((value) => value * scale) : null,
     lineCap: stroke.cap ?? "butt",
     lineJoin: stroke.join ?? "miter"
@@ -474,15 +622,75 @@ export function konvaShadowProps(shadow: ShadowDescriptor | null): Record<string
   };
 }
 
+/**
+ * Drop-shadow-only view of the effect stack (the Konva path renders one shadow
+ * per shape; the pre-A4 CanvasKit shadow chain consumes the whole list). Glow,
+ * layer blur, and inner shadow are NOT drop shadows and are filtered out here —
+ * they ride `effectDescriptors` and the CanvasKit general pipeline instead.
+ */
 function shadowDescriptors(effects: Effect[], scale: number): ShadowDescriptor[] {
-  return effects.map((effect) => ({
-    color: colorToCss(effect.kind.color),
-    opacity: effect.kind.opacity,
-    offsetX: effect.kind.x * scale,
-    offsetY: effect.kind.y * scale,
-    blur: effect.kind.blur * scale,
-    spreadApproximated: effect.kind.spread !== 0
-  }));
+  const shadows: ShadowDescriptor[] = [];
+  for (const effect of effects) {
+    if (effect.kind.kind !== "drop_shadow") {
+      continue;
+    }
+    shadows.push({
+      color: colorToCss(effect.kind.color),
+      opacity: effect.kind.opacity,
+      offsetX: effect.kind.x * scale,
+      offsetY: effect.kind.y * scale,
+      blur: effect.kind.blur * scale,
+      spreadApproximated: effect.kind.spread !== 0
+    });
+  }
+  return shadows;
+}
+
+/**
+ * A4: the full effect stack resolved into `EffectDescriptor`s in declaration
+ * order — colors to CSS, geometry into canvas units. Mirrors the engine's
+ * `EffectKind` variants one-to-one so the CanvasKit general pipeline can honor
+ * the D1 stacking contract.
+ */
+function effectDescriptors(effects: Effect[], scale: number): EffectDescriptor[] {
+  return effects.map((effect): EffectDescriptor => {
+    const kind = effect.kind;
+    switch (kind.kind) {
+      case "drop_shadow":
+        return {
+          type: "drop_shadow",
+          color: colorToCss(kind.color),
+          opacity: kind.opacity,
+          offsetX: kind.x * scale,
+          offsetY: kind.y * scale,
+          blur: kind.blur * scale,
+          spread: kind.spread * scale
+        };
+      case "glow":
+        return {
+          type: "glow",
+          color: colorToCss(kind.color),
+          opacity: kind.opacity,
+          blur: kind.blur * scale,
+          spread: kind.spread * scale
+        };
+      case "layer_blur":
+        return {
+          type: "layer_blur",
+          radius: kind.radius * scale
+        };
+      case "inner_shadow":
+        return {
+          type: "inner_shadow",
+          color: colorToCss(kind.color),
+          opacity: kind.opacity,
+          offsetX: kind.x * scale,
+          offsetY: kind.y * scale,
+          blur: kind.blur * scale,
+          spread: kind.spread * scale
+        };
+    }
+  });
 }
 
 function defaultFillForNode(node: Node): string {
@@ -563,20 +771,92 @@ export function contourPathForNode(
     case "group":
     case "auto_layout":
     case "image":
-      return rectContourPath(width, height, uniformCornerRadius(node, scale));
+      return rectBodyContourPath(node, width, height, scale);
     default:
       return null;
   }
 }
 
-/** The single corner radius (scaled) when all four are equal, else 0 — the
- * export squares non-uniform corners, so the parity contour does too. */
-function uniformCornerRadius(node: Node, scale: number): number {
+/**
+ * Rect-body outline honoring per-corner radii (A4 / D3). A resolved radius
+ * token or four equal corners take the uniform arc path; mixed corners take a
+ * per-corner arc `<path>` (CSS overlap-clamped), mirroring the SVG exporter's
+ * `rounded_rect_path` — so the canvas matches export AND a zero-radius corner
+ * stays square. Shared by body geometry and the image clip (both read
+ * `contourPath`).
+ */
+function rectBodyContourPath(node: Node, width: number, height: number, scale: number): string {
+  // K1.5: a resolved radius token IS uniform by definition.
+  if (node.corner.token) {
+    const resolved = resolveTokenNumber(node.corner.token);
+    if (resolved !== null) {
+      return rectContourPath(width, height, resolved * scale);
+    }
+  }
   const { top_left, top_right, bottom_right, bottom_left } = node.corner;
   if (top_left === top_right && top_left === bottom_right && top_left === bottom_left) {
-    return top_left * scale;
+    return rectContourPath(width, height, top_left * scale);
   }
-  return 0;
+  const clamped = clampedCorners(
+    [top_left * scale, top_right * scale, bottom_right * scale, bottom_left * scale],
+    width,
+    height
+  );
+  return perCornerContourPath(width, height, clamped);
+}
+
+/**
+ * CSS overlap-algorithm clamp (mirrors the SVG exporter's `clamped_corners`):
+ * scale every radius down by the single factor that keeps each pair of adjacent
+ * radii within their shared side length. Returns `[tl, tr, br, bl]`.
+ */
+function clampedCorners(
+  radii: [number, number, number, number],
+  width: number,
+  height: number
+): [number, number, number, number] {
+  const [tl, tr, br, bl] = radii.map((r) => Math.max(0, r)) as [number, number, number, number];
+  const ratios: [number, number][] = [
+    [width, tl + tr], // top
+    [height, tr + br], // right
+    [width, br + bl], // bottom
+    [height, tl + bl] // left
+  ];
+  let factor = 1;
+  for (const [side, sum] of ratios) {
+    if (sum > 0) {
+      factor = Math.min(factor, side / sum);
+    }
+  }
+  if (factor < 1) {
+    return [tl * factor, tr * factor, br * factor, bl * factor];
+  }
+  return [tl, tr, br, bl];
+}
+
+/**
+ * Per-corner rounded-rect `<path>` `d`, clockwise from the top-left corner,
+ * byte-mirroring the SVG exporter's `rounded_rect_path`. A zero-radius corner
+ * degenerates to a lineto per SVG arc semantics.
+ */
+function perCornerContourPath(
+  width: number,
+  height: number,
+  radii: [number, number, number, number]
+): string {
+  const [tl, tr, br, bl] = radii;
+  const n = (value: number) => roundForScene(value);
+  return (
+    `M${n(tl)} 0` +
+    `H${n(width - tr)}` +
+    `A${n(tr)} ${n(tr)} 0 0 1 ${n(width)} ${n(tr)}` +
+    `V${n(height - br)}` +
+    `A${n(br)} ${n(br)} 0 0 1 ${n(width - br)} ${n(height)}` +
+    `H${n(bl)}` +
+    `A${n(bl)} ${n(bl)} 0 0 1 0 ${n(height - bl)}` +
+    `V${n(tl)}` +
+    `A${n(tl)} ${n(tl)} 0 0 1 ${n(tl)} 0Z`
+  );
 }
 
 function rectContourPath(width: number, height: number, radius: number): string {
@@ -642,11 +922,139 @@ function normalizeHexForCss(value: string): string {
  * the safe default.
  */
 let tokenColorMap: TokenColorMap = {};
+// K1.5: typography roles + number tokens from the same kit fetch, so the
+// client measure/render path speaks the kit's type before server preflight
+// resolves it into literals (the LUMV0903/0810 ghost-killer).
+let tokenTextStyles: Record<string, TokenTextStyle> = {};
+let tokenNumbers: Record<string, number> = {};
+
+/**
+ * K0.5 reactivity: the map is set by an async fetch that usually resolves
+ * AFTER the canvas first paints, and a module-level assignment re-renders
+ * nothing — the live K0 proof showed a freshly loaded document staying on
+ * heuristic colors forever because no scene change ever followed the fetch.
+ * `setTokenColorMap` therefore bumps a generation and notifies subscribers;
+ * canvas components read the generation via `useSyncExternalStore` and key
+ * their descriptor memos on it, so kit values repaint the moment they land.
+ */
+let tokenColorsGeneration = 0;
+const tokenColorListeners = new Set<() => void>();
 
 /** Sets the token color map consulted by the token paint cases in
- * `paintToCss`/`colorToCss`/`paintDescriptor`. See `tokenColorMap` above. */
+ * `paintToCss`/`colorToCss`/`paintDescriptor`, and notifies subscribers.
+ * Colors-only legacy/test entry point — it RESETS the typography/number
+ * maps so test isolation stays one call. Product code uses
+ * `setKitTokenMaps`. */
 export function setTokenColorMap(map: TokenColorMap): void {
-  tokenColorMap = map;
+  setKitTokenMaps({ colors: map, typography: {}, numbers: {} });
+}
+
+/** K1.5: install all three kit maps (colors, typography roles, numbers) and
+ * notify subscribers — one generation covers paint, type, and radii. */
+export function setKitTokenMaps(maps: KitTokenMaps): void {
+  tokenColorMap = maps.colors;
+  tokenTextStyles = maps.typography;
+  tokenNumbers = maps.numbers;
+  tokenColorsGeneration += 1;
+  for (const listener of tokenColorListeners) {
+    listener();
+  }
+}
+
+/** K3: kit font faces landed in the CanvasKit provider AFTER first paint —
+ * same generation bump as a token-map install, so text measurement and
+ * descriptor memos rebuild against the newly registered faces. */
+export function notifyKitFontsChanged(): void {
+  tokenColorsGeneration += 1;
+  for (const listener of tokenColorListeners) {
+    listener();
+  }
+}
+
+/** Subscribe to token-map replacements (useSyncExternalStore contract). */
+export function subscribeTokenColors(listener: () => void): () => void {
+  tokenColorListeners.add(listener);
+  return () => {
+    tokenColorListeners.delete(listener);
+  };
+}
+
+/** Monotonic generation of the current token map (useSyncExternalStore
+ * snapshot; also the memo key that invalidates descriptor trees). */
+export function tokenColorsGenerationSnapshot(): number {
+  return tokenColorsGeneration;
+}
+
+/** Whether a token paint will resolve to a real kit value on the canvas —
+ * i.e. the render is NOT on the string-heuristic fallback for this token.
+ * `renderDiagnostics` consults this so EDITOR_RENDER_TOKEN_FALLBACK is only
+ * reported when the fallback is actually in use. */
+export function tokenPaintResolves(token: string): boolean {
+  return resolveTokenColor(tokenColorMap, token) !== null;
+}
+
+function stripTokenPrefix(token: string): string {
+  return token.startsWith("$") ? token.slice(1) : token;
+}
+
+/** K1.5: whether a `style($type.role)` resolves from the kit's typography. */
+export function tokenTextStyleResolves(token: string): boolean {
+  return tokenTextStyles[stripTokenPrefix(token)] !== undefined;
+}
+
+/** K1.5: a number token's kit value (radius/stroke-width/opacity/size-step),
+ * or null when the map misses. */
+export function resolveTokenNumber(token: string): number | null {
+  return tokenNumbers[stripTokenPrefix(token)] ?? null;
+}
+
+/**
+ * K1.5: a text node's EFFECTIVE fields — the kit style_token's values (with
+ * individual `*_token` overrides) over the node's literals, mirroring the
+ * engine's resolve_text_style precedence. When a token is present but not
+ * yet resolvable client-side, the literal is kept — the pre-existing
+ * skeleton behavior, and honest about what the canvas will show.
+ */
+export function resolvedTextFields(text: {
+  font_family: string;
+  font_size: number;
+  font_weight: number;
+  line_height?: number | null;
+  letter_spacing?: number | null;
+  style_token?: string | null;
+  font_size_token?: string | null;
+  line_height_token?: string | null;
+  letter_spacing_token?: string | null;
+}): {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  lineHeight: number;
+  letterSpacing: number;
+} {
+  const style = text.style_token ? tokenTextStyles[stripTokenPrefix(text.style_token)] : undefined;
+  const sizeOverride = text.font_size_token ? resolveTokenNumber(text.font_size_token) : null;
+  const lineHeightOverride = text.line_height_token
+    ? resolveTokenNumber(text.line_height_token)
+    : null;
+  const letterSpacingOverride = text.letter_spacing_token
+    ? resolveTokenNumber(text.letter_spacing_token)
+    : null;
+  return {
+    fontFamily: style?.fontFamily ?? text.font_family,
+    fontSize: sizeOverride ?? style?.fontSize ?? text.font_size,
+    fontWeight: style?.fontWeight ?? text.font_weight,
+    lineHeight: lineHeightOverride ?? style?.lineHeight ?? text.line_height ?? 1.2,
+    letterSpacing: letterSpacingOverride ?? style?.letterSpacing ?? text.letter_spacing ?? 0
+  };
+}
+
+/** The CSS color a token swatch should show — EXACTLY what the canvas will
+ * paint for that token: the kit-resolved value when the map has it, else the
+ * same heuristic fallback the paint path uses. One resolution path for chips,
+ * previews, and canvas. */
+export function tokenSwatchCss(token: string): string {
+  return resolveTokenColor(tokenColorMap, token) ?? tokenFallback(token);
 }
 
 function tokenFallback(token: string): string {

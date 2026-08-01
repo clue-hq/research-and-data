@@ -9,8 +9,16 @@ import {
   paintToCss,
   pageDescriptor,
   sceneUnitFromCanvas,
+  resolvedTextFields,
+  resolveTokenNumber,
+  setKitTokenMaps,
   setTokenColorMap,
-  sizeFromCanvas
+  sizeFromCanvas,
+  subscribeTokenColors,
+  tokenColorsGenerationSnapshot,
+  tokenPaintResolves,
+  tokenSwatchCss,
+  valignOffset
 } from "../renderAdapter";
 
 describe("render adapter", () => {
@@ -414,6 +422,23 @@ describe("render adapter", () => {
       setTokenColorMap({});
     });
 
+    it("tokenSwatchCss resolves a mapped token to the kit value (the color the canvas paints)", () => {
+      setTokenColorMap({ "surface.brand": "#123456" });
+      expect(tokenSwatchCss("surface.brand")).toBe("#123456");
+      // `$`-prefixed author form hits the same map entry.
+      expect(tokenSwatchCss("$surface.brand")).toBe("#123456");
+    });
+
+    it("tokenSwatchCss falls through to the same heuristic the paint path uses on a map miss", () => {
+      setTokenColorMap({});
+      expect(tokenSwatchCss("text.primary")).toBe("#27231d");
+      expect(tokenSwatchCss("surface.page")).toBe("#f8f4ec");
+      expect(tokenSwatchCss("accent.primary")).toBe("#256c70");
+      expect(tokenSwatchCss("unmapped.custom")).toBe("#b7aa96");
+      // Identical to what the paint path would produce for the same token.
+      expect(tokenSwatchCss("surface.page")).toBe(paintToCss({ kind: "token", token: "surface.page" }));
+    });
+
     it("WITHOUT a map, pins the pre-existing string-heuristic fallback", () => {
       const color: Color = { kind: "token", token: "surface.page" };
       expect(colorToCss(color)).toBe("#f8f4ec");
@@ -478,6 +503,92 @@ describe("render adapter", () => {
       const descriptor = nodeDescriptor(scene, node, page);
       expect(descriptor.fill).toBe("#FFFFFF");
       expect(descriptor.fills[0]?.paint).toEqual({ kind: "solid", color: "#FFFFFF" });
+    });
+
+    it("K0.5: setTokenColorMap notifies subscribers and bumps the generation (repaint trigger)", () => {
+      const before = tokenColorsGenerationSnapshot();
+      let notified = 0;
+      const unsubscribe = subscribeTokenColors(() => {
+        notified += 1;
+      });
+
+      setTokenColorMap({ "surface.brand": "#00525c" });
+      expect(notified).toBe(1);
+      expect(tokenColorsGenerationSnapshot()).toBe(before + 1);
+
+      unsubscribe();
+      setTokenColorMap({});
+      expect(notified).toBe(1);
+      expect(tokenColorsGenerationSnapshot()).toBe(before + 2);
+    });
+
+    it("K0.5: tokenPaintResolves reports map hits vs heuristic-fallback misses", () => {
+      setTokenColorMap({ "surface.brand": "#00525c" });
+      expect(tokenPaintResolves("surface.brand")).toBe(true);
+      expect(tokenPaintResolves("$surface.brand")).toBe(true);
+      expect(tokenPaintResolves("surface.page")).toBe(false);
+    });
+
+    it("K1.5: resolvedTextFields applies the kit type role over skeleton literals", () => {
+      setKitTokenMaps({
+        colors: {},
+        typography: {
+          "type.headline": {
+            fontFamily: "Source Sans 3",
+            fontSize: 80,
+            fontWeight: 800,
+            lineHeight: 1.05
+          }
+        },
+        numbers: { "type.size.7xl": 96, "radius.button": 12 }
+      });
+      // The K1 live-proof skeleton: Inter 16 literals + a style token.
+      const styled = resolvedTextFields({
+        font_family: "Inter",
+        font_size: 16,
+        font_weight: 400,
+        style_token: "type.headline"
+      });
+      expect(styled).toEqual({
+        fontFamily: "Source Sans 3",
+        fontSize: 80,
+        fontWeight: 800,
+        lineHeight: 1.05,
+        letterSpacing: 0
+      });
+      // font_size_token overrides the role size; unresolved tokens keep literals.
+      expect(
+        resolvedTextFields({
+          font_family: "Inter",
+          font_size: 16,
+          font_weight: 400,
+          style_token: "type.headline",
+          font_size_token: "type.size.7xl"
+        }).fontSize
+      ).toBe(96);
+      expect(
+        resolvedTextFields({
+          font_family: "Inter",
+          font_size: 16,
+          font_weight: 400,
+          style_token: "type.ghost"
+        }).fontSize
+      ).toBe(16);
+      expect(resolveTokenNumber("radius.button")).toBe(12);
+      expect(resolveTokenNumber("$radius.button")).toBe(12);
+      expect(resolveTokenNumber("radius.ghost")).toBeNull();
+    });
+
+    it("K0.5: direct oklch scene colors paint as hex (CanvasKit parseColor cannot read oklch)", () => {
+      const color: Color = {
+        kind: "oklch",
+        l: 0.4,
+        c: 0.07382381488920986,
+        h: 207.87981654900904,
+        alpha: 1
+      };
+      // Same value the engine resolves for the Insight kit's surface.brand.
+      expect(colorToCss(color)).toBe("#00525c");
     });
   });
 
@@ -609,10 +720,10 @@ describe("render adapter", () => {
     expect(path.endsWith("Z")).toBe(true);
   });
 
-  it("squares a non-uniform corner contour (export has no per-corner radii)", () => {
+  it("emits a per-corner arc contour when corners differ (A4 per-corner radii)", () => {
     const scene = cloneScene();
     const page = scene.pages.page_a4;
-    const scale = unitScaleForTest(page.size.unit);
+    const s = unitScaleForTest(page.size.unit);
     const node: Node = {
       ...scene.nodes.node_contact_name,
       kind: { kind: "rect" },
@@ -622,9 +733,19 @@ describe("render adapter", () => {
     };
     scene.nodes[node.id] = node;
 
+    // E-A4 landed per-corner radii end-to-end (the SVG exporter now emits a
+    // per-corner arc <path>); the canvas contour mirrors it. The tl/br corners
+    // round; the zero tr/bl corners degenerate to zero-radius arcs (linetos).
     const path = nodeDescriptor(scene, node, page).contourPath!;
-    expect(path).toBe(`M0 0H${round3(100 * scale)}V${round3(60 * scale)}H0Z`);
-    expect(path).not.toContain("A");
+    const n = round3;
+    const w = 100 * s;
+    const h = 60 * s;
+    const r = 8 * s;
+    expect(path).toBe(
+      `M${n(r)} 0H${n(w)}A0 0 0 0 1 ${n(w)} 0V${n(h - r)}` +
+        `A${n(r)} ${n(r)} 0 0 1 ${n(w - r)} ${n(h)}H0A0 0 0 0 1 0 ${n(h)}` +
+        `V${n(r)}A${n(r)} ${n(r)} 0 0 1 ${n(r)} 0Z`
+    );
   });
 
   it("emits an ellipse contour from the rightmost point", () => {
@@ -819,3 +940,79 @@ function unitScaleForTest(unit: Page["size"]["unit"]): number {
       return 96;
   }
 }
+
+describe("A7a vertical alignment", () => {
+  it("valignOffset applies the clamped-slack formula (top=0, center=0.5, bottom=1)", () => {
+    // Slack present: box (100) taller than content (40) → 60px of slack.
+    expect(valignOffset(100, 40, "top")).toBe(0);
+    expect(valignOffset(100, 40, "center")).toBe(30);
+    expect(valignOffset(100, 40, "bottom")).toBe(60);
+  });
+
+  it("valignOffset clamps overflow to a no-op (never paints above the top edge)", () => {
+    // Content taller than the box → negative slack clamps to 0 for every mode.
+    expect(valignOffset(40, 100, "top")).toBe(0);
+    expect(valignOffset(40, 100, "center")).toBe(0);
+    expect(valignOffset(40, 100, "bottom")).toBe(0);
+    // Exact fit → zero slack.
+    expect(valignOffset(40, 40, "bottom")).toBe(0);
+  });
+
+  it("the text descriptor carries valign, defaulting to \"top\" when the node omits it", () => {
+    const page = minimalScene.pages.page_a4;
+    const base = minimalScene.nodes.node_contact_name as Node;
+
+    const defaulted = nodeDescriptor(minimalScene, base, page);
+    expect(defaulted.text?.valign).toBe("top");
+
+    const centered: Node = {
+      ...structuredClone(base),
+      kind: { ...structuredClone(base.kind), valign: "center" } as Node["kind"]
+    };
+    expect(nodeDescriptor(minimalScene, centered, page).text?.valign).toBe("center");
+
+    const bottom: Node = {
+      ...structuredClone(base),
+      kind: { ...structuredClone(base.kind), valign: "bottom" } as Node["kind"]
+    };
+    expect(nodeDescriptor(minimalScene, bottom, page).text?.valign).toBe("bottom");
+  });
+});
+
+describe("A7b italic descriptor", () => {
+  const page = minimalScene.pages.page_a4;
+  const base = minimalScene.nodes.node_contact_name as Node;
+
+  it("carries block italic, defaulting to false when the node omits it", () => {
+    expect(nodeDescriptor(minimalScene, base, page).text?.italic).toBe(false);
+
+    const italicNode: Node = {
+      ...structuredClone(base),
+      kind: { ...structuredClone(base.kind), italic: true } as Node["kind"]
+    };
+    expect(nodeDescriptor(minimalScene, italicNode, page).text?.italic).toBe(true);
+  });
+
+  it("carries span italic verbatim — false preserved (override), absent → null (inherit)", () => {
+    const spanned: Node = {
+      ...structuredClone(base),
+      kind: {
+        ...structuredClone(base.kind),
+        italic: true,
+        spans: [
+          // Explicit de-italicize: false must survive as false, NOT collapse to
+          // null (the override merge `span.italic ?? block` depends on it).
+          { start: 0, end: 3, italic: false },
+          // Italic span inside an upright region.
+          { start: 4, end: 7, italic: true },
+          // No italic channel → inherit (null in descriptor form).
+          { start: 8, end: 11, font_weight: 700 }
+        ]
+      } as Node["kind"]
+    };
+    const spans = nodeDescriptor(minimalScene, spanned, page).text?.spans;
+    expect(spans?.[0].italic).toBe(false);
+    expect(spans?.[1].italic).toBe(true);
+    expect(spans?.[2].italic).toBeNull();
+  });
+});

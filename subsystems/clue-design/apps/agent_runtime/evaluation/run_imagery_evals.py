@@ -14,7 +14,7 @@ Two ways to obtain a run to score:
     captured runs; reads each run's ``final_scene.json`` + PNG and scores it. No model
     calls unless ``--model`` is given (the JUDGE ceiling); without a model only the
     deterministic gates run.
-  • ``--run`` (live, costs credits) — invokes ``python -m lumen_deepagent.cli ...
+  • ``--run`` (live, costs credits) — invokes ``python -m lumen_pipeline_archive.cli ...
     --mode deepagent`` per brief, then scores the resulting trace dir.
 
 The scoring core (``score_run_dir``) and aggregation (``summarize``) are pure and
@@ -39,7 +39,9 @@ _API_ROOT = _AGENT_ROOT.parent / "api"
 if str(_API_ROOT) not in sys.path:
     sys.path.insert(0, str(_API_ROOT))
 
-from lumen_deepagent.imagery_judge import judge_imagery  # noqa: E402
+from py_lumen_config import settings  # noqa: E402
+
+from lumen_pipeline_archive.imagery_judge import judge_imagery  # noqa: E402
 
 DEFAULT_BRIEFS = _AGENT_ROOT / "evaluation" / "imagery_fixtures" / "briefs.json"
 DEFAULT_PROMPTS = _AGENT_ROOT / "evaluation" / "fixture_prompts.json"
@@ -174,11 +176,27 @@ def write_capture(
     return capture_dir
 
 
+def parse_cli_payload(stdout: str) -> Optional[Dict[str, Any]]:
+    """Parse the CLI's result payload from stdout. The CLI prints it as INDENTED
+    multi-line JSON (the old last-line parse only ever saw the closing brace), and
+    tool/framework chatter may precede it — so parse the last top-level object."""
+    text = stdout.strip()
+    start = text.rfind("\n{")
+    candidate = text[start + 1 :] if start != -1 else text
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(payload, dict) and payload.get("run_id"):
+        return payload
+    return None
+
+
 def run_brief_live(brief: Dict[str, Any], *, repo_root: Path, trace_root: Path, mode: str = "deepagent") -> Optional[Path]:
     """Invoke the agent CLI for one brief and return its trace dir. COSTS CREDITS and
     requires the model/image-model env to be configured. Returns None on failure."""
     cmd = [
-        sys.executable, "-m", "lumen_deepagent.cli", brief["prompt"],
+        sys.executable, "-m", "lumen_pipeline_archive.cli", brief["prompt"],
         "--mode", mode, "--repo-root", str(repo_root),
     ]
     env_note = f"[run] {brief['id']} ({brief['expected_decision']}) via --mode {mode}"
@@ -187,13 +205,11 @@ def run_brief_live(brief: Dict[str, Any], *, repo_root: Path, trace_root: Path, 
     if proc.returncode != 0:
         print(f"[error] {brief['id']} CLI failed: {proc.stderr[-500:]}")
         return None
-    try:
-        payload = json.loads(proc.stdout.strip().splitlines()[-1])
-        run_id = payload["run_id"]
-    except Exception:
+    payload = parse_cli_payload(proc.stdout)
+    if payload is None:
         print(f"[error] {brief['id']} could not parse run_id from CLI output")
         return None
-    return Path(trace_root) / run_id
+    return Path(trace_root) / payload["run_id"]
 
 
 def summarize(results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -297,10 +313,21 @@ def main() -> None:
     config = None
     model = None
     if args.model:
-        from lumen_deepagent.imagery_judge import ImageryJudgeVerdict
-        from lumen_deepagent.providers import init_model, try_structured_model
+        from lumen_pipeline_archive.imagery_judge import ImageryJudgeVerdict
+        from lumen_pipeline_archive.providers import init_model, try_structured_model
 
-        model = try_structured_model(init_model(args.model), ImageryJudgeVerdict)
+        # Same routing contract as AgentRuntimeConfig.from_env: when the agent env
+        # points at an OpenAI-compatible endpoint (e.g. OpenRouter), the judge must
+        # ride it too — a bare init_model() would demand OPENAI_API_KEY instead.
+        model = try_structured_model(
+            init_model(
+                args.model,
+                base_url=settings.lumen_agent_base_url,
+                api_key=settings.lumen_agent_api_key,
+                reasoning=settings.lumen_agent_reasoning,
+            ),
+            ImageryJudgeVerdict,
+        )
 
     score_map = json.loads(args.score_map.read_text(encoding="utf-8")) if args.score_map else None
     run_imagery_evals(

@@ -17,6 +17,7 @@ describe("export runner profiles", () => {
         pdf_intent: "preview",
         raster: null,
         include_bleed: true,
+        include_marks: false,
         embed_fonts: true
       },
       {
@@ -25,6 +26,7 @@ describe("export runner profiles", () => {
         pdf_intent: "print",
         raster: null,
         include_bleed: true,
+        include_marks: true,
         embed_fonts: true
       }
     ];
@@ -197,6 +199,73 @@ describe("export runner profiles", () => {
       filename: "page_a4.pdf",
       sidecar_filename: "page_a4.sidecar.json"
     });
+  });
+
+  it("parses the print_ready report on a print-intent PDF export", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          schema_version: 1,
+          status: "ok",
+          diagnostics: [],
+          export: {
+            artifacts: [
+              {
+                format: "pdf",
+                page_id: "page_a4",
+                mime_type: "application/pdf",
+                byte_length: 8,
+                data_url: "data:application/pdf;base64,AAAA"
+              }
+            ],
+            print_ready: {
+              ruleset: "commercial-print-v1",
+              status: "warn",
+              rules: [
+                { id: "bleed_present", status: "pass", detail: "3mm bleed present" },
+                { id: "min_dpi", status: "warn", detail: "Image below 300dpi" }
+              ]
+            }
+          }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const runner = createApiExportRunner({ apiBaseUrl: "http://localhost:8000" });
+
+    const result = await runner({
+      scene: minimalScene,
+      profile: defaultEditorExportProfile(),
+      pageIds: ["page_a4"]
+    });
+
+    expect(result.printReady).not.toBeNull();
+    expect(result.printReady).toMatchObject({
+      ruleset: "commercial-print-v1",
+      status: "warn"
+    });
+    expect(result.printReady?.rules).toHaveLength(2);
+    expect(result.printReady?.rules[1]).toMatchObject({ id: "min_dpi", status: "warn", detail: "Image below 300dpi" });
+  });
+
+  it("leaves printReady null when the export payload omits it", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ schema_version: 1, status: "ok", diagnostics: [], export: { artifacts: [] } }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const runner = createApiExportRunner({ apiBaseUrl: "http://localhost:8000" });
+
+    const result = await runner({
+      scene: minimalScene,
+      profile: defaultEditorExportProfile(),
+      pageIds: ["page_a4"]
+    });
+
+    expect(result.printReady).toBeNull();
   });
 
   it("uses the persisted document export route when a document id is configured", async () => {

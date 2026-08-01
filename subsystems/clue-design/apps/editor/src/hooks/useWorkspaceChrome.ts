@@ -13,7 +13,9 @@ import {
  */
 export function useWorkspaceChrome() {
   const [editorPanelMode, setEditorPanelMode] = useState<EditorPanelMode>("inspector");
-  const [agentSidebarWidth, setAgentSidebarWidth] = useState(420);
+  // Same resting width as the other right-rail modes (the inspect rail's
+  // 340px column); drag-resize still allows wider when the user wants it.
+  const [agentSidebarWidth, setAgentSidebarWidth] = useState(340);
   const [workspaceMode, setWorkspaceMode] = useState<"canvas" | "export" | "compare">("canvas");
   const [workspaceViewport, setWorkspaceViewport] = useState(defaultWorkspaceViewport);
   const [workspaceTool, setWorkspaceTool] = useState<WorkspaceTool>("select");

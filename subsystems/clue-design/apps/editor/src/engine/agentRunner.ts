@@ -26,8 +26,15 @@ export interface EditorAgentRequest {
   /** 2c: the chipped edit targets. Sent as target_node_ids; the server scopes
    * the compensating edit to them and keeps every other node byte-identical. */
   targetNodeIds?: NodeId[];
+  /** RC: the library asset ids the user attached as visual references for THIS
+   * turn. Sent as reference_asset_ids; the server resolves them into the run's
+   * reference manifest by value. Per-turn context — cleared after each send. */
+  referenceAssetIds?: string[];
   /** 2e: the document's standing instructions, folded into every turn. */
   agentInstructions?: string | null;
+  /** Model override for this turn (runtime id, e.g. "openai:anthropic/...").
+   * null/undefined = the runtime's configured default. */
+  model?: string | null;
   diagnostics: Diagnostic[];
   /** 2b: live run events (checklist ticks) are pushed here as they stream. */
   onEvent?: (event: AgentRunEvent) => void;
@@ -97,7 +104,9 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
     documentId,
     activePageId,
     targetNodeIds,
+    referenceAssetIds,
     agentInstructions,
+    model,
     diagnostics
   }) => {
     const response = await fetch(new URL("/agent/turn-preview", apiBaseUrl), {
@@ -111,7 +120,9 @@ export function createApiAgentRunner({ apiBaseUrl }: ApiAgentRunnerOptions): Edi
         document_id: documentId ?? null,
         active_page_id: activePageId,
         target_node_ids: targetNodeIds ?? [],
+        reference_asset_ids: referenceAssetIds ?? [],
         agent_instructions: agentInstructions ?? null,
+        model: model ?? null,
         diagnostics
       })
     });
@@ -146,7 +157,9 @@ export function createStreamingAgentRunner({
     documentId,
     activePageId,
     targetNodeIds,
+    referenceAssetIds,
     agentInstructions,
+    model,
     diagnostics,
     onEvent
   }) => {
@@ -159,7 +172,9 @@ export function createStreamingAgentRunner({
         document_id: documentId ?? null,
         active_page_id: activePageId,
         target_node_ids: targetNodeIds ?? [],
+        reference_asset_ids: referenceAssetIds ?? [],
         agent_instructions: agentInstructions ?? null,
+        model: model ?? null,
         diagnostics
       })
     });
@@ -229,6 +244,26 @@ export function subscribeToAgentRun({
     // Transient errors are handled by EventSource's own reconnect (Last-Event-ID
     // replays missed events); a terminal run always ends with a `done` frame.
   });
+}
+
+/**
+ * Live-design-streaming (D3): a progress event for a clean `dsl_compiled` /
+ * `asset_placed` carries the compile's applied `operations` — the exact
+ * canonical list the proposal ledger records, so the streamed batch is
+ * byte-identical to what Accept later replays. Non-mutating events (checklist
+ * ticks) and refused drafts carry none.
+ *
+ * Strict-but-tolerant by contract: absent or malformed operations return null
+ * (the caller applies nothing), never throw. An empty list is treated as "no
+ * batch" so a checklist event behaves exactly as before.
+ */
+export function operationsFromRunEvent(event: AgentRunEvent): Operation[] | null {
+  const raw = event.data.operations;
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const operations = raw.filter(isRecord) as unknown as Operation[];
+  return operations.length > 0 ? operations : null;
 }
 
 function runEventFromUnknown(raw: string): AgentRunEvent | null {

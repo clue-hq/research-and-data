@@ -81,6 +81,17 @@ pub enum EffectFeature {
     DropShadow,
     DropShadowSpread,
     LayeredShadows,
+    Glow,
+    LayerBlur,
+    InnerShadow,
+    /// A6a text features (D8).
+    TextStroke,
+    TextDecoration,
+    TextTransform,
+    TextEllipsis,
+    ParagraphSpacing,
+    /// A6b rich-text spans (D7).
+    RichTextSpans,
 }
 
 impl EffectFeature {
@@ -96,6 +107,15 @@ impl EffectFeature {
             Self::DropShadow => "drop shadow",
             Self::DropShadowSpread => "drop shadow spread",
             Self::LayeredShadows => "layered drop shadows",
+            Self::Glow => "glow",
+            Self::LayerBlur => "layer blur",
+            Self::InnerShadow => "inner shadow",
+            Self::TextStroke => "text stroke",
+            Self::TextDecoration => "text underline/strikethrough",
+            Self::TextTransform => "text case transform",
+            Self::TextEllipsis => "text ellipsis truncation",
+            Self::ParagraphSpacing => "paragraph spacing",
+            Self::RichTextSpans => "rich-text spans",
         }
     }
 }
@@ -124,14 +144,36 @@ impl RendererEffectSupport {
             // PNG raster paints the scene directly through Skia (Wave 1
             // Track A); it matches the SVG verdicts, with stroke alignment
             // kept Approximate (native for rect/ellipse only).
-            RenderTarget::Svg | RenderTarget::Png { .. } => match feature {
+            // SVG text decoration is the CSS presentation attribute; its
+            // underline metrics vary slightly across viewers, so it is
+            // Approximate here (Native on the Skia raster). Every other text
+            // feature is Native on both.
+            RenderTarget::Svg => match feature {
+                EffectFeature::StrokeAlignment => EffectSupportLevel::Approximate,
+                EffectFeature::TextDecoration => EffectSupportLevel::Approximate,
+                _ => EffectSupportLevel::Native,
+            },
+            RenderTarget::Png { .. } => match feature {
                 EffectFeature::StrokeAlignment => EffectSupportLevel::Approximate,
                 _ => EffectSupportLevel::Native,
             },
             RenderTarget::KonvaScene => match feature {
                 EffectFeature::StrokeAlignment
                 | EffectFeature::DropShadowSpread
-                | EffectFeature::LayeredShadows => EffectSupportLevel::Approximate,
+                | EffectFeature::LayeredShadows
+                // Legacy Konva preview: blur/glow approximate the merged
+                // filter; inner shadow has no native Konva form.
+                | EffectFeature::Glow
+                | EffectFeature::LayerBlur => EffectSupportLevel::Approximate,
+                EffectFeature::InnerShadow
+                // A6a text features are not represented by the legacy Konva
+                // preview (no CanvasKit contract target in A6a — §9 debt).
+                | EffectFeature::TextStroke
+                | EffectFeature::TextDecoration
+                | EffectFeature::TextTransform
+                | EffectFeature::TextEllipsis
+                | EffectFeature::ParagraphSpacing
+                | EffectFeature::RichTextSpans => EffectSupportLevel::Unsupported,
                 _ => EffectSupportLevel::Native,
             },
             // PDF V0 is solid-paint-only: the first solid fill/stroke
@@ -146,7 +188,23 @@ impl RendererEffectSupport {
                 | EffectFeature::RadialGradientPaint
                 | EffectFeature::DropShadow
                 | EffectFeature::DropShadowSpread
-                | EffectFeature::LayeredShadows => EffectSupportLevel::Unsupported,
+                | EffectFeature::LayeredShadows
+                | EffectFeature::Glow
+                | EffectFeature::LayerBlur
+                | EffectFeature::InnerShadow
+                // PDF renders neither text strokes nor decoration (loud
+                // per-node advisories emitted at export, D2/D5).
+                | EffectFeature::TextStroke
+                | EffectFeature::TextDecoration
+                // PDF renders base text only; span styling degrades with a
+                // loud per-node advisory (LUME0424) at export, D7.
+                | EffectFeature::RichTextSpans => EffectSupportLevel::Unsupported,
+                // Case transform, ellipsis, and paragraph spacing are carried
+                // by the measured lines PDF already consumes — string-level /
+                // measurer-owned, so Native.
+                EffectFeature::TextTransform
+                | EffectFeature::TextEllipsis
+                | EffectFeature::ParagraphSpacing => EffectSupportLevel::Native,
             },
             // The Figma manifest is a structural sidecar, not a visual
             // render; it does not represent the effect surface.
@@ -204,17 +262,64 @@ pub fn effect_features_for_node(node: &Node) -> Vec<EffectFeature> {
     {
         features.push(EffectFeature::StrokeAlignment);
     }
-    if !node.effects.is_empty() {
+    let mut drop_shadows = 0usize;
+    let mut has_drop_shadow_spread = false;
+    let mut has_glow = false;
+    let mut has_layer_blur = false;
+    let mut has_inner_shadow = false;
+    for effect in &node.effects {
+        match &effect.kind {
+            EffectKind::DropShadow { spread, .. } => {
+                drop_shadows += 1;
+                if *spread != 0.0 {
+                    has_drop_shadow_spread = true;
+                }
+            }
+            EffectKind::Glow { .. } => has_glow = true,
+            EffectKind::LayerBlur { .. } => has_layer_blur = true,
+            EffectKind::InnerShadow { .. } => has_inner_shadow = true,
+        }
+    }
+    if drop_shadows > 0 {
         features.push(EffectFeature::DropShadow);
     }
-    if node.effects.iter().any(|effect| {
-        let EffectKind::DropShadow { spread, .. } = &effect.kind;
-        *spread != 0.0
-    }) {
+    if has_drop_shadow_spread {
         features.push(EffectFeature::DropShadowSpread);
     }
-    if node.effects.len() > 1 {
+    if drop_shadows > 1 {
         features.push(EffectFeature::LayeredShadows);
+    }
+    if has_glow {
+        features.push(EffectFeature::Glow);
+    }
+    if has_layer_blur {
+        features.push(EffectFeature::LayerBlur);
+    }
+    if has_inner_shadow {
+        features.push(EffectFeature::InnerShadow);
+    }
+    // A6a text features (D8): only text nodes carry them, and each fires from
+    // the authored property, in stable order after the shared effect surface.
+    if let crate::scene::NodeKind::Text(text) = &node.kind {
+        if !node.strokes.is_empty() {
+            features.push(EffectFeature::TextStroke);
+        }
+        if text.underline || text.strikethrough {
+            features.push(EffectFeature::TextDecoration);
+        }
+        if text.text_transform != crate::scene::TextTransform::None {
+            features.push(EffectFeature::TextTransform);
+        }
+        if text.truncate {
+            features.push(EffectFeature::TextEllipsis);
+        }
+        if text.paragraph_spacing > 0.0 {
+            features.push(EffectFeature::ParagraphSpacing);
+        }
+        // A6b D7: detection is simply the presence of any span.
+        if !text.spans.is_empty() {
+            features.push(EffectFeature::RichTextSpans);
+        }
     }
     features
 }

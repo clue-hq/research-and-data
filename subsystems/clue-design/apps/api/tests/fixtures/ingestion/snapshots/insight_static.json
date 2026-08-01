@@ -1,0 +1,90 @@
+{
+  "computed_samples": null,
+  "custom_props": null,
+  "diagnostics": [],
+  "downloads": [
+    {
+      "bytes_b64": "d09GMgABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "content_type": "font/woff2",
+      "kind": "font",
+      "sha256": "ad5c9f98f3756ec91161f4c1a1e707ec3a1b0399590cb34401c0e9054de97733",
+      "url": "https://www.insighthealth.ai/fonts/Aeonik-Trial-Bold.woff2"
+    },
+    {
+      "bytes_b64": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjMTJFQUIxIi8+PC9zdmc+",
+      "content_type": "image/svg+xml",
+      "kind": "logo",
+      "sha256": "ed7e8fa4dc75b96d80d6ed89286358743c2cd00949052d48d7f35cde3291582c",
+      "url": "https://www.insighthealth.ai/brand/logo.svg"
+    },
+    {
+      "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMQerURAAK/Aa7mzn39AAAAAElFTkSuQmCC",
+      "content_type": "image/png",
+      "kind": "logo",
+      "sha256": "07baabdb3436355903c0f057ae5be698721f2745b04a6753f4ed7af6b5891dc5",
+      "url": "https://www.insighthealth.ai/brand/touch-icon.png"
+    },
+    {
+      "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMQerURAAK/Aa7mzn39AAAAAElFTkSuQmCC",
+      "content_type": "image/png",
+      "kind": "logo",
+      "sha256": "07baabdb3436355903c0f057ae5be698721f2745b04a6753f4ed7af6b5891dc5",
+      "url": "https://www.insighthealth.ai/brand/oglogo.png"
+    },
+    {
+      "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNoaPgJAAN9Afof4w6PAAAAAElFTkSuQmCC",
+      "content_type": "image/png",
+      "kind": "image",
+      "sha256": "e095dd69bbc15582b4957553fed54a155c538c9f739fcee5da40d2395e9d0d2d",
+      "url": "https://www.insighthealth.ai/og-cover.png"
+    },
+    {
+      "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOQlZEFAACwAFcF8eMyAAAAAElFTkSuQmCC",
+      "content_type": "image/png",
+      "kind": "image",
+      "sha256": "6f449ac4c9db7b235b3a794a61103ca88d5b00f0afbd785100cdde7694cd7f02",
+      "url": "https://www.insighthealth.ai/img/dashboard.png"
+    },
+    {
+      "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNYtfsMAAREAjLFENlZAAAAAElFTkSuQmCC",
+      "content_type": "image/png",
+      "kind": "image",
+      "sha256": "80ae367e17a526bed5c27472402b74adcdeddb0f2cba61f14068a79dcb34f780",
+      "url": "https://www.insighthealth.ai/img/team.png"
+    },
+    {
+      "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgePwQAAKrAcWPyOkmAAAAAElFTkSuQmCC",
+      "content_type": "image/png",
+      "kind": "image",
+      "sha256": "af01da484142ce3af115f44982284be0e5f57efd9a38ac2dbaf61f1500422ba6",
+      "url": "https://www.insighthealth.ai/img/chart.png"
+    }
+  ],
+  "fetched_at": "2026-07-05T00:00:00+00:00",
+  "final_url": "https://www.insighthealth.ai/",
+  "html": "<!doctype html>\n<html><head>\n<title>Insight Health | Clinical intelligence</title>\n<meta name=\"description\" content=\"Insight Health turns clinical data into decisions.\">\n<meta property=\"og:site_name\" content=\"Insight Health\">\n<meta property=\"og:title\" content=\"Clinical intelligence for modern care\">\n<meta property=\"og:description\" content=\"Turn clinical data into decisions.\">\n<meta property=\"og:image\" content=\"/og-cover.png\">\n<meta property=\"og:logo\" content=\"/brand/oglogo.png\">\n<link rel=\"apple-touch-icon\" href=\"/brand/touch-icon.png\">\n<link rel=\"stylesheet\" href=\"/styles/base.css\">\n<link rel=\"stylesheet\" href=\"/styles/theme.css\">\n<style>.inline{color:#00E3E1}</style>\n</head>\n<body>\n<header class=\"site-header\">\n  <a href=\"/\" class=\"logo\"><img src=\"/brand/logo.svg\" width=\"140\" height=\"40\" alt=\"Insight\"></a>\n  <nav><a href=\"/product\">Product</a></nav>\n</header>\n<main>\n<h1>Clinical intelligence for modern care</h1>\n<p>Insight Health turns raw clinical data into confident decisions for care teams across the country. Our platform surfaces the signal in the noise so clinicians can act sooner, with evidence they can trust and workflows that respect their time. From intake to outcome, Insight keeps every stakeholder aligned, informed, and moving in the same direction. Clinicians see the whole patient story, administrators see the whole operation, and everyone shares one source of truth that stays current as new results arrive throughout the day.</p>\n<button class=\"btn btn-primary\">Book a demo</button>\n<img src=\"/img/dashboard.png\" width=\"1200\" height=\"800\" alt=\"dashboard\">\n<img src=\"/img/team.png\" width=\"900\" height=\"600\" alt=\"team\">\n<img src=\"/img/chart.png\" width=\"600\" height=\"400\" alt=\"chart\">\n</main>\n</body></html>",
+  "meta": {
+    "apple_touch_icon": "/brand/touch-icon.png",
+    "description": "Insight Health turns clinical data into decisions.",
+    "og:image": "/og-cover.png",
+    "og:site_name": "Insight Health",
+    "title": "Insight Health | Clinical intelligence"
+  },
+  "requested_url": "https://www.insighthealth.ai/",
+  "schema_version": 1,
+  "stylesheets": [
+    {
+      "text": "\n:root{\n  --brand: #12EAB1;\n  --brand-2: rgb(0,227,225);\n  --ink: #1D1C1D;\n  --paper: #F5F5F5;\n  --indigo: #8080F9;\n}\nhtml,body{ background: var(--paper); color: var(--ink); }\nh1{ font-family: \"Aeonik\", sans-serif; font-size: 3rem; font-weight: 600; line-height: 1.1; }\np{ font-family: \"Inter\", sans-serif; font-size: 1rem; font-weight: 400; line-height: 1.5; }\n.btn-primary{ background: var(--brand); color: #FFFFFF; border-radius: 8px; }\na{ color: var(--brand-2); }\n.badge{ background: var(--indigo); }\n",
+      "url": "https://www.insighthealth.ai/styles/base.css"
+    },
+    {
+      "text": "\n@font-face{\n  font-family: \"Aeonik\";\n  font-weight: 600;\n  font-style: normal;\n  src: url(\"/fonts/Aeonik-Trial-Bold.woff2\") format(\"woff2\"),\n       url(\"/fonts/Aeonik-Trial-Bold.woff\") format(\"woff\");\n}\n@media (prefers-color-scheme: dark){\n  html,body{ background: #0B0B0C; color: #F5F5F5; }\n  .btn-primary{ background: #12EAB1; }\n}\n",
+      "url": "https://www.insighthealth.ai/styles/theme.css"
+    },
+    {
+      "text": ".inline{color:#00E3E1}",
+      "url": "inline:0"
+    }
+  ],
+  "tier": "static"
+}

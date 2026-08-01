@@ -113,6 +113,64 @@ describe("TextToolbar", () => {
     expect(JSON.stringify(operation)).not.toContain("style_token");
   });
 
+  it("renders the vertical-alignment group and reflects the node's valign", () => {
+    render(<TextToolbar selectedNode={textNode({ valign: "center" })} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Vertical align top")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByLabelText("Vertical align center")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Vertical align bottom")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("defaults the vertical-alignment group to top when valign is absent", () => {
+    render(<TextToolbar selectedNode={textNode()} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Vertical align top")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("dispatches updateTextNode with the chosen valign", () => {
+    const node = textNode();
+    const onOperation = vi.fn<(operation: Operation) => void>();
+    render(<TextToolbar selectedNode={node} onOperation={onOperation} />);
+
+    fireEvent.click(screen.getByLabelText("Vertical align bottom"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(node, { valign: "bottom" }));
+
+    fireEvent.click(screen.getByLabelText("Vertical align center"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(node, { valign: "center" }));
+  });
+
+  it("disables the vertical-alignment group on a hug-height node (D6)", () => {
+    const node = textNode();
+    node.size = { ...node.size, height: { kind: "hug" } };
+    render(<TextToolbar selectedNode={node} onOperation={vi.fn()} />);
+    const center = screen.getByLabelText("Vertical align center");
+    expect(center).toBeDisabled();
+    expect(center).toHaveAttribute("title", "No effect with hug height");
+  });
+
+  it("reflects the node's italic state on the Italic button (A7b)", () => {
+    const { rerender } = render(<TextToolbar selectedNode={textNode()} onOperation={vi.fn()} />);
+    // Absent italic → not pressed.
+    expect(screen.getByLabelText("Italic")).toHaveAttribute("aria-pressed", "false");
+    rerender(<TextToolbar selectedNode={textNode({ italic: true })} onOperation={vi.fn()} />);
+    expect(screen.getByLabelText("Italic")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Italic")).toHaveClass("active");
+  });
+
+  it("toggles italic via updateTextNode (A7b)", () => {
+    const node = textNode();
+    const onOperation = vi.fn<(operation: Operation) => void>();
+    const { rerender } = render(<TextToolbar selectedNode={node} onOperation={onOperation} />);
+
+    // Off → on.
+    fireEvent.click(screen.getByLabelText("Italic"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(node, { italic: true }));
+
+    // On → off (de-italicize).
+    const italicNode = textNode({ italic: true });
+    rerender(<TextToolbar selectedNode={italicNode} onOperation={onOperation} />);
+    fireEvent.click(screen.getByLabelText("Italic"));
+    expect(onOperation).toHaveBeenLastCalledWith(updateTextNode(italicNode, { italic: false }));
+  });
+
   it("passes brand tokens through to the swatch popover", () => {
     const brandTokens: BrandTokenCatalog = { text_tokens: ["text.primary"] };
     render(<TextToolbar selectedNode={textNode()} onOperation={vi.fn()} brandTokens={brandTokens} />);

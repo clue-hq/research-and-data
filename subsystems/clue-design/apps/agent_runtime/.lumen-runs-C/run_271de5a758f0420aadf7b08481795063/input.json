@@ -1,0 +1,20 @@
+{
+  "run_id": "run_271de5a758f0420aadf7b08481795063",
+  "prompt": "Design a 1200x627 LinkedIn trust post: Security you can audit. SOC 2 Type II, SSO, RBAC, and field-level encryption by default. Convey rigor and trust; surface the four guarantees clearly.",
+  "seeded_from_initial_scene": false,
+  "scene_summary": {
+    "document_id": "run_271de5a758f0420aadf7b08481795063",
+    "title": "Agent-authored design",
+    "status": {
+      "kind": "draft"
+    },
+    "brand_kit": null,
+    "effective_brand": null,
+    "page_count": 0,
+    "node_count": 0,
+    "slot_count": 0,
+    "asset_count": 0,
+    "pages": [],
+    "slots": []
+  }
+}

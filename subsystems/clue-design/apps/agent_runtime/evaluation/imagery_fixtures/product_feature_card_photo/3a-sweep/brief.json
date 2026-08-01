@@ -1,0 +1,11 @@
+{
+  "id": "product_feature_card_photo",
+  "artifact": "product_card_1x1",
+  "prompt": "Design a 1080x1080 product announcement: New \u2014 Lumen Brand Kits. Lock fonts, colors, and logo so every asset ships on-brand. Drive a See it in action click. Show the product in context.",
+  "expected_decision": "photo",
+  "role": "product_on_plate_centered",
+  "risks": [
+    "low-fidelity UI shot that looks fake",
+    "product competes with headline (both centered, no entry point)"
+  ]
+}

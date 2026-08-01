@@ -1,9 +1,76 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import type { AssetRecord, Node, Scene } from "../contracts";
-import { editorRenderDiagnostics } from "../renderDiagnostics";
+import { setTokenColorMap } from "../renderAdapter";
+import { editorRenderDiagnostics, heuristicMeasurementDiagnostic } from "../renderDiagnostics";
+
+describe("heuristic measurement diagnostic", () => {
+  it("emits a loud EDITOR_HEURISTIC_MEASUREMENT error only when measurement is heuristic", () => {
+    const diagnostic = heuristicMeasurementDiagnostic("heuristic");
+    expect(diagnostic).not.toBeNull();
+    expect(diagnostic).toEqual(
+      expect.objectContaining({
+        severity: "error",
+        code: "EDITOR_HEURISTIC_MEASUREMENT",
+        subject: { kind: "document" }
+      })
+    );
+    expect(diagnostic?.message).toMatch(/measurement degraded/i);
+    expect(diagnostic?.message).toMatch(/font engine unavailable/i);
+  });
+
+  it("is silent while measurement is exact (skia) or not yet resolved (pending)", () => {
+    expect(heuristicMeasurementDiagnostic("skia")).toBeNull();
+    expect(heuristicMeasurementDiagnostic("pending")).toBeNull();
+  });
+});
 
 describe("editor render diagnostics", () => {
+  afterEach(() => {
+    // The diagnostics consult renderAdapter's module-level token map (K0.5);
+    // reset it so map state never leaks across cases.
+    setTokenColorMap({});
+  });
+
+  it("K0.5: does NOT report token fallback for paints the kit map actually resolves", () => {
+    const scene = cloneScene();
+    scene.nodes.node_token_card = tokenCardNode();
+    scene.pages.page_a4.children = ["node_contact_name", "node_token_card"];
+
+    // Without the map: the token paints are genuinely on the heuristic.
+    const before = editorRenderDiagnostics(scene, "page_a4");
+    expect(
+      before.some(
+        (diagnostic) =>
+          diagnostic.code === "EDITOR_RENDER_TOKEN_FALLBACK" &&
+          diagnostic.message.includes("paint token surface.card")
+      )
+    ).toBe(true);
+    expect(
+      before.some(
+        (diagnostic) =>
+          diagnostic.code === "EDITOR_RENDER_TOKEN_FALLBACK" &&
+          diagnostic.message.includes("color token border.brand")
+      )
+    ).toBe(true);
+
+    // With the attached kit's values loaded, the same paints render the real
+    // colors — reporting "uses a local fallback color" would be false.
+    setTokenColorMap({ "surface.card": "#ffffff", "border.brand": "#00525c" });
+    const after = editorRenderDiagnostics(scene, "page_a4");
+    expect(
+      after.some(
+        (diagnostic) =>
+          diagnostic.code === "EDITOR_RENDER_TOKEN_FALLBACK" &&
+          (diagnostic.message.includes("paint token surface.card") ||
+            diagnostic.message.includes("color token border.brand"))
+      )
+    ).toBe(false);
+    // Non-color token fallbacks (dimensions, typography) are untouched by the
+    // color map and still report.
+    expect(after.some((diagnostic) => diagnostic.message.includes("Token Card width"))).toBe(true);
+  });
+
   it("reports canvas preview approximations for gradients, tokens, images, and text shaping", () => {
     const scene = cloneScene();
     scene.pages.page_a4.background = [
@@ -139,6 +206,33 @@ describe("editor render diagnostics", () => {
         message: expect.stringContaining("fallback geometry until preflight runs")
       })
     ]);
+  });
+
+  it("A4: effect spread emits NO approximation diagnostic — the canvas renders it faithfully", () => {
+    // Gate-R upgrade: outer-effect spread is rendered via MakeDilate/MakeErode
+    // (and inner-shadow spread via the erode recipe), so there is no divergence
+    // to declare. This pins the diagnostic's absence.
+    const scene = cloneScene();
+    const node = scene.nodes.node_contact_name;
+    node.effects = [
+      {
+        id: "fx_shadow",
+        kind: { kind: "drop_shadow", color: { kind: "hex", value: "#000000" }, opacity: 0.2, x: 0, y: 4, blur: 12, spread: 6 }
+      },
+      {
+        id: "fx_glow",
+        kind: { kind: "glow", color: { kind: "hex", value: "#256c70" }, opacity: 0.6, blur: 20, spread: 3 }
+      },
+      {
+        id: "fx_inner",
+        kind: { kind: "inner_shadow", color: { kind: "hex", value: "#000000" }, opacity: 0.5, x: 0, y: 2, blur: 6, spread: 4 }
+      }
+    ];
+
+    const diagnostics = editorRenderDiagnostics(scene, "page_a4");
+    expect(
+      diagnostics.some((diagnostic) => diagnostic.code === "EDITOR_RENDER_EFFECT_SPREAD_APPROXIMATION")
+    ).toBe(false);
   });
 });
 

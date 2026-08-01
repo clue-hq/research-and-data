@@ -1,8 +1,12 @@
 # Lumen DSL Vetted Block Catalog — Full-Artifact Compositions
 
-These are complete, pre-proportioned **page** blocks. ASSEMBLE one of these for the
-requested surface, then swap copy via the `#slot:` fixture lines — do not re-invent
-proportions from primitives (that is what overcrowds designs and fails preflight on
+These are complete, pre-proportioned **page** blocks — validated *proportion
+references* for the archetype you chose in `knowledge/design/layout-recipes`, not
+shells to reskin. Build the chosen archetype and use these to get the spacing, width
+floors, and fixture discipline right; **recompose for the brief, don't just swap copy
+via the `#slot:` lines** into a fixed layout (archetypes are skeletons — see
+`skills/create-design`). Do not re-invent proportions from primitives either (that is
+what overcrowds designs and fails preflight on
 `LUMV0810`/`LUMV0903`/`LUMV0904`). Every example below was personally run through
 `.context/p02-validate.py` and returned `{"ok": true}` (the only warnings are
 `LUMB0613`/`LUMB0614`, the platform-font-embedding warnings, which never fail a block).
@@ -87,9 +91,11 @@ Validator proof:
 ## Full-canvas poster — sparse big-canvas ad, distributed (1080×1080)
 
 **When to use:** a LIGHT-content big-canvas ad — one focal message + CTA, no proof
-stats. This is the template to reach for whenever content is sparse on a tall/large
-canvas, so it does NOT end up as three stranded strips with dead bands. It is the
-"poster idiom" from `knowledge/design/foundations` made concrete.
+stats. This is the proportion reference for the **vertical-poster archetype**
+(`knowledge/design/layout-recipes`) — ONE of six, not the default — reached for when
+content is sparse on a tall/large canvas, so it does NOT end up as three stranded
+strips with dead bands. It is the `fill`-region distribution mechanic from
+`knowledge/design/foundations` made concrete; other archetypes distribute differently.
 
 **Distribution (the whole point):** the root is **top-anchored** (`y(s)`), NOT `y(sb)`,
 with three children — a hug `header` (brand lockup), a **`fill`-height `main`

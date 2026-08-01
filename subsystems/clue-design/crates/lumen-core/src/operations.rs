@@ -120,6 +120,10 @@ pub struct NodePatch {
     #[serde(default)]
     pub asset_placement: OptionalFieldPatch<AssetPlacement>,
     pub clip: FieldPatch<bool>,
+    /// Declared bleed intent (A4). Skipped when unchanged so pinned pre-A4
+    /// operation fixtures stay byte-identical (mirrors `effects`).
+    #[serde(default, skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub bleed: FieldPatch<bool>,
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub computed: OptionalFieldPatch<ComputedGeometry>,
     pub locked: FieldPatch<bool>,
@@ -613,6 +617,18 @@ impl Scene {
             if fills_changing && !explicit.style {
                 after.style_token = None;
             }
+            // A6b D4 span honesty on the whole-kind path (review fix): a kind
+            // replace that changes `content` while carrying the OLD spans
+            // forward unchanged would leave stale byte offsets silently
+            // mis-highlighting the new string. Identical spans on changed
+            // content are indistinguishable from a stale carry-forward, so
+            // honesty wins: they clear, exactly like clear_stale_tokens above.
+            // A write that re-authors DIFFERENT spans alongside the new
+            // content keeps them (and inverse operations restore cleared
+            // spans on undo).
+            if after.content != before.content && after.spans == before.spans {
+                after.spans.clear();
+            }
         }
         if fills_detach_style {
             if let NodeKind::Text(text) = &mut node.kind {
@@ -630,6 +646,7 @@ impl Scene {
         apply_optional_patch(&mut node.source_asset_id, patch.source_asset_id);
         apply_optional_patch(&mut node.asset_placement, patch.asset_placement);
         apply_field_patch(&mut node.clip, patch.clip);
+        apply_field_patch(&mut node.bleed, patch.bleed);
         apply_optional_patch(&mut node.layout, patch.layout);
         apply_optional_patch(&mut node.computed, patch.computed);
         apply_field_patch(&mut node.locked, patch.locked);
@@ -1189,6 +1206,9 @@ impl Scene {
                 }
                 if !matches!(patch.clip, FieldPatch::Unchanged) {
                     inverse.clip = FieldPatch::Set(node.clip);
+                }
+                if !matches!(patch.bleed, FieldPatch::Unchanged) {
+                    inverse.bleed = FieldPatch::Set(node.bleed);
                 }
                 if !matches!(patch.layout, OptionalFieldPatch::Unchanged) {
                     inverse.layout = optional_restore(&node.layout);

@@ -32,6 +32,24 @@ a photo only when it does real work:
   to look busy, or when an icon/shape/gradient conveys the idea more crisply. A
   generic stock-style image reads as filler and fails the critic.
 
+## Surface archetypes where imagery EARNS its place (and the role it takes)
+
+"Default to NO" is about data/type surfaces — it is NOT a reason to strip imagery from
+surfaces whose *genre convention* is built on it. When the brief matches one of these
+archetypes, the professional default is YES, in the named role:
+
+| Surface archetype | Imagery verdict | Role |
+|---|---|---|
+| Event poster / invitation (any format) | YES — place/mood hero | Full-bleed + scrim (or split band) |
+| **Event/deck TITLE slide** (16:9, read from a distance) | YES — place/mood image | **Image band + clean type panel**: the image takes a band (side or top), the title/date/logo sit on a solid surface. Never full-bleed behind a projected title. |
+| **Testimonial / quote card / customer story** | YES — a human portrait IS the credibility mechanism | **Portrait frame + quote plate**: portrait in its own frame (fit:cover, focal on the face, native crop — never stretched to the card ratio), quote and attribution on a clean plate beside/below. Never overlay the quote on the face. |
+| Product announcement ("show the product") | YES — product-in-context shot | Product on a plate / in-context; keep any screens angled, distant, or abstract — **never a readable UI close-up** (models garble on-screen text and that fails review). |
+| Data slide, QBR, pricing, hiring, big-stat, feed announcement | NO — type/data-led | Headline + layout blocks carry it (this is where Default-to-NO applies). |
+
+A missing image on an archetype surface is the same class of failure as a gratuitous
+one on a data surface: a deck title slide shipped as a plain type slide, or a
+testimonial card with no portrait, reads unfinished and fails review.
+
 ## Rules of thumb
 
 - **One hero image per surface.** Like one dominant element — a single, deliberate

@@ -8,10 +8,6 @@ import type { WorkspaceViewport } from "@/engine/workspaceViewport";
 import { drawDescriptorTree, parseColor, type DrawNode } from "@/engine/canvaskit/drawDescriptors";
 import { CanvasKitImageCache, type CanvasKitImageSource } from "@/engine/canvaskit/imageCache";
 import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
-import { assetBytesUrl } from "@/engine/assetLibrary";
-import { editorApiBaseUrl } from "@/engine/editorConfig";
-
-const API_BASE_URL = editorApiBaseUrl();
 
 /**
  * Wave 3 C2: the imperative CanvasKit render surface. Replaces react-konva's
@@ -31,6 +27,12 @@ const API_BASE_URL = editorApiBaseUrl();
 export interface CanvasKitStageProps {
   artboards: CanvasKitArtboard[];
   viewport: WorkspaceViewport;
+  /** Bytes URL for an image node's asset id, resolved by the owner from the
+   * SCENE's asset record (content digest → `/asset-store/{digest}`) — the
+   * same source of truth server exports resolve from. Required: resolution
+   * policy (including its registry fallback) lives in ONE place,
+   * `sceneAssetBytesUrl`, not split across layers. */
+  resolveAssetUrl: (assetId: string) => string;
 }
 
 export interface CanvasKitArtboard {
@@ -38,9 +40,15 @@ export interface CanvasKitArtboard {
   nodes: DrawNode[];
   workspaceRect: Rect;
   isActive: boolean;
+  /** Print workstream W3: the page's bleed rect in descriptor space, relative
+   * to the page top-left (negative origin — art extends past trim). Present
+   * only when the print feature is on and the page defines a bleed; content is
+   * then clipped to this box instead of the trim box so bleed art stays
+   * visible up to the bleed line. */
+  bleed?: Rect | null;
 }
 
-export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
+export function CanvasKitStage({ artboards, viewport, resolveAssetUrl }: CanvasKitStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ckRef = useRef<CanvasKit | null>(null);
   const fontRef = useRef<TypefaceFontProvider | null>(null);
@@ -48,13 +56,22 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   const surfaceRef = useRef<Surface | null>(null);
   const dirtyRef = useRef(false);
   const rafRef = useRef(0);
-  const propsRef = useRef({ artboards, viewport });
-  propsRef.current = { artboards, viewport };
+  // Resize is coalesced into the SAME rAF as the repaint: resetting the
+  // canvas bitmap (element.width = …) blanks it, so wipe-and-redraw must
+  // happen inside one frame callback or every sidebar-drag step presents a
+  // blank stage (the resize-flicker bug).
+  const resizePendingRef = useRef(false);
+  const remakeSurfaceRef = useRef<(() => void) | null>(null);
+  const propsRef = useRef({ artboards, viewport, resolveAssetUrl });
+  propsRef.current = { artboards, viewport, resolveAssetUrl };
 
   // One draw pass; scheduled at most once per frame, only while dirty.
   const flush = () => {
     rafRef.current = 0;
     const ck = ckRef.current;
+    if (resizePendingRef.current && ck) {
+      remakeSurfaceRef.current?.();
+    }
     const surface = surfaceRef.current;
     if (!ck || !surface || !dirtyRef.current) {
       return;
@@ -65,7 +82,7 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
     canvas.save();
     const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
     canvas.scale(dpr, dpr);
-    canvas.clear(parseColor(ck, "#3b3f46") ?? ck.Color4f(0.231, 0.247, 0.275, 1));
+    canvas.clear(workspaceCanvasColor(ck));
     canvas.translate(current.viewport.pan.x, current.viewport.pan.y);
     canvas.scale(current.viewport.zoom, current.viewport.zoom);
     for (const artboard of current.artboards) {
@@ -91,16 +108,22 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
     }
 
     const makeSurface = (ck: CanvasKit) => {
+      resizePendingRef.current = false;
       try {
         surfaceRef.current?.delete();
         const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
         element.width = Math.max(1, Math.floor(element.clientWidth * dpr));
         element.height = Math.max(1, Math.floor(element.clientHeight * dpr));
         surfaceRef.current = ck.MakeWebGLCanvasSurface(element) ?? ck.MakeSWCanvasSurface(element);
-        invalidate();
       } catch {
         // Surface creation can fail (no GPU/context); leave the canvas blank
         // and let the parent fall back to Konva.
+        surfaceRef.current = null;
+      }
+    };
+    remakeSurfaceRef.current = () => {
+      if (ckRef.current) {
+        makeSurface(ckRef.current);
       }
     };
 
@@ -113,25 +136,61 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
       // Bridges async asset bytes into the synchronous draw loop: a decode
       // landing re-renders the frame with real image pixels (Step 2 / E0.1).
       imagesRef.current = new CanvasKitImageCache(bundle.ck, {
-        resolveUrl: (assetId) => assetBytesUrl(API_BASE_URL, assetId),
+        // Read through propsRef so resolution always sees the LATEST scene:
+        // the cache re-attempts a failed asset when its resolved URL changes
+        // (e.g. the record's digest arrives with a later scene).
+        resolveUrl: (assetId) => propsRef.current.resolveAssetUrl(assetId),
         onLoad: invalidate
       });
       makeSurface(bundle.ck);
+      invalidate();
     });
 
     const observer =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
-            if (ckRef.current) {
-              makeSurface(ckRef.current);
+            // Skip no-op notifications (observe() fires once immediately);
+            // real size changes wait for the next paint frame so the bitmap
+            // wipe and the redraw land together.
+            const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+            const targetWidth = Math.max(1, Math.floor(element.clientWidth * dpr));
+            const targetHeight = Math.max(1, Math.floor(element.clientHeight * dpr));
+            if (element.width === targetWidth && element.height === targetHeight) {
+              return;
             }
+            resizePendingRef.current = true;
+            invalidate();
           })
         : null;
     observer?.observe(element);
 
+    // The ResizeObserver only sees CSS-size changes — devicePixelRatio can
+    // change with NO size change (window dragged to another display, display
+    // scaling, browser zoom). Without this watcher the surface keeps the old
+    // density forever and every frame is CSS-stretched: a permanently blurry
+    // canvas while exports stay sharp. matchMedia is re-armed per value
+    // because a resolution query only fires when ITS OWN value stops holding.
+    let dprQuery: MediaQueryList | null = null;
+    const armDprWatch = () => {
+      if (typeof matchMedia !== "function") {
+        return;
+      }
+      dprQuery?.removeEventListener?.("change", onDprChange);
+      const dpr = typeof devicePixelRatio === "number" ? devicePixelRatio : 1;
+      dprQuery = matchMedia(`(resolution: ${dpr}dppx)`);
+      dprQuery.addEventListener?.("change", onDprChange);
+    };
+    const onDprChange = () => {
+      resizePendingRef.current = true;
+      invalidate();
+      armDprWatch();
+    };
+    armDprWatch();
+
     return () => {
       disposed = true;
       observer?.disconnect();
+      dprQuery?.removeEventListener?.("change", onDprChange);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         // Reset the guard: leaving the (now-cancelled) id here would make the
@@ -153,6 +212,14 @@ export function CanvasKitStage({ artboards, viewport }: CanvasKitStageProps) {
   return <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />;
 }
 
+function workspaceCanvasColor(ck: CanvasKit): Float32Array {
+  const css =
+    typeof document !== "undefined"
+      ? getComputedStyle(document.documentElement).getPropertyValue("--bg-canvas").trim()
+      : "";
+  return parseColor(ck, css || "#f5f5f5") ?? ck.Color4f(0.961, 0.961, 0.961, 1);
+}
+
 function drawArtboard(
   ck: CanvasKit,
   canvas: import("canvaskit-wasm").Canvas,
@@ -167,7 +234,18 @@ function drawArtboard(
 
   canvas.save();
   canvas.translate(rect.x, rect.y);
-  canvas.clipRect(ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height), ck.ClipOp.Intersect, true);
+  // Clip content to the bleed box when the print feature supplies one (art
+  // extends past trim, visible up to the bleed line); otherwise clip at trim
+  // exactly as before. The bleed origin is negative, so this widens the clip.
+  const clip = artboard.bleed
+    ? ck.LTRBRect(
+        artboard.bleed.x,
+        artboard.bleed.y,
+        artboard.bleed.x + artboard.bleed.width,
+        artboard.bleed.y + artboard.bleed.height
+      )
+    : ck.LTRBRect(0, 0, artboard.page.width, artboard.page.height);
+  canvas.clipRect(clip, ck.ClipOp.Intersect, true);
   drawDescriptorTree(ck, canvas, artboard.page, artboard.nodes, fontProvider, images);
   canvas.restore();
 

@@ -49,6 +49,10 @@ fn export_profile() -> ExportProfile {
         raster: None,
         include_bleed: true,
         embed_fonts: true,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     }
 }
 
@@ -527,6 +531,9 @@ fn brand_kit_font_and_logo_refs_can_match_scene_assets() {
             allowed_backgrounds: Vec::new(),
             license: None,
             provenance: None,
+            title: None,
+            description: None,
+            usage_note: None,
         },
     );
 

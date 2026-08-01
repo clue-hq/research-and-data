@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AgentChatMessage, QueuedAgentMessage } from "@/components/AgentChatPanel";
 import type { EditorHistoryFrame } from "@/hooks/useEditHistory";
-import type {
-  AgentRunEvent,
-  EditorAgentResult,
-  EditorAgentRunner
+import {
+  operationsFromRunEvent,
+  type AgentRunEvent,
+  type EditorAgentResult,
+  type EditorAgentRunner
 } from "@/engine/agentRunner";
 import type {
   BrandCompatibilityReport,
@@ -12,14 +13,28 @@ import type {
   ExportProfile,
   NodeId,
   Operation,
+  Page,
   PageId,
+  Rect,
   Scene
 } from "@/engine/contracts";
 import { defaultEditorExportProfile, type EditorExportResult } from "@/engine/exportRunner";
 import type { EditorPreflightResult } from "@/engine/preflightRunner";
-import { firstPageId } from "@/engine/sceneQueries";
+import { firstPageId, pageIdForNode } from "@/engine/sceneQueries";
+import { loadCanvasKit } from "@/engine/canvaskit/loadCanvasKit";
+import { skiaMeasurements } from "@/engine/canvaskit/skiaMeasurements";
+import {
+  resolveAndFreezeScene,
+  type AcceptBakeResult
+} from "@/engine/documentStore";
+import { editorApiBaseUrl } from "@/engine/editorConfig";
 import { freezeLayoutEdit } from "@/engine/structuredEdits";
 import type { OptimisticEnginePort } from "@/engine/wasmEngine";
+
+/** Default K1.6(b) bake: the real /preflight-preview call with
+ * freeze_layout, against the configured API. */
+const defaultAcceptBakeRunner = (scene: Scene): Promise<AcceptBakeResult | null> =>
+  resolveAndFreezeScene({ apiBaseUrl: editorApiBaseUrl() }, scene);
 
 /**
  * The agent-turn state machine: run → propose → preview → Accept/Reject,
@@ -58,6 +73,19 @@ export const agentTurnRunningDiagnostic = (): Diagnostic => ({
 
 /** Phase 0c ephemeral preview: the proposed turn applied to the live scene,
  * with the base kept for Reject and the Before/After toggle. */
+/** RC: one user-attached reference for the next turn — the uploaded library
+ * asset id, a human label, and a thumbnail URL (GET /assets/{id}/thumbnail).
+ * Per-turn context: cleared after each successful send. */
+export interface PendingReference {
+  assetId: string;
+  label: string;
+  thumbnailUrl: string;
+}
+
+/** RC: the maximum references a single turn carries — mirrors the runtime's
+ * PLACED_PREVIEWS_MAX and the API cap (D1); more dilutes vision context. */
+export const MAX_TURN_REFERENCES = 4;
+
 export interface AgentPreviewState {
   operations: Operation[];
   /** Engine-computed inverse of the previewed batch, captured at apply time
@@ -70,6 +98,281 @@ export interface AgentPreviewState {
   view: "before" | "after";
 }
 
+/** Live-design-streaming (D3/D5): one streamed ops batch — the operations that
+ * rode a single clean compile, with the run-event seq they arrived on. */
+export interface AgentStreamBatch {
+  seq: number;
+  operations: Operation[];
+}
+
+/** S2 reveal metadata: the one element (or artboard) most recently materialized
+ * by the pump, in the terms the SVG chrome + viewport auto-follow need. `bounds`
+ * is the node's `computed.layout_bounds` in SCENE units (the wiring layer scales
+ * by the page's unitScale and offsets by the artboard rect to reach workspace
+ * space); it is null for an `add_page` placeholder (the whole artboard flashes).*/
+export interface AgentStreamReveal {
+  /** The run-event seq the revealed op rode in on. */
+  seq: number;
+  /** The revealed op's kind (`insert_node`, `add_page`, …) — drives chrome copy.*/
+  kind: string;
+  /** The materialized node, or null for a page placeholder / silent step. */
+  nodeId: NodeId | null;
+  /** The page the reveal belongs to (drives viewport auto-follow). */
+  pageId: PageId | null;
+  /** Scene-unit layout bounds of the revealed node; null for a page/silent step.*/
+  bounds: Rect | null;
+  /** The label-chip copy ("text · headline"), derived from the APPLIED scene at
+   * publish time — the displayed scene lags the engine during the draw window
+   * (the S2.1 hold-back), so a display-side lookup would not find the node. */
+  label: string;
+  /** S2.1 draw-the-box choreography timing (ms) for THIS reveal, already
+   * compression- and reduced-motion-adjusted by the pump: the cursor travels to
+   * the corner over `travelMs`, the accent outline is dragged out to the full
+   * bbox over `drawMs`, then the content materializes and the outline fades over
+   * `materializeFadeMs`. The pump holds `setScene` until `travelMs + drawMs`
+   * elapse, so the content lands exactly when the box finishes drawing. */
+  travelMs: number;
+  drawMs: number;
+  materializeFadeMs: number;
+  /** prefers-reduced-motion for the run: the chrome renders a static outline
+   * (no travel/draw animation) and the pump collapses to one fast beat. */
+  reducedMotion: boolean;
+}
+
+/** Live-design-streaming: the minimal streaming status the hook exposes so the
+ * S2 theater can sequence reveals and draw chrome without re-plumbing. Small
+ * and derived; the canonical proposal (not this) is what Accept ever persists. */
+export interface AgentStreamStatus {
+  /** A run is in flight and progressively applying streamed batches. */
+  active: boolean;
+  /** The highest run-event seq whose reveal-step was applied (seq-dedup guard).*/
+  lastAppliedSeq: number;
+  /** How many reveal-steps were successfully applied this run (one visual op per
+   * paced step; a fast-forwarded backlog counts each drained step). */
+  stepsApplied: number;
+  /** An applyOperations failure stopped further streamed application; the
+   * canvas holds the last good streamed scene and waits for the terminal
+   * reconcile. Never breaks the turn or the final proposal. */
+  brokenStream: boolean;
+  /** The most recently applied step (ops + seq), or null before the first. */
+  latestBatch: AgentStreamBatch | null;
+  /** S2: the element/artboard just revealed, for the SVG chrome + auto-follow.*/
+  currentReveal: AgentStreamReveal | null;
+  /** S2: reveal-steps still queued behind the pump (0 = caught up / idle). */
+  revealQueueLength: number;
+}
+
+const idleAgentStreamStatus = (): AgentStreamStatus => ({
+  active: false,
+  lastAppliedSeq: 0,
+  stepsApplied: 0,
+  brokenStream: false,
+  latestBatch: null,
+  currentReveal: null,
+  revealQueueLength: 0
+});
+
+/** S2.1 draw-the-box choreography (moda-parity calm cadence). Per element the
+ * cursor travels to the top-left, an accent outline is dragged out to the
+ * element's full bbox, then the content materializes inside it and the outline
+ * fades — ~0.7–0.9 s per element uncompressed. */
+const TRAVEL_MS = 200; // cursor glide to the new element's corner
+const DRAW_MIN_MS = 250; // a small chip
+const DRAW_MAX_MS = 500; // a full-width hero (scaled by box diagonal, below)
+const ADD_PAGE_DRAW_MS = 300; // whole-artboard placeholder outline (no corner-drag)
+const MATERIALIZE_FADE_MS = 250; // outline fade after the content lands (CSS)
+const INTER_STEP_PAUSE_MS = 120; // calm gap between elements
+/** Per-batch duration cap: when steps × per-step exceeds it, the per-element
+ * pace compresses proportionally — but never below MIN_STEP_TOTAL_MS per element
+ * (and the draw is never dropped entirely). The new-batch fast-forward still
+ * bypasses the theater wholesale. */
+const MAX_BATCH_REVEAL_MS = 15000;
+const MIN_STEP_TOTAL_MS = 250;
+/** prefers-reduced-motion: collapse travel+draw to one fast beat with no
+ * animated chrome (the CSS renders a static outline). */
+const REDUCED_MOTION_STEP_MS = 80;
+
+/** Read the OS reduced-motion preference once per run (armStream). Defensive
+ * around SSR / stubbed environments — a missing matchMedia means full motion. */
+const prefersReducedMotion = (): boolean => {
+  try {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  } catch {
+    return false;
+  }
+};
+
+/** The reveal draw duration scales with the element's footprint: a small chip
+ * (short diagonal relative to the page) draws in ~DRAW_MIN_MS, a full-bleed hero
+ * in ~DRAW_MAX_MS. `add_page` placeholders (and any node whose bounds/page are
+ * unknown) use a fixed whole-artboard beat. Bounds and `page.size` share the
+ * pre-unitScale page-unit space, so the ratio is zoom-independent. */
+function drawMsForReveal(kind: string, bounds: Rect | null, page: Page | undefined): number {
+  if (kind === "add_page" || !bounds || !page) {
+    return ADD_PAGE_DRAW_MS;
+  }
+  const pageDiagonal = Math.hypot(page.size.width, page.size.height);
+  const boxDiagonal = Math.hypot(bounds.width, bounds.height);
+  const fraction = pageDiagonal > 0 ? Math.min(1, boxDiagonal / pageDiagonal) : 0;
+  return DRAW_MIN_MS + (DRAW_MAX_MS - DRAW_MIN_MS) * fraction;
+}
+
+/** The per-step phase timing, after batch compression and the reduced-motion
+ * collapse. `pauseMs` is the calm gap before the NEXT step (not carried in the
+ * reveal — the chrome only needs travel/draw/fade). */
+interface RevealTiming {
+  travelMs: number;
+  drawMs: number;
+  pauseMs: number;
+  materializeFadeMs: number;
+}
+
+function revealTiming(
+  kind: string,
+  bounds: Rect | null,
+  page: Page | undefined,
+  compression: number,
+  reducedMotion: boolean
+): RevealTiming {
+  if (reducedMotion) {
+    // One fast beat, no chrome animation; the draw still exists (never zero).
+    return { travelMs: 0, drawMs: REDUCED_MOTION_STEP_MS, pauseMs: 0, materializeFadeMs: 0 };
+  }
+  let travelMs = TRAVEL_MS * compression;
+  let drawMs = drawMsForReveal(kind, bounds, page) * compression;
+  let pauseMs = INTER_STEP_PAUSE_MS * compression;
+  let materializeFadeMs = MATERIALIZE_FADE_MS * compression;
+  // Floor: never reveal an element faster than MIN_STEP_TOTAL_MS total (and so
+  // never drop the draw) — if compression pushed the step under the floor, scale
+  // the whole step back up proportionally.
+  const total = travelMs + drawMs + pauseMs;
+  if (total > 0 && total < MIN_STEP_TOTAL_MS) {
+    const boost = MIN_STEP_TOTAL_MS / total;
+    travelMs *= boost;
+    drawMs *= boost;
+    pauseMs *= boost;
+    materializeFadeMs *= boost;
+  }
+  return { travelMs, drawMs, pauseMs, materializeFadeMs };
+}
+
+/** The batch-wide compression factor: if pacing every step at its worst-case
+ * nominal duration would overrun the cap, shrink every step by this factor so
+ * the whole batch fits MAX_BATCH_REVEAL_MS (the per-step floor still applies). */
+function batchCompression(stepCount: number): number {
+  const nominalPerStep = TRAVEL_MS + DRAW_MAX_MS + INTER_STEP_PAUSE_MS;
+  const totalNominal = stepCount * nominalPerStep;
+  return totalNominal > MAX_BATCH_REVEAL_MS ? MAX_BATCH_REVEAL_MS / totalNominal : 1;
+}
+
+/** A single paced reveal-step: the ops applied together this beat (a run of
+ * silent non-visual ops folded onto the one visual op so there are no dead
+ * beats) and the visual op that drives the chrome (null = a silent step). */
+interface RevealStep {
+  seq: number;
+  ops: Operation[];
+  visualOp: Operation | null;
+}
+
+/** Structure-first reveal granularity: an `add_page` lands as an artboard
+ * placeholder and an `insert_node` materializes one element — both are visual
+ * beats. Everything else (asset upserts, slot writes, …) applies silently WITH
+ * the next visual step. */
+const isVisualRevealOp = (op: Operation): boolean =>
+  op.kind === "add_page" || op.kind === "insert_node";
+
+/** Split a streamed batch's ops into paced reveal-steps: each visual op closes a
+ * step, carrying any preceding non-visual ops as its silent prefix; trailing
+ * non-visual ops fold onto the last step (or form one silent step if the batch
+ * has no visual op at all) so the pump never ticks on an empty beat. */
+function stepsFromOps(seq: number, ops: Operation[]): RevealStep[] {
+  const steps: RevealStep[] = [];
+  let pending: Operation[] = [];
+  for (const op of ops) {
+    pending.push(op);
+    if (isVisualRevealOp(op)) {
+      steps.push({ seq, ops: pending, visualOp: op });
+      pending = [];
+    }
+  }
+  if (pending.length > 0) {
+    if (steps.length > 0) {
+      steps[steps.length - 1].ops.push(...pending);
+    } else {
+      steps.push({ seq, ops: pending, visualOp: null });
+    }
+  }
+  return steps;
+}
+
+/** The geometry half of a reveal (kind + node/page + bounds + label), before
+ * the pump attaches the phase timing. */
+type RevealGeometry = Pick<
+  AgentStreamReveal,
+  "seq" | "kind" | "nodeId" | "pageId" | "bounds" | "label"
+>;
+
+/** Trim an id-ish suffix ("numeral_a" → "numeral") and cap the length so the
+ * reveal label chip stays compact. */
+function prettyRevealName(raw: string): string {
+  const stripped = raw.replace(/_[a-z0-9]+$/i, "");
+  const name = stripped.length > 0 ? stripped : raw;
+  return name.length > 18 ? `${name.slice(0, 17)}…` : name;
+}
+
+/** Derive the chrome/auto-follow geometry for a revealed step from the scene it
+ * produced. `add_page` → the new page (whole-artboard flash, no node bounds);
+ * `insert_node` → the materialized node + its computed bounds + owning page.
+ * The label is derived HERE, from the applied scene — the displayed scene lags
+ * the engine during the draw window, so it cannot answer this lookup. */
+function revealFromStep(step: RevealStep, scene: Scene): RevealGeometry {
+  const op = step.visualOp;
+  if (op?.kind === "add_page") {
+    const pageName = scene.pages[op.page.id]?.name ?? "";
+    const label = pageName ? `artboard · ${prettyRevealName(pageName)}` : "artboard";
+    return { seq: step.seq, kind: op.kind, nodeId: null, pageId: op.page.id, bounds: null, label };
+  }
+  if (op?.kind === "insert_node") {
+    // A later op folded onto this step can remove the just-inserted node (an
+    // insert+delete that lands in one paced step). Only reveal a node that
+    // actually survives into the applied scene — otherwise the chrome would
+    // point at a node that no longer exists (a dangling reveal).
+    const insertedId = op.node?.id ?? null;
+    const nodeId = insertedId && scene.nodes[insertedId] ? insertedId : null;
+    const pageId =
+      op.parent.kind === "page"
+        ? op.parent.id
+        : nodeId
+          ? pageIdForNode(scene, nodeId)
+          : null;
+    const bounds = nodeId ? scene.nodes[nodeId]?.computed?.layout_bounds ?? null : null;
+    const node = nodeId ? scene.nodes[nodeId] : undefined;
+    // Defensive reads: the label is chrome copy, never worth breaking a stream
+    // over — a node missing kind/name (possible on partial scenes) degrades to
+    // a generic label instead of throwing inside the pump's apply path.
+    const label = node
+      ? (() => {
+          const kindName = node.kind?.kind ?? "element";
+          const name = prettyRevealName(node.name ?? nodeId ?? "");
+          return name ? `${kindName} · ${name}` : kindName;
+        })()
+      : "designing…";
+    return { seq: step.seq, kind: op.kind, nodeId, pageId, bounds, label };
+  }
+  return {
+    seq: step.seq,
+    kind: op?.kind ?? "silent",
+    nodeId: null,
+    pageId: null,
+    bounds: null,
+    label: "designing…"
+  };
+}
+
 export interface UseAgentTurnDeps {
   agentRunner: EditorAgentRunner;
   engineRef: { current: OptimisticEnginePort | null };
@@ -79,11 +382,22 @@ export interface UseAgentTurnDeps {
   selectedNodeId: NodeId | null;
   /** 2c: the chipped edit targets sent with each turn. */
   targetNodeIds: NodeId[];
+  /** RC: uploads one attached file to the asset library and resolves its
+   * reference descriptor (id + label + thumbnail url). Injected so the hook
+   * stays testable (tests mock it); EditorApp wires the real uploadAsset +
+   * thumbnail URL. Absent → the attach affordance is inert. */
+  referenceUploader?: (file: File) => Promise<PendingReference>;
   /** 2e: the document's standing instructions sent with each turn. */
   agentInstructions: string | null;
+  /** Model override sent with each turn (null = runtime default). */
+  agentModel?: string | null;
   /** Advanced per-document opt-out from handoff-absolute: when true the
    * accept-time freeze is skipped, so the turn's Stack containers stay live. */
   layoutManagedEditing: boolean;
+  /** K1.6(b): the server accept bake (resolve tokens + relayout + freeze on
+   * the server, returning the raw scene + ops). Defaults to the real API
+   * call; tests inject fakes. Null return / throw → client-side fallback. */
+  acceptBakeRunner?: (scene: Scene) => Promise<AcceptBakeResult | null>;
   diagnostics: Diagnostic[];
   setDiagnostics: Dispatch<SetStateAction<Diagnostic[]>>;
   setScene: Dispatch<SetStateAction<Scene>>;
@@ -103,11 +417,13 @@ export interface UseAgentTurnDeps {
     persistOptions?: { checkpoint?: string },
     inverseOperations?: Operation[] | null
   ) => "persisted" | "creation-seed" | "local-only";
+  // The agent turn only awaits completion; the export result (returned for
+  // callers like the topbar download flow) is ignored here.
   runExportForScene: (
     sceneForExport: Scene,
     profile: ExportProfile,
     pageIds: PageId[]
-  ) => Promise<void>;
+  ) => Promise<unknown>;
   applyOperations: (operations: Operation[], onAccepted?: (scene: Scene) => void) => void;
   /** 2b: rejoin an in-flight run's SSE stream after a tab reload (resume). The
    * run keeps executing server-side; this replays its events and resolves with
@@ -156,8 +472,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    referenceUploader,
     agentInstructions,
+    agentModel,
     layoutManagedEditing,
+    acceptBakeRunner = defaultAcceptBakeRunner,
     diagnostics,
     setDiagnostics,
     setScene,
@@ -180,6 +499,342 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   const [agentDraft, setAgentDraft] = useState("");
   // 2b show-work: the live run-event stream feeding the Moda plan checklist.
   const [runEvents, setRunEvents] = useState<AgentRunEvent[]>([]);
+  // Live-design-streaming (D3): the exposed streaming status the S2 theater
+  // reads. Mirrors the synchronous working state in streamRef (below).
+  const [agentStream, setAgentStream] = useState<AgentStreamStatus>(idleAgentStreamStatus);
+  // The synchronous working copy of the stream, mutated in-place inside the SSE
+  // event callback + the pump tick: cumulative application needs a monotonic
+  // seq guard and a single captured base scene read/written without waiting for
+  // a React re-render. `baseScene` is captured ONCE (before the first streamed
+  // apply) and is what the terminal reconcile / failure-restore return the
+  // engine to. `queue` holds the paced reveal-steps; `timer` is the single
+  // setTimeout chain (D4.5: no rAF — the canvas repaints itself per setScene).
+  const streamRef = useRef<{
+    active: boolean;
+    baseScene: Scene | null;
+    lastEnqueuedSeq: number;
+    lastAppliedSeq: number;
+    stepsApplied: number;
+    broken: boolean;
+    queue: RevealStep[];
+    /** Batch-wide pace compression (1 = uncompressed); set per enqueued batch. */
+    compression: number;
+    /** OS reduced-motion preference, read once at arm time. */
+    reducedMotion: boolean;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
+
+  // The pre-turn seed scene, captured EXPLICITLY at arm time — before any
+  // streamed apply mutates the live scene. Every settle path (live send AND
+  // reload resume) reads THIS, never closure/ref `scene` (which streaming has
+  // since mutated). Kills the staleness class the resume path fell into: an
+  // undo frame that captured the half-built streamed scene, and an
+  // unchanged-seed check that compared the draft against the streamed scene.
+  // Held until the next armStream overwrites it (never nulled on settle, since
+  // handleTurnResult reads it AFTER reconcileStreamToBase runs).
+  const turnSeedRef = useRef<Scene | null>(null);
+
+  const cancelPump = () => {
+    const stream = streamRef.current;
+    if (stream?.timer != null) {
+      clearTimeout(stream.timer);
+      stream.timer = null;
+    }
+  };
+
+  // Arm the stream at run start: a fresh run paces batches from a base scene
+  // captured lazily on the first reveal-step. Called by the live send and the
+  // reload resume path alike.
+  const armStream = () => {
+    cancelPump();
+    // Capture the pre-turn seed NOW — nothing streamed yet, so the engine's
+    // scene (or the React scene) is the honest base for both the live send and
+    // the reload-resume path (this mount's `scene` is the pre-turn base).
+    turnSeedRef.current = engineRef.current?.scene ?? scene;
+    streamRef.current = {
+      active: true,
+      baseScene: null,
+      lastEnqueuedSeq: 0,
+      lastAppliedSeq: 0,
+      stepsApplied: 0,
+      broken: false,
+      queue: [],
+      compression: 1,
+      reducedMotion: prefersReducedMotion(),
+      timer: null
+    };
+    setAgentStream({ ...idleAgentStreamStatus(), active: true });
+  };
+
+  const markStreamBroken = () => {
+    cancelPump();
+    const stream = streamRef.current;
+    if (stream) {
+      stream.broken = true;
+      stream.queue = [];
+    }
+    setAgentStream((status) => ({ ...status, brokenStream: true, revealQueueLength: 0 }));
+  };
+
+  // S2.1 inversion: apply a reveal-step's ops to the ENGINE ahead of the display
+  // (`engine.applyOperations`) and read the new node's bounds off the applied
+  // scene, WITHOUT `setScene` — the pump holds the content until the draw-the-box
+  // choreography completes. A failed apply is SWALLOWED loudly: the stream is
+  // marked broken and later steps drop; the canvas holds the last good streamed
+  // scene until the terminal reconcile. Streaming can never break the turn or the
+  // final proposal. Returns the applied scene + the reveal (geometry + phase
+  // timing) + the raw timing (for the pump's own hold/pace), or null if it broke.
+  const applyStepToEngine = (
+    step: RevealStep
+  ): { scene: Scene; reveal: AgentStreamReveal; timing: RevealTiming } | null => {
+    const stream = streamRef.current;
+    const engine = engineRef.current;
+    if (!stream || !engine) {
+      return null;
+    }
+    if (stream.baseScene === null) {
+      stream.baseScene = engine.scene;
+    }
+    try {
+      const applied = engine.applyOperations(step.ops);
+      if (!applied.accepted) {
+        // eslint-disable-next-line no-console
+        console.error(
+          "[agent-stream] streamed step rejected by the engine; stream marked broken",
+          applied.message ?? applied.code
+        );
+        markStreamBroken();
+        return null;
+      }
+      stream.lastAppliedSeq = step.seq;
+      stream.stepsApplied += 1;
+      const geometry = revealFromStep(step, applied.scene);
+      const page = geometry.pageId ? applied.scene.pages[geometry.pageId] : undefined;
+      const timing = revealTiming(
+        geometry.kind,
+        geometry.bounds,
+        page,
+        stream.compression,
+        stream.reducedMotion
+      );
+      const reveal: AgentStreamReveal = {
+        ...geometry,
+        travelMs: timing.travelMs,
+        drawMs: timing.drawMs,
+        materializeFadeMs: timing.materializeFadeMs,
+        reducedMotion: stream.reducedMotion
+      };
+      return { scene: applied.scene, reveal, timing };
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[agent-stream] applyOperations threw on a streamed step; stream marked broken", error);
+      markStreamBroken();
+      return null;
+    }
+  };
+
+  // Publish the reveal onto the exposed streaming status (the chrome + auto-follow
+  // read this). Mirrors the synchronous streamRef bookkeeping applyStepToEngine
+  // already advanced.
+  const commitRevealState = (reveal: AgentStreamReveal, ops: Operation[], seq: number) => {
+    const stream = streamRef.current;
+    setAgentStream((status) => ({
+      ...status,
+      lastAppliedSeq: seq,
+      stepsApplied: status.stepsApplied + 1,
+      latestBatch: { seq, operations: ops },
+      currentReveal: reveal,
+      revealQueueLength: stream?.queue.length ?? 0
+    }));
+  };
+
+  // Fast-forward apply: engine-apply AND materialize (`setScene`) immediately, no
+  // theater. Used to drain a backlog in one shot when a newer batch arrives.
+  const applyImmediate = (step: RevealStep): boolean => {
+    const applied = applyStepToEngine(step);
+    if (!applied) {
+      return false;
+    }
+    setScene(applied.scene);
+    commitRevealState(applied.reveal, step.ops, step.seq);
+    return true;
+  };
+
+  // The pump (S2.1 draw-the-box): pop the head step, apply its ops to the engine
+  // AHEAD of the display, publish the reveal (the chrome starts travel→draw) and
+  // HOLD the content. At travelMs+drawMs the held `setScene` fires — the content
+  // materializes inside the just-drawn box; the outline then fades (CSS) while the
+  // next step starts after the inter-step pause. Exactly one active timer at any
+  // moment (stream.timer), so cancellation (reconcile / failure / fast-forward)
+  // stays a single clearTimeout — and a `done` that lands DURING the draw phase
+  // (engine applied, held setScene not yet fired) cancels here and reconciles to
+  // the canonical preview with no streamed frame shown after.
+  const runRevealStep = () => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active || stream.broken) {
+      return;
+    }
+    const step = stream.queue.shift();
+    if (!step) {
+      return;
+    }
+    const applied = applyStepToEngine(step);
+    if (!applied) {
+      return;
+    }
+    // The corner-drag hold-back applies only to NODES. An `add_page` (or a
+    // silent step) materializes IMMEDIATELY — the empty artboard IS the
+    // placeholder (moda's structure-first beat), and the whole-artboard outline
+    // draws OVER it. Holding a page back would also leave its chrome with
+    // nothing to anchor to: the overlay maps reveals through the DISPLAYED
+    // scene's artboard rects, and a held page is not in the displayed scene
+    // yet. (A node's page, by contrast, always materialized in an earlier step,
+    // so node reveals — even bounds-less ones — anchor fine while held.)
+    const holdContent = applied.reveal.kind === "insert_node";
+    if (!holdContent) {
+      setScene(applied.scene);
+    }
+    // Publish the reveal (chrome begins travel+draw); node content stays hidden
+    // until the box finishes drawing.
+    commitRevealState(applied.reveal, step.ops, step.seq);
+    const drawDone = applied.timing.travelMs + applied.timing.drawMs;
+    stream.timer = setTimeout(() => {
+      const current = streamRef.current;
+      if (!current || !current.active || current.broken) {
+        return;
+      }
+      current.timer = null;
+      if (holdContent) {
+        // The box finished drawing — materialize the held content.
+        setScene(applied.scene);
+      }
+      // Calm cadence: the next element starts after the inter-step pause.
+      scheduleNextRevealStep(applied.timing.pauseMs);
+    }, drawDone);
+  };
+
+  // Schedule the next reveal-step to BEGIN after `leadMs` (the previous step's
+  // inter-step pause, or the batch's initial lead). One timer chain, cancellable;
+  // it halts on an empty queue, a broken apply, or a torn-down stream.
+  const scheduleNextRevealStep = (leadMs: number) => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active || stream.broken || stream.timer != null) {
+      return;
+    }
+    if (stream.queue.length === 0) {
+      return;
+    }
+    stream.timer = setTimeout(() => {
+      const current = streamRef.current;
+      if (!current || !current.active || current.broken) {
+        return;
+      }
+      current.timer = null;
+      runRevealStep();
+    }, leadMs);
+  };
+
+  // Enqueue a streamed batch (D4.1): its ops become paced reveal-steps. When a
+  // NEW batch arrives while a backlog is still pending, fast-forward — drain the
+  // whole backlog in ONE cumulative apply (no visible catch-up crawl), then pace
+  // the new batch. Replayed-on-reconnect events therefore fast-forward for free.
+  // The per-batch duration cap compresses the pace so a large batch still
+  // finishes within MAX_BATCH_REVEAL_MS.
+  const enqueueStreamedBatch = (event: AgentRunEvent) => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active || stream.broken) {
+      return;
+    }
+    const operations = operationsFromRunEvent(event);
+    if (!operations) {
+      return;
+    }
+    if (event.seq <= stream.lastEnqueuedSeq) {
+      return;
+    }
+    stream.lastEnqueuedSeq = event.seq;
+    const engine = engineRef.current;
+    if (!engine) {
+      // Server-only mode has no local engine to render onto; the terminal
+      // proposal still arrives on `done` and applies through the normal path.
+      return;
+    }
+    // Fast-forward any pending backlog from earlier batches as a single apply
+    // (materialized immediately, no theater). A step already popped and applied
+    // to the engine but still mid-draw (its held setScene not yet fired) is
+    // covered too: its ops are in the engine, so this cumulative setScene shows
+    // them — no held content is lost.
+    if (stream.queue.length > 0) {
+      cancelPump();
+      const backlog = stream.queue;
+      stream.queue = [];
+      const drained: Operation[] = [];
+      let lastStep: RevealStep | null = null;
+      for (const pending of backlog) {
+        drained.push(...pending.ops);
+        if (pending.visualOp) {
+          lastStep = pending;
+        }
+      }
+      const flushSeq = backlog[backlog.length - 1]?.seq ?? stream.lastAppliedSeq;
+      if (
+        !applyImmediate({
+          seq: flushSeq,
+          ops: drained,
+          visualOp: lastStep?.visualOp ?? null
+        })
+      ) {
+        return;
+      }
+    }
+    const steps = stepsFromOps(event.seq, operations);
+    if (steps.length === 0) {
+      return;
+    }
+    stream.queue = steps;
+    stream.compression = batchCompression(steps.length);
+    setAgentStream((status) => ({ ...status, revealQueueLength: steps.length }));
+    // Kick off the pump: the first element begins after one inter-step pause
+    // (0 under reduced motion), then each subsequent step self-schedules.
+    const firstLead = stream.reducedMotion ? 0 : INTER_STEP_PAUSE_MS * stream.compression;
+    scheduleNextRevealStep(firstLead);
+  };
+
+  // Terminal reconcile (D3, the invariant): cancel the pump, drop any pending
+  // reveal-steps, and discard the ephemeral stream by resetting the engine to
+  // the pre-turn base. previewAgentProposal reads `engine.scene` as its base and
+  // applies the canonical ops from there, so the streamed engine state can
+  // NEVER leak into the preview — a streamed run reconciles byte-identically to
+  // a non-streamed one. `setScene(base)` covers the rare path where nothing
+  // repaints after (an unchanged-seed failure); the proposed/draft paths
+  // setScene their own result immediately after and win the batched update.
+  const reconcileStreamToBase = () => {
+    cancelPump();
+    const stream = streamRef.current;
+    if (stream?.baseScene) {
+      engineRef.current?.reset(stream.baseScene);
+      setScene(stream.baseScene);
+    }
+    streamRef.current = null;
+    setAgentStream(idleAgentStreamStatus());
+  };
+
+  // Failure path: cancel the pump, drop pending steps, and restore the pre-turn
+  // base exactly like Reject (replaceScene resets the engine AND the scene), so
+  // a run that streamed some progress then failed never leaves a half-built
+  // design masquerading as the result.
+  const restoreStreamBaseOnFailure = () => {
+    cancelPump();
+    const stream = streamRef.current;
+    if (stream?.baseScene) {
+      replaceScene(stream.baseScene);
+    }
+    streamRef.current = null;
+    setAgentStream(idleAgentStreamStatus());
+  };
+
+  // A mid-run unmount must not leak the pump's timer.
+  useEffect(() => () => cancelPump(), []);
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
   const [agentProposal, setAgentProposal] = useState<EditorAgentResult | null>(null);
   // Phase 0c (Moda pattern): a proposed agent turn is applied to the live scene
@@ -191,6 +846,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // pending wait here and drain one per idle transition — each drained turn
   // seeds from the scene as it is at drain time, not at enqueue time.
   const [queuedAgentMessages, setQueuedAgentMessages] = useState<QueuedAgentMessage[]>([]);
+  // RC: references the user attached for the NEXT turn. Per-turn context —
+  // threaded into the runner call and cleared after each successful send.
+  const [pendingReferences, setPendingReferences] = useState<PendingReference[]>([]);
+  const [isUploadingReferences, setIsUploadingReferences] = useState(false);
 
   // Merge one streamed run event into the checklist state. Replay (EventSource
   // reconnect, or resume-on-mount) re-sends events, so dedupe by seq; the
@@ -199,6 +858,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (typeof event.data.run_id === "string") {
       writeActiveRun(event.data.run_id);
     }
+    // Live-design-streaming (D3/S2): pace the design's element-by-element
+    // reveal. Events that carry no operations (checklist ticks) fall through
+    // untouched.
+    enqueueStreamedBatch(event);
     setRunEvents((events) => {
       if (events.some((existing) => existing.seq === event.seq && existing.type === event.type)) {
         return events;
@@ -209,9 +872,18 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
 
   // Turn-settled bookkeeping, shared by the live send path and the reload
   // resume path: surface the proposal/draft, post the chat messages, and (for
-  // a proposed turn) drop into the reviewable preview. `seedScene` is the scene
-  // the turn was seeded from — used only to detect the unchanged-seed case.
-  const handleTurnResult = (result: EditorAgentResult, seedScene: Scene) => {
+  // a proposed turn) drop into the reviewable preview. The seed is the scene
+  // the turn was ARMED from (turnSeedRef, captured before any streamed apply) —
+  // NOT closure/ref `scene`, which progressive streaming has since mutated.
+  // Both the unchanged-seed check and the draft's undo frame read this seed, so
+  // the resume path can no longer compare against — or persist — the streamed
+  // scene.
+  const handleTurnResult = (result: EditorAgentResult) => {
+    const seedScene = turnSeedRef.current ?? scene;
+    // Live-design-streaming (D3): the streamed build is ephemeral. Reset the
+    // engine to the pre-turn base BEFORE the canonical preview so the streamed
+    // state can never leak into what Accept applies (the reconcile invariant).
+    reconcileStreamToBase();
     // A failed run can hand back a "draft" that is just the untouched seed
     // (every authored block was rejected — nothing ever applied). Claiming
     // "draft visible" for an unchanged design reads as a broken canvas;
@@ -224,7 +896,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       draftIsUnchangedSeed ? { ...result, draft_scene: null } : result
     );
     if (result.status === "failed" && result.draft_scene && !draftIsUnchangedSeed) {
-      showAgentDraftScene(result);
+      showAgentDraftScene(result, seedScene);
     }
     setAgentMessages((messages) => [
       ...messages,
@@ -257,6 +929,9 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   };
 
   const handleTurnError = (error: unknown) => {
+    // Live-design-streaming (D3/D7): a failed run restores the pre-turn base
+    // exactly like Reject — the stream never masks a failure as progress.
+    restoreStreamBaseOnFailure();
     const message = error instanceof Error ? error.message : "Agent request failed.";
     const diagnostic: Diagnostic = {
       severity: "error",
@@ -293,7 +968,10 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     ]);
   };
 
-  const sendAgentPrompt = async (prompt: string) => {
+  const sendAgentPrompt = async (
+    prompt: string,
+    referencesOverride?: PendingReference[]
+  ) => {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt || isAgentRunning) {
       return;
@@ -303,17 +981,34 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
       return;
     }
 
-    const seedScene = scene;
+    // RC: snapshot the references riding THIS turn before any async work, so a
+    // reference added mid-flight never leaks into an in-flight send. A QUEUED
+    // message passes its enqueue-time snapshot as the override (ship-blocker 2:
+    // reading the live pending set at drain time dropped or mixed attachments);
+    // a composer send reads the live pending set.
+    const fromQueue = referencesOverride !== undefined;
+    const turnReferences = fromQueue ? referencesOverride : pendingReferences;
+    const referenceAssetIds = turnReferences.map((reference) => reference.assetId);
     setAgentDraft("");
     setAgentProposal(null);
     setRunEvents([]);
+    armStream();
     setIsAgentRunning(true);
     setAgentMessages((messages) => [
       ...messages,
       {
         id: uniqueChatMessageId("user"),
         role: "user",
-        content: trimmedPrompt
+        content: trimmedPrompt,
+        // RC: record what rode the turn so the transcript shows the attachments
+        // (optional-metadata pattern, like `turn` on accepted messages).
+        attachments:
+          turnReferences.length > 0
+            ? turnReferences.map((reference) => ({
+                assetId: reference.assetId,
+                label: reference.label
+              }))
+            : undefined
       }
     ]);
 
@@ -324,11 +1019,24 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
         documentId: activeDocumentId ?? undefined,
         activePageId,
         targetNodeIds,
+        referenceAssetIds,
         agentInstructions,
+        model: agentModel ?? null,
         diagnostics,
         onEvent: handleRunEvent
       });
-      handleTurnResult(result, seedScene);
+      handleTurnResult(result);
+      // RC per-turn semantics (D8): references are consumed by a successful
+      // send. On error they stay so the user can retry without re-attaching.
+      // Clear ONLY the ids that rode this turn (ship-blocker 2: a blanket []
+      // wiped attachments the user added mid-flight for their NEXT message);
+      // a queued send owns its snapshot and never touches the live pending set.
+      if (!fromQueue) {
+        const sentIds = new Set(turnReferences.map((reference) => reference.assetId));
+        setPendingReferences((current) =>
+          current.filter((reference) => !sentIds.has(reference.assetId))
+        );
+      }
     } catch (error) {
       handleTurnError(error);
     } finally {
@@ -351,15 +1059,80 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     if (!trimmed) {
       return;
     }
+    // RC (ship-blocker 2): the queued message OWNS the attachments pending at
+    // enqueue time — snapshot them onto the message and consume them from the
+    // composer, so the running turn's success-clear can never drop them and a
+    // later message's attachments can never mix in.
+    const references = pendingReferences;
+    if (references.length > 0) {
+      setPendingReferences([]);
+    }
     setQueuedAgentMessages((queue) => [
       ...queue,
-      { id: uniqueChatMessageId("user"), content: trimmed }
+      {
+        id: uniqueChatMessageId("user"),
+        content: trimmed,
+        references: references.length > 0 ? references : undefined
+      }
     ]);
   };
 
   const removeQueuedAgentMessage = (id: string) => {
     setQueuedAgentMessages((queue) => queue.filter((message) => message.id !== id));
   };
+
+  /** RC: upload each attached file (via the injected uploader) and add it to
+   * the pending references, honoring the ≤4 cap and de-duping by asset id.
+   * Files past the cap are dropped with a system note; an upload failure is
+   * surfaced but never blocks the others. */
+  const attachReferences = async (files: File[]) => {
+    if (!referenceUploader || files.length === 0) {
+      return;
+    }
+    const room = MAX_TURN_REFERENCES - pendingReferences.length;
+    if (room <= 0) {
+      postSystemMessage(
+        `You can attach at most ${MAX_TURN_REFERENCES} references per turn — remove one to add another.`
+      );
+      return;
+    }
+    const accepted = files.slice(0, room);
+    if (accepted.length < files.length) {
+      postSystemMessage(
+        `Only ${accepted.length} of ${files.length} files were attached — a turn carries at most ${MAX_TURN_REFERENCES} references.`
+      );
+    }
+    setIsUploadingReferences(true);
+    try {
+      for (const file of accepted) {
+        try {
+          const reference = await referenceUploader(file);
+          setPendingReferences((current) =>
+            current.length >= MAX_TURN_REFERENCES ||
+            current.some((existing) => existing.assetId === reference.assetId)
+              ? current
+              : [...current, reference]
+          );
+        } catch (error) {
+          postSystemMessage(
+            `Could not attach ${file.name}: ${
+              error instanceof Error ? error.message : "upload failed"
+            }`
+          );
+        }
+      }
+    } finally {
+      setIsUploadingReferences(false);
+    }
+  };
+
+  const removeReference = (assetId: string) => {
+    setPendingReferences((current) =>
+      current.filter((reference) => reference.assetId !== assetId)
+    );
+  };
+
+  const clearReferences = () => setPendingReferences([]);
 
   // Drain the queue one message per idle transition: a turn must have
   // settled AND its review been resolved (Accept or Reject both count — the
@@ -371,7 +1144,7 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
     const [next, ...rest] = queuedAgentMessages;
     setQueuedAgentMessages(rest);
-    void sendAgentPrompt(next.content);
+    void sendAgentPrompt(next.content, next.references ?? []);
     // sendAgentPrompt is re-created per render; keying the effect on it would
     // drain the whole queue in one burst instead of one per idle transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,15 +1154,14 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
   // reload. If one was in flight, rejoin its SSE stream — replaying the
   // checklist and then either streaming live ticks or settling immediately if
   // it finished while we were away. Refs keep the mount-only effect calling
-  // the latest handlers (which close over the current scene) without re-firing.
+  // the latest handlers without re-firing; the pre-turn seed those handlers
+  // settle against comes from turnSeedRef (armed on mount), not closure state.
   const handleRunEventRef = useRef(handleRunEvent);
   handleRunEventRef.current = handleRunEvent;
   const handleTurnResultRef = useRef(handleTurnResult);
   handleTurnResultRef.current = handleTurnResult;
   const handleTurnErrorRef = useRef(handleTurnError);
   handleTurnErrorRef.current = handleTurnError;
-  const sceneRef = useRef(scene);
-  sceneRef.current = scene;
 
   useEffect(() => {
     if (!resumeRun) {
@@ -401,9 +1173,12 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     }
     setRunEvents([]);
     setAgentProposal(null);
+    // Mid-run reload: SSE replay delivers every missed batch in order, so the
+    // same cumulative apply path fast-forwards the build (S2 animates it).
+    armStream();
     setIsAgentRunning(true);
     void resumeRun(runId, (event) => handleRunEventRef.current(event))
-      .then((result) => handleTurnResultRef.current(result, sceneRef.current))
+      .then((result) => handleTurnResultRef.current(result))
       .catch((error) => handleTurnErrorRef.current(error))
       .finally(() => {
         setIsAgentRunning(false);
@@ -413,12 +1188,15 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const showAgentDraftScene = (result: EditorAgentResult) => {
+  const showAgentDraftScene = (result: EditorAgentResult, seedScene: Scene) => {
     if (!result.draft_scene) {
       return;
     }
     const draftScene = result.draft_scene;
-    const draftPageId = agentDraftPageId(scene, draftScene, activePageId);
+    // Compare the draft's pages against the pre-turn SEED, not closure `scene`
+    // (which streaming mutated on the resume path) — otherwise a "new" draft
+    // page could be misclassified against a half-built streamed scene.
+    const draftPageId = agentDraftPageId(seedScene, draftScene, activePageId);
     const draftDiagnostic: Diagnostic = {
       severity: "warning",
       phase: "validation",
@@ -433,7 +1211,11 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     setUndoStack((stack) => [
       ...stack.slice(-49),
       {
-        scene,
+        // The undo frame must capture the true PRE-TURN base (the seed), never
+        // the streamed scene: undo history is durable, and "nothing streamed is
+        // ever persisted" (D3). On the resume path closure `scene` is the
+        // half-built streamed scene — the seed is the honest base.
+        scene: seedScene,
         operations: [],
         inverseOperations: null,
         persisted: false
@@ -546,18 +1328,65 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     // ops commit exactly as proposed and its Stack containers stay live.
     let mergedOperations = operations;
     let mergedInverseOperations = inverseOperations;
-    if (!layoutManagedEditing && engine?.applyStructuredEdit) {
-      const freezeOutcome = engine.applyStructuredEdit(freezeLayoutEdit());
-      if (freezeOutcome.accepted && freezeOutcome.operations.length > 0) {
-        acceptedScene = freezeOutcome.scene;
-        mergedOperations = [...operations, ...freezeOutcome.operations];
+    if (!layoutManagedEditing) {
+      // K1.6(b): resolve THEN freeze, both server-side. Agent proposal ops
+      // carry token-form text with skeleton literals (Inter 16); the real
+      // style exists only after token resolution, which is server preflight's
+      // job. Any freeze built from a client solve can therefore bake
+      // skeleton-derived geometry (17pt text heights, a 58pt hero, collapsed
+      // child offsets — three live-proof failures of this family). The
+      // server bake preflights the accepted scene (resolution + real
+      // SkParagraph relayout) and builds the freeze from THAT, so frozen
+      // numbers can never derive from unresolved literals. Resolution ops
+      // ride the same envelope: the accepted design persists its derived
+      // values in its own history.
+      let baked: AcceptBakeResult | null = null;
+      try {
+        baked = await acceptBakeRunner(acceptedScene);
+      } catch {
+        // API unreachable mid-accept: fall through to the client-side path
+        // below rather than blocking the accept.
+      }
+      if (baked) {
+        acceptedScene = baked.scene;
+        engine?.reset(baked.scene);
+        mergedOperations = [
+          ...operations,
+          ...baked.resolutionOperations,
+          ...baked.freezeOperations
+        ];
         // Inverses undo in reverse order of the forward batch: the freeze's
-        // inverse (each sub-batch already internally reverse-ordered) goes
-        // first so undoing peels the freeze off before the turn's content.
+        // inverse goes first so undoing peels the freeze off before the
+        // turn's content. Resolution ops are not individually inverted —
+        // turn inverses restore touched nodes' full prior state (same
+        // semantics as the post-accept system preflight today).
         mergedInverseOperations =
-          inverseOperations && freezeOutcome.inverseOperations
-            ? [...freezeOutcome.inverseOperations, ...inverseOperations]
-            : null;
+          inverseOperations && baked.freezeInverseOperations.length > 0
+            ? [...baked.freezeInverseOperations, ...inverseOperations]
+            : mergedInverseOperations;
+      } else if (engine?.applyStructuredEdit) {
+        // Fallback (server declined/unreachable): the pre-(b) client-side
+        // freeze — re-measure with kit-resolved fields, relayout, bake.
+        // Weaker (client measurement can miss wrapped-text keys) but never
+        // blocks an accept.
+        if (engine.setMeasurements) {
+          const bundle = await loadCanvasKit();
+          if (bundle?.fontProvider) {
+            engine.setMeasurements(
+              skiaMeasurements(bundle.ck, bundle.fontProvider, engine.scene)
+            );
+            acceptedScene = engine.scene;
+          }
+        }
+        const freezeOutcome = engine.applyStructuredEdit(freezeLayoutEdit());
+        if (freezeOutcome.accepted && freezeOutcome.operations.length > 0) {
+          acceptedScene = freezeOutcome.scene;
+          mergedOperations = [...operations, ...freezeOutcome.operations];
+          mergedInverseOperations =
+            inverseOperations && freezeOutcome.inverseOperations
+              ? [...freezeOutcome.inverseOperations, ...inverseOperations]
+              : null;
+        }
       }
     }
     const disposition = commitAppliedOperations(
@@ -680,10 +1509,21 @@ export function useAgentTurn(deps: UseAgentTurnDeps) {
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    agentStream,
+    /** The scene the in-flight turn was armed from (its pre-turn seed), or null
+     * once no stream is active. EditorApp threads this into
+     * previewBaseSceneRef so a pre-run edit-queue batch draining MID-STREAM
+     * reconciles against the honest base, not the streamed scene. */
+    turnSeedRef,
+    pendingReferences,
+    isUploadingReferences,
     sendAgentPrompt,
     postSystemMessage,
     queueAgentMessage,
     removeQueuedAgentMessage,
+    attachReferences,
+    removeReference,
+    clearReferences,
     applyAgentProposal,
     acceptAgentPreview,
     rejectAgentPreview,

@@ -15,15 +15,17 @@ export function SizingSection({
   return (
       <section className="inspector-section">
         <div className="section-heading">Sizing</div>
-        <div className="field-grid two">
+        <div className="field-grid">
           <DimensionModeSelect
             label="Width mode"
+            inline
             dimension={selectedNode.size.width}
             disabled={selectedNode.locked}
             onChange={(dimension) => onOperation(updateNodeSize(selectedNode, { ...selectedNode.size, width: dimension }))}
           />
           <DimensionModeSelect
             label="Height mode"
+            inline
             dimension={selectedNode.size.height}
             disabled={selectedNode.locked}
             onChange={(dimension) => onOperation(updateNodeSize(selectedNode, { ...selectedNode.size, height: dimension }))}
@@ -31,6 +33,7 @@ export function SizingSection({
           {selectedNode.size.width.kind === "fixed" ? (
             <NumberField
               label="Width fixed"
+              inline
               value={selectedNode.size.width.value}
               min={1}
               disabled={selectedNode.locked}
@@ -42,6 +45,7 @@ export function SizingSection({
           {selectedNode.size.height.kind === "fixed" ? (
             <NumberField
               label="Height fixed"
+              inline
               value={selectedNode.size.height.value}
               min={1}
               disabled={selectedNode.locked}
@@ -53,6 +57,7 @@ export function SizingSection({
           {selectedNode.size.width.kind === "fill" ? (
             <NumberField
               label="Width fill weight"
+              inline
               value={selectedNode.size.width.value.weight}
               min={0.1}
               step={0.1}
@@ -65,6 +70,7 @@ export function SizingSection({
           {selectedNode.size.height.kind === "fill" ? (
             <NumberField
               label="Height fill weight"
+              inline
               value={selectedNode.size.height.value.weight}
               min={0.1}
               step={0.1}

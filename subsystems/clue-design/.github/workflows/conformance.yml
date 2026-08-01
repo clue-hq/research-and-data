@@ -84,6 +84,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node for the constrained component compiler
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install and test custom-component compiler
+        run: |
+          npm --prefix apps/custom-component-compiler ci
+          npm --prefix apps/custom-component-compiler test
+
       - name: Install API test dependencies
         run: python -m pip install -r apps/api/requirements-dev.txt
 

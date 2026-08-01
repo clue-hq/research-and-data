@@ -1,0 +1,7 @@
+{
+  "run_id": "run_fd934cbb907d4be29cf8510e46ff0e15",
+  "run_status": "success",
+  "model": "openai:anthropic/claude-opus-4.8",
+  "tag": "3a-flow-fix",
+  "brief_id": "customer_story_linkedin_photo"
+}

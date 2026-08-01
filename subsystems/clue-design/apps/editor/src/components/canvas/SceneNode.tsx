@@ -267,14 +267,20 @@ function NodeBody({
         {...konvaShadowProps(descriptor.shadow)}
         fontFamily={descriptor.text.fontFamily}
         fontSize={descriptor.text.fontSize}
-        fontStyle={fontStyleFromWeight(descriptor.text.fontWeight)}
+        fontStyle={fontStyleFrom(descriptor.text.fontWeight, descriptor.text.italic)}
         align={descriptor.text.align}
         direction={textDirectionForKonva(descriptor.text.direction)}
         lineHeight={descriptor.text.lineHeight}
         letterSpacing={descriptor.text.letterSpacing}
         wrap={descriptor.text.wrap === "wrap" ? "word" : "none"}
         ellipsis={descriptor.text.maxLines !== null}
-        verticalAlign="top"
+        // A7a: Konva is the TEST-ONLY jsdom leg (frontend-practices §4), and it
+        // has no measurer to feed the shared clamped formula — its built-in
+        // verticalAlign uses Konva's real line layout instead. Known, accepted
+        // divergences from D3 on this non-product leg: no overflow clamp
+        // (negative offset when content exceeds the box), and with max_lines
+        // the alignment bound is the capped rect, not the full box.
+        verticalAlign={descriptor.text.valign === "center" ? "middle" : descriptor.text.valign}
         stroke={selectionStroke ?? undefined}
         strokeWidth={selected ? 0.35 : 0}
       />
@@ -422,15 +428,15 @@ function textDirectionForKonva(direction: "ltr" | "rtl" | "auto"): string {
   return direction === "auto" ? "inherit" : direction;
 }
 
-function fontStyleFromWeight(weight: number): string {
-  if (weight >= 700) {
-    return "700";
+/** A7b: compose Konva's combined `fontStyle` string from weight + italic. Konva
+ * accepts space-separated `"italic 700"`, or a bare `"italic"` / `"700"` /
+ * `"normal"`. This is the TEST-ONLY jsdom leg (frontend-practices §4); the
+ * product canvas is CanvasKit, which maps italic to a real `fontStyle.slant`. */
+function fontStyleFrom(weight: number, italic: boolean): string {
+  const weightPart =
+    weight >= 700 ? "700" : weight >= 600 ? "600" : weight >= 500 ? "500" : null;
+  if (italic) {
+    return weightPart ? `italic ${weightPart}` : "italic";
   }
-  if (weight >= 600) {
-    return "600";
-  }
-  if (weight >= 500) {
-    return "500";
-  }
-  return "normal";
+  return weightPart ?? "normal";
 }

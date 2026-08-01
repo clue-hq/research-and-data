@@ -1,0 +1,11 @@
+{
+  "id": "gtm_conf_deck_band",
+  "artifact": "deck_title_16x9",
+  "prompt": "Design a 1920x1080 deck title slide projected before doors open at RevMotion '26 \u2014 Rebuilding GTM for the AI-native era. Include the event name, tagline, date and city, and space for a host logo. It should read clearly from the back of a room.",
+  "expected_decision": "photo",
+  "role": "image_band_clean_type",
+  "risks": [
+    "full-bleed image swallows the title",
+    "square image stretched into the 16:9 band, skyline distorted"
+  ]
+}

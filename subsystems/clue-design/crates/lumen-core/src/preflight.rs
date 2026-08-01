@@ -241,7 +241,7 @@ fn token_options_for_scene_medium(
 fn brand_medium_for_scene_medium(medium: &Medium) -> &'static str {
     match medium {
         Medium::Print | Medium::DirectMail => "print",
-        Medium::Digital | Medium::Email | Medium::Ad => "digital",
+        Medium::Digital | Medium::Email | Medium::Ad | Medium::Web => "digital",
     }
 }
 

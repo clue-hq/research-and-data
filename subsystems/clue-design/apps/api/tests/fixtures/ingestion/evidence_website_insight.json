@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "source": {
+    "kind": "website",
+    "url": "https://www.insighthealth.example",
+    "captured_at": "2026-07-05",
+    "confidence": 0.7
+  },
+  "colors": [
+    {
+      "value": "#F5F5F5",
+      "weight": 40.0,
+      "theme": "light",
+      "role_hints": ["page-bg"],
+      "name": null,
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: body background"}
+    },
+    {
+      "value": "#1D1C1D",
+      "weight": 18.0,
+      "theme": "light",
+      "role_hints": ["body-text", "heading-text"],
+      "name": "Ash Black",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: body copy"}
+    },
+    {
+      "value": "#12EAB1",
+      "weight": 9.0,
+      "theme": "light",
+      "role_hints": ["button-bg", "accent"],
+      "name": "Mint Green",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: primary CTA"}
+    },
+    {
+      "value": "#00E3E1",
+      "weight": 4.0,
+      "theme": "light",
+      "role_hints": ["link", "accent"],
+      "name": "Aqua",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: link hover"}
+    },
+    {
+      "value": "#8080F9",
+      "weight": 2.0,
+      "theme": "light",
+      "role_hints": ["custom-prop:--indigo"],
+      "name": "Soft Indigo",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: illustration"}
+    }
+  ],
+  "type_samples": [
+    {
+      "label": "h1",
+      "family": "Aeonik",
+      "weight": 600,
+      "size_px": 48.0,
+      "line_height": 1.1,
+      "letter_spacing": -0.01,
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: hero h1"}
+    },
+    {
+      "label": "h2",
+      "family": "Aeonik",
+      "weight": 600,
+      "size_px": 32.0,
+      "line_height": 1.15,
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: section h2"}
+    },
+    {
+      "label": "body",
+      "family": "Aeonik",
+      "weight": 400,
+      "size_px": 16.0,
+      "line_height": 1.5,
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: paragraph"}
+    },
+    {
+      "label": "button",
+      "family": "Aeonik",
+      "weight": 600,
+      "size_px": 16.0,
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: CTA label"}
+    }
+  ],
+  "fonts": [
+    {
+      "family": "Aeonik",
+      "role_hint": "heading",
+      "faces": [
+        {"weight": 400, "style": "normal", "asset_id": null, "source_url": "https://www.insighthealth.example/fonts/aeonik-regular.woff2", "format": "woff2"},
+        {"weight": 600, "style": "normal", "asset_id": null, "source_url": "https://www.insighthealth.example/fonts/aeonik-medium.woff2", "format": "woff2"}
+      ],
+      "fallback_stack": ["Helvetica Neue", "Arial", "sans-serif"],
+      "license_hint": "self-hosted",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: @font-face"}
+    }
+  ],
+  "logos": [
+    {
+      "asset_id": "asset_insight_logo_primary",
+      "color_mode_hint": "full_color",
+      "usage_hint": "primary",
+      "width": 148.0,
+      "height": 32.0,
+      "background_hint": "#F5F5F5",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: header logo"}
+    },
+    {
+      "asset_id": "asset_insight_logo_mark",
+      "color_mode_hint": "full_color",
+      "usage_hint": "mark",
+      "width": 32.0,
+      "height": 32.0,
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: favicon"}
+    }
+  ],
+  "images": [
+    {
+      "asset_id": "asset_insight_hero",
+      "width": 1600,
+      "height": 900,
+      "transparency": false,
+      "dominant_colors": ["#12EAB1", "#F5F5F5"],
+      "kind_hint": "photo",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: hero image"}
+    },
+    {
+      "asset_id": "asset_insight_illustration",
+      "width": 800,
+      "height": 800,
+      "transparency": true,
+      "dominant_colors": ["#8080F9"],
+      "kind_hint": "illustration",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: feature illustration"}
+    },
+    {
+      "asset_id": "asset_insight_og",
+      "width": 1200,
+      "height": 630,
+      "transparency": false,
+      "dominant_colors": ["#1D1C1D"],
+      "kind_hint": "og_image",
+      "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: og:image"}
+    }
+  ],
+  "numbers": [
+    {"kind": "spacing", "value": 64.0, "weight": 3.0, "role_hints": ["section"], "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: section gap"}},
+    {"kind": "spacing", "value": 24.0, "weight": 5.0, "role_hints": ["padding", "card"], "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: card padding"}},
+    {"kind": "spacing", "value": 48.0, "weight": 2.0, "role_hints": ["margin"], "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: page margin"}},
+    {"kind": "radius", "value": 12.0, "weight": 4.0, "role_hints": ["card"], "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: card radius"}},
+    {"kind": "radius", "value": 8.0, "weight": 6.0, "role_hints": ["button"], "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: button radius"}}
+  ],
+  "shadows": [
+    {"x": 0.0, "y": 8.0, "blur": 24.0, "spread": 0.0, "color": "#1D1C1D", "opacity": 0.12, "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: card shadow"}}
+  ],
+  "rules": [
+    {"kind": "clearspace", "text": "Maintain clearspace of 16px around the logo.", "numeric_value": 16.0, "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: brand page"}},
+    {"kind": "tone", "text": "Warm, human, and clinically credible.", "numeric_value": null, "pointer": {"source": "website", "locator": "https://www.insighthealth.example :: about"}}
+  ],
+  "screenshots": ["asset_insight_screenshot_home"],
+  "narrative": {
+    "brand_name": "Insight Health",
+    "url": "https://www.insighthealth.example",
+    "tagline": "Care that keeps up with you.",
+    "summary_facts": ["Digital-first primary care.", "Founded 2021."],
+    "text_excerpt": "Insight Health brings warm, proactive primary care to everyone."
+  }
+}

@@ -1,0 +1,1776 @@
+{
+  "version": 1,
+  "provenance": {
+    "google_fonts_repo": "https://github.com/google/fonts",
+    "google_fonts_commit": "ec0464b978de222073645d6d3366f3fdf03376d8",
+    "fonttools_version": "4.63.0",
+    "script": "scripts/provision_font_library.py"
+  },
+  "families": [
+    {
+      "slug": "inter",
+      "family": "Inter",
+      "category": "sans",
+      "tone": [
+        "neutral",
+        "ui",
+        "systematic"
+      ],
+      "pairing": "The default voice; pairs with any display or serif face.",
+      "notes": "Also the engine's bundled fallback — using it is never a risk.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 2048.0,
+        "x_height_ratio": 0.5459,
+        "cap_height_ratio": 0.7275,
+        "avg_char_width_ratio": 0.6401,
+        "ascender_ratio": 0.9688,
+        "descender_ratio": -0.2412,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_inter_w400_ca633ac10657",
+          "digest": "ca633ac1065759615007d43992cd269981831663c7812eada7389feb9d473de9",
+          "byte_length": 341460
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_inter_w500_b26c5c4837dc",
+          "digest": "b26c5c4837dc06c4ac78ddea7bcffa6598fe2b06532577ea09c31d9c4627e954",
+          "byte_length": 342092
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_inter_w600_40a3afd55ada",
+          "digest": "40a3afd55ada72a060542659577c9fba28e4336b7575eb702e60fd07edb6c4b1",
+          "byte_length": 342784
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_inter_w700_393b6d580cd8",
+          "digest": "393b6d580cd86a0fdba47c9c99d5b1cbd2335d23a6356c451b9c9d0db9428e90",
+          "byte_length": 343120
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_inter_w800_707f327dd034",
+          "digest": "707f327dd0344879b9302de0c2072ad89037a226fd6d7bcce3b0ef027cf55676",
+          "byte_length": 344096
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_inter_w400i_4c7454bec42b",
+          "digest": "4c7454bec42bf8a7cb14f56f763f16192e53603c4e105c42e15665b98f9ca19a",
+          "byte_length": 344860
+        }
+      ]
+    },
+    {
+      "slug": "dm-sans",
+      "family": "DM Sans",
+      "category": "sans",
+      "tone": [
+        "geometric",
+        "friendly",
+        "startup"
+      ],
+      "pairing": "Rounded geometry; pairs well with Fraunces or Playfair Display.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.526,
+        "cap_height_ratio": 0.7,
+        "avg_char_width_ratio": 0.553,
+        "ascender_ratio": 0.992,
+        "descender_ratio": -0.31,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_dm_sans_w400_a8c9505140e7",
+          "digest": "a8c9505140e7761c45fd6433fd53652d2a8f61eb7bb6e13bd5f6e8a9fcffc5f8",
+          "byte_length": 56756
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_dm_sans_w500_12d445873021",
+          "digest": "12d4458730215ca6c1119ceda699a9475ebe9fad1539141b7a577b0ab5fa3bed",
+          "byte_length": 56896
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_dm_sans_w600_5ad13c1b32d7",
+          "digest": "5ad13c1b32d76e0bd5ef8790373cc04fd840d3fa6bcc882a676241833669c758",
+          "byte_length": 56884
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_dm_sans_w700_502c292f1f55",
+          "digest": "502c292f1f55f69c42cce49f59f97f831b9dcbd550fef22e23a3948fbae5ddc2",
+          "byte_length": 56784
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_dm_sans_w800_af22d445898e",
+          "digest": "af22d445898eb67f8568d06a413819db58719c7b8854671ffa9c9badd9e8ce80",
+          "byte_length": 56904
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_dm_sans_w400i_36d21928a0d1",
+          "digest": "36d21928a0d112f2b3d898ebee331f1e405afb2f654682ffc75e425f81f95649",
+          "byte_length": 61180
+        }
+      ]
+    },
+    {
+      "slug": "manrope",
+      "family": "Manrope",
+      "category": "sans",
+      "tone": [
+        "modern",
+        "semi-geometric",
+        "tech"
+      ],
+      "pairing": "Crisp product voice; pairs with Newsreader for editorial contrast.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 2000.0,
+        "x_height_ratio": 0.54,
+        "cap_height_ratio": 0.72,
+        "avg_char_width_ratio": 0.585,
+        "ascender_ratio": 1.066,
+        "descender_ratio": -0.3,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_manrope_w400_95205798f93c",
+          "digest": "95205798f93c5dd0649da5e0a8fc0f690204405791653251c0c6a6c51caa3cb0",
+          "byte_length": 96636
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_manrope_w500_5c64fe196e2d",
+          "digest": "5c64fe196e2d0dd116a83b0fa4277fd37de571c54da2030ef34f0bb9a50f1b7a",
+          "byte_length": 96744
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_manrope_w600_7315bdd8f945",
+          "digest": "7315bdd8f94507357e43a1b1765d07c15e58a3c9c2ea32df83a501fe9cace9a4",
+          "byte_length": 96788
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_manrope_w700_544b47715476",
+          "digest": "544b4771547626ab803cad6627883f3d3b084d13a9f842ac31b406eb8d7e47d2",
+          "byte_length": 96576
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_manrope_w800_cda5d1949df5",
+          "digest": "cda5d1949df5f0c6b3dde3798ec09bc099b95801fa1571f7832271fc2c6aafc6",
+          "byte_length": 97380
+        }
+      ]
+    },
+    {
+      "slug": "sora",
+      "family": "Sora",
+      "category": "sans",
+      "tone": [
+        "techy",
+        "futuristic",
+        "product"
+      ],
+      "pairing": "Wide techy counters; strong for SaaS and AI subjects.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.534,
+        "cap_height_ratio": 0.73,
+        "avg_char_width_ratio": 0.59,
+        "ascender_ratio": 0.97,
+        "descender_ratio": -0.29,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": [
+          "→",
+          "←"
+        ]
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_sora_w400_3d287be97a6f",
+          "digest": "3d287be97a6f435c8b9704a69798bef02672b9255b413431ef8be3bbd62a89f5",
+          "byte_length": 58576
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_sora_w500_23e2cbf35bf4",
+          "digest": "23e2cbf35bf4bba38a7d6f92340ef22d2609b4210114a1e2362df3473d5fec5b",
+          "byte_length": 58684
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_sora_w600_0d15572e5097",
+          "digest": "0d15572e50976da5d4ca6bd329814a05b2b7a6ce0743b4439a6f0914518b541b",
+          "byte_length": 58780
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_sora_w700_54a56f56e50a",
+          "digest": "54a56f56e50a1f02ecfe03b11f13fdf970b6cf294355120d8c651e42a21ac4d8",
+          "byte_length": 58640
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_sora_w800_abb12b7f2889",
+          "digest": "abb12b7f28896ffdf10d00348fca750bd96c3f4f85dd478ddb42e679a159ebe8",
+          "byte_length": 58732
+        }
+      ]
+    },
+    {
+      "slug": "space-grotesk",
+      "family": "Space Grotesk",
+      "category": "sans",
+      "tone": [
+        "quirky-grotesque",
+        "tech-editorial",
+        "distinctive"
+      ],
+      "pairing": "Distinctive at display sizes; body text works but keep it short.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.486,
+        "cap_height_ratio": 0.7,
+        "avg_char_width_ratio": 0.561,
+        "ascender_ratio": 0.984,
+        "descender_ratio": -0.292,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_space_grotesk_w400_0bc2b3df3a04",
+          "digest": "0bc2b3df3a040d5e06389bc5821db54bfc588e7ff999fff956449d99130fc2f0",
+          "byte_length": 88448
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_space_grotesk_w500_2dafee0ed5a6",
+          "digest": "2dafee0ed5a6239fc225dbca7238822bba57624f77598858914b968968a1a1a5",
+          "byte_length": 88508
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_space_grotesk_w600_4ab12794d2be",
+          "digest": "4ab12794d2bebabf292a891032bb8ae7475a9f3223ea4db882b15c3960876162",
+          "byte_length": 88432
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_space_grotesk_w700_e2eb3a03988d",
+          "digest": "e2eb3a03988d7010d4f324d9b4893bce0d04eaadb7f0f6b2c379fb8a306576a2",
+          "byte_length": 88340
+        }
+      ]
+    },
+    {
+      "slug": "plus-jakarta-sans",
+      "family": "Plus Jakarta Sans",
+      "category": "sans",
+      "tone": [
+        "warm-geometric",
+        "contemporary",
+        "brandable"
+      ],
+      "pairing": "Warm geometric; a safe modern default when Inter feels too plain.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.536,
+        "cap_height_ratio": 0.745,
+        "avg_char_width_ratio": 0.585,
+        "ascender_ratio": 1.038,
+        "descender_ratio": -0.222,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w400_1c7ee3fda4ac",
+          "digest": "1c7ee3fda4acadcbcf8bd79b502c068e8f9ca9a01b75563f313e30f53a700828",
+          "byte_length": 96696
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w500_765a492ca18a",
+          "digest": "765a492ca18ada4a1a86249ee25891d834dc42527ae47d0997d72f4796c62855",
+          "byte_length": 96748
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w600_ce3205304b61",
+          "digest": "ce3205304b61a3b8b516d9f149157c693b2894ee9102245e0402c05d13c0c60b",
+          "byte_length": 96748
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w700_12503edbacc9",
+          "digest": "12503edbacc90062171faf07e8499ae34e842cba38a28cc3553109203f76d511",
+          "byte_length": 96576
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w800_00e10f55b76e",
+          "digest": "00e10f55b76e73c43946ce0d7a1ca3f3f5d98e4edb229cf1a97668bd0cfe427d",
+          "byte_length": 96636
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_plus_jakarta_sans_w400i_d3491c79312c",
+          "digest": "d3491c79312c9de7d846ee4a9f4e450f87b0145e28c4b992d9ecd5a6595a6b9e",
+          "byte_length": 100288
+        }
+      ]
+    },
+    {
+      "slug": "outfit",
+      "family": "Outfit",
+      "category": "sans",
+      "tone": [
+        "clean-geometric",
+        "minimal",
+        "display-friendly"
+      ],
+      "pairing": "Geometric enough to carry headlines on minimal layouts.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.475,
+        "cap_height_ratio": 0.694,
+        "avg_char_width_ratio": 0.574,
+        "ascender_ratio": 1.0,
+        "descender_ratio": -0.26,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_outfit_w400_de82ff8c01db",
+          "digest": "de82ff8c01dba5f1181da174417326b14a5304f534d1b67e5e2cacc13388af15",
+          "byte_length": 55320
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_outfit_w500_be91921d39a7",
+          "digest": "be91921d39a7462bf82049a914fca79aa04330e0f977c37887237bb409405dae",
+          "byte_length": 55284
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_outfit_w600_9db48ee7a1e3",
+          "digest": "9db48ee7a1e30ef37fe7bf44042289d7c0ada4ebb7b9239d5418fd6f0620cf5c",
+          "byte_length": 55544
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_outfit_w700_26f3d5e7a02e",
+          "digest": "26f3d5e7a02e59e64b3f393257f4aea35c7f883f2b1fa120a035f7ee45055631",
+          "byte_length": 55356
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_outfit_w800_f4cfefd67e07",
+          "digest": "f4cfefd67e0753dc0699e7959b13643bbf96ea0897797424dc5f21f5d81c79ae",
+          "byte_length": 55356
+        }
+      ]
+    },
+    {
+      "slug": "work-sans",
+      "family": "Work Sans",
+      "category": "sans",
+      "tone": [
+        "workhorse",
+        "neutral-warm",
+        "editorial"
+      ],
+      "pairing": "Quiet editorial workhorse; pairs with Lora or Source Serif 4.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.5,
+        "cap_height_ratio": 0.66,
+        "avg_char_width_ratio": 0.597,
+        "ascender_ratio": 0.93,
+        "descender_ratio": -0.243,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_work_sans_w400_e9253608c2f4",
+          "digest": "e9253608c2f49c407b42db17a1f634349fad6263d223109a65e5ad786e93c635",
+          "byte_length": 192876
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_work_sans_w500_b0a18040199c",
+          "digest": "b0a18040199c601e4ac59ae3f111b30bc85a038122c481efaf0724e25bd57f64",
+          "byte_length": 193380
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_work_sans_w600_e5b4a3f5f588",
+          "digest": "e5b4a3f5f58889736b0116f11b68c23ba81452147741bec88584eba1e2879251",
+          "byte_length": 193360
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_work_sans_w700_0881932590d9",
+          "digest": "0881932590d9ddb4db4c6f6a04523b582750c76c27dc47f8d5292816bc72caba",
+          "byte_length": 193272
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_work_sans_w800_3d080dde472e",
+          "digest": "3d080dde472edd7b1434d95911c578a6d5a88cf07d7a6570c9d1dede37b54ae8",
+          "byte_length": 193348
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_work_sans_w400i_53bb5b83969a",
+          "digest": "53bb5b83969aa67fdd29694d6b323617a9f773e3a007c8c2a5cae3ceb5234088",
+          "byte_length": 176436
+        }
+      ]
+    },
+    {
+      "slug": "archivo",
+      "family": "Archivo",
+      "category": "sans",
+      "tone": [
+        "grotesque",
+        "sturdy",
+        "poster-capable"
+      ],
+      "pairing": "Sturdy grotesque; use Archivo Black for full-impact posters.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.526,
+        "cap_height_ratio": 0.686,
+        "avg_char_width_ratio": 0.559,
+        "ascender_ratio": 0.878,
+        "descender_ratio": -0.21,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_archivo_w400_17774a77ec40",
+          "digest": "17774a77ec4021e00ac9747d4a15c518e6bc3a4f19529448a6c462238485f4a6",
+          "byte_length": 121536
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_archivo_w500_ad5e751f7231",
+          "digest": "ad5e751f72313b958144cba5434cf7292f128996df0d869f8c3b72ed2c4d504e",
+          "byte_length": 121652
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_archivo_w600_da11028f0428",
+          "digest": "da11028f04285569923e09cefeaa82761632b2cc329723b1c61512a9fe984c72",
+          "byte_length": 121392
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_archivo_w700_40b9f1aedb2f",
+          "digest": "40b9f1aedb2fc6150b3e617d6bb8259c545e807078cebd607e4fdad86a138e59",
+          "byte_length": 121416
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_archivo_w800_baf484ffef84",
+          "digest": "baf484ffef84ce948f748c453144af49f2c86b83627413bed483ba7547a7e3e5",
+          "byte_length": 121456
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_archivo_w400i_d030229ec54a",
+          "digest": "d030229ec54a69202b8438f6eae23294d30031ead1cac252ea806444022f59ee",
+          "byte_length": 133660
+        }
+      ]
+    },
+    {
+      "slug": "hanken-grotesk",
+      "family": "Hanken Grotesk",
+      "category": "sans",
+      "tone": [
+        "humanist",
+        "calm",
+        "readable"
+      ],
+      "pairing": "Humanist and calm; good for healthcare, finance, trust subjects.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.493,
+        "cap_height_ratio": 0.697,
+        "avg_char_width_ratio": 0.545,
+        "ascender_ratio": 1.0,
+        "descender_ratio": -0.303,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_hanken_grotesk_w400_264cefadc176",
+          "digest": "264cefadc1765a4fd8e8048b35e5729e3096b5eb2dd1faa2d839e77a25d9530a",
+          "byte_length": 68004
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_hanken_grotesk_w500_f9c68dc31963",
+          "digest": "f9c68dc319632b8525f729f3134a461777b96c43d8fc085084c82e5dfe1f6723",
+          "byte_length": 68036
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_hanken_grotesk_w600_fa150479df50",
+          "digest": "fa150479df5045373faa07dacf1cf05cb19a9f390862a129ccd528b244fe02f1",
+          "byte_length": 67992
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_hanken_grotesk_w700_06374b3c86f1",
+          "digest": "06374b3c86f153d98d21fde74d10b069034e05d6388d8de0c5f59f52a79b0c92",
+          "byte_length": 67912
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_hanken_grotesk_w800_be0350c2970e",
+          "digest": "be0350c2970ea39525d29f5af03f967da15376e815cb6b4ba3f9514cade402a9",
+          "byte_length": 67984
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_hanken_grotesk_w400i_f6c104914e0a",
+          "digest": "f6c104914e0a87dacbe69e08b8959586a8a8b88b352ee764311662d74f4cc250",
+          "byte_length": 70904
+        }
+      ]
+    },
+    {
+      "slug": "fraunces",
+      "family": "Fraunces",
+      "category": "serif",
+      "tone": [
+        "display-serif",
+        "expressive",
+        "warm",
+        "editorial"
+      ],
+      "pairing": "Soft old-style display serif; hero headlines over DM Sans or Inter body.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 2000.0,
+        "x_height_ratio": 0.482,
+        "cap_height_ratio": 0.7,
+        "avg_char_width_ratio": 0.5765,
+        "ascender_ratio": 0.978,
+        "descender_ratio": -0.255,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": [
+          "→",
+          "←"
+        ]
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_fraunces_w400_674e19047307",
+          "digest": "674e19047307cbe36792365733a408128f84302511ebc42c283b2f68913e8623",
+          "byte_length": 73068
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_fraunces_w500_eadb7481e0aa",
+          "digest": "eadb7481e0aa48d8b68e0912db5729af19110cca5dcf9bfe659b2bb247caab69",
+          "byte_length": 73116
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_fraunces_w600_fa83cfcf4378",
+          "digest": "fa83cfcf43789bf899769409f63b92fca5517c7e939923eaacba588711420a00",
+          "byte_length": 73168
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_fraunces_w700_de648af328ec",
+          "digest": "de648af328ecf9b26c43ae8fa19070480750d4b0294825cc46e49122cab057cd",
+          "byte_length": 73064
+        },
+        {
+          "weight": 900,
+          "style": "normal",
+          "asset_id": "asset_font_lib_fraunces_w900_ef05df4954a8",
+          "digest": "ef05df4954a854a01c37263ff2722cc013a3a1a57feb1867aa5f4501625a367c",
+          "byte_length": 73184
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_fraunces_w400i_e9c09989a03e",
+          "digest": "e9c09989a03ebb9fbfb04a7e57f486ef322ada1154f85d0747e11921cd9bad9b",
+          "byte_length": 89020
+        },
+        {
+          "weight": 600,
+          "style": "italic",
+          "asset_id": "asset_font_lib_fraunces_w600i_41041888ac03",
+          "digest": "41041888ac03088464e3ef039eea3325fc39ccaa5f01ae400a688532579e1fcc",
+          "byte_length": 89276
+        }
+      ]
+    },
+    {
+      "slug": "playfair-display",
+      "family": "Playfair Display",
+      "category": "serif",
+      "tone": [
+        "high-contrast",
+        "elegant",
+        "luxury"
+      ],
+      "pairing": "High-contrast elegance; luxury and fashion headlines, never body.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.514,
+        "cap_height_ratio": 0.708,
+        "avg_char_width_ratio": 0.579,
+        "ascender_ratio": 1.082,
+        "descender_ratio": -0.251,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_playfair_display_w400_4c4d3d53097a",
+          "digest": "4c4d3d53097af7739d374b2244523212a68029693a825d0a9eb07e40537350e7",
+          "byte_length": 194632
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_playfair_display_w500_dce6654676c8",
+          "digest": "dce6654676c87c57d24d095e9c8dea9951edae2bc8b9d79526421ba6753be087",
+          "byte_length": 195084
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_playfair_display_w600_d6795b3de1f3",
+          "digest": "d6795b3de1f3e5a0e9a690286640986fb7f1776a9fc440c7ff01a323fcc344c6",
+          "byte_length": 195144
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_playfair_display_w700_99aebec986e8",
+          "digest": "99aebec986e8aec23710be910b380678692e5e71e23c41583126f573309b34d8",
+          "byte_length": 194964
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_playfair_display_w800_eec638fbb94b",
+          "digest": "eec638fbb94b1749a245f77d0b760deecce4f6873c9012dea5d2739923047d2c",
+          "byte_length": 194984
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_playfair_display_w400i_e216f19545fe",
+          "digest": "e216f19545feb26158a22003618f7228f15559a9db46ce4c989064922c886335",
+          "byte_length": 177920
+        }
+      ]
+    },
+    {
+      "slug": "lora",
+      "family": "Lora",
+      "category": "serif",
+      "tone": [
+        "readable-serif",
+        "calm",
+        "body"
+      ],
+      "pairing": "Calm text serif; body copy under a grotesque display face.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.5,
+        "cap_height_ratio": 0.7,
+        "avg_char_width_ratio": 0.599,
+        "ascender_ratio": 1.006,
+        "descender_ratio": -0.274,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": [
+          "→",
+          "←"
+        ]
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_lora_w400_794d9d8141ee",
+          "digest": "794d9d8141ee01cfd4879daffe0ff4a9500a55762db39afad28f0b55d38d5fcf",
+          "byte_length": 135364
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_lora_w500_f07879673e5a",
+          "digest": "f07879673e5ab8464bea46a502c76e03b27896a61de0e734b622b81468c4f6f2",
+          "byte_length": 135492
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_lora_w600_bc248ac54188",
+          "digest": "bc248ac54188dcc48af7a904d29b0480475fe2ae891392ac2c67a53f637912a1",
+          "byte_length": 135608
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_lora_w700_35103982fc0c",
+          "digest": "35103982fc0c18bd8f3ecae70b58f521dc21ddd329dcf5a55af134ae0c6fd3fa",
+          "byte_length": 135004
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_lora_w400i_a3086329c445",
+          "digest": "a3086329c445cd189dc94a943d3b6676532446113f710891f69c769ac19d35ca",
+          "byte_length": 140940
+        },
+        {
+          "weight": 700,
+          "style": "italic",
+          "asset_id": "asset_font_lib_lora_w700i_34a2a01e7589",
+          "digest": "34a2a01e75892901d7fbd77128694647a0ef5ed462c18f6c8c756bf031c41043",
+          "byte_length": 141648
+        }
+      ]
+    },
+    {
+      "slug": "source-serif-4",
+      "family": "Source Serif 4",
+      "category": "serif",
+      "tone": [
+        "sturdy-serif",
+        "editorial",
+        "body"
+      ],
+      "pairing": "Sturdy editorial serif; long copy and pull-quotes.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.475,
+        "cap_height_ratio": 0.67,
+        "avg_char_width_ratio": 0.558,
+        "ascender_ratio": 1.036,
+        "descender_ratio": -0.335,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_source_serif_4_w400_35f39a0160c9",
+          "digest": "35f39a0160c957e9b6aaf8e4c6b28c3ac21169dbcb9b133d87c1e12a9d5add56",
+          "byte_length": 330376
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_source_serif_4_w500_c99b3d51fcd2",
+          "digest": "c99b3d51fcd27089407f29daf2ab10e783c22d1cf075f85f1f3c14677641e0c0",
+          "byte_length": 330532
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_source_serif_4_w600_e5c9f650462c",
+          "digest": "e5c9f650462c01cd3d115097d7a3f31c5ff7148226c7a828dba216f0ecc3c616",
+          "byte_length": 330572
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_source_serif_4_w700_7b262f8cdd65",
+          "digest": "7b262f8cdd65da7b0237bd17b68c395799ef4872562d70a10bc0bb6c09b0fe41",
+          "byte_length": 330468
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_source_serif_4_w800_c9cef6de5507",
+          "digest": "c9cef6de5507b20c4baea4fd90201fe2b640ac2a913c7107add1b50afc2962c0",
+          "byte_length": 330676
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_source_serif_4_w400i_ed774fed8228",
+          "digest": "ed774fed8228cb847c0a5702a6faf843d0e603a1cb31dfa22cdddb5b0c8fe610",
+          "byte_length": 207620
+        },
+        {
+          "weight": 600,
+          "style": "italic",
+          "asset_id": "asset_font_lib_source_serif_4_w600i_87da177ae774",
+          "digest": "87da177ae774a022d830e1a307b7580e5d5ada5a689970c73a71cdae6cd13cab",
+          "byte_length": 207976
+        }
+      ]
+    },
+    {
+      "slug": "newsreader",
+      "family": "Newsreader",
+      "category": "serif",
+      "tone": [
+        "news-editorial",
+        "refined",
+        "text"
+      ],
+      "pairing": "Refined news voice; pairs with Manrope or Archivo.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 2000.0,
+        "x_height_ratio": 0.426,
+        "cap_height_ratio": 0.67,
+        "avg_char_width_ratio": 0.5435,
+        "ascender_ratio": 0.735,
+        "descender_ratio": -0.265,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": [
+          "→",
+          "←"
+        ]
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_newsreader_w400_75aea7cd322e",
+          "digest": "75aea7cd322ef02470aeff2c5a6e247eddf4e3228a8dbc8b5783f3d313885bd2",
+          "byte_length": 118204
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_newsreader_w500_8c14a557b53c",
+          "digest": "8c14a557b53cd00e0c73d34145f7b98456eb44cfc5cad66714f9f61df779eaf6",
+          "byte_length": 118620
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_newsreader_w600_04693335e8fd",
+          "digest": "04693335e8fd9914bb50bb5a3d95c038cc5527f3436b7b7675956fc771a0ed75",
+          "byte_length": 118688
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_newsreader_w700_62b67196f3b4",
+          "digest": "62b67196f3b4bb10a46eee2943da3f6793fde83398d6878c4033a8c4bad46e10",
+          "byte_length": 118524
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_newsreader_w800_07c625b2c1f0",
+          "digest": "07c625b2c1f0bd3f9c832f2e4d3c4bd460c07833895fdeeee099a2e3d5e819d4",
+          "byte_length": 118576
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_newsreader_w400i_6fea7ed8e6e1",
+          "digest": "6fea7ed8e6e1b5acef63f51d380cf09d6ac1047f0d8eef88aa490f3d0940861a",
+          "byte_length": 129076
+        },
+        {
+          "weight": 500,
+          "style": "italic",
+          "asset_id": "asset_font_lib_newsreader_w500i_1084f27960ae",
+          "digest": "1084f27960aee1fb980c3206483299b11bb6defcffd3b2cb9074ac68fab4a6c3",
+          "byte_length": 130988
+        }
+      ]
+    },
+    {
+      "slug": "instrument-serif",
+      "family": "Instrument Serif",
+      "category": "serif",
+      "tone": [
+        "display-serif",
+        "fashionable",
+        "condensed-elegant"
+      ],
+      "pairing": "Single-weight display serif with a fashionable, condensed elegance.",
+      "notes": "One weight only (400) — scale with size, not weight.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.51,
+        "cap_height_ratio": 0.72,
+        "avg_char_width_ratio": 0.422,
+        "ascender_ratio": 0.99,
+        "descender_ratio": -0.31,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": [
+          "→",
+          "←"
+        ]
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_instrument_serif_w400_498efd461f6d",
+          "digest": "498efd461f6ddfcb7a111bf9a565709d2085d48201d501ead960d93e84ffbb88",
+          "byte_length": 70012
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_instrument_serif_w400i_08939b8bdf53",
+          "digest": "08939b8bdf534afec24ae0ef5e03f948940cd9a8fe08e7fecbad040e62327385",
+          "byte_length": 71592
+        }
+      ]
+    },
+    {
+      "slug": "zilla-slab",
+      "family": "Zilla Slab",
+      "category": "slab",
+      "tone": [
+        "slab",
+        "friendly-technical"
+      ],
+      "pairing": "Friendly technical slab; developer and maker subjects.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.445,
+        "cap_height_ratio": 0.65,
+        "avg_char_width_ratio": 0.538,
+        "ascender_ratio": 0.944,
+        "descender_ratio": -0.256,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_zilla_slab_w400_41a4626844da",
+          "digest": "41a4626844da9216b031308d4423045c765fe4231d99862d85d7d74509d37703",
+          "byte_length": 270104
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_zilla_slab_w500_d344b0f60cd5",
+          "digest": "d344b0f60cd5fb2d34c4168d2811ba684163e5665e20cccbcfb6ac822d84a500",
+          "byte_length": 268184
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_zilla_slab_w600_aafcb295b88d",
+          "digest": "aafcb295b88d520357db1ecf9a1c3167055e87e9ddf5f63e560cbd139ec2805e",
+          "byte_length": 270088
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_zilla_slab_w700_4ec3a04a4eef",
+          "digest": "4ec3a04a4eef37074b42ef542e4d874e13646668cfe65256e0bf100441cf8719",
+          "byte_length": 273044
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_zilla_slab_w400i_ff0cd7a2f0db",
+          "digest": "ff0cd7a2f0db59d017d51b4ed9003f58bf21ae218ab2a965aa3bc1dd894c152b",
+          "byte_length": 277732
+        }
+      ]
+    },
+    {
+      "slug": "bitter",
+      "family": "Bitter",
+      "category": "slab",
+      "tone": [
+        "slab",
+        "contemporary",
+        "readable"
+      ],
+      "pairing": "Contemporary readable slab; headlines and body both work.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.528,
+        "cap_height_ratio": 0.698,
+        "avg_char_width_ratio": 0.598,
+        "ascender_ratio": 0.935,
+        "descender_ratio": -0.265,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bitter_w400_a0bc0e91051f",
+          "digest": "a0bc0e91051faf5238af8d87076a250f27bdebdf7d45a0d50beda3a51e9bbe65",
+          "byte_length": 202072
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bitter_w500_3bfe2ad26a72",
+          "digest": "3bfe2ad26a72af66947d2658b02d5132dc1df99531a93a232d88d6b68912da18",
+          "byte_length": 202384
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bitter_w600_7804e1bd5d82",
+          "digest": "7804e1bd5d8255da2a3b6819dbc633763a018fa45ea288987f8942835ef32bcc",
+          "byte_length": 202376
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bitter_w700_feb89da7f328",
+          "digest": "feb89da7f3285320e6dc4c737b35588d0b6d7218d0517ca9a41a8bc8676b1286",
+          "byte_length": 202316
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bitter_w800_c9c3b2a56e68",
+          "digest": "c9c3b2a56e683de5a8816f1e64118766027bbb7683c712905a3517c728f8ba69",
+          "byte_length": 202572
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_bitter_w400i_61e5e5adb3df",
+          "digest": "61e5e5adb3dff6347d74b3610ab6653e703f615d0f31ee79da4cb6150c5ec353",
+          "byte_length": 194448
+        },
+        {
+          "weight": 700,
+          "style": "italic",
+          "asset_id": "asset_font_lib_bitter_w700i_090c6b73c6b7",
+          "digest": "090c6b73c6b75bb20ff4fad9e49792e01484bba88d3e445634f61dec758506b5",
+          "byte_length": 194424
+        }
+      ]
+    },
+    {
+      "slug": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "category": "mono",
+      "tone": [
+        "code",
+        "technical"
+      ],
+      "pairing": "Code voice; terminal snippets, specs, dev-tool ads.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.55,
+        "cap_height_ratio": 0.73,
+        "avg_char_width_ratio": 0.602,
+        "ascender_ratio": 1.02,
+        "descender_ratio": -0.3,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_jetbrains_mono_w400_5b050f93ff74",
+          "digest": "5b050f93ff747f49e7e46ebf7034e75565911e2cb5e8742c2aabc3fe234d7456",
+          "byte_length": 115228
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_jetbrains_mono_w700_6efecaeaae4a",
+          "digest": "6efecaeaae4a9ba6b585ebc11b1b7343010e24b5786596ecba689ef90b1a7359",
+          "byte_length": 115140
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_jetbrains_mono_w400i_e777f398f603",
+          "digest": "e777f398f60358de2e118a5abd8de37c552e1973924b6c7cc93bf9e83a847328",
+          "byte_length": 118032
+        }
+      ]
+    },
+    {
+      "slug": "ibm-plex-mono",
+      "family": "IBM Plex Mono",
+      "category": "mono",
+      "tone": [
+        "code",
+        "technical-corporate"
+      ],
+      "pairing": "Corporate-technical mono; data, engineering, enterprise subjects.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.516,
+        "cap_height_ratio": 0.698,
+        "avg_char_width_ratio": 0.6,
+        "ascender_ratio": 1.025,
+        "descender_ratio": -0.275,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_ibm_plex_mono_w400_6a3412f058c7",
+          "digest": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+          "byte_length": 135580
+        },
+        {
+          "weight": 500,
+          "style": "normal",
+          "asset_id": "asset_font_lib_ibm_plex_mono_w500_a9b4c49bb299",
+          "digest": "a9b4c49bb299e05b5f6c481e7fb5e78943d2793249a0c8874ab574a2d1ea6755",
+          "byte_length": 136704
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_ibm_plex_mono_w600_d3c38e55c78f",
+          "digest": "d3c38e55c78f5b0f28009fddba4834ec503278936a5986032424c9bd2d23aa46",
+          "byte_length": 140216
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_ibm_plex_mono_w700_ac27abd6450a",
+          "digest": "ac27abd6450a64dd94467580a02fe6235156d5b92f2926ebbc8e7489df64e0be",
+          "byte_length": 137784
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_ibm_plex_mono_w400i_3362fc791b06",
+          "digest": "3362fc791b0652193328b862c1c5f23a789bc7288b1617fa63302f88689a2a34",
+          "byte_length": 143920
+        }
+      ]
+    },
+    {
+      "slug": "space-mono",
+      "family": "Space Mono",
+      "category": "mono",
+      "tone": [
+        "retro-tech",
+        "display-mono",
+        "quirky"
+      ],
+      "pairing": "Quirky retro mono; eyebrow labels and display accents, not long copy.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.496,
+        "cap_height_ratio": 0.7,
+        "avg_char_width_ratio": 0.612,
+        "ascender_ratio": 1.12,
+        "descender_ratio": -0.361,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_space_mono_w400_95837e182bae",
+          "digest": "95837e182baeeada83368f7748db28357f0a1b75c6b84ff7065b5edf933c8e18",
+          "byte_length": 99356
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_space_mono_w700_405e73d41afb",
+          "digest": "405e73d41afb7e5906efce206a326af5c956f38e255f35421c260e861e599c59",
+          "byte_length": 98232
+        },
+        {
+          "weight": 400,
+          "style": "italic",
+          "asset_id": "asset_font_lib_space_mono_w400i_eca264c8690a",
+          "digest": "eca264c8690a91fe837d19a6badf2d88961610c4c8aafcb196526192a9f258c5",
+          "byte_length": 121396
+        }
+      ]
+    },
+    {
+      "slug": "anton",
+      "family": "Anton",
+      "category": "display",
+      "tone": [
+        "condensed-impact",
+        "poster",
+        "loud"
+      ],
+      "pairing": "Condensed poster impact; huge single-word headlines.",
+      "notes": "One weight; designed for large sizes and tight leading.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 2048.0,
+        "x_height_ratio": 0.7324,
+        "cap_height_ratio": 0.8594,
+        "avg_char_width_ratio": 0.458,
+        "ascender_ratio": 1.1763,
+        "descender_ratio": -0.3291,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_anton_w400_a4ba3a92350e",
+          "digest": "a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab",
+          "byte_length": 170812
+        }
+      ]
+    },
+    {
+      "slug": "bebas-neue",
+      "family": "Bebas Neue",
+      "category": "display",
+      "tone": [
+        "condensed-caps",
+        "classic-ad",
+        "tall"
+      ],
+      "pairing": "The classic tall-caps ad face; all-caps headlines only.",
+      "notes": "Caps-only design — lowercase input renders as small caps.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.7,
+        "cap_height_ratio": 0.7,
+        "avg_char_width_ratio": 0.387,
+        "ascender_ratio": 0.9,
+        "descender_ratio": -0.3,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": [
+          "→",
+          "←"
+        ]
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bebas_neue_w400_08e462380510",
+          "digest": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
+          "byte_length": 61400
+        }
+      ]
+    },
+    {
+      "slug": "archivo-black",
+      "family": "Archivo Black",
+      "category": "display",
+      "tone": [
+        "heavy-impact",
+        "poster",
+        "grotesque"
+      ],
+      "pairing": "Maximum-weight grotesque; short shouting headlines.",
+      "notes": "One weight (visually ~900); the display cut of Archivo.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.528,
+        "cap_height_ratio": 0.688,
+        "avg_char_width_ratio": 0.652,
+        "ascender_ratio": 0.878,
+        "descender_ratio": -0.21,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_archivo_black_w400_dd9a89a019b4",
+          "digest": "dd9a89a019b4849f66ab75455fe7bdf931311042cbb0f0f97acc061539703180",
+          "byte_length": 90988
+        }
+      ]
+    },
+    {
+      "slug": "bricolage-grotesque",
+      "family": "Bricolage Grotesque",
+      "category": "display",
+      "tone": [
+        "characterful-grotesque",
+        "editorial-punch"
+      ],
+      "pairing": "Characterful grotesque with editorial punch; headlines and stats.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.516,
+        "cap_height_ratio": 0.66,
+        "avg_char_width_ratio": 0.502,
+        "ascender_ratio": 0.93,
+        "descender_ratio": -0.27,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bricolage_grotesque_w400_953fb8fede06",
+          "digest": "953fb8fede067323f4c82b9a169506d134ce71a159544f23ce12ef5d6ea00fb0",
+          "byte_length": 90776
+        },
+        {
+          "weight": 600,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bricolage_grotesque_w600_3f1499daa0c1",
+          "digest": "3f1499daa0c10b5ea8f24a152c718d1d1ef3185bd7647efbf56df476b840e6d4",
+          "byte_length": 90888
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bricolage_grotesque_w700_ec0b99420a2a",
+          "digest": "ec0b99420a2abb96c12e603a41f954e90ba7382e59ed7386f133c3b3e1ccf5bb",
+          "byte_length": 90736
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_bricolage_grotesque_w800_12bb73824168",
+          "digest": "12bb73824168ad57cdde8a930d1d5c28f14ef8baa3795c65551e4bb7593bee27",
+          "byte_length": 90836
+        }
+      ]
+    },
+    {
+      "slug": "unbounded",
+      "family": "Unbounded",
+      "category": "display",
+      "tone": [
+        "wide-futuristic",
+        "crypto-tech"
+      ],
+      "pairing": "Wide futuristic display; web3/AI/frontier-tech subjects.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.566,
+        "cap_height_ratio": 0.75,
+        "avg_char_width_ratio": 0.756,
+        "ascender_ratio": 0.995,
+        "descender_ratio": -0.245,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_unbounded_w400_715b238c3818",
+          "digest": "715b238c38180da4e00073cfdc3dcd6723aedb4fe6b6ff01a292a16628e056d5",
+          "byte_length": 417548
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_unbounded_w700_895d53a162a8",
+          "digest": "895d53a162a8758a514e677f3843813c8889be876a37f4a51598fefb95197ca2",
+          "byte_length": 423216
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_unbounded_w800_e3c66e374430",
+          "digest": "e3c66e3744307e055cfe41547d6692978aa789b9306039b3f2464a3b59a18bd0",
+          "byte_length": 423872
+        }
+      ]
+    },
+    {
+      "slug": "syne",
+      "family": "Syne",
+      "category": "display",
+      "tone": [
+        "art-house",
+        "wide-display",
+        "distinctive"
+      ],
+      "pairing": "Art-house wide display; culture, studios, portfolio subjects.",
+      "license": {
+        "name": "OFL-1.1",
+        "embeddable": true,
+        "subsettable": true,
+        "source_url": "https://openfontlicense.org"
+      },
+      "metrics": {
+        "units_per_em": 1000.0,
+        "x_height_ratio": 0.5,
+        "cap_height_ratio": 0.65,
+        "avg_char_width_ratio": 0.55,
+        "ascender_ratio": 0.925,
+        "descender_ratio": -0.275,
+        "line_gap_ratio": 0.0
+      },
+      "glyph_coverage": {
+        "required_ok": true,
+        "missing_optional": []
+      },
+      "faces": [
+        {
+          "weight": 400,
+          "style": "normal",
+          "asset_id": "asset_font_lib_syne_w400_0386a8e1d97a",
+          "digest": "0386a8e1d97a91134dcb59711c5a2282005d7e018ea6466fa9053b7d5a6b2f2f",
+          "byte_length": 69684
+        },
+        {
+          "weight": 700,
+          "style": "normal",
+          "asset_id": "asset_font_lib_syne_w700_488c63cfdad9",
+          "digest": "488c63cfdad999285f1d659a5d7b867147a0c03e3647e2ee486625a331610309",
+          "byte_length": 70080
+        },
+        {
+          "weight": 800,
+          "style": "normal",
+          "asset_id": "asset_font_lib_syne_w800_8c58c2f01019",
+          "digest": "8c58c2f0101992266852501520839f6f2beee9cd9c18dd367dc664481f9650c8",
+          "byte_length": 70252
+        }
+      ]
+    }
+  ]
+}

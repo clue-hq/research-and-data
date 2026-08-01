@@ -1,0 +1,3 @@
+#subtitle_rm font_size($type.size.2xl) font_weight(600)
+#cta_rm fill($accent)
+#cta_text_rm font_size(22)

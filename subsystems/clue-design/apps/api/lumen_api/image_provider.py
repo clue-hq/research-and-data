@@ -18,10 +18,12 @@ Design:
 
 from __future__ import annotations
 
-import os
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
+
+from py_lumen_config import settings
 
 # Default id for the Python-side T2I provider. Anything else (qr, stub-image-v0,
 # …) continues to route to the Rust provider registry, untouched.
@@ -29,6 +31,16 @@ DEFAULT_PROVIDER_ID = "image-gen-v1"
 DEFAULT_MIME = "image/png"
 DEFAULT_TIMEOUT_S = 60.0
 DEFAULT_MAX_RETRIES = 2
+
+# Framing prepended to the instruction when reference images ride a GENERATION
+# (not an edit). Reference images are STYLE anchors, not source pixels to modify,
+# so the model is told explicitly to synthesize a NEW image rather than copy or
+# edit the attachments (edit's "modify THIS image" semantics are the opposite).
+STYLE_REFERENCE_FRAMING = (
+    "The attached image(s) are STYLE REFERENCES only — match their visual style "
+    "(palette, texture, mood, edge character) but generate a NEW image; do not "
+    "copy, crop, or edit them."
+)
 
 
 class ImageGenerationError(Exception):
@@ -60,8 +72,8 @@ class ImageModelConfig:
 
     @classmethod
     def from_env(cls) -> "ImageModelConfig":
-        base_url = os.environ.get("IMAGE_MODEL_BASE_URL", "").strip()
-        api_key = os.environ.get("IMAGE_MODEL_API_KEY", "").strip()
+        base_url = settings.image_model_base_url.strip()
+        api_key = settings.image_model_api_key.strip()
         if not base_url or not api_key:
             raise ImageGenerationError(
                 "image_model.not_configured",
@@ -72,14 +84,14 @@ class ImageModelConfig:
         return cls(
             base_url=base_url,
             api_key=api_key,
-            model_id=os.environ.get("IMAGE_MODEL_ID", "default"),
-            timeout_s=_env_float("IMAGE_MODEL_TIMEOUT_S", DEFAULT_TIMEOUT_S),
-            max_retries=_env_int("IMAGE_MODEL_MAX_RETRIES", DEFAULT_MAX_RETRIES),
+            model_id=settings.image_model_id,
+            timeout_s=settings.image_model_timeout_s,
+            max_retries=settings.image_model_max_retries,
         )
 
 
 def provider_id() -> str:
-    return os.environ.get("IMAGE_MODEL_PROVIDER_ID", DEFAULT_PROVIDER_ID)
+    return settings.image_model_provider_id
 
 
 def is_image_model_provider(provider: str) -> bool:
@@ -89,20 +101,13 @@ def is_image_model_provider(provider: str) -> bool:
 
 
 def is_configured() -> bool:
-    return bool(
-        os.environ.get("IMAGE_MODEL_BASE_URL", "").strip()
-        and os.environ.get("IMAGE_MODEL_API_KEY", "").strip()
-    )
+    return settings.image_model_configured()
 
 
 def configured_model_id() -> str:
     """The text-to-image model id used for generation. Exposed for the generation
-    cache key + provenance without constructing the full config. Tolerates stray
-    surrounding quotes in a `.env` value."""
-    value = os.environ.get("IMAGE_MODEL_ID", "default").strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        value = value[1:-1]
-    return value or "default"
+    cache key + provenance without constructing the full config."""
+    return settings.image_model_id
 
 
 def generate(
@@ -115,6 +120,7 @@ def generate(
     image_size: Optional[str] = None,
     transparent_background: Optional[bool] = None,
     reference_asset_ids: Optional[List[str]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
     request_id: Optional[str] = None,
 ) -> ImageGenerationResult:
     """Generate one raster image. Provider-agnostic orchestration:
@@ -123,8 +129,12 @@ def generate(
 
     `aspect_ratio` ("16:9") + `image_size` ("1k"/"2k"/"4k") translate to concrete
     width/height when explicit dimensions are absent (a 1:1 frame is never stretched
-    into 16:9). `reference_asset_ids` lands now for forward-compat; reference-image
-    *use* is Slice 1. Raises `ImageGenerationError` (typed) on misconfiguration or
+    into 16:9). `reference_asset_ids` stays accepted — the caller (API route) resolves
+    those ids into `reference_images`, the bytes channel: (bytes, mime) pairs that ride
+    the model call as STYLE references (multimodal content, images first then the
+    instruction, framed so the model synthesizes a NEW image rather than editing the
+    attachments). No references → the request body is byte-identical to a bare
+    text-to-image call. Raises `ImageGenerationError` (typed) on misconfiguration or
     provider failure. This is the function the route calls and tests patch.
     """
     if not (prompt or "").strip():
@@ -144,6 +154,57 @@ def generate(
         aspect_ratio=aspect_ratio,
         image_size=image_size,
         transparent_background=transparent_background,
+        reference_images=reference_images or None,
+    )
+    return ImageGenerationResult(
+        image_bytes=image_bytes,
+        mime_type=mime_type or DEFAULT_MIME,
+        model=config.model_id,
+        provenance=_generated_provenance(config.model_id, request_id),
+        license=_generated_license(),
+    )
+
+
+def edit(
+    *,
+    prompt: str,
+    source_images: List[Tuple[bytes, str]],
+    brand_notes: Optional[List[str]] = None,
+    transparent_background: Optional[bool] = None,
+    request_id: Optional[str] = None,
+) -> ImageGenerationResult:
+    """Edit an existing raster image with a text instruction (Phase 3b).
+
+    Same orchestration as `generate`, but the source image(s) ride the model
+    call as multimodal content and the output geometry follows the source —
+    no dimension resolution or aspect hints (asking an edit to change framing
+    belongs in the instruction itself). `transparent_background` is how
+    remove-background rides this path. Raises `ImageGenerationError` (typed)
+    on misconfiguration, empty inputs, or provider failure.
+    """
+    if not (prompt or "").strip():
+        raise ImageGenerationError(
+            "image_model.empty_prompt",
+            "a non-empty edit instruction is required",
+            status_code=400,
+        )
+    if not source_images:
+        raise ImageGenerationError(
+            "image_model.missing_source",
+            "an image edit requires at least one source image",
+            status_code=400,
+        )
+    config = ImageModelConfig.from_env()
+    full_prompt = _compose_prompt(prompt, brand_notes or [])
+    image_bytes, mime_type = _invoke_with_retries(
+        config,
+        prompt=full_prompt,
+        width=None,
+        height=None,
+        aspect_ratio=None,
+        image_size=None,
+        transparent_background=transparent_background,
+        source_images=source_images,
     )
     return ImageGenerationResult(
         image_bytes=image_bytes,
@@ -214,6 +275,24 @@ def _compose_prompt(prompt: str, brand_notes: List[str]) -> str:
     return prompt
 
 
+def _image_content_parts(images: List[Tuple[bytes, str]]) -> List[dict]:
+    """OpenAI-style multimodal `image_url` parts (base64 data: URLs), one per
+    (bytes, mime) pair, in order. Shared by the edit (source) and reference-
+    conditioned generation paths so both build byte-identical image parts."""
+    return [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": "data:"
+                + (mime or DEFAULT_MIME)
+                + ";base64,"
+                + base64.b64encode(image_bytes).decode("ascii")
+            },
+        }
+        for image_bytes, mime in images
+    ]
+
+
 # --- adapter seam (the only vendor-specific code) --------------------------
 
 def _invoke_with_retries(
@@ -225,6 +304,8 @@ def _invoke_with_retries(
     aspect_ratio: Optional[str],
     image_size: Optional[str],
     transparent_background: Optional[bool],
+    source_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
     last_error: Optional[Exception] = None
     for attempt in range(config.max_retries + 1):
@@ -237,6 +318,8 @@ def _invoke_with_retries(
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
                 transparent_background=transparent_background,
+                source_images=source_images,
+                reference_images=reference_images,
             )
         except ImageGenerationError:
             raise  # typed/terminal — don't retry config or decode errors
@@ -258,6 +341,8 @@ def _invoke_model(
     aspect_ratio: Optional[str],
     image_size: Optional[str],
     transparent_background: Optional[bool],
+    source_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_images: Optional[List[Tuple[bytes, str]]] = None,
 ) -> Tuple[bytes, str]:
     """ADAPTER SEAM — OpenRouter (raw HTTP).
 
@@ -283,9 +368,30 @@ def _invoke_model(
         hints.append("transparent background")
     user_prompt = prompt if not hints else f"{prompt}\n\n(Render with " + ", ".join(hints) + ".)"
 
+    # Image EDIT: source images ride the same chat-completions call as
+    # OpenAI-style multimodal content parts (base64 data: URLs) ahead of the
+    # instruction text; the model returns the edited image the same way a
+    # generation does. Reference-conditioned GENERATION uses the same content
+    # shape — reference images first, then the instruction — but prefixes an
+    # explicit "these are STYLE references, make a NEW image" framing so the
+    # model does not treat them as pixels to edit. Plain generation (no source,
+    # no references) keeps the bare-string content, byte-identical to before.
+    if source_images:
+        content: object = [
+            *_image_content_parts(source_images),
+            {"type": "text", "text": user_prompt},
+        ]
+    elif reference_images:
+        content = [
+            *_image_content_parts(reference_images),
+            {"type": "text", "text": f"{STYLE_REFERENCE_FRAMING}\n\n{user_prompt}"},
+        ]
+    else:
+        content = user_prompt
+
     body = {
         "model": config.model_id,
-        "messages": [{"role": "user", "content": user_prompt}],
+        "messages": [{"role": "user", "content": content}],
         "modalities": ["image", "text"],
     }
     headers = {
@@ -293,8 +399,8 @@ def _invoke_model(
         "Content-Type": "application/json",
     }
     # Optional OpenRouter attribution headers (ranking only; harmless if unset).
-    referer = os.environ.get("IMAGE_MODEL_HTTP_REFERER")
-    title = os.environ.get("IMAGE_MODEL_APP_TITLE")
+    referer = settings.image_model_http_referer
+    title = settings.image_model_app_title
     if referer:
         headers["HTTP-Referer"] = referer
     if title:
@@ -398,17 +504,3 @@ def _generated_provenance(model_id: str, request_id: Optional[str]) -> dict:
         "confidence": None,
         "notes": notes,
     }
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default

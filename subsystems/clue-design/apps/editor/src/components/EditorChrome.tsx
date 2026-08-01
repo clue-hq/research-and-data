@@ -1,10 +1,30 @@
 "use client";
 
-import { AlertTriangle, History } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  Bot,
+  Download,
+  History,
+  Images,
+  SlidersHorizontal,
+  type LucideIcon
+} from "lucide-react";
 import type { Operation, Page } from "@/engine/contracts";
 import { EDITOR_PANEL_MODES, type EditorPanelMode } from "@/engine/editorModes";
 import { operationLabel } from "@/engine/operationLabels";
 import { pageDescriptor } from "@/engine/renderAdapter";
+
+/** Rail-tab glyphs per mode (moda 7.30.53's icon-over-label rail tabs).
+ * The icon is decorative; the accessible name stays the mode label / ariaLabel. */
+const MODE_ICON: Record<EditorPanelMode, LucideIcon> = {
+  inspector: SlidersHorizontal,
+  assets: Images,
+  agent: Bot,
+  export: Download,
+  diagnostics: Activity
+};
 
 /** Small presentational pieces of the editor shell — topbar chrome, the
  * local operation-history section, and the engine-disabled banner. No
@@ -18,20 +38,92 @@ export function EditorModeSwitch({
   onModeChange: (mode: EditorPanelMode) => void;
 }) {
   return (
-    <div className="top-mode-switch" aria-label="Editor mode">
-      {EDITOR_PANEL_MODES.map((item) => (
-        <button
-          key={item.mode}
-          type="button"
-          className={mode === item.mode ? "active" : undefined}
-          aria-label={item.ariaLabel}
-          aria-pressed={mode === item.mode}
-          onClick={() => onModeChange(item.mode)}
-        >
-          {item.label}
-        </button>
-      ))}
+    <div className="rail-tabs" role="group" aria-label="Editor mode">
+      {EDITOR_PANEL_MODES.map((item) => {
+        const Icon = MODE_ICON[item.mode];
+        return (
+          <button
+            key={item.mode}
+            type="button"
+            className={mode === item.mode ? "active" : undefined}
+            aria-label={item.ariaLabel}
+            aria-pressed={mode === item.mode}
+            onClick={() => onModeChange(item.mode)}
+          >
+            <Icon aria-hidden size={16} />
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+/**
+ * Click-to-edit document title (moda's doc-row rename pattern): renders the
+ * title as the topbar heading; clicking swaps in an input that commits on
+ * Enter/blur and cancels on Escape. Emits the canonical rename through
+ * `onRename` — no policy here.
+ */
+export function EditableDocumentTitle({
+  title,
+  onRename
+}: {
+  title: string;
+  onRename: (title: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (draft !== null) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [draft]);
+
+  const commit = () => {
+    if (draft === null) {
+      return;
+    }
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== title) {
+      onRename(trimmed);
+    }
+    setDraft(null);
+  };
+
+  if (draft === null) {
+    return (
+      <h1
+        className="doc-title"
+        title="Rename design"
+        onClick={() => setDraft(title)}
+      >
+        {title}
+      </h1>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="doc-title-input"
+      aria-label="Design name"
+      value={draft}
+      maxLength={255}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          setDraft(null);
+        }
+      }}
+    />
   );
 }
 
@@ -156,6 +248,39 @@ export function EngineDisabledBanner({
         <code>
           <span className="engine-disabled-banner-cmd">npm run build:wasm</span>
           {` · ${detail}`}
+        </code>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loud, persistent banner shown when the on-canvas text-measurement path is
+ * degraded — CanvasKit or its fonts failed to load, so the wasm engine falls
+ * back to a heuristic text measurer. Without it that failure was silent: text
+ * laid out with approximate geometry and could even vanish, with no signal.
+ * Reuses the engine-disabled banner styling (same alert affordance) so no new
+ * visual token is introduced.
+ */
+export function HeuristicMeasurementBanner() {
+  return (
+    <div
+      className="engine-disabled-banner"
+      role="alert"
+      data-testid="heuristic-measurement-banner"
+    >
+      <AlertTriangle aria-hidden size={18} className="engine-disabled-banner-icon" />
+      <div className="engine-disabled-banner-body">
+        <strong>Text measurement degraded</strong>
+        <span>
+          Canvas geometry is approximate (font engine unavailable). On-canvas text is laid out with
+          a heuristic estimate and may misfit or not appear as it will on export. Reload the editor;
+          if it persists, rebuild the CanvasKit and font assets, then hard-refresh (⌘⇧R).
+        </span>
+        <code>
+          <span className="engine-disabled-banner-cmd">npm run build:canvaskit</span>
+          {" · "}
+          <span className="engine-disabled-banner-cmd">npm run build:fonts</span>
         </code>
       </div>
     </div>

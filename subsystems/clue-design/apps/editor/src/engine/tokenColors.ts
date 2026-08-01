@@ -133,7 +133,7 @@ function resolveColorToken(
       return typeof value.l === "number" &&
         typeof value.c === "number" &&
         typeof value.h === "number"
-        ? `oklch(${value.l} ${value.c} ${value.h} / ${value.alpha ?? 1})`
+        ? oklchToHexCss(value.l, value.c, value.h, value.alpha ?? 1)
         : null;
     case "alias":
       return typeof value.token === "string"
@@ -144,6 +144,58 @@ function resolveColorToken(
   }
 }
 
+/**
+ * oklch -> sRGB hex, so the token map only ever holds strings BOTH canvas
+ * backends can paint. The CanvasKit paint path (`parseColor` in
+ * `canvaskit/drawDescriptors.ts`) parses hex and rgb()/rgba() only — an
+ * `oklch(...)` string returns null there, which erased kit-valued fills
+ * (transparent) and dropped text to black on the product canvas: exactly the
+ * K0 live-proof failure, because ingested kits express their palette ramps
+ * in oklch and every semantic token aliases into one. Matches the engine's
+ * own resolution (`crates/lumen-core` oklch -> hex, e.g. the Insight kit's
+ * `surface.brand` -> #00525C), so canvas, export, and agent preview agree.
+ *
+ * Standard OKLab math (Björn Ottosson's reference matrices): oklch -> OKLab
+ * -> LMS' -> cube -> linear sRGB -> gamma-encode, channels clamped to [0,1]
+ * (out-of-gamut values clip, same as the engine). Alpha < 1 emits 8-digit
+ * hex, which `parseColor` already handles.
+ */
+export function oklchToHexCss(l: number, c: number, h: number, alpha = 1): string {
+  const hRad = (h * Math.PI) / 180;
+  const labA = c * Math.cos(hRad);
+  const labB = c * Math.sin(hRad);
+
+  const lPrime = l + 0.3963377774 * labA + 0.2158037573 * labB;
+  const mPrime = l - 0.1055613458 * labA - 0.0638541728 * labB;
+  const sPrime = l - 0.0894841775 * labA - 1.291485548 * labB;
+
+  const l3 = lPrime * lPrime * lPrime;
+  const m3 = mPrime * mPrime * mPrime;
+  const s3 = sPrime * sPrime * sPrime;
+
+  const red = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  const green = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  const blue = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+  const channel = (linear: number): string => {
+    const clamped = Math.min(1, Math.max(0, linear));
+    const encoded =
+      clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+    return Math.round(encoded * 255)
+      .toString(16)
+      .padStart(2, "0");
+  };
+
+  const hex = `#${channel(red)}${channel(green)}${channel(blue)}`;
+  if (alpha >= 1) {
+    return hex;
+  }
+  const alphaHex = Math.round(Math.min(1, Math.max(0, alpha)) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${hex}${alphaHex}`;
+}
+
 /** A token string as carried on a `Paint`/`Color` (`paint.token` /
  * `color.token`) may or may not include the `$` prefix used in author-facing
  * hints (e.g. `fill($surface.page)`); this strips it before lookup so both
@@ -151,4 +203,96 @@ function resolveColorToken(
 export function resolveTokenColor(map: TokenColorMap, token: string): string | null {
   const name = token.startsWith("$") ? token.slice(1) : token;
   return map[name] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// K1.5 ("K0.5 for type"): typography + number tokens, resolved client-side.
+//
+// Agent proposal ops insert SKELETON text (Inter 16) carrying a style_token;
+// the server resolves the real family/size only at post-accept preflight. The
+// editor measured the skeleton (~17px/line), relayout used those metrics, and
+// the accept-time freeze baked the collapsed POSITIONS — the LUMV0903/0810
+// ghost. Resolving the kit's typography roles into the client measure/render
+// path measures the true 80pt headline before anything freezes, and makes
+// canvas type WYSIWYG. Radius / stroke-width / opacity number tokens ride
+// the same map so their fallback diagnostics can clear too.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the engine's ResolvedTypographyStyle (brand.rs resolve_text_style):
+ * what a `style($type.role)` supplies to a text node. All fields optional —
+ * apply over the node's literals only when present. */
+export interface TokenTextStyle {
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+}
+
+export type TokenTextStyleMap = Record<string, TokenTextStyle>;
+export type TokenNumberMap = Record<string, number>;
+
+export interface KitTokenMaps {
+  colors: TokenColorMap;
+  typography: TokenTextStyleMap;
+  numbers: TokenNumberMap;
+}
+
+interface TypographyValuePayload {
+  kind?: string;
+  font_family?: unknown;
+  font_size?: unknown;
+  font_weight?: unknown;
+  line_height?: unknown;
+  letter_spacing?: unknown;
+  token?: unknown;
+}
+
+interface NumberValuePayload {
+  kind?: string;
+  value?: unknown;
+}
+
+interface KitTokensPayload extends BrandKitTokensPayload {
+  typography?: Record<string, { value?: { default?: TypographyValuePayload } }>;
+  numbers?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  spacing?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  radii?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  stroke_widths?: Record<string, { value?: { default?: NumberValuePayload } }>;
+  opacity?: Record<string, { value?: { default?: NumberValuePayload } }>;
+}
+
+/** All three client-resolvable maps from one kit detail payload. */
+export function buildKitTokenMaps(kit: BrandKitDetailPayload | null | undefined): KitTokenMaps {
+  const tokens = (kit?.tokens ?? {}) as KitTokensPayload;
+
+  const typography: TokenTextStyleMap = {};
+  for (const [role, entry] of Object.entries(tokens.typography ?? {})) {
+    const value = entry?.value?.default;
+    if (!value || (value.kind && value.kind !== "style")) {
+      // Alias roles are rare and server-resolved; skip rather than chase.
+      continue;
+    }
+    const style: TokenTextStyle = {};
+    if (typeof value.font_family === "string") style.fontFamily = value.font_family;
+    if (typeof value.font_size === "number") style.fontSize = value.font_size;
+    if (typeof value.font_weight === "number") style.fontWeight = value.font_weight;
+    if (typeof value.line_height === "number") style.lineHeight = value.line_height;
+    if (typeof value.letter_spacing === "number") style.letterSpacing = value.letter_spacing;
+    if (Object.keys(style).length > 0) {
+      typography[role] = style;
+    }
+  }
+
+  const numbers: TokenNumberMap = {};
+  for (const category of ["numbers", "spacing", "radii", "stroke_widths", "opacity"] as const) {
+    for (const [name, entry] of Object.entries(tokens[category] ?? {})) {
+      const value = entry?.value?.default;
+      if (value && typeof value.value === "number") {
+        numbers[name] = value.value;
+      }
+    }
+  }
+
+  return { colors: buildTokenColorMap(kit), typography, numbers };
 }

@@ -1,0 +1,26 @@
+{
+  "compile": {
+    "status": "error",
+    "applied_operations": 0,
+    "operation_count": 0,
+    "diagnostics": [
+      {
+        "severity": "error",
+        "code": "LUMA0200",
+        "message": "repair block tries to recreate existing page pipeline_slide",
+        "line": 1,
+        "column": null,
+        "target_page_id": "pipeline_slide",
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": "Do not emit an existing page line during repair. Use checked structured operations for targeted changes, or emit only a non-duplicating DSL continuation."
+      }
+    ],
+    "halted_at": {
+      "code": "LUMA0200",
+      "line": 1
+    },
+    "operation_error": null
+  }
+}

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +13,9 @@ from fastapi.testclient import TestClient
 
 from lumen_api import image_provider
 from lumen_api.main import agent_response_from_trace, create_app
+from py_lumen_config import settings
+from py_lumen_obs import bind_request_id, get_logger, unbind_context
+from py_lumen_obs.testing import capture_events
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -411,6 +416,706 @@ def test_agent_turn_preview_route_returns_editor_safe_proposal(client: TestClien
     assert captured["root"] == REPO_ROOT
 
 
+def test_resolve_agent_turn_brand_kit_passes_document_kit_by_value(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K0 kit application: a turn whose scene references an attached Brand Kit
+    resolves the full kit JSON from the library (passed by value into the
+    runtime config); resolution failures degrade to (None, None) so the turn
+    itself can never fail on kit lookup."""
+    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+
+    scene = preflightable_scene()
+    scene["meta"]["brand_kit"] = {"id": "brand_kit_insight_health", "version": 4}
+    kit, source, manifest, brand_fonts = resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="Restyle the letter", scene=scene)
+    )
+    assert source == "document"
+    assert kit is not None
+    assert kit["id"] == "brand_kit_insight_health"
+    assert kit["version"] == 4
+    # K2: a styles-compiled kit has no logo/image assets → empty manifest,
+    # not an error. K3: its font faces carry no asset_ids → no font spec
+    # (bundled fallback), not an error.
+    assert manifest == {}
+    assert brand_fonts is None
+
+    # No scene ref → no kit (platform-default behavior unchanged).
+    assert resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="x", scene=preflightable_scene())
+    ) == (None, None, None, None)
+
+    # Unknown kit id → graceful Nones, never an exception.
+    ghost = preflightable_scene()
+    ghost["meta"]["brand_kit"] = {"id": "brand_kit_ghost", "version": 1}
+    assert resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="x", scene=ghost)
+    ) == (None, None, None, None)
+
+    # K2: a kit WITH a logo asset yields a manifest carrying the library
+    # record verbatim plus the human usage guidance.
+    uploaded = upload_logo(client, label="Insight reversed lockup")
+    assert uploaded.status_code == 200, uploaded.text
+    logo_asset_id = uploaded.json()["asset"]["id"]
+    described = client.put(
+        f"/assets/{logo_asset_id}/description",
+        json={"usage": "Use on dark or brand-colored fields."},
+    )
+    assert described.status_code == 200, described.text
+
+    kit_with_logo = json.loads(
+        json.dumps(client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"])
+    )
+    kit_with_logo["id"] = "brand_kit_insight_with_logo"
+    kit_with_logo["assets"]["logos"] = {
+        "primary": {
+            "variants": [
+                {
+                    "name": "reversed",
+                    "asset_id": logo_asset_id,
+                    "color_mode": "reversed",
+                    "width": 8.0,
+                    "height": 8.0,
+                }
+            ],
+            "usage": "primary",
+            "min_size": 8.0,
+            "clearspace": None,
+            "allowed_backgrounds": ["surface.brand"],
+            "license": None,
+            "provenance": {"source": "manual", "confidence": 1.0},
+        }
+    }
+    created = client.post(
+        "/brand-kits", json={"brand_kit": kit_with_logo, "source": "manual"}
+    )
+    assert created.status_code == 200, created.text
+
+    logo_scene = preflightable_scene()
+    logo_scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_insight_with_logo",
+        "version": kit_with_logo["version"],
+    }
+    kit, source, manifest, _ = resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="Add our logo", scene=logo_scene)
+    )
+    assert kit is not None and source == "document"
+    entry = manifest[logo_asset_id]
+    assert entry["record"]["id"] == logo_asset_id
+    assert entry["record"]["media"]["digest"]["algorithm"] == "sha256"
+    assert entry["usage"] == "Use on dark or brand-colored fields."
+
+
+def test_brand_kit_font_faces_ride_preflight_as_store_digests(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K3 server font fidelity: a kit whose font faces reference stored font
+    assets yields a {store_root, digests} spec (via the agent-turn resolver),
+    and a real-engine /preflight-preview against that kit stays clean — the
+    helper loads the face bytes from the store instead of erroring."""
+    from lumen_api.main import resolve_agent_turn_brand_kit
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    font_path = Path(__file__).resolve().parents[3] / "fonts" / "Inter-Regular.ttf"
+    uploaded = client.post(
+        "/assets",
+        files={"file": ("Inter-Regular.ttf", font_path.read_bytes(), "font/ttf")},
+        data={"label": "Inter Regular", "kind": "font"},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    font_asset = uploaded.json()["asset"]
+    font_digest = font_asset["media"]["digest"]["value"]
+
+    kit_with_font = json.loads(
+        json.dumps(
+            client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"]
+        )
+    )
+    kit_with_font["id"] = "brand_kit_insight_with_font"
+    kit_with_font["assets"]["fonts"]["brand"]["faces"][0]["asset_id"] = font_asset["id"]
+    created = client.post(
+        "/brand-kits", json={"brand_kit": kit_with_font, "source": "manual"}
+    )
+    assert created.status_code == 200, created.text
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    scene = preflightable_scene()
+    scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_insight_with_font",
+        "version": kit_with_font["version"],
+    }
+    kit, source, _, brand_fonts = resolve_agent_turn_brand_kit(
+        AgentTurnPreviewRequest(prompt="Set our type", scene=scene)
+    )
+    assert kit is not None and source == "document"
+    assert brand_fonts is not None
+    # Spec faces now ride with their per-face weight/style (P2.5 enrichment);
+    # this kit face records 400/normal.
+    assert brand_fonts["faces"] == [
+        {"digest": font_digest, "family": "Source Sans 3", "weight": 400, "style": "normal"}
+    ]
+    assert (Path(brand_fonts["store_root"]) / "sha256").exists()
+
+    # Real engine round trip: the spec flows through /preflight-preview and
+    # the helper reads the face bytes from the store — clean result, no
+    # LUMS0101 (unloadable face) diagnostics.
+    previewed = client.post(
+        "/preflight-preview",
+        json={"scene": scene, "brand_kit_id": "brand_kit_insight_with_font"},
+    )
+    assert previewed.status_code == 200, previewed.text
+    codes = [
+        d.get("code")
+        for d in (previewed.json().get("diagnostics") or {}).get("current", [])
+    ]
+    assert "LUMS0101" not in codes
+
+
+REFERENCE_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80">'
+    b'<rect width="120" height="80" fill="#3366CC"/></svg>'
+)
+
+
+def upload_reference_svg(client: TestClient):
+    # NOTE: the engine AssetKind enum has no "reference" variant, so the upload
+    # omits `kind` (the engine auto-classifies SVG → vector); reference-ness is
+    # carried by tags, exactly as the editor sends it.
+    return client.post(
+        "/assets",
+        files={"file": ("wash.svg", REFERENCE_SVG, "image/svg+xml")},
+        data={"label": "Soft wash", "tags": "reference,chat-attachment"},
+    )
+
+
+def test_reference_manifest_matches_config_contract_shape(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): a raster reference resolves to the exact config.py
+    reference_assets contract — record verbatim, the asset's OWN sha256 as
+    preview_digest, mime/dims/dominant_colors/order — and dedupes ids
+    preserving first-occurrence order."""
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    uploaded = upload_logo(client)
+    assert uploaded.status_code == 200, uploaded.text
+    asset = uploaded.json()["asset"]
+    asset_id = asset["id"]
+    own_digest = asset["media"]["digest"]["value"]
+
+    # Duplicate id + empty id: deduped, order preserved, still one entry.
+    manifest = resolve_agent_turn_references(
+        AgentTurnPreviewRequest(
+            prompt="Match this",
+            scene=minimal_scene(),
+            reference_asset_ids=[asset_id, "", asset_id],
+        )
+    )
+    assert set(manifest.keys()) == {asset_id}
+    entry = manifest[asset_id]
+    assert set(entry.keys()) == {
+        "record",
+        "preview_digest",
+        "mime_type",
+        "width",
+        "height",
+        "dominant_colors",
+        "title",
+        "description",
+        "order",
+    }
+    assert entry["record"]["id"] == asset_id
+    assert entry["preview_digest"] == own_digest  # raster: its own digest
+    assert entry["mime_type"] == "image/png"
+    assert entry["order"] == 0
+    assert isinstance(entry["dominant_colors"], list)
+    assert isinstance(entry["width"], int) and isinstance(entry["height"], int)
+
+
+def test_reference_manifest_no_ids_is_none(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No reference ids → None: the turn is byte-identical to today (and no DB
+    connection is opened)."""
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    assert (
+        resolve_agent_turn_references(
+            AgentTurnPreviewRequest(prompt="x", scene=minimal_scene())
+        )
+        is None
+    )
+
+
+def test_reference_manifest_svg_materializes_raster_preview(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): an SVG reference is engine-rasterized at resolve time — its
+    preview_digest is a PNG that exists in the shared store, NOT the SVG's own
+    digest, and mime_type reports the raster."""
+    from fastapi import HTTPException  # noqa: F401  (kept for parity w/ 422 tests)
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    uploaded = upload_reference_svg(client)
+    assert uploaded.status_code == 200, uploaded.text
+    asset = uploaded.json()["asset"]
+    asset_id = asset["id"]
+    svg_digest = asset["media"]["digest"]["value"]
+
+    manifest = resolve_agent_turn_references(
+        AgentTurnPreviewRequest(
+            prompt="Match this",
+            scene=minimal_scene(),
+            reference_asset_ids=[asset_id],
+        )
+    )
+    entry = manifest[asset_id]
+    preview_digest = entry["preview_digest"]
+    assert preview_digest != svg_digest
+    assert entry["mime_type"] == "image/png"
+    store_root = tmp_path / "asset-store"
+    blob = store_root / "sha256" / preview_digest[:2] / preview_digest
+    assert blob.is_file(), "rasterized SVG preview must land in the store"
+
+
+def test_reference_manifest_unknown_id_is_422(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): a missing id is EXPLICIT user intent gone wrong — a hard 422
+    naming the id, never a silent skip like the kit manifest."""
+    from fastapi import HTTPException
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    # Touch the store so the db/store exist for this run.
+    upload_logo(client)
+    with pytest.raises(HTTPException) as excinfo:
+        resolve_agent_turn_references(
+            AgentTurnPreviewRequest(
+                prompt="x",
+                scene=minimal_scene(),
+                reference_asset_ids=["asset_ghost"],
+            )
+        )
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["code"] == "reference.asset_not_found"
+    assert "asset_ghost" in excinfo.value.detail["message"]
+
+
+def test_reference_manifest_too_many_is_422(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D1): >4 references → 422 reference.too_many (cap enforced API-side)."""
+    from fastapi import HTTPException
+    from lumen_api.main import resolve_agent_turn_references
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    with pytest.raises(HTTPException) as excinfo:
+        resolve_agent_turn_references(
+            AgentTurnPreviewRequest(
+                prompt="x",
+                scene=minimal_scene(),
+                reference_asset_ids=[f"asset_{i}" for i in range(5)],
+            )
+        )
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["code"] == "reference.too_many"
+
+
+def test_async_agent_turns_route_422s_on_bad_reference_before_creating_a_run(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC adversarial-gate ship-blocker 1: on the LIVE editor path
+    (POST /agent/turns) a bad attachment must surface as a REAL 422 from the
+    route handler — validated BEFORE the run row exists — never be swallowed
+    by the worker's catch-all into a generic agent_runtime.failed run."""
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    response = client.post(
+        "/agent/turns",
+        json={
+            "prompt": "x",
+            "scene": minimal_scene(),
+            "reference_asset_ids": ["asset_ghost"],
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "reference.asset_not_found"
+    # No run row was created: the runs listing endpoint knows nothing new.
+    # (A swallowed 422 would have produced a run with a failed result.)
+
+
+def test_agent_turn_forwards_references_into_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC (D2): run_agent_turn_preview resolves the ids and threads the manifest
+    into config.reference_assets BY VALUE (mirrors the kit/target-node
+    forwarding), pinning the store root so the runtime resolves preview bytes."""
+    import lumen_agent.harness as harness_mod
+    import lumen_agent.llm as llm_mod
+
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+    asset_id = upload_logo(client).json()["asset"]["id"]
+
+    captured: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_run(prompt, config, **kwargs):
+        captured["config"] = config
+        raise _Stop()
+
+    monkeypatch.setattr(harness_mod, "run_deepagent_turn", fake_run)
+    monkeypatch.setattr(
+        llm_mod, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(
+            prompt="Match these references",
+            scene=minimal_scene(),
+            reference_asset_ids=[asset_id],
+        ),
+        repo_root(),
+    )
+    config = captured["config"]
+    assert config.reference_assets is not None
+    assert asset_id in config.reference_assets
+    assert config.reference_assets[asset_id]["order"] == 0
+    assert config.asset_store_root == (tmp_path / "asset-store")
+
+
+def test_agent_turn_without_references_leaves_config_unset(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RC: a no-reference turn never sets config.reference_assets (byte-identical
+    to pre-RC behavior)."""
+    import lumen_agent.harness as harness_mod
+    import lumen_agent.llm as llm_mod
+
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_api_database_path", tmp_path / "api.sqlite3")
+
+    captured: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_run(prompt, config, **kwargs):
+        captured["config"] = config
+        raise _Stop()
+
+    monkeypatch.setattr(harness_mod, "run_deepagent_turn", fake_run)
+    monkeypatch.setattr(
+        llm_mod, "assert_model_supports_image_input", lambda *a, **k: None
+    )
+
+    run_agent_turn_preview(
+        AgentTurnPreviewRequest(prompt="Design a poster", scene=minimal_scene()),
+        repo_root(),
+    )
+    assert captured["config"].reference_assets is None
+
+
+def test_set_brand_kit_logo_publishes_new_version_with_human_choice(
+    client: TestClient,
+) -> None:
+    """Human logo curation: POST /brand-kits/{id}/logo promotes a library
+    asset into the chosen slot as a NEW kit version — manual provenance,
+    approval state preserved, scraper's guess kept in history."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+    approved = client.post(
+        "/brand-kits/brand_kit_insight_health/approval",
+        json={"approval_status": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    uploaded = upload_logo(client, label="The real lockup")
+    assert uploaded.status_code == 200, uploaded.text
+    asset_id = uploaded.json()["asset"]["id"]
+
+    chosen = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": asset_id, "slot": "primary"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    kit = chosen.json()["brand_kit"]
+    assert kit["version"] == 5
+
+    detail = client.get("/brand-kits/brand_kit_insight_health").json()
+    kit_json = detail["brand_kit_json"]
+    assert kit_json["version"] == 5
+    # approval survives the curation version bump
+    assert kit_json["approval_status"] == "approved"
+    primary = kit_json["assets"]["logos"]["primary"]
+    assert [v["asset_id"] for v in primary["variants"]] == [asset_id]
+    assert primary["provenance"]["confidence"] == 1.0
+    assert primary["provenance"]["source"].startswith("manual :: human-selected")
+    # history keeps the prior version
+    assert client.get("/brand-kits/brand_kit_insight_health?version=4").status_code in (200, 404)
+
+    # unknown asset → 404, kit untouched
+    missing = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": "asset_ghost", "slot": "primary"},
+    )
+    assert missing.status_code == 404
+
+
+def test_describe_assets_backfill_republishes_kit_with_metadata(
+    client: TestClient,
+) -> None:
+    """Imagery slice 1 backfill: POST /brand-kits/{id}/describe-assets stamps
+    cached asset descriptions onto the kit's entries and publishes a NEW
+    version — descriptions are frozen into the kit JSON at publish, so
+    healing the library alone never reaches the agent's brand card. With no
+    describer configured (tests), the cache is the only source: cache-first
+    behavior is exactly what's under test."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    uploaded = upload_logo(client, label="The real lockup")
+    assert uploaded.status_code == 200, uploaded.text
+    asset_id = uploaded.json()["asset"]["id"]
+    chosen = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": asset_id, "slot": "primary"},
+    )
+    assert chosen.status_code == 200, chosen.text  # kit v5, real asset in slot
+
+    # A human-authored library row is the cache the backfill stamps from.
+    described = client.put(
+        f"/assets/{asset_id}/description",
+        json={
+            "title": "Insight lockup",
+            "description": "Teal squares beside INSIGHT HEALTH text.",
+            "usage": "Use the reversed variant on dark surfaces.",
+            "tags": ["logo"],
+        },
+    )
+    assert described.status_code == 200, described.text
+
+    backfilled = client.post(
+        "/brand-kits/brand_kit_insight_health/describe-assets"
+    )
+    assert backfilled.status_code == 200, backfilled.text
+    payload = backfilled.json()
+    assert payload["published"] is True
+    assert payload["counts"]["cached"] >= 1
+
+    detail = client.get("/brand-kits/brand_kit_insight_health").json()
+    kit_json = detail["brand_kit_json"]
+    assert kit_json["version"] == 6
+    primary = kit_json["assets"]["logos"]["primary"]
+    assert primary["title"] == "Insight lockup"
+    assert primary["description"] == "Teal squares beside INSIGHT HEALTH text."
+    # usage guidance is its OWN field — never folded into description.
+    assert primary["usage_note"] == "Use the reversed variant on dark surfaces."
+
+    # Idempotence: nothing new to stamp → no no-op version published.
+    again = client.post("/brand-kits/brand_kit_insight_health/describe-assets")
+    assert again.status_code == 200, again.text
+    assert again.json()["published"] is False
+    assert (
+        client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"][
+            "version"
+        ]
+        == 6
+    )
+
+
+def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(
+    client: TestClient,
+) -> None:
+    """K0.5: the editor's Brandkit chip attaches via an update_document patch
+    (scene.meta.brand_kit only — the document row's brand_kit_json stays
+    null). choose_effective_brand must fall back to the scene ref so
+    preflight/export resolve the attached kit instead of the platform default
+    (which hard-errors LUMB0101 against the scene ref), and a successful
+    preflight persists the kit onto the row (source scene_ref)."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    document = create_document(client, preflightable_scene())
+
+    attach_via_ops = client.post(
+        f"/documents/{document['id']}/operations",
+        json={
+            "operations": [
+                {
+                    "kind": "update_document",
+                    "patch": {
+                        "title": {"kind": "unchanged"},
+                        "artifact_type": {"kind": "unchanged"},
+                        "medium": {"kind": "unchanged"},
+                        "brand_kit": {
+                            "kind": "set",
+                            "value": {"id": "brand_kit_insight_health", "version": 4},
+                        },
+                    },
+                }
+            ],
+            "actor": {"kind": "human"},
+            "source": "editor",
+        },
+    )
+    assert attach_via_ops.status_code == 200, attach_via_ops.text
+
+    preflight = client.post(f"/documents/{document['id']}/preflight", json={})
+    assert preflight.status_code == 200, preflight.text
+    payload = preflight.json()
+    assert payload["brand_kit"]["source"] == "scene_ref"
+    assert payload["brand_kit"]["id"] == "brand_kit_insight_health"
+    diagnostic_views = payload.get("diagnostics", {})
+    codes = {
+        diag.get("code")
+        for view in diagnostic_views.values()
+        for diag in view
+        if isinstance(diag, dict)
+    }
+    assert "LUMB0101" not in codes
+
+    # The row heals: subsequent resolution takes the fast "document" branch.
+    detail = client.get(f"/documents/{document['id']}").json()
+    assert detail["effective_brand_kit_id"] == "brand_kit_insight_health"
+    assert detail["effective_brand_kit_source"] == "scene_ref"
+
+
+def test_preflight_preview_freeze_layout_bakes_resolved_scene(
+    client: TestClient,
+) -> None:
+    """K1.6(b): freeze_layout=true returns a `bake` block whose scene is
+    token-RESOLVED, server-relaid-out, and container-frozen — with raw
+    resolution + freeze operations (and freeze inverses) for the editor's
+    accept envelope. The frozen text child keeps its hug height (K1 rider)."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={
+            "source": valid_styles_source(),
+            "brand_kit_id": "brand_kit_insight_health",
+            "version": 4,
+            "name": "Insight Health",
+        },
+    )
+    assert compiled.status_code == 200, compiled.text
+
+    # Author the production shape through the real compiler: a Stack (al)
+    # container whose text children carry style TOKENS + skeleton literals
+    # (Inter 16) — exactly what agent proposal ops replay into the editor.
+    core = client.app.state.core
+    compiled_scene = core.compile_dsl_into_scene(
+        core.new_scene("doc_bake", "Bake preview"),
+        "\n".join(
+            [
+                "page page_bake size(1080,1080,px)",
+                "  hero al p(96,96) s(888,hug)",
+                '    headline text "Your health, now online." s(888,hug) style($type.headline)',
+                '    subtitle text "Short supporting line." s(820,hug) style($type.body)',
+            ]
+        ),
+        None,
+    )["scene"]
+    compiled_scene["meta"]["brand_kit"] = {
+        "id": "brand_kit_insight_health",
+        "version": 4,
+    }
+    assert compiled_scene["nodes"]["headline"]["kind"]["font_size"] == 16.0
+
+    response = client.post(
+        "/preflight-preview",
+        json={"scene": compiled_scene, "freeze_layout": True},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["brand_kit"]["source"] == "scene_ref"
+
+    bake = payload["bake"]
+    baked_scene = bake["scene"]
+    # Resolution happened before the bake: the headline's literals are the
+    # kit's real typography, not the skeleton.
+    headline = baked_scene["nodes"]["headline"]
+    assert headline["kind"]["font_family"] == "Source Sans 3"
+    assert headline["kind"]["font_size"] != 16.0
+    # The container froze (Stack -> Free) with real ops + inverses; the text
+    # child keeps its hug height through the bake (K1 rider).
+    assert baked_scene["nodes"]["hero"]["layout"]["layout_mode"] == "free"
+    assert len(bake["freeze_operations"]) > 0
+    assert len(bake["freeze_inverse_operations"]) > 0
+    assert len(bake["resolution_operations"]) > 0
+    assert headline["size"]["height"] == {"kind": "hug"}
+    # No scene-ref mismatch anywhere in the pipeline.
+    codes = {
+        diag.get("code")
+        for view in payload.get("diagnostics", {}).values()
+        for diag in view
+        if isinstance(diag, dict)
+    }
+    assert "LUMB0101" not in codes
+
+
 def test_editor_target_node_ids_prefers_plural_and_dedupes() -> None:
     from lumen_api.main import editor_target_node_ids
     from lumen_api.models import AgentTurnPreviewRequest
@@ -598,6 +1303,54 @@ def test_agent_run_snapshot_404_for_unknown_run(client: TestClient) -> None:
     assert client.get("/agent/runs/run_missing").status_code == 404
 
 
+def test_startup_sweep_fails_runs_orphaned_by_a_restart(tmp_path: Path) -> None:
+    # Turns run on daemon threads inside the API process, so a restart kills
+    # them silently. The next create_app must fail every leftover 'running'
+    # row (terminal result + error event so SSE settles) and leave finished
+    # runs untouched. Live failure 2026-07-29: two website turns sat
+    # 'running' for hours after an API bounce.
+    from lumen_api.database import Repository, connect
+
+    database_path = tmp_path / "api.sqlite3"
+    first = TestClient(create_app(database_path))
+
+    connection = connect(database_path)
+    repo = Repository(connection)
+    repo.create_document(
+        {"id": "doc_web_orphan", "title": "Orphan site", "schema_version": 1, "pages": []},
+        doc_kind="web",
+    )
+    repo.create_run("run_orphan_web", "doc_web_orphan")
+    repo.create_run("run_orphan_scene", "doc_untracked")
+    repo.create_run("run_finished", "doc_untracked")
+    repo.set_run_result("run_finished", "succeeded", {"status": "applied"})
+    repo.append_run_event("run_finished", "result", {"status": "applied"})
+    connection.close()
+    del first
+
+    # "Restart": a new app over the same database sweeps at construction.
+    restarted = TestClient(create_app(database_path))
+
+    web_snapshot = restarted.get("/agent/runs/run_orphan_web").json()
+    assert web_snapshot["status"] == "failed"
+    assert web_snapshot["result"]["doc_kind"] == "web"
+    assert web_snapshot["result"]["diagnostics"][0]["code"] == "agent_runtime.orphaned"
+    assert any(event["type"] == "error" for event in web_snapshot["events"])
+
+    scene_snapshot = restarted.get("/agent/runs/run_orphan_scene").json()
+    assert scene_snapshot["status"] == "failed"
+    assert "doc_kind" not in scene_snapshot["result"]
+
+    finished = restarted.get("/agent/runs/run_finished").json()
+    assert finished["status"] == "succeeded"
+    assert finished["result"] == {"status": "applied"}
+
+    # The SSE stream for an orphan closes with `done` immediately.
+    stream = restarted.get("/agent/runs/run_orphan_web/events").text
+    assert "event: done" in stream
+    assert "agent_runtime.orphaned" in stream
+
+
 def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     # Drive the store directly to assert SSE framing deterministically (no
     # dependence on background-thread timing): a progress event replays, then
@@ -627,6 +1380,55 @@ def test_agent_run_events_stream_replays_then_done(client: TestClient) -> None:
     assert "event: done" in resumed
 
 
+def test_run_event_enriched_with_operations_round_trips_and_streams(
+    client: TestClient,
+) -> None:
+    # Live-design-streaming S0 (D1/D2): the sink stores whatever dict it is
+    # handed (append_run_event → data_json) untouched, so an authoring event
+    # enriched with its applied `operations` list round-trips through the
+    # run_events row AND rides the SSE progress frame the editor consumes.
+    from lumen_api.database import Repository, connect
+
+    connection = connect(client.app.state.database_path)
+    repo = Repository(connection)
+    repo.create_run("run_ops", "doc_ops")
+    enriched = {
+        "actor": "dsl-author",
+        "iteration": 1,
+        "input_summary": "page Hero",
+        "output_summary": "2 operations; 0 DSL diagnostics",
+        "diagnostic_count": 0,
+        "operations": [
+            {"kind": "add_page", "page_id": "page_hero"},
+            {"kind": "insert_node", "node_id": "headline", "parent_id": "page_hero"},
+        ],
+    }
+    repo.append_run_event("run_ops", "dsl_compiled", enriched)
+
+    # (e-i) the durable row round-trips the enriched dict verbatim.
+    rows = repo.list_run_events("run_ops", after_seq=0)
+    assert rows[-1]["data"] == enriched
+    repo.set_run_result("run_ops", "succeeded", {"status": "proposed"})
+    repo.append_run_event("run_ops", "result", {"status": "proposed"})
+    connection.close()
+
+    # (e-ii) the SSE progress frame carries the operations to the client.
+    body = client.get("/agent/runs/run_ops/events").text
+    assert "event: progress" in body
+    assert "dsl_compiled" in body
+    assert "add_page" in body and "page_hero" in body
+    assert "insert_node" in body
+
+
+def test_run_events_sse_cadence_constants_pinned() -> None:
+    # D2: poll fast (250ms) so authoring batches land promptly; keepalive slow
+    # (~1s) so a quiet run does not spam a comment every poll.
+    from lumen_api import main as api_main
+
+    assert api_main._RUN_EVENTS_SSE_POLL_INTERVAL_SECONDS == 0.25
+    assert api_main._RUN_EVENTS_SSE_KEEPALIVE_INTERVAL_SECONDS == 1.0
+
+
 def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
     iteration_dir = trace_dir / "iterations" / f"{index:03d}"
     iteration_dir.mkdir(parents=True, exist_ok=True)
@@ -640,6 +1442,44 @@ def write_iteration_compile(trace_dir, index: int, operations: list) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_agent_response_prefers_operations_ledger_over_compile_scrape(tmp_path) -> None:
+    """K2 accept-seam: the ledger is the proposal-op source of truth — it
+    carries asset-tool mutations the compile scrape can never see, honors the
+    keep-best iteration window, and the scrape remains only as the fallback
+    for pre-ledger traces."""
+    from lumen_api.main import agent_response_from_trace
+
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "stale_scrape_op"}]
+    )
+    ledger = {
+        "entries": [
+            {"iteration": 1, "source": "compile_dsl_block",
+             "operation": {"kind": "insert_node", "node": {"id": "mark"}}},
+            {"iteration": 1, "source": "use_brand_asset",
+             "operation": {"kind": "upsert_asset", "asset": {"id": "asset_logo"}}},
+            {"iteration": 2, "source": "compile_dsl_block",
+             "operation": {"kind": "update_node", "node_id": "beyond_window"}},
+        ]
+    }
+    (tmp_path / "operations_ledger.json").write_text(json.dumps(ledger))
+    result = {
+        "status": "accepted",
+        "stop_reason": "accepted",
+        "run_id": "run_ledger",
+        "summary": "ok",
+        "preview_paths": [],
+        "ops_valid_through_iteration": 1,
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["operations"] == [
+        {"kind": "insert_node", "node": {"id": "mark"}},
+        {"kind": "upsert_asset", "asset": {"id": "asset_logo"}},
+    ]
 
 
 def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
@@ -688,6 +1528,69 @@ def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
     assert advisory[0]["severity"] == "warning"  # advisory even for critique blockers
     assert advisory[0]["subject"] == {"kind": "node", "id": "hero"}
     assert advisory[0]["hint"] == "regenerate the hero"
+
+
+def test_agent_response_clarification_requested_round_trips(tmp_path) -> None:
+    # Brief clarification (honest turn outcome #3): the harness's
+    # clarification_requested envelope maps to an editor response that carries
+    # the questions and proposes NO operations — the turn asked, it did not
+    # author. Mirrors how run_deepagent_turn returns final.json verbatim.
+    from lumen_api.main import agent_response_from_trace
+
+    # An operations ledger from an earlier design is irrelevant to a
+    # clarification turn — the branch fires before any op scrape.
+    write_iteration_compile(
+        tmp_path, 1, [{"kind": "update_node", "node_id": "headline"}]
+    )
+    result = {
+        "run_id": "run_clarify",
+        "status": "clarification_requested",
+        "stop_reason": "clarification_requested",
+        "outcome": "clarification_requested",
+        "summary": "Before I design this, a couple of quick decisions...",
+        "clarification": {
+            "questions": [
+                {
+                    "id": "format",
+                    "question": "What surface is this for?",
+                    "why_it_matters": "It fixes the canvas size.",
+                    "options": ["Instagram square", "LinkedIn landscape"],
+                    "default": "an Instagram square (1080x1080)",
+                    "allow_freeform": True,
+                }
+            ]
+        },
+    }
+
+    response = agent_response_from_trace(result, tmp_path)
+
+    assert response["status"] == "clarification_requested"
+    assert response["stop_reason"] == "clarification_requested"
+    assert response["run_id"] == "run_clarify"
+    # The questions ride through intact.
+    questions = response["clarification"]["questions"]
+    assert len(questions) == 1
+    assert questions[0]["id"] == "format"
+    assert questions[0]["default"] == "an Instagram square (1080x1080)"
+    # Nothing to apply — asking is not authoring.
+    assert response["operations"] == []
+    assert response["artifacts"] == []
+    assert response["draft_scene"] is None
+
+
+def test_agent_turn_preview_request_accepts_previous_turn_outcome() -> None:
+    # The one-round-per-turn signal the editor echoes back rides on the request
+    # model (None by default; set to "clarification_requested" on the reply turn).
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    default = AgentTurnPreviewRequest(prompt="x", scene={})
+    assert default.previous_turn_outcome is None
+    echoed = AgentTurnPreviewRequest(
+        prompt="Instagram square, lead with the benefit",
+        scene={},
+        previous_turn_outcome="clarification_requested",
+    )
+    assert echoed.previous_turn_outcome == "clarification_requested"
 
 
 def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> None:
@@ -829,58 +1732,101 @@ def test_agent_turn_preview_allows_editor_cors_preflight(client: TestClient) -> 
     assert "POST" in response.headers["access-control-allow-methods"]
 
 
-def test_structured_request_logging_adds_request_id_header(
-    client: TestClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level(logging.INFO, logger="lumen_api.api")
-
-    response = client.get(
-        "/documents/missing_document",
-        headers={"x-request-id": "req_test_observability"},
-    )
+def test_structured_request_logging_adds_request_id_header(client: TestClient) -> None:
+    # request_id is bound ONCE into the obs contextvar by the middleware; the
+    # merge_contextvars processor then stamps it on http_request_completed —
+    # proving the contextvar (not a per-call kwarg) supplies it.
+    with capture_events(mode="info") as cap:
+        response = client.get(
+            "/documents/missing_document",
+            headers={"x-request-id": "req_test_observability"},
+        )
 
     assert response.status_code == 404
     assert response.headers["x-request-id"] == "req_test_observability"
-    completed = [
-        record
-        for record in caplog.records
-        if getattr(record, "lumen_event", None) == "http_request_completed"
-    ]
-    assert completed
-    fields = getattr(completed[-1], "lumen_fields")
-    assert fields["request_id"] == "req_test_observability"
-    assert fields["method"] == "GET"
-    assert fields["route"] == "/documents/{document_id}"
-    assert fields["status_code"] == 404
-    assert fields["duration_ms"] >= 0
+    completed = cap.first("http_request_completed")
+    assert completed is not None
+    assert completed["request_id"] == "req_test_observability"
+    assert completed["method"] == "GET"
+    assert completed["route"] == "/documents/{document_id}"
+    assert completed["status_code"] == 404
+    assert completed["duration_ms"] >= 0
 
 
-def test_core_helper_logging_records_runtime_summary(
-    client: TestClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level(logging.INFO, logger="lumen_api.core")
+def test_http_request_completed_event_shape_is_preserved(client: TestClient) -> None:
+    # The canonical event name + field set must survive the migration onto the
+    # shared obs pipeline unchanged.
+    with capture_events(mode="info") as cap:
+        client.get("/documents/missing_document", headers={"x-request-id": "req_shape"})
 
-    response = client.post(
-        "/export-preview",
-        headers={"x-request-id": "req_helper_observability"},
-        json={
-            "scene": minimal_scene(),
-            "format": "svg",
-            "page_ids": ["page_a4"],
-        },
-    )
+    completed = cap.first("http_request_completed")
+    assert completed is not None
+    assert completed["event"] == "http_request_completed"
+    assert completed["level"] == "info"
+    for key in (
+        "request_id",
+        "method",
+        "path",
+        "route",
+        "status_code",
+        "duration_ms",
+        "client_host",
+    ):
+        assert key in completed, f"missing preserved field: {key}"
+
+
+def test_request_id_from_contextvar_stamps_events() -> None:
+    # Bind directly (no request) and confirm any obs logger's event carries it.
+    with capture_events(mode="info") as cap:
+        bind_request_id("req_ctx_direct")
+        try:
+            get_logger("lumen_api.api").info("probe_event", widget="x")
+        finally:
+            unbind_context("request_id")
+
+    probe = cap.first("probe_event")
+    assert probe is not None
+    assert probe["request_id"] == "req_ctx_direct"
+    assert probe["widget"] == "x"
+
+
+def test_startup_configures_logging_once(tmp_path: Path) -> None:
+    root = logging.getLogger()
+
+    create_app(tmp_path / "once_a.sqlite3")
+    owned = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
+    assert len(owned) == 1
+
+    # A second app build must NOT stack another root handler — configure is
+    # idempotent (it removes its own owned handlers first).
+    create_app(tmp_path / "once_b.sqlite3")
+    owned_again = [h for h in root.handlers if getattr(h, "_lumen_obs_handler", False)]
+    assert len(owned_again) == 1
+
+
+def test_core_helper_logging_records_runtime_summary(client: TestClient) -> None:
+    with capture_events(mode="info") as cap:
+        response = client.post(
+            "/export-preview",
+            headers={"x-request-id": "req_helper_observability"},
+            json={
+                "scene": minimal_scene(),
+                "format": "svg",
+                "page_ids": ["page_a4"],
+            },
+        )
 
     assert response.status_code == 200, response.text
-    events = {
-        getattr(record, "lumen_event", None): getattr(record, "lumen_fields")
-        for record in caplog.records
-    }
-    assert events["core_helper_started"]["request_id"] == "req_helper_observability"
-    assert events["core_helper_started"]["action"] == "export_preview"
-    assert events["core_helper_started"]["page_id_count"] == 1
-    assert events["core_helper_completed"]["ok"] is True
-    assert events["core_helper_completed"]["action"] == "export_preview"
-    assert events["core_helper_completed"]["diagnostic_count"] >= 0
+    started = cap.first("core_helper_started")
+    completed = cap.first("core_helper_completed")
+    assert started is not None and completed is not None
+    # request_id flows into the core-helper path via the same contextvar.
+    assert started["request_id"] == "req_helper_observability"
+    assert started["action"] == "export_preview"
+    assert started["page_id_count"] == 1
+    assert completed["ok"] is True
+    assert completed["action"] == "export_preview"
+    assert completed["diagnostic_count"] >= 0
 
 
 def test_agent_trace_response_returns_unapproved_draft_scene(tmp_path: Path) -> None:
@@ -1203,10 +2149,322 @@ def test_export_preview_route_reports_print_pdf_bleed_dimensions(
         "source": "pdf_media_box",
     }
     diagnostic_codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
-    assert "LUME0401" in diagnostic_codes
-    assert "LUME0402" in diagnostic_codes
+    # Print W2: the server PDF path renders vector by default through the
+    # Skia PDF backend (declared by LUME0427; LUMEN_PDF_RENDERER=flattened
+    # selects the W0 raster baseline, LUME0426). The early vector writer's
+    # fidelity warnings no longer apply.
+    assert "LUME0427" in diagnostic_codes
+    assert "LUME0401" not in diagnostic_codes
+    assert "LUME0402" not in diagnostic_codes
     assert "LUME0411" not in diagnostic_codes
     assert "LUME0412" not in diagnostic_codes
+
+    # Print W6: the print-ready report must SURVIVE the API compaction —
+    # compact_export_result once rebuilt the payload without it and the
+    # editor's report block silently never rendered (browser-verify find).
+    report = payload["export"]["print_ready"]
+    assert report["ruleset"] == "print-ready-v1"
+    assert report["status"] in {"pass", "warn", "fail"}
+    assert any(rule["id"] == "edge_art_reaches_bleed" for rule in report["rules"])
+
+
+def test_export_preview_route_honors_include_marks(client: TestClient) -> None:
+    """Print W2r: include_marks must survive profile normalization — the
+    MediaBox grows by the 14pt mark margin per side around the bleed."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    scene["pages"]["page_a4"]["bleed"] = {
+        "x": -18,
+        "y": -18,
+        "width": 1116,
+        "height": 1116,
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_marks",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+                "include_marks": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    artifact = payload["export"]["artifacts"][0]
+    assert artifact["dimensions"] == {
+        "width": 1144.0,
+        "height": 1144.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+
+
+def test_export_preview_marks_on_bleedless_page_keep_exact_trim_geometry(
+    client: TestClient,
+) -> None:
+    """The 2026-07-15 phantom-margin bug, pinned end-to-end: a print export
+    with bleed+marks flags against a page WITHOUT a bleed rect must produce
+    plain trim-size geometry — previously the box finalizer grew the
+    MediaBox by the 14pt mark margin while the renderer painted a trim-size
+    canvas, shipping a TrimBox that cut into the art."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1350,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+    assert scene["pages"]["page_a4"].get("bleed") is None
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": {
+                "name": "print_pdf_marks_no_bleed",
+                "format": "pdf",
+                "pdf_intent": "print",
+                "raster": None,
+                "include_bleed": True,
+                "embed_fonts": True,
+                "include_marks": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    artifact = payload["export"]["artifacts"][0]
+    # Exactly the trim size — no phantom 14pt margin.
+    assert artifact["dimensions"] == {
+        "width": 1080.0,
+        "height": 1350.0,
+        "unit": "pt",
+        "source": "pdf_media_box",
+    }
+    # The gap stays loud: the missing-bleed warning rides the export.
+    codes = {item["code"] for item in payload["export"]["diagnostics"]}
+    assert "LUME0412" in codes
+
+
+def test_normalize_export_profile_keeps_optional_print_controls() -> None:
+    """Print W5: the profile whitelist rebuild must pass imposition/proof/
+    color through — dropping them here silently downgraded saved document
+    profiles (same defect class as the include_marks browser-verify find)."""
+    from lumen_api.main import normalize_export_profile
+
+    normalized = normalize_export_profile(
+        {
+            "name": "offset_press_pdf",
+            "format": "pdf",
+            "pdf_intent": "print",
+            "include_bleed": True,
+            "embed_fonts": True,
+            "include_marks": True,
+            "imposition": "booklet",
+            "proof": True,
+            "color": "cmyk",
+        }
+    )
+    assert normalized["imposition"] == "booklet"
+    assert normalized["proof"] is True
+    assert normalized["color"] == "cmyk"
+
+    plain = normalize_export_profile({"name": "digital_pdf", "format": "pdf"})
+    assert "imposition" not in plain
+    assert "proof" not in plain
+    assert "color" not in plain
+
+
+def cmyk_print_profile() -> JsonObject:
+    return {
+        "name": "print_pdf_cmyk",
+        "format": "pdf",
+        "pdf_intent": "print",
+        "raster": None,
+        "include_bleed": False,
+        "embed_fonts": True,
+        "include_marks": False,
+        "color": "cmyk",
+    }
+
+
+@pytest.mark.skipif(shutil.which("gs") is None, reason="ghostscript not installed")
+def test_export_preview_route_converts_print_pdf_to_cmyk(client: TestClient) -> None:
+    """Print W5 stage B: color:"cmyk" on a print-intent profile converts the
+    PDF through Ghostscript — the export declares the conversion (LUME0432)
+    and the OutputIntent names the press profile, not sRGB."""
+    scene = minimal_scene()
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": cmyk_print_profile(),
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    codes = {item["code"] for item in payload["export"]["diagnostics"]}
+    assert "LUME0432" in codes
+    assert payload["export"]["print_ready"] is not None
+
+    artifact = payload["export"]["artifacts"][0]
+    header, encoded = artifact["data_url"].split(",", 1)
+    assert header == "data:application/pdf;base64"
+    pdf_bytes = base64.b64decode(encoded)
+    assert b"GTS_PDFX" in pdf_bytes
+    assert b"sRGB IEC61966-2.1" not in pdf_bytes, "CMYK export must not claim an sRGB intent"
+
+
+@pytest.mark.skipif(shutil.which("gs") is None, reason="ghostscript not installed")
+def test_document_export_via_saved_cmyk_profile(client: TestClient) -> None:
+    """The saved-profile blind spot: every other CMYK test uses an ad-hoc
+    inline profile — the exact gap that let the normalize whitelist silently
+    drop imposition/proof for weeks. This drives CMYK through a profile
+    SAVED in the document (name-resolved), end to end."""
+    scene = preflightable_scene()
+    scene["export_profiles"] = [cmyk_print_profile()]
+    document = create_document(client, scene)
+
+    response = client.post(
+        f"/documents/{document['id']}/export",
+        json={"profile_name": "print_pdf_cmyk", "page_ids": ["page_a4"]},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "ok", payload["diagnostics"]
+    # The saved profile survived normalization with its color intact.
+    assert payload["profile"]["color"] == "cmyk"
+
+    artifact = payload["export"]["artifacts"][0]
+    header, encoded = artifact["data_url"].split(",", 1)
+    assert header == "data:application/pdf;base64"
+    pdf_bytes = base64.b64decode(encoded)
+    assert b"GTS_PDFX" in pdf_bytes
+    assert b"sRGB IEC61966-2.1" not in pdf_bytes, (
+        "CMYK export must not claim an sRGB intent"
+    )
+
+
+def test_export_preview_route_rejects_cmyk_on_digital_pdf(client: TestClient) -> None:
+    """CMYK conversion is print-only: an electronic-distribution (preview
+    intent) PDF requesting it fails loudly, never silently converts."""
+    scene = minimal_scene()
+    profile = cmyk_print_profile()
+    profile["pdf_intent"] = "preview"
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "pdf",
+            "page_ids": ["page_a4"],
+            "profile": profile,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "failed"
+    codes = {item["code"] for item in payload["diagnostics"]}
+    assert "export.cmyk_requires_print_intent" in codes
+
+
+def png_scale_profile(scale: float) -> JsonObject:
+    return {
+        "name": f"png_{scale}x",
+        "format": "png",
+        "pdf_intent": None,
+        "raster": {"scale": scale, "dpi": 96},
+        "include_bleed": False,
+        "embed_fonts": False,
+    }
+
+
+def test_export_preview_route_scales_png_with_raster_scale(client: TestClient) -> None:
+    """raster.scale must survive profile normalization end-to-end: the PNG's
+    own IHDR dimensions scale by the profile multiplier (px pages get the
+    figma-style 1x/2x/... semantics)."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    for scale, expected in ((1.0, 1080), (2.0, 2160)):
+        response = client.post(
+            "/export-preview",
+            json={
+                "scene": scene,
+                "format": "png",
+                "page_ids": ["page_a4"],
+                "profile": png_scale_profile(scale),
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["status"] == "ok", payload["diagnostics"]
+        artifact = payload["export"]["artifacts"][0]
+        assert artifact["dimensions"] == {
+            "width": expected,
+            "height": expected,
+            "unit": "px",
+            "source": "png_ihdr",
+        }
+
+
+def test_export_preview_route_fails_raster_over_budget(client: TestClient) -> None:
+    """The engine raster budget (150 MP) fails loudly through the API: a
+    runaway scale x dpi profile must never OOM the helper silently."""
+    scene = minimal_scene()
+    scene["pages"]["page_a4"]["size"] = {
+        "width": 1080,
+        "height": 1080,
+        "unit": "px",
+        "preset": "custom",
+        "orientation": "portrait",
+    }
+
+    response = client.post(
+        "/export-preview",
+        json={
+            "scene": scene,
+            "format": "png",
+            "page_ids": ["page_a4"],
+            "profile": png_scale_profile(40.0),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "failed"
+    codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
+    assert "export.raster_budget_exceeded" in codes, codes
 
 
 def test_styles_brand_kit_persists_validates_and_lists_versions(
@@ -2184,7 +3442,7 @@ def test_asset_upload_rejects_mime_mismatch(
 def test_asset_upload_enforces_size_limit(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LUMEN_ASSET_MAX_BYTES", "16")
+    monkeypatch.setattr(settings, "lumen_asset_max_bytes", 16)
     response = upload_logo(client)
     assert response.status_code == 413, response.text
     assert store_files(tmp_path) == []
@@ -2496,13 +3754,8 @@ def test_generate_asset_image_model_not_configured_returns_clean_error(
 ) -> None:
     # With no model configured and no mock, the provider raises a typed error
     # that surfaces as a clean 503 (never a 500).
-    for var in (
-        "IMAGE_MODEL_BASE_URL",
-        "IMAGE_MODEL_API_KEY",
-        "IMAGE_MODEL_ID",
-        "IMAGE_MODEL_PROVIDER_ID",
-    ):
-        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "image_model_base_url", "")
+    monkeypatch.setattr(settings, "image_model_api_key", "")
     response = client.post(
         "/assets/generate",
         json={"provider": "image-gen-v1", "prompt": "anything"},
@@ -2518,9 +3771,9 @@ def test_image_provider_openrouter_chat_completion_shape(
     # modality; decode the data: URL from choices[0].message.images[0].
     import base64
 
-    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
-    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
 
     png = _tiny_png(8, 8)
     data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
@@ -2558,9 +3811,9 @@ def test_image_provider_openrouter_chat_completion_shape(
 
 def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPatch) -> None:
     # A text-only chat response (model refused / no image) -> typed error.
-    monkeypatch.setenv("IMAGE_MODEL_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("IMAGE_MODEL_API_KEY", "test-key")
-    monkeypatch.setenv("IMAGE_MODEL_ID", "test/image-model")
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
 
     class _FakeResponse:
         status_code = 200
@@ -2638,7 +3891,13 @@ def test_resolve_dimensions_translates_aspect_ratio_and_size_tier() -> None:
 def test_generate_asset_image_model_forwards_aspect_size_and_references(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Step 7: the route threads aspect_ratio / image_size / reference_asset_ids to the provider.
+    # Step 7 + RC2 D-RC2.5: the route threads aspect_ratio / image_size to the
+    # provider AND resolves reference_asset_ids FOR REAL — the once-inert field now
+    # lands the reference PIXELS on the provider's reference_images channel (bytes
+    # read from the store), while the ids stay passed through too.
+    ref_rgba = (12, 200, 90, 255)
+    ref = _upload_source_raster(client, rgba=ref_rgba, label="style-ref")
+    ref_png = _tiny_png(8, 8, rgba=ref_rgba)
     captured: dict = {}
 
     def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
@@ -2659,13 +3918,402 @@ def test_generate_asset_image_model_forwards_aspect_size_and_references(
             "prompt": "a hero photograph",
             "aspect_ratio": "16:9",
             "image_size": "2k",
-            "reference_asset_ids": ["asset_ref_a"],
+            "reference_asset_ids": [ref["id"]],
         },
     )
     assert response.status_code == 200, response.text
     assert captured["aspect_ratio"] == "16:9"
     assert captured["image_size"] == "2k"
-    assert captured["reference_asset_ids"] == ["asset_ref_a"]
+    assert captured["reference_asset_ids"] == [ref["id"]]
+    # The real resolution: the reference's stored pixels ride the bytes channel.
+    assert captured["reference_images"] == [(ref_png, "image/png")]
+
+
+def _upload_source_raster(
+    client: TestClient, rgba=(64, 120, 200, 255), label: str = "source"
+) -> dict:
+    """Upload a valid PNG as a source asset with content-addressed stored bytes.
+
+    Distinct `rgba` -> distinct pixels -> distinct digest, which is what an
+    edit's source-keyed cache must discriminate on.
+    """
+    png = _tiny_png(8, 8, rgba=rgba)
+    response = client.post(
+        "/assets",
+        files={"file": (f"{label}.png", png, "image/png")},
+        data={"label": label, "kind": "raster_image", "uploaded_by": "designer"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["asset"]
+
+
+def test_generate_asset_image_edit_loads_source_bytes_and_stamps_edited_source(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Phase 3b: an edit with source_asset_id routes to image_provider.edit with the
+    # SOURCE BYTES loaded from the store, and the persisted record's source chains
+    # provenance to the parent as kind "edited".
+    source = _upload_source_raster(client)
+    source_png = _tiny_png(8, 8, rgba=(64, 120, 200, 255))
+    edited_png = _tiny_png(8, 8, rgba=(10, 20, 30, 255))
+    captured: dict = {}
+
+    def fake_edit(**kwargs) -> image_provider.ImageGenerationResult:
+        captured.update(kwargs)
+        return image_provider.ImageGenerationResult(
+            image_bytes=edited_png,
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image edit", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "edit", fake_edit)
+    # generate must NOT be called on the edit path
+    def fail_generate(**kwargs):  # pragma: no cover - guard
+        raise AssertionError("edit path must not call generate")
+
+    monkeypatch.setattr(image_provider, "generate", fail_generate)
+
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "make the sky pink",
+            "source_asset_id": source["id"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    record = response.json()["asset"]
+    # source bytes were loaded from the store and handed to edit()
+    assert captured["prompt"] == "make the sky pink"
+    assert captured["source_images"] == [(source_png, "image/png")]
+    # provenance chains to the parent
+    assert record["source"]["kind"] == "edited"
+    assert record["source"]["source_asset_id"] == source["id"]
+    assert record["source"]["model"] == "mock-image-model"
+    served = client.get(f"/assets/{record['id']}/bytes")
+    assert served.status_code == 200
+    assert served.content == edited_png
+
+
+def test_image_edit_cache_keys_on_source_digest(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The edit cache must discriminate on source pixels: the SAME instruction on
+    # a DIFFERENT source is a miss; a repeat of the same (source, prompt) is a hit.
+    source_a = _upload_source_raster(client, rgba=(64, 120, 200, 255), label="a")
+    source_b = _upload_source_raster(client, rgba=(200, 30, 30, 255), label="b")
+    calls = {"n": 0}
+
+    def fake_edit(**kwargs) -> image_provider.ImageGenerationResult:
+        calls["n"] += 1
+        return image_provider.ImageGenerationResult(
+            image_bytes=_tiny_png(8, 8, rgba=(1, 2, 3, 255)),
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image edit", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "edit", fake_edit)
+    prompt = "remove the background"
+
+    first = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "source_asset_id": source_a["id"]},
+    )
+    assert first.status_code == 200, first.text
+    assert calls["n"] == 1
+    assert first.json()["deduplicated"] is False
+
+    # Different source, identical prompt -> MISS (must not return A's result).
+    second = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "source_asset_id": source_b["id"]},
+    )
+    assert second.status_code == 200, second.text
+    assert calls["n"] == 2, "a different source with the same prompt must not hit the cache"
+
+    # Repeat of the first (source, prompt) -> HIT (model not re-called).
+    repeat = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "source_asset_id": source_a["id"]},
+    )
+    assert repeat.status_code == 200, repeat.text
+    assert calls["n"] == 2, "an identical (source, prompt) edit must hit the cache"
+    assert repeat.json()["deduplicated"] is True
+    assert repeat.json()["asset"]["id"] == first.json()["asset"]["id"]
+
+
+def test_image_edit_source_bytes_missing_returns_409(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A source record whose bytes are absent from the store -> clean 409, not a 500.
+    def fail_edit(**kwargs):  # pragma: no cover - guard
+        raise AssertionError("edit must not run when source bytes are missing")
+
+    monkeypatch.setattr(image_provider, "edit", fail_edit)
+
+    source = _upload_source_raster(client, rgba=(5, 6, 7, 255), label="gone")
+    # Remove the content-addressed blob backing the record, leaving the record.
+    for blob in store_files(tmp_path):
+        blob.unlink()
+
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "edit me",
+            "source_asset_id": source["id"],
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "asset.source_bytes_missing"
+
+
+def test_image_provider_edit_rejects_empty_prompt_and_missing_source() -> None:
+    # Typed guardrails on the edit provider entrypoint.
+    with pytest.raises(image_provider.ImageGenerationError) as empty:
+        image_provider.edit(prompt="   ", source_images=[(b"x", "image/png")])
+    assert empty.value.code == "image_model.empty_prompt"
+
+    with pytest.raises(image_provider.ImageGenerationError) as missing:
+        image_provider.edit(prompt="make it pop", source_images=[])
+    assert missing.value.code == "image_model.missing_source"
+
+
+def test_image_provider_edit_builds_multimodal_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # _invoke_model turns source_images into OpenAI-style multimodal content:
+    # image_url part(s) first, the text instruction last.
+    import base64
+
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+
+    src_png = _tiny_png(8, 8)
+    out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    result = image_provider.edit(
+        prompt="remove the background completely",
+        source_images=[(src_png, "image/png")],
+        transparent_background=True,
+    )
+    assert result.image_bytes == out_png
+
+    content = captured["json"]["messages"][0]["content"]
+    assert isinstance(content, list)
+    # image part first, text part last
+    assert content[0]["type"] == "image_url"
+    expected_data_url = "data:image/png;base64," + base64.b64encode(src_png).decode("ascii")
+    assert content[0]["image_url"]["url"] == expected_data_url
+    assert content[-1]["type"] == "text"
+    assert "remove the background completely" in content[-1]["text"]
+    assert "transparent background" in content[-1]["text"]
+
+
+def test_image_provider_generate_builds_reference_conditioned_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # RC2 D-RC2.2: reference_images turn a GENERATION into OpenAI-style multimodal
+    # content — reference image part(s) FIRST, the instruction LAST, prefixed with
+    # the fixed STYLE-REFERENCE framing (make a NEW image, don't edit these).
+    import base64
+
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+
+    ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
+    ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
+    out_png = _tiny_png(8, 8, rgba=(9, 9, 9, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(url=url, json=json, headers=headers)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    result = image_provider.generate(
+        prompt="a focused surgeon in an operating theatre",
+        brand_notes=["calm clinical confidence"],
+        aspect_ratio="16:9",
+        reference_images=[(ref_a, "image/png"), (ref_b, "image/png")],
+    )
+    assert result.image_bytes == out_png
+
+    content = captured["json"]["messages"][0]["content"]
+    assert isinstance(content, list)
+    # References first, in order; instruction last.
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(ref_a).decode("ascii")
+    )
+    assert content[1]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(ref_b).decode("ascii")
+    )
+    assert content[-1]["type"] == "text"
+    text = content[-1]["text"]
+    assert image_provider.STYLE_REFERENCE_FRAMING in text
+    assert "STYLE REFERENCES only" in text
+    # The composed prompt (subject + brand notes) and the aspect hint still ride the
+    # instruction, AFTER the framing.
+    assert "a focused surgeon" in text
+    assert "calm clinical confidence" in text
+    assert "aspect ratio 16:9" in text
+    assert text.index(image_provider.STYLE_REFERENCE_FRAMING) < text.index("a focused surgeon")
+
+
+def test_image_provider_generate_without_references_is_bare_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No-references path stays BYTE-IDENTICAL: bare-string content (no multimodal
+    # list), exactly the request a plain text-to-image call has always made.
+    import base64
+
+    monkeypatch.setattr(settings, "image_model_base_url", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "image_model_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_model_id", "test/image-model")
+
+    out_png = _tiny_png(8, 8, rgba=(1, 2, 3, 255))
+    out_url = "data:image/png;base64," + base64.b64encode(out_png).decode("ascii")
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"images": [{"image_url": {"url": out_url}}]}}]}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.update(json=json)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    image_provider.generate(prompt="a quiet mountain lake at dawn", aspect_ratio="16:9")
+    content = captured["json"]["messages"][0]["content"]
+    assert content == "a quiet mountain lake at dawn\n\n(Render with aspect ratio 16:9.)"
+
+
+def test_generation_key_reference_digests(client: TestClient) -> None:
+    # RC2 D-RC2.3: reference_digests participate only when truthy (existing keys
+    # byte-identical), order-insensitively.
+    from lumen_api import image_cache
+
+    base = image_cache.generation_key(prompt="a hero", model="m")
+    # No digests / empty list -> identical to the pre-RC2 key (byte-compatible).
+    assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=None) == base
+    assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=[]) == base
+    # Truthy digests change the key, and their order does not matter.
+    with_refs = image_cache.generation_key(prompt="a hero", model="m", reference_digests=["b", "a"])
+    assert with_refs != base
+    assert with_refs == image_cache.generation_key(
+        prompt="a hero", model="m", reference_digests=["a", "b"]
+    )
+    # Different reference pixels -> different key.
+    assert with_refs != image_cache.generation_key(
+        prompt="a hero", model="m", reference_digests=["a", "c"]
+    )
+
+
+def test_generate_asset_route_422s_on_unknown_reference(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # RC2 D-RC2.5: the route resolves references for real, so an unknown id fails
+    # with the RC manifest's hard 422 (the field is no longer inert) — the model is
+    # never called.
+    def fail_generate(**kwargs):  # pragma: no cover - guard
+        raise AssertionError("generate must not run when a reference id is bad")
+
+    monkeypatch.setattr(image_provider, "generate", fail_generate)
+    response = client.post(
+        "/assets/generate",
+        json={
+            "provider": "image-gen-v1",
+            "prompt": "a hero photograph",
+            "reference_asset_ids": ["asset_ghost"],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "reference.asset_not_found"
+
+
+def test_generate_asset_reference_cache_keys_on_pixel_digests(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # RC2 D-RC2.3 at the route: the same (prompt, reference) is a cache HIT; the SAME
+    # prompt with a DIFFERENT reference is a MISS (digests are in the key).
+    ref_a = _upload_source_raster(client, rgba=(200, 40, 40, 255), label="ref-a")
+    ref_b = _upload_source_raster(client, rgba=(40, 40, 200, 255), label="ref-b")
+    calls = {"n": 0}
+
+    def fake_generate(**kwargs) -> image_provider.ImageGenerationResult:
+        calls["n"] += 1
+        return image_provider.ImageGenerationResult(
+            image_bytes=_tiny_png(8, 8, rgba=(7, 7, 7, 255)),
+            mime_type="image/png",
+            model="mock-image-model",
+            provenance={"created_by": "agent", "source_label": "image generation", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr(image_provider, "generate", fake_generate)
+    prompt = "a calm hero field"
+
+    first = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "reference_asset_ids": [ref_a["id"]]},
+    )
+    assert first.status_code == 200, first.text
+    assert calls["n"] == 1
+    assert first.json()["deduplicated"] is False
+
+    # Different reference pixels, identical prompt -> MISS.
+    second = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "reference_asset_ids": [ref_b["id"]]},
+    )
+    assert second.status_code == 200, second.text
+    assert calls["n"] == 2, "a different reference with the same prompt must not hit the cache"
+
+    # Repeat of the first (prompt, reference) -> HIT (model not re-called).
+    repeat = client.post(
+        "/assets/generate",
+        json={"provider": "image-gen-v1", "prompt": prompt, "reference_asset_ids": [ref_a["id"]]},
+    )
+    assert repeat.status_code == 200, repeat.text
+    assert calls["n"] == 2, "an identical (prompt, reference) generation must hit the cache"
+    assert repeat.json()["deduplicated"] is True
+    assert repeat.json()["asset"]["id"] == first.json()["asset"]["id"]
 
 
 def test_mailer_carries_scannable_qr_through_export(client: TestClient) -> None:
@@ -3166,6 +4814,178 @@ def test_instance_batch_processes_chunks_with_resumable_cursor(
     loaded = client.get(f"/batches/{batch['batch_id']}")
     assert loaded.status_code == 200
     assert loaded.json()["status"] == "completed"
+
+
+PRINT_RUN_PROFILE = {
+    "name": "print_run",
+    "format": "pdf",
+    "pdf_intent": "print",
+    "raster": None,
+    "include_bleed": True,
+    "include_marks": True,
+    "embed_fonts": True,
+}
+
+
+def finalize_mailer_revision_with_saved_profile(client: TestClient) -> str:
+    """Mailer revision whose scene carries a saved print profile — the
+    'set up once, reuse forever' shape bulk runs resolve by name."""
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    scene["export_profiles"] = [dict(PRINT_RUN_PROFILE)]
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    finalized = client.post(
+        f"/documents/{document_id}/finalize",
+        json={"template_revision_id": "tmpl_mailer_v1"},
+    )
+    assert finalized.status_code == 200, finalized.text
+    return "tmpl_mailer_v1"
+
+
+def test_instance_derivation_with_saved_print_profile(client: TestClient) -> None:
+    # A saved document profile drives the bulk artifact through the same
+    # print pipeline as an interactive download: bleed, marks, print boxes,
+    # embedded fonts, and the print-ready report.
+    revision_id = finalize_mailer_revision_with_saved_profile(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile_name": "print_run",
+        },
+    )
+    assert response.status_code == 200, response.text
+    instance = response.json()
+    assert instance["status"] == "derived"
+    pdfs = [a for a in instance["artifacts"] if a["format"] == "pdf"]
+    assert len(pdfs) == 1, instance["artifacts"]
+    pdf = pdfs[0]
+    assert pdf["profile_name"] == "print_run"
+    assert pdf.get("error") is None, pdf
+    assert pdf["print_ready"]["status"] != "fail"
+
+    store_root = str(client.app.state.asset_store_root)
+    pdf_bytes = (Path(store_root) / pdf["relative_path"]).read_bytes()
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert b"/TrimBox" in pdf_bytes, "print finalize expected"
+    assert b"FontFile2" in pdf_bytes, "embedded subset fonts expected"
+
+
+def test_instance_derivation_rejects_bad_profile_requests(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision_with_saved_profile(client)
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    both = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile": dict(PRINT_RUN_PROFILE),
+            "export_profile_name": "print_run",
+        },
+    )
+    assert both.status_code == 422
+    assert both.json()["detail"]["code"] == "export_profile.ambiguous_source"
+
+    unknown = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={"binding_set_id": binding_set_id, "export_profile_name": "ghost"},
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["detail"]["code"] == "export_profile.not_found"
+
+    formatless = client.post(
+        f"/template-revisions/{revision_id}/instances",
+        json={
+            "binding_set_id": binding_set_id,
+            "export_profile": {"name": "mystery", "include_bleed": True},
+        },
+    )
+    assert formatless.status_code == 422
+    assert formatless.json()["detail"]["code"] == "export_profile.format_required"
+
+
+def test_batch_with_print_profile_persists_profile_and_error_codes(
+    client: TestClient,
+) -> None:
+    revision_id = finalize_mailer_revision(client)
+    logo = upload_logo_asset(client)
+    ids = [
+        stored_binding(client, "nominal", logo["id"]),
+        stored_binding(client, "worst_case", logo["id"]),
+    ]
+
+    response = client.post(
+        f"/template-revisions/{revision_id}/batches",
+        json={
+            "binding_set_ids": ids,
+            "export_formats": [],
+            "export_profile": dict(PRINT_RUN_PROFILE),
+            "chunk_size": 2,
+        },
+    )
+    assert response.status_code == 200, response.text
+    batch = response.json()
+    assert batch["status"] == "completed"
+    assert batch["export_profile"]["name"] == "print_run"
+
+    by_binding = {entry["binding_set_id"]: entry for entry in batch["manifest"]}
+    derived = by_binding["bind_acme_dr_sharma"]
+    assert derived["status"] == "derived"
+    assert derived["error_codes"] == []
+    pdf = next(a for a in derived["artifacts"] if a["format"] == "pdf")
+    assert pdf["profile_name"] == "print_run"
+    assert pdf["print_ready"]["status"] != "fail"
+
+    # The failed derivation names its why directly in the manifest.
+    failed = by_binding["bind_meridian_dr_whitmore"]
+    assert failed["status"] == "failed"
+    assert failed["error_codes"], "failed instances must surface error codes"
+
+    # The profile survives persistence (resume reads it from the row).
+    loaded = client.get(f"/batches/{batch['batch_id']}").json()
+    assert loaded["export_profile"]["name"] == "print_run"
+
+
+def test_batch_with_bleed_profile_fails_fast_on_bleedless_template(
+    client: TestClient,
+) -> None:
+    # Fail-fast at copy zero: a bleed-requesting profile against a template
+    # with no bleed geometry would print-not-ready EVERY instance.
+    document_id = "doc_g8_mailer"
+    scene = mailer_revision_scene_draft(document_id)
+    scene["pages"]["page_mailer"]["bleed"] = None
+    created = client.post(
+        "/documents", json={"document_id": document_id, "scene": scene}
+    )
+    assert created.status_code == 200, created.text
+    assert (
+        client.post(
+            f"/documents/{document_id}/finalize",
+            json={"template_revision_id": "tmpl_mailer_v1"},
+        ).status_code
+        == 200
+    )
+    logo = upload_logo_asset(client)
+    binding_set_id = stored_binding(client, "nominal", logo["id"])
+
+    response = client.post(
+        "/template-revisions/tmpl_mailer_v1/batches",
+        json={
+            "binding_set_ids": [binding_set_id],
+            "export_profile": dict(PRINT_RUN_PROFILE),
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "batch.template_not_print_ready"
 
 
 def test_batch_rejects_unknown_or_mismatched_binding_sets(

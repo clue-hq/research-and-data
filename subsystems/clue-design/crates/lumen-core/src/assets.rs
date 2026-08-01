@@ -136,6 +136,13 @@ pub enum AssetSource {
         request_id: Option<String>,
         model: String,
     },
+    /// A model-edited derivative of an existing asset (Phase 3b image edit /
+    /// remove-background). `source_asset_id` chains provenance to the parent.
+    Edited {
+        request_id: Option<String>,
+        model: String,
+        source_asset_id: AssetId,
+    },
     Vectorized {
         source_asset_id: AssetId,
         tool: Option<String>,
@@ -950,5 +957,44 @@ mod generation_constraints_tests {
         let reserialized = serde_json::to_string(&parsed).unwrap();
         let again: AssetGenerationConstraints = serde_json::from_str(&reserialized).unwrap();
         assert_eq!(parsed, again);
+    }
+}
+
+#[cfg(test)]
+mod asset_source_tests {
+    use super::{AssetId, AssetSource};
+
+    #[test]
+    fn edited_variant_serde_round_trip() {
+        // Phase 3b: an edited derivative tags "edited" and chains the parent via
+        // snake_case `source_asset_id`, matching the API's persisted `source`.
+        let source = AssetSource::Edited {
+            request_id: Some("asset_gen_abc123".to_owned()),
+            model: "google/gemini-2.5-flash-image".to_owned(),
+            source_asset_id: AssetId::from("asset_parent_0001"),
+        };
+
+        let json = serde_json::to_value(&source).unwrap();
+        assert_eq!(json["kind"], "edited");
+        assert_eq!(json["request_id"], "asset_gen_abc123");
+        assert_eq!(json["model"], "google/gemini-2.5-flash-image");
+        assert_eq!(json["source_asset_id"], "asset_parent_0001");
+
+        let back: AssetSource = serde_json::from_value(json).unwrap();
+        assert_eq!(back, source);
+    }
+
+    #[test]
+    fn edited_variant_parses_from_stored_shape() {
+        let stored = r#"{"kind":"edited","request_id":null,"model":"m","source_asset_id":"asset_p"}"#;
+        let parsed: AssetSource = serde_json::from_str(stored).unwrap();
+        assert_eq!(
+            parsed,
+            AssetSource::Edited {
+                request_id: None,
+                model: "m".to_owned(),
+                source_asset_id: AssetId::from("asset_p"),
+            }
+        );
     }
 }

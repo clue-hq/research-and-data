@@ -160,12 +160,97 @@ export async function generateAsset(
   };
 }
 
+export interface EditAssetRequest {
+  /** The existing asset whose pixels are edited; the result is a new asset. */
+  sourceAssetId: string;
+  /** The edit instruction (or the fixed remove-background instruction). */
+  prompt: string;
+  provider?: string;
+  outputKind?: string;
+  transparentBackground?: boolean;
+  brandNotes?: string[];
+  label?: string;
+}
+
+/**
+ * Edit an existing raster asset through `POST /assets/generate` with a
+ * `source_asset_id` (Phase 3b). The API loads the source pixels, runs the
+ * model edit, and returns a NEW ready `AssetRecord` whose `source` chains to
+ * the parent (kind "edited"). Remove-background is this same call with the
+ * fixed instruction + `transparentBackground: true`. Errors surface the same
+ * typed `detail.message` / `LUMA*` code as generation.
+ */
+export async function editAsset(
+  apiBaseUrl: string,
+  request: EditAssetRequest
+): Promise<AssetGenerateResult> {
+  const response = await fetch(new URL("/assets/generate", apiBaseUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      provider: request.provider ?? IMAGE_GEN_PROVIDER,
+      prompt: request.prompt,
+      output_kind: request.outputKind ?? "raster_image",
+      source_asset_id: request.sourceAssetId,
+      transparent_background: request.transparentBackground,
+      brand_notes: request.brandNotes ?? [],
+      label: request.label
+    })
+  });
+  const payload = (await response.json().catch(() => ({}))) as {
+    asset?: AssetRecord;
+    deduplicated?: boolean;
+    diagnostics?: Diagnostic[];
+    detail?: { message?: string; code?: string };
+  };
+  if (!response.ok || !payload.asset) {
+    const detail = payload.detail;
+    throw new Error(
+      detail?.message ?? detail?.code ?? `Image edit failed with status ${response.status}`
+    );
+  }
+  return {
+    asset: payload.asset,
+    deduplicated: payload.deduplicated ?? false,
+    diagnostics: payload.diagnostics ?? []
+  };
+}
+
 export function assetThumbnailUrl(apiBaseUrl: string, assetId: string): string {
   return new URL(`/assets/${assetId}/thumbnail`, apiBaseUrl).toString();
 }
 
 export function assetBytesUrl(apiBaseUrl: string, assetId: string): string {
   return new URL(`/assets/${assetId}/bytes`, apiBaseUrl).toString();
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** Content-addressed bytes URL (`/asset-store/{digest}`) — immutable,
+ * cache-friendly, and independent of the asset REGISTRY. */
+export function assetStoreBytesUrl(apiBaseUrl: string, digestValue: string): string {
+  return new URL(`/asset-store/${digestValue}`, apiBaseUrl).toString();
+}
+
+/**
+ * Resolve an asset's bytes URL from the SCENE's own record — the same source
+ * of truth server exports resolve from. An asset any producer put into the
+ * scene (the deepagent's generated imagery, edits, QR codes) is servable by
+ * its content digest even when nothing registered it in the asset library.
+ * Records without a usable sha256 digest — and asset ids the scene does not
+ * carry at all (dangling references) — fall back to the registry endpoint,
+ * which stays the last word on whether such an asset exists.
+ */
+export function sceneAssetBytesUrl(
+  apiBaseUrl: string,
+  assets: Record<string, AssetRecord> | undefined,
+  assetId: string
+): string {
+  const digest = assets?.[assetId]?.media?.digest;
+  if (digest && digest.algorithm === "sha256" && SHA256_HEX.test(digest.value)) {
+    return assetStoreBytesUrl(apiBaseUrl, digest.value);
+  }
+  return assetBytesUrl(apiBaseUrl, assetId);
 }
 
 /**

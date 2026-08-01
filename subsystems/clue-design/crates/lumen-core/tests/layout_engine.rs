@@ -382,6 +382,39 @@ fn plain_text_overflow_is_diagnosed_without_slot() {
 }
 
 #[test]
+fn bottom_valign_overflowing_fixed_box_still_emits_vertical_overflow() {
+    // A7a D3: valign changes paint position only, never geometry. A bottom-
+    // aligned text node whose content overflows its Fixed-height box must still
+    // emit LUMV0903 — validation compares measured height vs bounds and never
+    // sees the paint offset.
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node_with_font(
+        "overflow",
+        "Line one\nLine two\nLine three\nLine four\nLine five",
+        24.0,
+        24.0,
+        320.0,
+        30.0, // far too short for five wrapped/broken lines
+        24.0,
+    );
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.valign = lumen_core::VerticalAlign::Bottom;
+        text.wrap = lumen_core::TextWrap::Wrap;
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions {
+            validate_slots: false,
+            ..Default::default()
+        },
+    );
+
+    assert!(has_code(&result.diagnostics, "LUMV0903"));
+}
+
+#[test]
 fn column_layout_positions_fixed_children() {
     let mut scene = scene_with_page(400.0, 300.0);
     insert(
@@ -1084,4 +1117,125 @@ fn repeater_and_conditional_scaffolds_are_validated() {
     assert!(has_code(&diagnostics, "LUMV0841"));
     assert!(has_code(&diagnostics, "LUMV0842"));
     assert!(has_code(&diagnostics, "LUMV0843"));
+}
+
+#[test]
+fn truncate_with_no_max_lines_and_wrap_advises_lumv0905() {
+    // A6a D3: truncate on freely-wrapping text with no max_lines can never
+    // fire — teach with an advisory, don't block.
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node("body", "wrapping copy that never truncates", 24.0, 24.0, 200.0, 80.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.wrap = lumen_core::TextWrap::Wrap;
+        text.truncate = true;
+        text.max_lines = None;
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
+    );
+    assert!(has_code(&result.diagnostics, "LUMV0905"), "{:#?}", result.diagnostics);
+}
+
+#[test]
+fn truncate_with_max_lines_does_not_advise_lumv0905() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node("body", "copy", 24.0, 24.0, 200.0, 80.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.wrap = lumen_core::TextWrap::Wrap;
+        text.truncate = true;
+        text.max_lines = Some(2);
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
+    );
+    assert!(!has_code(&result.diagnostics, "LUMV0905"));
+}
+
+#[test]
+fn negative_paragraph_spacing_is_an_invalid_metric_lumv0900() {
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node("body", "copy", 24.0, 24.0, 200.0, 80.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.paragraph_spacing = -4.0;
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
+    );
+    assert!(has_code(&result.diagnostics, "LUMV0900"), "{:#?}", result.diagnostics);
+}
+
+#[test]
+fn invalid_ops_injected_span_errors_lumv0906_at_the_gate() {
+    // A6b D3 end-to-end: the LAYOUT GATE (not just the unit helper) must
+    // reject an out-of-bounds ops-injected span before measurement.
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node("body", "hello", 24.0, 24.0, 200.0, 80.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.spans = vec![lumen_core::TextSpan {
+            start: 2,
+            end: 99,
+            fill: None,
+            font_weight: Some(800),
+            underline: None,
+            strikethrough: None,
+            italic: None,
+        }];
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
+    );
+    assert!(has_code(&result.diagnostics, "LUMV0906"), "{:#?}", result.diagnostics);
+}
+
+#[test]
+fn spans_with_paragraph_spacing_advise_lumv0907() {
+    // A6b v1 limitation must be LOUD: the segmented span path does not apply
+    // the paragraph gap, so authored para_spacing on spanned multi-stanza
+    // text advises instead of silently dropping the air.
+    let mut scene = scene_with_page(400.0, 300.0);
+    let mut node = text_node("body", "alpha\\nbeta", 24.0, 24.0, 200.0, 120.0);
+    if let NodeKind::Text(text) = &mut node.kind {
+        text.paragraph_spacing = 16.0;
+        text.spans = vec![lumen_core::TextSpan {
+            start: 0,
+            end: 5,
+            fill: None,
+            font_weight: Some(800),
+            underline: None,
+            strikethrough: None,
+            italic: None,
+        }];
+    }
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), node);
+
+    let result = layout_scene(
+        &scene,
+        lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
+    );
+    assert!(has_code(&result.diagnostics, "LUMV0907"), "{:#?}", result.diagnostics);
+
+    // Without spans the same node measures with the gap and must NOT advise.
+    let mut clean = scene_with_page(400.0, 300.0);
+    let mut plain = text_node("body2", "alpha\\nbeta", 24.0, 24.0, 200.0, 120.0);
+    if let NodeKind::Text(text) = &mut plain.kind {
+        text.paragraph_spacing = 16.0;
+    }
+    insert(&mut clean, ParentRef::Page(PageId::from("page")), plain);
+    let result = layout_scene(
+        &clean,
+        lumen_core::LayoutOptions { validate_slots: false, ..Default::default() },
+    );
+    assert!(!has_code(&result.diagnostics, "LUMV0907"), "{:#?}", result.diagnostics);
 }

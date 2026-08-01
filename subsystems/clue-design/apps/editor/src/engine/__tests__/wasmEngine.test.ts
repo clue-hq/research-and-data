@@ -155,4 +155,26 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     expect(undo.accepted).toBe(true);
     expect(undo.scene).toEqual(original);
   });
+
+  it("round-trips an A6a decoration toggle through undo", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const engine = new WasmEngine(module, cloneScene(baseScene));
+    const original = engine.scene;
+    const node = engine.scene.nodes.node_contact_name;
+
+    // Toggle underline on through the single text-node op (no new op kind).
+    const outcome = engine.applyOperations([updateTextNode(node, { underline: true })]);
+    expect(outcome.accepted).toBe(true);
+    expect(outcome.inverseOperations).not.toBeNull();
+    const updated = engine.scene.nodes.node_contact_name.kind;
+    expect(updated.kind).toBe("text");
+    if (updated.kind === "text") {
+      expect(updated.underline).toBe(true);
+    }
+
+    // The inverse batch restores the pre-toggle scene exactly (decoration off).
+    const undo = engine.applyOperations(outcome.inverseOperations ?? []);
+    expect(undo.accepted).toBe(true);
+    expect(undo.scene).toEqual(original);
+  });
 });

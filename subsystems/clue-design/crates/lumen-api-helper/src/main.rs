@@ -1,11 +1,13 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use lumen_assets::{AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES};
+use lumen_assets::{
+    digest_relative_path, AssetStore, IngestRequest, LocalAssetStore, DEFAULT_MAX_BYTES,
+};
 use lumen_core::validation::validate_scene;
 use lumen_core::SharedTextMeasurer;
 use lumen_core::{
     batch_scope_violations, build_structured_edit_batch, compare_brand_kit_compatibility,
-    compile_dsl_into_scene_with_session, compile_styles_brand_kit, derive_instance,
+    compile_dsl_into_scene_with_session_and_protected, compile_styles_brand_kit, derive_instance,
     generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
     summarize_brand_kit_for_authoring, validate_binding_set, validate_brand_kit,
     validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
@@ -13,12 +15,14 @@ use lumen_core::{
     AssetSource, AssetStatus, AssetThumbnail, BindingSet, BrandGovernanceStrictness, BrandKit,
     BrandKitId, BrandMode, BrandSeed, DerivationAssets, DeriveOptions, Diagnostic,
     DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditScope, EditScopeMode,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, Operation,
-    PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
+    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
+    Operation, PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
     StructuredEditInstruction, TemplateRevisionId,
 };
 use lumen_export::LumenExportAdapter;
-use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
+use lumen_skia::{
+    FontManager, SkiaFontFaceResolver, SkiaSceneRenderer, SkiaTextMeasurer, SkiaVectorPdfRenderer,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
@@ -30,24 +34,166 @@ mod store_resolver;
 
 use store_resolver::{StoreBackedResolver, LOCAL_STORE_PROVIDER};
 
-/// The server-side text measurer: SkParagraph shaping over the bundled
-/// deterministic font set (Wave 1 Track A, Decision 5). Every helper path
-/// that measures text — preflight, layout geometry, export — injects this;
-/// the heuristic remains only as the wasm fallback inside lumen-core.
-fn server_measurer() -> SharedTextMeasurer {
-    Arc::new(SkiaTextMeasurer::bundled())
+/// Brand-kit font faces for a request: sha256 digests of font assets in the
+/// shared content-addressed store, each with the kit-DECLARED family name.
+/// The caller (API / agent runtime) resolves kit
+/// `assets.fonts[*].faces[].asset_id` to digests. The declared family is the
+/// name scenes actually request, and it is routinely an alias over the
+/// bytes' intrinsic name (`@font-face` aliasing: kit "Aeonik" over trial
+/// bytes named "Aeonik TRIAL") — both must resolve.
+#[derive(Debug, Deserialize)]
+struct BrandFontsSpec {
+    store_root: String,
+    faces: Vec<BrandFontFaceSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrandFontFaceSpec {
+    digest: String,
+    #[serde(default)]
+    family: Option<String>,
+}
+
+/// Read one spec's faces from the store into `faces`, degrading unreadable
+/// entries to LUMS0101 warnings. `family_filter` is the library-fonts lazy
+/// load: when set, a face loads only if its declared family appears in the
+/// request's scene/kit JSON — the library is ~27 families and a request
+/// typically uses two or three, so eager loading would read megabytes of
+/// unused bytes per helper call. Substring matching over the serialized
+/// request can only over-load (harmless), never under-load: scenes and kits
+/// reference families by their exact declared name.
+fn collect_font_faces(
+    spec: &BrandFontsSpec,
+    source_label: &str,
+    family_filter: Option<&str>,
+    seen_digests: &mut std::collections::HashSet<String>,
+    faces: &mut Vec<(Vec<u8>, Option<String>)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let store = LocalAssetStore::new(&spec.store_root);
+    let mut unavailable = |digest: &str, detail: String| {
+        diagnostics.push(
+            Diagnostic::warning(
+                lumen_core::Phase::Layout,
+                "LUMS0101",
+                format!("{source_label} font face sha256:{digest} is unavailable: {detail}"),
+                None,
+            )
+            .with_hint(
+                "Text in this family shapes with the bundled fallback; re-ingest the font asset to restore fidelity.",
+            ),
+        );
+    };
+    for face in &spec.faces {
+        if let Some(scan) = family_filter {
+            match face.family.as_deref() {
+                Some(family) if !family.is_empty() && scan.contains(family) => {}
+                _ => continue,
+            }
+        }
+        if !seen_digests.insert(face.digest.clone()) {
+            continue;
+        }
+        match digest_relative_path(&face.digest) {
+            Ok(relative_path) => match store.get(&relative_path) {
+                Ok(bytes) => faces.push((bytes, face.family.clone())),
+                Err(error) => unavailable(&face.digest, error.to_string()),
+            },
+            Err(error) => unavailable(&face.digest, error.to_string()),
+        }
+    }
+}
+
+/// Build the request's font set: the bundled deterministic faces, any
+/// brand-kit faces readable from the store, and the library faces whose
+/// family the request actually mentions (`family_scan` = the serialized
+/// scene + kit JSON). Unreadable or unparseable faces degrade to warning
+/// diagnostics (LUMS0101) — a bad font must never take down shaping, and it
+/// must never fail silently either.
+fn load_request_fonts(
+    brand: Option<&BrandFontsSpec>,
+    library: Option<&BrandFontsSpec>,
+    family_scan: &str,
+) -> (Arc<FontManager>, Vec<Diagnostic>) {
+    if brand.is_none() && library.is_none() {
+        return (Arc::new(FontManager::bundled()), Vec::new());
+    }
+    let mut faces = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut seen_digests = std::collections::HashSet::new();
+    if let Some(spec) = brand {
+        collect_font_faces(spec, "brand", None, &mut seen_digests, &mut faces, &mut diagnostics);
+    }
+    if let Some(spec) = library {
+        collect_font_faces(
+            spec,
+            "library",
+            Some(family_scan),
+            &mut seen_digests,
+            &mut faces,
+            &mut diagnostics,
+        );
+    }
+    let (fonts, errors) = FontManager::bundled_with(faces);
+    for error in errors {
+        diagnostics.push(
+            Diagnostic::warning(
+                lumen_core::Phase::Layout,
+                "LUMS0101",
+                format!("font face is unavailable: {error}"),
+                None,
+            )
+            .with_hint(
+                "Text in this family shapes with the bundled fallback; re-ingest the font asset to restore fidelity.",
+            ),
+        );
+    }
+    (Arc::new(fonts), diagnostics)
+}
+
+/// The server-side text measurer: SkParagraph shaping over the request's
+/// font set (Wave 1 Track A, Decision 5; K3 adds brand-kit faces). Every
+/// helper path that measures text — preflight, layout geometry, export —
+/// injects this; the heuristic remains only as the wasm fallback inside
+/// lumen-core.
+fn server_measurer_with(fonts: Arc<FontManager>) -> SharedTextMeasurer {
+    Arc::new(SkiaTextMeasurer::new(fonts))
 }
 
 /// Export adapter composition for every server export path (slice A4):
 /// Skia text measurement for SVG/PDF line breaks and the direct Skia scene
-/// rasterizer for PNG — measurer and renderer share one FontManager, so
-/// critic previews and artifacts shape text identically to preflight.
-fn server_export_adapter(adapter: LumenExportAdapter) -> LumenExportAdapter {
-    let fonts = Arc::new(FontManager::bundled());
+/// renderer for PNG rasters and PDF — measurer and renderer share one
+/// FontManager, so critic previews and artifacts shape text identically to
+/// preflight.
+///
+/// PDF renderer selection (print W2): the vector Skia-PDF renderer (live
+/// text, embedded subset fonts, parity with PNG by shared paint) is the
+/// default; `LUMEN_PDF_RENDERER=flattened` selects the W0 raster-flattened
+/// baseline (D5: kept for comparison until the vector path has burned in).
+/// Any other value falls through to vector — never a silent third mode.
+fn server_export_adapter_with(
+    adapter: LumenExportAdapter,
+    fonts: Arc<FontManager>,
+) -> LumenExportAdapter {
+    let renderer = Arc::new(SkiaSceneRenderer::new(Arc::clone(&fonts)));
+    let pdf_renderer: Arc<dyn lumen_export::ScenePdfRenderer> =
+        match std::env::var("LUMEN_PDF_RENDERER").as_deref() {
+            Ok("flattened") => Arc::clone(&renderer) as _,
+            _ => Arc::new(SkiaVectorPdfRenderer::from_renderer((*renderer).clone())),
+        };
     adapter
         .with_measurer(Arc::new(SkiaTextMeasurer::new(Arc::clone(&fonts))))
-        .with_rasterizer(Arc::new(SkiaSceneRenderer::new(fonts)))
+        .with_rasterizer(renderer)
+        .with_pdf_renderer(pdf_renderer)
+        // SVG font embedding shares the same FontManager as measurement and
+        // paint: the embedded @font-face bytes are the faces that shaped and
+        // painted — parity by construction.
+        .with_font_resolver(Arc::new(SkiaFontFaceResolver::new(fonts)))
 }
+// NOTE: there is deliberately no fonts-defaulted variant of the measurer or
+// adapter builders — every call site must state its font set explicitly.
+// The bundled-Inter defaults were how derive_instance silently shipped
+// wrong-typeface bulk runs.
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -79,12 +225,20 @@ enum CoreRequest {
         source: String,
         #[serde(default)]
         dsl_session: Option<Value>,
+        /// Slice 3: seed-born / human node ids a `reconcile(...)` block must
+        /// KEEP when omitted (LUMD0262). Defaulted empty (pure declarative).
+        #[serde(default)]
+        protected_node_ids: Vec<String>,
     },
     PreflightScene {
         scene: Value,
         brand_kit: Option<Value>,
         #[serde(default)]
         mode: Option<Value>,
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     ExportPreview {
         scene: Value,
@@ -94,6 +248,10 @@ enum CoreRequest {
         profile: Option<Value>,
         #[serde(default)]
         asset_store_root: Option<String>,
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     IngestAsset {
         store_root: String,
@@ -173,6 +331,10 @@ enum CoreRequest {
     },
     LayoutGeometry {
         scene: Value,
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
     },
     ValidateBindingSet {
         scene: Value,
@@ -191,8 +353,90 @@ enum CoreRequest {
         export_formats: Vec<String>,
         #[serde(default)]
         export_dpi: Option<u16>,
+        /// Kit + library faces for shaping and artifact rendering. Without
+        /// these every instance shapes with bundled Inter — the silent
+        /// substitution that made bulk runs lie about the template's
+        /// typography.
+        #[serde(default)]
+        brand_fonts: Option<BrandFontsSpec>,
+        #[serde(default)]
+        library_fonts: Option<BrandFontsSpec>,
+        /// Full ExportProfile driving the bulk artifact for its format
+        /// (print controls: bleed, marks, proof, imposition, CMYK, raster
+        /// scale). Replaces the built-in default profile of the same
+        /// format; other formats in `export_formats` keep their defaults.
+        /// Malformed profiles fail loudly (`profile.invalid`).
+        #[serde(default)]
+        export_profile: Option<Value>,
     },
     BuildInfo,
+    WebNewDoc {
+        document_id: String,
+        title: String,
+        #[serde(default)]
+        brand_kit_ref: Option<Value>,
+    },
+    WebValidate {
+        doc: Value,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
+    WebIngestHtml {
+        doc: Value,
+        page_id: String,
+        html: String,
+        #[serde(default)]
+        custom_css: Option<String>,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
+    WebApplyOps {
+        doc: Value,
+        operations: Vec<Value>,
+    },
+    WebRender {
+        doc: Value,
+        page_id: String,
+        mode: String,
+        #[serde(default)]
+        asset_base_url: Option<String>,
+        #[serde(default)]
+        tailwind_runtime_src: Option<String>,
+        #[serde(default)]
+        bridge_script: Option<String>,
+        #[serde(default)]
+        custom_component_runtimes:
+            std::collections::BTreeMap<String, lumen_web::CustomComponentRuntimeFrame>,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+        /// Pre-built @font-face CSS (the API owns font-serving URLs); folded
+        /// into the theme base layer so kit typography renders everywhere.
+        #[serde(default)]
+        font_face_css: Option<String>,
+    },
+    /// Parse a constrained-HTML fragment against `doc` WITHOUT mutating it:
+    /// returns the would-be nodes + roots so callers can compose surgical
+    /// RemoveNode/InsertNode batches (scoped edit turns).
+    WebIngestFragment {
+        doc: Value,
+        html: String,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+    },
+    /// Derive one account-personalized copy of `doc`. Pure (doc → doc, no
+    /// render, no I/O): returns the derived doc, diagnostics, and a coverage
+    /// report. An error-level diagnostic rejects the derive atomically (no
+    /// `web_doc` on the response — the template is never mutated).
+    WebDerive {
+        doc: Value,
+        #[serde(default)]
+        values: std::collections::BTreeMap<String, Value>,
+        #[serde(default)]
+        assets: Vec<Value>,
+        new_doc_id: String,
+        #[serde(default)]
+        new_title: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -230,6 +474,18 @@ struct CoreResponse {
     asset: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     instance: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_doc: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inverse_operations: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_fragment: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    web_theme: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage: Option<Value>,
     build_info: Option<Value>,
 }
 
@@ -278,6 +534,12 @@ fn main() {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 },
             };
@@ -319,6 +581,12 @@ fn main() {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             }
         }
@@ -355,6 +623,13 @@ impl CoreRequest {
             CoreRequest::ValidateBindingSet { .. } => "validate_binding_set",
             CoreRequest::DeriveInstance { .. } => "derive_instance",
             CoreRequest::BuildInfo => "build_info",
+            CoreRequest::WebNewDoc { .. } => "web_new_doc",
+            CoreRequest::WebValidate { .. } => "web_validate",
+            CoreRequest::WebIngestHtml { .. } => "web_ingest_html",
+            CoreRequest::WebApplyOps { .. } => "web_apply_ops",
+            CoreRequest::WebRender { .. } => "web_render",
+            CoreRequest::WebIngestFragment { .. } => "web_ingest_fragment",
+            CoreRequest::WebDerive { .. } => "web_derive",
         }
     }
 }
@@ -461,6 +736,39 @@ fn request_log_fields(request: &CoreRequest) -> Value {
             "export_formats": export_formats,
         }),
         CoreRequest::BuildInfo => json!({}),
+        CoreRequest::WebNewDoc { brand_kit_ref, .. } => json!({
+            "has_brand_kit_ref": brand_kit_ref.is_some(),
+        }),
+        CoreRequest::WebValidate { brand_kit, .. } => json!({
+            "has_brand_kit": brand_kit.is_some(),
+        }),
+        CoreRequest::WebIngestHtml {
+            html,
+            custom_css,
+            brand_kit,
+            ..
+        } => json!({
+            "html_bytes": html.len(),
+            "has_custom_css": custom_css.is_some(),
+            "has_brand_kit": brand_kit.is_some(),
+        }),
+        CoreRequest::WebApplyOps { operations, .. } => json!({
+            "operation_count": operations.len(),
+        }),
+        CoreRequest::WebRender {
+            mode, brand_kit, ..
+        } => json!({
+            "mode": mode,
+            "has_brand_kit": brand_kit.is_some(),
+        }),
+        CoreRequest::WebIngestFragment { html, brand_kit, .. } => json!({
+            "html_bytes": html.len(),
+            "has_brand_kit": brand_kit.is_some(),
+        }),
+        CoreRequest::WebDerive { values, assets, .. } => json!({
+            "value_count": values.len(),
+            "asset_count": assets.len(),
+        }),
     }
 }
 
@@ -544,6 +852,12 @@ fn error_response(error: CoreError, diagnostics: Vec<Diagnostic>) -> CoreRespons
         export: None,
         asset: None,
         instance: None,
+        web_doc: None,
+        html: None,
+        inverse_operations: None,
+        web_fragment: None,
+        web_theme: None,
+        coverage: None,
         build_info: None,
     }
 }
@@ -665,6 +979,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -689,6 +1009,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             });
             let batch = match batch {
@@ -737,6 +1063,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -764,6 +1096,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -772,13 +1110,20 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             scene,
             source,
             dsl_session,
+            protected_node_ids,
         } => {
             let mut scene = parse_scene(scene)?;
             let session = dsl_session
                 .map(serde_json::from_value::<DslCompileSessionSnapshot>)
                 .transpose()
                 .map_err(|error| core_error("helper.dsl_session", error.to_string()))?;
-            let result = compile_dsl_into_scene_with_session(&source, &mut scene, session);
+            let protected: std::collections::BTreeSet<NodeId> = protected_node_ids
+                .into_iter()
+                .map(NodeId::from)
+                .collect();
+            let result = compile_dsl_into_scene_with_session_and_protected(
+                &source, &mut scene, session, protected,
+            );
             let applied_operations = result
                 .operation_report
                 .as_ref()
@@ -806,6 +1151,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -813,15 +1164,24 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             scene,
             brand_kit,
             mode,
+            brand_fonts,
+            library_fonts,
         } => {
+            let family_scan = match &brand_kit {
+                Some(kit) => format!("{scene}{kit}"),
+                None => scene.to_string(),
+            };
             let scene = parse_scene(scene)?;
             let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
             let mut options = PreflightOptions::default();
-            options.layout.measurer = Some(server_measurer());
+            options.layout.measurer = Some(server_measurer_with(fonts));
             if let Some(mode) = mode {
                 options.token_resolution.mode = parse_brand_mode(mode)?;
             }
-            let result = preflight_scene(scene, brand_kit.as_ref(), options);
+            let mut result = preflight_scene(scene, brand_kit.as_ref(), options);
+            result.diagnostics.extend(font_diagnostics);
             let summary = PreflightSummary {
                 has_errors: result.has_errors(),
                 brand_ref_operations: values(result.brand_ref_operations)?,
@@ -846,6 +1206,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -855,7 +1221,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             page_ids,
             profile,
             asset_store_root,
+            brand_fonts,
+            library_fonts,
         } => {
+            let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
             let profile = match profile {
                 Some(profile) => {
@@ -876,6 +1245,10 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     }),
                     include_bleed: false,
                     embed_fonts: true,
+                    include_marks: false,
+                imposition: None,
+                proof: false,
+                color: None,
                 },
             };
             let request = ExportRequest {
@@ -883,17 +1256,26 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 page_ids: page_ids.into_iter().map(PageId::from).collect(),
                 purpose: ExportPurpose::AgentCritique,
             };
-            let adapter = server_export_adapter(match asset_store_root {
-                Some(root) => {
-                    LumenExportAdapter::with_resolver(Arc::new(StoreBackedResolver::new(root)))
-                }
-                None => LumenExportAdapter::new(),
-            });
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
+            let adapter = server_export_adapter_with(
+                match asset_store_root {
+                    Some(root) => {
+                        LumenExportAdapter::with_resolver(Arc::new(StoreBackedResolver::new(root)))
+                    }
+                    None => LumenExportAdapter::new(),
+                },
+                fonts,
+            );
             match adapter.export(&scene, &request) {
                 Ok(result) => Ok(CoreResponse {
                     ok: true,
                     scene: None,
-                    diagnostics: result.diagnostics.clone(),
+                    diagnostics: {
+                        let mut diagnostics = result.diagnostics.clone();
+                        diagnostics.extend(font_diagnostics);
+                        diagnostics
+                    },
                     error: None,
                     applied_operations: None,
                     preflight: None,
@@ -908,6 +1290,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: Some(to_value(result)?),
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
                 Err(error) => Ok(CoreResponse {
@@ -928,6 +1316,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1079,6 +1473,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "byte_length": stored.byte_length,
                 })),
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1258,6 +1658,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1284,6 +1690,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1315,6 +1727,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1345,6 +1763,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         export: None,
                         asset: None,
                         instance: None,
+                        web_doc: None,
+                        html: None,
+                        inverse_operations: None,
+                        web_fragment: None,
+                        web_theme: None,
+                        coverage: None,
                         build_info: None,
                     })
                 }
@@ -1369,6 +1793,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     export: None,
                     asset: None,
                     instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
                     build_info: None,
                 }),
             }
@@ -1410,6 +1840,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1434,6 +1870,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1463,6 +1905,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1489,22 +1937,39 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
-        CoreRequest::LayoutGeometry { scene } => {
+        CoreRequest::LayoutGeometry {
+            scene,
+            brand_fonts,
+            library_fonts,
+        } => {
+            let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
             let result = layout_scene(
                 &scene,
                 lumen_core::LayoutOptions {
-                    measurer: Some(server_measurer()),
+                    measurer: Some(server_measurer_with(fonts)),
                     ..Default::default()
                 },
             );
             Ok(CoreResponse {
                 ok: true,
                 scene: None,
-                diagnostics: result.diagnostics,
+                diagnostics: {
+                    let mut diagnostics = result.diagnostics;
+                    diagnostics.extend(font_diagnostics);
+                    diagnostics
+                },
                 error: None,
                 applied_operations: None,
                 preflight: None,
@@ -1519,6 +1984,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 export: None,
                 asset: None,
                 instance: None,
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1549,6 +2020,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "template_revision_id": binding.template_revision_id,
                     "valid": ok,
                 })),
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1559,9 +2036,27 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             store_root,
             export_formats,
             export_dpi,
+            brand_fonts,
+            library_fonts,
+            export_profile,
         } => {
+            // The template's families live in the revision scene; binding
+            // sets substitute content, never typography — so the scene JSON
+            // alone is the family scan.
+            let family_scan = scene.to_string();
             let scene = parse_scene(scene)?;
             let binding = parse_binding_set(binding_set)?;
+            let export_profile: Option<ExportProfile> = export_profile
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    core_error(
+                        "profile.invalid",
+                        format!("invalid export profile payload: {error}"),
+                    )
+                })?;
+            let (fonts, font_diagnostics) =
+                load_request_fonts(brand_fonts.as_ref(), library_fonts.as_ref(), &family_scan);
 
             let mut assets = DerivationAssets::default();
             for value in asset_records {
@@ -1707,14 +2202,15 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 &binding,
                 &assets,
                 &DeriveOptions {
-                    measurer: Some(server_measurer()),
+                    measurer: Some(server_measurer_with(Arc::clone(&fonts))),
                 },
             );
 
             let mut diagnostics = derived.diagnostics.clone();
+            diagnostics.extend(font_diagnostics);
             let mut artifacts: Vec<Value> = Vec::new();
             let mut export_skipped = false;
-            if !export_formats.is_empty() {
+            if !export_formats.is_empty() || export_profile.is_some() {
                 if derived.has_errors() {
                     // Failed instances never produce artifacts; the fit
                     // report and diagnostics carry the why.
@@ -1730,7 +2226,9 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                         &derived.scene,
                         &export_formats,
                         export_dpi.unwrap_or(300),
+                        export_profile,
                         &store_root,
+                        Arc::clone(&fonts),
                         &mut diagnostics,
                     )?;
                 }
@@ -1764,6 +2262,12 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                     "artifacts": artifacts,
                     "export_skipped": export_skipped,
                 })),
+                web_doc: None,
+                html: None,
+                inverse_operations: None,
+                web_fragment: None,
+                web_theme: None,
+                coverage: None,
                 build_info: None,
             })
         }
@@ -1788,11 +2292,306 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             export: None,
             asset: None,
             instance: None,
+            web_doc: None,
+            html: None,
+            inverse_operations: None,
+            web_fragment: None,
+            web_theme: None,
+            coverage: None,
             build_info: Some(json!({
                 "schema_version": lumen_core::SCHEMA_VERSION,
                 "engine_commit": env!("LUMEN_ENGINE_COMMIT"),
             })),
         }),
+        CoreRequest::WebNewDoc {
+            document_id,
+            title,
+            brand_kit_ref,
+        } => {
+            let brand_kit_ref = brand_kit_ref
+                .map(serde_json::from_value::<lumen_core::BrandKitRef>)
+                .transpose()
+                .map_err(|error| core_error("helper.brand_kit_ref", error.to_string()))?;
+            let doc = lumen_web::WebDoc::new(document_id, title, brand_kit_ref);
+            Ok(ok_web(Some(&doc), None, None, None, Vec::new()))
+        }
+        CoreRequest::WebValidate { doc, brand_kit } => {
+            let doc = parse_web_doc(doc)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
+            diagnostics.extend(lumen_web::validate_web_doc(&doc));
+            diagnostics.extend(lint_web_doc_classes(&doc, &theme));
+            let mut response = ok_web(Some(&doc), None, None, None, diagnostics);
+            // Inspector surface: token pickers list exactly what the lint
+            // accepts, from the same compile.
+            response.web_theme = Some(web_theme_json(&theme));
+            Ok(response)
+        }
+        CoreRequest::WebIngestHtml {
+            doc,
+            page_id,
+            html,
+            custom_css,
+            brand_kit,
+        } => {
+            let mut doc = parse_web_doc(doc)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
+            let outcome = lumen_web::ingest_html_into_page(
+                &mut doc,
+                &lumen_core::PageId::from(page_id),
+                &html,
+                &theme,
+            );
+            let installed = if outcome.has_errors() {
+                None
+            } else {
+                if let Some(css) = custom_css {
+                    doc.custom_css = css;
+                }
+                Some(outcome.nodes.len())
+            };
+            diagnostics.extend(outcome.diagnostics);
+            if installed.is_some() {
+                diagnostics.extend(lumen_web::validate_web_doc(&doc));
+            }
+            Ok(ok_web(Some(&doc), None, None, installed, diagnostics))
+        }
+        CoreRequest::WebApplyOps { doc, operations } => {
+            let mut doc = parse_web_doc(doc)?;
+            let operations: Vec<lumen_web::WebOperation> = operations
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<_, _>>()
+                .map_err(|error| core_error("helper.web_operations", error.to_string()))?;
+            // Checked apply: a batch that would leave the document invalid is
+            // rejected outright (ok:false + the validation diagnostics) — the
+            // mutated doc is never returned, so callers cannot persist it.
+            match lumen_web::apply_operations_checked(&mut doc, &operations) {
+                Ok((inverses, diagnostics)) => {
+                    let count = operations.len();
+                    Ok(ok_web(
+                        Some(&doc),
+                        None,
+                        Some(&inverses),
+                        Some(count),
+                        diagnostics,
+                    ))
+                }
+                Err(error) => Ok(error_response(
+                    core_error(error.code, error.message.clone()),
+                    error.diagnostics,
+                )),
+            }
+        }
+        CoreRequest::WebRender {
+            doc,
+            page_id,
+            mode,
+            asset_base_url,
+            tailwind_runtime_src,
+            bridge_script,
+            custom_component_runtimes,
+            brand_kit,
+            font_face_css,
+        } => {
+            let doc = parse_web_doc(doc)?;
+            let (theme, theme_diagnostics) = web_theme_for(&doc, brand_kit, font_face_css)?;
+            let mode = match mode.as_str() {
+                "editor" => lumen_web::RenderMode::Editor,
+                "delivery" => lumen_web::RenderMode::Delivery,
+                other => {
+                    return Err(core_error(
+                        "helper.web_render_mode",
+                        format!("unknown render mode `{other}` (editor|delivery)"),
+                    ))
+                }
+            };
+            let options = lumen_web::RenderOptions {
+                mode,
+                asset_base_url: asset_base_url.unwrap_or_else(|| "/asset-store".to_owned()),
+                tailwind_runtime_src,
+                bridge_script,
+                custom_component_runtimes,
+            };
+            let output = lumen_web::render_page(
+                &doc,
+                &lumen_core::PageId::from(page_id),
+                &theme,
+                &options,
+            )
+            .map_err(|diagnostics| {
+                let detail = diagnostics
+                    .first()
+                    .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+                    .unwrap_or_else(|| "render failed".to_owned());
+                core_error("web.render", detail)
+            })?;
+            let mut diagnostics = theme_diagnostics;
+            diagnostics.extend(output.diagnostics);
+            Ok(ok_web(None, Some(output.html), None, None, diagnostics))
+        }
+        CoreRequest::WebIngestFragment {
+            doc,
+            html,
+            brand_kit,
+        } => {
+            let doc = parse_web_doc(doc)?;
+            let (theme, mut diagnostics) = web_theme_for(&doc, brand_kit, None)?;
+            let outcome = lumen_web::ingest_html(&html, &theme);
+            // Same asset-reference discipline as the page ingest: a fragment
+            // referencing unknown assets must fail loudly, not splice blind.
+            for node in &outcome.nodes {
+                if let lumen_web::WebNodeKind::Image { asset_id, .. } = &node.kind {
+                    if !doc.assets.contains_key(asset_id) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                lumen_core::Phase::Web,
+                                "LUMW0120",
+                                format!(
+                                    "image node `{}` references unknown asset `{asset_id}`",
+                                    node.id
+                                ),
+                                Some(lumen_core::DiagnosticSubject::Node(node.id.clone())),
+                            )
+                            .with_hint(
+                                "Generate or import the asset first, then reference its id \
+                                 via data-asset.",
+                            ),
+                        );
+                    }
+                }
+            }
+            diagnostics.extend(outcome.diagnostics.clone());
+            let fragment = json!({
+                "nodes": to_value(&outcome.nodes)?,
+                "roots": to_value(&outcome.roots)?,
+            });
+            let mut response = ok_web(None, None, None, None, diagnostics);
+            response.web_fragment = Some(fragment);
+            Ok(response)
+        }
+        CoreRequest::WebDerive {
+            doc,
+            values,
+            assets,
+            new_doc_id,
+            new_title,
+        } => {
+            let template = parse_web_doc(doc)?;
+            let values: std::collections::BTreeMap<String, lumen_web::WebBoundValue> = values
+                .into_iter()
+                .map(|(key, value)| serde_json::from_value(value).map(|bound| (key, bound)))
+                .collect::<Result<_, _>>()
+                .map_err(|error| core_error("helper.web_values", error.to_string()))?;
+            let assets: Vec<lumen_core::AssetRecord> = assets
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<_, _>>()
+                .map_err(|error| core_error("helper.web_assets", error.to_string()))?;
+            let derived = lumen_web::derive_web_doc(
+                &template,
+                &values,
+                &assets,
+                &lumen_web::DeriveWebOptions {
+                    new_doc_id,
+                    new_title,
+                },
+            );
+            let coverage = to_value(&derived.coverage)?;
+            // Atomic gate mirroring the checked apply: an error-level diagnostic
+            // rejects the derive and the (invalid) doc is never returned.
+            if derived.has_errors() {
+                let mut response = error_response(
+                    core_error(
+                        "web_derive.rejected",
+                        "derivation produced an invalid document",
+                    ),
+                    derived.diagnostics,
+                );
+                response.coverage = Some(coverage);
+                return Ok(response);
+            }
+            let mut response = ok_web(Some(&derived.doc), None, None, None, derived.diagnostics);
+            response.coverage = Some(coverage);
+            Ok(response)
+        }
+    }
+}
+
+fn parse_web_doc(value: Value) -> Result<lumen_web::WebDoc, CoreError> {
+    serde_json::from_value(value).map_err(|error| core_error("helper.web_doc", error.to_string()))
+}
+
+/// Compile the web theme from the provided kit JSON (or the platform default
+/// when absent) against the document's theme ref (overrides).
+fn web_theme_for(
+    doc: &lumen_web::WebDoc,
+    brand_kit: Option<Value>,
+    font_face_css: Option<String>,
+) -> Result<(lumen_web::WebTheme, Vec<Diagnostic>), CoreError> {
+    let kit = brand_kit.map(parse_brand_kit).transpose()?;
+    Ok(lumen_web::compile_web_theme(
+        kit.as_ref(),
+        &doc.theme,
+        &lumen_web::WebThemeOptions { font_face_css },
+    ))
+}
+
+/// The compiled theme's inspector-facing surface: token map + families.
+fn web_theme_json(theme: &lumen_web::WebTheme) -> Value {
+    json!({
+        "tokens": theme.tokens,
+        "display_family": theme.display_family,
+        "body_family": theme.body_family,
+    })
+}
+
+fn lint_web_doc_classes(doc: &lumen_web::WebDoc, theme: &lumen_web::WebTheme) -> Vec<Diagnostic> {
+    let context = lumen_web::ClassLintContext {
+        color_tokens: &theme.tokens,
+    };
+    doc.pages
+        .iter()
+        .flat_map(|page| {
+            page.nodes.values().flat_map(|node| {
+                lumen_web::lint_classes(&node.classes, Some(&node.id), &context)
+            })
+        })
+        .collect()
+}
+
+fn ok_web(
+    doc: Option<&lumen_web::WebDoc>,
+    html: Option<String>,
+    inverse_operations: Option<&[lumen_web::WebOperation]>,
+    applied_operations: Option<usize>,
+    diagnostics: Vec<Diagnostic>,
+) -> CoreResponse {
+    CoreResponse {
+        ok: true,
+        scene: None,
+        diagnostics,
+        error: None,
+        applied_operations,
+        preflight: None,
+        brand_kit: None,
+        brand_summary: None,
+        brand_generation: None,
+        brand_compatibility: None,
+        geometry: None,
+        operations: None,
+        edit: None,
+        dsl: None,
+        export: None,
+        asset: None,
+        instance: None,
+        web_doc: doc.map(|doc| to_value(doc).expect("web doc should serialize")),
+        html,
+        inverse_operations: inverse_operations
+            .map(|inverses| to_value(inverses).expect("web operations should serialize")),
+        web_fragment: None,
+        web_theme: None,
+        coverage: None,
+        build_info: None,
     }
 }
 
@@ -1826,14 +2625,21 @@ fn export_instance_artifacts(
     scene: &Scene,
     formats: &[String],
     dpi: u16,
+    custom_profile: Option<ExportProfile>,
     store_root: &str,
+    fonts: Arc<FontManager>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Vec<Value>, CoreError> {
     let store = LocalAssetStore::new(store_root);
     let resolver = Arc::new(StoreBackedResolver::new(store_root.to_owned()));
-    let adapter = server_export_adapter(LumenExportAdapter::with_resolver(
-        Arc::clone(&resolver) as Arc<dyn lumen_export::AssetByteResolver>
-    ));
+    // Same font set that shaped the derivation: measurement, paint, and
+    // embedding all resolve the template's real faces, not bundled Inter.
+    let adapter = server_export_adapter_with(
+        LumenExportAdapter::with_resolver(
+            Arc::clone(&resolver) as Arc<dyn lumen_export::AssetByteResolver>
+        ),
+        Arc::clone(&fonts),
+    );
     let page_ids: Vec<PageId> = scene.pages.keys().cloned().collect();
     let mut artifacts = Vec::new();
 
@@ -1844,123 +2650,144 @@ fn export_instance_artifacts(
         }));
     };
 
+    // Every artifact runs through the ONE export pipeline (adapter.export)
+    // that interactive downloads use — bulk inherits vector PDF, bleed,
+    // marks, proof, imposition, CMYK, X-4 finalize, the geometry tripwire,
+    // and the print-ready report by construction. `formats` requests the
+    // built-in default profiles; `custom_profile` (a full ExportProfile
+    // from the request, usually a saved document profile resolved by the
+    // API) replaces the default for its own format.
+    let mut profiles: Vec<ExportProfile> = Vec::new();
     for format in formats {
-        match format.as_str() {
-            "svg" | "png" => {
-                let profile = ExportProfile {
-                    name: format!("instance_{format}"),
-                    format: if format == "svg" {
-                        ExportFormat::Svg
-                    } else {
-                        ExportFormat::Png
-                    },
-                    pdf_intent: None,
-                    raster: (format == "png").then_some(RasterScale {
-                        scale: 1.0,
-                        dpi: Some(dpi),
-                    }),
-                    include_bleed: false,
-                    embed_fonts: false,
-                };
-                let request = ExportRequest {
-                    profile,
-                    page_ids: page_ids.clone(),
-                    purpose: ExportPurpose::BulkRender,
-                };
-                match adapter.export(scene, &request) {
-                    Ok(result) => {
-                        diagnostics.extend(result.diagnostics);
-                        for artifact in result.artifacts {
-                            let stored = store
-                                .put(&artifact.bytes)
-                                .map_err(|error| core_error(error.code, error.message))?;
-                            artifacts.push(json!({
-                                "format": format,
-                                "page_id": artifact.page_id,
-                                "mime_type": artifact.mime_type,
-                                "byte_length": stored.byte_length,
-                                "digest_value": stored.digest_value,
-                                "relative_path": stored.relative_path,
-                                "deduplicated": stored.deduplicated,
-                            }));
-                        }
-                    }
-                    Err(error) => {
-                        diagnostics.extend(error.diagnostics.clone());
-                        push_error(&mut artifacts, format, error.code, &error.message);
+        let profile = match format.as_str() {
+            "svg" => ExportProfile {
+                name: "instance_svg".to_owned(),
+                format: ExportFormat::Svg,
+                pdf_intent: None,
+                raster: None,
+                include_bleed: false,
+                // SVG embeds fonts — instance previews render as images,
+                // which cannot reach document fonts, and a resolver is
+                // always wired here (name-only would warn LUME0216 into
+                // the editor UI).
+                embed_fonts: true,
+                include_marks: false,
+                imposition: None,
+                proof: false,
+                color: None,
+            },
+            "png" => ExportProfile {
+                name: "instance_png".to_owned(),
+                format: ExportFormat::Png,
+                pdf_intent: None,
+                raster: Some(RasterScale {
+                    scale: 1.0,
+                    dpi: Some(dpi),
+                }),
+                include_bleed: false,
+                embed_fonts: false,
+                include_marks: false,
+                imposition: None,
+                proof: false,
+                color: None,
+            },
+            // Default PDF = the same vector print-intent deliverable an
+            // interactive print download produces (live text, embedded
+            // fonts, X-4). The W0-era raster-flattened default is gone —
+            // flattened mode remains reachable only via the global
+            // LUMEN_PDF_RENDERER=flattened comparison baseline.
+            "pdf" => ExportProfile {
+                name: "instance_pdf".to_owned(),
+                format: ExportFormat::Pdf,
+                pdf_intent: Some(PdfIntent::Print),
+                raster: None,
+                include_bleed: false,
+                embed_fonts: true,
+                include_marks: false,
+                imposition: None,
+                proof: false,
+                color: None,
+            },
+            other => {
+                push_error(
+                    &mut artifacts,
+                    other,
+                    "export.unknown_format",
+                    "instance export supports svg, png, and pdf",
+                );
+                continue;
+            }
+        };
+        // The custom profile owns its format; drop the default for it.
+        if custom_profile
+            .as_ref()
+            .is_some_and(|custom| custom.format == profile.format)
+        {
+            continue;
+        }
+        profiles.push(profile);
+    }
+    if let Some(custom) = custom_profile {
+        profiles.push(custom);
+    }
+
+    for profile in profiles {
+        let format_label = match profile.format {
+            ExportFormat::Svg => "svg",
+            ExportFormat::Png => "png",
+            ExportFormat::Pdf => "pdf",
+            ExportFormat::FigmaManifest => "figma_manifest",
+        };
+        let profile_name = profile.name.clone();
+        let request = ExportRequest {
+            profile,
+            page_ids: page_ids.clone(),
+            purpose: ExportPurpose::BulkRender,
+        };
+        match adapter.export(scene, &request) {
+            Ok(result) => {
+                diagnostics.extend(result.diagnostics);
+                // W6/L4 hard gate, now against the REAL request: a failed
+                // print-ready report blocks the bulk artifact — one bad
+                // instance fails loudly instead of joining a 400-copy run.
+                if let Some(report) = &result.print_ready {
+                    if report.failed() {
+                        artifacts.push(json!({
+                            "format": format_label,
+                            "profile_name": profile_name,
+                            "error": {
+                                "code": "export.print_not_ready",
+                                "message": "print-ready preflight failed; see print_ready report",
+                            },
+                            "print_ready": to_value(report)?,
+                        }));
+                        continue;
                     }
                 }
-            }
-            "pdf" => {
-                // Checks first (license enforcement, print DPI, logo safe
-                // area) through the adapter; the SVG bytes are discarded.
-                let check_request = ExportRequest {
-                    profile: ExportProfile {
-                        name: "instance_pdf_checks".to_owned(),
-                        format: ExportFormat::Svg,
-                        pdf_intent: Some(PdfIntent::Print),
-                        raster: None,
-                        include_bleed: false,
-                        embed_fonts: false,
-                    },
-                    page_ids: page_ids.clone(),
-                    purpose: ExportPurpose::BulkRender,
-                };
-                match adapter.export(scene, &check_request) {
-                    Ok(check_result) => {
-                        diagnostics.extend(check_result.diagnostics);
-                        let renderer = SkiaSceneRenderer::bundled();
-                        match lumen_skia::raster_flattened_pdf(
-                            &renderer,
-                            scene,
-                            &page_ids,
-                            dpi,
-                            Some(resolver.as_ref()),
-                        ) {
-                            Ok(flattened) => {
-                                diagnostics.extend(flattened.diagnostics);
-                                let stored = store
-                                    .put(&flattened.bytes)
-                                    .map_err(|error| core_error(error.code, error.message))?;
-                                artifacts.push(json!({
-                                    "format": "pdf",
-                                    "page_id": null,
-                                    "mime_type": "application/pdf",
-                                    "byte_length": stored.byte_length,
-                                    "digest_value": stored.digest_value,
-                                    "relative_path": stored.relative_path,
-                                    "deduplicated": stored.deduplicated,
-                                    "flattened_raster_dpi": dpi,
-                                    "pages": flattened
-                                        .pages
-                                        .iter()
-                                        .map(|page| json!({
-                                            "page_id": page.page_id,
-                                            "width_pt": page.width_pt,
-                                            "height_pt": page.height_pt,
-                                            "width_px": page.width_px,
-                                            "height_px": page.height_px,
-                                        }))
-                                        .collect::<Vec<_>>(),
-                                }));
-                            }
-                            Err(error) => {
-                                push_error(&mut artifacts, "pdf", error.code, &error.message)
-                            }
-                        }
+                for artifact in result.artifacts {
+                    let stored = store
+                        .put(&artifact.bytes)
+                        .map_err(|error| core_error(error.code, error.message))?;
+                    let mut row = json!({
+                        "format": format_label,
+                        "profile_name": profile_name,
+                        "page_id": artifact.page_id,
+                        "mime_type": artifact.mime_type,
+                        "byte_length": stored.byte_length,
+                        "digest_value": stored.digest_value,
+                        "relative_path": stored.relative_path,
+                        "deduplicated": stored.deduplicated,
+                    });
+                    if let Some(report) = &result.print_ready {
+                        row["print_ready"] = to_value(report)?;
                     }
-                    Err(error) => {
-                        diagnostics.extend(error.diagnostics.clone());
-                        push_error(&mut artifacts, "pdf", error.code, &error.message);
-                    }
+                    artifacts.push(row);
                 }
             }
-            other => push_error(
-                &mut artifacts,
-                other,
-                "export.unknown_format",
-                "instance export supports svg, png, and pdf",
-            ),
+            Err(error) => {
+                diagnostics.extend(error.diagnostics.clone());
+                push_error(&mut artifacts, format_label, error.code, &error.message);
+            }
         }
     }
 
@@ -1995,6 +2822,12 @@ fn ok_scene(
         export: None,
         asset: None,
         instance: None,
+        web_doc: None,
+        html: None,
+        inverse_operations: None,
+        web_fragment: None,
+        web_theme: None,
+        coverage: None,
         build_info: None,
     }
 }

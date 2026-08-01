@@ -1,0 +1,257 @@
+{
+  "compile": {
+    "status": "ok",
+    "applied_operations": 3,
+    "operation_count": 3,
+    "diagnostics": [],
+    "halted_at": null,
+    "operation_error": null
+  },
+  "operations": [
+    {
+      "kind": "update_node",
+      "node_id": "subtitle_rm",
+      "patch": {
+        "asset_placement": {
+          "kind": "unchanged"
+        },
+        "clip": {
+          "kind": "unchanged"
+        },
+        "computed": {
+          "kind": "clear"
+        },
+        "corner": {
+          "kind": "unchanged"
+        },
+        "fills": {
+          "kind": "unchanged"
+        },
+        "kind": {
+          "kind": "set",
+          "value": {
+            "align": "left",
+            "content": "September 12\u201313 \u00b7 San Francisco",
+            "direction": "ltr",
+            "font_family": "Inter",
+            "font_size": 16.0,
+            "font_size_token": "type.size.2xl",
+            "font_weight": 600,
+            "kind": "text",
+            "letter_spacing": 0.0,
+            "line_height": 1.45,
+            "max_lines": 2,
+            "wrap": "wrap"
+          }
+        },
+        "layout": {
+          "kind": "unchanged"
+        },
+        "locked": {
+          "kind": "unchanged"
+        },
+        "name": {
+          "kind": "unchanged"
+        },
+        "opacity": {
+          "kind": "unchanged"
+        },
+        "opacity_token": {
+          "kind": "unchanged"
+        },
+        "size": {
+          "kind": "unchanged"
+        },
+        "source_asset_id": {
+          "kind": "unchanged"
+        },
+        "strokes": {
+          "kind": "unchanged"
+        },
+        "transform": {
+          "kind": "unchanged"
+        }
+      }
+    },
+    {
+      "kind": "update_node",
+      "node_id": "cta_rm",
+      "patch": {
+        "asset_placement": {
+          "kind": "unchanged"
+        },
+        "clip": {
+          "kind": "unchanged"
+        },
+        "computed": {
+          "kind": "clear"
+        },
+        "corner": {
+          "kind": "unchanged"
+        },
+        "fills": {
+          "kind": "set",
+          "value": [
+            {
+              "id": "paint_cta_rm_fill_1",
+              "paint": {
+                "kind": "token",
+                "token": "accent"
+              }
+            }
+          ]
+        },
+        "kind": {
+          "kind": "unchanged"
+        },
+        "layout": {
+          "kind": "unchanged"
+        },
+        "locked": {
+          "kind": "unchanged"
+        },
+        "name": {
+          "kind": "unchanged"
+        },
+        "opacity": {
+          "kind": "unchanged"
+        },
+        "opacity_token": {
+          "kind": "unchanged"
+        },
+        "size": {
+          "kind": "unchanged"
+        },
+        "source_asset_id": {
+          "kind": "unchanged"
+        },
+        "strokes": {
+          "kind": "unchanged"
+        },
+        "transform": {
+          "kind": "unchanged"
+        }
+      }
+    },
+    {
+      "kind": "update_node",
+      "node_id": "cta_text_rm",
+      "patch": {
+        "asset_placement": {
+          "kind": "unchanged"
+        },
+        "clip": {
+          "kind": "unchanged"
+        },
+        "computed": {
+          "kind": "clear"
+        },
+        "corner": {
+          "kind": "unchanged"
+        },
+        "fills": {
+          "kind": "unchanged"
+        },
+        "kind": {
+          "kind": "set",
+          "value": {
+            "align": "center",
+            "content": "Save your seat",
+            "direction": "ltr",
+            "font_family": "Inter",
+            "font_size": 22.0,
+            "font_weight": 800,
+            "kind": "text",
+            "letter_spacing": 0.0,
+            "line_height": 1.05,
+            "max_lines": 1,
+            "wrap": "no_wrap"
+          }
+        },
+        "layout": {
+          "kind": "unchanged"
+        },
+        "locked": {
+          "kind": "unchanged"
+        },
+        "name": {
+          "kind": "unchanged"
+        },
+        "opacity": {
+          "kind": "unchanged"
+        },
+        "opacity_token": {
+          "kind": "unchanged"
+        },
+        "size": {
+          "kind": "unchanged"
+        },
+        "source_asset_id": {
+          "kind": "unchanged"
+        },
+        "strokes": {
+          "kind": "unchanged"
+        },
+        "transform": {
+          "kind": "unchanged"
+        }
+      }
+    }
+  ],
+  "dsl_session": {
+    "emitted_slots": {
+      "account.name": "slot_account_name_06eb8ff1c8310c35",
+      "campaign.cta": "slot_campaign_cta_3859a6984f5f9a8b",
+      "campaign.eyebrow": "slot_campaign_eyebrow_92252b6be2914522",
+      "campaign.headline": "slot_campaign_headline_65eba10e0a95172f",
+      "offer.primary_message": "slot_offer_primary_message_66c2f13a2eec8735"
+    },
+    "parent_stack": [
+      {
+        "indent": 0,
+        "parent": {
+          "id": "poster_revmotion",
+          "kind": "page"
+        }
+      },
+      {
+        "indent": 1,
+        "parent": {
+          "id": "artboard_rm",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 2,
+        "parent": {
+          "id": "footer_rm",
+          "kind": "node"
+        }
+      },
+      {
+        "indent": 3,
+        "parent": {
+          "id": "cta_rm",
+          "kind": "node"
+        }
+      }
+    ],
+    "previous_can_have_children": false,
+    "previous_structural_depth": 4,
+    "seen_node_ids": [
+      "artboard_rm",
+      "cta_rm",
+      "cta_text_rm",
+      "footer_rm",
+      "header_rm",
+      "headline_rm",
+      "kicker_rm",
+      "logo_rm",
+      "main_rm",
+      "mark_rm",
+      "markt_rm",
+      "subtitle_rm"
+    ]
+  },
+  "checkpoint_label": null
+}

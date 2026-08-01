@@ -44,11 +44,21 @@ impl fmt::Display for FontLoadError {
 impl std::error::Error for FontLoadError {}
 
 /// One loaded font face: raw bytes plus the metadata Skia parsed from them.
+/// `alias` is the caller-declared family (a brand kit's `font-family` name —
+/// e.g. "Aeonik" for bytes whose intrinsic name is "Aeonik TRIAL"): the web's
+/// `@font-face` aliasing is the norm, so scenes request the DECLARED name and
+/// the face must resolve under both.
 #[derive(Clone)]
-struct LoadedFace {
-    bytes: Arc<Vec<u8>>,
-    family: String,
-    weight: i32,
+pub(crate) struct LoadedFace {
+    pub(crate) bytes: Arc<Vec<u8>>,
+    pub(crate) family: String,
+    pub(crate) alias: Option<String>,
+    pub(crate) weight: i32,
+    /// A7b: whether this face is an italic (or oblique) style, parsed from the
+    /// bytes' `font_style().slant()` at registration. Upright + italic faces of
+    /// one family register under the SAME family key; the requested `FontStyle`
+    /// slant disambiguates them at shape time (`match_typeface`).
+    pub(crate) italic: bool,
 }
 
 /// Outcome of resolving a requested font family against the loaded set.
@@ -126,6 +136,50 @@ impl FontManager {
         .expect("bundled Inter faces must parse")
     }
 
+    /// The bundled deterministic set plus additional font faces (brand-kit
+    /// fonts read from the asset store), each with an optional DECLARED
+    /// family alias — the kit's `font-family` name, which is what scenes
+    /// request and is routinely different from the bytes' intrinsic name
+    /// (`@font-face` aliasing: "Aeonik" kit family over "Aeonik TRIAL"
+    /// bytes). Faces whose bytes do not parse are skipped and reported —
+    /// the bundled fallback set must never be lost to one bad kit font, so
+    /// this constructor cannot fail.
+    pub fn bundled_with(
+        extra: impl IntoIterator<Item = (Vec<u8>, Option<String>)>,
+    ) -> (Self, Vec<FontLoadError>) {
+        let parser = FontMgr::new();
+        let mut manager = Self::bundled();
+        let mut errors = Vec::new();
+        for (bytes, alias) in extra {
+            let Some(typeface) = parser.new_from_data(&bytes, None) else {
+                errors.push(FontLoadError {
+                    message: "brand font bytes did not parse as a typeface".to_owned(),
+                });
+                continue;
+            };
+            let family = typeface.family_name();
+            let weight = *typeface.font_style().weight();
+            let italic = typeface.font_style().slant()
+                != skia_safe::font_style::Slant::Upright;
+            manager.families.insert(family.clone());
+            let alias = alias.filter(|alias| !alias.is_empty() && *alias != family);
+            if let Some(alias) = &alias {
+                manager.families.insert(alias.clone());
+            }
+            manager.faces.push(LoadedFace {
+                bytes: Arc::new(bytes),
+                family,
+                alias,
+                weight,
+                italic,
+            });
+        }
+        // Fresh identity: the thread-local FontCollection cache keys on it,
+        // and this manager's face set differs from plain bundled().
+        manager.id = NEXT_MANAGER_ID.fetch_add(1, Ordering::Relaxed);
+        (manager, errors)
+    }
+
     /// Load every `.ttf`/`.otf` in `dir` (sorted by file name for
     /// deterministic registration order). The default fallback family must
     /// be among the loaded families.
@@ -183,11 +237,15 @@ impl FontManager {
                 })?;
             let family = typeface.family_name();
             let weight = *typeface.font_style().weight();
+            let italic = typeface.font_style().slant()
+                != skia_safe::font_style::Slant::Upright;
             families.insert(family.clone());
             faces.push(LoadedFace {
                 bytes: Arc::new(bytes),
                 family,
+                alias: None,
                 weight,
+                italic,
             });
         }
 
@@ -227,6 +285,17 @@ impl FontManager {
         weights
     }
 
+    /// A7b: whether `family` (or its alias) has at least one italic face loaded.
+    /// Reads the slant parsed at registration — the byte-driven source of truth
+    /// for whether requesting italic will find a real face or snap to upright
+    /// (LUMS0105). For diagnostics, teaching, and tests.
+    pub fn has_italic_face(&self, family: &str) -> bool {
+        self.faces.iter().any(|face| {
+            face.italic
+                && (face.family == family || face.alias.as_deref() == Some(family))
+        })
+    }
+
     /// Resolve a requested family against the loaded set. Missing families
     /// fall back to the default family — explicitly and deterministically —
     /// and the resolution carries the warning diagnostic for callers that
@@ -260,22 +329,53 @@ impl FontManager {
         })
     }
 
-    /// Match a typeface by family + weight through the same collection the
-    /// shaper uses. Returns `None` only if the fallback family itself has no
-    /// faces (impossible for a constructed manager).
-    pub fn match_typeface(&self, family: &str, weight: i32) -> Option<Typeface> {
+    /// Match a typeface by family + weight + slant through the same collection
+    /// the shaper uses. Returns `None` only if the fallback family itself has no
+    /// faces (impossible for a constructed manager). A7b: `italic` requests the
+    /// `Slant::Italic` face; with no italic face loaded Skia snaps to the
+    /// upright (the LUMS0105 advisory reports the snap).
+    pub fn match_typeface(&self, family: &str, weight: i32, italic: bool) -> Option<Typeface> {
         let resolution = self.resolve_family(family);
         self.with_collection(|collection| {
             let style = skia_safe::FontStyle::new(
                 weight.into(),
                 skia_safe::font_style::Width::NORMAL,
-                skia_safe::font_style::Slant::Upright,
+                if italic {
+                    skia_safe::font_style::Slant::Italic
+                } else {
+                    skia_safe::font_style::Slant::Upright
+                },
             );
             collection
                 .find_typefaces(&[resolution.family.as_str()], style)
                 .into_iter()
                 .next()
         })
+    }
+
+    /// The actual weight of the face the shaper resolves for `family` at the
+    /// requested `weight`/`italic` (A6a D6.2). `Some(actual)` only when it
+    /// differs from the request — the silent within-family weight snap
+    /// `find_typefaces` performs — so callers can surface it as the LUMS0104
+    /// advisory. `None` when the face matches exactly or no face resolves.
+    pub fn resolved_weight(&self, family: &str, weight: i32, italic: bool) -> Option<i32> {
+        let actual = *self
+            .match_typeface(family, weight, italic)?
+            .font_style()
+            .weight();
+        (actual != weight).then_some(actual)
+    }
+
+    /// A7b D2: the actual slant of the face the shaper resolves for `family` at
+    /// the requested `weight`/`italic`. `Some(actual_is_italic)` only when it
+    /// differs from the requested slant — the silent italic→upright snap
+    /// `find_typefaces` performs when the family has no italic face — so callers
+    /// surface it as the LUMS0105 advisory. `None` when the slant matches or no
+    /// face resolves. Mirrors `resolved_weight`.
+    pub fn resolved_slant(&self, family: &str, weight: i32, italic: bool) -> Option<bool> {
+        let actual = self.match_typeface(family, weight, italic)?.font_style().slant()
+            != skia_safe::font_style::Slant::Upright;
+        (actual != italic).then_some(actual)
     }
 
     fn build_collection(&self) -> FontCollection {
@@ -285,16 +385,149 @@ impl FontManager {
             let typeface = parser
                 .new_from_data(face.bytes.as_slice(), None)
                 .expect("bytes parsed at construction time");
+            if let Some(alias) = &face.alias {
+                provider.register_typeface(typeface.clone(), Some(alias.as_str()));
+            }
             provider.register_typeface(typeface, Some(face.family.as_str()));
         }
 
         let mut collection = FontCollection::new();
         let provider_mgr: FontMgr = provider.into();
-        collection.set_asset_font_manager(Some(provider_mgr));
-        // No default font manager and no fallback: resolution is exactly
-        // the registered byte-backed faces, nothing else.
-        collection.disable_font_fallback();
+        collection.set_asset_font_manager(Some(provider_mgr.clone()));
+        // Per-glyph fallback, kept DETERMINISTIC: the fallback font manager is
+        // the SAME byte-backed provider (never the system FontMgr), and the
+        // default fallback family is our loaded default. So a codepoint the
+        // resolved family lacks — the "/", "×", em-dash gaps a subsetted brand
+        // webfont exhibits — shapes from another loaded face (bundled Inter)
+        // instead of rendering .notdef tofu. Resolution of a *whole* family is
+        // still pre-decided by `resolve_family` before the shaper runs, so this
+        // only ever supplies missing GLYPHS, never a different family, and only
+        // from bytes this workspace embeds — the cross-runtime parity contract
+        // holds.
+        collection.set_default_font_manager(Some(provider_mgr), Some(self.default_family.as_str()));
+        collection.enable_font_fallback();
         collection
+    }
+
+    /// The characters in `content` that the resolved primary face for
+    /// `requested` (at `weight`) cannot supply — they map to `.notdef` in that
+    /// face — but which another loaded face *does* supply, so per-glyph
+    /// fallback substitutes for them (LUMS0103). Deterministic: it consults
+    /// only the loaded byte-backed faces through the same collection the shaper
+    /// uses. Whitespace and control characters are ignored (never tofu-worthy).
+    /// Order follows first appearance; duplicates are collapsed. A character no
+    /// loaded face covers is genuine tofu, not a substitution, and is excluded.
+    pub fn substituted_chars(
+        &self,
+        requested: &str,
+        weight: i32,
+        italic: bool,
+        content: &str,
+    ) -> Vec<char> {
+        let resolution = self.resolve_family(requested);
+        let style = skia_safe::FontStyle::new(
+            weight.into(),
+            skia_safe::font_style::Width::NORMAL,
+            if italic {
+                skia_safe::font_style::Slant::Italic
+            } else {
+                skia_safe::font_style::Slant::Upright
+            },
+        );
+        let Some(primary) = self.with_collection(|collection| {
+            collection
+                .find_typefaces(&[resolution.family.as_str()], style)
+                .into_iter()
+                .next()
+        }) else {
+            return Vec::new();
+        };
+
+        // Unique gap characters the resolved family cannot supply directly.
+        let mut seen = BTreeSet::new();
+        let mut candidates = Vec::new();
+        for ch in content.chars() {
+            if ch.is_control() || ch.is_whitespace() || !seen.insert(ch) {
+                continue;
+            }
+            if primary.unichar_to_glyph(ch as i32) == 0 {
+                candidates.push(ch);
+            }
+        }
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        // A real substitution only when some OTHER loaded face supplies the
+        // glyph — a char no loaded face covers is genuine tofu, not a
+        // substitution, and is excluded. Parse the loaded faces directly (the
+        // same byte-introspection `build_collection` uses) rather than the
+        // paragraph collection's fallback API, keeping this deterministic and
+        // within loaded bytes only. Only reached when the primary already
+        // lacks a glyph (rare), so the hot fully-covered path never parses.
+        let parser = FontMgr::new();
+        let faces: Vec<Typeface> = self
+            .faces
+            .iter()
+            .filter_map(|face| parser.new_from_data(face.bytes.as_slice(), None))
+            .collect();
+        candidates
+            .into_iter()
+            .filter(|ch| {
+                faces
+                    .iter()
+                    .any(|face| face.unichar_to_glyph(*ch as i32) != 0)
+            })
+            .collect()
+    }
+
+    /// The loaded faces in registration order — the deterministic scan
+    /// order per-glyph fallback uses when the default family cannot supply
+    /// a character. For the SVG font embedder (same crate) only.
+    pub(crate) fn loaded_faces(&self) -> &[LoadedFace] {
+        &self.faces
+    }
+
+    /// The loaded bytes behind the face `match_typeface` resolves for this
+    /// request, with the face's actual identity (intrinsic family, weight,
+    /// slant). SVG font embedding ships exactly these bytes, so the SVG
+    /// viewer renders the face the painter used — parity by construction.
+    /// `None` only when no face resolves at all (an unconstructable
+    /// manager) or when the matched typeface cannot be traced back to a
+    /// loaded face — both invariant breaches the caller must fail loudly on.
+    pub fn matched_face_bytes(
+        &self,
+        family: &str,
+        weight: i32,
+        italic: bool,
+    ) -> Option<(Arc<Vec<u8>>, String, i32, bool)> {
+        let resolution = self.resolve_family(family);
+        let typeface = self.match_typeface(family, weight, italic)?;
+        let actual_weight = *typeface.font_style().weight();
+        let actual_italic =
+            typeface.font_style().slant() != skia_safe::font_style::Slant::Upright;
+        // Trace back within the faces registered under the RESOLVED family
+        // (intrinsic name or declared alias) — the same candidate set
+        // `find_typefaces` matched among. Matching on intrinsic name alone
+        // would confuse an aliased face with a same-named face from another
+        // registration (e.g. a kit font whose bytes share the intrinsic
+        // family of a bundled face).
+        self.faces
+            .iter()
+            .find(|face| {
+                (face.family == resolution.family
+                    || face.alias.as_deref() == Some(resolution.family.as_str()))
+                    && face.weight == actual_weight
+                    && face.italic == actual_italic
+            })
+            .map(|face| {
+                (
+                    Arc::clone(&face.bytes),
+                    face.family.clone(),
+                    actual_weight,
+                    actual_italic,
+                )
+            })
     }
 
     /// Deduplicated grouping used by tests: family -> sorted weights.

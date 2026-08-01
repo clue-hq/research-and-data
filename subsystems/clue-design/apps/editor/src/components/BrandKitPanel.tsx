@@ -264,5 +264,7 @@ function mediumLabel(medium: Medium): string {
       return "Email";
     case "print":
       return "Print";
+    case "web":
+      return "Website";
   }
 }

@@ -28,9 +28,13 @@ export interface DocumentMeta {
   medium: Medium | null;
   brand_kit: BrandKitRef | null;
   status: DocumentStatus;
+  /** Website mode: distinguishes a scene document (the canvas editor) from a
+   * `web` document (the /web WebDoc editor). Absent = `"scene"` (every existing
+   * document); only web-mode code reads it. */
+  doc_kind?: "scene" | "web";
 }
 
-export type Medium = "print" | "digital" | "email" | "direct_mail" | "ad";
+export type Medium = "print" | "digital" | "email" | "direct_mail" | "ad" | "web";
 
 export interface BrandKitRef {
   id: BrandKitId;
@@ -175,6 +179,13 @@ export interface Node {
   source_asset_id?: AssetId | null;
   asset_placement?: AssetPlacement | null;
   clip: boolean;
+  /**
+   * A4 (D5): declared intent that the node deliberately extends past the
+   * page/parent bounds (a full-bleed wash). Preflight-only signal — omitted by
+   * the Rust core when false. It never changes what is rendered/exported, so
+   * the canvas ignores it.
+   */
+  bleed?: boolean;
   layout: AutoLayoutProps | null;
   computed: ComputedGeometry | null;
   locked: boolean;
@@ -227,19 +238,81 @@ export interface TextNode {
   font_size: number;
   font_weight: number;
   align: TextAlign;
+  /** A7a: vertical placement within the box. Absent = `"top"`, mirroring the
+   * engine's `#[serde(default, skip_serializing_if = is_default)] VerticalAlign`
+   * (absent from JSON for top-aligned nodes). Only slack (box taller than
+   * measured content) is consumed; overflow clamps to a no-op. */
+  valign?: VerticalAlign;
   line_height?: number;
   letter_spacing?: number;
   max_lines?: number | null;
   wrap?: TextWrap;
   direction?: TextDirection;
+  /** A6a D1: display-time case transform; `content` is never mutated. Absent =
+   * `"none"`, mirroring the engine's `#[serde(default)] TextTransform::None`. */
+  text_transform?: TextTransform;
+  /** A6a D2: independent decoration flags (absent = false). */
+  underline?: boolean;
+  strikethrough?: boolean;
+  /** A7b D3: block-level italic. Unlike the decoration flags, italic changes
+   * glyph shapes and advances, so it is a MEASUREMENT input (joins the engine's
+   * `measure_key`). Absent = false, mirroring the engine's
+   * `#[serde(default, skip_serializing_if = is_false)] TextNode.italic`. */
+  italic?: boolean;
+  /** A6a D3: opt-in "…" elision when max_lines/NoWrap cut content (absent = false). */
+  truncate?: boolean;
+  /** A6a D4: extra vertical px inserted at each `\n` break (absent/0 = today's
+   * uniform stack). Px units, like `letter_spacing`. */
+  paragraph_spacing?: number;
+  /** A6b D1: rich-text spans — sub-ranges of `content` styled differently (the
+   * two-color headline). Byte offsets index the STORED `content` string, never
+   * the transformed one. Absent/empty = today's behavior, mirroring the engine's
+   * `#[serde(default, skip_serializing_if = "Vec::is_empty")]`. */
+  spans?: TextSpan[];
   style_token?: string | null;
+  /** K1.5: mirrors engine TextNode.font_size_token (`font_size($type.size.*)`). */
+  font_size_token?: string | null;
   line_height_token?: string | null;
   letter_spacing_token?: string | null;
 }
 
+/**
+ * A6b D1: one rich-text span — a sub-range of a {@link TextNode}'s `content`
+ * with override channels. Absent channels inherit the node. Mirrors the Rust
+ * `TextSpan` serde exactly (optional fields omitted when `None`) so the scene
+ * JSON round-trips byte-identically and the editor's measurement records can be
+ * fed back to the engine verbatim. Fill is `Solid` or `Token` only (gradient
+ * span fills are rejected at engine validation, LUMV0908).
+ */
+export interface TextSpan {
+  /** Byte offset into `content` where the run starts (inclusive). */
+  start: number;
+  /** Byte offset into `content` where the run ends (exclusive). */
+  end: number;
+  /** Override fill (Solid or Token only); absent inherits the node fill. */
+  fill?: Paint;
+  /** Override CSS font weight (100..900); absent inherits the node weight. */
+  font_weight?: number;
+  /** Override underline decoration; absent inherits the node. */
+  underline?: boolean;
+  /** Override strikethrough decoration; absent inherits the node. */
+  strikethrough?: boolean;
+  /** A7b D1: override italic. Merge is OVERRIDE, not union (unlike underline):
+   * `span.italic.unwrap_or(block.italic)`, so `italic(false)` de-italicizes one
+   * run inside an italic block. Absent (None) inherits the node. Mirrors the
+   * engine's `#[serde(skip_serializing_if = "Option::is_none")] Option<bool>`. */
+  italic?: boolean;
+}
+
 export type TextAlign = "left" | "center" | "right" | "justify";
+/** A7a: vertical placement of text within its own box. Mirrors the engine's
+ * `VerticalAlign` serde (snake_case values). Absent = `"top"`, matching the
+ * engine's `#[serde(default)] VerticalAlign::Top` (skip-serialized when Top, so
+ * the field is ABSENT from JSON for top-aligned nodes and old docs). */
+export type VerticalAlign = "top" | "center" | "bottom";
 export type TextWrap = "no_wrap" | "wrap";
 export type TextDirection = "ltr" | "rtl" | "auto";
+export type TextTransform = "none" | "uppercase" | "lowercase" | "title";
 
 export interface ImageNode {
   asset_id: AssetId;
@@ -272,6 +345,7 @@ export type AssetStatus = "pending" | "ready" | "failed" | "archived";
 export type AssetSource =
   | { kind: "uploaded"; asset_id?: AssetId | null; filename: string | null; uploaded_by: string | null }
   | { kind: "generated"; request_id: string | null; model: string }
+  | { kind: "edited"; request_id: string | null; model: string; source_asset_id: AssetId }
   | { kind: "vectorized"; source_asset_id: AssetId; tool: string | null }
   | { kind: "website"; url: string; captured_at: string | null }
   | { kind: "brand_guide"; source_asset_id: AssetId | null; label: string }
@@ -459,16 +533,46 @@ export interface Effect {
   kind: EffectKind;
 }
 
-export type EffectKind = {
-  kind: "drop_shadow";
-  color: Color;
-  opacity: number;
-  x: number;
-  y: number;
-  blur: number;
-  spread: number;
-  color_token?: string | null;
-};
+/**
+ * Effects v1 (A4): the open effect vocabulary, serde tag `kind`, snake_case —
+ * mirrors `crates/lumen-core/src/scene.rs` `EffectKind`.
+ * - `drop_shadow` / `inner_shadow`: offset + blur + spread shadow.
+ * - `glow`: zero-offset outer glow (dilate by spread, gaussian blur, beneath).
+ * - `layer_blur`: gaussian blur of the node's own rendering (`radius`).
+ */
+export type EffectKind =
+  | {
+      kind: "drop_shadow";
+      color: Color;
+      opacity: number;
+      x: number;
+      y: number;
+      blur: number;
+      spread: number;
+      color_token?: string | null;
+    }
+  | {
+      kind: "glow";
+      color: Color;
+      opacity: number;
+      blur: number;
+      spread: number;
+      color_token?: string | null;
+    }
+  | {
+      kind: "layer_blur";
+      radius: number;
+    }
+  | {
+      kind: "inner_shadow";
+      color: Color;
+      opacity: number;
+      x: number;
+      y: number;
+      blur: number;
+      spread: number;
+      color_token?: string | null;
+    };
 
 export type Paint =
   | {
@@ -677,6 +781,35 @@ export interface ExportProfile {
   pdf_intent: "preview" | "print" | null;
   raster: RasterScale | null;
   include_bleed: boolean;
+  /** Print workstream W3: emit crop/registration marks (print-intent PDF).
+   * The server understands this field (serde default false); the editor sends
+   * it on every profile it constructs. Optional to mirror the wire contract —
+   * the Rust core round-trips ExportProfile and, until it carries the field,
+   * an absent value must not be a type error (a `null`/absent is treated as
+   * false everywhere the editor reads it). */
+  include_marks?: boolean;
+  /** Print workstream W4: optional booklet (2-up saddle-stitch) imposition.
+   * Reader-order pages stay the DEFAULT deliverable (product decision D2);
+   * booklet is an opt-in mode. Optional to mirror the wire contract — the
+   * server omits it when absent (serde) and only recognizes "booklet", so an
+   * absent value must round-trip through the core as none, not a type error. */
+  imposition?: "booklet";
+  /** Print workstream W7: proof export — a margin with crop marks, a slug line
+   * (doc · profile · page n/N · "PROOF — not for production") and an sRGB
+   * control strip, for the physical-proof workflow, never a production run.
+   * The server declares LUME0431. Optional to mirror the wire contract — the
+   * server omits it when false (serde), so an absent value round-trips through
+   * the core as false, not a type error. */
+  proof?: boolean;
+  /** Print workstream W5 stage B: color pipeline. When "cmyk", the server
+   * converts the PDF to a CMYK color space via Ghostscript for offset presses;
+   * absent/null leaves the sRGB (digital-press) default. The server accepts
+   * this ONLY on format="pdf" profiles with pdf_intent="print" — any other
+   * combination is a hard export error (export.cmyk_requires_print_intent), so
+   * the editor must only ever emit it on print-intent PDF profiles. Optional to
+   * mirror the wire contract — the server omits it when absent (serde), so an
+   * absent value round-trips through the core as none, not a type error. */
+  color?: string | null;
   embed_fonts: boolean;
 }
 

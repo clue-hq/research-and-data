@@ -5,16 +5,19 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type Dispatch,
   type SetStateAction
 } from "react";
-import { Bot, Check, Download, FileCheck2, PanelRightClose, RotateCcw, RotateCw, X } from "lucide-react";
+import { Bot, Check, Download, History, RotateCcw, RotateCw, X } from "lucide-react";
 import { AgentChatPanel, type AcceptedTurnRecord } from "./AgentChatPanel";
 import {
   DiagnosticsAlertPill,
+  EditableDocumentTitle,
   EditorModeSwitch,
   EngineDisabledBanner,
+  HeuristicMeasurementBanner,
   OperationHistoryPanel,
   topArtboardSizeLabel
 } from "./EditorChrome";
@@ -23,13 +26,17 @@ import { EditorCanvas } from "./canvas/EditorCanvas";
 import { ExportPanel } from "./ExportPanel";
 import { ExportPreviewSurface } from "./ExportPreviewSurface";
 import { AssetBrowserPanel } from "./AssetBrowserPanel";
-import { HistoryPanel } from "./HistoryPanel";
 import { WorstCasePreviewPanel } from "./WorstCasePreviewPanel";
 import { InspectorPanel } from "./InspectorPanel";
 import { TextToolbar } from "./TextToolbar";
 import { LayerPanel } from "./LayerPanel";
 import { PageRail } from "./PageRail";
 import { ValidationPanel } from "./ValidationPanel";
+import appMark from "../app/icon.svg";
+import { ExportMenu } from "./ExportMenu";
+import { VersionHistoryDialog } from "./HistoryPanel";
+import { downloadDataUrl } from "./exportArtifactActions";
+import { printReadyDiagnostics } from "@/engine/printReadiness";
 import { emptyScene } from "@/fixtures/emptyScene";
 import type { BrandCompatibilityRunner } from "@/engine/brandCompatibility";
 import type { BrandGovernanceRunner } from "@/engine/brandGovernance";
@@ -42,6 +49,7 @@ import type {
   BrandKitSummary,
   Diagnostic,
   DiagnosticSubject,
+  ExportProfile,
   NodeId,
   Operation,
   Page,
@@ -58,12 +66,20 @@ import {
   type RevertOutcome
 } from "@/engine/documentStore";
 import { editorApiBaseUrl } from "@/engine/editorConfig";
+import { assetThumbnailUrl, uploadAsset } from "@/engine/assetLibrary";
 import {
-  buildTokenColorMap,
+  buildKitTokenMaps,
   PLATFORM_DEFAULT_BRAND_KIT_ID,
   type BrandKitDetailPayload
 } from "@/engine/tokenColors";
-import { setTokenColorMap } from "@/engine/renderAdapter";
+import {
+  notifyKitFontsChanged,
+  setKitTokenMaps,
+  subscribeTokenColors,
+  tokenColorsGenerationSnapshot
+} from "@/engine/renderAdapter";
+import { loadKitFontFaces } from "@/engine/kitFonts";
+import { loadLibraryFontFaces } from "@/engine/libraryFonts";
 import { postTurnSuggestions } from "@/engine/agentSuggestions";
 import { mergeStickyDiagnostics } from "@/engine/diagnosticsPolicy";
 import { createEditQueue, type EnqueueOptions } from "@/engine/editQueue";
@@ -83,10 +99,15 @@ import {
   removeExportProfile,
   removeNode,
   removePage,
+  updateDocumentBrand,
+  updateDocumentTitle,
   updateNodeTransform,
+  updatePageBleed,
+  updatePageSafeArea,
   upsertExportProfile
 } from "@/engine/operations";
 import { normalizePageSize } from "@/engine/pageGeometry";
+import { printBleedRect, printSafeAreaRect } from "@/engine/printBleed";
 import {
   groupEdit,
   mintGroupId,
@@ -95,7 +116,11 @@ import {
   ungroupEdit,
   type StructuredEdit
 } from "@/engine/structuredEdits";
-import { editorRenderDiagnostics } from "@/engine/renderDiagnostics";
+import { editorRenderDiagnostics, heuristicMeasurementDiagnostic } from "@/engine/renderDiagnostics";
+import {
+  subscribeTextMeasurementStatus,
+  textMeasurementStatusSnapshot
+} from "@/engine/canvaskit/loadCanvasKit";
 import {
   canGroupNodes,
   canUngroupNode,
@@ -115,6 +140,7 @@ import {
 import { useAgentInstructions } from "@/hooks/useAgentInstructions";
 import { useLayoutManagedEditing } from "@/hooks/useLayoutManagedEditing";
 import { useMarginGuides } from "@/hooks/useMarginGuides";
+import { usePrintFeature } from "@/hooks/usePrintFeature";
 import { useBrandChecks } from "@/hooks/useBrandChecks";
 import { useTurnNotification } from "@/hooks/useTurnNotification";
 import { useDocumentSync, type EditQueueFactory } from "@/hooks/useDocumentSync";
@@ -211,6 +237,22 @@ const defaultResumeRun = (
   onEvent: Parameters<typeof subscribeToAgentRun>[0]["onEvent"]
 ) => subscribeToAgentRun({ apiBaseUrl: editorApiBaseUrl(), runId, onEvent });
 
+// RC: upload one chat-attached reference into the asset library and resolve
+// its chip descriptor. Reference-ness rides the TAGS (the engine's AssetKind
+// enum has no "reference" variant — kind is left for the engine to classify);
+// the thumbnail is the library's own GET /assets/{id}/thumbnail.
+const defaultReferenceUploader = async (file: File) => {
+  const result = await uploadAsset(editorApiBaseUrl(), file, {
+    label: file.name,
+    tags: "reference,chat-attachment"
+  });
+  return {
+    assetId: result.asset.id,
+    label: result.asset.label || file.name,
+    thumbnailUrl: assetThumbnailUrl(editorApiBaseUrl(), result.asset.id)
+  };
+};
+
 const defaultDocumentCreator = (scene: Scene) =>
   createDocument({ apiBaseUrl: editorApiBaseUrl() }, scene);
 
@@ -225,6 +267,15 @@ const defaultAgentInstructionsSaver = (documentId: string, instructions: string 
 
 const defaultLayoutManagedEditingSaver = (documentId: string, enabled: boolean) =>
   saveLayoutManagedEditing({ apiBaseUrl: editorApiBaseUrl() }, documentId, enabled);
+
+/** Models offered in the composer's model chip. Values are runtime model ids
+ * (LUMEN_AGENT_MODEL format, OpenRouter-routed); "" = the runtime default. */
+const AGENT_MODEL_OPTIONS = [
+  { value: "", label: "Auto", hint: "default" },
+  { value: "openai:anthropic/claude-opus-4.8", label: "Opus 4.8", hint: "quality" },
+  { value: "openai:anthropic/claude-sonnet-5", label: "Sonnet 5", hint: "balanced" },
+  { value: "openai:google/gemini-3-pro", label: "Gemini 3 Pro", hint: "fast" }
+];
 
 export default function EditorApp({
   documentId,
@@ -326,6 +377,17 @@ export default function EditorApp({
     reason: "load_failed" | "handshake_failed" | "version_mismatch";
     detail: string;
   } | null>(null);
+  // Data-refresh signal (not workflow policy): the image-edit gate reports a
+  // kept asset (Accept / Save as new) and the asset library refetches.
+  const [assetLibraryRefreshToken, setAssetLibraryRefreshToken] = useState(0);
+  const notifyAssetLibraryChanged = () => setAssetLibraryRefreshToken((t) => t + 1);
+  // Topbar floats (presentation state): the export popover and the version
+  // history dialog.
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  const exportMenuAnchorRef = useRef<HTMLDivElement | null>(null);
+  // Model override for agent turns ("" = runtime default).
+  const [agentModel, setAgentModel] = useState("");
   // Workspace chrome (panel mode, workspace mode, viewport/tool, sidebar
   // width + resizer) lives in useWorkspaceChrome — presentation state only.
   const {
@@ -346,9 +408,43 @@ export default function EditorApp({
   const selectedNode = useMemo(() => getNode(scene, selectedNodeId), [scene, selectedNodeId]);
   const activePage = activePageId ? scene.pages[activePageId] ?? null : null;
   const brandDiagnostics = diagnostics.filter((diagnostic) => diagnostic.phase === "brand");
+  // K0.5: re-render when the async brand-kit token map lands, so token
+  // swatches, the Konva fallback canvas (descriptors built in render), and
+  // the render diagnostics below all pick up real kit values — the map is a
+  // module-level registry, so nothing else re-renders on its arrival.
+  const tokenColorsGeneration = useSyncExternalStore(
+    subscribeTokenColors,
+    tokenColorsGenerationSnapshot,
+    tokenColorsGenerationSnapshot
+  );
+  // Live text-measurement status (CanvasKit + font provider). When it reports
+  // `heuristic` the canvas is laying out text with an approximate measurer —
+  // a formerly-silent degradation we now surface loudly (banner + diagnostic).
+  const textMeasurementStatus = useSyncExternalStore(
+    subscribeTextMeasurementStatus,
+    textMeasurementStatusSnapshot,
+    () => "pending" as const
+  );
+  // Per-face kit-font load failures, surfaced from loadKitFontFaces (previously
+  // swallowed). Replaced wholesale on each kit fetch so they never accrete.
+  const [kitFontDiagnostics, setKitFontDiagnostics] = useState<Diagnostic[]>([]);
   const renderDiagnostics = useMemo(
-    () => editorRenderDiagnostics(scene, activePageId),
-    [activePageId, scene]
+    () => {
+      const base = editorRenderDiagnostics(scene, activePageId);
+      const heuristic = heuristicMeasurementDiagnostic(textMeasurementStatus);
+      // The measurement + kit-font signals are renderer state, not scene
+      // state; prepend them so the panels list them alongside the scene-derived
+      // approximations.
+      return [
+        ...(heuristic ? [heuristic] : []),
+        ...kitFontDiagnostics,
+        ...base
+      ];
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenColorsGeneration
+    // is deliberately a dep: the diagnostics consult the module-level map to
+    // report only tokens actually on the heuristic fallback.
+    [activePageId, scene, tokenColorsGeneration, textMeasurementStatus, kitFontDiagnostics]
   );
 
   useEffect(() => {
@@ -502,23 +598,78 @@ export default function EditorApp({
   // list) so re-attaching a different kit refreshes the map. A failed fetch
   // leaves the map from the last success (or empty on first load), which
   // falls through to the pre-existing heuristic — never blocks rendering.
+  //
+  // Keyed on the ref's VALUE (id@version string), never the ref object:
+  // `scene.meta.brand_kit` gets a fresh identity on every scene update, and
+  // object-keyed deps refired this fetch per update — measured live at
+  // ~45k GETs of the same kit during one agent turn (K1.6(b) verify).
+  const brandKitRefKey = `${scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID}@${
+    scene.meta.brand_kit?.version ?? ""
+  }`;
   useEffect(() => {
     let cancelled = false;
-    const brandKitId = scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID;
+    const brandKitId = brandKitRefKey.slice(0, brandKitRefKey.lastIndexOf("@"));
     brandKitDetailFetcher(brandKitId)
-      .then((detail) => {
+      .then(async (detail) => {
+        if (cancelled) {
+          return;
+        }
+        // K1.5: colors + typography roles + numbers in one install, so
+        // paint, type measurement, and radii all resolve from the kit.
+        setKitTokenMaps(buildKitTokenMaps(detail));
+        // K3: the kit's font-face bytes into the CanvasKit provider — text
+        // shapes/measures in the real faces. The bump re-keys measurement
+        // and descriptor memos only when a NEW face actually registered.
+        // Per-face fetch misses (previously swallowed) collect into client
+        // diagnostics, replacing the prior kit's set so they never accrete.
+        const faceFailures: Diagnostic[] = [];
+        const registered = await loadKitFontFaces(
+          {
+            apiBaseUrl: editorApiBaseUrl(),
+            onFaceDiagnostic: (diagnostic) => faceFailures.push(diagnostic)
+          },
+          detail
+        );
         if (!cancelled) {
-          setTokenColorMap(buildTokenColorMap(detail));
+          setKitFontDiagnostics(faceFailures);
+        }
+        if (registered && !cancelled) {
+          notifyKitFontsChanged();
         }
       })
       .catch(() => {
         // API-down or kit not found: leave the canvas on whatever map (or
-        // heuristic) it already had rather than block rendering.
+        // heuristic) it already had rather than block rendering. Drop any
+        // prior kit's face-failure diagnostics so they don't go stale.
+        if (!cancelled) {
+          setKitFontDiagnostics([]);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [scene.meta.brand_kit, brandKitDetailFetcher]);
+  }, [brandKitRefKey, brandKitDetailFetcher]);
+
+  // Curated FONT LIBRARY leg: lazily register only the faces whose family the
+  // current scene references, mirroring the K3 kit-font leg above. The manifest
+  // is fetched once (module-cached, negatively cached when the API is down);
+  // the module-level dedup makes a re-run that references only already-loaded
+  // families a pure no-op (no network). Debounced so rapid scene edits don't
+  // thrash JSON.stringify — the trailing scene is the one that gets scanned.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadLibraryFontFaces(scene, { apiBaseUrl: editorApiBaseUrl() })
+        .then((registered) => {
+          if (registered) {
+            notifyKitFontsChanged();
+          }
+        })
+        .catch(() => {
+          // API-down: leave the canvas on whatever fonts it already had.
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [scene]);
 
   // The export + preflight leg (Validate/Export flows, their in-flight
   // flags and results) lives in useExportPreflight. Deps rebuilt per
@@ -550,6 +701,47 @@ export default function EditorApp({
   const hasExportArtifacts = Boolean(exportResult?.artifacts.length);
   const exportWorkspaceMode = workspaceMode === "compare" && hasExportArtifacts ? "compare" : "export";
   const renderedWorkspaceMode = editorPanelMode === "export" ? exportWorkspaceMode : "canvas";
+
+  // Topbar export menu: exports it started download their artifacts directly
+  // (moda's Download button) instead of routing through the Export panel.
+  // Scoped to the awaited result of THIS call — never ambient state, which
+  // leaked the download intent onto the next panel export when a request
+  // aborted (no page selected, network error).
+  const downloadTopbarExport = async (profile: ExportProfile, pageIds: PageId[]) => {
+    const result = await runExportForScene(scene, profile, pageIds, {
+      openPreviewTab: false,
+      focusExportPanel: false
+    });
+    if (!result || result.status !== "ok") {
+      return;
+    }
+    for (const artifact of result.artifacts) {
+      downloadDataUrl(artifact.data_url, artifact.filename);
+    }
+    // The silent topbar path clears export diagnostics on success, so a
+    // print-intent PDF that came back warn/fail (e.g. bleed_present + LUME0412
+    // on an artboard with no bleed rect) would otherwise vanish. Surface those
+    // rules through the always-visible diagnostics alert pill.
+    const printDiagnostics = printReadyDiagnostics(result.printReady);
+    if (printDiagnostics.length > 0) {
+      setDiagnostics(printDiagnostics);
+    }
+  };
+
+  // Close the export popover on any click outside its anchor.
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const anchor = exportMenuAnchorRef.current;
+      if (anchor && !anchor.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isExportMenuOpen]);
 
   // Local undo/redo history lives in useEditHistory (pure mechanics; the
   // agent-turn canvas-lock guards stay HERE, on the orchestration layer,
@@ -623,6 +815,11 @@ export default function EditorApp({
   // safe-area/bleed guides on the canvas.
   const marginGuides = useMarginGuides();
 
+  // Master view preference (not per-document): the "Print & bleed" feature.
+  // Off by default; gates the trim guide, bleed-extent clip, print presets,
+  // and the export bleed/marks + print-readiness surfacing.
+  const printFeature = usePrintFeature();
+
   /**
    * Shared post-apply bookkeeping for operations that are already applied to
    * the engine: undo frame, history, persistence. Used by the direct edit path
@@ -688,10 +885,16 @@ export default function EditorApp({
     agentPreview,
     queuedAgentMessages,
     runEvents,
+    agentStream,
+    turnSeedRef,
+    pendingReferences,
+    isUploadingReferences,
     sendAgentPrompt,
     postSystemMessage,
     queueAgentMessage,
     removeQueuedAgentMessage,
+    attachReferences,
+    removeReference,
     applyAgentProposal,
     acceptAgentPreview,
     rejectAgentPreview,
@@ -705,7 +908,9 @@ export default function EditorApp({
     activePageId,
     selectedNodeId,
     targetNodeIds,
+    referenceUploader: defaultReferenceUploader,
     agentInstructions: standingInstructions.instructions,
+    agentModel: agentModel || null,
     layoutManagedEditing: layoutManagedEditing.enabled,
     diagnostics,
     setDiagnostics,
@@ -725,8 +930,13 @@ export default function EditorApp({
   });
   // Keep the reconcile baseline in step with the pending preview (see the
   // ref's declaration above useDocumentSync). Render-body assignment is the
-  // established ref-mirror pattern here (activeDocumentIdRef et al.).
-  previewBaseSceneRef.current = agentPreview?.baseScene ?? null;
+  // established ref-mirror pattern here (activeDocumentIdRef et al.). While a
+  // turn is STREAMING, the engine holds the ephemeral half-built scene, so a
+  // pre-run edit-queue batch draining mid-stream would reconcile against it and
+  // could clobber history — pin the baseline to the turn's pre-turn seed
+  // instead (streaming and a pending preview never overlap).
+  previewBaseSceneRef.current =
+    agentPreview?.baseScene ?? (agentStream.active ? turnSeedRef.current : null);
 
   // 2e notify-when-done: a turn that settles while the agent panel is
   // closed raises a click-to-open toast (no browser Notification API).
@@ -1120,7 +1330,13 @@ export default function EditorApp({
     setSelectedNodeId(null);
   };
 
-  const createCustomPage = (input: { name: string; width: number; height: number; unit: Page["size"]["unit"] }) => {
+  const createCustomPage = (input: {
+    name: string;
+    width: number;
+    height: number;
+    unit: Page["size"]["unit"];
+    print?: boolean;
+  }) => {
     const page: Page = {
       id: uniquePageId(scene, input),
       name: input.name,
@@ -1130,9 +1346,19 @@ export default function EditorApp({
       safe_area: null,
       background: []
     };
-    applyOperation(addPage(page));
-    setActivePageId(page.id);
-    setSelectedNodeId(null);
+    // Print presets seed a 3mm bleed + 5mm safe-area default (only while the
+    // print feature is on) — set through the operation builders in the same
+    // atomic batch as the page insert, never by mutating the page literal.
+    // Existing pages are untouched; the inspector fields remain the override.
+    const operations = [addPage(page)];
+    if (input.print && printFeature.printFeatureEnabled) {
+      operations.push(updatePageBleed(page, printBleedRect(page.size)));
+      operations.push(updatePageSafeArea(page, printSafeAreaRect(page.size)));
+    }
+    applyOperations(operations, () => {
+      setActivePageId(page.id);
+      setSelectedNodeId(null);
+    });
   };
 
   const duplicatePageInEditor = (pageId: PageId) => {
@@ -1220,53 +1446,109 @@ export default function EditorApp({
 
   return (
     <main className="editor-shell">
-      <header className="topbar">
-        <div className="topbar-title">
-          <p className="eyebrow">ABM Design Engine</p>
-          <h1>{scene.meta.title}</h1>
-        </div>
-        <div className="topbar-context" aria-label="Active artboard context">
-          <div className="topbar-artboard-label">
-            <strong>{activePage?.name ?? "No artboard"}</strong>
-            <span>
-              {activePage ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%` : "No frame"}
+      <header className="editor-chrome">
+        <div className="doc-row">
+          <div className="doc-row-left">
+            <span className="app-mark" aria-hidden>
+              <img src={appMark.src} alt="" width={16} height={16} />
             </span>
+            <div className="topbar-title">
+              <p className="eyebrow">ABM Design Engine</p>
+              <EditableDocumentTitle
+                title={scene.meta.title}
+                onRename={(title) => applyOperation(updateDocumentTitle(title))}
+              />
+            </div>
           </div>
-          {editorPanelMode !== "diagnostics" ? (
-            <DiagnosticsAlertPill
-              errorCount={
-                diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
-              }
-              onOpen={() => setEditorPanelMode("diagnostics")}
-            />
-          ) : null}
-          <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
+          <div className="doc-row-actions" aria-label="Editor actions">
+            {editorPanelMode !== "diagnostics" ? (
+              <DiagnosticsAlertPill
+                errorCount={
+                  diagnostics.filter((diagnostic) => diagnostic.severity === "error").length
+                }
+                onOpen={() => setEditorPanelMode("diagnostics")}
+              />
+            ) : null}
+            {activeDocumentId ? (
+              <button
+                type="button"
+                className="doc-icon-button"
+                aria-label="Version history"
+                title="Version history"
+                aria-haspopup="dialog"
+                aria-expanded={isVersionHistoryOpen}
+                onClick={() => setIsVersionHistoryOpen((open) => !open)}
+              >
+                <History aria-hidden size={16} />
+              </button>
+            ) : null}
+            <div className="export-menu-anchor" ref={exportMenuAnchorRef}>
+              <button
+                type="button"
+                className="btn-primary"
+                aria-haspopup="dialog"
+                aria-expanded={isExportMenuOpen}
+                disabled={isExporting}
+                onClick={() => setIsExportMenuOpen((open) => !open)}
+              >
+                <Download aria-hidden size={16} />
+                {isExporting ? "Exporting" : "Export"}
+              </button>
+              {isExportMenuOpen ? (
+                <ExportMenu
+                  pages={Object.values(scene.pages)}
+                  activePageId={activePageId}
+                  isExporting={isExporting}
+                  onDownload={(profile, scope) => {
+                    setIsExportMenuOpen(false);
+                    const pageIds =
+                      scope === "all"
+                        ? Object.values(scene.pages).map((page) => page.id)
+                        : activePageId
+                          ? [activePageId]
+                          : [];
+                    void downloadTopbarExport(profile, pageIds);
+                  }}
+                  onClose={() => setIsExportMenuOpen(false)}
+                />
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="toolbar" aria-label="Editor actions">
-          <button type="button" onClick={() => void runPreflight()} disabled={isPreflighting}>
-            <FileCheck2 aria-hidden size={16} />
-            {isPreflighting ? "Validating" : "Validate"}
-          </button>
-          <button type="button" onClick={() => void runExport()} disabled={!activePageId || isExporting}>
-            <Download aria-hidden size={16} />
-            {isExporting ? "Exporting" : "Export"}
-          </button>
-          <button
-            type="button"
-            onClick={undoLastOperation}
-            disabled={undoStack.length === 0 || isAgentRunning || agentPreview !== null}
-          >
-            <RotateCcw aria-hidden size={16} />
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={redoLastOperation}
-            disabled={redoStack.length === 0 || isAgentRunning || agentPreview !== null}
-          >
-            <RotateCw aria-hidden size={16} />
-            Redo
-          </button>
+        <div className="tool-row" aria-label="Editing tools">
+          <div className="tool-row-left">
+            <button
+              type="button"
+              className="icon-ghost-button"
+              aria-label="Undo"
+              title="Undo"
+              onClick={undoLastOperation}
+              disabled={undoStack.length === 0 || isAgentRunning || agentPreview !== null}
+            >
+              <RotateCcw aria-hidden size={16} />
+            </button>
+            <button
+              type="button"
+              className="icon-ghost-button"
+              aria-label="Redo"
+              title="Redo"
+              onClick={redoLastOperation}
+              disabled={redoStack.length === 0 || isAgentRunning || agentPreview !== null}
+            >
+              <RotateCw aria-hidden size={16} />
+            </button>
+          </div>
+          <span className="tool-row-separator" aria-hidden />
+          <div className="topbar-context" aria-label="Active artboard context">
+            <div className="topbar-artboard-label">
+              <strong>{activePage?.name ?? "No artboard"}</strong>
+              <span>
+                {activePage
+                  ? `${topArtboardSizeLabel(activePage)} · ${Math.round(workspaceViewport.zoom * 100)}%`
+                  : "No frame"}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
       <div
@@ -1278,6 +1560,7 @@ export default function EditorApp({
             scene={scene}
             activePageId={activePageId}
             diagnostics={diagnostics}
+            printFeatureEnabled={printFeature.printFeatureEnabled}
             onSelectPage={selectPage}
             onAddCustomPage={createCustomPage}
             onDuplicatePage={duplicatePageInEditor}
@@ -1296,14 +1579,38 @@ export default function EditorApp({
           {engineDisabled ? (
             <EngineDisabledBanner reason={engineDisabled.reason} detail={engineDisabled.detail} />
           ) : null}
+          {textMeasurementStatus === "heuristic" ? <HeuristicMeasurementBanner /> : null}
           {isAgentRunning && !agentPreview ? (
             <div
               className="agent-designing-banner"
               role="status"
               data-testid="agent-designing-banner"
             >
-              <Bot aria-hidden size={15} />
               <span>Agent is designing — please wait to edit</span>
+              {agentStream.currentReveal
+                ? (() => {
+                    const reveal = agentStream.currentReveal;
+                    const pageNumber = reveal.pageId
+                      ? Object.keys(scene.pages).indexOf(reveal.pageId) + 1
+                      : 0;
+                    const label =
+                      reveal.kind === "add_page"
+                        ? pageNumber > 0
+                          ? `adding page ${pageNumber}…`
+                          : "adding a page…"
+                        : pageNumber > 0
+                          ? `building page ${pageNumber}…`
+                          : "placing elements…";
+                    return (
+                      <span
+                        className="agent-designing-substatus"
+                        data-testid="agent-designing-substatus"
+                      >
+                        {label}
+                      </span>
+                    );
+                  })()
+                : null}
               <span className="agent-designing-dots" aria-hidden>
                 <i />
                 <i />
@@ -1482,6 +1789,9 @@ export default function EditorApp({
                 layoutManagedEditing={layoutManagedEditing.enabled}
                 showMarginGuides={marginGuides.showMarginGuides}
                 onToggleMarginGuides={marginGuides.toggleMarginGuides}
+                printFeatureEnabled={printFeature.printFeatureEnabled}
+                onTogglePrintFeature={printFeature.togglePrintFeature}
+                agentReveal={agentStream.currentReveal}
               />
             </>
           )}
@@ -1496,9 +1806,10 @@ export default function EditorApp({
           />
         ) : null}
         <aside
-          className="inspector-shell"
+          className={`inspector-shell${editorPanelMode === "agent" ? " chat-mode" : ""}`}
           aria-label={rightSidebarLabelForMode(editorPanelMode)}
         >
+          <EditorModeSwitch mode={editorPanelMode} onModeChange={setEditorPanelMode} />
           {editorPanelMode === "agent" ? (
             <AgentChatPanel
               messages={agentMessages}
@@ -1525,6 +1836,10 @@ export default function EditorApp({
               activePageId={activePageId}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
+              pendingReferences={pendingReferences}
+              isUploadingReferences={isUploadingReferences}
+              onAttachReferences={(files) => void attachReferences(files)}
+              onRemoveReference={removeReference}
               onRemoveTargetChip={removeTargetChip}
               onClearTargetChips={clearTargetChips}
               onDraftChange={setAgentDraft}
@@ -1553,6 +1868,16 @@ export default function EditorApp({
               onCompareTurn={compareTurn}
               onExitCompare={exitCompare}
               onRevertTurn={revertTurn}
+              brandKits={initialAvailableBrandKits}
+              attachedBrandKit={scene.meta.brand_kit ?? null}
+              onAttachBrandKit={(kit) =>
+                applyOperation(
+                  updateDocumentBrand({ id: kit.id, version: kit.version }, scene.meta.medium)
+                )
+              }
+              modelOptions={AGENT_MODEL_OPTIONS}
+              model={agentModel}
+              onModelChange={setAgentModel}
             />
           ) : editorPanelMode === "export" ? (
             <ExportPanel
@@ -1565,24 +1890,34 @@ export default function EditorApp({
               onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
               panelState={exportPanelState}
               onPanelStateChange={setExportPanelState}
+              printFeatureEnabled={printFeature.printFeatureEnabled}
             />
           ) : editorPanelMode === "diagnostics" ? (
-            <ValidationPanel
-              scene={scene}
-              activePageId={activePageId}
+            <>
+              <ValidationPanel
+                scene={scene}
+                activePageId={activePageId}
+                selectedNodeId={selectedNodeId}
+                diagnostics={diagnostics}
+                renderDiagnostics={renderDiagnostics}
+                lastOperation={lastOperation}
+                preflightResult={preflightResult}
+                onSelectSubject={selectDiagnosticSubject}
+                onRunPreflight={() => void runPreflight()}
+                isPreflighting={isPreflighting}
+              />
+              <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
+            </>
+          ) : editorPanelMode === "assets" ? (
+            <AssetBrowserPanel
+              apiBaseUrl={editorApiBaseUrl()}
               selectedNodeId={selectedNodeId}
-              diagnostics={diagnostics}
-              renderDiagnostics={renderDiagnostics}
-              lastOperation={lastOperation}
-              preflightResult={preflightResult}
-              onSelectSubject={selectDiagnosticSubject}
+              selectedNodePlacement={selectedNode?.asset_placement ?? null}
+              refreshToken={assetLibraryRefreshToken}
+              onOperations={applyOperations}
             />
           ) : (
             <>
-              <div className="panel-title">
-                <PanelRightClose aria-hidden size={16} />
-                Inspector
-              </div>
               <InspectorPanel
                 scene={scene}
                 activePage={activePage}
@@ -1599,6 +1934,7 @@ export default function EditorApp({
                 onSelectSubject={selectDiagnosticSubject}
                 layoutManagedEditing={layoutManagedEditing.enabled}
                 onSetLayoutManagedEditing={layoutManagedEditing.setEnabled}
+                onAssetLibraryChanged={notifyAssetLibraryChanged}
               />
               <BrandKitPanel
                 scene={scene}
@@ -1613,42 +1949,19 @@ export default function EditorApp({
                 isRunningBrandCompatibility={isBrandCompatibilityRunning}
                 onSelectSubject={selectDiagnosticSubject}
               />
-              <ExportPanel
-                scene={scene}
-                activePageId={activePageId}
-                exportResult={exportResult}
-                isExporting={isExporting}
-                onExport={(profile, pageIds) => void runExport(profile, pageIds)}
-                onSaveProfile={(profile) => applyOperation(upsertExportProfile(profile))}
-                onRemoveProfile={(name) => applyOperation(removeExportProfile(name))}
-                panelState={exportPanelState}
-                onPanelStateChange={setExportPanelState}
-              />
-              <OperationHistoryPanel operations={operationHistory} redoCount={redoStack.length} />
-              <AssetBrowserPanel
-                apiBaseUrl={editorApiBaseUrl()}
-                selectedNodeId={selectedNodeId}
-                selectedNodePlacement={selectedNode?.asset_placement ?? null}
-                onOperations={applyOperations}
-              />
               <WorstCasePreviewPanel apiBaseUrl={editorApiBaseUrl()} scene={scene} />
-              {activeDocumentId ? (
-                <HistoryPanel apiBaseUrl={editorApiBaseUrl()} documentId={activeDocumentId} />
-              ) : null}
-              <ValidationPanel
-                scene={scene}
-                activePageId={activePageId}
-                selectedNodeId={selectedNodeId}
-                diagnostics={diagnostics}
-                renderDiagnostics={renderDiagnostics}
-                lastOperation={lastOperation}
-                preflightResult={preflightResult}
-                onSelectSubject={selectDiagnosticSubject}
-              />
             </>
           )}
         </aside>
       </div>
+      {isVersionHistoryOpen && activeDocumentId ? (
+        <VersionHistoryDialog
+          apiBaseUrl={editorApiBaseUrl()}
+          documentId={activeDocumentId}
+          onClose={() => setIsVersionHistoryOpen(false)}
+          onDocumentChanged={() => void refreshSceneFromEngine()}
+        />
+      ) : null}
     </main>
   );
 }

@@ -1,0 +1,679 @@
+{
+  "assets": {},
+  "export_profiles": [],
+  "meta": {
+    "artifact_type": null,
+    "brand_kit": {
+      "id": "brand_kit_platform_default",
+      "version": 1
+    },
+    "id": "run_0103c9a412c54050a3fd37eb2c0cebe1",
+    "medium": null,
+    "status": {
+      "kind": "draft"
+    },
+    "title": "Agent-authored design"
+  },
+  "nodes": {
+    "accent_rule": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 6.0,
+          "width": 96.0,
+          "x": 96.0,
+          "y": 835.0
+        },
+        "render_bounds": {
+          "height": 6.0,
+          "width": 96.0,
+          "x": 96.0,
+          "y": 835.0
+        }
+      },
+      "corner": {
+        "bottom_left": 999.0,
+        "bottom_right": 999.0,
+        "top_left": 999.0,
+        "top_right": 999.0
+      },
+      "fills": [
+        {
+          "id": "paint_accent_rule_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#0F766E"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "accent_rule",
+      "kind": {
+        "kind": "rect"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 6.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 96.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "artboard": {
+      "children": [
+        "main"
+      ],
+      "clip": true,
+      "computed": {
+        "layout_bounds": {
+          "height": 1350.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 0.0
+        },
+        "render_bounds": {
+          "height": 1350.0,
+          "width": 1080.0,
+          "x": 0.0,
+          "y": 0.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_artboard_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#111827"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "artboard",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 48.0,
+        "grow": 0.0,
+        "padding": [
+          96.0,
+          96.0,
+          96.0,
+          96.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "author_name": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 30.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 857.0
+        },
+        "render_bounds": {
+          "height": 30.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 857.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_author_name_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "author_name",
+      "kind": {
+        "align": "left",
+        "content": "Priya N.",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 24.0,
+        "font_weight": 650,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.24,
+        "max_lines": 1,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 888.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "author_role": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 20.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 903.0
+        },
+        "render_bounds": {
+          "height": 20.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 903.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_author_role_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "author_role",
+      "kind": {
+        "align": "left",
+        "content": "VP Brand, Northwind",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 14.0,
+        "font_weight": 450,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.4,
+        "max_lines": 2,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 0.64,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 888.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "main": {
+      "children": [
+        "quote_mark",
+        "quote",
+        "accent_rule",
+        "author_name",
+        "author_role"
+      ],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 1158.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 96.0
+        },
+        "render_bounds": {
+          "height": 1158.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 96.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "main",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 16.0,
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 888.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "quote": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 280.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 539.0
+        },
+        "render_bounds": {
+          "height": 280.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 539.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_quote_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "quote",
+      "kind": {
+        "align": "left",
+        "content": "Lumen replaced three vendors and a week of design ops.",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 64.0,
+        "font_weight": 800,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.1,
+        "max_lines": 4,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 888.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "quote_mark": {
+      "children": [],
+      "clip": false,
+      "computed": {
+        "layout_bounds": {
+          "height": 96.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 427.0
+        },
+        "render_bounds": {
+          "height": 96.0,
+          "width": 888.0,
+          "x": 96.0,
+          "y": 427.0
+        }
+      },
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_quote_mark_fill_1",
+          "paint": {
+            "color": {
+              "kind": "hex",
+              "value": "#FFFFFF"
+            },
+            "kind": "solid"
+          }
+        }
+      ],
+      "id": "quote_mark",
+      "kind": {
+        "align": "left",
+        "content": "\u201c",
+        "direction": "ltr",
+        "font_family": "Inter",
+        "font_size": 96.0,
+        "font_weight": 850,
+        "kind": "text",
+        "letter_spacing": -0.02,
+        "line_height": 1.0,
+        "max_lines": 1,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 0.64,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 888.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  },
+  "pages": {
+    "quote_card": {
+      "background": [],
+      "bleed": null,
+      "children": [
+        "artboard"
+      ],
+      "id": "quote_card",
+      "name": "quote_card",
+      "safe_area": null,
+      "size": {
+        "height": 1350.0,
+        "orientation": "portrait",
+        "output": {
+          "raster": {
+            "height_px": 1350,
+            "width_px": 1080
+          }
+        },
+        "preset": "custom",
+        "source": {
+          "height": 1350.0,
+          "unit": "px",
+          "width": 1080.0
+        },
+        "unit": "pt",
+        "width": 1080.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {
+    "slot_author_name_f9a0feeadcb7d80b": {
+      "binding_hints": [],
+      "bound_nodes": [
+        "author_name"
+      ],
+      "cardinality": {
+        "max_items": 1,
+        "min_items": 1
+      },
+      "conditional": null,
+      "content_type": "text_short",
+      "editability": "template_and_instance",
+      "formatting": {
+        "allowed_pattern": null,
+        "max_length": null,
+        "preserve_case": true
+      },
+      "id": "slot_author_name_f9a0feeadcb7d80b",
+      "image_policy": null,
+      "key": "author.name",
+      "label": "author.name",
+      "overflow": {
+        "kind": "error"
+      },
+      "placeholder": "Priya N.",
+      "repeater": null,
+      "required": true,
+      "scope": {
+        "kind": "document"
+      },
+      "validation": {
+        "max_length": null,
+        "samples": [
+          "Priya N."
+        ],
+        "worst_case": "Priyanka Narayanaswamy"
+      }
+    },
+    "slot_author_role_010479915523a918": {
+      "binding_hints": [],
+      "bound_nodes": [
+        "author_role"
+      ],
+      "cardinality": {
+        "max_items": 1,
+        "min_items": 1
+      },
+      "conditional": null,
+      "content_type": "text_short",
+      "editability": "template_and_instance",
+      "formatting": {
+        "allowed_pattern": null,
+        "max_length": null,
+        "preserve_case": true
+      },
+      "id": "slot_author_role_010479915523a918",
+      "image_policy": null,
+      "key": "author.role",
+      "label": "author.role",
+      "overflow": {
+        "kind": "error"
+      },
+      "placeholder": "VP Brand, Northwind",
+      "repeater": null,
+      "required": true,
+      "scope": {
+        "kind": "document"
+      },
+      "validation": {
+        "max_length": null,
+        "samples": [
+          "VP Brand, Northwind"
+        ],
+        "worst_case": "Vice President of Brand Marketing, Northwind Global"
+      }
+    },
+    "slot_quote_text_1d2493413643852c": {
+      "binding_hints": [],
+      "bound_nodes": [
+        "quote"
+      ],
+      "cardinality": {
+        "max_items": 1,
+        "min_items": 1
+      },
+      "conditional": null,
+      "content_type": "text_short",
+      "editability": "template_and_instance",
+      "formatting": {
+        "allowed_pattern": null,
+        "max_length": null,
+        "preserve_case": true
+      },
+      "id": "slot_quote_text_1d2493413643852c",
+      "image_policy": null,
+      "key": "quote.text",
+      "label": "quote.text",
+      "overflow": {
+        "kind": "error"
+      },
+      "placeholder": "Lumen replaced three vendors and a week of design ops.",
+      "repeater": null,
+      "required": true,
+      "scope": {
+        "kind": "document"
+      },
+      "validation": {
+        "max_length": null,
+        "samples": [
+          "Lumen replaced three vendors and a week of design ops."
+        ],
+        "worst_case": "Lumen replaced three separate vendors and a full week of tedious design operations."
+      }
+    }
+  }
+}

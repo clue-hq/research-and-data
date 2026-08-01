@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { minimalScene } from "@/fixtures/minimalScene";
 import {
   createStreamingAgentRunner,
+  operationsFromRunEvent,
   subscribeToAgentRun,
   type AgentRunEvent,
   type EventSourceLike
 } from "../agentRunner";
+import type { Operation } from "../contracts";
 import { agentChecklist, agentEventLabel } from "../agentChecklist";
 
 afterEach(() => {
@@ -58,6 +60,7 @@ describe("streaming agent runner", () => {
       scene: minimalScene,
       documentId: undefined,
       activePageId: "page_a4",
+      referenceAssetIds: ["asset_ref_a"],
       diagnostics: [],
       onEvent: (event) => events.push(event)
     });
@@ -65,6 +68,9 @@ describe("streaming agent runner", () => {
     // Let the POST resolve and the subscription open.
     await vi.waitFor(() => expect(source).not.toBeNull());
     expect(fetchMock.mock.calls[0][0].toString()).toContain("/agent/turns");
+    // RC: the async-turn POST carries the turn's reference asset ids.
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(JSON.parse(requestInit.body as string).reference_asset_ids).toEqual(["asset_ref_a"]);
     expect(source!.url).toContain("/agent/runs/run_stream_1/events");
     // The synthetic run_started frame carries the run id for reload-resume.
     expect(events.find((event) => event.type === "run_started")?.data.run_id).toBe("run_stream_1");
@@ -96,6 +102,39 @@ describe("streaming agent runner", () => {
     const result = await promise;
     expect(result.status).toBe("failed");
     expect(source.closed).toBe(true);
+  });
+});
+
+describe("operationsFromRunEvent (live-design-streaming accessor)", () => {
+  const withData = (data: Record<string, unknown>): AgentRunEvent => ({
+    seq: 1,
+    type: "dsl_compiled",
+    data
+  });
+
+  it("returns the applied operations when a compile event carries them", () => {
+    const operations = [
+      { kind: "add_page", page_id: "page_hero" },
+      { kind: "insert_node", node_id: "headline", parent_id: "page_hero" }
+    ] as unknown as Operation[];
+    expect(operationsFromRunEvent(withData({ iteration: 1, operations }))).toEqual(operations);
+  });
+
+  it("returns null for a checklist event that carries no operations", () => {
+    expect(operationsFromRunEvent(withData({ iteration: 1 }))).toBeNull();
+  });
+
+  it("is tolerant: absent / non-array / all-malformed operations return null, never throw", () => {
+    expect(operationsFromRunEvent(withData({ operations: undefined }))).toBeNull();
+    expect(operationsFromRunEvent(withData({ operations: "nope" }))).toBeNull();
+    expect(operationsFromRunEvent(withData({ operations: [] }))).toBeNull();
+    // Non-record entries are dropped; an all-malformed list collapses to null.
+    expect(operationsFromRunEvent(withData({ operations: [42, "x", null] }))).toBeNull();
+  });
+
+  it("keeps only the record entries when a list is partially malformed", () => {
+    const kept = { kind: "insert_node", node_id: "n1" };
+    expect(operationsFromRunEvent(withData({ operations: [kept, 7, "bad"] }))).toEqual([kept]);
   });
 });
 

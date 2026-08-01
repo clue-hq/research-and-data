@@ -1,0 +1,264 @@
+{
+  "repair_request": {
+    "original_user_request": "Design a 1920x1080 data slide: pipeline coverage by stage, 4.2x coverage on an $18M target. Present the figures clearly with one supporting takeaway line.",
+    "exact_feedback": "1) Change the Commit bar fill from pale cyan to the same $surface.brand ink as the other three bars. 2) Raise the four stage name labels from 14pt to ~18pt so the category label is not smaller than the 24pt value.",
+    "diagnostics": [
+      {
+        "severity": "blocker",
+        "code": null,
+        "message": "{'severity': 'blocker', 'category': 'contrast', 'node_id': 'row4_fill'}",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      },
+      {
+        "severity": "error",
+        "code": null,
+        "message": "{'severity': 'error', 'category': 'hierarchy', 'node_id': 'row1_name'}",
+        "line": null,
+        "column": null,
+        "target_page_id": null,
+        "target_node_id": null,
+        "target_slot_id": null,
+        "target_slot_key": null,
+        "suggested_repair": null
+      }
+    ],
+    "target": {
+      "page_id": null,
+      "node_id": null,
+      "slot_key": null
+    },
+    "repair_class": null,
+    "cluster": null,
+    "scene_summary": {
+      "document_id": "run_c267a27b4be04f2894aa87c770f6da26",
+      "title": "Agent-authored design",
+      "status": {
+        "kind": "draft"
+      },
+      "brand_kit": {
+        "id": "brand_kit_platform_default",
+        "version": 1
+      },
+      "effective_brand": {
+        "source": "platform_default",
+        "brand_kit_id": "brand_kit_platform_default",
+        "brand_kit_version": "1",
+        "brand_kit_name": "Lumen Platform Default",
+        "mode": {
+          "accessibility": "standard",
+          "density": "comfortable",
+          "medium": "digital",
+          "theme": "light"
+        }
+      },
+      "page_count": 1,
+      "node_count": 31,
+      "slot_count": 3,
+      "asset_count": 0,
+      "pages": [
+        {
+          "id": "pipeline_slide",
+          "name": "pipeline_slide",
+          "size": {
+            "height": 1080.0,
+            "orientation": "landscape",
+            "output": {
+              "raster": {
+                "height_px": 1080,
+                "width_px": 1920
+              }
+            },
+            "preset": "custom",
+            "source": {
+              "height": 1080.0,
+              "unit": "px",
+              "width": 1920.0
+            },
+            "unit": "pt",
+            "width": 1920.0
+          },
+          "width": 1920.0,
+          "height": 1080.0,
+          "aspect_ratio": 1.7777777777777777,
+          "children": [
+            "artboard"
+          ],
+          "child_count": 1
+        }
+      ],
+      "slots": [
+        {
+          "id": "slot_campaign_eyebrow_92252b6be2914522",
+          "key": "campaign.eyebrow",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "eyebrow",
+              "name": null,
+              "kind": "text",
+              "text": "Q3 PIPELINE REVIEW",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 560.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 14.0,
+                  "width": 560.0,
+                  "x": 172.0,
+                  "y": 115.0
+                },
+                "render_bounds": {
+                  "height": 14.0,
+                  "width": 560.0,
+                  "x": 172.0,
+                  "y": 115.0
+                }
+              },
+              "slots": [
+                "campaign.eyebrow"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_hero_label_356fde88465ace82",
+          "key": "campaign.hero_label",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "hero_label",
+              "name": null,
+              "kind": "text",
+              "text": "pipeline coverage on an $18M target",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 600.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 30.0,
+                  "width": 600.0,
+                  "x": 120.0,
+                  "y": 612.0
+                },
+                "render_bounds": {
+                  "height": 30.0,
+                  "width": 600.0,
+                  "x": 120.0,
+                  "y": 612.0
+                }
+              },
+              "slots": [
+                "campaign.hero_label"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        },
+        {
+          "id": "slot_campaign_takeaway_b38ce68e16257f66",
+          "key": "campaign.takeaway",
+          "content_type": "text_short",
+          "scope": {
+            "kind": "document"
+          },
+          "bound_nodes": [
+            {
+              "id": "takeaway",
+              "name": null,
+              "kind": "text",
+              "text": "Coverage is healthy across every stage, with committed pipeline alone covering 59% of the $18M target.",
+              "transform": {
+                "flip_x": false,
+                "flip_y": false,
+                "rotation": 0.0,
+                "skew_x": 0.0,
+                "skew_y": 0.0,
+                "x": 0.0,
+                "y": 0.0
+              },
+              "size": {
+                "height": {
+                  "kind": "hug"
+                },
+                "width": {
+                  "kind": "fixed",
+                  "value": 600.0
+                }
+              },
+              "computed": {
+                "layout_bounds": {
+                  "height": 46.0,
+                  "width": 600.0,
+                  "x": 120.0,
+                  "y": 658.0
+                },
+                "render_bounds": {
+                  "height": 46.0,
+                  "width": 600.0,
+                  "x": 120.0,
+                  "y": 658.0
+                }
+              },
+              "slots": [
+                "campaign.takeaway"
+              ],
+              "source_asset_id": null
+            }
+          ]
+        }
+      ]
+    },
+    "allowed_edit_surface": "structured_ops",
+    "permissions": [],
+    "prohibitions": [],
+    "forbidden_changes": [
+      "layout structure",
+      "hero sizing",
+      "bar widths",
+      "copy content"
+    ]
+  }
+}

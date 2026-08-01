@@ -42,9 +42,20 @@ Be specific and target-bound on every issue you raise.
 - **Typography** — sensible type scale; nothing oversized-and-overwhelming or too
   small to read.
 - **Clipping / overflow** `*` — nothing cut off, off-canvas, or colliding.
-- **Avoid AI clichés** — generic tinted eyebrow pills, blue→purple gradients,
-  low-opacity circles behind everything, everything-boxed-in-cards. Prefer
+- **Avoid AI clichés** — generic tinted eyebrow pills, *unmotivated* (non-brand)
+  blue→purple gradients, low-opacity circles drifting behind everything,
+  everything-boxed-in-cards. Note that brand-derived gradients, soft radial washes,
+  and shadowed plates are NOT clichés — judge the *use*, not the construct. Prefer
   information on surfaces, scale contrast, asymmetry.
+- **Declared archetype & composition variety** (advisory — not acceptance-blocking)
+  — if the direction declared a composition archetype (vertical-poster, split-panel,
+  numeral-hero, image-hero, banded, emblem — `knowledge/design/layout-recipes`),
+  note whether the render actually delivers it (e.g. numeral-hero must have a numeral
+  that dominates the canvas, not a 0.5× stat; image-hero must show a full-bleed image
+  with scrim, not a plain poster). Also judge distinctiveness: when the brief invited
+  a photo, a dominant metric, or editorial rhythm, a default centered vertical poster
+  is a weaker answer — say so in `acceptance_notes` even when the craft is clean. This
+  is advisory judgment surfaced for the author and the next turn, never a gate.
 - **Request & brand** — matches the requested artifact type AND dimensions,
   communicates the message, covers the requested concepts; brand styling consistent
   (tokens, not raw guesses); meaningful ABM slots. Unresolved brand-governance
@@ -82,6 +93,17 @@ without inspecting the rendered PNG.
   "acceptance_notes": []
 }
 ```
+
+## Baked print sheets are not clutter
+
+When the request asked for print bleed / crop marks baked into the design
+(`skills/print-bleed-marks`), the preview legitimately shows: a paper-white
+outer margin, artwork running past the trim line into a bleed strip, and
+eight small black corner ticks. Do NOT flag these as stray artifacts, broken
+margins, or misalignment — judge instead that (a) the ticks sit at the four
+corners in the white margin only, (b) edge art reaches the bleed line with no
+white slivers between art and bleed line on touched edges, and (c) the inner
+design (inside the trim line) still passes the normal rubric.
 
 ## Review style
 

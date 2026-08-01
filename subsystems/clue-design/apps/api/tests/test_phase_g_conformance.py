@@ -346,31 +346,19 @@ def test_g10_pdf_batch_follows_the_b3_verdict(client: TestClient) -> None:
 
     entry = batch["manifest"][1]
     pdf_artifact = next(a for a in entry["artifacts"] if a["format"] == "pdf")
-    # The manifest records the flattened-raster accounting per the B3
-    # verdict: DL mailer 210x105mm at 300dpi = 2480x1240 raster pages.
-    assert pdf_artifact["flattened_raster_dpi"] == 300
-    assert pdf_artifact["pages"][0]["width_px"] == 2480
-    assert pdf_artifact["pages"][0]["height_px"] == 1240
+    # Bulk PDF = the vector press-ready deliverable through the shared
+    # adapter pipeline (supersedes the W0-era flattened-raster B3 default):
+    # live text with embedded subset fonts, print boxes, and the print-ready
+    # report riding the artifact. Clean instances report no error codes.
+    assert pdf_artifact["profile_name"] == "instance_pdf"
+    assert pdf_artifact["print_ready"]["status"] != "fail"
+    assert entry["error_codes"] == []
 
     pdf_path = store_path(client, pdf_artifact["relative_path"])
-    assert pdf_path.read_bytes().startswith(b"%PDF-")
-
-    # pdfimages: each page is one raster image XObject at 300 ppi —
-    # never native-PDF text or vectors.
-    listing = subprocess.run(
-        ["pdfimages", "-list", str(pdf_path)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    image_rows = [
-        line.split()
-        for line in listing.splitlines()
-        if line.strip() and line.lstrip()[0].isdigit()
-    ]
-    assert len(image_rows) == 1, listing
-    assert image_rows[0][3] == "2480" and image_rows[0][4] == "1240", listing
-    assert image_rows[0][12] == "300", listing
+    pdf_bytes = pdf_path.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert b"FontFile2" in pdf_bytes, "embedded subset fonts expected"
+    assert b"/TrimBox" in pdf_bytes, "print finalize expected"
 
     # The QR scans from a 300dpi render of the flattened PDF to the
     # exact per-recipient landing URL.

@@ -1,10 +1,12 @@
 use lumen_core::validation::validate_scene;
 use lumen_core::{
-    compile_dsl, compile_dsl_into_scene, normalize_dsl, parse_dsl, Color, DiagnosticSeverity,
-    Dimension, DslCompileSession, DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty,
-    DslScalar, LayoutAnchor, NodeId, NodeKind, Operation, Orientation, PageId, PagePreset, Paint,
-    ParentRef, PhysicalUnit, Scene, SlotKey, TextDirection, TextWrap, Unit,
+    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session_and_protected,
+    normalize_dsl, parse_dsl, Color, DiagnosticSeverity, Dimension, DslCompileSession,
+    DslLayoutAnchor, DslLayoutAxis, DslLineKind, DslProperty, DslScalar, LayoutAnchor, NodeId,
+    NodeKind, Operation, Orientation, PageId, PagePreset, Paint, ParentRef, PhysicalUnit, Scene,
+    SlotKey, TextDirection, TextWrap, Unit, VerticalAlign,
 };
+use std::collections::BTreeSet;
 
 const VALID_BROCHURE: &str = include_str!("../fixtures/dsl/valid_brochure.lumen");
 const VALID_LANGUAGE_SURFACE: &str = include_str!("../fixtures/dsl/valid_language_surface.lumen");
@@ -124,6 +126,36 @@ fn compiled_dsl_applies_through_checked_core_operations() {
         scene.bound_nodes_for_slot(&headline_slot_id)[0].id,
         NodeId::from("headline")
     );
+}
+
+/// Empty-page compose gap (burned two live agent turns): a continuation
+/// block must be able to FILL an existing empty page. A top-level
+/// `#page:<id>` modification now opens that page as the parent context, so
+/// indented element lines append to it — exactly like a fresh `page` line.
+#[test]
+fn continuation_page_modify_accepts_indented_children() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_fill"), "Fill");
+    let first = compile_dsl_into_scene("page page_empty size(1080,1080,px)", &mut scene);
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+    assert!(scene.pages[&PageId::from("page_empty")].children.is_empty());
+
+    let continuation = concat!(
+        "#page:page_empty size(1080,1080,px)\n",
+        "  hero_root fr p(0,0) s(1080,1080) fill($surface.brand)\n",
+        "    title text \"Your health, now online.\" p(60,60) s(400,hug) font(\"Inter\",64,800,left)\n",
+    );
+    let output = compile_dsl_into_scene(continuation, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    let page = &scene.pages[&PageId::from("page_empty")];
+    assert_eq!(
+        page.children,
+        vec![lumen_core::NodeId::from("hero_root")],
+        "the indented child must attach to the EXISTING page (it was silently dropped before)"
+    );
+    let hero = &scene.nodes[&lumen_core::NodeId::from("hero_root")];
+    assert_eq!(hero.children, vec![lumen_core::NodeId::from("title")]);
 }
 
 #[test]
@@ -289,6 +321,81 @@ page page_square size(400,400,px)
     assert_eq!(text.font_weight, 700);
     assert!((text.letter_spacing - 3.6).abs() < 0.001);
     assert_eq!(text.wrap, TextWrap::NoWrap);
+}
+
+#[test]
+fn dsl_valign_lowers_to_text_node_on_create() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_valign"), "Valign");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  band text "Centered band" p(0,0) s(fill,200) align(center) valign(center)
+  footer text "Bottom" p(0,220) s(fill,120) valign(bottom)
+  top text "Top default" p(0,0) s(fill,80)
+"#,
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let NodeKind::Text(band) = &scene.nodes[&NodeId::from("band")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(band.valign, VerticalAlign::Center);
+    let NodeKind::Text(footer) = &scene.nodes[&NodeId::from("footer")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(footer.valign, VerticalAlign::Bottom);
+    let NodeKind::Text(top) = &scene.nodes[&NodeId::from("top")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(top.valign, VerticalAlign::Top);
+}
+
+#[test]
+fn dsl_modify_line_updates_valign() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_valign_mod"), "ValignMod");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_square size(400,400,px)
+  band text "Band" p(0,0) s(fill,200)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+
+    let second = compile_dsl_into_scene(r#"#band valign(bottom)"#, &mut scene);
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+
+    let NodeKind::Text(band) = &scene.nodes[&NodeId::from("band")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(band.valign, VerticalAlign::Bottom);
+}
+
+#[test]
+fn dsl_rejects_valign_middle_value_with_no_alias() {
+    // D2: no aliases — `middle` fails loudly with the standard value diagnostic.
+    let output = compile_dsl(
+        r#"
+page page_square size(400,400,px)
+  band text "Band" p(0,0) s(fill,200) valign(middle)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0275");
+}
+
+#[test]
+fn dsl_rejects_valign_wrong_arity() {
+    let output = compile_dsl(
+        r#"
+page page_square size(400,400,px)
+  band text "Band" p(0,0) s(fill,200) valign(top,center)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0230");
 }
 
 #[test]
@@ -695,15 +802,31 @@ fn svg_icon_lowers_to_a_vector_with_its_source_view_box() {
 }
 
 #[test]
-fn unsupported_paint_arguments_are_errors_not_silent_ignores() {
-    let output = parse_dsl(
+fn solid_opacity_argument_lowers_into_the_color_alpha() {
+    // A4 retires the LUMD0241 halt: `solid(color, opacity)` multiplies the
+    // opacity into the color's alpha at model-build time.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_solid"), "Solid");
+    let output = compile_dsl_into_scene(
         r#"
 page page_a4
   card frame p(0,0) s(100,100) fill(solid(#ffffff,o(0.5)))
 "#,
+        &mut scene,
     );
 
-    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0241");
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.fills.len(), 1);
+    // 0.5 * 0xff = 127.5 -> rounds to 0x80.
+    assert_eq!(
+        card.fills[0].paint,
+        Paint::Solid {
+            color: Color::Hex {
+                value: "#ffffff80".to_owned()
+            }
+        }
+    );
 }
 
 #[test]
@@ -1310,6 +1433,10 @@ fn export_profile_modify_line_lowers_to_upsert_profile() {
         raster: None,
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     });
 
     let output = compile_dsl_into_scene(
@@ -1715,7 +1842,10 @@ page page_square size(400,400,px)
         blur,
         spread,
         color_token,
-    } = &effect.kind;
+    } = &effect.kind
+    else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(
         color,
         &Color::Hex {
@@ -1757,7 +1887,10 @@ page page_square size(400,400,px)
         blur,
         spread,
         ..
-    } = &card.effects[0].kind;
+    } = &card.effects[0].kind
+    else {
+        panic!("expected drop shadow");
+    };
     // The alpha rides in the color (input #AARRGGBB `#19000000` ~10% black,
     // normalized to canonical #RRGGBBAA); opacity stays the channel default.
     assert_eq!(
@@ -1803,7 +1936,10 @@ page page_square size(400,400,px)
     assert_eq!(card.effects.len(), 1);
     let lumen_core::EffectKind::DropShadow {
         color, x, y, blur, ..
-    } = &card.effects[0].kind;
+    } = &card.effects[0].kind
+    else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(
         color,
         &Color::Hex {
@@ -1911,7 +2047,9 @@ page page_square size(400,400,px)
     assert!(update.operation_error.is_none());
     let card = &scene.nodes[&NodeId::from("card")];
     assert_eq!(card.effects.len(), 1);
-    let lumen_core::EffectKind::DropShadow { opacity, blur, .. } = &card.effects[0].kind;
+    let lumen_core::EffectKind::DropShadow { opacity, blur, .. } = &card.effects[0].kind else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(*opacity, 0.3);
     assert_eq!(*blur, 32.0);
 
@@ -2011,7 +2149,10 @@ page page_square size(400,400,px)
     assert_no_dsl_errors(&output.compile_output.diagnostics);
     let lumen_core::EffectKind::DropShadow {
         color, color_token, ..
-    } = &scene.nodes[&NodeId::from("card")].effects[0].kind;
+    } = &scene.nodes[&NodeId::from("card")].effects[0].kind
+    else {
+        panic!("expected drop shadow");
+    };
     assert_eq!(
         color,
         &Color::Token {
@@ -2405,5 +2546,1387 @@ fn node_edit_patch_wire_format_omits_absolute_box_when_unchanged() {
     assert!(
         !json.contains("absolute_box"),
         "unchanged absolute_box must be omitted from the wire format: {json}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// LUMD0206 double-trap compiler-ergonomics fixes (F1 / F2 / F3).
+//
+// A live agent run (run_5daea3965dd641bbba1c6e5e1241ef6a) burned three
+// iterations on a ship-grade design because the LUMD0206 halt was atomic and
+// its hint steered the model into a worse failure. The fixtures below are the
+// EXACT model output from iterations 001 and 002; they must now compile.
+// ---------------------------------------------------------------------------
+
+/// Iteration 001 verbatim: line 1 is model narration, everything after it is a
+/// complete, valid subtree targeting the existing empty page via `#page:`.
+const LUMD0206_ITER1: &str = concat!(
+    "page_custom_artboard is empty (zero nodes) — my canvas. I'll open with a `#page:` line and author the subtree. Split idiom: full-bleed product hero image top, brand band below carrying logo + copy + CTA. The hero image already has a baked-in label so text over it isn't needed; keep copy on the solid band (no scrim needed).\n",
+    "\n",
+    "#page:page_custom_artboard size(1080,1080,px)\n",
+    "  artboard al(v, x(s), g(0), pad(0)) p(0,0) s(fill,fill) fill($surface.page) clip(true)\n",
+    "    hero fr p(0,0) s(1080,560) clip(true) fill($surface.inverse)\n",
+    "      photo image asset(asset_ing_631ad93878fc572f) p(0,0) s(1080,560)\n",
+    "    band al(v, x(s), y(c), g($space.stack.default), pad(72,80)) p(0,0) s(1080,fill) fill($surface.brand)\n",
+    "      logo image asset(asset_bbd6b7b8e2f2) p(0,0) s(280,42)\n",
+    "      eyebrow text \"NOW AVAILABLE\" p(0,0) s(920,hug) style($type.eyebrow) fill($text.inverse) wrap_text(true) max_lines(1) slot(campaign.eyebrow)\n",
+    "      headline text \"Meet your AI documentation assistant.\" p(0,0) s(920,hug) style($type.headline) font_size($type.size.6xl) lh(1.05) fill($text.inverse) wrap_text(true) max_lines(2) slot(campaign.headline)\n",
+    "      subtitle text \"Scribe drafts your clinical notes automatically, so you can focus on patients.\" p(0,0) s(860,hug) style($type.body) font_size($type.size.lg) lh(1.4) fill($text.inverse) wrap_text(true) max_lines(3) slot(offer.primary_message)\n",
+    "      cta al(h, x(c), y(c), pad(18,40)) p(0,0) s(320,72) fill($surface.inverse) rd($radius.button)\n",
+    "        cta_text text \"Book a Demo\" p(0,0) s(fill,hug) align(center) style($type.cta) fill($text.inverse) max_lines(1) slot(campaign.cta)\n",
+    "  #slot:campaign.eyebrow sample(\"NOW AVAILABLE\") worst_case(\"NOW AVAILABLE\")\n",
+    "  #slot:campaign.headline sample(\"Meet your AI documentation assistant.\") worst_case(\"Meet your AI documentation assistant.\")\n",
+    "  #slot:offer.primary_message sample(\"Scribe drafts your clinical notes automatically, so you can focus on patients.\") worst_case(\"Scribe drafts your clinical notes automatically, so you can focus on patients.\")\n",
+    "  #slot:campaign.cta sample(\"Book a Demo\") worst_case(\"Book a Demo\")\n",
+);
+
+/// Iteration 002 verbatim: line 1 is a BARE `page_custom_artboard size(...)`
+/// opener — the narration was deleted along with the `#page:` prefix.
+const LUMD0206_ITER2: &str = concat!(
+    "page_custom_artboard size(1080,1080,px)\n",
+    "  artboard al(v, x(s), g(0), pad(0)) p(0,0) s(fill,fill) fill($surface.page) clip(true)\n",
+    "    hero fr p(0,0) s(1080,560) clip(true) fill($surface.inverse)\n",
+    "      photo image asset(asset_ing_631ad93878fc572f) p(0,0) s(1080,560)\n",
+    "    band al(v, x(s), y(c), g($space.stack.default), pad(72,80)) p(0,0) s(1080,fill) fill($surface.brand)\n",
+    "      logolock al(h, x(s), y(c), g(0), pad(16,24)) p(0,0) s(320,74) fill($surface.page) rd($radius.card)\n",
+    "        logo image asset(asset_bbd6b7b8e2f2) p(0,0) s(272,40)\n",
+    "      eyebrow text \"INTRODUCING\" p(0,0) s(920,hug) style($type.eyebrow) fill($text.inverse) wrap_text(true) max_lines(1) slot(campaign.eyebrow)\n",
+    "      headline text \"Meet your AI documentation assistant.\" p(0,0) s(920,hug) style($type.headline) font_size($type.size.5xl) lh(1.06) fill($text.inverse) wrap_text(true) max_lines(2) slot(campaign.headline)\n",
+    "      subtitle text \"Scribe drafts clinical notes automatically, so you can focus on patients.\" p(0,0) s(860,hug) style($type.body) font_size($type.size.lg) lh(1.4) fill($text.inverse) wrap_text(true) max_lines(3) slot(offer.primary_message)\n",
+    "      cta al(h, x(c), y(c), pad(18,40)) p(0,0) s(320,72) fill($surface.inverse) rd($radius.button)\n",
+    "        cta_text text \"Book a Demo\" p(0,0) s(fill,hug) align(center) style($type.cta) fill($text.inverse) max_lines(1) slot(campaign.cta)\n",
+    "  #slot:campaign.eyebrow sample(\"INTRODUCING\") worst_case(\"INTRODUCING\")\n",
+    "  #slot:campaign.headline sample(\"Meet your AI documentation assistant.\") worst_case(\"Meet your AI documentation assistant.\")\n",
+    "  #slot:offer.primary_message sample(\"Scribe drafts clinical notes automatically, so you can focus on patients.\") worst_case(\"Scribe drafts clinical notes automatically, so you can focus on patients.\")\n",
+    "  #slot:campaign.cta sample(\"Book a Demo\") worst_case(\"Book a Demo\")\n",
+);
+
+fn scene_with_empty_custom_artboard() -> Scene {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_ergo"), "Ergo");
+    let seed = compile_dsl_into_scene("page page_custom_artboard size(1080,1080,px)", &mut scene);
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+    assert!(scene.pages[&PageId::from("page_custom_artboard")]
+        .children
+        .is_empty());
+    scene
+}
+
+fn assert_hero_and_logo_present(scene: &Scene) {
+    let photo = scene
+        .nodes
+        .get(&NodeId::from("photo"))
+        .expect("hero photo node must exist");
+    match &photo.kind {
+        NodeKind::Image(image) => assert_eq!(
+            image.asset_id,
+            lumen_core::AssetId::from("asset_ing_631ad93878fc572f")
+        ),
+        other => panic!("photo node must be an image, got {other:?}"),
+    }
+    let logo = scene
+        .nodes
+        .get(&NodeId::from("logo"))
+        .expect("logo node must exist");
+    match &logo.kind {
+        NodeKind::Image(image) => assert_eq!(
+            image.asset_id,
+            lumen_core::AssetId::from("asset_bbd6b7b8e2f2")
+        ),
+        other => panic!("logo node must be an image, got {other:?}"),
+    }
+}
+
+/// F2 — leading-narration tolerance. Iteration 001 opens with a prose line
+/// then a valid `#page:` subtree; the narration is skipped with a LUMD0260
+/// warning instead of halting, and the whole design lands.
+#[test]
+fn lumd0206_leading_narration_is_skipped_and_design_lands() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output = compile_dsl_into_scene(LUMD0206_ITER1, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "the narration line must be reported as a LUMD0260 warning, not silently dropped: {:#?}",
+        output.compile_output.diagnostics
+    );
+    assert!(
+        !output.compile_output.operations.is_empty(),
+        "the valid subtree after the narration must produce operations"
+    );
+    assert_hero_and_logo_present(&scene);
+}
+
+/// F1 — bare known-page-id normalization. Iteration 002 opens with a bare
+/// `page_custom_artboard size(...)` line; it is rewritten into a `#page:`
+/// modification (LUMD0259) and routes through the empty-page compose path.
+#[test]
+fn lumd0206_bare_known_page_id_is_normalized_and_design_lands() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output = compile_dsl_into_scene(LUMD0206_ITER2, &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0259"),
+        "the bare page reference must be reported as a LUMD0259 warning: {:#?}",
+        output.compile_output.diagnostics
+    );
+    assert!(!output.compile_output.operations.is_empty());
+    assert_hero_and_logo_present(&scene);
+}
+
+/// F1 precedence over F2: a leading bare KNOWN page id is normalized (LUMD0259),
+/// never skipped as narration (LUMD0260).
+#[test]
+fn lumd0206_f1_takes_precedence_over_f2_for_bare_known_page_id() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output =
+        compile_dsl_into_scene("page_custom_artboard size(1080,1080,px)", &mut scene);
+
+    let codes: Vec<&str> = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.diagnostic.code.as_str())
+        .collect();
+    assert!(
+        codes.contains(&"LUMD0259"),
+        "bare known page id must be normalized (F1): {codes:?}"
+    );
+    assert!(
+        !codes.contains(&"LUMD0260"),
+        "F1 must win over F2 — no narration skip: {codes:?}"
+    );
+    assert!(output.compile_output.halted_at.is_none());
+}
+
+/// F2 bounds: a block of 4+ narration-only lines (no structural line ever
+/// parses) halts with LUMD0206 exactly as before — zero operations, and the
+/// tentative skip warnings are dropped so it fails cleanly.
+#[test]
+fn lumd0206_four_narration_lines_still_halt() {
+    let garbage = concat!(
+        "this is the first line of prose I wrote\n",
+        "still explaining what I intend to do here\n",
+        "and yet more narration about the layout\n",
+        "one more sentence that is not DSL at all\n",
+    );
+    let output = compile_dsl(garbage);
+
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0206");
+    assert!(
+        output.operations.is_empty(),
+        "a pure-narration block must apply zero operations"
+    );
+    assert!(
+        !output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "a genuinely failing block must not leave warnings-instead-of-error: {:#?}",
+        output.diagnostics
+    );
+    assert!(output.has_errors());
+}
+
+/// The skip is leading-lines-only: an unknown-element line AFTER a structural
+/// line has parsed still halts with LUMD0206.
+#[test]
+fn lumd0206_mid_block_unknown_element_still_halts() {
+    let source = concat!(
+        "page page_a4\n",
+        "  hero fr p(0,0) s(400,400) fill($surface.brand)\n",
+        "  prose narration sneaking in after a real element\n",
+    );
+    let output = compile_dsl(source);
+
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0206");
+    assert!(
+        !output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "a mid-block failure must not be skipped as narration: {:#?}",
+        output.diagnostics
+    );
+}
+
+/// F3 — an UNKNOWN bare page id matches no known page, so it still fails
+/// LUMD0206, and the amended hint now points at the `#page:` form.
+#[test]
+fn lumd0206_unknown_bare_page_id_fails_with_amended_hint() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let output = compile_dsl_into_scene("page_nonexistent size(1080,1080,px)", &mut scene);
+
+    let halt = output.compile_output.halted_at.as_ref().unwrap();
+    assert_eq!(halt.code, "LUMD0206");
+    let diagnostic = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.diagnostic.code == "LUMD0206")
+        .expect("LUMD0206 diagnostic must be present");
+    let hint = diagnostic
+        .diagnostic
+        .hint
+        .as_ref()
+        .expect("LUMD0206 must carry a hint");
+    assert!(
+        hint.contains("#page:<page_id>"),
+        "the amended hint must point at the #page: form: {hint}"
+    );
+}
+
+/// Review refinement: the garbage-block guard keys on "zero PARSED lines", not
+/// "zero structural lines" — a narration-led block of ONLY `#node prop(...)`
+/// modifications (the repair-iteration shape, the single most common narration
+/// leak site) must compile with the LUMD0260 warning, not die on the restored
+/// halt.
+#[test]
+fn lumd0206_narration_led_modification_only_repair_block_compiles() {
+    let mut scene = scene_with_empty_custom_artboard();
+    let seed = compile_dsl_into_scene(
+        concat!(
+            "#page:page_custom_artboard size(1080,1080,px)\n",
+            "  artboard al(v, x(s), g(0), pad(0)) p(0,0) s(fill,fill) clip(true)\n",
+            "    headline text \"Hello\" p(0,0) s(400,hug) font(\"Inter\",32,700,left)\n",
+        ),
+        &mut scene,
+    );
+    assert!(seed.compile_output.halted_at.is_none());
+
+    let repair = concat!(
+        "The headline overflows its band, so I will simply raise its size cap.\n",
+        "#headline font_size(48)\n",
+    );
+    let output = compile_dsl_into_scene(repair, &mut scene);
+
+    assert!(
+        output.compile_output.halted_at.is_none(),
+        "a narration-led modification-only repair block must compile: {:#?}",
+        output.compile_output.halted_at
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0260"),
+        "the narration line must be reported, never silently dropped: {:#?}",
+        output.compile_output.diagnostics
+    );
+    assert!(
+        !output.compile_output.operations.is_empty(),
+        "the modification after the narration must produce operations"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Modify-path kit-asset swap (Slice 2 D1). A `#node ... asset(X)` line that
+// swaps an image node to an asset the scene has not registered yet used to
+// hard-fail (LUMD0900 → PlaceAssetInNode requires the record), even though the
+// declaration path tolerates the same dangling reference. D1 degrades the
+// modify path to declaration semantics for a LEAF node and warns LUMD0261.
+// ---------------------------------------------------------------------------
+
+/// A minimal REGISTERED raster asset record, decoded so the scene can carry it
+/// verbatim (mirrors assets_pipeline.rs `decode_asset`).
+fn registered_raster_asset(id: &str, label: &str) -> lumen_core::AssetRecord {
+    serde_json::from_str(&format!(
+        r#"{{
+            "id": "{id}",
+            "label": "{label}",
+            "kind": "raster_image",
+            "status": "ready",
+            "source": {{ "kind": "uploaded", "filename": "x.png", "uploaded_by": "t" }},
+            "media": {{ "mime_type": "image/png" }},
+            "raster": {{ "pixel_width": 1080, "pixel_height": 560 }}
+        }}"#
+    ))
+    .unwrap()
+}
+
+/// Base scene: page → `hero` frame → `hero_img` leaf image already carrying a
+/// DIFFERENT registered asset with populated placement provenance + alt, so a
+/// swap has real state to clear. The dashboard asset is NOT in scene.assets.
+fn seed_hero_scene() -> Scene {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_hero_swap"), "Hero");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_hero size(1080,560,px)
+  hero frame p(0,0) s(1080,560)
+    hero_img image asset(asset_existing_hero) p(0,0) s(1080,560)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // Register a DIFFERENT asset and place it into hero_img so the base node
+    // carries source_asset_id / asset_placement / alt (from the label).
+    scene
+        .apply_operation(Operation::UpsertAsset {
+            asset: registered_raster_asset("asset_existing_hero", "Old hero photo"),
+        })
+        .unwrap();
+    scene
+        .apply_operation(Operation::PlaceAssetInNode {
+            node_id: NodeId::from("hero_img"),
+            asset_id: lumen_core::AssetId::from("asset_existing_hero"),
+            placement: lumen_core::AssetPlacement::default(),
+        })
+        .unwrap();
+
+    // Precondition sanity: the base node has all three provenance signals.
+    let base = &scene.nodes[&NodeId::from("hero_img")];
+    assert!(base.source_asset_id.is_some());
+    assert!(base.asset_placement.is_some());
+    let NodeKind::Image(base_img) = &base.kind else {
+        panic!("expected image base node");
+    };
+    assert!(base_img.alt.is_some());
+    scene
+}
+
+const ITERATION_3_FIXTURE: &str = "\
+// heads-up: reworked the hero cluster and lower-half distribution — swapped the pillarboxed text-baked hero photo for the clean dashboard product image cover-filling the top band, and rebalanced the copy/logo/CTA into a fill-height centered footer region so the empty white void at the bottom is removed
+#hero p(0,0) s(1080,560) clip(true) fill($surface.inverse)
+#hero_img p(0,0) s(1080,560) asset(asset_ing_9394e96d3c08576a)";
+
+#[test]
+fn dsl_modify_swap_to_unregistered_kit_asset_degrades_to_dangling_reference() {
+    let mut scene = seed_hero_scene();
+
+    let output = compile_dsl_into_scene(ITERATION_3_FIXTURE, &mut scene);
+
+    // Compiles, no halt, real ops applied.
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.compile_output.halted_at.is_none());
+    assert!(output.operation_error.is_none());
+    assert!(!output.compile_output.operations.is_empty());
+
+    // The swap warns LUMD0261 (never silent).
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"),
+        "the unregistered swap must warn LUMD0261: {:#?}",
+        output.compile_output.diagnostics
+    );
+
+    // hero_img now references the dashboard asset as a dangling reference with
+    // alt cleared and stale placement provenance cleared.
+    let img_node = &scene.nodes[&NodeId::from("hero_img")];
+    let NodeKind::Image(image) = &img_node.kind else {
+        panic!("expected image kind after swap");
+    };
+    assert_eq!(image.asset_id.as_str(), "asset_ing_9394e96d3c08576a");
+    assert_eq!(image.alt, None);
+    assert_eq!(img_node.source_asset_id, None);
+    assert_eq!(img_node.asset_placement, None);
+    assert!(!scene.assets.contains_key(&lumen_core::AssetId::from(
+        "asset_ing_9394e96d3c08576a"
+    )));
+
+    // The `#hero` line's rest-of-patch (clip + fill) still applied to the frame.
+    let hero = &scene.nodes[&NodeId::from("hero")];
+    assert!(hero.clip);
+    assert!(!hero.fills.is_empty());
+}
+
+#[test]
+fn dsl_modify_swap_to_registered_asset_keeps_place_asset_in_node_route() {
+    let mut scene = seed_hero_scene();
+    // Register the target asset so the swap resolves to the placement route.
+    scene
+        .apply_operation(Operation::UpsertAsset {
+            asset: registered_raster_asset("asset_ing_9394e96d3c08576a", "Dashboard product"),
+        })
+        .unwrap();
+
+    let output = compile_dsl_into_scene(
+        "#hero_img p(0,0) s(1080,560) asset(asset_ing_9394e96d3c08576a)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    // No degradation warning for a registered target.
+    assert!(
+        !output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"),
+        "a registered swap must NOT warn LUMD0261: {:#?}",
+        output.compile_output.diagnostics
+    );
+
+    // The op stream carries PlaceAssetInNode exactly as today.
+    assert!(
+        output
+            .compile_output
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, Operation::PlaceAssetInNode { .. })),
+        "a registered swap keeps the PlaceAssetInNode route: {:#?}",
+        output.compile_output.operations
+    );
+
+    // Full placement semantics: provenance repopulated for the new asset.
+    let img_node = &scene.nodes[&NodeId::from("hero_img")];
+    assert_eq!(
+        img_node.source_asset_id,
+        Some(lumen_core::AssetId::from("asset_ing_9394e96d3c08576a"))
+    );
+    assert!(img_node.asset_placement.is_some());
+}
+
+#[test]
+fn dsl_modify_swap_on_node_with_children_still_errors() {
+    // A node WITH children keeps today's hard error — the leaf rule mirrors the
+    // placement path. `hero` (the frame) has a child, so swapping its image
+    // asset routes through build_modify_operations unchanged and fails.
+    let mut scene = seed_hero_scene();
+
+    let output = compile_dsl_into_scene(
+        "#hero p(0,0) s(1080,560) asset(asset_ing_9394e96d3c08576a)",
+        &mut scene,
+    );
+
+    // Today's behavior: the modify halts, no ops applied, error surfaced.
+    assert!(
+        output.compile_output.has_errors(),
+        "a swap on a node with children must still error: {:#?}",
+        output.compile_output.diagnostics
+    );
+    let error = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.diagnostic.severity == DiagnosticSeverity::Error)
+        .expect("expected a hard error");
+    // Pin today's error: LUMD0900 targeted-edit failure naming the missing asset.
+    assert_eq!(error.diagnostic.code, "LUMD0900");
+    assert!(
+        error
+            .diagnostic
+            .message
+            .contains("asset asset_ing_9394e96d3c08576a does not exist"),
+        "expected the missing-asset message, got: {}",
+        error.diagnostic.message
+    );
+    // No LUMD0261 for the children case — it never degrades.
+    assert!(!output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"));
+}
+
+#[test]
+fn dsl_modify_swap_degraded_still_applies_rest_of_patch() {
+    // The degraded path must still land the other properties on the SAME line
+    // (size + clip), not only the kind swap.
+    let mut scene = seed_hero_scene();
+
+    let output = compile_dsl_into_scene(
+        "#hero_img s(640,360) clip(true) asset(asset_ing_9394e96d3c08576a)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.diagnostic.code == "LUMD0261"));
+
+    let img_node = &scene.nodes[&NodeId::from("hero_img")];
+    let NodeKind::Image(image) = &img_node.kind else {
+        panic!("expected image kind after swap");
+    };
+    assert_eq!(image.asset_id.as_str(), "asset_ing_9394e96d3c08576a");
+    // rest-of-patch: size + clip landed via the ordinary modify op.
+    assert!(img_node.clip);
+    assert_eq!(img_node.size.width, Dimension::Fixed(640.0));
+    assert_eq!(img_node.size.height, Dimension::Fixed(360.0));
+}
+
+// ---------------------------------------------------------------------------
+// Slice 3 — reconcile directive (tests 8-13 from the Phase A brief).
+// ---------------------------------------------------------------------------
+
+fn summary_diag<'a>(
+    diagnostics: &'a [lumen_core::DslDiagnostic],
+) -> Option<&'a lumen_core::DslDiagnostic> {
+    diagnostics
+        .iter()
+        .find(|diag| diag.diagnostic.code == "LUMD0263")
+}
+
+// Test 8 — P3r3's intent in reconcile form: a container `cta` holding an
+// agent-born `cta_text`; a reconcile block that omits `cta_text` and adds an
+// image + caption → remove + 2 inserts, compiles clean, LUMD0263 present.
+#[test]
+fn reconcile_p3r3_intent_removes_and_inserts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_p3r3"), "P3r3");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_cta size(1080,1350,px)
+  cta al(v) p(0,0) s(320,72)
+    cta_text text "Book a Demo" p(0,0) s(320,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let reconcile = compile_dsl_into_scene(
+        r#"
+reconcile(cta)
+  cta_shot image asset(asset_ing_9394e96d3c08576a) p(0,0) s(320,220)
+  caption text "See it in action" p(0,0) s(320,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+
+    // cta_text removed; the two new nodes present under cta, in order.
+    assert!(!scene.nodes.contains_key(&NodeId::from("cta_text")));
+    assert_eq!(
+        scene.nodes[&NodeId::from("cta")].children,
+        vec![NodeId::from("cta_shot"), NodeId::from("caption")]
+    );
+    let summary = summary_diag(&reconcile.compile_output.diagnostics)
+        .expect("LUMD0263 summary present");
+    assert!(summary.diagnostic.message.contains("1 removed"));
+    assert!(summary.diagnostic.message.contains("2 inserted"));
+}
+
+// Test 9 — P4r3's intent: reconcile over `main` re-emitting its existing
+// children (unchanged) plus a new testimonial text → exactly 1 InsertNode,
+// zero ops for the unchanged re-emitted children (id-reuse + suspended
+// duplicate-id checks in-block).
+#[test]
+fn reconcile_p4r3_intent_reuses_ids_and_inserts_one() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_p4r3"), "P4r3");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+    body text "Body copy" p(0,0) s(600,120)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let reconcile = compile_dsl_into_scene(
+        r#"
+reconcile(main)
+  lead text "Lead copy" p(0,0) s(600,40)
+  body text "Body copy" p(0,0) s(600,120)
+  testimonial text "Loved by teams" p(0,0) s(600,60)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+
+    // Exactly one InsertNode (testimonial); the re-emitted lead/body are
+    // field-identical → zero ops for them.
+    let inserts: Vec<&NodeId> = reconcile
+        .compile_output
+        .operations
+        .iter()
+        .filter_map(|op| match op {
+            Operation::InsertNode { node, .. } => Some(&node.id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inserts, vec![&NodeId::from("testimonial")]);
+    // No stray updates/removes/moves for the unchanged children.
+    assert_eq!(reconcile.compile_output.operations.len(), 1);
+    assert_eq!(
+        scene.nodes[&NodeId::from("main")].children,
+        vec![
+            NodeId::from("lead"),
+            NodeId::from("body"),
+            NodeId::from("testimonial")
+        ]
+    );
+}
+
+// Test 10 — same as 9 but the omitted node is protected → kept + LUMD0262
+// warning, no RemoveNode.
+#[test]
+fn reconcile_protected_omission_keeps_and_warns() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_reconcile_protected"),
+        "Protected",
+    );
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+    body text "Body copy" p(0,0) s(600,120)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // `body` is protected (seed-born / human). The reconcile omits it.
+    let mut protected = BTreeSet::new();
+    protected.insert(NodeId::from("body"));
+    let reconcile = compile_dsl_into_scene_with_session_and_protected(
+        r#"
+reconcile(main)
+  lead text "Lead copy" p(0,0) s(600,40)
+"#,
+        &mut scene,
+        None,
+        protected,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+
+    // body kept, no removal op.
+    assert!(scene.nodes.contains_key(&NodeId::from("body")));
+    assert!(!reconcile.compile_output.operations.iter().any(|op| matches!(
+        op,
+        Operation::RemoveNode { node_id } if node_id == &NodeId::from("body")
+    )));
+    assert!(reconcile
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0262"
+            && diag.diagnostic.message.contains("body")));
+}
+
+// Test 11 — invalid targets → LUMD0264 with the container hint.
+#[test]
+fn reconcile_invalid_target_errors_with_container_hint() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_reconcile_bad_target"),
+        "BadTarget",
+    );
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    leaf text "leaf" p(0,0) s(600,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // Nonexistent target.
+    let missing = compile_dsl_into_scene("reconcile(nope)\n  x text \"x\" p(0,0) s(10,10)", &mut scene);
+    let missing_diag = missing
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diag| diag.diagnostic.code == "LUMD0264")
+        .expect("LUMD0264 for missing target");
+    assert!(missing_diag
+        .diagnostic
+        .hint
+        .as_ref()
+        .unwrap()
+        .contains("main"));
+
+    // Leaf (text) target.
+    let leaf = compile_dsl_into_scene("reconcile(leaf)\n  x text \"x\" p(0,0) s(10,10)", &mut scene);
+    assert!(leaf
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0264"));
+}
+
+// Test 12 — a nested delete(protected_id) inside a reconcile block IS honored
+// (delete stays the human-content deletion path).
+#[test]
+fn reconcile_nested_delete_honors_explicit_removal_of_protected() {
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_reconcile_delete"),
+        "Delete",
+    );
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+    body text "Body copy" p(0,0) s(600,120)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // `body` is protected, but the block explicitly deletes it → removed.
+    let mut protected = BTreeSet::new();
+    protected.insert(NodeId::from("body"));
+    let reconcile = compile_dsl_into_scene_with_session_and_protected(
+        r#"
+reconcile(main)
+  lead text "Lead copy" p(0,0) s(600,40)
+  delete(body)
+"#,
+        &mut scene,
+        None,
+        protected,
+    );
+    assert_no_dsl_errors(&reconcile.compile_output.diagnostics);
+    assert!(reconcile.operation_error.is_none());
+    assert!(!scene.nodes.contains_key(&NodeId::from("body")));
+    // Explicit delete wins over protection: no LUMD0262 kept-warning for body.
+    assert!(!reconcile
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0262"));
+}
+
+// Test 13 — duplicate-id checks OUTSIDE a reconcile block are unchanged: a
+// plain block re-declaring an existing id still halts LUMD0401.
+#[test]
+fn duplicate_id_outside_reconcile_block_still_halts() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_dupe"), "Dupe");
+    let seed = compile_dsl_into_scene(
+        r#"
+page page_main size(1080,1350,px)
+  main al(v) p(0,0) s(1080,900)
+    lead text "Lead copy" p(0,0) s(600,40)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    // Re-declaring `lead` in a PLAIN continuation (no reconcile) still halts.
+    let dupe = compile_dsl_into_scene(
+        r#"
+#page:page_main
+  lead text "Duplicate" p(0,0) s(600,40)
+"#,
+        &mut scene,
+    );
+    assert!(dupe
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0401"));
+}
+
+// --- D12: detach_to_freehand(<node_id>) DSL directive ---
+//
+// The directive lowers to the core `StructuredEditInstruction::DetachToFreehand`
+// builder: it bakes a managed (solver-owned) node to `position_mode: absolute`
+// at its solved box, so the node joins the page-level freehand paint pass and
+// can layer ABOVE a pre-existing pinned human node (the P1r6 doppelganger
+// class, where sibling `after(...)` could not reorder managed content above a
+// pin because pins paint in a page-level pass after all in-flow content).
+
+/// A page with (in document order) a pinned human ellipse `human_ellipse_p1`
+/// followed by a MANAGED (solver-owned, `position_mode: managed`) mark rect
+/// `ellipse_mark`, both carrying solved `computed` geometry. This is the P1r6
+/// scenario: the human pin paints in the freehand pass, so the earlier-declared
+/// managed mark cannot appear on top of it until it, too, joins the pass.
+fn scene_p1r6_pin_then_managed_mark() -> Scene {
+    use lumen_core::{ComputedGeometry, Node, Page, PageSize};
+
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_p1r6"), "P1r6");
+    scene
+        .apply_operation(Operation::AddPage {
+            page: Page {
+                id: PageId::from("page_a4"),
+                name: "Page".to_owned(),
+                size: PageSize {
+                    width: 1080.0,
+                    height: 1080.0,
+                    unit: Unit::Px,
+                    preset: Some(PagePreset::Custom),
+                    orientation: Orientation::Landscape,
+                    source: None,
+                    output: None,
+                },
+                children: Vec::new(),
+                bleed: None,
+                safe_area: None,
+                background: Vec::new(),
+            },
+        })
+        .unwrap();
+
+    // The human freehand pin (already absolute) is declared FIRST.
+    let pin_box = lumen_core::Rect {
+        x: 600.0,
+        y: 900.0,
+        width: 340.0,
+        height: 270.0,
+    };
+    let mut pin = Node::new(NodeId::from("human_ellipse_p1"), NodeKind::Ellipse);
+    pin.size = lumen_core::SizeSpec::fixed(pin_box.width, pin_box.height);
+    pin.position_mode = lumen_core::PositionMode::Absolute;
+    pin.absolute_box = Some(pin_box.clone());
+    pin.base_anchor = Some(pin_box.clone());
+    pin.computed = Some(ComputedGeometry {
+        layout_bounds: pin_box.clone(),
+        render_bounds: pin_box.clone(),
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 0,
+            node: pin,
+        })
+        .unwrap();
+
+    // The managed mark is declared AFTER the pin, still solver-owned. It has
+    // solved geometry so `detach_to_freehand` can read its box.
+    let mark_box = lumen_core::Rect {
+        x: 690.0,
+        y: 955.0,
+        width: 160.0,
+        height: 160.0,
+    };
+    let mut mark = Node::new(NodeId::from("ellipse_mark"), NodeKind::Rect);
+    mark.size = lumen_core::SizeSpec::fixed(mark_box.width, mark_box.height);
+    mark.computed = Some(ComputedGeometry {
+        layout_bounds: mark_box.clone(),
+        render_bounds: mark_box.clone(),
+    });
+    scene
+        .apply_operation(Operation::InsertNode {
+            parent: ParentRef::Page(PageId::from("page_a4")),
+            index: 1,
+            node: mark,
+        })
+        .unwrap();
+
+    scene
+}
+
+#[test]
+fn detach_to_freehand_bakes_managed_node_to_absolute_at_solved_box() {
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+    let solved = scene.nodes[&NodeId::from("ellipse_mark")]
+        .computed
+        .as_ref()
+        .unwrap()
+        .layout_bounds
+        .clone();
+    assert_eq!(
+        scene.nodes[&NodeId::from("ellipse_mark")].position_mode,
+        lumen_core::PositionMode::Managed,
+        "mark starts solver-owned"
+    );
+
+    let output = compile_dsl_into_scene("detach_to_freehand(ellipse_mark)", &mut scene);
+
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let mark = &scene.nodes[&NodeId::from("ellipse_mark")];
+    assert_eq!(
+        mark.position_mode,
+        lumen_core::PositionMode::Absolute,
+        "detach must bake the node absolute"
+    );
+    assert_eq!(
+        mark.absolute_box,
+        Some(solved.clone()),
+        "detach pins the node at its solved box"
+    );
+    assert_eq!(
+        mark.base_anchor,
+        Some(solved),
+        "detach records the solved box as the base anchor"
+    );
+}
+
+#[test]
+fn detach_to_freehand_lets_managed_mark_paint_after_pinned_human_node() {
+    // THE P1r6 scenario. Before detach the mark is solver-owned, so the
+    // freehand pass contains ONLY the human pin. After detach the mark joins
+    // the pass and — being later in document order — paints AFTER the pin, so
+    // it is visible on top (what `after(...)` could never achieve).
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+
+    let before = lumen_core::pinned_paint_pass(&scene, &scene.pages[&PageId::from("page_a4")]);
+    assert_eq!(
+        before,
+        vec![NodeId::from("human_ellipse_p1")],
+        "only the human pin is in the freehand pass before detach"
+    );
+
+    let output = compile_dsl_into_scene("detach_to_freehand(ellipse_mark)", &mut scene);
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let after = lumen_core::pinned_paint_pass(&scene, &scene.pages[&PageId::from("page_a4")]);
+    assert_eq!(
+        after,
+        vec![
+            NodeId::from("human_ellipse_p1"),
+            NodeId::from("ellipse_mark"),
+        ],
+        "after detach the mark joins the freehand pass AFTER the pin (paints on top)"
+    );
+    // The pin's position in the pass is unchanged; the mark is strictly later,
+    // which is exactly the paint-order guarantee the directive exists to give.
+    let pin_index = after
+        .iter()
+        .position(|id| id == &NodeId::from("human_ellipse_p1"))
+        .unwrap();
+    let mark_index = after
+        .iter()
+        .position(|id| id == &NodeId::from("ellipse_mark"))
+        .unwrap();
+    assert!(
+        mark_index > pin_index,
+        "the detached mark must paint after the pre-existing pin"
+    );
+}
+
+#[test]
+fn detach_to_freehand_unknown_id_is_the_standard_unknown_target_diagnostic() {
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+
+    let output = compile_dsl_into_scene("detach_to_freehand(ghost)", &mut scene);
+
+    // Unknown node id falls through to the core builder's TargetNotFound, which
+    // `edit_error_diag` reports as the standard LUMD0900 halt.
+    assert_eq!(
+        output.compile_output.halted_at.as_ref().unwrap().code,
+        "LUMD0900"
+    );
+    assert!(output
+        .compile_output
+        .diagnostics
+        .iter()
+        .any(|diag| diag.diagnostic.code == "LUMD0900"
+            && diag.diagnostic.message.contains("ghost")));
+}
+
+#[test]
+fn detach_to_freehand_on_already_pinned_node_is_a_loud_no_op_warning() {
+    let mut scene = scene_p1r6_pin_then_managed_mark();
+
+    let output = compile_dsl_into_scene("detach_to_freehand(human_ellipse_p1)", &mut scene);
+
+    // Already-absolute target is a loud no-op: a LUMD0265 WARNING, not a halt,
+    // and no operations are emitted.
+    assert!(
+        output.compile_output.halted_at.is_none(),
+        "already-pinned detach must not halt"
+    );
+    assert!(output.operation_error.is_none());
+    let warning = output
+        .compile_output
+        .diagnostics
+        .iter()
+        .find(|diag| diag.diagnostic.code == "LUMD0265")
+        .expect("LUMD0265 warning emitted");
+    assert_eq!(
+        warning.diagnostic.severity,
+        DiagnosticSeverity::Warning,
+        "the no-op is a warning, not an error"
+    );
+    assert!(output
+        .compile_output
+        .operations
+        .iter()
+        .all(|op| !matches!(op, Operation::UpdateNode { node_id, .. }
+            if node_id == &NodeId::from("human_ellipse_p1"))));
+}
+
+// ---------------------------------------------------------------------------
+// A4 grammar: glow / blur / inner_shadow, per-corner radius, solid opacity,
+// bleed intent + misplaced-form disambiguation.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dsl_lowers_glow_blur_and_inner_shadow() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a4"), "A4");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(20,20) s(200,120) fill(#6d8bff) glow(#a855f7,o(0.8),blur(20),spread(4)) blur(3) inner_shadow(#101828,o(0.6),y(6),blur(10),spread(2))
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 3);
+    assert!(matches!(
+        card.effects[0].kind,
+        lumen_core::EffectKind::Glow { .. }
+    ));
+    assert!(matches!(
+        card.effects[1].kind,
+        lumen_core::EffectKind::LayerBlur { radius } if radius == 3.0
+    ));
+    assert!(matches!(
+        card.effects[2].kind,
+        lumen_core::EffectKind::InnerShadow { .. }
+    ));
+    // Auto ids are class-scoped and deterministic.
+    assert_eq!(card.effects[0].id, lumen_core::EffectId::from("effect_card_glow_1"));
+    assert_eq!(card.effects[1].id, lumen_core::EffectId::from("effect_card_blur_1"));
+    assert_eq!(
+        card.effects[2].id,
+        lumen_core::EffectId::from("effect_card_inner_shadow_1")
+    );
+}
+
+#[test]
+fn dsl_effect_upsert_and_remove_by_id() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a4u"), "A4");
+    compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(20,20) s(200,120) fill(#ffffff) glow(halo,#a855f7,o(0.8),blur(20),spread(4))
+"#,
+        &mut scene,
+    );
+    // Upsert same id in place.
+    compile_dsl_into_scene("#card glow(halo,#22d3ee,o(0.5),blur(30),spread(2))", &mut scene);
+    let card = &scene.nodes[&NodeId::from("card")];
+    assert_eq!(card.effects.len(), 1);
+    let lumen_core::EffectKind::Glow { blur, .. } = &card.effects[0].kind else {
+        panic!("expected glow");
+    };
+    assert_eq!(*blur, 30.0);
+
+    // Remove by id.
+    compile_dsl_into_scene("#card remove_effect(halo)", &mut scene);
+    assert!(scene.nodes[&NodeId::from("card")].effects.is_empty());
+}
+
+#[test]
+fn dsl_blur_shorthand_and_named_radius() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_blur"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) fill(#ffffff) blur(12)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    assert!(matches!(
+        scene.nodes[&NodeId::from("card")].effects[0].kind,
+        lumen_core::EffectKind::LayerBlur { radius } if radius == 12.0
+    ));
+}
+
+#[test]
+fn dsl_glow_rejects_xy_offset() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) glow(#a855f7,x(4))
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0266");
+}
+
+#[test]
+fn dsl_per_corner_radius_lowers_four_args() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_rd"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) fill(#ffffff) rd(40,4,40,4)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    let corner = &scene.nodes[&NodeId::from("card")].corner;
+    assert_eq!(corner.top_left, 40.0);
+    assert_eq!(corner.top_right, 4.0);
+    assert_eq!(corner.bottom_right, 40.0);
+    assert_eq!(corner.bottom_left, 4.0);
+}
+
+#[test]
+fn dsl_per_corner_radius_rejects_bad_arity() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) rd(40,4)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0230");
+}
+
+#[test]
+fn dsl_per_corner_radius_accepts_zero_corners() {
+    // Review-gate regression (A4, found by the K-A4 validation protocol):
+    // zero is a meaningful corner magnitude (a square corner) — the classic
+    // "round only the top" idiom must compile.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_rd0"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) fill(#ffffff) rd(12,12,0,0)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    let corner = &scene.nodes[&NodeId::from("card")].corner;
+    assert_eq!(corner.top_left, 12.0);
+    assert_eq!(corner.top_right, 12.0);
+    assert_eq!(corner.bottom_right, 0.0);
+    assert_eq!(corner.bottom_left, 0.0);
+}
+
+#[test]
+fn dsl_per_corner_radius_rejects_negative_corners() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(200,120) rd(12,12,-4,0)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0255");
+}
+
+#[test]
+fn dsl_solid_opacity_composes_into_existing_alpha() {
+    // opacity multiplies into the color alpha: 0xff * 0.5 = 127.5 -> 0x80.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_solid8"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) fill(solid(#ff0000,0.5))
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    assert_eq!(
+        scene.nodes[&NodeId::from("card")].fills[0].paint,
+        Paint::Solid {
+            color: Color::Hex {
+                value: "#ff000080".to_owned()
+            }
+        }
+    );
+}
+
+#[test]
+fn dsl_solid_opacity_out_of_range_is_a_loud_error() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  card r p(0,0) s(100,100) fill(solid(#ff0000,1.4))
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0270");
+}
+
+#[test]
+fn dsl_bleed_intent_sets_node_flag() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_bleed"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  wash r p(0,0) s(500,400) fill(#dbe6ff) bleed(true)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&out.compile_output.diagnostics);
+    assert!(scene.nodes[&NodeId::from("wash")].bleed);
+
+    // Modify path toggles it back off.
+    compile_dsl_into_scene("#wash bleed(false)", &mut scene);
+    assert!(!scene.nodes[&NodeId::from("wash")].bleed);
+}
+
+#[test]
+fn dsl_bleed_rect_on_node_is_disambiguated_loudly() {
+    // A 4-arg print-bleed rect on an element warns with LUMD0269 naming the
+    // per-node form, never silently ignored.
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_bleed2"), "A4");
+    let out = compile_dsl_into_scene(
+        r#"
+page page_a4
+  wash r p(0,0) s(100,100) fill(#ffffff) bleed(0,0,120,120)
+"#,
+        &mut scene,
+    );
+    assert!(
+        out.compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0269"),
+        "bleed rect on a node is disambiguated: {:#?}",
+        out.compile_output.diagnostics
+    );
+}
+
+#[test]
+fn dsl_bleed_arity_error_names_both_forms() {
+    let output = parse_dsl(
+        r#"
+page page_a4
+  wash r p(0,0) s(100,100) bleed(1,2,3)
+"#,
+    );
+    assert_eq!(output.halted_at.as_ref().unwrap().code, "LUMD0269");
+}
+
+#[test]
+fn dsl_applies_a6_typography_keywords() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  eyebrow text "kicker" p(24,24) s(240,hug) case(upper) underline(true) strike(true) truncate(true) para_spacing(12) max_lines(2) wrap_text(true)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    assert!(output.operation_error.is_none());
+
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("eyebrow")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.text_transform, lumen_core::TextTransform::Uppercase);
+    assert!(text.underline);
+    assert!(text.strikethrough);
+    assert!(text.truncate);
+    assert_eq!(text.paragraph_spacing, 12.0);
+}
+
+#[test]
+fn dsl_italic_keyword_create_and_modify_lowering() {
+    // A7b: block italic(bool) on create sets TextNode.italic; a later modify
+    // line flips it (content edits elsewhere preserve it — geometry channel,
+    // like valign).
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_italic"), "Italic");
+    let first = compile_dsl_into_scene(
+        r#"
+page page_a7 size(400,400,px)
+  quote text "Emphasis" p(24,24) s(240,hug) italic(true)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&first.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("quote")].kind else {
+        panic!("expected text node");
+    };
+    assert!(text.italic, "create-time italic(true) sets the field");
+
+    // Modify path: flip it back off.
+    let second = compile_dsl_into_scene(r#"#quote italic(false)"#, &mut scene);
+    assert_no_dsl_errors(&second.compile_output.diagnostics);
+    assert!(second.operation_error.is_none());
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("quote")].kind else {
+        panic!("expected text node");
+    };
+    assert!(!text.italic, "modify italic(false) clears the field");
+}
+
+#[test]
+fn dsl_italic_on_non_text_warns_lumd0607() {
+    // A7b: italic(...) on a non-text node warns LUMD0607 (underline mirror).
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_italic_wrong"), "ItalicWrong");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a7 size(400,400,px)
+  box rect p(0,0) s(100,100) italic(true)
+"#,
+        &mut scene,
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0607"),
+        "italic on a non-text node must warn LUMD0607: {:#?}",
+        output.compile_output.diagnostics
+    );
+}
+
+#[test]
+fn dsl_a6_keyword_aliases_resolve() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_alias"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  lbl text "x" p(0,0) s(240,hug) text_transform(lowercase) strikethrough(true) ellipsis(true) paragraph_spacing(4)
+"#,
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+    let NodeKind::Text(text) = &scene.nodes[&NodeId::from("lbl")].kind else {
+        panic!("expected text node");
+    };
+    assert_eq!(text.text_transform, lumen_core::TextTransform::Lowercase);
+    assert!(text.strikethrough);
+    assert!(text.truncate);
+    assert_eq!(text.paragraph_spacing, 4.0);
+}
+
+#[test]
+fn dsl_rejects_unknown_case_value_with_lumd0271() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_badcase"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  lbl text "x" p(0,0) s(240,hug) case(smallcaps)
+"#,
+        &mut scene,
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0271"),
+        "{:#?}",
+        output.compile_output.diagnostics
+    );
+}
+
+#[test]
+fn dsl_rejects_negative_paragraph_spacing() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_a6_negspacing"), "A6");
+    let output = compile_dsl_into_scene(
+        r#"
+page page_a6 size(400,400,px)
+  lbl text "x" p(0,0) s(240,hug) para_spacing(-3)
+"#,
+        &mut scene,
+    );
+    assert!(
+        output
+            .compile_output
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == "LUMD0255"),
+        "{:#?}",
+        output.compile_output.diagnostics
     );
 }

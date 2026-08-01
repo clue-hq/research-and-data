@@ -209,6 +209,10 @@ fn scene_with_effect_card(profile_format: ExportFormat) -> Scene {
         raster: None,
         include_bleed: false,
         embed_fonts: false,
+    include_marks: false,
+    imposition: None,
+    proof: false,
+    color: None,
     });
     scene
 }
@@ -260,4 +264,81 @@ fn preflight_surfaces_matrix_verdicts_for_export_profiles() {
         "{:#?}",
         svg_result.diagnostics
     );
+}
+
+#[test]
+fn a6_text_features_are_detected_on_text_nodes() {
+    let mut text = lumen_core::TextNode {
+        content: "x".to_owned(),
+        underline: true,
+        strikethrough: true,
+        truncate: true,
+        paragraph_spacing: 6.0,
+        text_transform: lumen_core::TextTransform::Uppercase,
+        ..lumen_core::TextNode::default()
+    };
+    let mut node = Node::new(NodeId::from("t"), NodeKind::Text(text.clone()));
+    node.strokes = vec![Stroke::solid(PaintId::from("s"), solid("#000000"), 2.0)];
+
+    let features = effect_features_for_node(&node);
+    for expected in [
+        EffectFeature::TextStroke,
+        EffectFeature::TextDecoration,
+        EffectFeature::TextTransform,
+        EffectFeature::TextEllipsis,
+        EffectFeature::ParagraphSpacing,
+    ] {
+        assert!(features.contains(&expected), "missing {expected:?} in {features:?}");
+    }
+
+    // A bare (default) text node carries none of them.
+    text.underline = false;
+    text.strikethrough = false;
+    text.truncate = false;
+    text.paragraph_spacing = 0.0;
+    text.text_transform = lumen_core::TextTransform::None;
+    let bare = Node::new(NodeId::from("bare"), NodeKind::Text(text));
+    let bare_features = effect_features_for_node(&bare);
+    for f in [
+        EffectFeature::TextStroke,
+        EffectFeature::TextDecoration,
+        EffectFeature::TextTransform,
+        EffectFeature::TextEllipsis,
+        EffectFeature::ParagraphSpacing,
+    ] {
+        assert!(!bare_features.contains(&f), "unexpected {f:?} on a bare text node");
+    }
+}
+
+#[test]
+fn a6_text_feature_matrix_matches_the_d8_table() {
+    use EffectSupportLevel::*;
+    let svg = RenderTarget::Svg;
+    let png = RenderTarget::Png { scale: 1.0 };
+    let pdf = RenderTarget::Pdf;
+    let konva = RenderTarget::KonvaScene;
+
+    // TextStroke: Native on SVG/PNG, Unsupported on PDF + Konva.
+    assert_eq!(RendererEffectSupport::level(&svg, EffectFeature::TextStroke), Native);
+    assert_eq!(RendererEffectSupport::level(&png, EffectFeature::TextStroke), Native);
+    assert_eq!(RendererEffectSupport::level(&pdf, EffectFeature::TextStroke), Unsupported);
+    assert_eq!(RendererEffectSupport::level(&konva, EffectFeature::TextStroke), Unsupported);
+
+    // TextDecoration: SVG Approximate, PNG Native, PDF/Konva Unsupported.
+    assert_eq!(RendererEffectSupport::level(&svg, EffectFeature::TextDecoration), Approximate);
+    assert_eq!(RendererEffectSupport::level(&png, EffectFeature::TextDecoration), Native);
+    assert_eq!(RendererEffectSupport::level(&pdf, EffectFeature::TextDecoration), Unsupported);
+    assert_eq!(RendererEffectSupport::level(&konva, EffectFeature::TextDecoration), Unsupported);
+
+    // Measurer-carried features are Native on SVG/PNG/PDF, Unsupported on Konva.
+    for feature in [
+        EffectFeature::TextTransform,
+        EffectFeature::TextEllipsis,
+        EffectFeature::ParagraphSpacing,
+    ] {
+        assert_eq!(RendererEffectSupport::level(&svg, feature), Native);
+        assert_eq!(RendererEffectSupport::level(&png, feature), Native);
+        assert_eq!(RendererEffectSupport::level(&pdf, feature), Native);
+        assert_eq!(RendererEffectSupport::level(&konva, feature), Unsupported);
+    }
 }

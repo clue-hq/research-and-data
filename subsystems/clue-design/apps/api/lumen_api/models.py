@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 
 JsonObject = Dict[str, Any]
@@ -20,6 +20,12 @@ class CreateDocumentRequest(BaseModel):
     medium: Optional[Any] = None
     scene: Optional[JsonObject] = None
     brand_kit: Optional[JsonObject] = None
+    # Website mode: "scene" (default, Rust engine scene) or "web" (WebDoc).
+    doc_kind: str = "scene"
+    # Web-only: the Brand Kit reference ({"id": str, "version": int}) the
+    # helper compiles into the new WebDoc's theme. Stored verbatim; not
+    # validated against the kits table in P0.
+    brand_kit_ref: Optional[JsonObject] = None
 
 
 class ReplaceSceneRequest(BaseModel):
@@ -75,6 +81,12 @@ class PreflightPreviewRequest(BaseModel):
     generated_default_brand_kit: Optional[JsonObject] = None
     mode: Optional[JsonObject] = None
     strict_no_fallback: bool = False
+    # K1.6(b): after a clean preflight, ALSO bake every Stack container to
+    # Free (build_freeze_layout) on the RESOLVED, server-relaid-out scene and
+    # return the raw scene + operations in a `bake` block. The editor's
+    # accept path uses this so frozen geometry can never derive from an
+    # unresolved (skeleton-literal) client solve.
+    freeze_layout: bool = False
 
 
 class ExportPreviewRequest(BaseModel):
@@ -108,11 +120,141 @@ class AgentTurnPreviewRequest(BaseModel):
     # (The singular selected_node_id back-compat field was dropped after its
     # one-release window; legacy senders' extra key is ignored by pydantic.)
     target_node_ids: List[str] = Field(default_factory=list)
+    # RC (reference-conditioned design): the library asset ids the human
+    # attached to THIS turn as visual references. Per-turn context, not
+    # document state (D1) — mirrors GenerateAssetRequest.reference_asset_ids.
+    # run_agent_turn_preview resolves these into config.reference_assets BY
+    # VALUE (the runtime never reads the API database). Empty → no references.
+    reference_asset_ids: List[str] = Field(default_factory=list)
     diagnostics: List[JsonObject] = Field(default_factory=list)
     # 2e: the document's standing agent instructions, sent by the editor with
     # every turn and folded into the prompt context.
     agent_instructions: Optional[str] = None
     max_iterations: Optional[int] = None
+    # Editor model picker: a runtime model id ("openai:<openrouter-id>" /
+    # "anthropic:<id>"); None = the runtime's configured default.
+    model: Optional[str] = None
+    # Brief clarification (one-round-per-turn guard): the honest outcome of the
+    # PREVIOUS turn on this document, echoed back by the editor. When it is
+    # "clarification_requested", the harness withholds the request_clarification
+    # tool this turn — the agent must design from the user's answer, never ask a
+    # second round. None/absent → an ordinary turn (the tool is available).
+    previous_turn_outcome: Optional[str] = None
+
+
+class WebTurnRequest(BaseModel):
+    """A website-mode agent turn against one exact stored WebDoc revision.
+
+    ``base_version`` is mandatory because the async worker may run for minutes:
+    the result must never replace human edits committed after the turn began.
+    """
+
+    prompt: str
+    base_version: int
+    model: Optional[str] = None
+    # Scoped edit turns: the node ids the user selected in the editor. When
+    # present, the turn is scoped to the enclosing section(s) of those nodes
+    # (the orchestrator reacts to a "TURN TARGET" line appended to the brief).
+    # Absent/None → an ordinary whole-page turn.
+    target_node_ids: Optional[List[str]] = None
+    # P5 (D6): the target account this turn personalizes for. Unknown id → 404
+    # before the run starts. Absent → the document row's own account_id (a
+    # derived doc) is used when present, else an un-personalized turn.
+    account_id: Optional[str] = None
+
+
+class WebOperationsRequest(BaseModel):
+    """A manual website-mode edit: a batch of typed WebOperations applied to the
+    stored WebDoc through the checked-apply helper. `base_version` gates on the
+    optimistic-concurrency contract the scene /operations endpoint uses; `intent`
+    labels the resulting edit envelope."""
+
+    operations: List[JsonObject] = Field(default_factory=list)
+    base_version: Optional[int] = None
+    intent: Optional[str] = None
+
+
+class CreateWebAccountRequest(BaseModel):
+    """A personalization account (P5 D3). `account_id` is minted (`acc_…`) when
+    absent; an explicit duplicate id is a 409. `data` is the string→string custom
+    var map (each key becomes `account.<key>`); `notes` is agent-only context,
+    never a substitution value. A provided `logo_asset_id` must resolve in the
+    assets table (422 otherwise)."""
+
+    account_id: Optional[str] = None
+    name: str
+    domain: Optional[str] = None
+    logo_asset_id: Optional[str] = None
+    data: Dict[str, str] = Field(default_factory=dict)
+    notes: Optional[str] = None
+
+
+class UpdateWebAccountRequest(BaseModel):
+    """Partial account update (P5 D3). Only the fields present in the request
+    body are written; `data`, when present, replaces the whole map. Same
+    logo_asset_id resolution check as create."""
+
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    logo_asset_id: Optional[str] = None
+    data: Optional[Dict[str, str]] = None
+    notes: Optional[str] = None
+
+
+class PutCustomComponentSourceRequest(BaseModel):
+    """Replace one component source tree using optimistic source versioning."""
+
+    expected_version: StrictInt = Field(ge=0)
+    files: Dict[str, str]
+    actor: ActorEnvelope = Field(
+        default_factory=lambda: ActorEnvelope(kind="human")
+    )
+
+
+class CompileCustomComponentRequest(BaseModel):
+    """Compile only the exact durable source version named by the caller."""
+
+    source_version: StrictInt = Field(ge=1)
+    actor: ActorEnvelope = Field(
+        default_factory=lambda: ActorEnvelope(kind="human")
+    )
+
+
+class SaveWebTemplateRequest(BaseModel):
+    """Clone a web document into a reusable template (P5 D4). An omitted title
+    defaults to ``"{source title} — template"``."""
+
+    title: Optional[str] = None
+
+
+class DeriveWebRequest(BaseModel):
+    """Derive a personalized copy of a web document (P5 D4). `account_id` is
+    OPTIONAL: absent → a plain marker-preserving copy with an EMPTY value map
+    (default title ``"{source title} — copy"``); present → the account's value
+    map is applied (default title ``"{source title} — {account name}"``). An
+    unknown account is a 404; an engine rejection is a 422."""
+
+    account_id: Optional[str] = None
+    title: Optional[str] = None
+
+
+class WebBatchRequest(BaseModel):
+    """Bulk derive (+ optional publish) a template web document for a set of
+    accounts (P5 D5). Chunked + resumable; per-account failures never kill the
+    batch. Slugs are ``{slug_base or slugify(template title)}-{slugify(account
+    name)}`` with collision suffixing (never a 409)."""
+
+    account_ids: List[str] = Field(default_factory=list)
+    publish: bool = True
+    slug_base: Optional[str] = None
+
+
+class WebPublishRequest(BaseModel):
+    """Publish a website-mode document to a public slug. An omitted/None slug is
+    derived from the document title; a provided slug is validated against the
+    public-slug charset by the endpoint."""
+
+    slug: Optional[str] = None
 
 
 class SetAgentInstructionsRequest(BaseModel):
@@ -150,6 +292,11 @@ class GenerateAssetRequest(BaseModel):
     image_size: Optional[str] = None
     reference_asset_ids: List[str] = Field(default_factory=list)
     label: Optional[str] = None
+    # Phase 3b image EDIT: when set, the prompt is an edit instruction applied
+    # to this existing asset's pixels; the result is a NEW asset whose source
+    # records the parent (kind "edited"). Remove-background = an edit with
+    # transparent_background=true.
+    source_asset_id: Optional[str] = None
 
 
 class CreateBindingSetRequest(BaseModel):
@@ -161,12 +308,21 @@ class DeriveInstanceRequest(BaseModel):
     binding_set: Optional[JsonObject] = None
     export_formats: List[str] = Field(default_factory=list)
     export_dpi: Optional[int] = None
+    # Bulk print controls: a full export profile (inline) or the name of a
+    # profile saved in the revision scene's export_profiles. Mutually
+    # exclusive; the profile owns the artifact for its format (bleed, marks,
+    # proof, imposition, CMYK, raster scale) via the same adapter pipeline
+    # interactive exports use.
+    export_profile: Optional[JsonObject] = None
+    export_profile_name: Optional[str] = None
 
 
 class CreateInstanceBatchRequest(BaseModel):
     binding_set_ids: List[str]
     export_formats: List[str] = Field(default_factory=lambda: ["svg", "png"])
     chunk_size: int = 10
+    export_profile: Optional[JsonObject] = None
+    export_profile_name: Optional[str] = None
 
 
 class InstancePreviewRequest(BaseModel):
@@ -235,6 +391,34 @@ class ValidateDocumentBrandGovernanceRequest(BaseModel):
     brand_kit_id: Optional[str] = None
     version: Optional[int] = None
     strictness: Literal["advisory", "strict", "finalize"] = "strict"
+
+
+class IngestWebsiteRequest(BaseModel):
+    url: str
+    name: Optional[str] = None
+    brand_kit_id: Optional[str] = None
+    force_render: bool = False
+
+
+class SetBrandKitApprovalRequest(BaseModel):
+    approval_status: Literal["approved", "draft"]
+
+
+class SetBrandKitLogoRequest(BaseModel):
+    """Human logo curation: promote a library asset into a kit logo slot.
+    Publishes a NEW kit version — the scraper proposes, the human disposes,
+    and the version history records both."""
+
+    asset_id: str
+    slot: Literal["primary", "mark", "wordmark"] = "primary"
+    color_mode: str = "full_color"
+
+
+class SetAssetDescriptionRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    usage: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class BrandCompatibilityRequest(BaseModel):

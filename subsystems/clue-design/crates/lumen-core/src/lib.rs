@@ -18,6 +18,7 @@ pub mod layout;
 pub mod operations;
 pub mod page_geometry;
 pub mod preflight;
+pub mod reconcile;
 pub mod render_contract;
 pub mod render_geometry;
 pub mod scene;
@@ -60,7 +61,8 @@ pub use brand::{
 };
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
-    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session, normalize_dsl,
+    compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session,
+    compile_dsl_into_scene_with_session_and_protected, normalize_dsl,
     parse_dsl, slot_id_for_key, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot,
     DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill,
     DslFont, DslHalt, DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind,
@@ -84,7 +86,7 @@ pub use editing::{
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
-    ExportRequest, ExportResult, PdfIntent, RasterScale,
+    ExportRequest, ExportResult, PdfIntent, PrintReadyReport, PrintReadyRule, RasterScale,
 };
 pub use hit_test::{hit_stack, hit_test};
 pub use ids::{
@@ -108,6 +110,7 @@ pub use page_geometry::{
     POINTS_PER_INCH,
 };
 pub use preflight::{preflight_scene, PreflightOptions, PreflightResult};
+pub use reconcile::{reconcile_subtree, IntendedSubtree, ReconcileNote};
 pub use render_contract::{
     effect_features_for_node, effect_support_diagnostics, EffectFeature, EffectSupportLevel,
     RenderIntent, RenderManifest, RenderTarget, RendererAdapter, RendererEffectSupport,
@@ -117,12 +120,18 @@ pub use render_geometry::{
     node_render_size, paints_out_of_tree, pinned_paint_pass, render_box_for_node, RenderBox,
 };
 pub use scene::{
-    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ComputedGeometry,
+    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, BrandKitRef, Color, ColorStop,
+    ComputedGeometry,
     CornerRadii, Dimension, DocumentMeta, DocumentStatus, Effect, EffectKind, Fill, ImageNode,
     LayoutAnchor, LayoutMode, LineNode, Medium, Node, NodeKind, Orientation, Page, PageOutputSize,
     PagePreset, PageSize, PageSizeSource, Paint, ParentRef, PhysicalPageSize, PhysicalUnit,
-    PositionMode, RasterPageSize, Rect, Scene, SizeSpec, Stroke, StrokeAlign, StrokeCap,
-    StrokeJoin, TextAlign, TextDirection, TextNode, TextWrap, Transform, Unit, VectorNode,
+    PositionMode, RasterPageSize, Rect, Scene, SizeSpec, SpanSegment, Stroke, StrokeAlign,
+    StrokeCap, StrokeJoin, TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap,
+    Transform, Unit, VectorNode, VerticalAlign,
+};
+pub use scene::{
+    normalize_content_mapped, span_validation_errors, transform_segments, valign_offset,
+    SpanValidationError,
 };
 pub use slots::{
     BindingHint, Cardinality, ConditionalRule, ContentType, Editability, EmptyBehavior, FocalPoint,
@@ -131,9 +140,9 @@ pub use slots::{
 };
 pub use snapshot::{SnapshotError, SnapshotResult};
 pub use text_measure::{
-    estimate_text_width, line_height_px, measure_key, measure_text, HeuristicTextMeasurer,
-    ProvidedTextMeasurer, SharedTextMeasurer, TextLineBox, TextMeasureInput, TextMeasureOutput,
-    TextMeasurer,
+    estimate_text_width, heuristic_measurement_diagnostic, line_height_px, measure_key,
+    measure_text, HeuristicTextMeasurer, ProvidedTextMeasurer, SharedTextMeasurer, TextLineBox,
+    TextMeasureInput, TextMeasureOutput, TextMeasurer, TextRunBox,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;

@@ -1,3 +1,4 @@
+use crate::fonts::{FontFaceResolver, FontUsage};
 use crate::resolver::{AssetByteResolver, ResolvedAssetBytes};
 use crate::sidecar::{build_sidecar, node_output_id, page_output_id};
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -10,7 +11,8 @@ use lumen_core::{
     ImageFitMode, ImageNode, Node, NodeId, NodeKind, Page, PageId, Paint, Phase, Rect, Scene,
     Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign, TextDirection, Unit,
 };
-use lumen_core::{HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
+use lumen_core::{valign_offset, HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// Heuristic fallback used when no measurer is injected, preserving
@@ -21,6 +23,7 @@ pub(crate) static FALLBACK_MEASURER: HeuristicTextMeasurer = HeuristicTextMeasur
 pub struct SvgExportAdapter {
     resolver: Option<Arc<dyn AssetByteResolver>>,
     measurer: Option<SharedTextMeasurer>,
+    font_resolver: Option<Arc<dyn FontFaceResolver>>,
 }
 
 impl SvgExportAdapter {
@@ -32,6 +35,7 @@ impl SvgExportAdapter {
         Self {
             resolver: Some(resolver),
             measurer: None,
+            font_resolver: None,
         }
     }
 
@@ -40,6 +44,16 @@ impl SvgExportAdapter {
     /// layout engine used.
     pub fn with_measurer(mut self, measurer: SharedTextMeasurer) -> Self {
         self.measurer = Some(measurer);
+        self
+    }
+
+    /// Inject a font-face resolver: `embed_fonts` profiles then embed the
+    /// exact face bytes the raster path painted with as `@font-face` data
+    /// URIs, so the SVG renders identically on machines without the fonts
+    /// installed. Without one, embedding is impossible and every export
+    /// carries the LUME0216 viewer-font dependency warning.
+    pub fn with_font_resolver(mut self, resolver: Arc<dyn FontFaceResolver>) -> Self {
+        self.font_resolver = Some(resolver);
         self
     }
 }
@@ -66,6 +80,17 @@ impl ExportAdapter for SvgExportAdapter {
         }
 
         let mut diagnostics = resolved.diagnostics;
+        // LUMS0102: this export shapes text with the heuristic fallback (no
+        // measurer injected, or a non-shaping one), so line breaks in the SVG
+        // markup are geometry-approximate. Emitted once per export; server
+        // paths inject SkiaTextMeasurer and never reach this branch.
+        if !self
+            .measurer
+            .as_deref()
+            .is_some_and(|measurer| measurer.shaping())
+        {
+            diagnostics.push(lumen_core::heuristic_measurement_diagnostic());
+        }
         let mut artifacts = Vec::new();
 
         for page_id in &resolved.page_ids {
@@ -81,7 +106,9 @@ impl ExportAdapter for SvgExportAdapter {
                 page,
                 self.resolver.as_deref(),
                 self.measurer.as_deref().map(measurer_as_dyn),
-            );
+                self.font_resolver.as_deref(),
+                request.profile.embed_fonts,
+            )?;
             diagnostics.extend(page_diagnostics);
 
             let sidecar =
@@ -101,6 +128,7 @@ impl ExportAdapter for SvgExportAdapter {
         Ok(ExportResult {
             artifacts,
             diagnostics,
+            print_ready: None,
         })
     }
 }
@@ -114,10 +142,13 @@ pub(crate) fn render_page_svg(
     page: &Page,
     resolver: Option<&dyn AssetByteResolver>,
     measurer: Option<&dyn TextMeasurer>,
-) -> (String, Vec<Diagnostic>) {
-    let mut renderer = SvgPageRenderer::new(scene, page, resolver, measurer);
-    let svg = renderer.render_page();
-    (svg, renderer.diagnostics)
+    font_resolver: Option<&dyn FontFaceResolver>,
+    embed_fonts: bool,
+) -> Result<(String, Vec<Diagnostic>), ExportError> {
+    let mut renderer =
+        SvgPageRenderer::new(scene, page, resolver, measurer, font_resolver, embed_fonts);
+    let svg = renderer.render_page()?;
+    Ok((svg, renderer.diagnostics))
 }
 
 pub fn resolve_page_ids(scene: &Scene, requested: &[PageId]) -> PageResolution {
@@ -154,6 +185,15 @@ struct SvgPageRenderer<'a> {
     page: &'a Page,
     resolver: Option<&'a dyn AssetByteResolver>,
     measurer: &'a dyn TextMeasurer,
+    font_resolver: Option<&'a dyn FontFaceResolver>,
+    embed_fonts: bool,
+    /// The resolver's deterministic fallback family, resolved once per
+    /// render (constant for the export); `None` without a resolver.
+    fallback_family: Option<String>,
+    /// (requested family, weight, italic) → characters rendered with it,
+    /// collected while emitting text nodes. Feeds `@font-face` embedding
+    /// when active and the LUME0216 viewer-font warning when not.
+    font_usage: BTreeMap<(String, i32, bool), BTreeSet<char>>,
     defs: Vec<String>,
     body: String,
     diagnostics: Vec<Diagnostic>,
@@ -165,19 +205,31 @@ impl<'a> SvgPageRenderer<'a> {
         page: &'a Page,
         resolver: Option<&'a dyn AssetByteResolver>,
         measurer: Option<&'a dyn TextMeasurer>,
+        font_resolver: Option<&'a dyn FontFaceResolver>,
+        embed_fonts: bool,
     ) -> Self {
         Self {
             scene,
             page,
             resolver,
             measurer: measurer.unwrap_or(&FALLBACK_MEASURER),
+            font_resolver,
+            embed_fonts,
+            fallback_family: font_resolver.map(|fonts| fonts.fallback_family()),
+            font_usage: BTreeMap::new(),
             defs: Vec::new(),
             body: String::new(),
             diagnostics: Vec::new(),
         }
     }
 
-    fn render_page(&mut self) -> String {
+    /// Whether this render embeds fonts: the profile asked for it AND a
+    /// resolver is injected. Both name-only states diagnose via LUME0216.
+    fn embedding_active(&self) -> bool {
+        self.embed_fonts && self.font_resolver.is_some()
+    }
+
+    fn render_page(&mut self) -> Result<String, ExportError> {
         let dimensions = page_dimensions(self.page);
 
         self.body.push_str(&format!(
@@ -224,13 +276,15 @@ impl<'a> SvgPageRenderer<'a> {
 
         self.body.push_str("</g>\n");
 
-        let defs = if self.defs.is_empty() {
+        let font_style = self.font_face_style_def()?;
+        let defs_content = format!("{}{}", font_style, self.defs.join(""));
+        let defs = if defs_content.is_empty() {
             String::new()
         } else {
-            format!("<defs>\n{}</defs>\n", self.defs.join(""))
+            format!("<defs>\n{}</defs>\n", defs_content)
         };
 
-        format!(
+        Ok(format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}{}\" height=\"{}{}\" viewBox=\"0 0 {} {}\" data-lumen-document-id=\"{}\" data-lumen-page-id=\"{}\">\n{}{}{}</svg>\n",
             fmt_num(dimensions.attr_width),
             dimensions.unit_suffix,
@@ -243,7 +297,142 @@ impl<'a> SvgPageRenderer<'a> {
             defs,
             self.body,
             ""
-        )
+        ))
+    }
+
+    /// The `@font-face` style def embedding every face this page's text
+    /// used (the exact bytes the raster painted with, subset by the
+    /// resolver), or — in either declared name-only state — the LUME0216
+    /// viewer-font dependency warning and no def. Resolution failures are
+    /// fatal: the export never silently ships a file whose fidelity
+    /// depends on which machine opens it when embedding was requested.
+    fn font_face_style_def(&mut self) -> Result<String, ExportError> {
+        if self.font_usage.is_empty() {
+            return Ok(String::new());
+        }
+        if !self.embedding_active() {
+            self.push_viewer_font_warning();
+            return Ok(String::new());
+        }
+        let resolver = self
+            .font_resolver
+            .expect("embedding_active() checked the resolver");
+        // Empty-family normalization is the RESOLVER's contract (an empty
+        // requested family resolves to its fallback family) — one owner, so
+        // the css_family in the emitted rules and the attr chain cannot
+        // drift. Usages pass through as collected.
+        let usages = self
+            .font_usage
+            .iter()
+            .map(|((family, weight, italic), chars)| FontUsage {
+                family: family.clone(),
+                weight: *weight,
+                italic: *italic,
+                chars: chars.clone(),
+            })
+            .collect::<Vec<_>>();
+        let faces = resolver.resolve_embeds(&usages).map_err(|error| {
+            ExportError::new(
+                error.code,
+                format!(
+                    "SVG font embedding failed for page {}: {}",
+                    self.page.id, error.message
+                ),
+            )
+        })?;
+        if faces.is_empty() {
+            return Err(ExportError::new(
+                "export.font_embed_empty",
+                format!(
+                    "font resolver returned no faces for page {} despite {} font usage(s) — refusing to ship a name-only SVG from an embedding export",
+                    self.page.id,
+                    usages.len()
+                ),
+            ));
+        }
+        let mut css = String::new();
+        for face in &faces {
+            let format_hint = match face.mime_type.as_str() {
+                "font/ttf" => " format(\"truetype\")",
+                "font/otf" => " format(\"opentype\")",
+                _ => "",
+            };
+            let unicode_range = face
+                .unicode_range
+                .as_ref()
+                .map(|range| format!(" unicode-range: {};", range))
+                .unwrap_or_default();
+            css.push_str(&format!(
+                "@font-face {{ font-family: {}; font-weight: {}; font-style: {};{} src: url(\"data:{};base64,{}\"){}; }}\n",
+                css_string(&face.css_family),
+                face.weight,
+                if face.italic { "italic" } else { "normal" },
+                unicode_range,
+                face.mime_type,
+                BASE64.encode(&face.bytes),
+                format_hint
+            ));
+        }
+        // XML-escape the CSS text content; conforming SVG parsers decode
+        // entities before the CSS parser runs.
+        Ok(format!(
+            "<style type=\"text/css\">\n{}</style>\n",
+            escape_text(&css)
+        ))
+    }
+
+    /// Record that rendered text used `family` at `weight`/`italic` for
+    /// `content`'s characters. Control characters never need glyphs;
+    /// whitespace does (space advances come from the font).
+    fn record_font_usage(&mut self, family: &str, weight: i32, italic: bool, content: &str) {
+        let chars: BTreeSet<char> = content.chars().filter(|ch| !ch.is_control()).collect();
+        if chars.is_empty() {
+            return;
+        }
+        self.font_usage
+            .entry((family.trim().to_owned(), weight, italic))
+            .or_default()
+            .extend(chars);
+    }
+
+    /// LUME0216: this SVG references fonts by name only, so faithful
+    /// rendering depends on the fonts being installed on the viewing
+    /// machine. Emitted for both declared name-only states — the profile
+    /// opting out (`embed_fonts=false`) and a portable consumer with no
+    /// font resolver injected — never for the embedding path.
+    fn push_viewer_font_warning(&mut self) {
+        let families = self
+            .font_usage
+            .keys()
+            .map(|(family, _, _)| family.trim())
+            .filter(|family| !family.is_empty())
+            .collect::<BTreeSet<_>>();
+        if families.is_empty() {
+            // Only default-family text: the emitted markup already carries
+            // the generic fallback chain, nothing viewer-specific to name.
+            return;
+        }
+        let cause = if self.embed_fonts {
+            "no font resolver is configured on this export path"
+        } else {
+            "the export profile disables font embedding (embed_fonts=false)"
+        };
+        self.diagnostics.push(
+            Diagnostic::warning(
+                Phase::Export,
+                "LUME0216",
+                format!(
+                    "SVG for page {} references fonts by name only ({}); faithful rendering requires these fonts installed on every viewing machine: {}",
+                    self.page.id,
+                    cause,
+                    families.into_iter().collect::<Vec<_>>().join(", ")
+                ),
+                Some(DiagnosticSubject::Page(self.page.id.clone())),
+            )
+            .with_hint(
+                "Export with embed_fonts enabled (server exports embed automatically) or install the listed fonts on every machine that will open this SVG.",
+            ),
+        );
     }
 
     /// Pinned nodes never render inside their parent's tree — see
@@ -305,21 +494,17 @@ impl<'a> SvgPageRenderer<'a> {
                     "<g{}{}{}{}>\n",
                     id_attrs, transform, opacity, filter
                 ));
-                let geometry = format!(
-                    "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
-                    fmt_num(width),
-                    fmt_num(height),
-                    corner_attrs(node, width, height)
-                );
+                let (shape, geometry) = rect_shape(node, width, height);
                 if stacked {
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
-                        self.body.push_str(&format!("<rect {geometry}{layer} />\n"));
+                        self.body
+                            .push_str(&format!("<{shape} {geometry}{layer} />\n"));
                     }
                 } else if !node.fills.is_empty() || !node.strokes.is_empty() {
                     let fill_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
                     self.body
-                        .push_str(&format!("<rect {geometry}{fill_attrs} />\n"));
+                        .push_str(&format!("<{shape} {geometry}{fill_attrs} />\n"));
                 }
                 if let Some(clip_id) = clip_id {
                     self.body.push_str(&format!(
@@ -352,12 +537,7 @@ impl<'a> SvgPageRenderer<'a> {
                 self.body.push_str("</g>\n");
             }
             NodeKind::Rect => {
-                let geometry = format!(
-                    "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
-                    fmt_num(width),
-                    fmt_num(height),
-                    corner_attrs(node, width, height)
-                );
+                let (shape, geometry) = rect_shape(node, width, height);
                 if stacked {
                     self.body.push_str(&format!(
                         "<g{}{}{}{}>\n",
@@ -365,13 +545,15 @@ impl<'a> SvgPageRenderer<'a> {
                     ));
                     for layer in self.paint_layer_attrs(&node.fills, &node.strokes, Some(&node.id))
                     {
-                        self.body.push_str(&format!("<rect {geometry}{layer} />\n"));
+                        self.body
+                            .push_str(&format!("<{shape} {geometry}{layer} />\n"));
                     }
                     self.body.push_str("</g>\n");
                 } else {
                     let paint_attrs = self.paint_attrs(&node.fills, &node.strokes, Some(&node.id));
                     self.body.push_str(&format!(
-                        "<rect{} {}{}{}{} />\n",
+                        "<{}{} {}{}{}{} />\n",
+                        shape,
                         id_attrs,
                         geometry,
                         transform,
@@ -440,15 +622,28 @@ impl<'a> SvgPageRenderer<'a> {
             }
             NodeKind::Text(text) => {
                 let paint_attrs = self.text_paint_attrs(node);
-                let anchor = match text.align {
-                    TextAlign::Left | TextAlign::Justify => "start",
-                    TextAlign::Center => "middle",
-                    TextAlign::Right => "end",
+                // A6b D7: a spanned node emits one tspan PER RUN with an absolute
+                // precomputed x, so `text-anchor` must NOT re-shift the runs —
+                // anchor stays `start` and x is 0 on the <text> element. A
+                // spanless node keeps the pre-A6b anchor + single per-line tspan.
+                let spanned = !text.spans.is_empty();
+                let anchor = if spanned {
+                    "start"
+                } else {
+                    match text.align {
+                        TextAlign::Left | TextAlign::Justify => "start",
+                        TextAlign::Center => "middle",
+                        TextAlign::Right => "end",
+                    }
                 };
-                let x = match text.align {
-                    TextAlign::Left | TextAlign::Justify => 0.0,
-                    TextAlign::Center => width / 2.0,
-                    TextAlign::Right => width,
+                let x = if spanned {
+                    0.0
+                } else {
+                    match text.align {
+                        TextAlign::Left | TextAlign::Justify => 0.0,
+                        TextAlign::Center => width / 2.0,
+                        TextAlign::Right => width,
+                    }
                 };
                 let direction = match text.direction {
                     TextDirection::Ltr => "ltr",
@@ -463,18 +658,122 @@ impl<'a> SvgPageRenderer<'a> {
                             width,
                             height,
                         }));
-                let tspans = measured
-                    .lines
-                    .iter()
-                    .map(|line| {
-                        format!(
-                            "<tspan x=\"{}\" y=\"{}\">{}</tspan>",
-                            fmt_num(x),
-                            fmt_num(line.baseline),
-                            escape_text(&line.text)
-                        )
-                    })
-                    .collect::<String>();
+                // R1 (audit fold): surface measurement-time font diagnostics
+                // (LUMS0100/0103/0104) on direct exports too, re-subjected to
+                // this node and deduped against anything layout already folded.
+                for diagnostic in &measured.diagnostics {
+                    let diagnostic = Diagnostic {
+                        subject: Some(DiagnosticSubject::Node(node.id.clone())),
+                        ..diagnostic.clone()
+                    };
+                    if !self.diagnostics.contains(&diagnostic) {
+                        self.diagnostics.push(diagnostic);
+                    }
+                }
+                // A7a: shift every line's baseline down by the clamped vertical
+                // slack (measured content height is THE total the raster path
+                // lays out; `valign_offset` clamps overflow to 0). One formula
+                // across all backends.
+                let valign_shift = valign_offset(height, measured.height, text.valign);
+                // A6a D2: underline/strike via the presentation attribute; the
+                // measured line text already carries the D1 case transform.
+                let decoration = match (text.underline, text.strikethrough) {
+                    (true, true) => " text-decoration=\"underline line-through\"",
+                    (true, false) => " text-decoration=\"underline\"",
+                    (false, true) => " text-decoration=\"line-through\"",
+                    (false, false) => "",
+                };
+                // A7b D6: block-level italic via the presentation attribute.
+                // Absent when upright so pre-A7b markup is byte-identical.
+                // D2 gate (adversarial-gate finding): emitted only when a REAL
+                // italic face exists — otherwise the raster deliberately renders
+                // upright (LUMS0105) and an italic attr here would make every
+                // SVG viewer synthesize the fake oblique the raster refused.
+                let italic_renderable =
+                    text.italic && self.measurer.has_italic_face(&text.font_family);
+                let italic = if italic_renderable {
+                    " font-style=\"italic\""
+                } else {
+                    ""
+                };
+                // Font-embedding usage: record every (family, weight, italic)
+                // this node renders with, and the characters it rendered —
+                // per span run when spanned (weight/italic overrides select
+                // different faces), per line otherwise. Mirrors exactly the
+                // face-selection inputs `text_run_attrs` emits as markup.
+                if spanned {
+                    for line in &measured.lines {
+                        for run in &line.runs {
+                            let span = run.span.and_then(|index| text.spans.get(index));
+                            let weight = span
+                                .and_then(|span| span.font_weight)
+                                .unwrap_or(text.font_weight);
+                            let run_italic = span
+                                .and_then(|span| span.italic)
+                                .unwrap_or(text.italic)
+                                && self.measurer.has_italic_face(&text.font_family);
+                            self.record_font_usage(
+                                &text.font_family,
+                                i32::from(weight),
+                                run_italic,
+                                &run.text,
+                            );
+                        }
+                    }
+                } else {
+                    for line in &measured.lines {
+                        self.record_font_usage(
+                            &text.font_family,
+                            i32::from(text.font_weight),
+                            italic_renderable,
+                            &line.text,
+                        );
+                    }
+                }
+                // A6b D7: per-run tspans (absolute x within the line) when spans
+                // exist; otherwise the pre-A6b single-tspan-per-line markup.
+                let tspans = if spanned {
+                    measured
+                        .lines
+                        .iter()
+                        .map(|line| {
+                            // Runs carry x relative to the line's left edge; the
+                            // line's left edge depends on alignment (the whole
+                            // line is anchored, runs are absolutely placed in it).
+                            let line_left = match text.align {
+                                TextAlign::Left | TextAlign::Justify => 0.0,
+                                TextAlign::Center => (width - line.width) / 2.0,
+                                TextAlign::Right => width - line.width,
+                            };
+                            line.runs
+                                .iter()
+                                .map(|run| {
+                                    let run_attrs = self.text_run_attrs(node, text, run);
+                                    format!(
+                                        "<tspan x=\"{}\" y=\"{}\"{}>{}</tspan>",
+                                        fmt_num(line_left + run.x),
+                                        fmt_num(line.baseline + valign_shift),
+                                        run_attrs,
+                                        escape_text(&run.text)
+                                    )
+                                })
+                                .collect::<String>()
+                        })
+                        .collect::<String>()
+                } else {
+                    measured
+                        .lines
+                        .iter()
+                        .map(|line| {
+                            format!(
+                                "<tspan x=\"{}\" y=\"{}\">{}</tspan>",
+                                fmt_num(x),
+                                fmt_num(line.baseline + valign_shift),
+                                escape_text(&line.text)
+                            )
+                        })
+                        .collect::<String>()
+                };
                 if node.fills.len() > 1 {
                     self.diagnostics.push(
                         Diagnostic::advice(
@@ -489,17 +788,33 @@ impl<'a> SvgPageRenderer<'a> {
                         .with_hint("Stacked text fills are out of V0 scope; use a single text fill."),
                     );
                 }
+                // Embedding exports emit a quoted two-family chain — the
+                // requested family plus the deterministic fallback — routing
+                // per-glyph gaps to the same embedded fallback faces the
+                // raster used. Name-only exports keep the historical
+                // unquoted markup byte-identical.
+                let family_attr = if self.embedding_active() {
+                    let fallback = self
+                        .fallback_family
+                        .as_deref()
+                        .expect("embedding_active() implies a resolver");
+                    embedded_font_family_attr(&text.font_family, fallback)
+                } else {
+                    svg_font_family(&text.font_family)
+                };
                 self.body.push_str(&format!(
-                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}>{}</text>\n",
+                    "<text{} x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" font-weight=\"{}\" text-anchor=\"{}\" letter-spacing=\"{}\" direction=\"{}\"{}{}{}{}{}>{}</text>\n",
                     id_attrs,
                     fmt_num(x),
                     fmt_num(text.font_size),
-                    escape_attr(&svg_font_family(&text.font_family)),
+                    escape_attr(&family_attr),
                     fmt_num(text.font_size),
                     text.font_weight,
                     anchor,
                     fmt_num(text.letter_spacing),
                     direction,
+                    decoration,
+                    italic,
                     transform,
                     filter,
                     opacity_with_paint(opacity, paint_attrs),
@@ -591,11 +906,9 @@ impl<'a> SvgPageRenderer<'a> {
             if let Some(crop) = focal_crop_geometry(node, record, width, height) {
                 let clip_id = format!("lumen-image-clip-{}", escape_attr(node.id.as_str()));
                 self.defs.push(format!(
-                    "<clipPath id=\"{}\"><rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} /></clipPath>\n",
+                    "<clipPath id=\"{}\">{}</clipPath>\n",
                     clip_id,
-                    fmt_num(width),
-                    fmt_num(height),
-                    corner_attrs(node, width, height)
+                    clip_shape_element(node, width, height)
                 ));
                 self.body.push_str(&format!(
                     "<g{} clip-path=\"url(#{})\" data-lumen-asset-id=\"{}\" data-lumen-image-fit=\"focal-crop\"{}{}{}>\n<image x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"{}\" />\n</g>\n",
@@ -731,26 +1044,136 @@ impl<'a> SvgPageRenderer<'a> {
     }
 
     fn text_paint_attrs(&mut self, node: &Node) -> String {
-        if !node.fills.is_empty() {
-            return self.paint_attrs(&node.fills, &[], Some(&node.id));
-        }
+        // A6a D5: the first solid text stroke renders behind the fill via
+        // `paint-order="stroke fill"`. First-stroke-only + solid-only; extras,
+        // gradient stroke paint, and dashes advise (LUME0215) and are dropped.
+        let stroke_attrs = self.text_stroke_attrs(node);
 
-        self.diagnostics.push(
-            Diagnostic::warning(
-                Phase::Export,
-                "LUME0207",
-                format!(
-                    "text node {} has no fill; SVG export used the default visible text fill",
-                    node.id
+        let fill_attrs = if !node.fills.is_empty() {
+            self.paint_attrs(&node.fills, &[], Some(&node.id))
+        } else {
+            self.diagnostics.push(
+                Diagnostic::warning(
+                    Phase::Export,
+                    "LUME0207",
+                    format!(
+                        "text node {} has no fill; SVG export used the default visible text fill",
+                        node.id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint(
+                    "Set an explicit text fill before final export if this fallback is not intended.",
                 ),
-                Some(DiagnosticSubject::Node(node.id.clone())),
-            )
-            .with_hint(
-                "Set an explicit text fill before final export if this fallback is not intended.",
-            ),
-        );
+            );
+            " fill=\"#000000\" data-lumen-default-fill=\"text\"".to_owned()
+        };
 
-        " fill=\"#000000\" data-lumen-default-fill=\"text\"".to_owned()
+        format!("{fill_attrs}{stroke_attrs}")
+    }
+
+    /// A6b D7: per-run SVG attrs — `fill`/`font-weight`/`text-decoration` only
+    /// when they differ from the node (base runs inherit the `<text>` attrs).
+    /// Decoration is the union node∪span. A base run (`span == None`) inherits
+    /// everything, so it emits no attrs.
+    fn text_run_attrs(
+        &mut self,
+        node: &Node,
+        text: &lumen_core::TextNode,
+        run: &lumen_core::TextRunBox,
+    ) -> String {
+        let Some(span) = run.span.and_then(|index| text.spans.get(index)) else {
+            return String::new();
+        };
+        let mut attrs = String::new();
+        if let Some(paint) = &span.fill {
+            // Span fills are Solid/Token only (gradients rejected at validation);
+            // resolve like a node fill. An unresolved token diagnoses + renders
+            // "none" through paint_ref, same as the node path.
+            let color = self.paint_ref(paint, &format!("{}-span-fill", node.id), Some(&node.id));
+            attrs.push_str(&format!(" fill=\"{color}\""));
+        }
+        if let Some(weight) = span.font_weight {
+            if weight != text.font_weight {
+                attrs.push_str(&format!(" font-weight=\"{weight}\""));
+            }
+        }
+        let run_underline = text.underline || span.underline.unwrap_or(false);
+        let run_strike = text.strikethrough || span.strikethrough.unwrap_or(false);
+        if (run_underline, run_strike) != (text.underline, text.strikethrough) {
+            let decoration = match (run_underline, run_strike) {
+                (true, true) => "underline line-through",
+                (true, false) => "underline",
+                (false, true) => "line-through",
+                (false, false) => "none",
+            };
+            attrs.push_str(&format!(" text-decoration=\"{decoration}\""));
+        }
+        // A7b D6: per-run italic is an OVERRIDE (`span.italic.unwrap_or(block)`),
+        // unlike the union-merged decorations above. Emit `font-style` only when
+        // the run's resolved italic differs from the block — BOTH directions: an
+        // italic run in an upright block (`italic`) AND an upright run in an
+        // italic block via `italic(false)` (`normal`). D2 gate: with no real
+        // italic face EVERY run renders upright (the raster's synthesis gate),
+        // so both effective values collapse to upright and no attr is emitted.
+        let has_face = self.measurer.has_italic_face(&text.font_family);
+        let run_italic = span.italic.unwrap_or(text.italic) && has_face;
+        if run_italic != (text.italic && has_face) {
+            let style = if run_italic { "italic" } else { "normal" };
+            attrs.push_str(&format!(" font-style=\"{style}\""));
+        }
+        attrs
+    }
+
+    /// The SVG stroke attributes for the first solid text stroke, plus
+    /// `paint-order="stroke fill"`; empty when the node has no stroke. Advises
+    /// LUME0215 for the un-rendered extras (additional strokes, gradient stroke
+    /// paint, dashes).
+    fn text_stroke_attrs(&mut self, node: &Node) -> String {
+        let Some(stroke) = node.strokes.first() else {
+            return String::new();
+        };
+        let gradient_or_dash = matches!(
+            stroke.paint,
+            Paint::LinearGradient { .. } | Paint::RadialGradient { .. }
+        ) || stroke.dash.as_ref().is_some_and(|dash| !dash.is_empty());
+        if node.strokes.len() > 1 || gradient_or_dash {
+            self.diagnostics.push(
+                Diagnostic::advice(
+                    Phase::Export,
+                    "LUME0215",
+                    format!(
+                        "text node {} renders the first solid stroke only; extra strokes, gradient stroke paint, and dashes on text strokes are ignored",
+                        node.id
+                    ),
+                    Some(DiagnosticSubject::Node(node.id.clone())),
+                )
+                .with_hint("Use a single solid text stroke; gradient/dash/multi-stroke text outlines are out of Typography v1 scope."),
+            );
+        }
+        // Solid stroke color: the solid value, or the first stop of a gradient.
+        let resolved = match &stroke.paint {
+            Paint::Solid { color } => self.color_ref(color, Some(&node.id)),
+            Paint::LinearGradient { stops, .. } | Paint::RadialGradient { stops } => stops
+                .first()
+                .map(|stop| self.color_ref(&stop.color, Some(&node.id)))
+                .unwrap_or_else(|| "none".to_owned()),
+            Paint::Token { token } => {
+                self.diagnostics
+                    .push(unresolved_token_diag(&node.id, token));
+                "none".to_owned()
+            }
+        };
+        let (color, opacity) = split_hex_stop_alpha(&resolved);
+        let mut attrs = format!(
+            " stroke=\"{}\" stroke-width=\"{}\" paint-order=\"stroke fill\"",
+            color,
+            fmt_num(stroke.width)
+        );
+        if let Some(opacity) = opacity {
+            attrs.push_str(&format!(" stroke-opacity=\"{}\"", fmt_num(opacity)));
+        }
+        attrs
     }
 
     /// Combined attrs for the single-layer fast path (at most one fill and
@@ -854,26 +1277,47 @@ impl<'a> SvgPageRenderer<'a> {
         attrs
     }
 
-    /// Register a deterministic `<filter>` for the node's drop-shadow stack
-    /// and return the `filter` attribute. The first effect in the stack
-    /// renders as the topmost shadow (CSS box-shadow convention).
+    /// Register a deterministic `<filter>` for the node's effect stack and
+    /// return the `filter` attribute. A pure drop-shadow stack keeps the exact
+    /// pre-A4 markup (feDropShadow / feMorphology fast paths). A stack that
+    /// mixes in glow, layer blur, or inner shadow uses the A4 general pipeline,
+    /// which honors the D1 stacking contract (source → layer blurs →
+    /// shadows/glows beneath the blurred result → inner shadows over it).
     fn effect_filter_attr(&mut self, node: &Node) -> String {
         if node.effects.is_empty() {
             return String::new();
         }
 
-        struct ResolvedShadow {
-            color: String,
-            opacity: f64,
-            x: f64,
-            y: f64,
-            blur: f64,
-            spread: f64,
-        }
+        let has_new = node.effects.iter().any(|effect| {
+            matches!(
+                effect.kind,
+                EffectKind::Glow { .. }
+                    | EffectKind::LayerBlur { .. }
+                    | EffectKind::InnerShadow { .. }
+            )
+        });
 
+        let body = if has_new {
+            self.general_effect_body(node)
+        } else {
+            self.drop_shadow_body(node)
+        };
+        let Some(body) = body else {
+            return String::new();
+        };
+
+        let filter_id = format!("lumen-effect-{}", escape_attr(node.id.as_str()));
+        self.defs.push(format!(
+            "<filter id=\"{filter_id}\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n{body}</filter>\n"
+        ));
+        format!(" filter=\"url(#{filter_id})\"")
+    }
+
+    /// The pre-A4 drop-shadow-only filter body (byte-identical markup).
+    fn drop_shadow_body(&mut self, node: &Node) -> Option<String> {
         let mut shadows = Vec::new();
         for effect in &node.effects {
-            let EffectKind::DropShadow {
+            if let EffectKind::DropShadow {
                 color,
                 opacity,
                 x,
@@ -881,30 +1325,28 @@ impl<'a> SvgPageRenderer<'a> {
                 blur,
                 spread,
                 ..
-            } = &effect.kind;
-            if let Color::Token { token } = color {
-                self.diagnostics
-                    .push(unresolved_token_diag(&node.id, token));
-                continue;
+            } = &effect.kind
+            {
+                if let Color::Token { token } = color {
+                    self.diagnostics.push(unresolved_token_diag(&node.id, token));
+                    continue;
+                }
+                shadows.push(ResolvedEffect {
+                    color: self.color_ref(color, Some(&node.id)),
+                    opacity: *opacity,
+                    x: *x,
+                    y: *y,
+                    blur: *blur,
+                    spread: *spread,
+                });
             }
-            shadows.push(ResolvedShadow {
-                color: self.color_ref(color, Some(&node.id)),
-                opacity: *opacity,
-                x: *x,
-                y: *y,
-                blur: *blur,
-                spread: *spread,
-            });
         }
         if shadows.is_empty() {
-            return String::new();
+            return None;
         }
 
-        let filter_id = format!("lumen-effect-{}", escape_attr(node.id.as_str()));
         let mut body = String::new();
         if shadows.iter().all(|shadow| shadow.spread == 0.0) {
-            // Chained feDropShadow keeps each later shadow underneath the
-            // accumulated result, so stack order is preserved.
             for shadow in &shadows {
                 body.push_str(&format!(
                     "<feDropShadow dx=\"{}\" dy=\"{}\" stdDeviation=\"{}\" flood-color=\"{}\" flood-opacity=\"{}\" />\n",
@@ -916,8 +1358,6 @@ impl<'a> SvgPageRenderer<'a> {
                 ));
             }
         } else {
-            // Spread needs a morphology composite per shadow, merged with
-            // the source on top.
             for (index, shadow) in shadows.iter().enumerate() {
                 let blur_input = if shadow.spread != 0.0 {
                     body.push_str(&format!(
@@ -953,11 +1393,208 @@ impl<'a> SvgPageRenderer<'a> {
             }
             body.push_str("<feMergeNode in=\"SourceGraphic\" />\n</feMerge>\n");
         }
+        Some(body)
+    }
 
-        self.defs.push(format!(
-            "<filter id=\"{filter_id}\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n{body}</filter>\n"
-        ));
-        format!(" filter=\"url(#{filter_id})\"")
+    /// The A4 general pipeline body honoring the D1 stacking contract. Result
+    /// names are stable and deterministic. See the module-level parity test.
+    fn general_effect_body(&mut self, node: &Node) -> Option<String> {
+        let mut layer_blurs: Vec<f64> = Vec::new();
+        let mut outers: Vec<ResolvedEffect> = Vec::new();
+        let mut inners: Vec<ResolvedEffect> = Vec::new();
+        for effect in &node.effects {
+            match &effect.kind {
+                EffectKind::LayerBlur { radius } => layer_blurs.push(*radius),
+                EffectKind::DropShadow {
+                    color,
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(e) = self.resolve_effect(node, color, *opacity, *x, *y, *blur, *spread)
+                    {
+                        outers.push(e);
+                    }
+                }
+                EffectKind::Glow {
+                    color,
+                    opacity,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(e) =
+                        self.resolve_effect(node, color, *opacity, 0.0, 0.0, *blur, *spread)
+                    {
+                        outers.push(e);
+                    }
+                }
+                EffectKind::InnerShadow {
+                    color,
+                    opacity,
+                    x,
+                    y,
+                    blur,
+                    spread,
+                    ..
+                } => {
+                    if let Some(e) = self.resolve_effect(node, color, *opacity, *x, *y, *blur, *spread)
+                    {
+                        inners.push(e);
+                    }
+                }
+            }
+        }
+
+        let mut body = String::new();
+
+        // 1. Blurred base graphic (and its alpha, for shadow/glow/inner geometry).
+        let mut base = "SourceGraphic".to_owned();
+        let mut base_alpha = "SourceAlpha".to_owned();
+        // The blurred-alpha chain feeds shadow/glow/inner geometry only; on a
+        // blur-only stack it must not be emitted — the filter's output is the
+        // LAST primitive's result, and a trailing alpha blur would replace the
+        // node with its black silhouette.
+        let needs_alpha = !outers.is_empty() || !inners.is_empty();
+        for (i, radius) in layer_blurs.iter().enumerate() {
+            let sigma = fmt_num(radius / 2.0);
+            if needs_alpha {
+                let next_alpha = format!("lumen-lba-{i}");
+                body.push_str(&format!(
+                    "<feGaussianBlur in=\"{base_alpha}\" stdDeviation=\"{sigma}\" result=\"{next_alpha}\" />\n"
+                ));
+                base_alpha = next_alpha;
+            }
+            let next = format!("lumen-lb-{i}");
+            body.push_str(&format!(
+                "<feGaussianBlur in=\"{base}\" stdDeviation=\"{sigma}\" result=\"{next}\" />\n"
+            ));
+            base = next;
+        }
+
+        // 2. Outer shadows/glows computed from the blurred alpha, beneath base.
+        let mut outer_results = Vec::new();
+        for (i, o) in outers.iter().enumerate() {
+            let spread_input = if o.spread != 0.0 {
+                let r = format!("lumen-ospread-{i}");
+                body.push_str(&format!(
+                    "<feMorphology in=\"{base_alpha}\" operator=\"{}\" radius=\"{}\" result=\"{r}\" />\n",
+                    if o.spread > 0.0 { "dilate" } else { "erode" },
+                    fmt_num(o.spread.abs())
+                ));
+                r
+            } else {
+                base_alpha.clone()
+            };
+            body.push_str(&format!(
+                "<feGaussianBlur in=\"{spread_input}\" stdDeviation=\"{}\" result=\"lumen-oblur-{i}\" />\n",
+                fmt_num(o.blur / 2.0)
+            ));
+            body.push_str(&format!(
+                "<feOffset in=\"lumen-oblur-{i}\" dx=\"{}\" dy=\"{}\" result=\"lumen-ooff-{i}\" />\n",
+                fmt_num(o.x),
+                fmt_num(o.y)
+            ));
+            body.push_str(&format!(
+                "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"lumen-oflood-{i}\" />\n",
+                o.color,
+                fmt_num(o.opacity)
+            ));
+            body.push_str(&format!(
+                "<feComposite in=\"lumen-oflood-{i}\" in2=\"lumen-ooff-{i}\" operator=\"in\" result=\"lumen-outer-{i}\" />\n"
+            ));
+            outer_results.push(format!("lumen-outer-{i}"));
+        }
+
+        // 3. Inner shadows computed from the blurred alpha, over base, clipped
+        //    to base alpha. Spread erodes the shape inward first.
+        let mut inner_results = Vec::new();
+        for (i, s) in inners.iter().enumerate() {
+            let shape = if s.spread > 0.0 {
+                let r = format!("lumen-ispread-{i}");
+                body.push_str(&format!(
+                    "<feMorphology in=\"{base_alpha}\" operator=\"erode\" radius=\"{}\" result=\"{r}\" />\n",
+                    fmt_num(s.spread)
+                ));
+                r
+            } else {
+                base_alpha.clone()
+            };
+            body.push_str(&format!(
+                "<feOffset in=\"{shape}\" dx=\"{}\" dy=\"{}\" result=\"lumen-ioff-{i}\" />\n",
+                fmt_num(s.x),
+                fmt_num(s.y)
+            ));
+            body.push_str(&format!(
+                "<feGaussianBlur in=\"lumen-ioff-{i}\" stdDeviation=\"{}\" result=\"lumen-iblur-{i}\" />\n",
+                fmt_num(s.blur / 2.0)
+            ));
+            // Inside the shape but outside the offset/blurred alpha = the inner
+            // shadow ring; clip keeps it within the (blurred) base alpha.
+            body.push_str(&format!(
+                "<feComposite in=\"{base_alpha}\" in2=\"lumen-iblur-{i}\" operator=\"out\" result=\"lumen-iring-{i}\" />\n"
+            ));
+            body.push_str(&format!(
+                "<feFlood flood-color=\"{}\" flood-opacity=\"{}\" result=\"lumen-iflood-{i}\" />\n",
+                s.color,
+                fmt_num(s.opacity)
+            ));
+            body.push_str(&format!(
+                "<feComposite in=\"lumen-iflood-{i}\" in2=\"lumen-iring-{i}\" operator=\"in\" result=\"lumen-inner-{i}\" />\n"
+            ));
+            inner_results.push(format!("lumen-inner-{i}"));
+        }
+
+        // 4. Merge bottom-up: outers (first = topmost outer) beneath the
+        //    blurred base, inner shadows (first = topmost) over it.
+        if outer_results.is_empty() && inner_results.is_empty() {
+            // Nothing survived (e.g. every effect was a token-colored shadow
+            // that got skipped) and there was no layer blur: no filter at all.
+            if body.is_empty() {
+                return None;
+            }
+            // Layer-blur only: the last blur result is already the output.
+            return Some(body);
+        }
+        body.push_str("<feMerge>\n");
+        for result in outer_results.iter().rev() {
+            body.push_str(&format!("<feMergeNode in=\"{result}\" />\n"));
+        }
+        body.push_str(&format!("<feMergeNode in=\"{base}\" />\n"));
+        for result in inner_results.iter().rev() {
+            body.push_str(&format!("<feMergeNode in=\"{result}\" />\n"));
+        }
+        body.push_str("</feMerge>\n");
+        Some(body)
+    }
+
+    /// Resolve one shadow/glow/inner effect's paint; token colors emit the
+    /// unresolved-token diagnostic and are skipped (as the pre-A4 path did).
+    fn resolve_effect(
+        &mut self,
+        node: &Node,
+        color: &Color,
+        opacity: f64,
+        x: f64,
+        y: f64,
+        blur: f64,
+        spread: f64,
+    ) -> Option<ResolvedEffect> {
+        if let Color::Token { token } = color {
+            self.diagnostics.push(unresolved_token_diag(&node.id, token));
+            return None;
+        }
+        Some(ResolvedEffect {
+            color: self.color_ref(color, Some(&node.id)),
+            opacity,
+            x,
+            y,
+            blur,
+            spread,
+        })
     }
 
     fn paint_ref(&mut self, paint: &Paint, paint_id: &str, node_id: Option<&NodeId>) -> String {
@@ -1043,14 +1680,23 @@ impl<'a> SvgPageRenderer<'a> {
     fn clip_rect(&mut self, node: &Node, width: f64, height: f64) -> String {
         let clip_id = format!("lumen-clip-{}", escape_attr(node.id.as_str()));
         self.defs.push(format!(
-            "<clipPath id=\"{}\"><rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{} /></clipPath>\n",
+            "<clipPath id=\"{}\">{}</clipPath>\n",
             clip_id,
-            fmt_num(width),
-            fmt_num(height),
-            corner_attrs(node, width, height)
+            clip_shape_element(node, width, height)
         ));
         clip_id
     }
+}
+
+/// A resolved shadow/glow/inner-shadow ready for filter emission (paint
+/// already resolved to an SVG color string).
+struct ResolvedEffect {
+    color: String,
+    opacity: f64,
+    x: f64,
+    y: f64,
+    blur: f64,
+    spread: f64,
 }
 
 /// Explicit crop window for cover/crop placements with a focal point.
@@ -1327,6 +1973,98 @@ fn transform_attr(node: &Node, x: f64, y: f64) -> String {
     }
 }
 
+/// True when all four corner radii are equal (the plain-`rx` fast path).
+fn corners_uniform(node: &Node) -> bool {
+    node.corner.top_left == node.corner.top_right
+        && node.corner.top_left == node.corner.bottom_right
+        && node.corner.top_left == node.corner.bottom_left
+}
+
+/// CSS overlap-algorithm clamp: scale every radius down by the single factor
+/// that keeps each pair of adjacent radii within their shared side length.
+/// Generalizes the uniform `min(w/2, h/2)` clamp (which is the equal-radii
+/// special case). Returns `[tl, tr, br, bl]`.
+fn clamped_corners(node: &Node, width: f64, height: f64) -> [f64; 4] {
+    let c = &node.corner;
+    let mut radii = [
+        c.top_left.max(0.0),
+        c.top_right.max(0.0),
+        c.bottom_right.max(0.0),
+        c.bottom_left.max(0.0),
+    ];
+    let [tl, tr, br, bl] = radii;
+    // side length / sum of the two radii sharing that side.
+    let ratios = [
+        (width, tl + tr),   // top
+        (height, tr + br),  // right
+        (width, br + bl),   // bottom
+        (height, tl + bl),  // left
+    ];
+    let mut factor = 1.0_f64;
+    for (side, sum) in ratios {
+        if sum > 0.0 {
+            factor = factor.min(side / sum);
+        }
+    }
+    if factor < 1.0 {
+        for r in radii.iter_mut() {
+            *r *= factor;
+        }
+    }
+    radii
+}
+
+/// Rounded-rect `<path>` `d` with per-corner (circular) radii, clockwise from
+/// the top-left corner. A zero-radius corner degenerates to a lineto per SVG
+/// arc semantics. Origin is (0,0); size is `width`×`height`.
+fn rounded_rect_path(width: f64, height: f64, radii: [f64; 4]) -> String {
+    let [tl, tr, br, bl] = radii;
+    let n = |v: f64| fmt_num(v);
+    format!(
+        "M {} 0 L {} 0 A {} {} 0 0 1 {} {} L {} {} A {} {} 0 0 1 {} {} L {} {} A {} {} 0 0 1 {} {} L 0 {} A {} {} 0 0 1 {} 0 Z",
+        n(tl),
+        n(width - tr),
+        n(tr), n(tr), n(width), n(tr),
+        n(width), n(height - br),
+        n(br), n(br), n(width - br), n(height),
+        n(bl), n(height),
+        n(bl), n(bl), n(0.0), n(height - bl),
+        n(tl),
+        n(tl), n(tl), n(tl),
+    )
+}
+
+/// The inner element of a rounded-rect clipPath: a plain `<rect>` on the
+/// uniform fast path, a per-corner `<path>` when corners are mixed.
+fn clip_shape_element(node: &Node, width: f64, height: f64) -> String {
+    let (shape, geometry) = rect_shape(node, width, height);
+    format!("<{shape} {geometry} />")
+}
+
+/// Geometry for a rect-like body element: `("rect", attrs)` on the uniform
+/// fast path (keeps `rx`/`ry`), or `("path", d-attr)` when corners are mixed.
+fn rect_shape(node: &Node, width: f64, height: f64) -> (&'static str, String) {
+    if corners_uniform(node) {
+        (
+            "rect",
+            format!(
+                "x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"{}",
+                fmt_num(width),
+                fmt_num(height),
+                corner_attrs(node, width, height)
+            ),
+        )
+    } else {
+        (
+            "path",
+            format!(
+                "d=\"{}\"",
+                rounded_rect_path(width, height, clamped_corners(node, width, height))
+            ),
+        )
+    }
+}
+
 fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
     if node.corner.top_left == 0.0
         && node.corner.top_right == 0.0
@@ -1336,10 +2074,7 @@ fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
         return String::new();
     }
 
-    if node.corner.top_left == node.corner.top_right
-        && node.corner.top_left == node.corner.bottom_right
-        && node.corner.top_left == node.corner.bottom_left
-    {
+    if corners_uniform(node) {
         // Clamp like Skia: an oversized radius saturates at half the SMALLER
         // dimension, keeping a stadium shape. Emitting the raw value lets the
         // SVG renderer clamp rx/ry per-axis independently (rx→w/2, ry→h/2),
@@ -1359,6 +2094,51 @@ fn corner_attrs(node: &Node, width: f64, height: f64) -> String {
 
 fn opacity_with_paint(opacity: String, paint_attrs: String) -> String {
     format!("{}{}", opacity, paint_attrs)
+}
+
+/// The `font-family` attribute value for an embedding export: the requested
+/// family plus the deterministic fallback family, each CSS-quoted so names
+/// with spaces, leading digits, or commas parse as ONE family and match the
+/// embedded `@font-face` rules exactly. (XML escaping of the attribute
+/// happens separately via `escape_attr`.)
+fn embedded_font_family_attr(family: &str, fallback: &str) -> String {
+    let trimmed = family.trim();
+    if trimmed.is_empty() || trimmed == fallback {
+        return css_escaped(fallback, '\'');
+    }
+    format!(
+        "{}, {}",
+        css_escaped(trimmed, '\''),
+        css_escaped(fallback, '\'')
+    )
+}
+
+/// Double-quoted CSS string for `@font-face` descriptors.
+fn css_string(name: &str) -> String {
+    css_escaped(name, '"')
+}
+
+/// A CSS string literal with the given quote character: backslashes, the
+/// quote itself, and control characters (raw newlines are invalid in CSS
+/// strings) are escaped.
+fn css_escaped(name: &str, quote: char) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    out.push(quote);
+    for ch in name.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\{:x} ", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
 }
 
 fn svg_font_family(family: &str) -> String {
@@ -1391,14 +2171,45 @@ where
     stops
         .iter()
         .map(|stop| {
-            format!(
-                "<stop offset=\"{}%\" stop-color=\"{}\" />\n",
-                fmt_num(stop.position * 100.0),
-                color(&stop.color)
-            )
+            let resolved = color(&stop.color);
+            // Max-compat alpha (A4): an 8-digit #RRGGBBAA stop splits into a
+            // 6-digit stop-color plus a stop-opacity, instead of relying on
+            // CSS Color-4-only 8-digit hex parsing.
+            let (stop_color, alpha) = split_hex_stop_alpha(&resolved);
+            match alpha {
+                Some(a) => format!(
+                    "<stop offset=\"{}%\" stop-color=\"{}\" stop-opacity=\"{}\" />\n",
+                    fmt_num(stop.position * 100.0),
+                    stop_color,
+                    fmt_num(a)
+                ),
+                None => format!(
+                    "<stop offset=\"{}%\" stop-color=\"{}\" />\n",
+                    fmt_num(stop.position * 100.0),
+                    stop_color
+                ),
+            }
         })
         .collect()
 }
+
+/// Split a resolved `#RRGGBBAA` color into `(#RRGGBB, Some(alpha 0..=1))`.
+/// Non-8-digit-hex colors (including oklch, which carries its own alpha)
+/// return `(color, None)` unchanged.
+fn split_hex_stop_alpha(resolved: &str) -> (String, Option<f64>) {
+    if let Some(hex) = resolved.strip_prefix('#') {
+        if hex.len() == 8 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if let Ok(a) = u8::from_str_radix(&hex[6..8], 16) {
+                return (format!("#{}", &hex[0..6]), Some(a as f64 / 255.0));
+            }
+        }
+    }
+    (resolved.to_owned(), None)
+}
+
+// LUME0214 (text strokes dropped) RETIRED in A6a — text strokes now render
+// (see `text_stroke_attrs`). The code number stays allocated in the
+// diagnostics ledger as retired history; its emission sites are deleted.
 
 fn unresolved_token_diag(node_id: &NodeId, token: &str) -> Diagnostic {
     Diagnostic::warning(

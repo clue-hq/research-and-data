@@ -5,11 +5,14 @@ describe("editor mode metadata", () => {
   it("keeps visible V0 panel modes ordered and labeled", () => {
     expect(EDITOR_PANEL_MODES.map((item) => item.mode)).toEqual([
       "inspector",
+      "assets",
       "agent",
-      "export",
       "diagnostics"
     ]);
-    expect(EDITOR_PANEL_MODES.find((item) => item.mode === "export")?.ariaLabel).toBe("Export panel");
+    // Export deliberately has no rail tab — the topbar popover and the
+    // canvas toolbar open the export surface.
+    expect(EDITOR_PANEL_MODES.some((item) => item.mode === "export")).toBe(false);
+    expect(EDITOR_PANEL_MODES.find((item) => item.mode === "assets")?.ariaLabel).toBe("Assets panel");
     expect(EDITOR_PANEL_MODES.find((item) => item.mode === "diagnostics")?.ariaLabel).toBe("Diagnostics panel");
   });
 

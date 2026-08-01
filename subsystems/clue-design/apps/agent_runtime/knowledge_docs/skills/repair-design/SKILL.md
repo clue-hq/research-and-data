@@ -64,8 +64,26 @@ replace(node_contact_name)
      "patch": { "kind": "node", "value": { "size": { "height": 140 } } },
      "scope": { "mode": "strict", "allowed": [{ "kind": "node", "id": "instruction" }] } }
    ```
-5. **Continuation DSL** — only when you are *adding* new nested elements under an
-   existing container. Indent them under the container; do not re-declare it.
+5. **Reconcile a container** — the way to ADD, REMOVE, or RESTRUCTURE elements
+   inside an existing container. Open `reconcile(<container_id>)` and indent the
+   container's **full intended child subtree**: re-emit every child you want to
+   keep verbatim (same id, same fields) and add/rewrite the ones you're changing.
+   The engine diffs the block against the live subtree and emits only the minimal
+   ops — kept children cost nothing.
+   ```text
+   reconcile(hero)
+     eyebrow text "INTRODUCING" style($type.eyebrow)   # kept — re-emitted verbatim
+     headline text "New Headline" style($type.h1)      # kept id, changed copy → update
+     cta_shot image asset(asset_ing_9394e96d) p(0,0) s(400,300)   # new → insert
+   ```
+   - Omitting an AGENT-authored child deletes it (the declarative contract).
+   - Omitting a PROTECTED (seed-born / human) child KEEPS it and warns
+     `LUMD0262` — omission never deletes human content. To remove human/seed
+     content you must say `delete(<id>)` explicitly (it may sit inside the block).
+   - `reconcile(target)` needs a NODE container (frame/group/autolayout), never a
+     page id (`LUMD0264`). To fill an *empty* page, use a `#page:<page_id>`
+     continuation instead. Each close emits an `LUMD0263` summary (n updated /
+     inserted / removed / moved / kept-protected).
 
 Re-authoring the whole scene is the **last** resort, used only when the design
 direction itself is wrong and the coordinator explicitly asked for a replacement.
@@ -74,8 +92,9 @@ direction itself is wrong and the coordinator explicitly asked for a replacement
 
 **Compile (`LUMD…`)** — fix the exact failing token on the failing line. Earlier
 lines are already applied; emit only the corrected continuation/modify, not the
-whole block. (`valign` → remove it; bad color → a valid color form; `rd(a,b,c,d)`
-→ `rd(a)`.) See `knowledge/lumen-dsl/diagnostics`.
+whole block. (unknown property e.g. `z_index` → remove it; `valign(middle)` →
+`valign(center)`; bad color → a valid color form; `rd(a,b,c,d)` → `rd(a)`.) See
+`knowledge/lumen-dsl/diagnostics`.
 
 **Layout / fit (`LUMV0903`, `LUMV0810`, `LUMV0904`)** — the text genuinely doesn't
 fit (measurement is real). Pick the *smallest* targeted change on the named node:
@@ -104,7 +123,8 @@ diagnostic targets page size.
 
 **Visual critique** — the reviewer names a target and a concrete repair. Apply it
 to that target only, preserving the layout direction. If the critique is about a
-missing concept, *add* it as a continuation; don't rebuild.
+missing concept, *add* it by reconciling its container (`reconcile(<container>)`,
+re-emitting the kept children verbatim); don't rebuild.
 
 ## Edit-surface guidance
 

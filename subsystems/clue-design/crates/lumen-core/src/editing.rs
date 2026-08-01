@@ -9,7 +9,7 @@ use crate::operations::{
 use crate::scene::{
     AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
     Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
-    TextAlign, TextDirection, TextNode, TextWrap, Transform,
+    TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform, VerticalAlign,
 };
 use crate::slots::Slot;
 use serde::{Deserialize, Serialize};
@@ -542,6 +542,26 @@ pub struct TextEditPatch {
     pub font_size_token: OptionalFieldPatch<String>,
     pub line_height_token: OptionalFieldPatch<String>,
     pub letter_spacing_token: OptionalFieldPatch<String>,
+    // A6a typography v1. None of these are token channels, so they never
+    // interact with `clear_stale_tokens`.
+    pub text_transform: FieldPatch<TextTransform>,
+    pub underline: FieldPatch<bool>,
+    pub strikethrough: FieldPatch<bool>,
+    /// A7b: italic style. A geometry channel (measurement input), but content
+    /// edits PRESERVE it — like `valign` and unlike `spans` (whose offsets go
+    /// stale). Not a token channel.
+    pub italic: FieldPatch<bool>,
+    pub truncate: FieldPatch<bool>,
+    pub paragraph_spacing: FieldPatch<f64>,
+    /// A7a: vertical alignment within the box. Not a token channel, so it never
+    /// interacts with `clear_stale_tokens`.
+    pub valign: FieldPatch<VerticalAlign>,
+    /// A6b D4: rich-text spans. A patch that changes `content` without ALSO
+    /// setting `spans` CLEARS spans — stale byte offsets are silent corruption,
+    /// so a content edit that doesn't re-author its spans drops them (undo
+    /// restores the prior spans through the existing inverse mechanism). A patch
+    /// that sets both applies both.
+    pub spans: FieldPatch<Vec<TextSpan>>,
 }
 
 /// One targeted edit against a fill/stroke/effect stack entry, addressed by
@@ -595,6 +615,8 @@ pub struct NodeEditPatch {
     pub opacity: FieldPatch<f64>,
     pub opacity_token: OptionalFieldPatch<String>,
     pub clip: FieldPatch<bool>,
+    #[serde(skip_serializing_if = "FieldPatch::is_unchanged")]
+    pub bleed: FieldPatch<bool>,
     pub layout: OptionalFieldPatch<AutoLayoutProps>,
     pub source_asset_id: OptionalFieldPatch<AssetId>,
     pub asset_placement: OptionalFieldPatch<crate::assets::AssetPlacement>,
@@ -647,6 +669,12 @@ pub struct AssetEditPatch {
 /// Sparse patch over an existing export profile. Missing fields default to
 /// unchanged; the patch lowers to `UpsertExportProfile` with the merged
 /// profile.
+///
+/// This struct is a hand-written mirror of [`ExportProfile`]'s shape — the
+/// completeness test in this module fails whenever the profile grows a
+/// field the patch cannot express (the drift bit three times: this struct
+/// missed four print features, and the API normalize whitelist dropped
+/// `include_marks` and then `imposition`/`proof`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExportProfileEditPatch {
@@ -655,6 +683,10 @@ pub struct ExportProfileEditPatch {
     pub raster: OptionalFieldPatch<RasterScale>,
     pub include_bleed: FieldPatch<bool>,
     pub embed_fonts: FieldPatch<bool>,
+    pub include_marks: FieldPatch<bool>,
+    pub imposition: OptionalFieldPatch<String>,
+    pub proof: FieldPatch<bool>,
+    pub color: OptionalFieldPatch<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -902,6 +934,10 @@ pub fn build_export_profile_modify(
     apply_optional_patch(&mut profile.raster, patch.raster);
     apply_field_patch(&mut profile.include_bleed, patch.include_bleed);
     apply_field_patch(&mut profile.embed_fonts, patch.embed_fonts);
+    apply_field_patch(&mut profile.include_marks, patch.include_marks);
+    apply_optional_patch(&mut profile.imposition, patch.imposition);
+    apply_field_patch(&mut profile.proof, patch.proof);
+    apply_optional_patch(&mut profile.color, patch.color);
 
     EditBatch::new(
         vec![Operation::UpsertExportProfile { profile }],
@@ -991,6 +1027,7 @@ pub fn build_node_modify(
         source_asset_id: patch.source_asset_id,
         asset_placement: patch.asset_placement,
         clip: patch.clip,
+        bleed: patch.bleed,
         layout: patch.layout,
         computed: OptionalFieldPatch::Unchanged,
         locked: patch.locked,
@@ -1874,9 +1911,18 @@ fn free_container_operations(
         if baked_transform != child.transform {
             child_patch.transform = FieldPatch::Set(baked_transform);
         }
+        // K1 rider: a TEXT child keeps Hug dimensions through the freeze.
+        // Hug text self-measures — it cannot re-flow siblings once the
+        // container is Free, so baking it buys nothing — and at accept time
+        // the solved extent may predate typography-token resolution (the
+        // proposal ops insert skeleton text; the post-accept preflight
+        // resolves the real family/size). Baking that skeleton measurement
+        // froze an 80pt headline into a 17pt Fixed box (LUMV0903/0810 on
+        // the K0 live-proof document). Non-text children bake as before.
+        let is_text_child = matches!(child.kind, NodeKind::Text(_));
         let baked_size = SizeSpec {
-            width: bake_dimension(&child.size.width, child_bounds.width),
-            height: bake_dimension(&child.size.height, child_bounds.height),
+            width: bake_dimension_for_child(&child.size.width, child_bounds.width, is_text_child),
+            height: bake_dimension_for_child(&child.size.height, child_bounds.height, is_text_child),
         };
         if baked_size != child.size {
             child_patch.size = FieldPatch::Set(baked_size);
@@ -1977,6 +2023,17 @@ fn bake_dimension(dimension: &Dimension, solved: f64) -> Dimension {
             token: token.clone(),
         },
     }
+}
+
+/// `bake_dimension`, except a text child's Hug survives the bake (see the
+/// K1 rider comment at the call site): Hug text self-measures and cannot
+/// re-flow siblings in a Free container, while baking it can freeze a
+/// pre-token-resolution measurement into a lying Fixed box.
+fn bake_dimension_for_child(dimension: &Dimension, solved: f64, is_text: bool) -> Dimension {
+    if is_text && matches!(dimension, Dimension::Hug) {
+        return Dimension::Hug;
+    }
+    bake_dimension(dimension, solved)
 }
 
 pub fn build_clone_subtree(
@@ -2588,6 +2645,23 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     apply_optional_patch(&mut text.font_size_token, patch.font_size_token);
     apply_optional_patch(&mut text.line_height_token, patch.line_height_token);
     apply_optional_patch(&mut text.letter_spacing_token, patch.letter_spacing_token);
+    apply_field_patch(&mut text.text_transform, patch.text_transform);
+    apply_field_patch(&mut text.underline, patch.underline);
+    apply_field_patch(&mut text.strikethrough, patch.strikethrough);
+    apply_field_patch(&mut text.italic, patch.italic);
+    apply_field_patch(&mut text.truncate, patch.truncate);
+    apply_field_patch(&mut text.paragraph_spacing, patch.paragraph_spacing);
+    apply_field_patch(&mut text.valign, patch.valign);
+    // A6b D4: span honesty. A patch that sets spans applies them; otherwise, a
+    // content change makes the existing spans' byte offsets stale garbage, so
+    // they are cleared (silent corruption forbidden). Undo restores them via
+    // the inverse patch, which sets `spans` from the pre-edit snapshot.
+    let content_changed = text.content != before.content;
+    match patch.spans {
+        FieldPatch::Set(spans) => text.spans = spans,
+        FieldPatch::Unchanged if content_changed => text.spans.clear(),
+        FieldPatch::Unchanged => {}
+    }
     text.clear_stale_tokens(&before, explicit);
     text
 }
@@ -2605,6 +2679,7 @@ fn node_patch_affects_render(patch: &NodePatch) -> bool {
         || !matches!(patch.source_asset_id, OptionalFieldPatch::Unchanged)
         || !matches!(patch.asset_placement, OptionalFieldPatch::Unchanged)
         || !matches!(patch.clip, FieldPatch::Unchanged)
+        || !matches!(patch.bleed, FieldPatch::Unchanged)
         || !matches!(patch.layout, OptionalFieldPatch::Unchanged)
         // Phase 1 freehand: pinning/unpinning or moving an absolute box moves
         // pixels, so stale computed geometry must be invalidated. Keep the TS

@@ -1,0 +1,379 @@
+{
+ "schema_version": 1,
+ "assets": {},
+ "export_profiles": [
+  {
+   "name": "agent_png",
+   "format": "png",
+   "pdf_intent": null,
+   "raster": {
+    "scale": 1.0,
+    "dpi": 96
+   },
+   "include_bleed": false,
+   "embed_fonts": false
+  }
+ ],
+ "meta": {
+  "id": "doc_typography_v1",
+  "title": "Typography v1 Showcase",
+  "artifact_type": "card",
+  "medium": "digital",
+  "brand_kit": null,
+  "status": {
+   "kind": "draft"
+  }
+ },
+ "nodes": {
+  "eyebrow": {
+   "id": "eyebrow",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "typography v1 features",
+    "font_family": "Inter",
+    "font_size": 13.0,
+    "font_weight": 700,
+    "align": "left",
+    "text_transform": "uppercase",
+    "letter_spacing": 3.0
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 24.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 280.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 24.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_eyebrow",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#6d28d9"
+      }
+     }
+    }
+   ],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "decorated": {
+   "id": "decorated",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "Underlined and struck",
+    "font_family": "Inter",
+    "font_size": 20.0,
+    "font_weight": 600,
+    "align": "left",
+    "underline": true,
+    "strikethrough": true
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 60.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 280.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 30.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_dec",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#111827"
+      }
+     }
+    }
+   ],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "truncated": {
+   "id": "truncated",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "This body paragraph is intentionally long enough to overflow the two visible lines it is given, demonstrating ellipsis truncation.",
+    "font_family": "Inter",
+    "font_size": 14.0,
+    "font_weight": 400,
+    "align": "left",
+    "wrap": "wrap",
+    "max_lines": 2,
+    "truncate": true,
+    "line_height": 1.3
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 100.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 280.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 44.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_trunc",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#374151"
+      }
+     }
+    }
+   ],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false,
+   "position_mode": "absolute",
+   "absolute_box": {
+    "x": 24.0,
+    "y": 100.0,
+    "width": 280.0,
+    "height": 44.0
+   }
+  },
+  "spaced": {
+   "id": "spaced",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "First paragraph line.\nSecond paragraph line.\nThird paragraph line.",
+    "font_family": "Inter",
+    "font_size": 14.0,
+    "font_weight": 400,
+    "align": "left",
+    "paragraph_spacing": 14.0,
+    "line_height": 1.25
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 160.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 280.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 110.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_spaced",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#0f766e"
+      }
+     }
+    }
+   ],
+   "strokes": [],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  },
+  "display": {
+   "id": "display",
+   "name": null,
+   "kind": {
+    "kind": "text",
+    "content": "STROKE",
+    "font_family": "Inter",
+    "font_size": 44.0,
+    "font_weight": 800,
+    "align": "left",
+    "text_transform": "uppercase"
+   },
+   "transform": {
+    "x": 24.0,
+    "y": 290.0,
+    "rotation": 0.0,
+    "skew_x": 0.0,
+    "skew_y": 0.0,
+    "flip_x": false,
+    "flip_y": false
+   },
+   "size": {
+    "width": {
+     "kind": "fixed",
+     "value": 280.0
+    },
+    "height": {
+     "kind": "fixed",
+     "value": 60.0
+    }
+   },
+   "children": [],
+   "fills": [
+    {
+     "id": "f_disp",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#f59e0b"
+      }
+     }
+    }
+   ],
+   "strokes": [
+    {
+     "id": "s_disp",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#111827"
+      }
+     },
+     "width": 2.0
+    }
+   ],
+   "corner": {
+    "top_left": 0.0,
+    "top_right": 0.0,
+    "bottom_right": 0.0,
+    "bottom_left": 0.0
+   },
+   "opacity": 1.0,
+   "clip": false,
+   "layout": null,
+   "computed": null,
+   "locked": false
+  }
+ },
+ "pages": {
+  "page_typography": {
+   "id": "page_typography",
+   "name": "Typography v1",
+   "size": {
+    "width": 328.0,
+    "height": 372.0,
+    "unit": "px",
+    "preset": "custom",
+    "orientation": "portrait"
+   },
+   "bleed": null,
+   "safe_area": {
+    "x": 12.0,
+    "y": 12.0,
+    "width": 304.0,
+    "height": 348.0
+   },
+   "background": [
+    {
+     "id": "bg",
+     "paint": {
+      "kind": "solid",
+      "color": {
+       "kind": "hex",
+       "value": "#fbfbfd"
+      }
+     }
+    }
+   ],
+   "children": [
+    "eyebrow",
+    "decorated",
+    "truncated",
+    "spaced",
+    "display"
+   ]
+  }
+ },
+ "slots": {}
+}

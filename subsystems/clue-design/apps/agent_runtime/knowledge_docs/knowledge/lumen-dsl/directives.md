@@ -67,6 +67,56 @@ override(card_b)
 Bad syntax in any of these → `LUMD0207`. Block `replace` requires exactly one
 staged root (`LUMD0914`).
 
+## Reconcile a container — `reconcile(<container_id>)` + subtree
+
+`reconcile(target)` is THE way to **add, remove, or restructure** the children of
+an existing container. Indent the container's **full intended child subtree**:
+re-emit every child you want to keep (same id, same fields) alongside the ones you
+add or change. The engine diffs the block against the live subtree and emits the
+MINIMAL operations — an unchanged re-emitted child costs zero ops.
+
+```text
+reconcile(hero)
+  eyebrow text "INTRODUCING" style($type.eyebrow)     # unchanged → no-op
+  headline text "New Headline" style($type.h1)        # kept id, new copy → update
+  cta_shot image asset(asset_ing_9394e96d) p(0,0) s(400,300)   # new id → insert
+```
+
+Re-emitting existing ids inside the block is the POINT, not a duplicate-id error:
+the block stages DETACHED, duplicate-id checks (`LUMD0401`) are suspended inside
+it, and it never applies directly — only the computed diff ops do.
+
+**Diff semantics** (by child id):
+
+- present in both block and live subtree → `UpdateNode` with only the changed
+  fields (`MoveNode` if its parent/index changed); identical → zero ops.
+- in the block only → `InsertNode` at its block position.
+- in the live subtree only → depends on **provenance** (the protection rule).
+
+**The protection rule** (the human contract):
+
+- An **agent-authored** live child omitted from the block is REMOVED — the
+  declarative contract for the agent's own material.
+- A **protected** child (seed-born / human) omitted from the block is **KEPT**,
+  with a loud `LUMD0262` warning — omission never deletes human content. To remove
+  protected content, write `delete(<id>)` explicitly (allowed inside the block).
+- A protected child re-emitted with changed fields IS updated (an explicit
+  re-author, same legitimacy as a `#node` modify line).
+
+`reconcile(target)` requires a NODE container — frame/group/autolayout — never a
+page id (`LUMD0264`, which names the valid containers in the live scene). To fill
+an *empty* page use the `#page:<page_id>` continuation form instead. Each close
+emits one `LUMD0263` info summary: `reconciled <container>: N updated, N inserted,
+N removed, N moved, N kept-protected`.
+
+```text
+# Add a testimonial under `main` and drop the old placeholder, keeping the rest:
+reconcile(main)
+  headline text "Trusted by teams" style($type.h2)   # kept verbatim
+  quote text "\"Best tool we've adopted.\"" style($type.body)   # new → insert
+  attribution text "— A. Patient" style($type.caption)          # new → insert
+```
+
 ## Repair discipline (do this, not that)
 
 - **Do** target the failing node with a `#id` modify, a `delete`/`parent`, or a

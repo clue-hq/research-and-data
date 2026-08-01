@@ -1,0 +1,11 @@
+{
+  "id": "testimonial_portrait_photo",
+  "artifact": "portrait_card_4x5",
+  "prompt": "Design a 1080x1350 quote card for social and sales decks: 'Lumen replaced three vendors and a week of design ops.' \u2014 Priya N., VP Brand, Northwind. Feature the quote and attribution prominently.",
+  "expected_decision": "photo",
+  "role": "portrait_frame_pull_quote",
+  "risks": [
+    "portrait stretched to 4:5 (squashed face)",
+    "quote illegible if overlaid instead of on a clean plate"
+  ]
+}
