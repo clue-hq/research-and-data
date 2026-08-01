@@ -277,6 +277,45 @@ async def get_onboarding_input(
     return OnboardingInputRow.model_validate(dict(row)) if row is not None else None
 
 
+async def get_onboarding_input_for_artifact(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    artifact_key: str,
+    kind: OnboardingInputKind | None = None,
+) -> OnboardingInputRow | None:
+    """Return the newest captured input in this workspace citing exactly this artifact.
+
+    The artifact is content-addressed, so two turns carrying byte-identical text legitimately
+    capture two inputs against one key. The newest row is the one the current turn just wrote
+    (capture precedes use), and every candidate carries the same immutable
+    ``artifact_key``/``content_sha256`` pair, so the choice can never change which bytes a caller
+    is handed — only which durable capture record they are attributed to. ``id`` breaks a
+    ``created_at`` tie so the answer is deterministic rather than storage-order dependent.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_ONBOARDING_COLUMNS} FROM onboarding_input "
+                    "WHERE workspace_id = :workspace_id AND artifact_key = :artifact_key "
+                    "AND (CAST(:kind AS text) IS NULL OR kind = :kind) "
+                    "ORDER BY created_at DESC, id DESC LIMIT 1"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "artifact_key": artifact_key,
+                    "kind": kind.value if kind is not None else None,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return OnboardingInputRow.model_validate(dict(row)) if row is not None else None
+
+
 def recon_dedupe_hash(
     *,
     workspace_id: str,

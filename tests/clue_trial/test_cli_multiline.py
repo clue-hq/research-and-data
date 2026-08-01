@@ -140,11 +140,15 @@ def test_multiline_input_error_is_a_value_error() -> None:
     assert issubclass(cli_multiline.MultilineInputError, ValueError)
 
 
-def test_cap_fits_the_routing_echo_inside_the_model_output_budget() -> None:
-    # The real bound is not the trial API (which caps nothing) but Stage-0 routing: the model must
-    # echo the whole message byte-identically into `record_interview_answer.answer`, inside the
-    # active profile's `max_output_tokens` (8192 for head-of-abm v6) and alongside the statements
-    # array. 16 KB leaves room for that overhead; 64 KB advertised a size routing cannot echo.
+def test_cap_fits_the_routed_turn_inside_the_model_budgets() -> None:
+    # The real bound is not the trial API (which caps nothing) but Stage-0 routing. It used to be
+    # an *output* bound: the model echoed the whole message byte-identically into
+    # `record_interview_answer.answer`, inside the active profile's `max_output_tokens` (8192).
+    # PC-C8 §6a retired that echo — the engine loads the captured bytes and the model sends only
+    # offsets — so what 16 KB now bounds is the L7 turn candidate the message becomes and the
+    # span the model must reason over. The cap is deliberately left where it is: relaxing it is a
+    # context-budget decision (Slice 2 re-denominates layer budgets in tokens), not a free win
+    # from the echo going away.
     assert cli_multiline.MAX_MESSAGE_BYTES == 16 * 1024
 
 

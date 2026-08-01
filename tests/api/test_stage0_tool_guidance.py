@@ -48,15 +48,23 @@ _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
     ("submit_onboarding_input", ("content_sha256",)): ("sha-256", "exact"),
     # stage0_tools.StartReconTool.preconditions: non-empty, resolvable, same-workspace refs.
     ("start_recon", ("onboarding_input_ids",)): ("at least one", "workspace"),
-    # stage0_tools.RecordInterviewAnswerTool.preconditions: sha256(answer) == content_sha256.
-    ("record_interview_answer", ("answer",)): ("byte-identical", "sha-256"),
-    ("record_interview_answer", ("onboarding_input_id",)): ("captured", "this turn"),
-    ("record_interview_answer", ("artifact_key",)): ("same",),
+    # `answer`, `onboarding_input_id` and `artifact_key` are engine-injected turn authority
+    # (PC-C8 §6a, clue_api.turn_binding): the model never fills them, so under this gate's own
+    # rule — state a constraint where the model authors the field — they have nothing to state
+    # here. Their absence is guarded by test_c8_slice0_evidence.py::
+    # test_record_interview_answer_no_longer_lets_the_model_author_the_answer_or_trusted_ids, and
+    # the sha equality they used to carry is enforced before injection, engine-side.
     # skills/stage0-interview: route every substantive turn, unmapped included.
     ("record_interview_answer", ("statements",)): ("unmapped",),
-    # interview._exact_quote: offsets index into `answer`.
-    ("record_interview_answer", ("statements", "quote_start")): ("offset", "answer"),
-    ("record_interview_answer", ("statements", "quote_end")): ("offset", "answer"),
+    # interview._exact_quote: offsets index into the platform-loaded captured message.
+    ("record_interview_answer", ("statements", "quote_start")): (
+        "offset",
+        "captured user message",
+    ),
+    ("record_interview_answer", ("statements", "quote_end")): (
+        "offset",
+        "captured user message",
+    ),
     # interview._exact_quote: a claim value must be textually entailed by the exact quote.
     ("record_interview_answer", ("statements", "value")): (
         "verbatim",

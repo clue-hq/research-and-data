@@ -56,6 +56,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
+        "skill:stage0-interview@v6",
     ]
     assert [item.ref.address for item in profiles.list()] == [
         "profile:account-research@v1",
@@ -72,6 +73,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
+        "profile:head-of-abm@v8",
         "profile:research-specialist@v1",
         "profile:research-specialist@v2",
         "profile:research-specialist@v3",

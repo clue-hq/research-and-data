@@ -69,13 +69,15 @@ class InterviewStatement(BaseModel):
     )
     quote_start: int = Field(
         description=(
-            "Start character offset of the evidence quote inside `answer` (0-based, inclusive). "
-            "Offsets outside `answer`, or a blank span, are refused."
+            "Start character offset of the evidence quote inside the captured user message the "
+            "platform supplies as `answer` (0-based, inclusive; characters, not bytes). An "
+            "offset past the end of that message, or a blank span, is refused."
         )
     )
     quote_end: int = Field(
         description=(
-            "End character offset inside `answer` (exclusive). `answer[quote_start:quote_end]` "
+            "End character offset inside that captured user message (exclusive). The slice "
+            "`answer[quote_start:quote_end]` is taken from the platform-loaded capture, so it "
             "must be the exact user words this statement rests on."
         )
     )
@@ -104,9 +106,10 @@ class InterviewStatement(BaseModel):
         default=None,
         description=(
             "The claim's value; required on the `claim` route and refused unless it appears "
-            "verbatim inside `answer[quote_start:quote_end]`. Facts are evidence-locked to the "
-            "user's exact words, so quote rather than summarize: narrow the offsets to the words "
-            "that state the fact instead of rewording them."
+            "verbatim inside `answer[quote_start:quote_end]` — the slice of the captured user "
+            "message the platform loads. Facts are evidence-locked to the user's exact words, so "
+            "quote rather than summarize: narrow the offsets to the words that state the fact "
+            "instead of rewording them."
         ),
     )
     route_ref: str | None = Field(
