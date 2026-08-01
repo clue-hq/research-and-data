@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from enum import StrEnum
+from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -49,9 +51,20 @@ class InterviewRoute(StrEnum):
 
 
 class InterviewStatement(BaseModel):
-    """One routed part of the captured answer: its species, its exact evidence quote offsets, and
-    the fields that species requires. (One minimal-actor classification; C6 can later produce the
-    same contract.)"""
+    """One routed part of the captured answer: its species, its verbatim evidence quote, and the
+    fields that species requires. (One minimal-actor classification; C6 can later produce the same
+    contract.)
+
+    **PC-C8 §6c-a — the model quotes text, the engine computes offsets.** The statement used to
+    carry ``quote_start``/``quote_end``: the model counted characters in a message it was told not
+    to retype, and any drift failed the call closed (12 such refusals in the 2026-08-01 acceptance
+    run, all on long or bulleted turns). Counting is not classification. The model now copies the
+    span it means; :func:`locate_quote` finds it by **exact substring search** over the captured
+    answer the platform loaded, and the durable row keeps the same offsets + sha as before — only
+    the authorship moved. There is deliberately no fuzzy matching anywhere on this path: the
+    evidence lock's whole guarantee is "this exact span", and approximate location readmits
+    paraphrase through the back door.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -68,19 +81,25 @@ class InterviewStatement(BaseModel):
             "topic, or project decision). Recorded verbatim on the durable statement."
         )
     )
-    quote_start: int = Field(
+    quote: str = Field(
         description=(
-            "Start character offset of the evidence quote inside the captured user message the "
-            "platform supplies as `answer` (0-based, inclusive; characters, not bytes). An "
-            "offset past the end of that message, or a blank span, is refused."
+            "The evidence span this statement rests on, copied exactly from the captured user "
+            "message. Copy the span character-for-character out of the message — do not retype, "
+            "tidy, re-punctuate, translate, or trim it. The platform searches the captured "
+            "message for this exact text and records the offsets itself; a span that does not "
+            "appear verbatim in that message is refused (`quote_not_found_verbatim`), and so is a "
+            "blank one. There is no approximate matching: re-copy the span rather than "
+            "paraphrasing it."
         )
     )
-    quote_end: int = Field(
+    occurrence: int = Field(
+        default=1,
+        ge=1,
         description=(
-            "End character offset inside that captured user message (exclusive). The slice "
-            "`answer[quote_start:quote_end]` is taken from the platform-loaded capture, so it "
-            "must be the exact user words this statement rests on."
-        )
+            "Which occurrence of `quote` in the captured user message to lock onto, 1-based; the "
+            "default 1 means the first. The evidence bytes are identical wherever the span "
+            "repeats, so leave this out unless you specifically mean a later one."
+        ),
     )
     entity_id: EntityId | None = Field(
         default=None,
@@ -109,11 +128,14 @@ class InterviewStatement(BaseModel):
     value: JsonValue | None = Field(
         default=None,
         description=(
-            "The claim's value; required on the `claim` route and refused unless it appears "
-            "verbatim inside `answer[quote_start:quote_end]` — the slice of the captured user "
-            "message the platform loads. Facts are evidence-locked to the user's exact words, so "
-            "quote rather than summarize: narrow the offsets to the words that state the fact "
-            "instead of rewording them."
+            "The claim's value; required on the `claim` route, and always evidence-locked to "
+            "`quote`. A **text** value must appear verbatim inside that quote — quote rather than "
+            "summarize, and narrow the quote to the words that state the fact instead of "
+            "rewording them. A **typed** value (true/false, a number, a list) cannot appear "
+            "verbatim in prose, so it is checked instead by an entailment judge reading the quote "
+            "alone: it is admitted only if those exact user words support it, and refused "
+            "otherwise. Either way the quote must actually state the fact — a typed value is not "
+            "a way around the evidence lock."
         ),
     )
     route_ref: str | None = Field(
@@ -226,6 +248,129 @@ class InterviewClaimEntityRefused(ValueError):
         self.reason_code = reason_code
 
 
+class InterviewEvidenceRefused(ValueError):
+    """A statement's evidence did not hold up, so nothing about it may be written (PC-C8 §6c).
+
+    Typed for the same reason :class:`InterviewClaimEntityRefused` is: the governed tool turns
+    ``reason_code`` into a model-visible :class:`PreconditionFailure` the model can actually act on,
+    instead of a bare ``ValueError`` whose only repair advice is its own prose. Every code here is
+    a *repairable* condition — re-copy the span, name the occurrence, narrow the quote — which is
+    why the failure is loud rather than a silent downgrade.
+    """
+
+    def __init__(self, *, reason_code: str, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
+#: The model quoted text that is not in the captured message (or asked for an occurrence that is
+#: not there). The single repair is always the same: copy the span exactly from the message.
+QUOTE_NOT_FOUND = "quote_not_found_verbatim"
+#: A blank / whitespace-only quote proves nothing; it was refused before §6c too.
+QUOTE_EMPTY = "interview_quote_empty"
+#: A text value that is not inside its own quote (the byte-substring rule, unchanged since C4).
+VALUE_NOT_ENTAILED = "claim_value_not_entailed"
+#: A typed value arrived with no judge wired, so nothing can vouch for it. Refusing is *today's*
+#: behaviour preserved, never a regression: before §6c-b a typed value could not pass the
+#: substring rule at all.
+VALUE_JUDGE_UNAVAILABLE = "claim_value_judge_unavailable"
+
+
+class ClaimEntailment(BaseModel):
+    """One judge's answer to "do these exact user words support this typed value?"."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    supported: bool
+    #: The judge's own label (``supported`` / ``partial`` / ``unsupported`` / ``contradicted``), or
+    #: ``unavailable`` when the judge could not be reached. Carried so the refusal can tell the
+    #: model *which* of those two very different things happened.
+    verdict: str
+    score: float = 0.0
+
+
+class ClaimEntailmentJudge(Protocol):
+    """The seam a typed interview value is admitted through (PC-C8 §6c-b).
+
+    Declared here and implemented at the ``api`` composition root over the shipped M9.3
+    faithfulness judge — the same inversion :class:`~clue_projections.stage0.
+    StatementEvidenceReader` uses, and for the same reason: ``clue_research.stage0`` may not import
+    ``clue_research.verification`` (the milestone-independence contract), and a second entailment
+    mechanism written here would be exactly the duplication the substrate forbids.
+
+    Unwired is a legal state and means **refuse** — a typed value with nothing to vouch for it is
+    not written.
+    """
+
+    async def entails(
+        self, *, entity_id: EntityId, field_key: str, value: JsonValue, quote: str
+    ) -> ClaimEntailment: ...
+
+
+def locate_quote(answer: str, *, quote: str, occurrence: int = 1) -> tuple[int, int]:
+    """Find ``quote`` verbatim in ``answer`` and return its ``(start, end)`` character offsets.
+
+    Exact substring search, **character domain** — the same decoded string ``record_statement``
+    hashes and the same domain ``resolve_statement_quotes`` slices in, so an astral-plane emoji
+    earlier in the message shifts nothing (a byte-domain search would silently misalign every
+    following span). ``occurrence`` counts non-overlapping matches from the start, so the count in
+    a not-found message agrees with :meth:`str.count`.
+
+    Not found is a refusal, never a nearest match: fuzzy location would make the evidence lock mean
+    "something like this span", which is the paraphrase this whole layer exists to refuse.
+    """
+
+    if not quote.strip():
+        raise InterviewEvidenceRefused(
+            reason_code=QUOTE_EMPTY,
+            message="the evidence quote is blank; quote the user's actual words",
+        )
+    start = -1
+    cursor = 0
+    for _ in range(occurrence):
+        start = answer.find(quote, cursor)
+        if start < 0:
+            break
+        cursor = start + len(quote)
+    if start < 0:
+        total = answer.count(quote)
+        detail = (
+            f"it appears only {total} time(s) there, so occurrence {occurrence} does not exist"
+            if total
+            else "it does not appear in that message"
+        )
+        raise InterviewEvidenceRefused(
+            reason_code=QUOTE_NOT_FOUND,
+            message=(
+                f"the quote {_clip(quote)} was not found in the captured user message: {detail}. "
+                "Copy the span exactly from the message — character for character, no retyping, "
+                "tidying, or re-punctuating."
+            ),
+        )
+    return start, start + len(quote)
+
+
+def _clip(text: str, *, limit: int = 60) -> str:
+    """The offending span, short enough to keep a refusal message readable."""
+
+    flat = " ".join(text.split())
+    return repr(flat if len(flat) <= limit else f"{flat[:limit]}…")
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedStatement:
+    """One statement whose evidence has been located and (for claims) vouched for, before any
+    write happens. Validating every statement first is what makes a multi-statement turn
+    all-or-nothing rather than partially durable."""
+
+    classified: InterviewStatement
+    quote: str
+    quote_start: int
+    quote_end: int
+    entity_id: EntityId | None
+    judged: bool
+
+
 class InterviewRoutingResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -237,20 +382,36 @@ class InterviewRoutingResult(BaseModel):
     unmapped_statement_ids: tuple[VolunteeredStatementId, ...]
 
 
+#: The client's own words, admitted because the value is literally inside the cited span.
+SOURCE_CLIENT_INTERVIEW = "client_interview"
+#: The client's own words, admitted because the M9.3 faithfulness judge found the cited span
+#: entails a *typed* value that cannot appear verbatim in prose (PC-C8 §6c-b). Same conversation,
+#: same tier, same evidence span — a different way of earning entry, and `claim.source_key` is
+#: where that stays visible per claim. (`extraction_method` cannot carry it: its enum is closed and
+#: `llm_synthesis` is pinned to tier 4 by a DB CHECK, which this claim is not.) The matching
+#: `faithfulness_verdict` row is the deep provenance; see `entailment_judgment_id` at the api root
+#: for how a claim is joined back to the verdict that admitted it.
+SOURCE_CLIENT_INTERVIEW_JUDGED = "client_interview_judged"
+
+_INTERVIEW_SOURCES = (SOURCE_CLIENT_INTERVIEW, SOURCE_CLIENT_INTERVIEW_JUDGED)
+
+
 async def register_client_interview_source(conn: AsyncConnection) -> None:
-    await register_source(
-        conn,
-        RegistrySourceManifest(
-            manifest=SourceManifest(
-                source_key="client_interview",
-                modality=Modality.CONVERSATION,
-                entity_scope=EntityScope.BOTH,
-                yields=("client", "account", "contact"),
-                tier=1,
+    """Register both interview sources (registration, not enumeration — conventions §2)."""
+    for source_key in _INTERVIEW_SOURCES:
+        await register_source(
+            conn,
+            RegistrySourceManifest(
+                manifest=SourceManifest(
+                    source_key=source_key,
+                    modality=Modality.CONVERSATION,
+                    entity_scope=EntityScope.BOTH,
+                    yields=("client", "account", "contact"),
+                    tier=1,
+                ),
+                provider="client",
             ),
-            provider="client",
-        ),
-    )
+        )
 
 
 async def route_interview_answer(
@@ -268,8 +429,15 @@ async def route_interview_answer(
     project_id: str | None = None,
     memory_write: MemoryWriteSeam | None = None,
     run_id: RunId | None = None,
+    entailment_judge: ClaimEntailmentJudge | None = None,
 ) -> InterviewRoutingResult:
-    """Validate exact quotes, then route without dropping unknown statements."""
+    """Locate and vouch for every quote, then route without dropping unknown statements.
+
+    Two passes on purpose (PC-C8 §6c): pass one locates each quote in the captured answer and, for
+    a claim, resolves its entity and proves its value is entailed; pass two writes. A turn whose
+    third statement is unquotable therefore records *nothing* rather than two durable statements
+    and a refusal the model must reconcile.
+    """
     if (
         any(item.route is InterviewRoute.PROJECT_STATE for item in statements)
         and project_id is None
@@ -277,23 +445,29 @@ async def route_interview_answer(
         raise ValueError("project-state interview statements require project_id")
     await register_client_interview_source(conn)
     run = run_id or new_run_id()
+    prepared = await judge_interview_values(
+        await prepare_interview_statements(
+            conn,
+            workspace_id=workspace_id,
+            answer=answer,
+            statements=statements,
+            client_entity_id=client_entity_id,
+        ),
+        entailment_judge=entailment_judge,
+    )
     statement_ids: list[VolunteeredStatementId] = []
     claim_refs: list[ClaimId] = []
     memory_refs: list[str] = []
     project_refs: list[str] = []
     proposal_refs: list[str] = []
     unmapped: list[VolunteeredStatementId] = []
-    for classified in statements:
-        quote = _exact_quote(answer, classified)
+    for item in prepared:
+        classified = item.classified
+        quote = item.quote
         route_ref = classified.route_ref
-        entity_id = classified.entity_id
+        entity_id = item.entity_id
         if classified.route is InterviewRoute.CLAIM:
-            entity_id = await resolve_claim_entity(
-                conn,
-                classified=classified,
-                workspace_id=workspace_id,
-                client_entity_id=client_entity_id,
-            )
+            assert entity_id is not None
             claim_id = await _write_claim(
                 conn,
                 classified=classified,
@@ -305,6 +479,7 @@ async def route_interview_answer(
                 artifact_key=artifact_key,
                 onboarding_input_id=onboarding_input_id,
                 run_id=run,
+                judged=item.judged,
             )
             route_ref = str(claim_id)
             claim_refs.append(claim_id)
@@ -345,8 +520,8 @@ async def route_interview_answer(
             route_key=classified.route_key,
             route_ref=route_ref,
             quote=quote,
-            quote_start=classified.quote_start,
-            quote_end=classified.quote_end,
+            quote_start=item.quote_start,
+            quote_end=item.quote_end,
             correction_of_id=classified.correction_of_statement_id,
             created_by_actor=actor,
         )
@@ -370,17 +545,152 @@ async def route_interview_answer(
     )
 
 
-def _exact_quote(answer: str, classified: InterviewStatement) -> str:
-    if classified.quote_start < 0 or classified.quote_end > len(answer):
-        raise ValueError("interview quote offsets fall outside the captured answer")
-    quote = answer[classified.quote_start : classified.quote_end]
-    if not quote.strip():
-        raise ValueError("interview evidence quote must be non-empty")
-    if classified.route is InterviewRoute.CLAIM:
-        rendered = str(classified.value)
+async def prepare_interview_statements(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    answer: str,
+    statements: tuple[InterviewStatement, ...],
+    client_entity_id: EntityId,
+) -> tuple[_PreparedStatement, ...]:
+    """Locate every statement's quote and resolve every claim's entity — writing nothing.
+
+    The **DB half** of validation, kept separate from :func:`judge_interview_values` so the caller
+    can release its connection before the judge's (multi-second, synchronous-gateway) call rather
+    than holding a transaction open across it — the same discipline the M9.3 judge itself follows.
+
+    Public because the governed tool runs it in ``preconditions`` too, so a refusal reaches the
+    model as typed, repairable feedback instead of an exception from mid-write. The engine still
+    runs it independently (this pair *is* the engine's pass one), so the guarantee never depends on
+    the precondition having been called.
+    """
+
+    prepared: list[_PreparedStatement] = []
+    for classified in statements:
+        start, end = locate_quote(answer, quote=classified.quote, occurrence=classified.occurrence)
+        entity_id = classified.entity_id
+        if classified.route is InterviewRoute.CLAIM:
+            entity_id = await resolve_claim_entity(
+                conn,
+                classified=classified,
+                workspace_id=workspace_id,
+                client_entity_id=client_entity_id,
+            )
+        prepared.append(
+            _PreparedStatement(
+                classified=classified,
+                quote=answer[start:end],
+                quote_start=start,
+                quote_end=end,
+                entity_id=entity_id,
+                judged=False,
+            )
+        )
+    return tuple(prepared)
+
+
+async def judge_interview_values(
+    prepared: tuple[_PreparedStatement, ...],
+    *,
+    entailment_judge: ClaimEntailmentJudge | None = None,
+) -> tuple[_PreparedStatement, ...]:
+    """Prove every claim value is entailed by its own quote; mark the ones the judge admitted.
+
+    Holds no connection. Run twice per turn by design (precondition then engine) and costs one
+    judgment either way: the port's implementation caches on the *content* of the question, so the
+    engine's re-ask is a cache hit rather than a second LLM call.
+    """
+
+    checked: list[_PreparedStatement] = []
+    for item in prepared:
+        if item.classified.route is not InterviewRoute.CLAIM:
+            checked.append(item)
+            continue
+        assert item.entity_id is not None
+        judged = await _check_value_entailment(
+            item.classified,
+            quote=item.quote,
+            entity_id=item.entity_id,
+            entailment_judge=entailment_judge,
+        )
+        checked.append(replace(item, judged=judged))
+    return tuple(checked)
+
+
+def is_judged_value(value: JsonValue) -> bool:
+    """Whether this claim value is admitted by the judge rather than by the substring rule.
+
+    **The discrimination is the JSON type of the value as it will be stored in ``value_json``, and
+    nothing else.** A JSON *string* is text the client can have said, so it keeps the pre-§6c rule
+    byte-for-byte: it must appear inside its own quote. Every other JSON type — ``true``/``false``,
+    a number, a list, an object, ``null`` — is a *rendering* of what the client said (``True``,
+    ``['SOAP', 'APSO', 'H&P']``), and no rendering is ever a substring of English prose, which is
+    why the acceptance run refused eight true, well-quoted facts. Those go to the judge.
+
+    Note the honest consequence: ``"true"`` (the string) is byte-checked and ``true`` (the boolean)
+    is judged. That is correct — they are different values, and the model chooses which it means.
+    """
+
+    return not isinstance(value, str)
+
+
+async def _check_value_entailment(
+    classified: InterviewStatement,
+    *,
+    quote: str,
+    entity_id: EntityId,
+    entailment_judge: ClaimEntailmentJudge | None,
+) -> bool:
+    """Prove a claim's value is supported by its own quote. Returns whether the judge did it."""
+
+    assert classified.field_key is not None
+    value = classified.value
+    if not is_judged_value(value):
+        # Unchanged since C4, deliberately byte-for-byte: a text value must be inside its quote.
+        rendered = str(value)
         if rendered.casefold() not in quote.casefold():
-            raise ValueError("claim value is not textually entailed by the exact interview quote")
-    return quote
+            raise InterviewEvidenceRefused(
+                reason_code=VALUE_NOT_ENTAILED,
+                message=(
+                    "claim value is not textually entailed by the exact interview quote; quote "
+                    "the words that state the fact, or send the fact as a typed value"
+                ),
+            )
+        return False
+    if entailment_judge is None:
+        raise InterviewEvidenceRefused(
+            reason_code=VALUE_JUDGE_UNAVAILABLE,
+            message=(
+                "a typed claim value cannot be admitted here because no entailment judge is "
+                "configured; send the value as the user's own words, or route the statement as "
+                "`unmapped`"
+            ),
+        )
+    entailment = await entailment_judge.entails(
+        entity_id=entity_id,
+        field_key=classified.field_key,
+        value=value,
+        quote=quote,
+    )
+    if entailment.supported:
+        return True
+    if entailment.verdict == "unavailable":
+        raise InterviewEvidenceRefused(
+            reason_code=VALUE_JUDGE_UNAVAILABLE,
+            message=(
+                "the entailment judge could not be reached, so this typed claim value cannot be "
+                "admitted; nothing was written — try again, or route the statement as `unmapped`"
+            ),
+        )
+    raise InterviewEvidenceRefused(
+        reason_code=VALUE_NOT_ENTAILED,
+        message=(
+            f"the entailment judge read the quote alone and returned {entailment.verdict!r} for "
+            "this typed claim value: those exact user words do not support it. Quote the sentence "
+            "that actually states the fact, correct the value, or route the statement as "
+            "`unmapped`"
+        ),
+    )
 
 
 async def resolve_claim_entity(
@@ -464,6 +774,7 @@ async def _write_claim(
     artifact_key: str,
     onboarding_input_id: OnboardingInputId,
     run_id: RunId,
+    judged: bool = False,
 ) -> ClaimId:
     assert classified.entity_type is not None
     assert classified.field_key is not None
@@ -495,7 +806,9 @@ async def _write_claim(
         field_key=classified.field_key,
         value_json=classified.value,
         source_url=f"interview://{onboarding_input_id}",
-        source_key="client_interview",
+        # PC-C8 §6c-b: how this value earned entry stays on the claim. Tier is untouched (it is a
+        # statement about *whose* entity this is — 1.4's rule); only the method distinction is new.
+        source_key=(SOURCE_CLIENT_INTERVIEW_JUDGED if judged else SOURCE_CLIENT_INTERVIEW),
         artifact_key=artifact_key,
         source_tier=source_tier,
         extraction_method=ExtractionMethod.HUMAN,
@@ -524,10 +837,23 @@ async def _write_claim(
 
 
 __all__ = [
+    "QUOTE_EMPTY",
+    "QUOTE_NOT_FOUND",
+    "SOURCE_CLIENT_INTERVIEW",
+    "SOURCE_CLIENT_INTERVIEW_JUDGED",
+    "VALUE_JUDGE_UNAVAILABLE",
+    "VALUE_NOT_ENTAILED",
+    "ClaimEntailment",
+    "ClaimEntailmentJudge",
     "InterviewClaimEntityRefused",
+    "InterviewEvidenceRefused",
     "InterviewRoute",
     "InterviewRoutingResult",
     "InterviewStatement",
+    "is_judged_value",
+    "judge_interview_values",
+    "locate_quote",
+    "prepare_interview_statements",
     "register_client_interview_source",
     "resolve_claim_entity",
     "route_interview_answer",

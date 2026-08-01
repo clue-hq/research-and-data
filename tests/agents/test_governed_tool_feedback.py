@@ -58,7 +58,7 @@ from tests.db.conftest import run_async
 
 _ANSWER = "We sell an AI scheduling assistant to specialist healthcare practices."
 _QUESTION = "Which specialist practices should this project prioritize first?"
-# The exact sentence ``interview._exact_quote`` refused on the live run.
+# The exact sentence ``interview._check_value_entailment`` refused on the live run.
 _VERIFIER_REFUSAL = "claim value is not textually entailed by the exact interview quote"
 
 
@@ -87,7 +87,9 @@ class _RefusingExecution(_FinalizingExecutionAdapter):
                         AgentPlanIssue(
                             code="tool_input_invalid",
                             location="plan.steps[0].arguments",
-                            message="statements[0].quote_end exceeds the answer length",
+                            message=(
+                                "statements[0].quote was not found in the captured user message"
+                            ),
                         ),
                     ),
                     dependency_depth=1,
@@ -130,7 +132,7 @@ class _RefusingExecution(_FinalizingExecutionAdapter):
         )
 
 
-def _route_call(call_id: str, *, quote_end: int = 41) -> AIMessage:
+def _route_call(call_id: str, *, quote: str = _ANSWER[:41]) -> AIMessage:
     return AIMessage(
         content="",
         tool_calls=[
@@ -139,15 +141,14 @@ def _route_call(call_id: str, *, quote_end: int = 41) -> AIMessage:
                 # No turn identity, no answer body, and no project scope: PC-C8 §6a moved all of
                 # them behind the execution seam (the turn's from its capture record, the brand
                 # and client from the constitution), and this schema now refuses them outright
-                # ("extra inputs are not permitted"). The model sends routing plus offsets into a
-                # message the platform loads.
+                # ("extra inputs are not permitted"). PC-C8 §6c-a then took the offsets too: the
+                # model sends routing plus the span it copied, and the engine locates it.
                 "args": {
                     "statements": [
                         {
                             "route": "project_state",
                             "route_key": "target_segment",
-                            "quote_start": 0,
-                            "quote_end": quote_end,
+                            "quote": quote,
                         }
                     ],
                 },
@@ -210,7 +211,7 @@ def test_a_refused_operation_is_repaired_from_visible_tool_feedback() -> None:
     outcome, calls = _run(
         (
             _route_call("route-paraphrased"),
-            _route_call("route-corrected", quote_end=len(_ANSWER)),
+            _route_call("route-corrected", quote=_ANSWER),
             _finalize_call("finalize", status="awaiting_input", user_message=_QUESTION),
         ),
         execution=execution,
@@ -241,7 +242,7 @@ def test_a_rejected_plan_is_visible_instead_of_propagating_raw() -> None:
     outcome, calls = _run(
         (
             _route_call("route-invalid-shape"),
-            _route_call("route-corrected", quote_end=len(_ANSWER)),
+            _route_call("route-corrected", quote=_ANSWER),
             _finalize_call("finalize", status="awaiting_input", user_message=_QUESTION),
         ),
         execution=execution,
@@ -251,7 +252,7 @@ def test_a_rejected_plan_is_visible_instead_of_propagating_raw() -> None:
     feedback = str(calls.batches[1][-1].content)
     assert "tool_input_invalid" in feedback
     assert "plan.steps[0].arguments" in feedback
-    assert "quote_end exceeds the answer length" in feedback
+    assert "quote was not found in the captured user message" in feedback
     assert '"recorded":false' in feedback
     assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
     assert [envelope.status for envelope in execution.envelopes] == [FinalizeStatus.AWAITING_INPUT]
@@ -270,7 +271,7 @@ def test_a_retry_is_a_new_operation_and_cannot_collide_with_the_refused_one() ->
     outcome, _ = _run(
         (
             _route_call("route-paraphrased"),
-            _route_call("route-corrected", quote_end=len(_ANSWER)),
+            _route_call("route-corrected", quote=_ANSWER),
             _finalize_call("finalize", status="awaiting_input", user_message=_QUESTION),
         ),
         execution=execution,
@@ -332,7 +333,7 @@ def test_every_converted_refusal_is_operator_visible(monkeypatch: pytest.MonkeyP
     _run(
         (
             _route_call("route-invalid-shape"),
-            _route_call("route-corrected", quote_end=len(_ANSWER)),
+            _route_call("route-corrected", quote=_ANSWER),
             _finalize_call("finalize", status="awaiting_input", user_message=_QUESTION),
         ),
         execution=execution,

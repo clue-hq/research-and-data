@@ -176,8 +176,7 @@ async def _record_project_statement(
             InterviewStatement(
                 route=InterviewRoute.PROJECT_STATE,
                 route_key=route_key,
-                quote_start=0,
-                quote_end=len(answer),
+                quote=answer,
                 entity_id=client_entity_id,  # type: ignore[arg-type]
                 entity_type=EntityType.ACCOUNT,
                 correction_of_statement_id=corrects,

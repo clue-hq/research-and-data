@@ -77,20 +77,26 @@ _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
     #     only to name a *different*, existing entity.
     # skills/stage0-interview: route every substantive turn, unmapped included.
     ("record_interview_answer", ("statements",)): ("unmapped",),
-    # interview._exact_quote: offsets index into the platform-loaded captured message.
-    ("record_interview_answer", ("statements", "quote_start")): (
-        "offset",
+    # interview.locate_quote (PC-C8 §6c-a): the model copies the span; the engine finds it by exact
+    # substring search over the platform-loaded capture and computes the offsets itself. The two
+    # offset rows this replaces stated a rule the model no longer has any field to break — the
+    # constraint that survived is "copy it exactly", and its refusal code belongs in the text the
+    # model reads before it authors the field, not only in the failure it gets afterwards.
+    ("record_interview_answer", ("statements", "quote")): (
+        "exactly",
         "captured user message",
+        "quote_not_found_verbatim",
     ),
-    ("record_interview_answer", ("statements", "quote_end")): (
-        "offset",
-        "captured user message",
-    ),
-    # interview._exact_quote: a claim value must be textually entailed by the exact quote.
+    ("record_interview_answer", ("statements", "occurrence")): ("first", "repeats"),
+    # interview._check_value_entailment: a text value must be inside its own quote; a typed value
+    # is admitted only by the entailment judge (§6c-b). Both halves are stated where the model
+    # decides what to put in the field.
     ("record_interview_answer", ("statements", "value")): (
         "verbatim",
-        "quote_start",
+        "quote",
         "claim",
+        "typed",
+        "judge",
     ),
     # interview.InterviewStatement._route_shape: per-route required fields.
     ("record_interview_answer", ("statements", "route")): ("unmapped",),

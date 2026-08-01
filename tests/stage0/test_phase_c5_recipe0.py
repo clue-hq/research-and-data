@@ -497,8 +497,7 @@ async def _url_recon_fingerprint(
                     {
                         "route": "claim",
                         "route_key": CLIENT_VALUE_PROP,
-                        "quote_start": 0,
-                        "quote_end": len(answer),
+                        "quote": answer,
                         "entity_id": client_entity_id,
                         "entity_type": "account",
                         "field_key": CLIENT_VALUE_PROP,
@@ -557,8 +556,7 @@ async def _url_recon_fingerprint(
                     {
                         "route": "claim",
                         "route_key": CLIENT_VALUE_PROP,
-                        "quote_start": 0,
-                        "quote_end": len(correction),
+                        "quote": correction,
                         "entity_id": client_entity_id,
                         "entity_type": "account",
                         "field_key": CLIENT_VALUE_PROP,

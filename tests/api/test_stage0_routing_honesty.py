@@ -293,8 +293,7 @@ def test_an_unmapped_route_satisfies_the_guard() -> None:
                     InterviewStatement(
                         route=InterviewRoute.UNMAPPED,
                         route_key="unmapped_small_talk",
-                        quote_start=0,
-                        quote_end=len(_ANSWER),
+                        quote=_ANSWER,
                     ),
                 ),
                 actor="agent",
@@ -515,8 +514,7 @@ def test_a_material_routed_turn_persists_a_readiness_decision(tmp_path: Any) -> 
                     InterviewStatement(
                         route=InterviewRoute.PROJECT_STATE,
                         route_key="target_segment",
-                        quote_start=0,
-                        quote_end=41,
+                        quote=_ANSWER[:41],
                     ),
                 ),
                 actor="agent",
@@ -622,8 +620,7 @@ def test_an_unmapped_only_turn_records_no_readiness_decision(tmp_path: Any) -> N
                     InterviewStatement(
                         route=InterviewRoute.UNMAPPED,
                         route_key="unmapped_small_talk",
-                        quote_start=0,
-                        quote_end=len(_ANSWER),
+                        quote=_ANSWER,
                     ),
                 ),
                 actor="agent",
@@ -702,8 +699,7 @@ def _route_call(call_id: str) -> AIMessage:
                         {
                             "route": "project_state",
                             "route_key": "target_segment",
-                            "quote_start": 0,
-                            "quote_end": 41,
+                            "quote": _ANSWER[:41],
                         }
                     ],
                 },
@@ -1203,8 +1199,7 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                         {
                             "route": "project_state",
                             "route_key": "target_segment",
-                            "quote_start": 0,
-                            "quote_end": 41,
+                            "quote": _ANSWER[:41],
                         }
                     ],
                 },
@@ -1304,8 +1299,7 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     {
                         "route": "project_state",
                         "route_key": "target_segment",
-                        "quote_start": 0,
-                        "quote_end": 41,
+                        "quote": _ANSWER[:41],
                     }
                 ],
             }

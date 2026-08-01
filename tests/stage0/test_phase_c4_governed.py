@@ -477,8 +477,7 @@ def test_interview_uses_exact_quote_and_human_override_is_enforced() -> None:
                     InterviewStatement(
                         route=InterviewRoute.CLAIM,
                         route_key=CLIENT_VALUE_PROP,
-                        quote_start=0,
-                        quote_end=len(body),
+                        quote=body,
                         entity_id=client,
                         entity_type=EntityType.ACCOUNT,
                         field_key=CLIENT_VALUE_PROP,
@@ -513,8 +512,7 @@ def test_interview_uses_exact_quote_and_human_override_is_enforced() -> None:
             correction_statement = InterviewStatement(
                 route=InterviewRoute.CLAIM,
                 route_key=CLIENT_VALUE_PROP,
-                quote_start=0,
-                quote_end=len(correction_body),
+                quote=correction_body,
                 entity_id=client,
                 entity_type=EntityType.ACCOUNT,
                 field_key=CLIENT_VALUE_PROP,
@@ -568,8 +566,7 @@ def test_interview_uses_exact_quote_and_human_override_is_enforced() -> None:
                         InterviewStatement(
                             route=InterviewRoute.CLAIM,
                             route_key="unsupported",
-                            quote_start=0,
-                            quote_end=len(body),
+                            quote=body,
                             entity_id=client,
                             entity_type=EntityType.ACCOUNT,
                             field_key=CLIENT_VALUE_PROP,

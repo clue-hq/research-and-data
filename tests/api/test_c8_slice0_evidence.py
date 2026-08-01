@@ -701,8 +701,9 @@ def test_record_interview_answer_no_longer_lets_the_model_author_the_answer_or_t
     (``_with_trusted_runtime`` strips, the execution seam injects), differing only in where the
     value lives: the turn's capture record (1.2) or the constitution (1.3).
 
-    What the model still authors is the classification: route kind/key, quote offsets, correction
-    lineage, proposed typed values (spec AC-6, first clause).
+    What the model still authors is the classification: route kind/key, the verbatim quote it
+    means (PC-C8 §6c-a took the offsets too), correction lineage, proposed typed values (spec AC-6,
+    first clause).
     """
 
     parameters = _model_facing_parameters(RecordInterviewAnswerTool)
@@ -721,10 +722,12 @@ def test_record_interview_answer_no_longer_lets_the_model_author_the_answer_or_t
     assert project_authority <= set(RecordInterviewAnswerTool.input_model.model_fields)
     assert turn_authority == set(trusted_turn_fields(RecordInterviewAnswerTool.input_model))
     assert project_authority <= MODEL_FORBIDDEN_AUTHORITY_KEYS
-    # The model authors only offsets into the body the platform loads.
+    # The model authors the span it means, in the user's own words; the engine locates it in the
+    # body it loaded and computes the offsets (§6c-a). No offset field survives on this surface.
     statement = properties["statements"]["items"]["properties"]
-    assert {"quote_start", "quote_end"} <= set(statement)
-    assert "captured user message" in statement["quote_start"]["description"].casefold()
+    assert {"quote", "occurrence"} <= set(statement)
+    assert {"quote_start", "quote_end"}.isdisjoint(statement)
+    assert "captured user message" in statement["quote"]["description"].casefold()
     # What survives is the classification surface plus the one scope the model genuinely chooses:
     # the *candidate* product, which in Stage 0 may differ from the confirmed one.
     assert set(properties) == {"product_id", "statements"}
