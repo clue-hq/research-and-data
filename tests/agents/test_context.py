@@ -23,7 +23,7 @@ from clue_agents.contracts import (
     ContextLayer,
 )
 from clue_agents.ports import HistoryMessageRef
-from tests.agents.conftest import NOW, artifact, constitution, domain_ref
+from tests.agents.conftest import NOW, SHA_A, artifact, constitution, domain_ref
 from tests.agents.test_contracts import profile
 
 TURN_ID = UUID("00000000-0000-0000-0000-000000000631")
@@ -247,6 +247,84 @@ def test_turn_layer_reads_message_but_never_raw_attachment_bytes() -> None:
     assert values[0].body == "Please inspect the attached file."
     assert values[1].body.startswith("Attachment reference only:")
     assert attachment.artifact_key in values[1].body
+
+
+@dataclass(frozen=True)
+class _CapturedTurn:
+    onboarding_input_id: str
+    artifact_key: str
+    sha256: str
+    byte_count: int
+
+
+class _Capture:
+    """The api-root binding, reduced to what L7 reads (PC-C8 §6b)."""
+
+    def __init__(self, identity: _CapturedTurn | None) -> None:
+        self.identity = identity
+        self.requests: list[str] = []
+
+    async def describe(self, request: AgentTurnRequest) -> _CapturedTurn | None:
+        self.requests.append(request.user_message_artifact_ref.artifact_key)
+        return self.identity
+
+
+def test_the_turn_layer_names_this_turns_capture_as_a_reference_the_model_cannot_author() -> None:
+    """L7 carries the capture's identity so the model can *refer* to it, never supply it.
+
+    The trusted values are injected at the tool seam (PC-C8 §6a); this envelope exists so the
+    agent can talk about the turn it is answering without the platform handing it an id to retype.
+    It is reference-only and ordered last, after the message and any attachments.
+    """
+
+    message = artifact("user-message.txt")
+    reader = _ArtifactReader({message.artifact_key: b"We target neurosurgery practices."})
+    capture = _Capture(
+        _CapturedTurn(
+            onboarding_input_id="00000000-0000-0000-0000-0000000000a1",
+            artifact_key=message.artifact_key,
+            sha256=SHA_A,
+            byte_count=33,
+        )
+    )
+    source = TurnLayerSource(reader, captured_turn=capture)
+
+    values = asyncio.run(
+        source.load(
+            request=request(user_message_artifact_ref=message),
+            profile=profile(),
+            history=(),
+        )
+    )
+
+    assert capture.requests == [message.artifact_key]
+    envelope = values[-1]
+    assert envelope.stable_key == "900-captured-turn"
+    assert values[0].stable_key < envelope.stable_key
+    assert envelope.required is False
+    assert "onboarding_input_id=00000000-0000-0000-0000-0000000000a1" in envelope.body
+    assert f"artifact_key={message.artifact_key}" in envelope.body
+    assert f"sha256={SHA_A}" in envelope.body
+    assert "byte_count=33" in envelope.body
+    assert "never author or retype them" in envelope.body
+
+
+def test_a_turn_with_no_capture_emits_no_envelope_rather_than_failing() -> None:
+    """Most surfaces capture no onboarding input; L7 must still assemble for them."""
+
+    message = artifact("user-message.txt")
+    reader = _ArtifactReader({message.artifact_key: b"Where should this campaign start?"})
+    source = TurnLayerSource(reader, captured_turn=_Capture(None))
+
+    values = asyncio.run(
+        source.load(
+            request=request(user_message_artifact_ref=message),
+            profile=profile(),
+            history=(),
+        )
+    )
+
+    assert [item.stable_key for item in values] == ["000-user-message"]
 
 
 def test_utf8_byte_counter_is_conservative_and_versioned() -> None:

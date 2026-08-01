@@ -20,13 +20,15 @@ from pathlib import Path
 #: A line containing only this (trailing whitespace tolerated) ends a ``/paste`` block.
 PASTE_TERMINATOR = "."
 
-#: Client-side cap for one assembled message. The trial API sets no maximum of its own, but the real
-#: bound is Stage-0 routing: the turn guard requires the model to echo the whole message
-#: byte-identically into ``record_interview_answer.answer`` (sha compared server-side), so the echo
-#: must fit the active profile's output budget — ``max_output_tokens: 8192`` for head-of-abm v6,
-#: i.e. roughly 25-30 KB of text *including* the statements array and the rest of the tool call.
-#: 16 KB leaves headroom for that overhead; it also keeps an accidental ``/file`` of a log or a
-#: binary from being shipped as a conversation turn.
+#: Client-side cap for one assembled message. The trial API sets no maximum of its own, but the
+#: real bound is Stage-0 routing. It used to be an *output* bound — the model echoed the whole
+#: message byte-identically into ``record_interview_answer.answer`` and the echo had to fit the
+#: profile's ``max_output_tokens``. PC-C8 §6a retired the echo: the engine loads the captured bytes
+#: from the artifact and the model sends only quote offsets into them. What 16 KB now bounds is the
+#: L7 turn candidate the message becomes, and the span the model must reason over to route it. The
+#: cap is deliberately unchanged — relaxing it is a context-budget decision, not a free consequence
+#: of the echo going away — and it still keeps an accidental ``/file`` of a log or a binary from
+#: being shipped as a conversation turn.
 MAX_MESSAGE_BYTES = 16 * 1024
 
 
