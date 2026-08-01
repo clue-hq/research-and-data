@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 from clue_api.ingestion_tools import (
+    DeclaredMaterialInput,
     RetryIngestionInput,
     RetryIngestionTool,
     SubmitIngestionInput,
@@ -79,7 +80,10 @@ def test_submit_tool_returns_only_frozen_references() -> None:
         tool.invoke(
             SubmitIngestionInput(
                 artifact_key="ws/hash",
-                declared_context=DeclaredMaterialContext(brand_id="brand"),
+                # PC-C8 task 1.4: `brand_id`/`project_id` are trusted top-level authority; the
+                # declared context is the caller-authored remainder.
+                brand_id="brand",
+                declared_context=DeclaredMaterialInput(),
             ),
             _ctx(),
         )
@@ -105,7 +109,8 @@ def test_submit_tool_preconditions_hide_foreign_artifacts(monkeypatch) -> None:
         tool.preconditions(
             SubmitIngestionInput(
                 artifact_key="other/hash",
-                declared_context=DeclaredMaterialContext(brand_id="brand"),
+                brand_id="brand",
+                declared_context=DeclaredMaterialInput(),
             ),
             ToolContext(
                 workspace_id="ws",

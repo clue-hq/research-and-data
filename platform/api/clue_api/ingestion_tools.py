@@ -12,7 +12,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from clue_api.tool_outputs import IngestionRetryOutput, IngestionSubmitOutput
 from clue_config.ingestion import DEFAULT_INGESTION_POLICY, IngestionPolicy
@@ -24,6 +24,8 @@ from clue_research.ingestion import (
     DeclaredMaterialContext,
     IngestionEngine,
     IngestionError,
+    IngestionTarget,
+    MaterialContext,
     get_job,
 )
 from clue_storage import SnapshotSink, StorageBackend, flush_snapshots, get_artifact
@@ -67,9 +69,60 @@ WorkspaceDep = Annotated[str, Depends(header_workspace_resolver)]
 ActorDep = Annotated[Actor, Depends(header_actor_resolver)]
 
 
+class DeclaredMaterialInput(BaseModel):
+    """The caller-authored part of a declared material context: what the document *is*.
+
+    The domain model (:class:`~clue_research.ingestion.DeclaredMaterialContext`) also carries
+    ``brand_id``/``project_id``, which are :data:`~clue_agents.contracts.
+    MODEL_FORBIDDEN_AUTHORITY_KEYS` — this execution's brand and project. The strip/inject seam is
+    top-level only, so while they lived here the model both saw and authored them (PC-C8 task 1.4).
+    They are hoisted onto :class:`SubmitIngestionInput` instead, where the existing seam hides and
+    serves them; this model is the remainder, and the domain context is rejoined engine-side by
+    :meth:`for_execution`. The durable idempotency key is unchanged — it hashes the *composed*
+    domain context, whose shape and values are the same as before.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    product_id: str | None = None
+    targets: tuple[IngestionTarget, ...] = ()
+    document_context: MaterialContext = MaterialContext.UNKNOWN
+
+    def for_execution(
+        self,
+        *,
+        brand_id: str,
+        project_id: str | None,
+    ) -> DeclaredMaterialContext:
+        return DeclaredMaterialContext(
+            brand_id=brand_id,
+            project_id=project_id,
+            product_id=self.product_id,
+            targets=self.targets,
+            document_context=self.document_context,
+        )
+
+    @classmethod
+    def of(cls, context: DeclaredMaterialContext) -> DeclaredMaterialInput:
+        """Split a domain context back into its caller-authored part (the upload transport)."""
+
+        return cls(
+            product_id=context.product_id,
+            targets=context.targets,
+            document_context=context.document_context,
+        )
+
+
 class SubmitIngestionInput(ToolInput):
     artifact_key: str
-    declared_context: DeclaredMaterialContext
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
+    declared_context: DeclaredMaterialInput
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class RetryIngestionInput(ToolInput):
@@ -131,6 +184,25 @@ class SubmitIngestionTool(Tool):
                     message="the ingestion engine is not configured at the API composition root",
                 ),
             )
+        try:
+            inputs.declared_context.for_execution(
+                brand_id=inputs.brand_id,
+                project_id=inputs.project_id,
+            )
+        except ValidationError:
+            # The domain context's own route rules (project_instruction needs a project,
+            # client_about_product needs a product) now bind across the hoisted authority and the
+            # declared remainder, so they are reported as a typed refusal here rather than as a
+            # bare validation error thrown from the middle of a spend path.
+            return (
+                PreconditionFailure(
+                    reason_code="ingestion_context_invalid",
+                    message=(
+                        "declared material context is not valid for this execution's "
+                        "brand and project"
+                    ),
+                ),
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -140,7 +212,10 @@ class SubmitIngestionTool(Tool):
         ref = await self._engine.submit(
             workspace_id=ctx.workspace_id,
             artifact_key=inputs.artifact_key,
-            context=inputs.declared_context,
+            context=inputs.declared_context.for_execution(
+                brand_id=inputs.brand_id,
+                project_id=inputs.project_id,
+            ),
             actor=ctx.actor,
         )
         return ToolResult(
@@ -311,7 +386,12 @@ def build_ingestion_router(
                 "submit_ingestion",
                 {
                     "artifact_key": artifact_key,
-                    "declared_context": context.model_dump(mode="json"),
+                    # The upload transport still speaks the whole domain context (the header
+                    # contract is unchanged for the human boundary); the tool input splits its
+                    # trusted scope authority from its declared remainder.
+                    "brand_id": context.brand_id,
+                    "project_id": context.project_id,
+                    "declared_context": DeclaredMaterialInput.of(context).model_dump(mode="json"),
                 },
                 ToolContext(
                     workspace_id=workspace_id,
@@ -361,6 +441,7 @@ def build_ingestion_router(
 
 
 __all__ = [
+    "DeclaredMaterialInput",
     "RetryIngestionInput",
     "RetryIngestionTool",
     "SubmitIngestionInput",

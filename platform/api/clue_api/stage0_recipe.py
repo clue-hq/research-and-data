@@ -162,6 +162,10 @@ class Stage0StepPinProvider:
         for key, digest in sorted(artifact_pairs):
             requested.append(PinRequest(kind="artifact_input", key=key, digest=digest))
 
+        # Top level first, then the two nested carriers. Since PC-C8 task 1.4 hoisted
+        # `brand_id`/`project_id` out of `scope`/`declared_context` (they are trusted authority, and
+        # the strip/inject seam is top-level only), the nested fallback is live for `product_id`
+        # alone — kept for the others because the lookup is uniform, not because they nest.
         for field, kind in (
             ("brand_id", "brand"),
             ("product_id", "product"),

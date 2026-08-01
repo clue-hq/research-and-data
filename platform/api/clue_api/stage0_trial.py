@@ -53,6 +53,7 @@ from clue_api.agent_platform_wiring import (
     build_agent_context_assembler,
     build_agent_platform_components,
 )
+from clue_api.agent_registry_wiring import STAGE0_CONVERSATION_TRIAL_SURFACE
 from clue_api.agent_runtime_wiring import ModelFinalizeRequest
 from clue_api.composition import load_research_packs
 from clue_api.execution_wiring import (
@@ -649,7 +650,15 @@ class Stage0Trial:
             tools=tools,
             conn_factory=conn_factory,
         )
-        resolved_profile = components.profiles.resolve(AgentRole.HEAD_OF_ABM)
+        # PC-C8 §8: the trial runs the promoted Head-of-ABM profile on its own *capability
+        # surface*. `start_recon`, `synthesize_icps` and `submit_onboarding_input` are not
+        # installed here (`C6_SURFACE_POLICIES`), so the middleware allowed-set, the resource
+        # manifest, and the generated capability map all describe the same narrower surface —
+        # the restriction is a tool that is absent, not prose asking the model to abstain.
+        resolved_profile = components.profiles.resolve(
+            AgentRole.HEAD_OF_ABM,
+            surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
+        )
         # PC-C8 §6: one binder per trial, shared by L7 (which *names* the captured turn) and the
         # execution seam (which *injects* its bytes and ids). Both derive the same binding from
         # durable state, so two instances could only agree — sharing costs nothing and saves the
@@ -681,6 +690,7 @@ class Stage0Trial:
             child_runner=_DelegationDisabled(),
             max_runtime_s=resolved_profile.profile.turn_timeout_s,
             max_rounds=resolved_profile.profile.max_model_rounds,
+            surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
             conn_factory=conn_factory,
         )
         return cls(
@@ -737,7 +747,10 @@ class Stage0Trial:
                 onboarding_input_id=OnboardingInputId(uuid5(turn_id, "onboarding-input")),
             )
         requested_at = datetime.now(UTC)
-        resolved = self._components.profiles.resolve(AgentRole.HEAD_OF_ABM)
+        resolved = self._components.profiles.resolve(
+            AgentRole.HEAD_OF_ABM,
+            surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
+        )
         card_ref = await self._project_card_ref()
         budget_limit = 1_000_000
         budget_ref = await self._artifact(
@@ -855,6 +868,7 @@ class Stage0Trial:
                 checkpointer_factory=postgres_agent_checkpointer,
                 budget_limit_millicents=budget_limit,
                 captured_turns=self._captured_turns,
+                surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
                 conn_factory=self._conn_factory,
             )
             outcome = await self._runtime.run(
