@@ -208,6 +208,16 @@ The governed wrapper loads the captured answer from the artifact store, applies 
 
 ---
 
+## 6c. Interview evidence ergonomics (post-acceptance package, 2026-08-01)
+
+Two acceptance findings share one root — the model is asked to produce proxies (character offsets; byte-literal values) for things the engine can verify directly. Ruling: **the model classifies; the engine computes and verifies** — extended to quote location and value entailment.
+
+**(a) Quote-by-text with exact location.** The model-facing statement authors the **verbatim quote string** (+ optional `occurrence`, default = first); the engine locates it by **exact substring search** over the captured answer, computes `quote_start`/`quote_end` itself, and stores the same durable row as today (offsets + sha engine-computed; **no migration** — only authorship moves). Not-found → typed refusal `quote_not_found_verbatim` with repair feedback ("copy the span exactly"). Ambiguous without `occurrence` → default first occurrence (the evidence bytes are identical wherever the span repeats; position is metadata). **Fuzzy matching is disqualified on principle** — the evidence lock guarantees "this exact span"; fuzzy readmits paraphrase.
+
+**(b) Typed-value entailment via the existing M9.3 judge.** The verbatim lock splits into its two honest halves: the *quote* must be verbatim in the captured answer (absolute, now automatic via (a)); the *value* must equal the quote's bytes **only for plain string-literal values**. Typed values (booleans, lists, numbers) are gated instead by the **M9.3 faithfulness judge** — value + verbatim evidence span → supported/unsupported, fail-closed to unsupported — reusing the shipped, cached, injection-hardened judge, never a second entailment mechanism. **Independence contract:** `clue_research.interview` may not import `verification`; the judge arrives through an injected port at the api composition root (the `StatementEvidenceReader` pattern); an unwired port refuses typed values (today's behavior, never worse). Judge-entailed claims carry a distinct verification-method stamp so provenance stays honest about how each claim earned entry ("client-stated, judge-entailed" vs "byte-literal").
+
+**ACs:** no model-authored offsets remain on the model-facing schema; the acceptance run's 12 offset failures are impossible by construction; its 8 entailment refusals (HIPAA boolean, "SOAP, APSO, and H&P" list) land as judged claims with the method stamp in a replay fixture; string-literal path byte-identical to today; refusals typed and repairable; schema change rides one coordinated catalog bump; live probe re-drives the failing turn shapes from `trial-acceptance-c8-aura`.
+
 ## 7. Governed inspection tools (bounded, paginated)
 
 Two Stage-0 tools in-slice — both read-only, workspace/project-scoped fail-closed (B3/B4 guard family), with **bounded response schemas** (page size ≤ 20, cursors; prompt bloat must not migrate from opening context into tool results):
