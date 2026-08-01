@@ -293,8 +293,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
                     media_type=media_type,
                 )
 
-            stage = await put('{"stage":"content"}')
-            readiness = await put('{"ready":true}')
+            card = await put('{"card_kind":"stage0_project","project":{}}')
             parent_budget = await put('{"limit_millicents":5000}')
             parent_manifest = await put(head.resource_manifest.model_dump_json())
             user = await put('{"message":"review the exemplar"}')
@@ -331,8 +330,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
                     brand_id=project.brand_id,
                     product_id=None,
                     profile_ref=head.profile_ref,
-                    stage_snapshot_ref=stage,
-                    readiness_snapshot_ref=readiness,
+                    project_card_ref=card,
                     budget_envelope_ref=parent_budget,
                     resource_manifest_ref=parent_manifest,
                     resource_manifest_sha256=head.resource_manifest.aggregate_sha256,

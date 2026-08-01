@@ -592,9 +592,9 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
                     tool_calls=[
                         {
                             "name": "synthesize_icps",
-                            "args": {
-                                "client_entity_id": ("00000000-0000-0000-0000-000000000999"),
-                            },
+                            # PC-C8 §6a: ``client_entity_id`` is constitution authority now, so
+                            # the model sends nothing at all here and the seam fills it in.
+                            "args": {},
                             "id": "synthesize-stage0-c65",
                             "type": "tool_call",
                         }
@@ -627,7 +627,6 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     proposed = execution.validated_plans[0].steps[0]
     assert proposed.tool.address == "synthesize_icps@1"  # type: ignore[union-attr]
     assert proposed.arguments == {  # type: ignore[union-attr]
-        "client_entity_id": "00000000-0000-0000-0000-000000000999",
         "kb_version": None,
         "product_id": None,
     }

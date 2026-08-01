@@ -66,6 +66,7 @@ def build_head_of_abm_stage0_execution(
     budget_limit_millicents: int,
     max_fanout: int = 4,
     max_parallelism: int = 4,
+    captured_turns: CapturedTurnBinder | None = None,
     crash_hook: AgentExecutionCrashHook = _no_crash,
     conn_factory: ConnFactory = transaction,
 ) -> C5AgentExecutionAdapter:
@@ -99,11 +100,12 @@ def build_head_of_abm_stage0_execution(
         ),
         # PC-C8 §6a: the captured turn is derived here, from the request's own artifact and its
         # capture record, so no caller has to hand the engine a turn-shaped argument it could get
-        # wrong — and so the model can never author one. This binder is independent of L7's
-        # (``agent_platform_wiring``), cache included; both derive the same binding from durable
-        # state, so they cannot disagree. Sharing one instance is task 1.3's wiring call.
+        # wrong — and so the model can never author one. A composition root that also builds the
+        # context assembler passes the same binder to both, so one turn is resolved and cached
+        # once; a caller that passes none gets a private binder that derives the same answer.
         captured_turn=RequestCapturedTurn(
-            binder=CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+            binder=captured_turns
+            or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
             request=request,
         ),
         crash_hook=crash_hook,

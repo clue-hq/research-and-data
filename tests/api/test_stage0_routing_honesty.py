@@ -694,11 +694,10 @@ def _route_call(call_id: str) -> AIMessage:
         tool_calls=[
             {
                 "name": "record_interview_answer",
-                # PC-C8 §6a: the turn's id, artifact key, and captured body are engine-injected,
-                # so a model call that carries them is refused by the schema itself.
+                # PC-C8 §6a: the turn's id, artifact key, and captured body are engine-injected
+                # from the capture record, and the brand/client scope from the constitution, so a
+                # model call that carries any of them is refused by the schema itself.
                 "args": {
-                    "brand_id": "brand-routing",
-                    "client_entity_id": "00000000-0000-0000-0000-0000000000a2",
                     "statements": [
                         {
                             "route": "project_state",
@@ -966,6 +965,7 @@ def _ws_constitution(
     workspace_id: str,
     project_id: str,
     brand_id: str,
+    client_entity_id: str,
     product_id: str,
     execution_id: ExecutionId,
     resolved: Any,
@@ -977,11 +977,11 @@ def _ws_constitution(
         project_id=project_id,
         brand_id=brand_id,
         product_id=product_id,
+        client_entity_id=client_entity_id,
         execution_id=execution_id,
         profile_ref=resolved.profile_ref,
         resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-        stage_snapshot_ref=artifact("stage.json", workspace_id=workspace_id),
-        readiness_snapshot_ref=artifact("readiness.json", workspace_id=workspace_id),
+        project_card_ref=artifact("project-card.json", workspace_id=workspace_id),
         budget_envelope_ref=artifact("budget.json", workspace_id=workspace_id),
         resource_manifest_ref=artifact("resource-manifest.json", workspace_id=workspace_id),
         focus_refs=(domain_ref("account-1", workspace_id=workspace_id),),
@@ -1175,6 +1175,7 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 workspace_id=workspace_id,
                 project_id=project_id,
                 brand_id=brand_id,
+                client_entity_id=str(client),
                 product_id=product_id,
                 execution_id=execution_id,
                 resolved=resolved,
@@ -1198,8 +1199,6 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 registry=registry,
                 request=request,
                 arguments={
-                    "brand_id": brand_id,
-                    "client_entity_id": str(client),
                     "statements": [
                         {
                             "route": "project_state",
@@ -1285,6 +1284,7 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                 workspace_id=workspace_id,
                 project_id=project_id,
                 brand_id=brand_id,
+                client_entity_id=str(client),
                 product_id=product_id,
                 execution_id=execution_id,
                 resolved=resolved,
@@ -1300,8 +1300,6 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                 workspace_id, hashlib.sha256(_ANSWER.encode()).hexdigest()
             )
             base_arguments = {
-                "brand_id": brand_id,
-                "client_entity_id": str(client),
                 "statements": [
                     {
                         "route": "project_state",

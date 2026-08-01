@@ -214,6 +214,16 @@ async def start_confirmed_project_run(
     return project_run_id
 
 
+# NOTE (PC-C8 §6a, task 1.3): `brand_id` and `client_entity_id` joined `project_id` in
+# `MODEL_FORBIDDEN_AUTHORITY_KEYS`, so on every input model below they are stripped from the
+# model-visible schema and served from the `AgentConstitution` at the execution seam. They stay
+# declared because the C4 recipe path supplies them directly. Their `description` text is
+# deliberately untouched here: it is part of `model_json_schema()` and therefore of the tool's
+# pinned `input_schema_sha256`, and the model never reads it (the field is gone from its schema).
+# Rewording it to the "supplied by the platform, never by you" phrasing `project_id` already uses
+# is folded into task 1.4's one coordinated catalog/profile bump rather than forcing a third.
+
+
 class SubmitOnboardingInput(ToolInput):
     brand_id: str = Field(
         description="Brand this input belongs to; it must already exist in this workspace."

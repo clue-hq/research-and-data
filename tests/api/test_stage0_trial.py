@@ -119,15 +119,19 @@ def test_stage0_turn_and_context_use_frozen_subject_binding_kinds(
 
     monkeypatch.setattr("clue_api.stage0_trial.submit_onboarding_input", capture_onboarding)
 
-    async def stop_after_user_message(
-        self: Stage0Trial,
-        *,
-        current_turn: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        del self, current_turn
+    # The turn's first act after capturing the user message is compiling the L3 project card
+    # (PC-C8 §10 replaced the stage/readiness snapshot pair with it), so that is where this test
+    # stops: everything it asserts about the *capture* has already happened.
+    async def stop_after_user_message(self: Stage0Trial) -> ArtifactRef:
+        del self
         raise _StopAfterUserMessage
 
-    monkeypatch.setattr(Stage0Trial, "snapshot", stop_after_user_message)
+    monkeypatch.setattr(Stage0Trial, "_project_card_ref", stop_after_user_message)
+    monkeypatch.setattr(
+        trial,
+        "_components",
+        SimpleNamespace(artifacts=artifacts, profiles=SimpleNamespace(resolve=lambda role: None)),
+    )
 
     with pytest.raises(_StopAfterUserMessage):
         run_async(trial.run_turn("We want to target neurosurgery practices."))

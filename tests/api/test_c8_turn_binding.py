@@ -103,6 +103,7 @@ def _constitution(
     project_id: str = "project-1",
     brand_id: str = "brand-1",
     product_id: str = "product-1",
+    client_entity_id: str = "00000000-0000-0000-0000-0000000000a2",
     execution_id: ExecutionId | None = None,
 ) -> AgentConstitution:
     """The shared conftest constitution, re-scoped to a per-scenario workspace."""
@@ -112,9 +113,9 @@ def _constitution(
         project_id=project_id,
         brand_id=brand_id,
         product_id=product_id,
+        client_entity_id=client_entity_id,
         execution_id=execution_id or ExecutionId(uuid4()),
-        stage_snapshot_ref=artifact("stage.json", workspace_id=workspace_id),
-        readiness_snapshot_ref=artifact("readiness.json", workspace_id=workspace_id),
+        project_card_ref=artifact("project-card.json", workspace_id=workspace_id),
         budget_envelope_ref=artifact("budget.json", workspace_id=workspace_id),
         resource_manifest_ref=artifact("resource-manifest.json", workspace_id=workspace_id),
         focus_refs=(domain_ref("account-1", workspace_id=workspace_id),),
@@ -139,6 +140,7 @@ def _request(
             project_id=project,
             brand_id=scope.brand_id,
             product_id=scope.product_id,
+            client_entity_id=str(scope.client_entity_id),
             execution_id=ExecutionId(uuid5(turn_id, "execution")),
         ),
         user_message_artifact_ref=ref,
@@ -249,11 +251,13 @@ def _ctx(scope: _Scope, connection_factory: Any, *, label: str) -> ToolContext:
 
 
 def _model_arguments(scope: _Scope, *, statements: list[dict[str, Any]]) -> dict[str, Any]:
-    """Exactly what the model may author: scope ids plus the classified statements."""
+    """Exactly what the model may author: the classified statements (and the candidate product).
+
+    ``brand_id`` and ``client_entity_id`` left this set with the PC-C8 §10 contract delta — they
+    are whole-execution authority served from the constitution, like ``project_id`` before them.
+    """
 
     return {
-        "brand_id": scope.brand_id,
-        "client_entity_id": str(scope.client_entity_id),
         "product_id": scope.product_id,
         "statements": statements,
     }
@@ -832,8 +836,6 @@ def test_the_model_facing_schema_refuses_smuggled_turn_authority() -> None:
     assert set(trusted_turn_fields(args_schema)) == set()
 
     valid = {
-        "brand_id": "brand-1",
-        "client_entity_id": "00000000-0000-0000-0000-0000000000a2",
         "statements": [
             {
                 "route": "project_state",
@@ -844,7 +846,14 @@ def test_the_model_facing_schema_refuses_smuggled_turn_authority() -> None:
         ],
         "runtime": None,
     }
-    for smuggled in ("answer", "onboarding_input_id", "artifact_key", "project_id"):
+    for smuggled in (
+        "answer",
+        "onboarding_input_id",
+        "artifact_key",
+        "project_id",
+        "brand_id",
+        "client_entity_id",
+    ):
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             args_schema.model_validate({**valid, smuggled: "forged"})
 
@@ -861,7 +870,7 @@ def test_the_seam_refuses_turn_authority_that_reaches_it_in_plan_arguments() -> 
     )
     with pytest.raises(ValueError, match="trusted turn authority"):
         _trusted_tool_arguments(
-            arguments={"brand_id": "brand-1", "onboarding_input_id": "forged"},
+            arguments={"onboarding_input_id": "forged"},
             input_model=RecordInterviewAnswerInput,
             constitution=_constitution(),
             captured_turn=binding,
@@ -873,7 +882,7 @@ def test_a_step_needing_turn_authority_without_a_binding_is_refused() -> None:
 
     with pytest.raises(CapturedTurnUnavailable, match="captured input, which is unavailable"):
         _trusted_tool_arguments(
-            arguments={"brand_id": "brand-1"},
+            arguments={},
             input_model=RecordInterviewAnswerInput,
             constitution=_constitution(),
             captured_turn=None,

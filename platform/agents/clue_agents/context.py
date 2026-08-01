@@ -265,16 +265,19 @@ class WorkspaceProductLayerSource:
 
 
 class ProjectLayerSource:
+    """L3 is exactly two required artifacts: the project card and the budget envelope.
+
+    One owner per concern (PC-C8 §2). The card is the whole bounded projection of durable project
+    state, so the compiled ``project`` context card this source used to read as well is subsumed by
+    it — reading both would put two descriptions of the same project in front of the model and
+    reintroduce the duplication the card exists to remove. The budget envelope stays separate
+    because it is spend authority rather than project state.
+    """
+
     layer = ContextLayer.L3_PROJECT
 
-    def __init__(
-        self,
-        *,
-        artifacts: AgentArtifactReader,
-        cards: CompiledContextCardReader,
-    ) -> None:
+    def __init__(self, *, artifacts: AgentArtifactReader) -> None:
         self._artifacts = artifacts
-        self._cards = cards
 
     async def load(
         self,
@@ -284,29 +287,12 @@ class ProjectLayerSource:
         history: Sequence[HistoryMessageRef],
     ) -> Sequence[ContextCandidate]:
         del profile, history
-        workspace_id = request.constitution.workspace_id
-        project_id = request.constitution.project_id
-        result: list[ContextCandidate] = []
-        card = await self._cards.read(
-            workspace_id=workspace_id,
-            object_type="project",
-            object_id=project_id,
-        )
-        if card is not None:
-            result.append(
-                ContextCandidate(
-                    stable_key=f"project:{project_id}:{card.ref.version}",
-                    ref=card.ref,
-                    body=card.body,
-                    materialized_path=_card_path("project", card.ref),
-                )
-            )
-        snapshots = (
-            ("stage", request.constitution.stage_snapshot_ref),
-            ("readiness", request.constitution.readiness_snapshot_ref),
+        candidates = (
+            ("project_card", request.constitution.project_card_ref),
             ("budget", request.constitution.budget_envelope_ref),
         )
-        for name, ref in snapshots:
+        result: list[ContextCandidate] = []
+        for name, ref in candidates:
             body = (await self._artifacts.read(ref)).decode("utf-8")
             result.append(
                 ContextCandidate(

@@ -403,8 +403,7 @@ class DbAgentTurnJournal:
                 status=AgentTurnStatus.REQUESTED,
             )
             turn_refs = (
-                ("stage_snapshot", 0, constitution.stage_snapshot_ref),
-                ("readiness_snapshot", 0, constitution.readiness_snapshot_ref),
+                ("project_card", 0, constitution.project_card_ref),
                 ("budget_envelope", 0, constitution.budget_envelope_ref),
                 ("resource_manifest", 0, constitution.resource_manifest_ref),
                 ("user_message", 0, request.user_message_artifact_ref),

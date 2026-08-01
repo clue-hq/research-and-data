@@ -72,9 +72,13 @@ from clue_api.recipe_wiring import (
     seed_system_recipes,
 )
 from clue_api.run_composition import build_platform_gateway
-from clue_api.statement_evidence import resolve_statement_quotes
+from clue_api.statement_evidence import (
+    ArtifactStatementEvidenceReader,
+    resolve_statement_quotes,
+)
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import (
     DEFAULT_STAGE0_POLICY,
     Secrets,
@@ -111,7 +115,11 @@ from clue_execution import (
     RecipeScopeType,
 )
 from clue_fleet import LeaseGeneration, WorkId, acquire_work_lease, release_work_lease
-from clue_projections import ExcludedEvidence
+from clue_projections import (
+    STAGE0_PROJECT_CARD_MEDIA_TYPE,
+    ExcludedEvidence,
+    compile_stage0_project_card,
+)
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
@@ -125,6 +133,7 @@ from clue_research.stage0 import (
     client_kb_readiness_metrics,
     confirm_icp,
     count_statements_for_input,
+    ensure_readiness_spec,
     evaluate_readiness,
     read_client_kb_claims,
     read_statements,
@@ -172,12 +181,12 @@ NO_ROUTING_RECEIPT = (
     "This turn has no durable routing receipt, so it cannot be finalized as completed or "
     "awaiting_input: the human's message was captured as an onboarding input, but nothing was "
     "routed out of it, and reporting otherwise would claim work the database does not contain. "
-    "Call record_interview_answer for this turn's onboarding_input_id and route every part of the "
-    "message you used — claim, memory, project_state, or a field/source proposal. If nothing in "
-    "the message is material, say so honestly by routing it with route='unmapped' (that route "
-    "needs only a route_key and the exact quote offsets), then finalize again. Never tell the "
-    "human that something was captured, recorded, saved, or stored except by reporting a routing "
-    "receipt you actually received."
+    "Call record_interview_answer and route every part of the message you used — claim, memory, "
+    "project_state, or a field/source proposal. The platform supplies this turn's captured "
+    "message and its ids; you supply the routing. If nothing in the message is material, say so "
+    "honestly by routing it with route='unmapped' (that route needs only a route_key and the "
+    "exact quote offsets), then finalize again. Never tell the human that something was captured, "
+    "recorded, saved, or stored except by reporting a routing receipt you actually received."
 )
 
 
@@ -534,6 +543,7 @@ class Stage0Trial:
         parameters: ExecutionParameterStore,
         contexts: Any,
         runtime: HeadOfAbmStage0Runtime,
+        captured_turns: CapturedTurnBinder | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self.state = state
@@ -551,6 +561,7 @@ class Stage0Trial:
         self._parameters = parameters
         self._contexts = contexts
         self._runtime = runtime
+        self._captured_turns = captured_turns
         self._plans = DbAgentPlanJournal(conn_factory=conn_factory)
         self._conn_factory = conn_factory
 
@@ -639,6 +650,14 @@ class Stage0Trial:
             conn_factory=conn_factory,
         )
         resolved_profile = components.profiles.resolve(AgentRole.HEAD_OF_ABM)
+        # PC-C8 §6: one binder per trial, shared by L7 (which *names* the captured turn) and the
+        # execution seam (which *injects* its bytes and ids). Both derive the same binding from
+        # durable state, so two instances could only agree — sharing costs nothing and saves the
+        # second read of every turn.
+        captured_turns = CapturedTurnBinder(
+            artifacts=components.artifacts,
+            conn_factory=conn_factory,
+        )
         contexts = build_agent_context_assembler(
             resolved_profile=resolved_profile,
             artifacts=components.artifacts,
@@ -650,6 +669,7 @@ class Stage0Trial:
                 MemoryType.BEHAVIORAL_LEARNING,
             ),
             policy=stage0_trial_context_policy(),
+            captured_turns=captured_turns,
             conn_factory=conn_factory,
         )
         runtime = HeadOfAbmStage0Runtime(
@@ -679,6 +699,7 @@ class Stage0Trial:
             parameters=parameters,
             contexts=contexts,
             runtime=runtime,
+            captured_turns=captured_turns,
             conn_factory=conn_factory,
         )
 
@@ -715,54 +736,9 @@ class Stage0Trial:
                 actor="human",
                 onboarding_input_id=OnboardingInputId(uuid5(turn_id, "onboarding-input")),
             )
-        current = await self.snapshot(
-            current_turn={
-                "onboarding_input_id": str(onboarding.onboarding_input_id),
-                "artifact_key": user_ref.artifact_key,
-                "sha256": user_ref.sha256,
-                "media_type": user_ref.media_type,
-                "byte_count": user_ref.byte_count,
-                "answer_is_exact_artifact_body": True,
-            }
-        )
         requested_at = datetime.now(UTC)
         resolved = self._components.profiles.resolve(AgentRole.HEAD_OF_ABM)
-        stage_ref = await self._artifact(
-            "application/vnd.clue.agent-stage-snapshot+json",
-            {
-                "schema_version": "1",
-                "surface": "stage0_conversation_trial",
-                "acquisition_mode": "manual_conversation_only",
-                "external_research_enabled": False,
-                "specialist_delegation_enabled": False,
-                "instruction": (
-                    "Use only supplied durable truth and the current user message. Do not call "
-                    "start_recon or imply that website, Exa, scraping, or campaign files were "
-                    "read. The current user turn is already a captured onboarding input; use its "
-                    "provided onboarding_input_id and do not call submit_onboarding_input again. "
-                    "Treat the user's target-ICP and campaign-strategy choices as project_state, "
-                    "not as an invented claim field. Claims about the client may use only the "
-                    "registered_client_claim_fields below and must include the supplied client "
-                    "entity id with entity_type=account. The human triggers inspectable ICP "
-                    "synthesis with /synthesize-icp; do not call synthesize_icps in this trial "
-                    "because its v1 tool result exposes only a count."
-                ),
-                "registered_client_claim_fields": list(CLIENT_KNOWLEDGE_FIELDS),
-                "current_truth": current,
-            },
-        )
-        project = current["project"]
-        if not isinstance(project, dict):
-            raise RuntimeError("Stage-0 project snapshot is malformed")
-        readiness_ref = await self._artifact(
-            "application/vnd.clue.agent-readiness-snapshot+json",
-            {
-                "schema_version": "1",
-                "readiness_decisions": current["readiness_decisions"],
-                "confirmed_icps": current["icps"],
-                "product_confirmed": project.get("product_id") == self.state.product_id,
-            },
-        )
+        card_ref = await self._project_card_ref()
         budget_limit = 1_000_000
         budget_ref = await self._artifact(
             "application/vnd.clue.agent-budget-envelope+json",
@@ -827,9 +803,9 @@ class Stage0Trial:
                 role=AgentRole.HEAD_OF_ABM,
                 brand_id=self.state.brand_id,
                 product_id=self.state.product_id,
+                client_entity_id=str(self.state.client_entity_id),
                 workspace_root_id=lease.identity.workspace_root_id,
-                stage_snapshot_ref=stage_ref,
-                readiness_snapshot_ref=readiness_ref,
+                project_card_ref=card_ref,
                 budget_envelope_ref=budget_ref,
                 profile_ref=resolved.profile_ref,
                 resource_manifest_ref=manifest_ref,
@@ -878,6 +854,7 @@ class Stage0Trial:
                 plans=self._plans,
                 checkpointer_factory=postgres_agent_checkpointer,
                 budget_limit_millicents=budget_limit,
+                captured_turns=self._captured_turns,
                 conn_factory=self._conn_factory,
             )
             outcome = await self._runtime.run(
@@ -1214,12 +1191,17 @@ class Stage0Trial:
         await self.export_report()
         return confirmation
 
-    async def snapshot(
-        self,
-        *,
-        current_turn: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        """Compile the current truth the agent and human inspect before every turn."""
+    async def snapshot(self) -> dict[str, object]:
+        """Compile the full current truth the **human** inspects (`/status`, `report.json`).
+
+        Deliberately unbounded and full-fidelity: this is an inspection surface, and completeness
+        is its job. It no longer feeds model context — PC-C8 gave L3 one bounded owner
+        (:meth:`_project_card_ref`), and the two roles pulled in opposite directions.
+
+        It also no longer names the current turn. Turn identity has exactly one owner now (the L7
+        envelope, from the engine-side binding); carrying it here as well is what let the model
+        read an id out of L3 and hand it back as if it had chosen it.
+        """
 
         async with self._conn_factory() as conn:
             project = await get_project(conn, self.state.project_id)
@@ -1319,7 +1301,6 @@ class Stage0Trial:
             "icp_proposals": [item.model_dump(mode="json") for item in stored.proposals],
             "icp_proposals_stale": stored.lineage_mismatch is not None,
             "icp_proposals_stale_reason": stored.lineage_mismatch,
-            "current_turn_input": current_turn,
         }
 
     async def export_report(self) -> None:
@@ -1490,6 +1471,53 @@ class Stage0Trial:
                 f"{stored.lineage_mismatch}"
             )
         return stored.proposals
+
+    async def _project_card_ref(self) -> ArtifactRef:
+        """Compile and persist this turn's L3 project card (PC-C8 §3).
+
+        The card replaces the stage/readiness snapshot pair: one bounded, typed projection of
+        durable project state instead of two `to_jsonb` dumps that re-serialized the same readiness
+        ledger and grew with every turn. Persisting is content-addressed, so an unchanged project
+        re-persists the same key — the crash-replay reuse AC-9 asks for falls out of that rather
+        than out of a cache.
+
+        ``readiness_spec_version`` is passed **explicitly**: the compiler's default is the
+        workspace's newest spec revision, but the card must show what *this engine* evaluates
+        against, which is the revision ``DEFAULT_STAGE0_POLICY.readiness`` hashes to. A newer
+        revision written by anything else would otherwise silently mark every live gate
+        ``not_evaluated_for_current_lineage``.
+        """
+
+        async with self._conn_factory() as conn:
+            spec_version = await ensure_readiness_spec(
+                conn,
+                workspace_id=self.state.workspace_id,
+                spec=DEFAULT_STAGE0_POLICY.readiness,
+            )
+        stored = self._read_icp_proposals()
+        card = await compile_stage0_project_card(
+            project_id=self.state.project_id,
+            workspace_id=self.state.workspace_id,
+            client_entity_id=EntityId(self.state.client_entity_id),
+            client_kb_version=self.state.client_kb_version,
+            evidence=ArtifactStatementEvidenceReader(
+                artifacts=self._components.artifacts,
+                conn_factory=self._conn_factory,
+            ),
+            product_id=self.state.product_id,
+            # Proposal *bodies* stay on the human surface (spec §5.1); the card says only whether
+            # something confirmable is waiting, and whether it has drifted out of lineage.
+            proposals_pending=bool(stored.proposals),
+            proposals_stale=stored.lineage_mismatch is not None,
+            readiness_spec_version=spec_version,
+            conn_factory=self._conn_factory,
+        )
+        return await self._components.artifacts.persist_body(
+            workspace_id=self.state.workspace_id,
+            data=card.canonical_bytes(),
+            media_type=STAGE0_PROJECT_CARD_MEDIA_TYPE,
+            subject_bindings=((self.state.client_entity_id, STAGE0_CONTEXT_BINDING_KIND),),
+        )
 
     async def _artifact(self, media_type: str, payload: object) -> ArtifactRef:
         return await self._components.artifacts.persist_body(
