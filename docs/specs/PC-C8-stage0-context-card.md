@@ -148,7 +148,7 @@ Root causes, each owned somewhere in this spec:
 | aggregate quoted text | 16,000 bytes | reduce statement count below 40 until it fits (newest-first survives) |
 | single KB `brief_value` | 256 bytes | truncate with marker; full claim via claim ref |
 | KB `known_fields` aggregate | 4,000 bytes | field-registry order, overflow to omissions |
-| per-gate readiness `metrics` + `reason_codes` | 1,000 bytes | truncate to the compiled summary keys with a marker — readiness must never starve the interview section (v2.1 addition: reviewer measured that uncapped metrics invert the shed order) |
+| per-gate readiness `metrics` + `reason_codes` | 1,000 bytes (`max_gate_evidence_bytes`) | truncate greedily in summary-key priority order (skip-not-stop) with an `evidence_truncated` marker, applied BEFORE the whole-card fit loop — readiness must never starve the interview section (v2.1 addition: reviewer measured that uncapped metrics invert the shed order). Known ranking choice: metrics outrank `reason_codes` within the shared budget; latent only at real metric sizes (~300 B), honest via the marker. Hardening backlog: the summary-key priority list (`_GATE_SUMMARY_METRIC_KEYS`) is hand-copied and fails soft if a producer renames a metric — bind or test it in a later task |
 | `omissions` entries | 12 entries; counts + one cursor each, **never id lists** | collapse to a single `omissions_truncated` entry (note: the v1 kind enum has ~5 members, so 12 is forward-capacity, not a reachable bound) |
 | **whole serialized card** | **24,000 bytes — enforced by construction** | deterministic shedding: oldest included statements first, then trailing KB fields, omission counts recomputed each round; `Stage0CardTooLarge` remains only as the genuine-bug backstop |
 
