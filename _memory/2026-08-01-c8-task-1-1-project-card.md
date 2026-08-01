@@ -87,6 +87,36 @@ stashed): `tests/api/test_agent_runtime_wiring_db.py::test_delegation_is_durable
 child_wake_and_rolls_up_reference_result` — `AgentCatalogError: tool 'evaluate_stage0_readiness@1'
 schema digest changed`. A third one beyond the two the 1.0 note records.
 
+## Review fix round (APPROVED-WITH-MINORS, second commit)
+
+Reviewer verified the enforcement-by-construction deviation as correct (envelopes measured at
+144–222 B; shedding deterministic across processes) and the spec was patched to match (`b487a0a`).
+The follow-ups, all landed:
+
+1. **Per-gate readiness evidence cap — the one behavioral fix.** Uncapped `metrics`/`reason_codes`
+   *inverted the shed order*: 3 gates × 6 KB of metrics shed every statement (a zero-quote card —
+   the very defect this slice fixes) and 3 × 20 KB raised `Stage0CardTooLarge` at runtime. New
+   policy dimension `max_gate_evidence_bytes = 1_000`, enforced in `_gate_readiness` **before** the
+   whole-card fit loop, with `Stage0CardGateReadiness.evidence_truncated` as the marker. Truncation
+   is greedy in `_GATE_SUMMARY_METRIC_KEYS` order (the keys the readiness floors actually score
+   against) and *skips* rather than stops, so one fat blob cannot hide the small scalars behind it.
+2. `Stage0CardTooLarge` docstring reworded: the genuine-bug backstop for unsheddable sections; the
+   one runtime path that used to reach it is closed by item 1.
+3. **F2 dedup honesty** — `Stage0CardSelection.deduped_count` added, so
+   `included + statements_over_cap + deduped_count + excluded_evidence == live statements` closes.
+4. **F4 `decision_lineage`** — kept the name (the spec §3 schema names it once), documented both
+   senses on the model: with a `decision_id` it is the lineage that decision pinned; without one it
+   is the *currently pinned* lineage a decision would have to match. `decision_id` is the
+   discriminator.
+5. **F5** — one-line note that `max_omissions=12` is forward capacity, not a tuned bound (the v1
+   kind enum tops out at ~4 entries, so `OMISSIONS_TRUNCATED` is test-only).
+6. **G1–G3** — new tests for the KB-shedding branch, the `Stage0CardTooLarge` backstop, and an
+   assertion that the whole-card loop genuinely iterates (40 statements that every per-dimension cap
+   would admit, shed only by the card cap — deleting the loop fails the fixture).
+7. Comment at the `evidence.resolve_quotes` call recording that it is a *second* read outside the
+   projection's transaction, and that the race errs safe (a concurrent erasure lands as
+   `ExcludedEvidence`).
+
 ## Handoff notes
 - Task 1.3 wires `project_card_ref` into the constitution and `ProjectLayerSource`; the compiler is
   importable and tested but **nothing calls it in production yet**.

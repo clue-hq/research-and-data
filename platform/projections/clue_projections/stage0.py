@@ -284,8 +284,17 @@ class Stage0CardPolicy(BaseModel):
     max_statements: int = MAX_PROJECT_STATEMENTS
     max_quote_bytes: int = 1_000
     max_quote_total_bytes: int = 16_000
+    #: Per-gate ``metrics`` + ``reason_codes``. Readiness evidence is caller-supplied and
+    #: unbounded at the source, so without this cap it *inverts the shed order*: three gates
+    #: carrying 6 KB of metrics each would shed every statement and produce a zero-quote card —
+    #: precisely the unreadable-context defect this slice exists to fix. Readiness must never
+    #: starve the interview section, so it is bounded before the whole-card fit runs.
+    max_gate_evidence_bytes: int = 1_000
     max_kb_brief_bytes: int = 256
     max_kb_total_bytes: int = 4_000
+    #: Forward capacity, not a load-bearing bound: :class:`Stage0CardOmissionKind` can produce at
+    #: most four entries in v1, so ``OMISSIONS_TRUNCATED`` is unreachable in production and only
+    #: the tests (which lower this cap) exercise the collapse. Nothing should treat 12 as tuned.
     max_omissions: int = 12
     max_card_bytes: int = 24_000
 
@@ -412,12 +421,24 @@ class Stage0CardStatement(BaseModel):
 
 
 class Stage0CardSelection(BaseModel):
-    """Honesty about the bound: how many of the candidates actually made it in."""
+    """Honesty about the bound: how many of the candidates actually made it in.
+
+    Every reduction between the durable rows and the shown ones is accounted for, so a reader can
+    close the books rather than infer::
+
+        included + statements_over_cap + deduped_count + excluded_statement_evidence_missing
+            == live project_state statements
+
+    ``total_effective`` is the post-dedup, evidence-resolved candidate pool the cap was applied to;
+    ``deduped_count`` is what collapsed *before* that pool, which would otherwise vanish from the
+    card's arithmetic entirely.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     included: int
     total_effective: int
+    deduped_count: int
     order: str = STATEMENT_SELECTION_ORDER
     cursor: str | None = None
 
@@ -432,7 +453,18 @@ class Stage0CardInterview(BaseModel):
 
 
 class Stage0CardDecisionLineage(BaseModel):
-    """The immutable context a readiness decision was taken against."""
+    """A readiness lineage tuple. Which lineage depends on whether the gate has a decision:
+
+    * on a gate **with** a ``decision_id`` — the immutable context that decision was taken
+      against, read off the decision row;
+    * on a ``not_evaluated_for_current_lineage`` gate (no ``decision_id``) — the project's
+      *currently pinned* lineage, i.e. what a decision would have to match to count as current.
+      Showing it is the useful half of the honest absence: it says what changed underneath.
+
+    ``decision_id`` present-or-absent is the discriminator; the two senses are never mixed in one
+    entry. (Kept as one field because the spec §3 schema names it once and both senses answer the
+    same reader question — "which lineage are we talking about?")
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -444,6 +476,14 @@ class Stage0CardDecisionLineage(BaseModel):
 
 
 class Stage0CardGateReadiness(BaseModel):
+    """One gate's current standing. ``metrics``/``reason_codes`` are bounded evidence, not the row.
+
+    ``evidence_truncated`` says the decision carried more than the policy's per-gate byte cap
+    allows, so what is shown is a subset; the full row is reachable through the readiness-history
+    cursor. Bounding here is what stops caller-supplied metrics from starving the interview
+    section when the whole-card fit runs.
+    """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     gate: str
@@ -454,6 +494,7 @@ class Stage0CardGateReadiness(BaseModel):
     decision_lineage: Stage0CardDecisionLineage
     metrics: dict[str, JsonValue] = {}
     reason_codes: tuple[str, ...] = ()
+    evidence_truncated: bool = False
 
 
 class Stage0CardReadiness(BaseModel):
@@ -537,8 +578,12 @@ class Stage0ProjectCard(BaseModel):
 class Stage0CardTooLarge(RuntimeError):
     """The compiler could not fit the card under its policy cap even after every reduction.
 
-    A bug, not a runtime path: the reductions below (drop statements, then Client-KB fields) bound
-    the card by construction, so reaching this means the *fixed* sections alone blew the cap.
+    The genuine-bug backstop, reached only when the sections the compiler *cannot* shed — the
+    identity frame, the registered-field allowlist, the open-gap list, the bounded readiness
+    entries, the omission counters — already exceed ``max_card_bytes`` on their own. That is a
+    policy/schema mismatch to fix, not a condition a conversation can reach: the shed loop drops
+    statements and then Client-KB fields, and the per-gate evidence cap keeps readiness from
+    growing without bound (the one runtime path that used to reach here).
     """
 
 
@@ -778,6 +823,60 @@ def _card_omissions(
     return tuple(kept)
 
 
+#: Preference order when a decision's ``metrics`` exceed the per-gate byte cap: the compiled
+#: summary keys the readiness floors are actually scored against (``client_kb_readiness_metrics``
+#: plus the Stage-0 interview counters) go in first, so a single fat caller-supplied blob can never
+#: push the load-bearing scalars out. Anything else follows in sorted order.
+_GATE_SUMMARY_METRIC_KEYS = (
+    "coverage_ratio",
+    "verified_claims",
+    "open_policy_blocks",
+    "project_state_statements",
+    "routed_statements_this_turn",
+    "material_statements_this_turn",
+    "available_field_keys",
+)
+
+
+def _bounded_gate_evidence(
+    metrics: Mapping[str, JsonValue],
+    reason_codes: Sequence[str],
+    *,
+    policy: Stage0CardPolicy,
+) -> tuple[dict[str, JsonValue], tuple[str, ...], bool]:
+    """Bound one gate's ``metrics`` + ``reason_codes`` to ``max_gate_evidence_bytes``.
+
+    Deterministic and greedy in :data:`_GATE_SUMMARY_METRIC_KEYS` order: an entry that does not fit
+    is *skipped*, not a stop, so one oversized metric cannot hide every smaller one behind it. The
+    caller marks the gate ``evidence_truncated`` whenever anything was left out — the full row
+    stays reachable through the readiness-history cursor.
+    """
+
+    ordered = [key for key in _GATE_SUMMARY_METRIC_KEYS if key in metrics]
+    ordered += sorted(set(metrics) - set(_GATE_SUMMARY_METRIC_KEYS))
+    kept: dict[str, JsonValue] = {}
+    kept_reasons: list[str] = []
+    truncated = False
+
+    def fits(candidate_metrics: dict[str, JsonValue], candidate_reasons: list[str]) -> bool:
+        payload = {"metrics": candidate_metrics, "reason_codes": candidate_reasons}
+        return len(_canonical_json(payload)) <= policy.max_gate_evidence_bytes
+
+    for key in ordered:
+        candidate = {**kept, key: metrics[key]}
+        if fits(candidate, kept_reasons):
+            kept = candidate
+        else:
+            truncated = True
+    for code in reason_codes:
+        candidate_reasons = [*kept_reasons, code]
+        if fits(kept, candidate_reasons):
+            kept_reasons = candidate_reasons
+        else:
+            truncated = True
+    return kept, tuple(kept_reasons), truncated
+
+
 def _lineage_is_current(
     row: ReadinessDecisionRow,
     *,
@@ -895,13 +994,18 @@ def _gate_readiness(
     product_id: str | None,
     spec_version: int | None,
     confirmed_icps: Sequence[Stage0CardIcpRef],
+    policy: Stage0CardPolicy,
 ) -> tuple[Stage0CardGateReadiness, ...]:
-    """Latest authoritative, lineage-current decision per gate — override-applied.
+    """Latest authoritative, lineage-current decision per gate — override-applied, evidence bounded.
 
     "Authoritative" means ``created_by_actor='system'``: an agent-authored row is evidence about
     the agent, not a machine verdict. A gate that has history but no lineage-current authoritative
     decision reports :data:`NOT_EVALUATED_FOR_CURRENT_LINEAGE` rather than a stale verdict; a gate
     with no history at all is simply absent.
+
+    Each shown decision's ``metrics``/``reason_codes`` are bounded here — *before* the whole-card
+    fit loop — so unbounded caller-supplied readiness evidence can never shed the statements
+    instead of itself.
     """
 
     gates = [gate for gate in ReadinessGate if any(row.gate is gate for row in ledger)]
@@ -938,6 +1042,9 @@ def _gate_readiness(
         # even when two decisions share a timestamp.
         latest = current[-1]
         override_ref = overrides.get(str(latest.id))
+        metrics, reason_codes, evidence_truncated = _bounded_gate_evidence(
+            latest.metrics, latest.reason_codes, policy=policy
+        )
         entries.append(
             Stage0CardGateReadiness(
                 gate=gate.value,
@@ -954,8 +1061,9 @@ def _gate_readiness(
                     icp_version=latest.icp_version,
                     spec_version=latest.spec_version,
                 ),
-                metrics=latest.metrics,
-                reason_codes=latest.reason_codes,
+                metrics=metrics,
+                reason_codes=reason_codes,
+                evidence_truncated=evidence_truncated,
             )
         )
     return tuple(entries)
@@ -1046,9 +1154,15 @@ async def compile_stage0_project_card(
             else await _current_spec_version(conn, workspace_id=workspace_id)
         )
 
+    # Deliberately outside the read transaction above: resolving quotes needs artifact bytes, which
+    # the projection layer cannot reach. The seam is therefore a second, later read — and it errs
+    # safe: an erasure landing in between makes the statement resolve to ExcludedEvidence, so the
+    # card omits words that no longer exist rather than serving a stale copy of them.
     resolutions = await evidence.resolve_quotes(workspace_id=workspace_id, statements=live)
     quotes, excluded = _resolved_quotes(resolutions)
-    candidates = _dedup_statements([row for row in live if str(row.id) in quotes], quotes)
+    resolved_rows = [row for row in live if str(row.id) in quotes]
+    candidates = _dedup_statements(resolved_rows, quotes)
+    deduped_count = len(resolved_rows) - len(candidates)
 
     readiness = Stage0CardReadiness(
         latest_by_gate=_gate_readiness(
@@ -1058,6 +1172,7 @@ async def compile_stage0_project_card(
             product_id=confirmed_product_id,
             spec_version=spec_version,
             confirmed_icps=confirmed_icps,
+            policy=policy,
         ),
         ledger_length=len(ledger),
     )
@@ -1118,6 +1233,7 @@ async def compile_stage0_project_card(
                 selection=Stage0CardSelection(
                     included=len(entries),
                     total_effective=len(candidates),
+                    deduped_count=deduped_count,
                     cursor=statement_cursor,
                 ),
                 unmapped_count=len(unmapped),
