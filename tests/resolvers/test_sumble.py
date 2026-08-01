@@ -30,10 +30,12 @@ from clue_research.resolvers.sumble import (
     SumbleCreditBudget,
     SumbleCreditContractViolation,
     SumbleCreditLimitExceeded,
+    SumbleSchemaDrift,
     SumbleSnapshot,
     SumbleSpendOutcomeUnknown,
     SumbleUnboundedCreditRisk,
     build_sumble_resolvers,
+    matched_organization_id,
     normalize_jobs,
     normalize_organization,
     normalize_tech_stack,
@@ -92,7 +94,18 @@ def test_organization_request_is_fixed_and_credit_bounded() -> None:
             "headers": {"Authorization": "Bearer fixture"},
             "json_body": {
                 "organizations": [{"url": "acme.example"}],
-                "select": {"attributes": ["employee_count"]},
+                # Every attribute the normalization keys on is selected: v9 returns only what the
+                # select list names. id/name/url/sumble_url are documented free, so the bound
+                # stays 1 base + 1 paid (employee_count) = 2 credits.
+                "select": {
+                    "attributes": [
+                        "id",
+                        "name",
+                        "url",
+                        "sumble_url",
+                        "employee_count",
+                    ]
+                },
             },
             "retries": 0,
         }
@@ -184,6 +197,63 @@ def test_organization_normalization_produces_direct_fields_and_hard_miss() -> No
         )
         == []
     )
+
+
+def test_matched_organization_id_is_recovered_for_the_jobs_call() -> None:
+    assert matched_organization_id(_fixture("organizations_match.json")) == 1726684
+    assert matched_organization_id(_fixture("organizations_unmatched.json")) is None
+
+
+def test_paid_matched_row_missing_identity_attributes_fails_loudly() -> None:
+    """A matched-and-charged row the normalizer cannot key on is drift, never a silent miss.
+
+    This is the live 2026-08-01 payload shape: Sumble returned only the selected
+    ``employee_count``, so the identity-gated normalization accepted zero rows and the run
+    lost a paid organization match without a single error.
+    """
+
+    payload = _fixture("organizations_attributes_only.json")
+    assert payload["matched_count"] == 1
+
+    with pytest.raises(SumbleSchemaDrift) as normalization:
+        normalize_organization(payload, _field("core.employee_count", "int"))
+    assert "matched_count" in str(normalization.value)
+
+    with pytest.raises(SumbleSchemaDrift):
+        matched_organization_id(payload)
+
+
+def test_schema_drift_is_a_sumble_contract_error() -> None:
+    assert issubclass(SumbleSchemaDrift, SumbleContractError)
+
+
+def test_bound_resolver_raises_rather_than_emitting_zero_claims_on_drift() -> None:
+    """The seam the run actually uses must fail, not return an empty claim list."""
+
+    account = _account()
+    snapshot = SumbleSnapshot(
+        source_key=ORGANIZATIONS_SOURCE_KEY,
+        request_id="fixture-org-attributes-only-drift",
+        credits_used=2,
+        credits_remaining=998,
+        payload=_fixture("organizations_attributes_only.json"),
+        estimated_max_credits=2,
+        artifact_key="workspace/provider-response",
+    )
+    lookup = MappingSumbleSnapshotLookup({(account.entity_id, ORGANIZATIONS_SOURCE_KEY): snapshot})
+    resolver = build_sumble_resolvers(lookup)[ORGANIZATIONS_SOURCE_KEY]
+
+    with pytest.raises(SumbleSchemaDrift):
+        resolver.resolve(account, _field("core.employee_count", "int"))
+
+
+def test_a_true_no_match_stays_a_successful_empty_result() -> None:
+    """Drift detection must not convert a legitimate unmatched domain into an error."""
+
+    payload = _fixture("organizations_unmatched.json")
+    assert payload["matched_count"] == 0
+    assert normalize_organization(payload, _field("core.employee_count", "int")) == []
+    assert matched_organization_id(payload) is None
 
 
 def test_jobs_normalization_is_an_explicit_engineering_activity_proxy() -> None:

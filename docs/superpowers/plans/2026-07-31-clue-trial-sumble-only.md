@@ -121,6 +121,19 @@ The report is a rendering of API/C7 data. It is never authoritative.
 
 The exact request and response version is Sumble API `v9`.
 
+**Select-list contract (corrected 2026-08-01 after a live drift).** The v9 `select` block is
+*exhaustive*, not additive: the response carries only the attributes it names. The docs' statement
+that `id`, `name`, `slug`, `url`, and `sumble_url` "are always included for free" governs **price,
+not delivery** — an unrequested free attribute is simply absent. The Organizations request must
+therefore select every attribute the normalization keys on (`id`, `name`, `url`, `sumble_url`)
+alongside the paid `employee_count`. Because those identity attributes cost nothing, the credit
+arithmetic is unchanged: **1 base credit + 1 paid attribute = 2 credits**, and the 3-credit
+aggregate bounded cap (Organizations 2 + Jobs 1) remains truthful.
+
+A matched-and-charged organization row that the normalization cannot key on is **schema drift**,
+not a no-match: it raises `SumbleSchemaDrift` rather than being discarded. Rule 11 below covers
+only a genuine unmatched input (`matched_count = 0`).
+
 ### 4.2 Deferred Sumble surfaces
 
 The following are not silently included:

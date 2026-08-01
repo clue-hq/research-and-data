@@ -59,12 +59,28 @@ _HIRING_VELOCITY_FIELD = "account.hiring_velocity_eng"
 _TECH_STACK_FIELD = "core.primary_tech_stack"
 _ENGINEERING_QUERY = "job_function EQ 'Software Engineer'"
 
+# Sumble v9 charges 1 base credit + 1 credit per *paid* attribute per matched organization. The
+# identity attributes below are documented as costing nothing, so selecting them keeps the request
+# at its two-credit bound while making the response normalizable.
+_ORGANIZATION_FREE_ATTRIBUTES: Final[tuple[str, ...]] = ("id", "name", "url", "sumble_url")
+_ORGANIZATION_PAID_ATTRIBUTES: Final[tuple[str, ...]] = ("employee_count",)
+
 type SumbleSourceKey = Literal["sumble_organizations", "sumble_jobs", "sumble_tech_stack"]
 type HttpFetcher = Callable[..., Any]
 
 
 class SumbleContractError(ResolverError):
     """A Sumble response or request violates the pinned v9 trial contract."""
+
+
+class SumbleSchemaDrift(SumbleContractError):
+    """A charged Sumble row is well-formed JSON the pinned normalization cannot key on.
+
+    A legitimate no-match is a successful empty result (plan §5 rule 11). Silently discarding a
+    row the provider *charged us for* is not: it turns a paid, matched organization into an empty
+    account with no error, which is exactly how the ``select``-list drift of 2026-08-01 went
+    unnoticed. Loud failure is the only honest disposition.
+    """
 
 
 class SumbleCreditLimitExceeded(ResolverError):
@@ -328,13 +344,22 @@ class SumbleClient:
         self,
         domain: str,
     ) -> SumbleSnapshot:
-        # One base credit + the one paid employee-count attribute for a matched organization.
-        # Identity fields (id/name/slug/url/sumble_url) are free. Keep this request shape fixed in
-        # the trial so its two-credit upper bound remains mechanically true.
-        estimated_max = 2
+        # ``select`` is exhaustive, not additive: v9 returns *only* the attributes named here.
+        # The identity attributes are documented as free ("1 credit per paid attribute requested
+        # (`id`, `name`, `slug`, `url`, and `sumble_url` are free)"), but "free" governs price, not
+        # delivery — an unrequested free attribute is still absent, which is what silently voided
+        # the 2026-08-01 live match. Request every attribute the normalization keys on.
+        #
+        # Cost is therefore unchanged: 1 base credit + 1 paid attribute (``employee_count``) = 2.
+        estimated_max = 1 + len(_ORGANIZATION_PAID_ATTRIBUTES)
         body: dict[str, Any] = {
             "organizations": [{"url": domain}],
-            "select": {"attributes": ["employee_count"]},
+            "select": {
+                "attributes": [
+                    *_ORGANIZATION_FREE_ATTRIBUTES,
+                    *_ORGANIZATION_PAID_ATTRIBUTES,
+                ]
+            },
         }
         return self._request(
             source_key=ORGANIZATIONS_SOURCE_KEY,
@@ -428,13 +453,43 @@ class SumbleClient:
         )
 
 
-def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[ResolvedField]:
-    response = SumbleOrganizationsResponse.model_validate(payload)
-    matched = [
+def _identified_rows(
+    response: SumbleOrganizationsResponse,
+) -> tuple[SumbleOrganizationRow, ...]:
+    """Return the rows carrying the identity attributes every Sumble binding keys on.
+
+    Accepting zero rows while the provider reports at least one *charged* match means the pinned
+    ``select`` list and the live response have drifted apart. That is raised, never absorbed: a
+    paid match must not be able to disappear into an empty result.
+    """
+
+    identified = tuple(
         row
         for row in response.organizations
         if row.attributes.id is not None and row.attributes.url
-    ]
+    )
+    matched_count = response.matched_count
+    if not identified and matched_count is not None and matched_count >= 1:
+        returned = sorted(
+            {
+                str(name)
+                for row in response.organizations
+                for name in row.attributes.model_dump(exclude_none=True)
+            }
+        )
+        raise SumbleSchemaDrift(
+            f"{ORGANIZATIONS_SOURCE_KEY}: response reports matched_count={matched_count} but no "
+            "returned organization carries the required 'id' and 'url' attributes "
+            f"(attributes present: {returned or ['<none>']}); the pinned select list "
+            f"{[*_ORGANIZATION_FREE_ATTRIBUTES, *_ORGANIZATION_PAID_ATTRIBUTES]!r} and the live "
+            "v9 contract have drifted"
+        )
+    return identified
+
+
+def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[ResolvedField]:
+    response = SumbleOrganizationsResponse.model_validate(payload)
+    matched = _identified_rows(response)
     if len(matched) != 1:
         return []
     row = matched[0]
@@ -461,17 +516,19 @@ def normalize_organization(payload: Mapping[str, Any], field: FieldDef) -> list[
 
 
 def matched_organization_id(payload: Mapping[str, Any]) -> int | None:
-    """Return the sole matched Sumble organization id, or ``None`` for no/ambiguous match."""
+    """Return the sole matched Sumble organization id, or ``None`` for no/ambiguous match.
+
+    Raises :class:`SumbleSchemaDrift` when the provider charged for a match this binding cannot
+    identify; the dependent jobs/tech-stack calls key on this id, so a silent ``None`` would
+    quietly degrade the whole account into "no data" (plan §5 rule 11 covers only a *true*
+    no-match).
+    """
 
     response = SumbleOrganizationsResponse.model_validate(payload)
-    matched = [
-        row.attributes.id
-        for row in response.organizations
-        if row.attributes.id is not None and row.attributes.url
-    ]
+    matched = _identified_rows(response)
     if len(matched) != 1:
         return None
-    return matched[0]
+    return matched[0].attributes.id
 
 
 def normalize_jobs(payload: Mapping[str, Any], field: FieldDef) -> list[ResolvedField]:
@@ -623,6 +680,7 @@ __all__ = [
     "SumbleJobsResponse",
     "SumbleOrganizationRow",
     "SumbleOrganizationsResponse",
+    "SumbleSchemaDrift",
     "SumbleSnapshot",
     "SumbleSnapshotLookup",
     "SumbleSnapshotResolver",
