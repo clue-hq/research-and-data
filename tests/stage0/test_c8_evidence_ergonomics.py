@@ -53,6 +53,12 @@ from clue_research.stage0 import (
     submit_onboarding_input,
 )
 from clue_research.stage0.fields import CLIENT_PACK, CLIENT_VALUE_PROP
+from clue_research.verification import (
+    DEFAULT_CORROBORATION_POLICY,
+    EqualityMode,
+    independent_source_count,
+    values_agree,
+)
 from clue_spine import create_brand, create_product, create_project
 from clue_storage import artifact_key as make_artifact_key
 from clue_storage import record_artifact
@@ -266,6 +272,11 @@ def test_locate_quote_defaults_to_the_first_occurrence_and_counts_the_rest() -> 
     # A blank quote can never make the occurrence loop spin: it is refused first.
     with pytest.raises(InterviewEvidenceRefused):
         locate_quote(answer, quote="", occurrence=9)
+
+    # Unreachable through the schema (`ge=1`), but the public function refuses it as the caller
+    # error it is rather than reporting a present span as absent.
+    with pytest.raises(ValueError, match="1-based"):
+        locate_quote(answer, quote="we ship fast", occurrence=0)
 
 
 def test_a_long_bulleted_turn_lands_every_span_the_offsets_used_to_miss() -> None:
@@ -658,5 +669,84 @@ def test_a_judge_that_cannot_be_reached_is_reported_as_unavailable_not_as_disbel
                 )
             assert refused.value.reason_code == "claim_value_judge_unavailable"
             assert "could not be reached" in str(refused.value)
+
+    run_async(_run())
+
+
+def test_one_conversation_is_one_source_however_its_values_earned_entry() -> None:
+    """The invariant the §6c-b source-key split rests on (see `interview._write_claim`).
+
+    `independent_source_count` unifies claims that share a `source_url` host **or** a `source_key`.
+    Two turns of one conversation carry different `interview://<onboarding_input_id>` hosts, so
+    `source_key` is the only thing preventing the client's own repetition from corroborating
+    itself — and §6c-b split that key in two. This is safe only because the two species can never
+    co-group: the byte-literal path's value is a JSON string by construction and the judged path's
+    never is, and `values_agree` equates nothing across JSON types. Both halves are asserted here,
+    so if `is_judged_value` or `values_agree` moves, this fails instead of the interview quietly
+    becoming its own corroboration.
+    """
+
+    async def _run() -> None:
+        judge = _StubJudge()
+        answer = "Our value proposition is revenue clarity."
+        async with rollback_conn(workspace_id=_WORKSPACE) as conn:
+            first = await _capture(conn, answer)
+            second = await _capture(conn, answer, suffix="-2")
+
+            def literal(field: str) -> InterviewStatement:
+                return InterviewStatement(
+                    route=InterviewRoute.CLAIM,
+                    route_key=field,
+                    quote=answer,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key=field,
+                    value="revenue clarity",
+                )
+
+            one = await _route(conn, first, literal(CLIENT_VALUE_PROP), judge=judge)
+            two = await _route(conn, second, literal(CLIENT_VALUE_PROP), judge=judge)
+            judged = await _route(
+                conn,
+                second,
+                InterviewStatement(
+                    route=InterviewRoute.CLAIM,
+                    route_key=BOOL_FIELD,
+                    quote=answer,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key=BOOL_FIELD,
+                    value=True,
+                ),
+                judge=judge,
+            )
+            ids = (
+                *one.claim_refs,  # type: ignore[attr-defined]
+                *two.claim_refs,  # type: ignore[attr-defined]
+                *judged.claim_refs,  # type: ignore[attr-defined]
+            )
+            claims = await claims_by_ids(
+                conn,
+                tuple(ClaimId(i) for i in ids),
+                scope=WorkspaceScope.private_for_workspace(_WORKSPACE),
+            )
+            byte_literal = [c for c in claims.values() if c.source_key == SOURCE_CLIENT_INTERVIEW]
+            judged_claims = [
+                c for c in claims.values() if c.source_key == SOURCE_CLIENT_INTERVIEW_JUDGED
+            ]
+            assert len(byte_literal) == 2 and len(judged_claims) == 1
+            # Two different turns: different hosts, so only the shared source_key unifies them.
+            assert len({c.source_url for c in byte_literal}) == 2
+            assert independent_source_count(byte_literal) == 1
+
+            # The load-bearing half: the two species cannot share a value group under ANY equality
+            # mode, so their different source_keys can never be counted inside one group.
+            for mode in EqualityMode:
+                assert not values_agree(
+                    byte_literal[0].value_json,
+                    judged_claims[0].value_json,
+                    mode=mode,
+                    policy=DEFAULT_CORROBORATION_POLICY,
+                )
+            # Stated as the property it protects: were they ever to co-group, this would be 2.
+            assert independent_source_count([byte_literal[0], judged_claims[0]]) == 2
 
     run_async(_run())

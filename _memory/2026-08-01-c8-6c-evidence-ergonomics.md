@@ -202,6 +202,89 @@ exclusion, and early-traction geography through the interview routing receipt."*
 4. **`faithfulness_verdict` rows now exist for questions whose claim was refused** (append-only
    audit, no FK). Harmless and useful as a cache, but a reader that assumes every verdict's
    `claim_id` names a live claim will find orphans on this path. Documented at the site.
-5. The M9.3 DSAR gap already on the backlog (`faithfulness_verdict.rationale` survives erasure)
-   now has a **second** producer: a judged interview claim's rationale quotes the client's own
-   words. Same fix, wider blast radius — worth noting when that follow-up is scheduled.
+5. **CORRECTED (review round, see below) — this entry was wrong as first written.** It said the
+   backlog's `faithfulness_verdict.rationale` gap merely gained "a second producer: same fix, wider
+   blast radius". That is factually false: the existing redaction does not apply *at all* on this
+   path. `compliance/dsar.py` redacts `WHERE claim_id = <erased claim id>`, and a §6c-b verdict is
+   keyed on the *entailment-question* id, so the WHERE matched **zero** rows — verified live —
+   while the rationale went on quoting the client's own words. Left as written, the scheduled
+   follow-up would have been implemented, believed complete, and missed every row on this path.
+   **Fixed in the review round** (below); the real mechanism is now in the repo `CLAUDE.md`
+   backlog.
+---
+
+## Review round (2026-08-01) — NEEDS-FIX-ROUND addressed
+
+The mechanism was verified correct end to end; two must-fixes and three pin-downs landed in one
+follow-up commit.
+
+**F1 — the judge-model seam broke `tests/gateway/test_gateway.py::test_model_id_is_config_swappable`.**
+`Settings` reads `.env` through `env_file`, so the on-disk `CLUE_JUDGE_MODEL` reaches
+`default_gateway_config()` even with the variable unexported, and the test's hardcoded
+`anthropic/claude-3.5-sonnet` base assertion failed. My green-list never included `tests/gateway` —
+the suite owning the file I changed. **Fix shape:** the test's property is "an overlay swaps the id
+with no code change", so the base is now asserted against `default_gateway_config().judge_model`
+(whatever the deployment resolved) plus `swapped_model != default_model`; the *code* default is
+asserted separately and deployment-independently as `GatewayConfig().judge_model ==
+"anthropic/claude-3.5-sonnet"`. Whole gateway suite green both with the env sourced and under
+`env -u CLUE_JUDGE_MODEL -u CLUE_SYNTHESIS_MODEL`. `tests/test_config_settings.py::
+test_c7_activation_controls_are_independently_default_off` fails **only** when `.env` is exported
+into the process env (`CLUE_C7_RESEARCH_VIEW_READ_ENABLED=true` leaks past that test's
+`_env_file=None`); verified pre-existing by running it on a stashed tree and with `env -u` —
+verified, not fixed, as instructed.
+
+**F2 — DSAR redaction could not reach §6c verdict rows. Fixed, not just ledgered.**
+`entailment_judgment_id` **moved to `clue_research.claimstore`** (new
+`claimstore/entailment_identity.py`, exported from the package). That is the least-invasive legal
+home: `compliance` and `stage0` are in an import-linter *independence* contract so compliance may
+not import stage0, and `clue_api` is off-limits to both — but `claimstore` is the shared substrate,
+already imported by `compliance/dsar.py`, `stage0/interview.py` and `clue_api`, and its own rule
+("imports only `core` and `db`") is satisfied by a dependency-free sha256+uuid5 function. So: **no
+`clue_core` contract-delta, and no compliance-local duplicate + drift-guard** (the
+`conflict_tier_threshold` precedent was the fallback, not needed). One definition, three importers.
+`compliance/dsar.py::_tombstone` now recomputes the question id from the erased claim's
+`field_key` + `value_json` + `evidence_span` and redacts `claim_id = ANY(...)` over both ids; a
+span-less claim was never judged this way and contributes no second id. Documented consequence: two
+subjects whose claims share field + value + span share one question, so erasing either redacts the
+shared rationale — correct, since the rationale quotes that exact text.
+
+**Red-proof of the new test.** `tests/compliance/test_dsar.py::
+test_dsar_erases_the_rationale_of_a_verdict_keyed_on_the_entailment_question` inserts a verdict
+under the recomputed question id, erases the contact, and asserts the rationale is NULL, redacted-at
+is stamped, the reason is `erasure`, the bounded audit metadata (`verdict`, `judge_model`) survives,
+and the sentinel appears in **no** rationale in the table. Reverting the WHERE to the claim-id-only
+match fails it loud on `assert row[0] is None, "the judged claim's rationale survived erasure"`
+(reproduced by temporarily re-adding `AND claim_id = :legacy_only`); restored and green.
+
+**Pin-down 1 — the corroboration-independence invariant is now stated and tested.**
+`independent_source_count` unifies claims sharing a `source_url` host **or** a `source_key`. Two
+turns of one conversation carry different `interview://<onboarding_input_id>` hosts, so `source_key`
+was the *only* thing stopping the client's own repetition from corroborating itself — and §6c-b
+split that key in two. It is safe for exactly one reason: the two species can never land in the same
+value group, because `is_judged_value` sends every non-string to the judge (so a `client_interview`
+value is a JSON string by construction, a `client_interview_judged` value never is) and
+`values_agree` equates nothing across JSON types under any `equality_mode`. That is a coupling
+across three files and would break silently if either side moved (the `semantic` mode equating
+`"true"` with `true` is the plausible route). Documented at the `source_key=` stamp in
+`interview._write_claim`; pinned by `tests/stage0/test_c8_evidence_ergonomics.py::
+test_one_conversation_is_one_source_however_its_values_earned_entry`, which routes two real turns
+and asserts `independent_source_count == 1` for the byte-literal pair, `values_agree` false across
+**every** `EqualityMode`, and — stated as the property it protects — that the cross-species pair
+*would* count as 2 if they ever co-grouped.
+
+**Pin-down 2 — M12/review blind spot ledgered** in the repo `CLAUDE.md` backlog alongside F2's
+entry, naming the recompute mechanism explicitly: `narrative/support.py::read_faithfulness_citation`
+and the review annotation reader (`clue_api/review/composition.py:~89`) both key on the real claim
+id, so a `client_interview_judged` claim reports as never-judged to M12 provenance and the review
+surface. Owner is the C6/M12 tool-output & provenance owner, not PC-C8.
+
+**Pin-down 3 — cosmetic.** `locate_quote` now refuses `occurrence < 1` as the caller error it is
+(`ValueError("occurrence must be 1-based")`) instead of falling through and reporting a span that is
+right there in the message as absent — unreachable through the schema's `ge=1`, but the function is
+public. The two documentation mentions (coverage-report phantom channels; the C7 provider label
+rendering the raw string) went into the `CLAUDE.md` ledger entry, not into code.
+
+**Re-run:** `tests/api tests/agents tests/stage0 tests/clue_trial tests/projections tests/gateway
+tests/verification tests/compliance` — only the documented pre-existing
+`test_agent_runtime_wiring_db.py::test_delegation_is_durable_…` fails. mypy clean, `lint-imports`
+24/24, ruff check + format clean on every touched file.

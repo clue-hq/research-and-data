@@ -325,6 +325,11 @@ def locate_quote(answer: str, *, quote: str, occurrence: int = 1) -> tuple[int, 
             reason_code=QUOTE_EMPTY,
             message="the evidence quote is blank; quote the user's actual words",
         )
+    if occurrence < 1:
+        # `InterviewStatement.occurrence` is `ge=1`, so no model can reach this — but the function
+        # is public, and falling through would report the honest-sounding lie "it appears only N
+        # time(s), so occurrence 0 does not exist" about a span that is right there in the message.
+        raise ValueError(f"occurrence must be 1-based; got {occurrence}")
     start = -1
     cursor = 0
     for _ in range(occurrence):
@@ -808,6 +813,26 @@ async def _write_claim(
         source_url=f"interview://{onboarding_input_id}",
         # PC-C8 §6c-b: how this value earned entry stays on the claim. Tier is untouched (it is a
         # statement about *whose* entity this is — 1.4's rule); only the method distinction is new.
+        #
+        # CORROBORATION-INDEPENDENCE INVARIANT — read before touching either side.
+        # `verification.independent_source_count` treats two claims as ONE source when they share a
+        # `source_url` host or a `source_key`. Two turns of one conversation have different
+        # `interview://<onboarding_input_id>` hosts, so `source_key` is the ONLY thing stopping the
+        # client's own repetition from counting as independent corroboration of itself. Splitting
+        # that key in two therefore looks like it re-opens exactly that hole — and it does not,
+        # for one reason and one reason only: **the two species can never land in the same value
+        # group.** Independence is counted *within* a group of claims whose values agree, and a
+        # `client_interview` claim's value is a JSON string by construction
+        # (`is_judged_value` sends every non-string to the judge) while a
+        # `client_interview_judged` claim's value is never a string — and `values_agree` never
+        # equates across JSON types under any `equality_mode`.
+        #
+        # That is a coupling between three files, so it breaks silently if any one of them moves:
+        # if `is_judged_value` ever admits a string, or `values_agree` ever equates `"true"` with
+        # `true` (the `semantic` mode is the plausible route), two claims from ONE conversation
+        # start counting as two independent sources and the interview self-corroborates. Pinned by
+        # `tests/stage0/test_c8_evidence_ergonomics.py::
+        # test_one_conversation_is_one_source_however_its_values_earned_entry`.
         source_key=(SOURCE_CLIENT_INTERVIEW_JUDGED if judged else SOURCE_CLIENT_INTERVIEW),
         artifact_key=artifact_key,
         source_tier=source_tier,
