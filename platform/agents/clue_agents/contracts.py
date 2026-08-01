@@ -140,17 +140,20 @@ _SOURCE_EXTENSIONS = {
 #: model-authored on other tools, is marked per input model instead
 #: (``clue_api.turn_binding.TRUSTED_TURN_FIELD``).
 #:
-#: **Top-level only, and there are live exceptions.** ``_with_trusted_runtime`` deletes fields from
-#: the input model itself, so a name nested inside a sub-model is neither hidden nor injected. Three
-#: granted tools still expose one a level down: ``propose_field``/``propose_source`` via
-#: ``ProposalScopeInput`` (``scope.brand_id``, ``scope.project_id``) and ``submit_ingestion`` via
-#: ``DeclaredMaterialContext`` (``declared_context.brand_id``, ``declared_context.project_id``).
-#: The model authors those. They are not accepted blind — the proposal tools refuse an unknown
-#: scope in ``preconditions`` (``proposal_scope_not_found``) and ingestion is fenced by the
-#: ``ingestion_job`` composite workspace FKs — but a *wrong yet existing* sibling scope in the same
-#: workspace is reachable there in a way it is not at the top level. The guarantee this set makes
-#: is therefore "not at the top level", not "nowhere". Recursing the strip (and the matching nested
-#: injection) is PC-C8 task 1.4's, with the schema bump it forces.
+#: **Top-level only — and no tool nests one any more.** ``_with_trusted_runtime`` deletes fields
+#: from the input model itself, so a name nested inside a sub-model would be neither hidden nor
+#: injected. Until PC-C8 task 1.4 three granted tools did exactly that
+#: (``propose_field``/``propose_source`` via ``scope.brand_id``/``scope.project_id``, and
+#: ``submit_ingestion`` via ``declared_context.*``), which let the model author a *wrong yet
+#: existing* sibling scope in the same workspace. Task 1.4 **hoisted** those fields onto the tool
+#: inputs rather than teaching the seam to recurse: the seam stays one simple rule, and the nested
+#: authority it could not reach no longer exists to reach.
+#:
+#: That is now a permanent, repo-wide gate rather than a claim —
+#: ``tests/architecture/test_model_facing_authority.py`` walks every granted tool's model-facing
+#: schema at **every** depth (``$defs`` included) and fails the build if any of these names
+#: reappears. So a future tool that nests one is a red build, not a quiet exception in this
+#: docstring.
 MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
         "actor_id",

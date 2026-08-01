@@ -34,6 +34,7 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim, supersede_claim
+from clue_research.identity import get_account, get_contact
 from clue_research.sources import RegistrySourceManifest, register_source
 from clue_research.stage0.governed import StatementRoute, record_statement
 
@@ -84,8 +85,11 @@ class InterviewStatement(BaseModel):
     entity_id: EntityId | None = Field(
         default=None,
         description=(
-            "Entity this claim is about; required on the `claim` route. Use the supplied client "
-            "entity id for facts about the client."
+            "Which entity a `claim` is about. Leave it out for a fact about the client itself — "
+            "an `account` claim defaults to this project's own client entity, which the platform "
+            "supplies. Fill it only to name a *different* entity, and then it must already exist "
+            "in this workspace; an id that resolves to nothing is refused. A `contact` claim "
+            "always needs it."
         ),
     )
     entity_type: EntityType | None = Field(
@@ -171,13 +175,21 @@ class InterviewStatement(BaseModel):
 
     @model_validator(mode="after")
     def _route_shape(self) -> InterviewStatement:
+        # PC-C8 §8 (B1 layer 2): `entity_id` is no longer *required* on the claim route. An
+        # `account` claim with no entity is engine-defaulted to the caller's trusted
+        # `client_entity_id` in `route_interview_answer` — the same authority the constitution
+        # serves — so the model neither needs the id nor gets to invent one. A `contact` claim
+        # still names its entity, because there is no trusted default for a person.
         if self.route is InterviewRoute.CLAIM and (
-            self.entity_id is None
-            or self.entity_type is None
-            or self.field_key is None
-            or self.value is None
+            self.entity_type is None or self.field_key is None or self.value is None
         ):
-            raise ValueError("claim route requires entity_id, entity_type, field_key, and value")
+            raise ValueError("claim route requires entity_type, field_key, and value")
+        if (
+            self.route is InterviewRoute.CLAIM
+            and self.entity_type is EntityType.CONTACT
+            and self.entity_id is None
+        ):
+            raise ValueError("contact claim route requires entity_id")
         if self.route is InterviewRoute.MEMORY and (
             self.memory_type is None or self.memory_scope_type is None
         ):
@@ -196,6 +208,22 @@ class InterviewStatement(BaseModel):
         ):
             raise ValueError("contact interview claims require identity_binding and use_class")
         return self
+
+
+class InterviewClaimEntityRefused(ValueError):
+    """A claim-route statement named an entity this workspace does not have (PC-C8 §8, B1).
+
+    The behaviour this replaces accepted *any* well-formed UUID and silently wrote the claim at
+    ``source_tier=3`` because it was not the client entity — so a hallucinated id became a durable,
+    lower-trust claim about an entity that does not exist, and the only signal was a tier the model
+    never saw. Fail-closed instead: an unresolvable entity is refused with a reason code the
+    governed tool surfaces, and tiering becomes an explicit consequence of a *verified* identity
+    rather than a fallback for an unverified one.
+    """
+
+    def __init__(self, *, reason_code: str, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 class InterviewRoutingResult(BaseModel):
@@ -258,10 +286,18 @@ async def route_interview_answer(
     for classified in statements:
         quote = _exact_quote(answer, classified)
         route_ref = classified.route_ref
+        entity_id = classified.entity_id
         if classified.route is InterviewRoute.CLAIM:
+            entity_id = await resolve_claim_entity(
+                conn,
+                classified=classified,
+                workspace_id=workspace_id,
+                client_entity_id=client_entity_id,
+            )
             claim_id = await _write_claim(
                 conn,
                 classified=classified,
+                entity_id=entity_id,
                 quote=quote,
                 workspace_id=workspace_id,
                 client_entity_id=client_entity_id,
@@ -304,7 +340,7 @@ async def route_interview_answer(
             product_id=product_id,
             project_id=project_id,
             client_entity_id=client_entity_id,
-            entity_id=classified.entity_id,
+            entity_id=entity_id,
             route_kind=StatementRoute(classified.route.value),
             route_key=classified.route_key,
             route_ref=route_ref,
@@ -347,10 +383,58 @@ def _exact_quote(answer: str, classified: InterviewStatement) -> str:
     return quote
 
 
+async def resolve_claim_entity(
+    conn: AsyncConnection,
+    *,
+    classified: InterviewStatement,
+    workspace_id: str,
+    client_entity_id: EntityId,
+) -> EntityId:
+    """Decide which entity a claim-route statement is about (PC-C8 §8, B1 layer 2).
+
+    Two rules, both fail-closed:
+
+    * **Engine default.** An ``account`` claim with no ``entity_id`` is about this project's own
+      client account — the id the caller's trusted ``client_entity_id`` already carries, sourced
+      from the constitution. The model never has to know, quote, or invent it.
+    * **Existence check.** Any id that *is* supplied must resolve to a live entity of the declared
+      type in this workspace. The old behaviour accepted any UUID and expressed its doubt as a
+      silent tier-3 downgrade; an id naming nothing is now refused outright, and the tier below is
+      an explicit statement about a *verified* entity.
+    """
+
+    entity_type = classified.entity_type
+    assert entity_type is not None
+    entity_id = classified.entity_id
+    if entity_id is None:
+        if entity_type is not EntityType.ACCOUNT:
+            raise InterviewClaimEntityRefused(
+                reason_code="interview_entity_required",
+                message="a contact claim must name the contact it is about",
+            )
+        entity_id = client_entity_id
+    if entity_type is EntityType.ACCOUNT:
+        account = await get_account(conn, entity_id)
+        found = account is not None and account.workspace_id == workspace_id
+    else:
+        contact = await get_contact(conn, entity_id)
+        found = contact is not None and contact.workspace_id == workspace_id
+    if not found:
+        raise InterviewClaimEntityRefused(
+            reason_code="interview_entity_not_found",
+            message=(
+                f"claim names {entity_type.value} {entity_id}, which does not exist in this "
+                "workspace"
+            ),
+        )
+    return entity_id
+
+
 async def _write_claim(
     conn: AsyncConnection,
     *,
     classified: InterviewStatement,
+    entity_id: EntityId,
     quote: str,
     workspace_id: str,
     client_entity_id: EntityId,
@@ -359,18 +443,19 @@ async def _write_claim(
     onboarding_input_id: OnboardingInputId,
     run_id: RunId,
 ) -> ClaimId:
-    assert classified.entity_id is not None
     assert classified.entity_type is not None
     assert classified.field_key is not None
-    source_tier = 1 if classified.entity_id == client_entity_id else 3
+    # Both branches now describe an entity `resolve_claim_entity` proved exists here: tier 1 is
+    # "the client stating a fact about itself", tier 3 is "the client stating a fact about some
+    # other resolved entity". Neither is a fallback for an id nobody could resolve.
+    source_tier = 1 if entity_id == client_entity_id else 3
     claim_product_id = product_id if classified.field_key.startswith("client.") else None
     if classified.field_key.startswith("client.") and claim_product_id is None:
         raise ValueError("product-scoped client claim requires a confirmed product")
     claim_id = ClaimId(
         uuid5(
             NAMESPACE_URL,
-            f"stage0-interview-claim:{onboarding_input_id}:{classified.entity_id}:"
-            f"{classified.field_key}",
+            f"stage0-interview-claim:{onboarding_input_id}:{entity_id}:{classified.field_key}",
         )
     )
     prior_by_id = await claims_by_ids(
@@ -383,7 +468,7 @@ async def _write_claim(
         return claim_id
     claim = Claim(
         id=claim_id,
-        entity_id=classified.entity_id,
+        entity_id=entity_id,
         entity_type=classified.entity_type,
         field_key=classified.field_key,
         value_json=classified.value,
@@ -411,19 +496,17 @@ async def _write_claim(
         include_superseded=True,
     )
     old = prior.get(classified.correction_of_claim_id)
-    if (
-        old is None
-        or old.entity_id != classified.entity_id
-        or old.field_key != classified.field_key
-    ):
+    if old is None or old.entity_id != entity_id or old.field_key != classified.field_key:
         raise ValueError("correction claim does not match this workspace, entity, and field")
     return await supersede_claim(conn, classified.correction_of_claim_id, claim)
 
 
 __all__ = [
+    "InterviewClaimEntityRefused",
     "InterviewRoute",
     "InterviewRoutingResult",
     "InterviewStatement",
     "register_client_interview_source",
+    "resolve_claim_entity",
     "route_interview_answer",
 ]

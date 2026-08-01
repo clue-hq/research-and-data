@@ -47,8 +47,10 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v8 / stage0-interview@v6 — the PC-C8 §6a turn-authority schema shrink.
-        AgentRole.HEAD_OF_ABM: "50827c756c7b5c7dab914f8399d3efb646aff845b2889d2a4d678b8f171d13bd",
+        # head-of-abm@v9 / stage0-interview@v7 — PC-C8 task 1.4's one coordinated bump:
+        # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
+        # nested authority, and B1 layer 2's engine-defaulted claim entity.
+        AgentRole.HEAD_OF_ABM: "48a2abd0d2031db67625e58f8eb62b19ef1ddae2fdc627a7f97636a6b544270d",
         AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
@@ -135,7 +137,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v6"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v7"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -229,7 +231,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v6")
+    body = head.open_skill("skill:stage0-interview@v7")
 
     assert required_guidance in body
 
@@ -291,7 +293,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v6/SKILL.md"
+                ".deepagent/skills/stage0-interview/v7/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

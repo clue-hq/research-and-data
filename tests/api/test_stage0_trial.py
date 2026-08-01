@@ -130,7 +130,11 @@ def test_stage0_turn_and_context_use_frozen_subject_binding_kinds(
     monkeypatch.setattr(
         trial,
         "_components",
-        SimpleNamespace(artifacts=artifacts, profiles=SimpleNamespace(resolve=lambda role: None)),
+        SimpleNamespace(
+            artifacts=artifacts,
+            # PC-C8 §8: the trial resolves its Head-of-ABM profile on a named capability surface.
+            profiles=SimpleNamespace(resolve=lambda role, *, surface=None: None),
+        ),
     )
 
     with pytest.raises(_StopAfterUserMessage):

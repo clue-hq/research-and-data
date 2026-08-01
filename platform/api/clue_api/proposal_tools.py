@@ -47,22 +47,50 @@ from clue_toolbelt import (
 
 
 class ProposalScopeInput(BaseModel):
+    """The narrowing part of a proposal's scope: what the proposal is *about*.
+
+    ``brand_id`` and ``project_id`` deliberately do **not** live here (PC-C8 task 1.4). They are
+    :data:`~clue_agents.contracts.MODEL_FORBIDDEN_AUTHORITY_KEYS` — this execution's brand, this
+    execution's project — and the strip/inject seam is top-level only, so a nested copy was neither
+    hidden from the model nor served from the constitution. Hoisting them onto the tool input
+    (rather than teaching the seam to recurse) means there is no nested authority left to strip:
+    the invalid state is unrepresentable instead of defended against.
+    """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    brand_id: str
     product_id: str | None = None
-    project_id: str | None = None
     icp_key: str | None = None
     icp_spec_version: int | None = Field(default=None, ge=1)
 
-    def for_workspace(self, workspace_id: str) -> ProposalScope:
-        return ProposalScope(workspace_id=workspace_id, **self.model_dump())
+    def for_execution(
+        self,
+        *,
+        workspace_id: str,
+        brand_id: str,
+        project_id: str | None,
+    ) -> ProposalScope:
+        """Rejoin the model-authored narrowing with the engine's trusted scope authority."""
+
+        return ProposalScope(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            project_id=project_id,
+            **self.model_dump(),
+        )
 
 
 class ProposeFieldInput(ToolInput):
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
     scope: ProposalScopeInput
     payload: FieldProposalPayload
     proposed_by_ref: str | None = None
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class DecideFieldProposalInput(ToolInput):
@@ -72,9 +100,16 @@ class DecideFieldProposalInput(ToolInput):
 
 
 class ProposeSourceInput(ToolInput):
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
     scope: ProposalScopeInput
     payload: SourceProposalPayload
     proposed_by_ref: str | None = None
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class DecideSourceProposalInput(ToolInput):
@@ -86,6 +121,19 @@ class DecideSourceProposalInput(ToolInput):
 
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
     return (PreconditionFailure(reason_code=code, message=message),)
+
+
+def _resolved_scope(
+    inputs: ProposeFieldInput | ProposeSourceInput,
+    ctx: ToolContext,
+) -> ProposalScope:
+    """Join the model-authored narrowing with the trusted brand/project/workspace authority."""
+
+    return inputs.scope.for_execution(
+        workspace_id=ctx.workspace_id,
+        brand_id=inputs.brand_id,
+        project_id=inputs.project_id,
+    )
 
 
 def _field_id(raw: str) -> FieldProposalId | None:
@@ -134,7 +182,7 @@ class ProposeFieldTool(_ProposalTool):
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ProposeFieldInput)
         async with ctx.conn_factory() as conn:
-            valid = await scope_exists(conn, inputs.scope.for_workspace(ctx.workspace_id))
+            valid = await scope_exists(conn, _resolved_scope(inputs, ctx))
         if not valid:
             return _failure("proposal_scope_not_found", "proposal scope not found")
         return ()
@@ -144,7 +192,7 @@ class ProposeFieldTool(_ProposalTool):
         async with ctx.conn_factory() as conn:
             proposal = await propose_field(
                 conn,
-                scope=inputs.scope.for_workspace(ctx.workspace_id),
+                scope=_resolved_scope(inputs, ctx),
                 payload=inputs.payload,
                 proposed_by_actor=ctx.actor,
                 proposed_by_ref=inputs.proposed_by_ref,
@@ -229,7 +277,7 @@ class ProposeSourceTool(_ProposalTool):
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ProposeSourceInput)
         async with ctx.conn_factory() as conn:
-            valid = await scope_exists(conn, inputs.scope.for_workspace(ctx.workspace_id))
+            valid = await scope_exists(conn, _resolved_scope(inputs, ctx))
         if not valid:
             return _failure("proposal_scope_not_found", "proposal scope not found")
         return ()
@@ -239,7 +287,7 @@ class ProposeSourceTool(_ProposalTool):
         async with ctx.conn_factory() as conn:
             proposal = await propose_source(
                 conn,
-                scope=inputs.scope.for_workspace(ctx.workspace_id),
+                scope=_resolved_scope(inputs, ctx),
                 payload=inputs.payload,
                 proposed_by_actor=ctx.actor,
                 proposed_by_ref=inputs.proposed_by_ref,

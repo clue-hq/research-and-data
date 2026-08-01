@@ -138,7 +138,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "gap_fields": ["account.strategic_moves"],
         },
         "propose_field": {
-            "scope": {"brand_id": "brand_missing"},
+            "brand_id": "brand_missing",
+            "scope": {},
             "payload": {
                 "field_def": {
                     "field_key": "account.proposed_signal",
@@ -154,7 +155,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "reason": "matrix decision",
         },
         "propose_source": {
-            "scope": {"brand_id": "brand_missing"},
+            "brand_id": "brand_missing",
+            "scope": {},
             "payload": {
                 "manifest": {
                     "source_key": "matrix_source",
@@ -175,7 +177,8 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "submit_ingestion": {
             "artifact_key": "missing-artifact",
-            "declared_context": {"brand_id": "brand_missing"},
+            "brand_id": "brand_missing",
+            "declared_context": {},
         },
         "retry_ingestion": {"ingestion_job_id": _UUID()},
         "submit_onboarding_input": {

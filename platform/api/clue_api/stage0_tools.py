@@ -50,6 +50,8 @@ from clue_research.durable import (
 from clue_research.icp import get_icp_version
 from clue_research.stage0 import (
     ClientInput,
+    InterviewClaimEntityRefused,
+    InterviewRoute,
     InterviewStatement,
     ReconLaneStatus,
     compile_product_context,
@@ -58,6 +60,7 @@ from clue_research.stage0 import (
     get_readiness_decision,
     override_readiness,
     recon_dedupe_hash,
+    resolve_claim_entity,
     reverse_profile,
     route_interview_answer,
     start_recon,
@@ -214,19 +217,24 @@ async def start_confirmed_project_run(
     return project_run_id
 
 
-# NOTE (PC-C8 §6a, task 1.3): `brand_id` and `client_entity_id` joined `project_id` in
+# NOTE (PC-C8 §6a, tasks 1.3 + 1.4): `brand_id` and `client_entity_id` joined `project_id` in
 # `MODEL_FORBIDDEN_AUTHORITY_KEYS`, so on every input model below they are stripped from the
 # model-visible schema and served from the `AgentConstitution` at the execution seam. They stay
-# declared because the C4 recipe path supplies them directly. Their `description` text is
-# deliberately untouched here: it is part of `model_json_schema()` and therefore of the tool's
-# pinned `input_schema_sha256`, and the model never reads it (the field is gone from its schema).
-# Rewording it to the "supplied by the platform, never by you" phrasing `project_id` already uses
-# is folded into task 1.4's one coordinated catalog/profile bump rather than forcing a third.
+# declared because the C4 recipe path supplies them directly.
+#
+# Task 1.3 deliberately left their `description` text stale — it is part of `model_json_schema()`
+# and therefore of the tool's pinned `input_schema_sha256`, so rewording it would have forced a
+# second catalog bump for text no model reads. Task 1.4's coordinated bump (skill
+# `stage0-interview/v7`, profile `head-of-abm/v9`) does the reword: all eight descriptions that
+# described a field the model fills now state the same thing `project_id` always did — the
+# platform supplies it. (`confirm_icp`, `import_accounts` and `synthesize_icps` declare
+# `client_entity_id` with no description at all; nothing to reword there, and adding one would
+# move their digests for no model-visible gain.)
 
 
 class SubmitOnboardingInput(ToolInput):
     brand_id: str = Field(
-        description="Brand this input belongs to; it must already exist in this workspace."
+        description="Trusted brand authority; supplied by the platform, never by you."
     )
     kind: OnboardingInputKind = Field(
         description=(
@@ -257,7 +265,7 @@ class SubmitOnboardingInput(ToolInput):
     )
     client_entity_id: str | None = Field(
         default=None,
-        description="Resolved client entity this input describes, when one is already resolved.",
+        description="Trusted client-entity authority; supplied by the platform, never by you.",
     )
     source_ref: str | None = Field(
         default=None,
@@ -267,7 +275,7 @@ class SubmitOnboardingInput(ToolInput):
 
 class StartReconInput(ToolInput):
     brand_id: str = Field(
-        description="Brand this recon profiles for; it must already exist in this workspace."
+        description="Trusted brand authority; supplied by the platform, never by you."
     )
     name: str = Field(
         description="Client company name exactly as the human gave it; not an expansion of yours."
@@ -305,7 +313,7 @@ class RecordInterviewAnswerInput(ToolInput):
     """
 
     brand_id: str = Field(
-        description="Brand this answer belongs to; it must already exist in this workspace."
+        description="Trusted brand authority; supplied by the platform, never by you."
     )
     onboarding_input_id: str = Field(
         json_schema_extra={TRUSTED_TURN_FIELD: True},
@@ -332,7 +340,7 @@ class RecordInterviewAnswerInput(ToolInput):
         ),
     )
     client_entity_id: str = Field(
-        description="Resolved client entity id for this workspace, as supplied in your context."
+        description="Trusted client-entity authority; supplied by the platform, never by you."
     )
     statements: list[InterviewStatement] = Field(
         description=(
@@ -364,9 +372,7 @@ class ConfirmProjectProductInput(ToolInput):
 
 class EvaluateStage0ReadinessInput(ToolInput):
     brand_id: str = Field(
-        description=(
-            "Brand being evaluated; it must exist in this workspace (`stage0_scope_not_found`)."
-        )
+        description="Trusted brand authority; supplied by the platform, never by you."
     )
     gate: ReadinessGate = Field(
         description=(
@@ -396,10 +402,7 @@ class EvaluateStage0ReadinessInput(ToolInput):
     )
     client_entity_id: str | None = Field(
         default=None,
-        description=(
-            "Resolved client entity this decision is about; part of the lineage a confirmed run "
-            "re-checks."
-        ),
+        description="Trusted client-entity authority; supplied by the platform, never by you.",
     )
     client_kb_version: int | None = Field(
         default=None,
@@ -485,10 +488,7 @@ class StartConfirmedProjectRunInput(ToolInput):
         description="Trusted project authority; supplied by the platform, never by you."
     )
     client_entity_id: str = Field(
-        description=(
-            "Resolved client entity of the confirmed context; every id here must name one single "
-            "lineage or the run is refused."
-        )
+        description="Trusted client-entity authority; supplied by the platform, never by you."
     )
     client_kb_version: int = Field(
         description=(
@@ -945,6 +945,25 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 "memory_not_configured",
                 "memory-routed interview statements require the MemoryWriteSeam",
             )
+        # PC-C8 §8 (B1 layer 2): a claim-route statement's entity is resolved before any write —
+        # engine-defaulted to the trusted client entity when absent, existence-checked when
+        # supplied. Running it here, through the *same* function the routing engine runs, turns
+        # what used to be a silent tier downgrade into a typed refusal the model can read and act
+        # on; `route_interview_answer` still refuses independently, so the guarantee does not
+        # depend on this precondition being called.
+        async with self._conn_factory() as conn:
+            for statement in inputs.statements:
+                if statement.route is not InterviewRoute.CLAIM:
+                    continue
+                try:
+                    await resolve_claim_entity(
+                        conn,
+                        classified=statement,
+                        workspace_id=ctx.workspace_id,
+                        client_entity_id=EntityId(client_uuid),
+                    )
+                except InterviewClaimEntityRefused as exc:
+                    return _failure(exc.reason_code, str(exc))
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
