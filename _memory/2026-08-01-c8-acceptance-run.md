@@ -22,6 +22,12 @@ C5 slot, so the omission cursors the card hands the model cannot be resolved by 
 below. This is not one of the §12-12 clauses, but it should be fixed before the slice is considered
 complete against §12 as a whole.
 
+**Update 2026-08-01 (post-run fix wave):** the C5-slot half of that gap is closed by
+`recipe0-stage0@4` and re-proved live — the tools now execute through the slot. A *second*,
+lower-layer gap surfaced in the same probe and keeps AC-3 from holding end to end: recovered
+governed-tool receipts carry only artifact refs, never the result values, so the model cannot read
+what the tools returned. See finding 3's closure note and new finding 5.
+
 ## Scale of the run
 
 80 conversation turns total, **zero HTTP 4xx of any kind** (no 422 anywhere in either access log),
@@ -180,8 +186,37 @@ the slice set out to kill is gone.
    omission-resolving tool it doesn't install is a failing contract test" is the rule that should
    have caught this. Good behavior under the gap: both turns finalized `blocked` and the agent
    refused to invent history. **Fix the C5 slot before closing §12.**
+
+   **CLOSED (C5-slot half) 2026-08-01 — `recipe0-stage0@4`.** The slot allowlist lives in the
+   *recipe revision*, not the profile: `platform/execution/recipes/recipe0-stage0-v3.json`
+   statically listed twelve tools and the trial pinned v3, so the v10 profile grant could never
+   take effect. Fixed by the versioning discipline (new immutable revision, v3 superseded, never
+   rewritten): checked-in `recipe0-stage0-v4.json` adds both tools to the graph `tool_allowlist`,
+   the gate's `dynamic_tool_allowlist`, and the node/compatibility tool pins; the trial pins it via
+   the single `stage0_trial.STAGE0_RECIPE_VERSION`; both tools joined `RECIPE_0_TOOL_ADDRESSES` and
+   therefore now declare a `project` pin (the standing replay-safety audit refuses an empty
+   `pin_requirements`). AC-7's contract test was extended to assert the pinned revision's allowlist,
+   not just the profile grant — it fails against a v3 pin.
+   **Live re-probe (1 turn, `trial-acceptance-c8-aura`, turn 50):** both tools executed through the
+   slot — `toolbelt.inspect_statement_history_started/completed` and
+   `toolbelt.inspect_readiness_history_started/completed` in the log, **zero** `c5_tool_not_allowed`
+   — and the durable result artifact carries the real ledger (36 decisions, real gates/verdicts,
+   e.g. `gate=icp_synthesis, verdict=ready`).
+
+   **Still open — a different layer (new finding 5).** AC-3 end-to-end is *not* yet met: the agent
+   still cannot cite the rows, and truthfully said so. `DbAgentPlanJournal.load_receipts`
+   (`agent_execution_wiring.py:~682`) reconstructs each `GovernedOperationReceipt` from the DB with
+   `artifact_refs` **only** — it never rehydrates `reference_values` — and `_governed_tool.invoke`
+   (`agent_runtime_wiring.py:~698–713`) returns that *recovered* receipt to the model rather than
+   the live one built in `_execute_tool` (which does carry `reference_values`). So every governed
+   read tool on this surface hands the model a pointer to a result it has no tool to read. Not
+   specific to the inspection tools; owner is the C6 tool-output lifecycle, not PC-C8 §7.
 4. Minor: **2** `agent.finalize_refused` (`NO_ROUTING_RECEIPT` guard) fired across 80 turns; both
    were repaired within the turn and neither killed a turn.
+5. **Governed tool results do not reach the model** — see the "still open" note under finding 3.
+   Two probe turns (50, 51) both ended `awaiting_input` with an honest refusal to invent rows; the
+   model named the limitation precisely ("their returned receipts contain no inline
+   `reference_values` rows — only artifact references"), and the code agrees with it.
 
 ## Evidence locations
 
@@ -193,6 +228,9 @@ the slice set out to kill is gone.
   `trial-report.json`, `session.json`, `icp-proposals.json`, `failures.json` — empty) and
   `.context/sumble-trials/trial-acceptance-c8-breadth/`.
 - Card artifact bodies: `.artifacts/<workspace_id>/<content_sha256>`.
+- C5-slot re-probe (2026-08-01, turns 50–51): `/tmp/c8slot/server.log` (tool receipts, zero
+  `c5_tool_not_allowed`), `/tmp/c8slot/probe.json`, `/tmp/c8slot/probe2.json`; the durable readiness
+  result artifact is `agent_tool_result.result_artifact_key` for `inspect_readiness_history@1`.
 - Card sizes per turn:
   `SELECT r.created_at, r.artifact_sha256, a.size_bytes FROM agent_artifact_ref r LEFT JOIN artifact a
    ON a.content_sha256 = r.artifact_sha256 AND a.workspace_id = r.workspace_id

@@ -201,7 +201,12 @@ class _Stage0InspectionTool(Tool):
         notes="read-only: the tool appends to neither the statement table nor the readiness ledger",
     )
     effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.READ
-    pin_requirements: ClassVar[tuple[str, ...]] = ()
+    #: The project whose durable history was read. A read is only replay-determined against the
+    #: scope it read, and this is the scope every query here is fail-closed on — so the C5 node
+    #: records it, exactly as the writing Stage-0 tools record theirs. It is also what keeps the
+    #: standing-inventory audit (`recipe_contracts.build_replay_safety_audit`) honest now that
+    #: these two run inside `recipe0-stage0@4`'s interaction slot.
+    pin_requirements: ClassVar[tuple[str, ...]] = ("project",)
 
     #: Cursor kinds this tool can resolve. A cursor from the *other* tool is a typed refusal, never
     #: a silently-ignored position (which would serve page one and look like the end of history).

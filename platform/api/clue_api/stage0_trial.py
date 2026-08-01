@@ -166,6 +166,13 @@ _WORKER_ID = "stage0-trial-cli"
 STAGE0_USER_MESSAGE_BINDING_KIND = "conversation"
 STAGE0_CONTEXT_BINDING_KIND = "context"
 
+#: The exact promoted Recipe-#0 revision this trial runs. Named once because the trial checks it
+#: twice — the checked-in *definition* must be installed, and the *promoted* revision must be the
+#: same number — and because the C5 interaction slot's tool allowlist lives in that revision: a
+#: tool granted on the profile but absent from the pinned revision is rejected at plan validation
+#: (`c5_tool_not_allowed`), so moving the pin is how a new Stage-0 tool becomes callable at all.
+STAGE0_RECIPE_VERSION = 4
+
 
 class Stage0ProductNotConfirmed(ValueError):
     """A human-gated Stage-0 step was attempted before the project's product was confirmed.
@@ -455,8 +462,8 @@ def stage0_trial_recipe_definitions() -> tuple[RecipeDefinition, ...]:
         for definition in load_system_recipe_definitions()
         if definition.recipe_key == "recipe0-stage0"
     )
-    if not any(definition.version == 3 for definition in definitions):
-        raise RuntimeError("recipe0-stage0@3 definition is not installed")
+    if not any(definition.version == STAGE0_RECIPE_VERSION for definition in definitions):
+        raise RuntimeError(f"recipe0-stage0@{STAGE0_RECIPE_VERSION} definition is not installed")
     return definitions
 
 
@@ -686,7 +693,7 @@ class Stage0Trial:
             artifacts=components.artifacts,
             cards=DbCompiledContextCardReader(conn_factory=conn_factory),
             memory=memory_assembly_factory(resolved_settings, conn_factory),
-            memory_recipe="recipe0-stage0@3",
+            memory_recipe=f"recipe0-stage0@{STAGE0_RECIPE_VERSION}",
             requested_memory_types=(
                 MemoryType.PREFERENCE,
                 MemoryType.BEHAVIORAL_LEARNING,
@@ -784,10 +791,10 @@ class Stage0Trial:
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
             recipe_key="recipe0-stage0",
-            version=3,
+            version=STAGE0_RECIPE_VERSION,
         )
         if revision is None:
-            raise RuntimeError("promoted recipe0-stage0@3 is not installed")
+            raise RuntimeError(f"promoted recipe0-stage0@{STAGE0_RECIPE_VERSION} is not installed")
         parameter_key, parameter_sha = await self._parameters.snapshot(
             workspace_id=self.state.workspace_id,
             parameters={},
@@ -1601,6 +1608,7 @@ class Stage0Trial:
 __all__ = [
     "NO_ROUTING_RECEIPT",
     "STAGE0_CONTEXT_BINDING_KIND",
+    "STAGE0_RECIPE_VERSION",
     "STAGE0_USER_MESSAGE_BINDING_KIND",
     "Stage0IcpSynthesis",
     "Stage0ProductNotConfirmed",

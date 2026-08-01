@@ -24,6 +24,11 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "propose_field@1",
     "propose_source@1",
     "submit_ingestion@1",
+    # PC-C8 §7 (recipe0-stage0@4): the two bounded read-only history tools. A tool the card's
+    # omission cursors resolve through has to be runnable in the Stage-0 interaction slot, and
+    # anything in that slot is certified here first.
+    "inspect_statement_history@1",
+    "inspect_readiness_history@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
