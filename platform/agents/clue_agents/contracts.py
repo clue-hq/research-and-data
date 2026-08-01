@@ -126,9 +126,9 @@ _SOURCE_EXTENSIONS = {
     ".ts",
     ".tsx",
 }
-#: Trusted authority a model may never supply. These names are stripped from every model-visible
-#: tool schema and rejected in plan arguments; a tool that declares one is served the value from
-#: the :class:`AgentConstitution` at the execution seam.
+#: Trusted authority a model may never supply. These names are stripped from the **top level** of
+#: every model-visible tool schema and rejected in top-level plan arguments; a tool that declares
+#: one there is served the value from the :class:`AgentConstitution` at the execution seam.
 #:
 #: The set is keyed by *name*, not per tool, because each name means exactly one thing everywhere
 #: it appears: the scope of the execution this constitution governs. ``brand_id`` and
@@ -139,6 +139,18 @@ _SOURCE_EXTENSIONS = {
 #: ids. Per-turn authority, which is *not* stable for an execution and *is* legitimately
 #: model-authored on other tools, is marked per input model instead
 #: (``clue_api.turn_binding.TRUSTED_TURN_FIELD``).
+#:
+#: **Top-level only, and there are live exceptions.** ``_with_trusted_runtime`` deletes fields from
+#: the input model itself, so a name nested inside a sub-model is neither hidden nor injected. Three
+#: granted tools still expose one a level down: ``propose_field``/``propose_source`` via
+#: ``ProposalScopeInput`` (``scope.brand_id``, ``scope.project_id``) and ``submit_ingestion`` via
+#: ``DeclaredMaterialContext`` (``declared_context.brand_id``, ``declared_context.project_id``).
+#: The model authors those. They are not accepted blind — the proposal tools refuse an unknown
+#: scope in ``preconditions`` (``proposal_scope_not_found``) and ingestion is fenced by the
+#: ``ingestion_job`` composite workspace FKs — but a *wrong yet existing* sibling scope in the same
+#: workspace is reachable there in a way it is not at the top level. The guarantee this set makes
+#: is therefore "not at the top level", not "nowhere". Recursing the strip (and the matching nested
+#: injection) is PC-C8 task 1.4's, with the schema bump it forces.
 MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
         "actor_id",

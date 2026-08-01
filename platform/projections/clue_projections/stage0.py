@@ -370,12 +370,28 @@ class StatementEvidenceReader(Protocol):
 
 
 class Stage0CardProject(BaseModel):
+    """The project this turn is about, including the client entity its claims are keyed on.
+
+    ``client_entity_id`` is here for one concrete reason (PC-C8 §8, v2.2): a ``claim``-route
+    statement is refused without an ``entity_id`` (``InterviewStatement._route_shape``), and after
+    the task-1.3 delta the card is the *only* place the model can read the client's entity id — the
+    tool field became engine-injected authority and the stage snapshot that used to state it was
+    deleted. Without it the model must either skip claim routing or invent a UUID.
+
+    Showing an id is not authorizing it: the id is trusted-but-visible scope, the way
+    ``project_id``/``brand_id`` already are. Task 1.4 moves the *authorship* engine-side (defaulting
+    ``entity_id`` from the constitution and existence-checking it), after which this field is
+    orientation rather than a load-bearing input — kept either way, because a model reasoning about
+    "facts about the client" should be able to name what the client is.
+    """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     project_id: str
     name: str
     workspace_id: str
     brand_id: str
+    client_entity_id: str
 
 
 class Stage0CardProduct(BaseModel):
@@ -551,6 +567,15 @@ class Stage0ProjectCard(BaseModel):
     therefore produce byte-identical bytes and the same sha256 — content-addressed dedup and
     deterministic context receipts. Turn identity is deliberately *not* in the card (spec §2/§6),
     which is what makes that reuse real across turns.
+
+    **``schema_version`` policy.** It stays ``"1"`` while the card only *grows* fields, because
+    nothing reads the card by schema version yet: the sole consumers are the L3 assembler (which
+    hands the bytes to a model) and this module's own validation, and a model reading one more
+    key needs no migration. ``project.client_entity_id`` (PC-C8 §8 v2.2) is such a growth. Bump it
+    when a field is removed, renamed, or changes meaning — an omission or a re-typed value is what
+    would actually break a reader. Either way the bytes change, so the content address changes and
+    a stale card is never mistaken for a current one; ``compiler_policy_version`` covers *bound*
+    changes on the same schema.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -1185,6 +1210,9 @@ async def compile_stage0_project_card(
         name=str(project["name"]),
         workspace_id=workspace_id,
         brand_id=str(project["brand_id"]),
+        # The same id the Client-KB read above is scoped to, so the card cannot show the model an
+        # entity its own claims section was not compiled against.
+        client_entity_id=str(client_entity_id),
     )
     card_product = Stage0CardProduct(
         product_id=confirmed_product_id or kb_product_id,

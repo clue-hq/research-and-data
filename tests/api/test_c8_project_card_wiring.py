@@ -21,34 +21,45 @@ rollback-only transaction per scenario, and ``pytest.skip`` when no database is 
 from __future__ import annotations
 
 import inspect
+import json
 import os
 import subprocess
 import sys
 import textwrap
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from uuid import uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import AgentRole
-from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
+from clue_agents.contracts import MODEL_FORBIDDEN_AUTHORITY_KEYS
+from clue_api.account_research_turn_wiring import (
+    DbCompiledContextCardReader,
+    account_research_card_payload,
+)
+from clue_api.agent_execution_wiring import _trusted_tool_arguments
 from clue_api.agent_platform_wiring import build_agent_context_assembler
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
 from clue_api.stage0_trial import Stage0Trial, Stage0TrialPaths, stage0_trial_context_policy
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import AccountStatus, MemoryType
+from clue_core import AccountStatus, EntityId, EntityType, MemoryType, ProjectRunId, RunId
 from clue_db import db_lifespan
 from clue_projections import STAGE0_PROJECT_CARD_MEDIA_TYPE, Stage0ProjectCard
+from clue_research.durable import ResearchPlan
 from clue_research.identity import insert_account_entity
-from clue_spine import create_brand, create_product, create_project, create_workspace
+from clue_research.stage0 import InterviewRoute, InterviewStatement
+from clue_spine import Project, create_brand, create_product, create_project, create_workspace
 from clue_storage import FsStorage
+from tests.agents.conftest import constitution
 from tests.api.test_c8_slice0_evidence import (
     _ANSWER,
     _NoMemory,
@@ -328,6 +339,157 @@ def test_one_turn_journals_one_project_card_ref_and_no_retired_snapshot_roles(
     run_async(scenario())
 
 
+def test_a_claim_route_statement_can_be_authored_from_what_the_card_shows(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """The B1 regression: the card is the model's only remaining source for the client entity id.
+
+    ``InterviewStatement._route_shape`` refuses a ``claim`` route without ``entity_id``, and task
+    1.3 closed both channels that used to carry it — the tool field became engine-injected
+    authority, and the stage snapshot that stated "use the supplied client entity id" was deleted
+    with its artifact. If the card does not show it, every claim-route statement either fails
+    validation into the ``NO_ROUTING_RECEIPT`` loop or carries an invented UUID.
+
+    So this reads the id *out of the card* and authors a statement with it, rather than reaching
+    for ``trial.state``: taking it from the card is the whole point, and a test that used the
+    state directly would still pass with the field missing.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"claim-{uuid4().hex[:8]}") as (
+            trial,
+            _conn,
+            artifacts,
+            _factory,
+        ):
+            card_ref = await trial._project_card_ref()
+            card = Stage0ProjectCard.model_validate_json(await artifacts.read(card_ref))
+
+            shown = card.project.client_entity_id
+            assert shown == str(trial.state.client_entity_id)
+
+            statement = InterviewStatement(
+                route=InterviewRoute.CLAIM,
+                route_key="client.product.description",
+                quote_start=0,
+                quote_end=len(_ANSWER),
+                entity_id=EntityId(UUID(shown)),
+                entity_type=EntityType.ACCOUNT,
+                field_key="client.product.description",
+                value=_ANSWER,
+            )
+            assert str(statement.entity_id) == shown
+
+            # And the negative: the same statement without an entity id is refused, which is what
+            # makes the card field load-bearing rather than decorative.
+            with pytest.raises(ValidationError, match="claim route requires entity_id"):
+                InterviewStatement(
+                    route=InterviewRoute.CLAIM,
+                    route_key="client.product.description",
+                    quote_start=0,
+                    quote_end=len(_ANSWER),
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="client.product.description",
+                    value=_ANSWER,
+                )
+
+    run_async(scenario())
+
+
+def test_the_account_research_card_still_names_the_project_the_run_belongs_to() -> None:
+    """M2: the other surface lost `ProjectLayerSource`'s project row too, so its card carries it.
+
+    "The card subsumes the compiled project row" is only true of a card that describes the
+    project. This one describes a *plan for one account*; without the ``project`` block the model
+    would be constitution-scoped to a `project_id` with nothing in context naming it.
+    """
+
+    project = Project(
+        project_id="project-ac",
+        workspace_id="ws-ac",
+        brand_id="brand-ac",
+        product_id="product-ac",
+        name="Neurosurgery Q3",
+        status="active",
+        created_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    payload = account_research_card_payload(
+        workspace_id="ws-ac",
+        project=project,
+        project_run_id=ProjectRunId(uuid5(NAMESPACE_URL, "c8-m2-project-run")),
+        account_run_id=RunId(uuid5(NAMESPACE_URL, "c8-m2-account-run")),
+        account_entity_id=EntityId(uuid5(NAMESPACE_URL, "c8-m2-account")),
+        account_run_status="running",
+        tier="tier_1",
+        plan=ResearchPlan(tier="tier_1", aspects=()),
+    )
+
+    assert payload["project"] == {
+        "project_id": "project-ac",
+        "name": "Neurosurgery Q3",
+        "status": "active",
+        "workspace_id": "ws-ac",
+        "brand_id": "brand-ac",
+        "product_id": "product-ac",
+    }
+    # The merged pair is still one card, and it kept both halves of what it replaced.
+    assert payload["card_kind"] == "account_research"
+    assert payload["tier"] == "tier_1"
+    assert isinstance(payload["admission"], dict)
+    assert payload["admission"]["account_run_status"] == "running"
+    assert "plan" in payload
+    # It is JSON, and small: this surface never had the Stage-0 growth problem and must not gain
+    # one by merging.
+    assert len(json.dumps(payload).encode()) < 4_000
+
+
+def test_a_constitution_without_a_client_entity_fails_a_tool_that_needs_one() -> None:
+    """Fail-closed: an absent trusted value is never fabricated, and never silently omitted.
+
+    ``_trusted_authority`` skips a ``None`` rather than injecting it, so a tool whose input model
+    *requires* ``client_entity_id`` (``synthesize_icps``) is refused by its own validator on a
+    surface that has no client entity — account research, for one, which builds a constitution
+    without one. The value can no longer come from the model, so refusing is the only honest
+    outcome; guessing would key claims to the wrong account.
+
+    **What surfaces the refusal today is a bare ``ValidationError``** — the merged arguments are
+    validated at ``executor.py:992`` (``descriptor.input_model.model_validate(inputs)``), not
+    converted into the typed, model-visible plan-issue feedback that
+    ``CapturedTurnUnavailable`` gets (``turn_binding_unavailable``, PC-C8 1.2 review F3). The
+    outcome is identical (nothing runs); the *legibility* is not, and whether this deserves the
+    same typed treatment is a whole-branch call rather than a 1.3 one. Asserted here so the
+    difference is recorded rather than discovered in a live session.
+    """
+
+    registry = build_toolbelt(storage=None, gateway=None)
+    descriptor = registry.descriptor("synthesize_icps", "1")
+    assert "client_entity_id" in MODEL_FORBIDDEN_AUTHORITY_KEYS
+    assert descriptor.input_model.model_fields["client_entity_id"].is_required()
+
+    without_client = constitution(client_entity_id=None)
+    merged = _trusted_tool_arguments(
+        arguments={},
+        input_model=descriptor.input_model,
+        constitution=without_client,
+    )
+    # Not fabricated, not defaulted: simply absent.
+    assert "client_entity_id" not in merged
+    with pytest.raises(ValidationError, match="client_entity_id"):
+        descriptor.input_model.model_validate(merged)
+
+    # The same call on a constitution that *has* one is served without the model saying anything.
+    served = _trusted_tool_arguments(
+        arguments={},
+        input_model=descriptor.input_model,
+        constitution=constitution(client_entity_id="client-1"),
+    )
+    assert served["client_entity_id"] == "client-1"
+
+
 # --- AC-8: byte-identical across a process restart -------------------------------------------
 
 # Deliberately self-contained: it runs in a *fresh interpreter*, so it may not import the test
@@ -352,11 +514,14 @@ _DETERMINISM_SCRIPT = textwrap.dedent(
         StatementRoute, ensure_readiness_spec, evaluate_readiness, record_statement,
         submit_onboarding_input,
     )
-    from clue_spine import create_brand, create_product, create_project, create_workspace
+    from clue_spine import Project, create_brand, create_product, create_project, create_workspace
     from clue_storage import FsStorage
 
-    ROOT = sys.argv[1]
-    WS = "c8-determinism-ws"
+    # The workspace id is per-invocation so parallel runners (xdist, two branches on one dev DB)
+    # cannot collide on it; the *card's* inputs stay fixed, and workspace_id is a card field, so
+    # both processes of one comparison are handed the same suffix by argv.
+    ROOT, SUFFIX = sys.argv[1], sys.argv[2]
+    WS = f"c8-determinism-ws-{SUFFIX}"
     BRAND, PRODUCT, PROJECT = "brand_det", "product_det", "project_det"
     CLIENT = EntityId(uuid5(NAMESPACE_URL, "c8-determinism-client"))
     ANSWER = (
@@ -456,11 +621,12 @@ def test_the_same_durable_state_compiles_the_same_card_in_a_second_process(
         pytest.skip("requires a migrated per-branch Postgres database")
 
     shas: list[str] = []
+    suffix = uuid4().hex[:8]
     for index, seed in enumerate(("0", "424242")):
         root = tmp_path / f"run-{index}"
         root.mkdir()
         result = subprocess.run(  # noqa: S603 - fixed argv, this interpreter
-            [sys.executable, "-c", _DETERMINISM_SCRIPT, str(root)],
+            [sys.executable, "-c", _DETERMINISM_SCRIPT, str(root), suffix],
             capture_output=True,
             text=True,
             timeout=180,

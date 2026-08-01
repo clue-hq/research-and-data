@@ -6,6 +6,8 @@ import json
 from decimal import Decimal
 from uuid import UUID, uuid5
 
+from pydantic import JsonValue
+
 from clue_agents import (
     AgentConstitution,
     AgentExecutionStatus,
@@ -74,6 +76,7 @@ __all__ = [
     "ACCOUNT_RESEARCH_CARD_MEDIA_TYPE",
     "DbCompiledContextCardReader",
     "PreparedAccountResearchTurnRunner",
+    "account_research_card_payload",
     "account_research_context_policy",
     "build_account_research_context",
 ]
@@ -85,6 +88,59 @@ ACCOUNT_RESEARCH_CARD_MEDIA_TYPE = "application/vnd.clue.account-research-card+j
 _EXECUTION_NAMESPACE_KEY = "account-research-unit@1"
 _TURN_NAMESPACE = UUID("85af4b9f-7d41-51ea-a333-7181c4fdb12f")
 _PREPARER_WORKER_ID = "agent-account-research-preparer"
+
+
+def account_research_card_payload(
+    *,
+    workspace_id: str,
+    project: Project,
+    project_run_id: ProjectRunId,
+    account_run_id: RunId,
+    account_entity_id: EntityId,
+    account_run_status: str,
+    tier: str,
+    plan: ResearchPlan,
+) -> dict[str, JsonValue]:
+    """The whole L3 card this surface puts in front of the model (PC-C8 §10).
+
+    One card per surface. The two snapshots it replaced were already small and bounded (a plan and
+    an admission verdict, neither growing with conversation length), so the fix here is the *shape*
+    rule rather than a size fix — same fields, one payload, its own media type. It is deliberately
+    not a ``Stage0ProjectCard``: nothing on this surface has a Stage-0 interview to project.
+
+    The ``project`` block is not decoration. Dropping ``ProjectLayerSource``'s compiled project-row
+    read was justified by "the card subsumes it" — true of the Stage-0 card, which describes the
+    project in detail, and **false here** unless this card names the project the run belongs to.
+    The constitution still sets ``project_id``, so without it the model is scoped to a project it
+    cannot name.
+
+    Pure and separately callable so the payload's shape is testable without standing up a project
+    run, an account run, and a research plan.
+    """
+
+    return {
+        "schema_version": "1",
+        "card_kind": "account_research",
+        "surface": "account_research",
+        "project": {
+            "project_id": project.project_id,
+            "name": project.name,
+            "status": project.status,
+            "workspace_id": workspace_id,
+            "brand_id": project.brand_id,
+            "product_id": project.product_id,
+        },
+        "project_run_id": str(project_run_id),
+        "account_run_id": str(account_run_id),
+        "account_entity_id": str(account_entity_id),
+        "tier": tier,
+        "plan": plan.model_dump(mode="json"),
+        "admission": {
+            "admitted": True,
+            "authority": "deep_phase_account_admission",
+            "account_run_status": account_run_status,
+        },
+    }
 
 
 class _NoMemoryContext:
@@ -284,29 +340,19 @@ class PreparedAccountResearchTurnRunner:
             object_id=str(account_entity_id),
             version=None,
         )
-        # PC-C8 §10: one L3 card per surface. This surface's two snapshots were already small and
-        # bounded (a plan and an admission verdict, neither growing with conversation length), so
-        # the fix here is the *shape* rule, not a size fix — the account-research card carries the
-        # same fields in one payload under its own media type. It is deliberately not a
-        # ``Stage0ProjectCard``: nothing on this surface has a Stage-0 interview to project.
         card_ref = await self._artifact(
             workspace_id,
             ACCOUNT_RESEARCH_CARD_MEDIA_TYPE,
-            {
-                "schema_version": "1",
-                "card_kind": "account_research",
-                "surface": "account_research",
-                "project_run_id": str(project_run_id),
-                "account_run_id": str(account_run_id),
-                "account_entity_id": str(account_entity_id),
-                "tier": tier,
-                "plan": plan.model_dump(mode="json"),
-                "admission": {
-                    "admitted": True,
-                    "authority": "deep_phase_account_admission",
-                    "account_run_status": account_run.status.value,
-                },
-            },
+            account_research_card_payload(
+                workspace_id=workspace_id,
+                project=project,
+                project_run_id=project_run_id,
+                account_run_id=account_run_id,
+                account_entity_id=account_entity_id,
+                account_run_status=account_run.status.value,
+                tier=tier,
+                plan=plan,
+            ),
             account_entity_id,
         )
         budget_limit = _effective_budget_limit(

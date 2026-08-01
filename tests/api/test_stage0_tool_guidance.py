@@ -54,6 +54,19 @@ _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
     # here. Their absence is guarded by test_c8_slice0_evidence.py::
     # test_record_interview_answer_no_longer_lets_the_model_author_the_answer_or_trusted_ids, and
     # the sha equality they used to carry is enforced before injection, engine-side.
+    #
+    # `brand_id` and `client_entity_id` left the model surface the same way in PC-C8 task 1.3, on
+    # every Stage-0 input that declares them — they joined `project_id` in
+    # MODEL_FORBIDDEN_AUTHORITY_KEYS and are served from the AgentConstitution. Same exemption,
+    # same reason: this gate only binds fields the model actually fills. Two consequences worth
+    # naming rather than discovering later:
+    #   * their existing descriptions ("Brand this answer belongs to; it must already exist in
+    #     this workspace") are now dead text — accurate, unread, and part of the pinned
+    #     `input_schema_sha256`, which is why task 1.3 left them and task 1.4's coordinated bump
+    #     rewords them to the "supplied by the platform, never by you" phrasing `project_id` uses;
+    #   * the *client entity id itself* still has to reach the model, because a `claim`-route
+    #     statement is refused without an `entity_id`. Its owner is now the project card's
+    #     `project.client_entity_id` (spec §8, v2.2), not a tool description.
     # skills/stage0-interview: route every substantive turn, unmapped included.
     ("record_interview_answer", ("statements",)): ("unmapped",),
     # interview._exact_quote: offsets index into the platform-loaded captured message.
