@@ -11,7 +11,6 @@ what the user says in the conversation. Exa and website acquisition are separate
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -73,6 +72,7 @@ from clue_api.recipe_wiring import (
     seed_system_recipes,
 )
 from clue_api.run_composition import build_platform_gateway
+from clue_api.statement_evidence import resolve_statement_quotes
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import (
@@ -111,6 +111,7 @@ from clue_execution import (
     RecipeScopeType,
 )
 from clue_fleet import LeaseGeneration, WorkId, acquire_work_lease, release_work_lease
+from clue_projections import ExcludedEvidence
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
@@ -140,7 +141,7 @@ from clue_spine import (
     get_project,
     get_workspace,
 )
-from clue_storage import ArtifactNotFound, StorageBackend, get_artifact
+from clue_storage import StorageBackend
 from clue_toolbelt import DbIdempotencyStore, ToolInvoker, ToolRegistry
 
 _SESSION_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -1148,17 +1149,12 @@ class Stage0Trial:
     async def _project_statements(self, conn: AsyncConnection) -> _ResolvedStatements:
         """Resolve this project's live ``project_state`` statements into synthesis evidence.
 
-        The statement row stores only offsets + a sha256 into its captured onboarding artifact, so
-        the exact quote is sliced from the artifact body and verified against that hash. The two
-        ways that can fail are **not** the same failure:
-
-        * the evidence artifact is **gone** (erased/tombstoned by DSAR, or its row purged) — the
-          statement is simply dropped and its id is surfaced as an exclusion. Erasing one
-          conversation turn must never permanently disable ICP synthesis for the project;
-        * the artifact is present but the span **does not hash to** the recorded quote, or its
-          durable metadata disagrees with the row — that is corruption or tampering, and it raises.
-
-        A cross-workspace artifact reference is a scoping violation, not an erasure: it raises.
+        The slicing, hash verification, workspace scoping and erased-evidence semantics all live in
+        :func:`~clue_api.statement_evidence.resolve_statement_quotes` — the same seam the PC-C8
+        Stage-0 project card reads through. That shared owner is the point: if synthesis resolved
+        quotes here and the card resolved them elsewhere, the model's context and the synthesis
+        prompt could disagree about what a statement says. This method only shapes the shared
+        result into the synthesis input contract.
         """
 
         rows = await read_statements(
@@ -1166,53 +1162,24 @@ class Stage0Trial:
             workspace_id=self.state.workspace_id,
             project_id=self.state.project_id,
         )
-        bodies: dict[str, str] = {}
-        missing_artifacts: set[str] = set()
+        resolutions = await resolve_statement_quotes(
+            conn,
+            self._components.artifacts,
+            workspace_id=self.state.workspace_id,
+            statements=rows,
+        )
+        route_keys = {str(row.id): row.route_key for row in rows}
         statements: list[ProjectStatement] = []
         excluded: list[VolunteeredStatementId] = []
-        for row in rows:
-            if row.artifact_key in missing_artifacts:
-                excluded.append(row.id)
+        for item in resolutions:
+            if isinstance(item, ExcludedEvidence):
+                excluded.append(item.statement_id)
                 continue
-            body = bodies.get(row.artifact_key)
-            if body is None:
-                record = await get_artifact(conn, row.artifact_key)
-                if record is not None and record.workspace_id != self.state.workspace_id:
-                    raise RuntimeError(
-                        f"interview statement {row.id} cites an artifact owned by another workspace"
-                    )
-                if record is None:
-                    missing_artifacts.add(row.artifact_key)
-                    excluded.append(row.id)
-                    continue
-                try:
-                    body = (
-                        await self._components.artifacts.read(
-                            ArtifactRef(
-                                workspace_id=self.state.workspace_id,
-                                artifact_key=row.artifact_key,
-                                sha256=record.content_sha256,
-                                media_type=record.media_type,
-                                byte_count=record.size_bytes,
-                            )
-                        )
-                    ).decode()
-                except ArtifactNotFound:
-                    # Erased or tombstoned evidence: honest-empty, never fatal.
-                    missing_artifacts.add(row.artifact_key)
-                    excluded.append(row.id)
-                    continue
-                bodies[row.artifact_key] = body
-            quote = body[row.quote_start : row.quote_end]
-            if hashlib.sha256(quote.encode()).hexdigest() != row.quote_sha256:
-                raise RuntimeError(
-                    f"interview statement {row.id} does not match its captured evidence quote"
-                )
             statements.append(
                 ProjectStatement(
-                    statement_id=row.id,
-                    route_key=row.route_key,
-                    quote=quote,
+                    statement_id=item.statement_id,
+                    route_key=route_keys[str(item.statement_id)],
+                    quote=item.quote,
                 )
             )
         return _ResolvedStatements(

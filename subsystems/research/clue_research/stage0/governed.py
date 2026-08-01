@@ -1011,6 +1011,38 @@ async def get_readiness_decision(
     return _readiness_row(dict(row)) if row is not None else None
 
 
+async def read_readiness_decisions(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> tuple[ReadinessDecisionRow, ...]:
+    """This project's readiness ledger, oldest first — the append-only decision history.
+
+    The read side of :func:`evaluate_readiness`. Ordered ``(created_at, id)`` so "the latest
+    decision" is a deterministic choice even when two decisions share a timestamp, and so a reader
+    that pages the ledger sees a stable sequence. Every gate and actor is returned: filtering to
+    *authoritative* (``created_by_actor='system'``) or lineage-current rows is a policy the caller
+    applies, not a truth the store hides.
+    """
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_READINESS_COLUMNS} FROM readiness_decision "
+                    "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                    "ORDER BY created_at, id"
+                ),
+                {"workspace_id": workspace_id, "project_id": project_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_readiness_row(dict(row)) for row in rows)
+
+
 async def override_readiness(
     conn: AsyncConnection,
     *,
@@ -1112,6 +1144,7 @@ __all__ = [
     "get_readiness_decision",
     "get_recon",
     "override_readiness",
+    "read_readiness_decisions",
     "read_statements",
     "recon_dedupe_hash",
     "record_statement",
