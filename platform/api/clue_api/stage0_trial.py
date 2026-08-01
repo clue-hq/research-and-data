@@ -72,6 +72,7 @@ from clue_api.recipe_wiring import (
     seed_system_recipes,
 )
 from clue_api.run_composition import build_platform_gateway
+from clue_api.stage0_card_dsar import stage0_card_subject_bindings
 from clue_api.statement_evidence import (
     ArtifactStatementEvidenceReader,
     resolve_statement_quotes,
@@ -1516,7 +1517,15 @@ class Stage0Trial:
             workspace_id=self.state.workspace_id,
             data=card.canonical_bytes(),
             media_type=STAGE0_PROJECT_CARD_MEDIA_TYPE,
-            subject_bindings=((self.state.client_entity_id, STAGE0_CONTEXT_BINDING_KIND),),
+            # PC-C8 §9: the body embeds `quoted_text` — a derived copy of interview personal data
+            # this slice creates — so it is bound to *every statement it quotes*, not only to the
+            # client. Per-source bindings are what make "which card artifacts quote statement X" a
+            # direct query, and therefore what makes erasure of one statement's words reach the
+            # cards that copied them.
+            subject_bindings=stage0_card_subject_bindings(
+                card=card,
+                base=((self.state.client_entity_id, STAGE0_CONTEXT_BINDING_KIND),),
+            ),
         )
 
     async def _artifact(self, media_type: str, payload: object) -> ArtifactRef:
