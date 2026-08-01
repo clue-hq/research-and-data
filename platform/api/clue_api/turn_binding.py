@@ -33,9 +33,13 @@ from clue_agents.contracts import AgentTurnRequest
 from clue_agents.ports import AgentArtifactReader
 from clue_core import OnboardingInputKind
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_research.stage0 import get_onboarding_input_for_artifact
 
+log = get_logger(__name__)
+
 __all__ = [
+    "CAPTURE_NOT_FOUND",
     "TRUSTED_TURN_FIELD",
     "CapturedTurn",
     "CapturedTurnBinder",
@@ -53,8 +57,22 @@ __all__ = [
 TRUSTED_TURN_FIELD = "clue_trusted_turn_field"
 
 
+#: The one reason that is *ordinary*: this surface's turn is simply not a captured onboarding
+#: input. Every other reason is a disagreement between things that should agree, and is logged.
+CAPTURE_NOT_FOUND = "capture_not_found"
+
+
 class CapturedTurnUnavailable(ValueError):
-    """No trustworthy binding exists for this turn, so nothing may be injected from it."""
+    """No trustworthy binding exists for this turn, so nothing may be injected from it.
+
+    ``reason_code`` separates "there is nothing to bind here" (normal on any surface that does not
+    capture onboarding inputs) from an integrity disagreement, so a caller that fails soft can
+    still be loud about the second kind.
+    """
+
+    def __init__(self, message: str, *, reason_code: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 def trusted_turn_fields(model: type[BaseModel]) -> tuple[str, ...]:
@@ -85,7 +103,8 @@ class CapturedTurn(BaseModel):
         if field not in type(self).model_fields:
             raise CapturedTurnUnavailable(
                 f"the captured turn carries no {field!r} to inject; a tool may only bind "
-                f"{sorted(type(self).model_fields)}"
+                f"{sorted(type(self).model_fields)}",
+                reason_code="unbindable_field",
             )
         value = getattr(self, field)
         assert isinstance(value, str | int)
@@ -101,8 +120,14 @@ class CapturedTurnSource(Protocol):
 class CapturedTurnBinder:
     """Compile the captured-turn binding from the turn's own artifact and its capture record.
 
-    The join is definitional rather than passed in: the captured input *is* the onboarding input
-    citing this turn's ``user_message_artifact_ref``. Nothing the model says participates.
+    The join is definitional rather than passed in: the captured input *is* the human-captured
+    onboarding input of this turn's project citing this turn's ``user_message_artifact_ref``.
+    Nothing the model says participates — and, because ``submit_onboarding_input`` is itself a
+    writable tool over a *content-addressed* key, nothing the model *writes* may participate
+    either. Hence ``actor='human'`` and the project scope in the lookup: without them the model
+    could insert a newer ``user_turn`` row citing this turn's artifact (whose key and digest it
+    can see in the L7 envelope) and make itself the selected capture record, and two projects in
+    one workspace whose users both answer "confirm" would cross-select each other's turns.
     """
 
     def __init__(
@@ -111,17 +136,20 @@ class CapturedTurnBinder:
         artifacts: AgentArtifactReader,
         conn_factory: ConnFactory = transaction,
         kind: OnboardingInputKind = OnboardingInputKind.USER_TURN,
+        actor: str = "human",
     ) -> None:
         self._artifacts = artifacts
         self._conn_factory = conn_factory
         self._kind = kind
-        self._cache: dict[tuple[str, str], CapturedTurn] = {}
+        self._actor = actor
+        self._cache: dict[tuple[str, str, str], CapturedTurn] = {}
 
     async def bind(self, request: AgentTurnRequest) -> CapturedTurn:
         """Resolve the binding or refuse; every consistency rule here is fail-closed."""
 
         ref = request.user_message_artifact_ref
-        cache_key = (ref.workspace_id, ref.artifact_key)
+        project_id = request.constitution.project_id
+        cache_key = (ref.workspace_id, project_id, ref.artifact_key)
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached
@@ -129,28 +157,34 @@ class CapturedTurnBinder:
         digest = hashlib.sha256(body).hexdigest()
         if digest != ref.sha256:
             raise CapturedTurnUnavailable(
-                "the captured turn body does not hash to its own artifact digest"
+                "the captured turn body does not hash to its own artifact digest",
+                reason_code="artifact_digest_mismatch",
             )
         async with self._conn_factory() as conn:
             captured = await get_onboarding_input_for_artifact(
                 conn,
                 workspace_id=ref.workspace_id,
+                project_id=project_id,
                 artifact_key=ref.artifact_key,
+                actor=self._actor,
                 kind=self._kind,
             )
         if captured is None:
             raise CapturedTurnUnavailable(
-                "this turn's message is not a captured onboarding input in this workspace"
+                "this turn's message is not a captured onboarding input of this project",
+                reason_code=CAPTURE_NOT_FOUND,
             )
         if captured.content_sha256 != digest:
             raise CapturedTurnUnavailable(
-                "the captured onboarding input records a different digest than the turn artifact"
+                "the captured onboarding input records a different digest than the turn artifact",
+                reason_code="capture_digest_mismatch",
             )
         try:
             answer = body.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise CapturedTurnUnavailable(
-                "the captured turn body is not valid UTF-8, so quote offsets are meaningless"
+                "the captured turn body is not valid UTF-8, so quote offsets are meaningless",
+                reason_code="capture_not_utf8",
             ) from exc
         binding = CapturedTurn(
             onboarding_input_id=str(captured.id),
@@ -168,11 +202,25 @@ class CapturedTurnBinder:
         Most surfaces (an account-research turn, say) capture no onboarding input, and a turn that
         has none must still assemble. Refusal belongs at the tool seam, where a tool actually needs
         the binding; here the honest answer is simply no envelope.
+
+        Failing *soft* is not the same as failing *silently*. Only ``capture_not_found`` is
+        ordinary; a digest disagreement or an undecodable body means two records that must agree
+        do not, so it is logged as an integrity warning rather than disappearing into a missing
+        envelope.
         """
 
         try:
             return await self.bind(request)
-        except CapturedTurnUnavailable:
+        except CapturedTurnUnavailable as exc:
+            if exc.reason_code != CAPTURE_NOT_FOUND:
+                log.warning(
+                    "stage0.captured_turn.unavailable",
+                    reason_code=exc.reason_code,
+                    workspace_id=request.constitution.workspace_id,
+                    project_id=request.constitution.project_id,
+                    artifact_key=request.user_message_artifact_ref.artifact_key,
+                    detail=str(exc),
+                )
             return None
 
 

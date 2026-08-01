@@ -281,17 +281,29 @@ async def get_onboarding_input_for_artifact(
     conn: AsyncConnection,
     *,
     workspace_id: str,
+    project_id: str,
     artifact_key: str,
+    actor: str,
     kind: OnboardingInputKind | None = None,
 ) -> OnboardingInputRow | None:
-    """Return the newest captured input in this workspace citing exactly this artifact.
+    """Return the newest capture record for exactly this artifact, in this project, by this actor.
 
-    The artifact is content-addressed, so two turns carrying byte-identical text legitimately
-    capture two inputs against one key. The newest row is the one the current turn just wrote
-    (capture precedes use), and every candidate carries the same immutable
-    ``artifact_key``/``content_sha256`` pair, so the choice can never change which bytes a caller
-    is handed — only which durable capture record they are attributed to. ``id`` breaks a
-    ``created_at`` tie so the answer is deterministic rather than storage-order dependent.
+    Every part of the scope is load-bearing, because an artifact key is *content-addressed* and
+    ``submit_onboarding_input`` is a writable tool: a caller who resolves "which capture is this
+    artifact" on ``(workspace_id, artifact_key)`` alone lets anything that can write an
+    ``onboarding_input`` row decide the answer, simply by writing a newer one.
+
+    * ``project_id`` — two projects in one workspace whose users send a byte-identical short
+      answer ("confirm") share one artifact key. Without this they cross-select, and each other's
+      turns are attributed to the wrong project.
+    * ``actor`` — an agent-written row (``actor='agent'``) must never out-rank the human capture
+      of the turn the agent is answering. Callers resolving a *user turn* pass ``'human'``.
+    * ``kind`` — a ``website``/``upload`` capture of the same bytes is not the user's turn.
+
+    Within that scope the newest row is the one just written (capture precedes use), and every
+    candidate carries the same immutable ``artifact_key``/``content_sha256`` pair, so the choice
+    can never change which bytes a caller is handed. ``id`` breaks a ``created_at`` tie so the
+    answer is deterministic rather than storage-order dependent.
     """
 
     row = (
@@ -299,13 +311,16 @@ async def get_onboarding_input_for_artifact(
             await conn.execute(
                 text(
                     f"SELECT {_ONBOARDING_COLUMNS} FROM onboarding_input "
-                    "WHERE workspace_id = :workspace_id AND artifact_key = :artifact_key "
+                    "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                    "AND artifact_key = :artifact_key AND actor = :actor "
                     "AND (CAST(:kind AS text) IS NULL OR kind = :kind) "
                     "ORDER BY created_at DESC, id DESC LIMIT 1"
                 ),
                 {
                     "workspace_id": workspace_id,
+                    "project_id": project_id,
                     "artifact_key": artifact_key,
+                    "actor": actor,
                     "kind": kind.value if kind is not None else None,
                 },
             )

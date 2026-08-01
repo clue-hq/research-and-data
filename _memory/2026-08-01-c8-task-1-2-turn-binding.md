@@ -103,6 +103,44 @@ fails — it hand-builds a registry pinning an old `evaluate_stage0_readiness` s
 clean tree too). `uv run mypy` clean (455 files), `uv run lint-imports` 24/24, ruff clean on every
 touched file.
 
+## Security-review follow-up (second commit)
+
+Reviewed APPROVED-WITH-MINORS. F2 (stale `stage0_trial.py` prose) belongs to 1.3 — untouched.
+
+- **F1 (required) — the capture lookup was model-influenceable.** `get_onboarding_input_for_artifact`
+  selected newest-first over `(workspace_id, artifact_key, kind)` only. `submit_onboarding_input`
+  is on the agent's granted surface, its `content_sha256` is never verified against the artifact,
+  the key is content-addressed, and the L7 envelope hands the model that exact key+sha — so the
+  model could insert a newer `user_turn` row citing this turn's artifact and become the selected
+  capture record (self-chosen attribution; also an unrepairable `Stage0RoutingReceiptGuard` loop).
+  Two projects sharing a byte-identical short answer could likewise cross-select. Fixed: the query
+  now also scopes by `project_id` (threaded from `request.constitution.project_id`) and
+  `actor` (binder passes `'human'`; agent rows are `'agent'`). The binder cache key gained
+  `project_id`.
+- **F3 — honest failure attribution.** `CapturedTurnUnavailable` now raises a distinct
+  `turn_binding_unavailable` plan issue located at `plan.steps[n]` (not `.arguments`), so an
+  engine-side binding failure is no longer blamed on model arguments it cannot repair. Same
+  fail-closed outcome.
+- **F4 — the offset matrix now discriminates.** Added a governed call quoting `"administrators"`,
+  which starts after the astral emoji; a byte-offset reading yields `"d the administ"`, and the
+  test asserts the durable `quote_sha256` matches the character slice and *not* the byte slice.
+- **F5 — silent seams.** `CapturedTurnUnavailable` carries a `reason_code`; `describe()` logs a
+  structured `stage0.captured_turn.unavailable` warning for every reason except the ordinary
+  `capture_not_found`. Both binder construction sites carry a comment noting they are independent
+  instances with independent caches (consolidation is 1.3's wiring call). Removed
+  `onboarding_input_id`/`artifact_key` from `RecordInterviewAnswerTool.parameter_policy.
+  safe_display_fields` (a journal display summarises what the *caller* chose; the turn identity is
+  no longer chosen). None of this touches `input_schema_sha256`, so **no further catalog bump**.
+
+New tests: `test_a_row_the_model_could_write_cannot_become_this_turns_capture_record`,
+`test_two_projects_answering_identically_each_bind_their_own_capture_record` (both plant a
+`ffffffff-…` capture id that would win the `id DESC` tie-break — rows in one transaction share
+`created_at` — so they genuinely discriminate),
+`test_a_governed_quote_after_a_multi_byte_character_lands_the_characters_not_the_bytes`,
+`test_an_integrity_disagreement_fails_soft_at_l7_but_never_silently`, and case (3) of
+`test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins` (asserts the
+`turn_binding_unavailable` code and that no issue location ends in `.arguments`).
+
 Pre-existing failures NOT caused here (verified by stashing): the above delegation test;
 `tests/memory/test_memory_offline.py`; `tests/resolvers/test_static.py` secret-scanner;
 `tests/execution/test_recipes.py` + `test_recipe1_cutover.py` (shared-DB recipe version conflicts);

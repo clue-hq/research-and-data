@@ -882,11 +882,13 @@ class RecordInterviewAnswerTool(_Stage0Tool):
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
     )
     effect_class = ToolEffectClass.SPEND
+    # The turn-authority fields are deliberately absent: a journal display is a summary of what
+    # the *caller* asked for, and since PC-C8 §6a nothing about the turn's identity is asked for —
+    # it is served from the binding. The durable receipt still carries them in the full validated
+    # body; they just stop being displayed as if the caller had chosen them.
     parameter_policy = JournalParameterPolicy(
         safe_display_fields=(
             "brand_id",
-            "onboarding_input_id",
-            "artifact_key",
             "client_entity_id",
             "product_id",
             "project_id",

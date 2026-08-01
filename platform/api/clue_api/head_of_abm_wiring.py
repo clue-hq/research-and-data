@@ -99,7 +99,9 @@ def build_head_of_abm_stage0_execution(
         ),
         # PC-C8 §6a: the captured turn is derived here, from the request's own artifact and its
         # capture record, so no caller has to hand the engine a turn-shaped argument it could get
-        # wrong — and so the model can never author one.
+        # wrong — and so the model can never author one. This binder is independent of L7's
+        # (``agent_platform_wiring``), cache included; both derive the same binding from durable
+        # state, so they cannot disagree. Sharing one instance is task 1.3's wiring call.
         captured_turn=RequestCapturedTurn(
             binder=CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
             request=request,
