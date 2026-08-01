@@ -57,6 +57,7 @@ from clue_projections.stage0 import (
     Stage0CardOmission,
     Stage0CardOmissionKind,
     Stage0CardPolicy,
+    Stage0CardTooLarge,
     Stage0ProjectCard,
     compile_stage0_project_card,
     decode_card_cursor,
@@ -263,6 +264,7 @@ async def _record_decision(
     gate: ReadinessGate = ReadinessGate.ICP_SYNTHESIS,
     client_kb_version: int | None = None,
     actor: str = "system",
+    metrics: dict[str, object] | None = None,
 ) -> ReadinessDecisionId:
     ref = await evaluate_readiness(
         conn,
@@ -276,7 +278,7 @@ async def _record_decision(
         ),
         gate=gate,
         spec=DEFAULT_STAGE0_POLICY.readiness,
-        metrics={"project_state_statements": index, "verified_claims": 0},
+        metrics=metrics or {"project_state_statements": index, "verified_claims": 0},  # type: ignore[arg-type]
         created_by_actor=actor,
         readiness_decision_id=ReadinessDecisionId(
             uuid5(NAMESPACE_URL, f"c8-card:{scope.project_id}:readiness:{gate.value}:{index}")
@@ -590,6 +592,159 @@ def test_the_omission_list_itself_collapses_when_it_overflows() -> None:
     run_async(_run())
 
 
+def test_oversized_readiness_evidence_cannot_starve_the_interview_section() -> None:
+    """Readiness evidence is bounded *before* the fit loop, so it sheds itself and not the words.
+
+    Without the per-gate cap the shed order inverts: three gates carrying 6 KB of caller-supplied
+    metrics each consume the whole card budget, the fit loop drops every statement, and the model
+    is handed a zero-quote card — the exact unreadable-context defect this slice exists to fix.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            scope = await _seed_scope(conn, suffix=f"rdyb{uuid4().hex[:6]}")
+            for index in range(10):
+                await _record_turn(conn, scope, index=index, route_key=f"route_{index}")
+            for gate in ReadinessGate:
+                await _record_decision(
+                    conn,
+                    scope,
+                    index=0,
+                    gate=gate,
+                    metrics={
+                        "coverage_ratio": 0.5,
+                        "verified_claims": 2,
+                        "project_state_statements": 10,
+                        # a caller-supplied blob an unbounded card would happily serialize
+                        "diagnostic_trace": ["t" * 100] * 60,
+                    },
+                )
+
+            card = await _compile(conn, scope)
+
+            assert len(card.readiness.latest_by_gate) == 3
+            for entry in card.readiness.latest_by_gate:
+                evidence_bytes = len(
+                    json.dumps(
+                        {"metrics": entry.metrics, "reason_codes": list(entry.reason_codes)},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode()
+                )
+                assert evidence_bytes <= STAGE0_CARD_POLICY_V1.max_gate_evidence_bytes
+                assert entry.evidence_truncated is True
+                # the load-bearing summary keys survive; only the blob is dropped
+                assert entry.metrics["coverage_ratio"] == 0.5
+                assert entry.metrics["project_state_statements"] == 10
+                assert "diagnostic_trace" not in entry.metrics
+            # and the interview section is intact: the words were never the thing to shed
+            assert card.interview.selection.included == 10
+            assert len(card.canonical_bytes()) <= STAGE0_CARD_POLICY_V1.max_card_bytes
+
+    run_async(_run())
+
+
+def test_the_whole_card_fit_loop_sheds_beyond_what_the_per_dimension_caps_allow() -> None:
+    """The fit loop is load-bearing, not decorative: it cuts where the §3.1 caps alone would not.
+
+    Every per-dimension cap here is satisfied by all 40 statements (40 ≤ ``max_statements``, and
+    40 × 400 B of quotes is inside the 16,000 B aggregate), so anything shed is shed by the
+    whole-card loop. Deleting that loop makes this fixture fail rather than quietly pass.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            scope = await _seed_scope(conn, suffix=f"fit{uuid4().hex[:6]}")
+            for index in range(40):
+                await _record_turn(conn, scope, index=index, route_key=f"route_{index}")
+            policy = STAGE0_CARD_POLICY_V1.model_copy(
+                update={"version": "test-fit-v1", "max_card_bytes": 8_000}
+            )
+            quote = "q" * 400
+            card = await _compile(conn, scope, evidence=_FakeEvidence(default=quote), policy=policy)
+
+            per_dimension_allowance = min(
+                policy.max_statements, policy.max_quote_total_bytes // len(quote.encode())
+            )
+            assert per_dimension_allowance == 40  # the caps alone would admit every statement
+            assert 0 < card.interview.selection.included < per_dimension_allowance
+            assert len(card.canonical_bytes()) <= 8_000
+            over_cap = _omission(card, Stage0CardOmissionKind.STATEMENTS_OVER_CAP)
+            assert over_cap is not None
+            assert over_cap.count == 40 - card.interview.selection.included
+
+    run_async(_run())
+
+
+def test_the_fit_loop_sheds_client_knowledge_once_it_runs_out_of_statements() -> None:
+    """The second shed step: statements go first, Client-KB briefs only after they are exhausted.
+
+    Statements are what the model cannot reconstruct; a KB brief always has its ``claim_id`` beside
+    it, so it is the cheaper thing to lose. The target size is measured from an unbounded compile
+    so the fixture cannot drift into asserting nothing.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            scope = await _seed_scope(
+                conn,
+                suffix=f"kbshed{uuid4().hex[:6]}",
+                materials=(
+                    VolunteeredMaterial(
+                        kind="deck",
+                        label="pitch.pdf",
+                        content="Everything about Aura.",
+                        asserted_fields=dict.fromkeys(CLIENT_KNOWLEDGE_FIELDS, "v" * 1_000),
+                    ),
+                ),
+            )
+            await _record_turn(conn, scope, index=0)
+            unbounded = await _compile(
+                conn,
+                scope,
+                policy=STAGE0_CARD_POLICY_V1.model_copy(
+                    update={"version": "test-kbshed-full", "max_card_bytes": 1_000_000}
+                ),
+            )
+            assert unbounded.client_knowledge.known_fields
+            target = len(unbounded.canonical_bytes()) - 500
+
+            card = await _compile(
+                conn,
+                scope,
+                policy=STAGE0_CARD_POLICY_V1.model_copy(
+                    update={"version": "test-kbshed-v1", "max_card_bytes": target}
+                ),
+            )
+
+            assert card.interview.current_effective_statements == ()  # statements shed first
+            assert len(card.client_knowledge.known_fields) < len(
+                unbounded.client_knowledge.known_fields
+            )
+            assert _omission(card, Stage0CardOmissionKind.CLIENT_KNOWLEDGE_OVER_CAP) is not None
+            assert len(card.canonical_bytes()) <= target
+
+    run_async(_run())
+
+
+def test_a_policy_whose_unsheddable_sections_exceed_the_cap_raises() -> None:
+    """The genuine-bug backstop. Not reachable by a conversation — only by a broken policy."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            scope = await _seed_scope(conn, suffix=f"toobig{uuid4().hex[:6]}")
+            await _record_turn(conn, scope, index=0)
+            policy = STAGE0_CARD_POLICY_V1.model_copy(
+                update={"version": "test-toobig-v1", "max_card_bytes": 10}
+            )
+
+            with pytest.raises(Stage0CardTooLarge, match="nothing left to drop"):
+                await _compile(conn, scope, policy=policy)
+
+    run_async(_run())
+
+
 # --- selection order ---------------------------------------------------------
 
 
@@ -620,8 +775,15 @@ def test_selection_dedups_then_keeps_the_newest() -> None:
             )
             card = await _compile(conn, scope, evidence=_FakeEvidence(quotes=quotes), policy=policy)
 
-            assert card.interview.selection.order == STATEMENT_SELECTION_ORDER
-            assert card.interview.selection.total_effective == 4  # the duplicate collapsed
+            selection = card.interview.selection
+            assert selection.order == STATEMENT_SELECTION_ORDER
+            assert selection.total_effective == 4  # the duplicate collapsed
+            assert selection.deduped_count == 1
+            # every reduction between the durable rows and the shown ones is accounted for, so
+            # the collapsed duplicate cannot quietly vanish from the card's own arithmetic
+            over_cap = _omission(card, Stage0CardOmissionKind.STATEMENTS_OVER_CAP)
+            assert over_cap is not None
+            assert selection.included + over_cap.count + selection.deduped_count == len(rows)
             assert [item.quoted_text for item in card.interview.current_effective_statements] == [
                 "fourth",
                 "third",
