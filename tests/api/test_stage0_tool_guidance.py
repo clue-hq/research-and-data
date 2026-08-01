@@ -58,15 +58,23 @@ _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
     # `brand_id` and `client_entity_id` left the model surface the same way in PC-C8 task 1.3, on
     # every Stage-0 input that declares them — they joined `project_id` in
     # MODEL_FORBIDDEN_AUTHORITY_KEYS and are served from the AgentConstitution. Same exemption,
-    # same reason: this gate only binds fields the model actually fills. Two consequences worth
-    # naming rather than discovering later:
-    #   * their existing descriptions ("Brand this answer belongs to; it must already exist in
-    #     this workspace") are now dead text — accurate, unread, and part of the pinned
-    #     `input_schema_sha256`, which is why task 1.3 left them and task 1.4's coordinated bump
-    #     rewords them to the "supplied by the platform, never by you" phrasing `project_id` uses;
-    #   * the *client entity id itself* still has to reach the model, because a `claim`-route
-    #     statement is refused without an `entity_id`. Its owner is now the project card's
-    #     `project.client_entity_id` (spec §8, v2.2), not a tool description.
+    # same reason: this gate only binds fields the model actually fills. Two consequences, both
+    # now closed by task 1.4's coordinated bump (skill v7 / profile v9):
+    #   * their descriptions were dead text — accurate, unread, and part of the pinned
+    #     `input_schema_sha256`, which is why 1.3 deliberately left them. 1.4 rewrote all eight
+    #     (`brand_id` on submit_onboarding_input/start_recon/record_interview_answer/
+    #     evaluate_stage0_readiness; `client_entity_id` on submit_onboarding_input/
+    #     record_interview_answer/evaluate_stage0_readiness/start_confirmed_project_run) to the
+    #     "supplied by the platform, never by you" phrasing `project_id` always used. The three
+    #     `client_entity_id` declarations with no description at all (confirm_icp,
+    #     import_accounts, synthesize_icps) stay bare — nothing to reword, and adding text would
+    #     move their pinned digests for no model-visible gain.
+    #   * the *client entity id itself* no longer has to reach the model at all. Task 1.3's layer 1
+    #     put it on the project card (`project.client_entity_id`); 1.4's layer 2 removed the need
+    #     — an `account` claim with no `entity_id` is engine-defaulted to the trusted client entity
+    #     (`interview.resolve_claim_entity`), so the card field is now belt-and-braces rather than
+    #     the model's only channel. The `entity_id` row below states the surviving rule: fill it
+    #     only to name a *different*, existing entity.
     # skills/stage0-interview: route every substantive turn, unmapped included.
     ("record_interview_answer", ("statements",)): ("unmapped",),
     # interview._exact_quote: offsets index into the platform-loaded captured message.
@@ -86,7 +94,17 @@ _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
     ),
     # interview.InterviewStatement._route_shape: per-route required fields.
     ("record_interview_answer", ("statements", "route")): ("unmapped",),
-    ("record_interview_answer", ("statements", "entity_id")): ("claim",),
+    # interview.resolve_claim_entity (PC-C8 §8, B1 layer 2): the engine defaults an `account`
+    # claim's entity to the trusted client entity, and refuses a supplied id that resolves to
+    # nothing (`interview_entity_not_found`) instead of silently writing it at a lower tier. Both
+    # halves are stated where the model decides whether to fill the field at all.
+    ("record_interview_answer", ("statements", "entity_id")): (
+        "claim",
+        "leave it out",
+        "already exist",
+        "refused",
+        "contact",
+    ),
     ("record_interview_answer", ("statements", "entity_type")): ("claim",),
     ("record_interview_answer", ("statements", "field_key")): ("claim", "registered"),
     ("record_interview_answer", ("statements", "memory_type")): ("memory",),

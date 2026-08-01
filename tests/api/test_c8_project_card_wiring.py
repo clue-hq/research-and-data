@@ -51,12 +51,31 @@ from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
 from clue_api.stage0_trial import Stage0Trial, Stage0TrialPaths, stage0_trial_context_policy
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import AccountStatus, EntityId, EntityType, MemoryType, ProjectRunId, RunId
+from clue_core import (
+    AccountStatus,
+    EntityId,
+    EntityType,
+    IdentityBinding,
+    MemoryType,
+    OnboardingInputKind,
+    ProjectRunId,
+    RunId,
+    UseClass,
+)
 from clue_db import db_lifespan
 from clue_projections import STAGE0_PROJECT_CARD_MEDIA_TYPE, Stage0ProjectCard
+from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.durable import ResearchPlan
 from clue_research.identity import insert_account_entity
-from clue_research.stage0 import InterviewRoute, InterviewStatement
+from clue_research.stage0 import (
+    InterviewClaimEntityRefused,
+    InterviewRoute,
+    InterviewStatement,
+    load_client_knowledge_pack,
+    route_interview_answer,
+    submit_onboarding_input,
+)
+from clue_research.stage0.fields import CLIENT_PRODUCT
 from clue_spine import Project, create_brand, create_product, create_project, create_workspace
 from clue_storage import FsStorage
 from tests.agents.conftest import constitution
@@ -339,21 +358,23 @@ def test_one_turn_journals_one_project_card_ref_and_no_retired_snapshot_roles(
     run_async(scenario())
 
 
-def test_a_claim_route_statement_can_be_authored_from_what_the_card_shows(
+def test_a_claim_route_statement_from_the_cards_id_lands_as_a_tier_1_claim(
     tmp_path: Path,
     stage0_db_available: bool,
 ) -> None:
-    """The B1 regression: the card is the model's only remaining source for the client entity id.
+    """R1 (PC-C8 §8, B1): the card's id survives the whole real routing path as tier-1 evidence.
 
-    ``InterviewStatement._route_shape`` refuses a ``claim`` route without ``entity_id``, and task
-    1.3 closed both channels that used to carry it — the tool field became engine-injected
-    authority, and the stage snapshot that stated "use the supplied client entity id" was deleted
-    with its artifact. If the card does not show it, every claim-route statement either fails
-    validation into the ``NO_ROUTING_RECEIPT`` loop or carries an invented UUID.
+    Task 1.3 shipped layer 1 — ``Stage0CardProject.client_entity_id``, because 1.3 had closed both
+    other channels (the tool field became engine-injected authority; the stage snapshot that said
+    "use the supplied client entity id" was deleted with its artifact). That only mattered if the
+    id actually *worked*, and the 1.3 test stopped at model construction.
 
-    So this reads the id *out of the card* and authors a statement with it, rather than reaching
-    for ``trial.state``: taking it from the card is the whole point, and a test that used the
-    state directly would still pass with the field missing.
+    This runs it end to end through the production ``route_interview_answer``: read the id out of
+    the card (never out of ``trial.state`` — taking it from the card is the whole point, and a
+    state-sourced test would still pass with the field missing), author a claim statement with it,
+    route it, and read the durable claim back. ``source_tier == 1`` is the assertion that carries
+    the meaning: tier 1 is "the client stating a fact about itself", so it proves the id the card
+    advertised is the same entity the claim store recognised as this project's client.
     """
 
     if not stage0_db_available:
@@ -362,7 +383,7 @@ def test_a_claim_route_statement_can_be_authored_from_what_the_card_shows(
     async def scenario() -> None:
         async with _seeded_trial(tmp_path, slug=f"claim-{uuid4().hex[:8]}") as (
             trial,
-            _conn,
+            conn,
             artifacts,
             _factory,
         ):
@@ -370,34 +391,189 @@ def test_a_claim_route_statement_can_be_authored_from_what_the_card_shows(
             card = Stage0ProjectCard.model_validate_json(await artifacts.read(card_ref))
 
             shown = card.project.client_entity_id
+            assert shown is not None
             assert shown == str(trial.state.client_entity_id)
 
-            statement = InterviewStatement(
-                route=InterviewRoute.CLAIM,
-                route_key="client.product.description",
-                quote_start=0,
-                quote_end=len(_ANSWER),
-                entity_id=EntityId(UUID(shown)),
-                entity_type=EntityType.ACCOUNT,
-                field_key="client.product.description",
-                value=_ANSWER,
+            await load_client_knowledge_pack(conn)
+            user_ref = await artifacts.persist_body(
+                workspace_id=trial.state.workspace_id,
+                data=_ANSWER.encode(),
+                media_type="text/plain",
             )
-            assert str(statement.entity_id) == shown
+            captured = await submit_onboarding_input(
+                conn,
+                workspace_id=trial.state.workspace_id,
+                brand_id=trial.state.brand_id,
+                product_id=trial.state.product_id,
+                project_id=trial.state.project_id,
+                client_entity_id=EntityId(UUID(shown)),
+                kind=OnboardingInputKind.USER_TURN,
+                artifact_key=user_ref.artifact_key,
+                content_sha256=user_ref.sha256,
+                actor="human",
+            )
+            result = await route_interview_answer(
+                conn,
+                workspace_id=trial.state.workspace_id,
+                brand_id=trial.state.brand_id,
+                product_id=trial.state.product_id,
+                project_id=trial.state.project_id,
+                client_entity_id=EntityId(UUID(shown)),
+                onboarding_input_id=captured.onboarding_input_id,
+                artifact_key=user_ref.artifact_key,
+                answer=_ANSWER,
+                statements=(
+                    InterviewStatement(
+                        route=InterviewRoute.CLAIM,
+                        route_key=CLIENT_PRODUCT,
+                        quote_start=0,
+                        quote_end=len(_ANSWER),
+                        entity_id=EntityId(UUID(shown)),
+                        entity_type=EntityType.ACCOUNT,
+                        field_key=CLIENT_PRODUCT,
+                        value=_ANSWER,
+                    ),
+                ),
+                actor="agent",
+            )
 
-            # And the negative: the same statement without an entity id is refused, which is what
-            # makes the card field load-bearing rather than decorative.
-            with pytest.raises(ValidationError, match="claim route requires entity_id"):
+            assert len(result.claim_refs) == 1
+            written = await claims_by_ids(
+                conn,
+                result.claim_refs,
+                scope=WorkspaceScope.private_for_workspace(trial.state.workspace_id),
+            )
+            claim = written[result.claim_refs[0]]
+            assert str(claim.entity_id) == shown
+            assert claim.source_tier == 1
+
+    run_async(scenario())
+
+
+def test_an_account_claim_defaults_its_entity_and_an_unknown_one_is_refused(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """B1 layer 2 (PC-C8 §8, v2.2): the engine owns the claim entity, in both directions.
+
+    Two halves of the same ruling, and they are only meaningful together:
+
+    * **Default.** An ``account`` claim with no ``entity_id`` is no longer a validation error — the
+      engine fills in the caller's trusted ``client_entity_id`` and the claim still lands tier 1.
+      So the model does not have to carry the id at all, which is the actual fix for B1.
+    * **Refusal.** A supplied id that resolves to nothing is refused with
+      ``interview_entity_not_found`` and writes nothing. The old behaviour accepted any well-formed
+      UUID and expressed its doubt as a *silent* tier-3 downgrade — a durable claim about an entity
+      that does not exist. Without this half, the default above would just be a nicer way to reach
+      the same hole.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"default-{uuid4().hex[:8]}") as (
+            trial,
+            conn,
+            artifacts,
+            _factory,
+        ):
+            await load_client_knowledge_pack(conn)
+            user_ref = await artifacts.persist_body(
+                workspace_id=trial.state.workspace_id,
+                data=_ANSWER.encode(),
+                media_type="text/plain",
+            )
+            captured = await submit_onboarding_input(
+                conn,
+                workspace_id=trial.state.workspace_id,
+                brand_id=trial.state.brand_id,
+                product_id=trial.state.product_id,
+                project_id=trial.state.project_id,
+                client_entity_id=EntityId(trial.state.client_entity_id),
+                kind=OnboardingInputKind.USER_TURN,
+                artifact_key=user_ref.artifact_key,
+                content_sha256=user_ref.sha256,
+                actor="human",
+            )
+
+            async def route(statement: InterviewStatement) -> Any:
+                return await route_interview_answer(
+                    conn,
+                    workspace_id=trial.state.workspace_id,
+                    brand_id=trial.state.brand_id,
+                    product_id=trial.state.product_id,
+                    project_id=trial.state.project_id,
+                    client_entity_id=EntityId(trial.state.client_entity_id),
+                    onboarding_input_id=captured.onboarding_input_id,
+                    artifact_key=user_ref.artifact_key,
+                    answer=_ANSWER,
+                    statements=(statement,),
+                    actor="agent",
+                )
+
+            defaulted = await route(
                 InterviewStatement(
                     route=InterviewRoute.CLAIM,
-                    route_key="client.product.description",
+                    route_key=CLIENT_PRODUCT,
                     quote_start=0,
                     quote_end=len(_ANSWER),
                     entity_type=EntityType.ACCOUNT,
-                    field_key="client.product.description",
+                    field_key=CLIENT_PRODUCT,
                     value=_ANSWER,
+                )
+            )
+            written = await claims_by_ids(
+                conn,
+                defaulted.claim_refs,
+                scope=WorkspaceScope.private_for_workspace(trial.state.workspace_id),
+            )
+            claim = written[defaulted.claim_refs[0]]
+            assert str(claim.entity_id) == str(trial.state.client_entity_id)
+            assert claim.source_tier == 1
+
+            before = await _claim_count(conn, trial.state.workspace_id)
+            with pytest.raises(InterviewClaimEntityRefused) as refused:
+                await route(
+                    InterviewStatement(
+                        route=InterviewRoute.CLAIM,
+                        route_key=CLIENT_PRODUCT,
+                        quote_start=0,
+                        quote_end=len(_ANSWER),
+                        entity_id=EntityId(uuid4()),
+                        entity_type=EntityType.ACCOUNT,
+                        field_key=CLIENT_PRODUCT,
+                        value=_ANSWER,
+                    )
+                )
+            assert refused.value.reason_code == "interview_entity_not_found"
+            assert await _claim_count(conn, trial.state.workspace_id) == before
+
+            # A contact claim has no trusted default — there is no "this project's contact".
+            with pytest.raises(ValidationError, match="contact claim route requires entity_id"):
+                InterviewStatement(
+                    route=InterviewRoute.CLAIM,
+                    route_key="contact.facet.interest",
+                    quote_start=0,
+                    quote_end=len(_ANSWER),
+                    entity_type=EntityType.CONTACT,
+                    field_key="contact.facet.interest",
+                    value=_ANSWER,
+                    identity_binding=IdentityBinding.STRONG,
+                    use_class=UseClass.PROFESSIONAL_PUBLIC,
                 )
 
     run_async(scenario())
+
+
+async def _claim_count(conn: AsyncConnection, workspace_id: str) -> int:
+    total = (
+        await conn.execute(
+            text("SELECT count(*) FROM claim WHERE workspace_id = :workspace"),
+            {"workspace": workspace_id},
+        )
+    ).scalar_one()
+    return int(total)
 
 
 def test_the_account_research_card_still_names_the_project_the_run_belongs_to() -> None:

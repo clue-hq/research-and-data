@@ -67,12 +67,18 @@ def build_head_of_abm_stage0_execution(
     max_fanout: int = 4,
     max_parallelism: int = 4,
     captured_turns: CapturedTurnBinder | None = None,
+    surface: str | None = None,
     crash_hook: AgentExecutionCrashHook = _no_crash,
     conn_factory: ConnFactory = transaction,
 ) -> C5AgentExecutionAdapter:
-    """Build the only C6.5 agent-to-C5 path, including C4-equivalent exact pins."""
+    """Build the only C6.5 agent-to-C5 path, including C4-equivalent exact pins.
 
-    resolved = profiles.resolve(AgentRole.HEAD_OF_ABM)
+    ``surface`` names the declared capability surface this execution runs on (PC-C8 §8). It must
+    match the surface the caller resolved the turn's constitution against, because the effective
+    tool set — the authority the plan is validated against — is narrower on a restricted surface.
+    """
+
+    resolved = profiles.resolve(AgentRole.HEAD_OF_ABM, surface=surface)
     if request.constitution.role is not AgentRole.HEAD_OF_ABM:
         raise ValueError("Stage-0 vertical requires a Head-of-ABM constitution")
     if request.constitution.profile_ref != resolved.profile_ref:
@@ -128,6 +134,7 @@ class HeadOfAbmStage0Runtime:
         materializer: AgentResourceMaterializer | None = None,
         max_runtime_s: float = 300.0,
         max_rounds: int = 24,
+        surface: str | None = None,
         crash_hook: AgentExecutionCrashHook = _no_crash,
         conn_factory: ConnFactory = transaction,
     ) -> None:
@@ -140,6 +147,7 @@ class HeadOfAbmStage0Runtime:
         self._materializer = materializer or AgentResourceMaterializer()
         self._max_runtime_s = max_runtime_s
         self._max_rounds = max_rounds
+        self._surface = surface
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
 
@@ -159,7 +167,7 @@ class HeadOfAbmStage0Runtime:
         captured onboarding input of *this* turn, which only the calling surface knows.
         """
 
-        resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM)
+        resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
         constitution = request.constitution
         if constitution.role is not AgentRole.HEAD_OF_ABM:
             raise ValueError("Stage-0 vertical requires the Head-of-ABM role")
