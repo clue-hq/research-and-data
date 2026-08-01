@@ -128,6 +128,16 @@ class CapturedTurnBinder:
     could insert a newer ``user_turn`` row citing this turn's artifact (whose key and digest it
     can see in the L7 envelope) and make itself the selected capture record, and two projects in
     one workspace whose users both answer "confirm" would cross-select each other's turns.
+
+    **Lifetime the cache must survive.** One binder is built per *trial* and shared by every turn
+    it runs (``stage0_trial``), so the cache exists only to spare the second read of a turn L7
+    already described — it is not a memo of "this project's binding". Its key is therefore the
+    **turn**, never the turn's content: an artifact key is content-addressed, so a user who answers
+    "confirm" twice sends byte-identical bytes under the same key while the capture record — the
+    thing actually being bound — is a new row each time. Keyed on content, turn 2 would silently
+    inherit turn 1's ``onboarding_input_id``: preconditions still pass (same artifact, same
+    digest), the statements land under the *previous* turn's input, and the routing-receipt guard
+    counts zero for this turn and drives an unrepairable repair loop.
     """
 
     def __init__(
@@ -142,14 +152,17 @@ class CapturedTurnBinder:
         self._conn_factory = conn_factory
         self._kind = kind
         self._actor = actor
-        self._cache: dict[tuple[str, str, str], CapturedTurn] = {}
+        self._cache: dict[tuple[str, str, str, str], CapturedTurn] = {}
 
     async def bind(self, request: AgentTurnRequest) -> CapturedTurn:
         """Resolve the binding or refuse; every consistency rule here is fail-closed."""
 
         ref = request.user_message_artifact_ref
         project_id = request.constitution.project_id
-        cache_key = (ref.workspace_id, project_id, ref.artifact_key)
+        # The turn is the cached thing's identity (see the class docstring); the artifact key stays
+        # in the key so a request whose ref moved under a reused turn id misses rather than being
+        # served the previous ref's bytes.
+        cache_key = (ref.workspace_id, project_id, str(request.turn_id), ref.artifact_key)
         cached = self._cache.get(cache_key)
         if cached is not None:
             return cached

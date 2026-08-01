@@ -372,17 +372,19 @@ class StatementEvidenceReader(Protocol):
 class Stage0CardProject(BaseModel):
     """The project this turn is about, including the client entity its claims are keyed on.
 
-    ``client_entity_id`` is here for one concrete reason (PC-C8 §8, v2.2): a ``claim``-route
-    statement is refused without an ``entity_id`` (``InterviewStatement._route_shape``), and after
-    the task-1.3 delta the card is the *only* place the model can read the client's entity id — the
-    tool field became engine-injected authority and the stage snapshot that used to state it was
-    deleted. Without it the model must either skip claim routing or invent a UUID.
+    ``client_entity_id`` is here for orientation (PC-C8 §8, v2.2): after the task-1.3 delta the
+    card is the *only* place the model can read the client's entity id — the tool field became
+    engine-injected authority and the stage snapshot that used to state it was deleted. It is no
+    longer load-bearing for claim routing: an ``account`` claim carrying no ``entity_id`` is
+    engine-defaulted to the trusted ``client_entity_id`` (``route_interview_answer``), and only a
+    ``contact`` claim must still name its entity (``InterviewStatement._route_shape``), because
+    there is no trusted default for a person.
 
     Showing an id is not authorizing it: the id is trusted-but-visible scope, the way
-    ``project_id``/``brand_id`` already are. Task 1.4 moves the *authorship* engine-side (defaulting
-    ``entity_id`` from the constitution and existence-checking it), after which this field is
-    orientation rather than a load-bearing input — kept either way, because a model reasoning about
-    "facts about the client" should be able to name what the client is.
+    ``project_id``/``brand_id`` already are. Task 1.4 moved the *authorship* engine-side (defaulting
+    ``entity_id`` from the constitution and existence-checking it), so this field is orientation
+    rather than a load-bearing input — kept either way, because a model reasoning about "facts
+    about the client" should be able to name what the client is.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
