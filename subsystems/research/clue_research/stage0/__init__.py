@@ -128,10 +128,12 @@ from clue_research.stage0.import_types import (
     UnresolvedRow,
 )
 from clue_research.stage0.interview import (
+    InterviewClaimEntityRefused,
     InterviewRoute,
     InterviewRoutingResult,
     InterviewStatement,
     register_client_interview_source,
+    resolve_claim_entity,
     route_interview_answer,
 )
 from clue_research.stage0.reuse import (
@@ -274,9 +276,11 @@ __all__ = [
     "start_recon",
     "submit_onboarding_input",
     "transition_recon_lane",
+    "InterviewClaimEntityRefused",
     "InterviewRoute",
     "InterviewRoutingResult",
     "InterviewStatement",
     "register_client_interview_source",
+    "resolve_claim_entity",
     "route_interview_answer",
 ]
