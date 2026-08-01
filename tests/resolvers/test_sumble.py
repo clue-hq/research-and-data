@@ -112,6 +112,44 @@ def test_organization_request_is_fixed_and_credit_bounded() -> None:
     ]
 
 
+def test_jobs_request_wraps_the_advanced_query_in_the_v9_query_object() -> None:
+    """``filter.query`` is a ``Query`` object, never the bare advanced-query string.
+
+    The bare string is the live 2026-08-01 drift: v9 answered HTTP 422
+    (``model_attributes_type`` at ``body.filter.query``), so the hiring-velocity field was never
+    resolved at all. ``JobsFilter`` forbids additional properties, so the wrapper is the contract.
+    """
+
+    http = RecordingHttp(_fixture("jobs_engineering.json"))
+    budget = SumbleCreditBudget(maximum=1)
+    snapshot = SumbleClient(
+        api_key=SecretStr("fixture"),
+        budget=budget,
+        http=http,
+        cents_per_credit=Decimal("0.5"),
+    ).engineering_jobs(1726684)
+
+    assert budget.spent == 1
+    assert snapshot.estimated_max_credits == 1
+    assert http.calls == [
+        {
+            "url": f"{SUMBLE_API_BASE}/jobs",
+            "source_key": JOBS_SOURCE_KEY,
+            "method": "POST",
+            "headers": {"Authorization": "Bearer fixture"},
+            "json_body": {
+                "filter": {
+                    "organization_ids": [1726684],
+                    "query": {"query": "job_function EQ 'Software Engineer'"},
+                },
+                "select": {"attributes": []},
+                "limit": 1,
+            },
+            "retries": 0,
+        }
+    ]
+
+
 def test_bounded_request_is_rejected_before_transport_when_cap_is_too_small() -> None:
     http = RecordingHttp(_fixture("organizations_match.json"))
     client = SumbleClient(

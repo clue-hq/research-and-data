@@ -375,10 +375,14 @@ class SumbleClient:
             raise ValueError("Sumble jobs limit must be between 1 and 200")
         # No paid attributes: each returned row costs only its one base credit. ``total`` carries
         # the count matched by the engineering-function filter while ``limit`` bounds paid rows.
+        #
+        # ``filter.query`` is v9's ``Query`` object (``{"query": "<advanced query>"}``), not the
+        # bare string: ``JobsFilter.query`` is ``$ref: Query`` and ``JobsFilter`` forbids additional
+        # properties, so a bare string is rejected HTTP 422 before any job is ever matched.
         body: dict[str, Any] = {
             "filter": {
                 "organization_ids": [organization_id],
-                "query": _ENGINEERING_QUERY,
+                "query": {"query": _ENGINEERING_QUERY},
             },
             "select": {"attributes": []},
             "limit": limit,
