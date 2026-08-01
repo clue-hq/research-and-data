@@ -21,11 +21,14 @@ from clue_api.agent_registry_wiring import (
     STAGE0_CONVERSATION_TRIAL_SURFACE,
     build_agent_profile_registry,
 )
+from clue_api.recipe_wiring import load_system_recipe_definitions
 from clue_api.stage0_inspection_tools import (
     READINESS_CURSOR_KIND,
     STATEMENT_CURSOR_KINDS,
 )
+from clue_api.stage0_trial import STAGE0_RECIPE_VERSION
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_execution import GateNode
 from clue_projections import Stage0CardOmissionKind
 from tests.api.conftest import hermetic_flag_env
 
@@ -110,6 +113,51 @@ def test_a_card_surface_installs_the_tool_for_every_omission_it_can_emit(
     # The manifest is what the constitution pins, so it must agree with the effective tool set —
     # a manifest that omitted the tool would advertise a narrower surface than the model gets.
     assert installed == {pin.name for pin in resolved.resource_manifest.tools}
+
+
+#: The Stage-0 interaction slot: the C5 gate node every agent-planned tool call is appended
+#: beneath, and whose ``dynamic_tool_allowlist`` is the second, independent ceiling on what the
+#: trial can actually run.
+_STAGE0_SLOT_KEY = "stage0_interactions"
+
+
+def test_the_pinned_recipe_revision_allows_every_omission_resolving_tool(
+    registry: AgentProfileRegistry,
+) -> None:
+    """The other half of "installed": a profile grant the pinned C5 slot does not allow is inert.
+
+    Granting the tool on the profile is necessary but not sufficient. A plan step is validated
+    twice — against the resolved profile *and* against the promoted recipe revision's interaction
+    slot (``agent_execution_wiring`` → ``c5_tool_not_allowed``) — so a card can advertise an
+    omission cursor, the profile can install the tool that resolves it, and the call can still be
+    rejected because the pinned revision's ``tool_allowlist`` predates the grant. That is exactly
+    what happened between profile v10 and ``recipe0-stage0@4``: the live trial refused
+    ``inspect_readiness_history@1`` while every profile-level assertion above passed.
+    """
+
+    definition = next(
+        item
+        for item in load_system_recipe_definitions()
+        if item.recipe_key == "recipe0-stage0" and item.version == STAGE0_RECIPE_VERSION
+    )
+    slot = next(node for node in definition.graph.nodes if node.node_key == _STAGE0_SLOT_KEY)
+    assert isinstance(slot, GateNode)
+
+    # Exact addresses, read off the surface's own pins rather than restated: the slot allowlist is
+    # keyed on `name@version`, so a version bump on either side has to meet in the middle here.
+    resolved = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
+    installed = {pin.name: pin.address for pin in resolved.profile.tools}
+    required = sorted(
+        installed[_ACCEPTED_BY[_CURSOR_KIND[kind]]]
+        for kind in Stage0CardOmissionKind
+        if kind not in _UNRESOLVABLE_BY_DESIGN
+    )
+    missing = [address for address in required if address not in slot.dynamic_tool_allowlist]
+    assert missing == []
+    # The graph-wide allowlist is the outer ceiling the slot's own list must sit inside; a slot
+    # entry absent from it fails promotion rather than the turn, but state it here too so the
+    # revision this test reads is the one that could actually promote.
+    assert [item for item in required if item not in definition.graph.tool_allowlist] == []
 
 
 def test_the_self_describing_omission_kind_carries_no_cursor() -> None:
