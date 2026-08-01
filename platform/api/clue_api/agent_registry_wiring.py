@@ -58,6 +58,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.ACCOUNT_RESEARCH,
     ),
     "import_accounts": (),
+    # NOTE (PC-C8 task 1.5): the two bounded Stage-0 inspection tools are registered but granted
+    # on NO profile — task 1.4 is re-versioning the head-of-abm profile in parallel, and a grant
+    # must ride that one coordinated catalog/profile bump. Empty here means "structurally absent
+    # from every current model surface", which is the honest state until then. The grants land in
+    # a post-merge commit against the bumped profile version.
+    "inspect_readiness_history": (),
+    "inspect_statement_history": (),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (AgentRole.RESEARCH,),
