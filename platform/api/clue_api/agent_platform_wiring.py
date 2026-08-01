@@ -41,6 +41,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.deep import ProfileAccountFn
+from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import Secrets, Settings
 from clue_config.gateway import GatewayConfig
 from clue_core import ContextAssembly, MemoryType
@@ -487,7 +488,20 @@ def build_agent_context_assembler(
             ),
             FocusLayerSource(cards),
             HistoryLayerSource(artifacts),
-            TurnLayerSource(artifacts),
+            TurnLayerSource(
+                artifacts,
+                # PC-C8 §6b: L7 names the turn's capture so the model can reference it; a surface
+                # whose turn is not a captured onboarding input simply gets no envelope.
+                # This binder is independent of the one the execution seam builds
+                # (``head_of_abm_wiring``), including its cache — the two resolve the same turn
+                # twice per turn. Harmless (the binding is derived, so both answers agree) and not
+                # worth sharing from here: consolidating means threading one instance through the
+                # trial composition root, which is task 1.3's wiring call, not this seam's.
+                captured_turn=CapturedTurnBinder(
+                    artifacts=artifacts,
+                    conn_factory=conn_factory,
+                ),
+            ),
         ),
         policy=policy,
         receipts=DbAgentContextReceiptStore(conn_factory=conn_factory),

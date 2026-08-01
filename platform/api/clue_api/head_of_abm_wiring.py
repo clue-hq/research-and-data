@@ -31,6 +31,7 @@ from clue_api.agent_runtime_wiring import (
 )
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
 from clue_api.stage0_recipe import Stage0StepPinProvider
+from clue_api.turn_binding import CapturedTurnBinder, RequestCapturedTurn
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 from clue_execution import CompatibilityLoader, RecipeExecutor
@@ -95,6 +96,15 @@ def build_head_of_abm_stage0_execution(
         pin_provider=Stage0StepPinProvider(
             compatibility=compatibility,
             conn_factory=conn_factory,
+        ),
+        # PC-C8 §6a: the captured turn is derived here, from the request's own artifact and its
+        # capture record, so no caller has to hand the engine a turn-shaped argument it could get
+        # wrong — and so the model can never author one. This binder is independent of L7's
+        # (``agent_platform_wiring``), cache included; both derive the same binding from durable
+        # state, so they cannot disagree. Sharing one instance is task 1.3's wiring call.
+        captured_turn=RequestCapturedTurn(
+            binder=CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+            request=request,
         ),
         crash_hook=crash_hook,
         conn_factory=conn_factory,

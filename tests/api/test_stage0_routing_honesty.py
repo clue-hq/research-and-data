@@ -68,6 +68,7 @@ from clue_api.stage0_trial import (
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.trial import spine as spine_module
+from clue_api.turn_binding import CapturedTurn
 from clue_config import Settings
 from clue_core import (
     AccountStatus,
@@ -693,11 +694,10 @@ def _route_call(call_id: str) -> AIMessage:
         tool_calls=[
             {
                 "name": "record_interview_answer",
+                # PC-C8 §6a: the turn's id, artifact key, and captured body are engine-injected,
+                # so a model call that carries them is refused by the schema itself.
                 "args": {
                     "brand_id": "brand-routing",
-                    "onboarding_input_id": "00000000-0000-0000-0000-0000000000a1",
-                    "artifact_key": "ws/abc",
-                    "answer": _ANSWER,
                     "client_entity_id": "00000000-0000-0000-0000-0000000000a2",
                     "statements": [
                         {
@@ -988,6 +988,28 @@ def _ws_constitution(
     )
 
 
+class _BoundTurn:
+    """A stand-in for the production captured-turn binding (PC-C8 §6a).
+
+    These tests exercise *pin derivation over the merged arguments*, so what matters is that the
+    turn's ``artifact_key`` now arrives from the engine rather than from the model. Resolving a
+    real binding is covered end to end in ``tests/api/test_c8_turn_binding.py``; here it would
+    only add a second artifact store to the fixture.
+    """
+
+    def __init__(self, *, onboarding_input_id: str, artifact_key: str, answer: str) -> None:
+        self._binding = CapturedTurn(
+            onboarding_input_id=onboarding_input_id,
+            artifact_key=artifact_key,
+            sha256=hashlib.sha256(answer.encode()).hexdigest(),
+            byte_count=len(answer.encode()),
+            answer=answer,
+        )
+
+    async def captured_turn(self) -> CapturedTurn:
+        return self._binding
+
+
 def _nested_conn_factory(conn: AsyncConnection) -> Any:
     lock = asyncio.Lock()
 
@@ -1164,9 +1186,10 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 user_message_artifact_ref=artifact("user-message.json", workspace_id=workspace_id),
                 requested_at=NOW,
             )
-            # Exactly what the model proposed on the live turn: no ``project_id`` (the governed
-            # wrapper hides it from the model-visible schema), and the interview artifact named
-            # only by key.
+            # Exactly what the model proposes on a live turn: no ``project_id`` and, since PC-C8
+            # §6a, no turn identity or answer body either — the governed wrapper hides all four
+            # from the model-visible schema. The interview artifact is now named by the engine's
+            # captured-turn binding.
             answer_key = make_artifact_key(
                 workspace_id, hashlib.sha256(_ANSWER.encode()).hexdigest()
             )
@@ -1176,9 +1199,6 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 request=request,
                 arguments={
                     "brand_id": brand_id,
-                    "onboarding_input_id": str(onboarding_input_id),
-                    "artifact_key": answer_key,
-                    "answer": _ANSWER,
                     "client_entity_id": str(client),
                     "statements": [
                         {
@@ -1191,6 +1211,9 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 },
             )
             assert "project_id" not in plan.steps[0].arguments
+            assert {"onboarding_input_id", "artifact_key", "answer"}.isdisjoint(
+                plan.steps[0].arguments
+            )
 
             pins = _RecordingPinProvider(
                 Stage0StepPinProvider(
@@ -1216,6 +1239,11 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
                 journal=cast(Any, _PlanJournal()),
                 checkpointer_factory=cast(Any, lambda _: None),
                 pin_provider=cast(Any, pins),
+                captured_turn=_BoundTurn(
+                    onboarding_input_id=str(onboarding_input_id),
+                    artifact_key=answer_key,
+                    answer=_ANSWER,
+                ),
                 conn_factory=_nested_conn_factory(conn),
             )
 
@@ -1225,8 +1253,10 @@ def test_the_agent_path_validates_a_governed_stage0_tool_with_per_turn_pins() ->
             assert validated.operations[0].address == "record_interview_answer@1"
             resolved_pins = adapter._pin_requests[plan.plan_id][plan.steps[0].node_key]
             by_kind = {pin.kind: pin for pin in resolved_pins}
-            # The pin the live rejection named, derived from the model-supplied artifact_key.
+            # The pin the live rejection named — now derived from the engine-injected
+            # artifact_key, which the model neither sees nor sends.
             assert by_kind["artifact_input"].key == answer_key
+            assert pins.seen[0]["artifact_key"] == answer_key
             # ... and the pin that can only come from the MERGED arguments: project_id is
             # authority-injected, absent from the model proposal above.
             assert by_kind["project"].key == project_id
@@ -1271,9 +1301,6 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
             )
             base_arguments = {
                 "brand_id": brand_id,
-                "onboarding_input_id": str(onboarding_input_id),
-                "artifact_key": answer_key,
-                "answer": _ANSWER,
                 "client_entity_id": str(client),
                 "statements": [
                     {
@@ -1285,7 +1312,12 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                 ],
             }
 
-            def _adapter(pin_provider: Any) -> C5AgentExecutionAdapter:
+            def _adapter(
+                pin_provider: Any,
+                *,
+                key: str = answer_key,
+                bound: bool = True,
+            ) -> C5AgentExecutionAdapter:
                 return C5AgentExecutionAdapter(
                     turn_id=request.turn_id,
                     constitution=trusted,
@@ -1304,22 +1336,34 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     journal=cast(Any, _PlanJournal()),
                     checkpointer_factory=cast(Any, lambda _: None),
                     pin_provider=cast(Any, pin_provider),
+                    captured_turn=(
+                        _BoundTurn(
+                            onboarding_input_id=str(onboarding_input_id),
+                            artifact_key=key,
+                            answer=_ANSWER,
+                        )
+                        if bound
+                        else None
+                    ),
                     conn_factory=_nested_conn_factory(conn),
                 )
 
-            # (1) an artifact_key that names nothing in this workspace cannot be pinned.
+            # (1) an artifact_key that names nothing in this workspace cannot be pinned. Since
+            # PC-C8 §6a the key comes from the captured-turn binding, so the unpinnable key is
+            # injected rather than proposed — the rejection shape is unchanged.
             unknown = await _wrapper_built_plan(
                 resolved=resolved,
                 registry=registry,
                 request=request,
-                arguments={**base_arguments, "artifact_key": f"{workspace_id}/{'0' * 64}"},
+                arguments=base_arguments,
             )
             with pytest.raises(AgentPlanRejected, match="pin_resolution_failed"):
                 await _adapter(
                     Stage0StepPinProvider(
                         compatibility=compatibility,
                         conn_factory=_nested_conn_factory(conn),
-                    )
+                    ),
+                    key=f"{workspace_id}/{'0' * 64}",
                 ).validate_plan(plan=unknown, constitution=trusted)
 
             # (2) a resolved pin kind the promoted slot never declared is refused.
@@ -1336,5 +1380,20 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
             )
             with pytest.raises(AgentPlanRejected, match="c5_pin_kind_not_allowed"):
                 await _adapter(_OutOfSlot()).validate_plan(plan=allowed, constitution=trusted)
+
+            # (3) an execution that cannot bind the turn refuses the step — and says so as an
+            # engine-side failure, not as a fault in arguments the model cannot repair.
+            with pytest.raises(AgentPlanRejected) as unbound:
+                await _adapter(
+                    Stage0StepPinProvider(
+                        compatibility=compatibility,
+                        conn_factory=_nested_conn_factory(conn),
+                    ),
+                    bound=False,
+                ).validate_plan(plan=allowed, constitution=trusted)
+            codes = {issue.code for issue in unbound.value.review.issues}
+            assert codes == {"turn_binding_unavailable"}
+            locations = {issue.location for issue in unbound.value.review.issues}
+            assert not any(location.endswith(".arguments") for location in locations)
 
     run_async(scenario())

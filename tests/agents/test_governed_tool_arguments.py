@@ -114,11 +114,18 @@ def _record_interview_answer_tool() -> tuple[Any, _Execution]:
     return tool, execution
 
 
-_INTERVIEW_ARGS: dict[str, Any] = {
-    "brand_id": "brand-1",
+# PC-C8 §6a: the turn's identity and its captured body are engine-injected at the execution seam,
+# so they are absent from what the model sends and from the plan arguments it produces. The tool's
+# own input model still declares them (the recipe path supplies them directly), which is why the
+# executor-revalidation test merges them back in.
+_TURN_AUTHORITY: dict[str, Any] = {
     "onboarding_input_id": "onboarding-input-1",
     "artifact_key": "ws-1/interview-answer.md",
     "answer": "We sell surgical planning software to neurosurgery departments.",
+}
+
+_INTERVIEW_ARGS: dict[str, Any] = {
+    "brand_id": "brand-1",
     "client_entity_id": "entity-client-1",
     "statements": [
         {
@@ -194,9 +201,14 @@ def test_record_interview_answer_plan_arguments_revalidate_for_the_executor() ->
     _invoke(tool, args=_INTERVIEW_ARGS, tool_call_id="call-interview-2")
 
     # The executor re-validates the durable arguments into the tool's own input model; the
-    # normalized JSON must produce exactly the values the model proposed.
-    replayed = RecordInterviewAnswerInput.model_validate(_plan_arguments(execution))
-    assert replayed == RecordInterviewAnswerInput.model_validate(_INTERVIEW_ARGS)
+    # normalized JSON must produce exactly the values the model proposed. The turn authority the
+    # seam injects is merged in here because the model's own arguments carry none of it.
+    replayed = RecordInterviewAnswerInput.model_validate(
+        {**_plan_arguments(execution), **_TURN_AUTHORITY}
+    )
+    assert replayed == RecordInterviewAnswerInput.model_validate(
+        {**_INTERVIEW_ARGS, **_TURN_AUTHORITY}
+    )
     assert replayed.statements == [
         InterviewStatement(
             route=InterviewRoute.PROJECT_STATE,
@@ -215,12 +227,14 @@ def test_governed_plan_arguments_exclude_the_injected_trusted_runtime() -> None:
 
     arguments = _plan_arguments(execution)
     assert "runtime" not in arguments
-    # Model-controlled fields only: the injected runtime and every trusted-authority field the
-    # tool declares are both absent from what the model proposes.
+    # Model-controlled fields only: the injected runtime, every trusted-authority field the tool
+    # declares, and every field it binds to the captured turn are all absent from what the model
+    # proposes.
     assert set(arguments) == set(RecordInterviewAnswerInput.model_fields) - (
-        MODEL_FORBIDDEN_AUTHORITY_KEYS
+        MODEL_FORBIDDEN_AUTHORITY_KEYS | set(_TURN_AUTHORITY)
     )
     assert "project_id" not in arguments
+    assert set(_TURN_AUTHORITY).isdisjoint(arguments)
 
 
 # --- trusted authority is hidden from the model, not merely rejected -----------------------

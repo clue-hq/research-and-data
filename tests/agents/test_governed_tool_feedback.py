@@ -136,11 +136,11 @@ def _route_call(call_id: str, *, quote_end: int = 41) -> AIMessage:
         tool_calls=[
             {
                 "name": "record_interview_answer",
+                # No turn identity and no answer body: PC-C8 §6a moved both behind the execution
+                # seam, and this schema now refuses them outright ("extra inputs are not
+                # permitted"). The model sends offsets into a message the platform loads.
                 "args": {
                     "brand_id": "brand-1",
-                    "onboarding_input_id": "00000000-0000-0000-0000-0000000000a1",
-                    "artifact_key": "ws/abc",
-                    "answer": _ANSWER,
                     "client_entity_id": "00000000-0000-0000-0000-0000000000a2",
                     "statements": [
                         {
