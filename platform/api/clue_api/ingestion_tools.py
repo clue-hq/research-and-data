@@ -149,6 +149,11 @@ class SubmitIngestionTool(Tool):
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
     )
     effect_class = ToolEffectClass.SPEND
+    # `brand_id`/`project_id` are deliberately absent since PC-C8 task 1.4 hoisted them out of
+    # `declared_context`: a journal display summarises what the *caller* chose, and trusted scope
+    # authority is not chosen — it is injected from the constitution. The durable receipt still
+    # carries both in the full validated body (and in the declared-context hash), so nothing about
+    # the audit trail narrowed; only the display stopped implying the caller picked them.
     parameter_policy = JournalParameterPolicy(
         safe_display_fields=("artifact_key", "declared_context")
     )

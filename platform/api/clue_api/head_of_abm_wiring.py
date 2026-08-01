@@ -83,6 +83,16 @@ def build_head_of_abm_stage0_execution(
         raise ValueError("Stage-0 vertical requires a Head-of-ABM constitution")
     if request.constitution.profile_ref != resolved.profile_ref:
         raise ValueError("Stage-0 turn does not pin the promoted Head-of-ABM profile")
+    # A surface narrows the *effective tool set*, not the profile resource, so `profile_ref` alone
+    # cannot tell a trial turn from a full-surface one — only the manifest digest can. Without this
+    # check a caller who forgot `surface=` would build an adapter whose plan authority is wider
+    # than the constitution the model was given, silently. `HeadOfAbmStage0Runtime.run` makes the
+    # same assertion; this one exists because the two are independently callable.
+    if request.constitution.resource_manifest_sha256 != resolved.resource_manifest.aggregate_sha256:
+        raise ValueError(
+            "Stage-0 turn constitution pins a different resource manifest than this surface "
+            "resolves; the execution surface and the constitution's surface disagree"
+        )
     return C5AgentExecutionAdapter(
         turn_id=request.turn_id,
         constitution=request.constitution,

@@ -68,6 +68,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:content-drafter@v3",
         "profile:content-drafter@v4",
         "profile:head-of-abm@v1",
+        # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
+        "profile:head-of-abm@v10",
         "profile:head-of-abm@v2",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",
