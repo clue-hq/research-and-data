@@ -26,20 +26,26 @@ code and freeze the defects in `docs/specs/PC-C8-stage0-context-card.md` §1. Ta
    `DeepAgentTurnRuntime` with a callback capturing the model input, proving the prompt reaches the
    model twice. Fixed in Slice 2, only recorded here.
 
-## Measured numbers (this fixture, 22 statements / 20 decisions)
-stage 33,671 B + readiness 16,942 B + budget 140 B = **50,753 B** vs the 48,000 B `l3_project`
-budget; duplicated ledger = 16,832 B (~35% of the layer budget); growth ≈ **2,324 B per material
+## Measured numbers (this fixture, 26 statements / 24 decisions)
+stage 39,655 B + readiness 20,314 B + budget 140 B = **60,109 B** vs the 48,000 B `l3_project`
+budget; duplicated ledger = 20,200 B (~42% of the layer budget); growth ≈ **2,324 B per material
 turn**. Historical failing run (spec §1) was 32,178 + 15,889 + 140 = 48,207 at ~20/18. Our
-synthetic rows are slightly smaller, so 20/18 measures ~46 KB here and 22/20 crosses the cliff —
-the shape reproduces exactly; the counts are two turns later. Byte figures live in docstrings as
-reference; the assertions are relational (over budget / identical / growing), never equalities.
+synthetic rows are slightly smaller, so 20/18 measures ~46 KB here and 22/20 was the first count to
+cross the cliff — the shape reproduces exactly; the counts land a few turns later. The fixture
+seeds 26/24 rather than the bare 22/20 cliff so the over-budget test carries ~5 material turns of
+margin (review M1: at 22/20 the margin was under one turn, and run-to-run spread is ~62 B — not
+flaky, but content drift could turn it red for the wrong reason). Byte figures live in docstrings
+as reference; the assertions are relational (over budget / identical / growing), never equalities.
 
 ## Verification
 `uv run pytest tests/api/test_c8_slice0_evidence.py` — 5 passed with `CLUE_DATABASE_URL` sourced
 from `.env` (`set -a; source .env; set +a`); the three DB tests skip cleanly without a DB.
 Also green: `tests/api/test_stage0_trial.py`, `tests/api/test_stage0_tool_guidance.py`,
-`tests/agents/test_context.py`, `tests/agents/test_runtime.py`. `mypy` clean, `lint-imports` 24/24,
-`ruff` clean on the new file.
+`tests/agents/test_context.py`, `tests/agents/test_runtime.py`. `lint-imports` 24/24 and `ruff`
+clean on the new file. **mypy does not cover this module**: its configured file set excludes
+`tests/` (`pyproject.toml:46`), so `uv run mypy` passing says nothing about it — a standalone run
+over the file reports ~13 errors, all the usual test-double/`ResolvedAgentProfile` variance the
+sibling suites carry too. Not gated, deliberately not chased.
 
 ## Pre-existing failures on this branch (NOT caused by this work — reproduced with the new file
 removed)
