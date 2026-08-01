@@ -392,7 +392,7 @@ async def resolve_claim_entity(
 ) -> EntityId:
     """Decide which entity a claim-route statement is about (PC-C8 §8, B1 layer 2).
 
-    Two rules, both fail-closed:
+    Three rules, all fail-closed:
 
     * **Engine default.** An ``account`` claim with no ``entity_id`` is about this project's own
       client account — the id the caller's trusted ``client_entity_id`` already carries, sourced
@@ -401,6 +401,15 @@ async def resolve_claim_entity(
       type in this workspace. The old behaviour accepted any UUID and expressed its doubt as a
       silent tier-3 downgrade; an id naming nothing is now refused outright, and the tier below is
       an explicit statement about a *verified* entity.
+    * **Canonical only.** A merged-away entity (``merged_into`` set) is refused, not silently
+      followed. ``get_account``/``get_contact`` deliberately do not chase the pointer (that is
+      ``surviving_id``'s job), so accepting the loser would write a **durable** claim keyed to a
+      row identity resolution has already retired — a worse form of the read-side hazard the M9.4
+      backlog records, because the claim outlives the read. Redirecting silently is the tempting
+      alternative and is wrong here for the same reason the existence check is: this function's
+      contract is "a live entity", and quietly changing which entity a client's own words are
+      attached to is not a repair the caller asked for. The refusal names the survivor so the
+      caller can re-route deliberately.
     """
 
     entity_type = classified.entity_type
@@ -408,6 +417,9 @@ async def resolve_claim_entity(
     entity_id = classified.entity_id
     if entity_id is None:
         if entity_type is not EntityType.ACCOUNT:
+            # Defence in depth, not a live path: `InterviewStatement._route_shape` already refuses
+            # a contact claim with no entity, and both callers construct the model first. It stays
+            # because this function is public and the invariant is its own, not the model's.
             raise InterviewClaimEntityRefused(
                 reason_code="interview_entity_required",
                 message="a contact claim must name the contact it is about",
@@ -416,15 +428,25 @@ async def resolve_claim_entity(
     if entity_type is EntityType.ACCOUNT:
         account = await get_account(conn, entity_id)
         found = account is not None and account.workspace_id == workspace_id
+        merged_into = account.merged_into if account is not None else None
     else:
         contact = await get_contact(conn, entity_id)
         found = contact is not None and contact.workspace_id == workspace_id
+        merged_into = contact.merged_into if contact is not None else None
     if not found:
         raise InterviewClaimEntityRefused(
             reason_code="interview_entity_not_found",
             message=(
                 f"claim names {entity_type.value} {entity_id}, which does not exist in this "
                 "workspace"
+            ),
+        )
+    if merged_into is not None:
+        raise InterviewClaimEntityRefused(
+            reason_code="interview_entity_merged",
+            message=(
+                f"claim names {entity_type.value} {entity_id}, which was merged into "
+                f"{merged_into}; use the surviving entity"
             ),
         )
     return entity_id

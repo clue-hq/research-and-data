@@ -45,6 +45,7 @@ __all__ = [
     "RoleRegistryEntry",
     "RoleRegistryStatus",
     "SkillDisclosure",
+    "SurfaceRegistryEntry",
     "ToolCapabilityDisclosure",
 ]
 
@@ -93,6 +94,15 @@ class AgentSurfacePolicy:
     ``ExactAgentToolSurfaceMiddleware``'s allowed-set enforcement. ``framing`` is the surface's own
     honest description of itself, rendered beside the withheld tools in the generated map so the
     words and the enforcement can never drift apart.
+
+    ``withheld_delegation_roles`` withholds *the other* way a surface can reach capability it is
+    not supposed to have. A tool ceiling alone left the trial's map promising "no external
+    research" while still advertising ``delegate_specialist`` and the research role beneath it —
+    the surface's words and its own map disagreed, and the only thing stopping a delegation was a
+    composition-root child runner raising at call time. Restriction by crash is exactly what ruling
+    §2.4 rejects, so a withheld role leaves ``delegation_roles``/``delegation_tool_grants`` empty:
+    the framework tool leaves the middleware's allowed set, the map stops advertising it, and the
+    runner's refusal becomes an unreachable backstop instead of the mechanism.
     """
 
     surface: str
@@ -100,6 +110,7 @@ class AgentSurfacePolicy:
     withheld_tools: frozenset[str]
     withheld_reason_code: str
     framing: str
+    withheld_delegation_roles: frozenset[AgentRole] = frozenset()
 
 
 class ProjectionValue(BaseModel):
@@ -151,10 +162,30 @@ class ProfileProjection(ProjectionValue):
     capabilities: tuple[ToolCapabilityDisclosure, ...]
 
 
+class SurfaceRegistryEntry(ProjectionValue):
+    """One declared surface of a role, as the operator projection sees it.
+
+    Without this the ``/agent/registry`` projection reports only the role's *full* authority, so an
+    operator reading it would be told the Stage-0 trial can call tools and delegate to specialists
+    it structurally cannot. Both the resulting set and what was removed to get there are reported:
+    "which tools does this surface have" and "which did the policy take away" are different
+    questions, and only the second survives a tool being renamed out of the withheld list.
+    """
+
+    surface: str
+    reason_code: str
+    resource_manifest_sha256: str
+    tool_addresses: tuple[str, ...]
+    withheld_tool_names: tuple[str, ...]
+    delegation_roles: tuple[AgentRole, ...]
+    withheld_delegation_roles: tuple[AgentRole, ...]
+
+
 class RoleRegistryEntry(ProjectionValue):
     role: AgentRole
     status: RoleRegistryStatus
     profile: ProfileProjection | None = None
+    surfaces: tuple[SurfaceRegistryEntry, ...] = ()
 
 
 class AgentRegistryProjection(ProjectionValue):
@@ -233,23 +264,36 @@ class ResolvedAgentProfile:
             + ", ".join(pin.address for pin in self.delegation_tool_grants.get(role, ()))
             for role in self.profile.delegation_roles
         )
+        surface = self.surface_policy
         delegation_capability = (
             "- delegate_specialist: available; validated C5 delegation and fresh child wake"
             if self.profile.delegation_roles
-            else "- delegate_specialist: unavailable in this profile"
+            else (
+                "- delegate_specialist: unavailable on this surface"
+                if surface is not None and surface.withheld_delegation_roles
+                else "- delegate_specialist: unavailable in this profile"
+            )
         )
-        surface = self.surface_policy
-        surface_block = (
-            "Surface policy:\n"
-            f"- surface={surface.surface}\n"
-            f"- {surface.framing}\n"
-            "- withheld on this surface: "
-            + ", ".join(sorted(surface.withheld_tools))
-            + f" (reason={surface.withheld_reason_code}); they are not installed, so there is "
-            "nothing here to decline\n\n"
-            if surface is not None
-            else ""
-        )
+        surface_block = ""
+        if surface is not None:
+            withheld_lines = []
+            if surface.withheld_tools:
+                withheld_lines.append(
+                    "- withheld tools: " + ", ".join(sorted(surface.withheld_tools))
+                )
+            if surface.withheld_delegation_roles:
+                withheld_lines.append(
+                    "- withheld delegation: "
+                    + ", ".join(sorted(role.value for role in surface.withheld_delegation_roles))
+                )
+            surface_block = (
+                "Surface policy:\n"
+                f"- surface={surface.surface}\n"
+                f"- {surface.framing}\n"
+                + "\n".join(withheld_lines)
+                + f"\n- reason={surface.withheld_reason_code}; none of the above is installed, "
+                "so there is nothing here to decline\n\n"
+            )
         return (
             "## Resolved resource and capability map (authoritative; generated)\n\n"
             f"{surface_block}"
@@ -412,9 +456,9 @@ class AgentProfileRegistry:
                     f"surface {policy.surface!r} names role {policy.role.value!r}, "
                     "which has no active profile"
                 )
-            if not policy.withheld_tools:
+            if not policy.withheld_tools and not policy.withheld_delegation_roles:
                 raise AgentCatalogError(
-                    f"surface {policy.surface!r} withholds no tool; it is not a restriction"
+                    f"surface {policy.surface!r} withholds nothing; it is not a restriction"
                 )
             declared = {pin.name for pin in resource.definition.tools}
             unknown = sorted(policy.withheld_tools - declared)
@@ -422,6 +466,15 @@ class AgentProfileRegistry:
                 raise AgentCatalogError(
                     f"surface {policy.surface!r} withholds tools "
                     f"{unknown} that profile {resource.ref.address!r} does not pin"
+                )
+            delegable = set(resource.definition.delegation_roles)
+            undelegated = sorted(
+                role.value for role in policy.withheld_delegation_roles - delegable
+            )
+            if undelegated:
+                raise AgentCatalogError(
+                    f"surface {policy.surface!r} withholds delegation roles "
+                    f"{undelegated} that profile {resource.ref.address!r} does not delegate"
                 )
             surfaces[key] = self._resolve_resource(resource, surface_policy=policy)
         return surfaces
@@ -495,14 +548,26 @@ class AgentProfileRegistry:
             if {pin.address for pin in skill.required_tools} <= effective_addresses:
                 effective_skills.append(skill)
 
+        withheld_roles = (
+            surface_policy.withheld_delegation_roles
+            if surface_policy is not None
+            else frozenset[AgentRole]()
+        )
         grants: dict[AgentRole, tuple[ToolPin, ...]] = {}
         for role, pins in definition.delegation_tool_grants.items():
-            resolved_pins: list[ToolPin] = []
+            # Every declared grant is still *resolved* — a surface must not be able to hide a
+            # stale or retired child pin by withholding the role it belongs to.
+            resolved_pins = []
             for pin in pins:
                 self._resolve_tool(pin)
                 if pin.address in self._engine_tool_ceiling:
                     resolved_pins.append(pin)
+            if role in withheld_roles:
+                continue
             grants[role] = tuple(resolved_pins)
+        effective_delegation_roles = tuple(
+            role for role in definition.delegation_roles if role not in withheld_roles
+        )
 
         workspace = definition.workspace.to_contract()
         if workspace_ceiling is not None:
@@ -527,9 +592,15 @@ class AgentProfileRegistry:
             tools=effective_tools,
             model=definition.model,
             workspace=workspace,
-            delegation_roles=tuple(definition.delegation_roles),
-            max_delegation_depth=definition.max_delegation_depth,
-            max_delegations=definition.max_delegations,
+            delegation_roles=effective_delegation_roles,
+            # `AgentProfile` requires a non-delegating profile to carry zero delegation budget, and
+            # that is the honest reading here too: a surface with no delegable role has no
+            # delegation depth to spend. `AgentPlanPolicy.from_profile` reads these, so the plan
+            # policy narrows with the surface instead of advertising a budget for nothing.
+            max_delegation_depth=(
+                definition.max_delegation_depth if effective_delegation_roles else 0
+            ),
+            max_delegations=(definition.max_delegations if effective_delegation_roles else 0),
             max_plan_nodes=definition.max_plan_nodes,
             turn_timeout_s=definition.turn_timeout_s,
             max_model_rounds=definition.max_model_rounds,
@@ -683,9 +754,29 @@ class AgentProfileRegistry:
                         else RoleRegistryStatus.PLANNED
                     ),
                     profile=resolved.projection() if resolved is not None else None,
+                    surfaces=self._surface_projections(role),
                 )
             )
         return AgentRegistryProjection(schema_version="1", roles=tuple(roles))
+
+    def _surface_projections(self, role: AgentRole) -> tuple[SurfaceRegistryEntry, ...]:
+        return tuple(
+            SurfaceRegistryEntry(
+                surface=surface,
+                reason_code=policy.withheld_reason_code,
+                resource_manifest_sha256=narrowed.resource_manifest.aggregate_sha256,
+                tool_addresses=tuple(pin.address for pin in narrowed.profile.tools),
+                withheld_tool_names=tuple(sorted(policy.withheld_tools)),
+                delegation_roles=narrowed.profile.delegation_roles,
+                withheld_delegation_roles=tuple(
+                    sorted(policy.withheld_delegation_roles, key=lambda item: item.value)
+                ),
+            )
+            for (owner, surface), narrowed in sorted(
+                self._surfaces.items(), key=lambda item: item[0][1]
+            )
+            if owner is role and (policy := narrowed.surface_policy) is not None
+        )
 
 
 def _prefix_is_authorized(prefix: str, ceilings: Sequence[str]) -> bool:
