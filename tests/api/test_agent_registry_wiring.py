@@ -103,7 +103,18 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         if item.status is AgentCapabilityStatus.AVAILABLE
     }
 
-    assert len(by_address) == 36
+    # 36 → 38 with PC-C8 task 1.5's two inspection tools. They appear in the *disclosure* map as
+    # ROLE_UNAVAILABLE (registered, granted to nobody) and stay out of `available` below — the
+    # honest state until task 1.4's coordinated profile bump carries the grants.
+    assert len(by_address) == 38
+    assert (
+        by_address["inspect_statement_history@1"].status
+        is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    )
+    assert (
+        by_address["inspect_readiness_history@1"].status
+        is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    )
     assert available == {
         "evaluate_stage0_readiness@1",
         "get_research_view@1",

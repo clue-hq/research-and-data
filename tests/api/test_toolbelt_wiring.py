@@ -60,6 +60,11 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "compose_dossier": ("precondition", ("research_view_feature_disabled",)),
     "get_research_view": ("precondition", ("research_view_feature_disabled",)),
     "recheck_research_view": ("precondition", ("research_view_feature_disabled",)),
+    # PC-C8 §7: `build_toolbelt(storage=None)` composes no evidence reader, so the statement tool
+    # refuses fail-closed rather than serving quote-less rows; the readiness tool needs no reader
+    # and refuses on scope, which is the guard that actually matters for it.
+    "inspect_statement_history": ("precondition", ("statement_evidence_not_configured",)),
+    "inspect_readiness_history": ("precondition", ("stage0_project_not_found",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
     "pause_run": ("precondition", ("run_not_found",)),
@@ -122,6 +127,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "subject_entity_id": _UUID(),
             "snapshot_id": _UUID(),
         },
+        "inspect_statement_history": {"project_id": "project_missing"},
+        "inspect_readiness_history": {"project_id": "project_missing"},
         "estimate_project": {},
         "start_project_run": {
             "project_id": "prj_replaced_by_test",
@@ -527,8 +534,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    assert len(registry.names()) == 35
-    assert len(registry) == 36
+    # 35 → 37 with PC-C8 task 1.5's two read-only Stage-0 inspection tools.
+    assert len(registry.names()) == 37
+    assert len(registry) == 38
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

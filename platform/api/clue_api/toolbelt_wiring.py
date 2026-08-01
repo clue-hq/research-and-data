@@ -63,6 +63,7 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.composition import build_pre_spend_gate
 from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
@@ -80,7 +81,9 @@ from clue_api.proposal_tools import (
     ProposeSourceTool,
 )
 from clue_api.research_view_tools import build_research_view_tools
+from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_tools import stage0_tools
+from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_api.tool_outputs import (
     CommitteeOutput,
@@ -1742,6 +1745,25 @@ def build_toolbelt(
         scrape_binder=stage0_scrape_binder,
         storage=storage,
         project_execution_router=project_execution_router,
+    ):
+        registry.register(tool, make_default=True)
+    # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
+    # resolve. NOTE — deliberately granted on **no** profile: `C6_AGENT_TOOL_AUTHORITY` maps both
+    # to `()` so they are registered and addressable but structurally absent from every model
+    # surface. Task 1.4 owns the coordinated profile/catalog bump; the grants land in a post-merge
+    # commit against that version, never by editing an already-reviewed profile in place.
+    # Without a storage backend the evidence reader cannot exist, so the statement tool refuses
+    # `statement_evidence_not_configured` rather than serving quote-less rows.
+    for tool in build_stage0_inspection_tools(
+        evidence=(
+            ArtifactStatementEvidenceReader(
+                artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory),
+                conn_factory=conn_factory,
+            )
+            if storage is not None
+            else None
+        ),
+        conn_factory=conn_factory,
     ):
         registry.register(tool, make_default=True)
     for tool in build_research_view_tools(
