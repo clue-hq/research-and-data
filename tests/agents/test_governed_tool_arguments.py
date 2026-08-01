@@ -124,9 +124,15 @@ _TURN_AUTHORITY: dict[str, Any] = {
     "answer": "We sell surgical planning software to neurosurgery departments.",
 }
 
-_INTERVIEW_ARGS: dict[str, Any] = {
+# PC-C8 §6a, the constitution half: the project's brand and client account are whole-execution
+# authority served from :class:`AgentConstitution`, so the model neither sees nor sends them
+# either. Same merge-back rule as the turn authority above.
+_PROJECT_AUTHORITY: dict[str, Any] = {
     "brand_id": "brand-1",
     "client_entity_id": "entity-client-1",
+}
+
+_INTERVIEW_ARGS: dict[str, Any] = {
     "statements": [
         {
             "route": "project_state",
@@ -204,10 +210,10 @@ def test_record_interview_answer_plan_arguments_revalidate_for_the_executor() ->
     # normalized JSON must produce exactly the values the model proposed. The turn authority the
     # seam injects is merged in here because the model's own arguments carry none of it.
     replayed = RecordInterviewAnswerInput.model_validate(
-        {**_plan_arguments(execution), **_TURN_AUTHORITY}
+        {**_plan_arguments(execution), **_TURN_AUTHORITY, **_PROJECT_AUTHORITY}
     )
     assert replayed == RecordInterviewAnswerInput.model_validate(
-        {**_INTERVIEW_ARGS, **_TURN_AUTHORITY}
+        {**_INTERVIEW_ARGS, **_TURN_AUTHORITY, **_PROJECT_AUTHORITY}
     )
     assert replayed.statements == [
         InterviewStatement(

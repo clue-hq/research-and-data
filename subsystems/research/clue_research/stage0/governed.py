@@ -304,6 +304,12 @@ async def get_onboarding_input_for_artifact(
     candidate carries the same immutable ``artifact_key``/``content_sha256`` pair, so the choice
     can never change which bytes a caller is handed. ``id`` breaks a ``created_at`` tie so the
     answer is deterministic rather than storage-order dependent.
+
+    ``project_id`` is required, and the column is nullable — so a capture surface that omits it
+    writes a row this lookup can never select, and the turn it captured is **unbindable**: a tool
+    needing turn authority is refused rather than served a scope-free match. That is deliberate
+    (fail-closed), and it is the one thing a future human-capture surface must not get wrong:
+    capture the project, or accept that the turn cannot be bound.
     """
 
     row = (

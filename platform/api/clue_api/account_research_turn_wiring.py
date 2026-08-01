@@ -71,11 +71,16 @@ from clue_spine import Brand, Product, Project, get_brand, get_product, get_proj
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
 __all__ = [
+    "ACCOUNT_RESEARCH_CARD_MEDIA_TYPE",
     "DbCompiledContextCardReader",
     "PreparedAccountResearchTurnRunner",
     "account_research_context_policy",
     "build_account_research_context",
 ]
+
+#: This surface's L3 card: the account-research analogue of the Stage-0 project card, carrying the
+#: plan and the admission verdict that used to be two separate constitution refs (PC-C8 §10).
+ACCOUNT_RESEARCH_CARD_MEDIA_TYPE = "application/vnd.clue.account-research-card+json"
 
 _EXECUTION_NAMESPACE_KEY = "account-research-unit@1"
 _TURN_NAMESPACE = UUID("85af4b9f-7d41-51ea-a333-7181c4fdb12f")
@@ -279,28 +284,28 @@ class PreparedAccountResearchTurnRunner:
             object_id=str(account_entity_id),
             version=None,
         )
-        stage_ref = await self._artifact(
+        # PC-C8 §10: one L3 card per surface. This surface's two snapshots were already small and
+        # bounded (a plan and an admission verdict, neither growing with conversation length), so
+        # the fix here is the *shape* rule, not a size fix — the account-research card carries the
+        # same fields in one payload under its own media type. It is deliberately not a
+        # ``Stage0ProjectCard``: nothing on this surface has a Stage-0 interview to project.
+        card_ref = await self._artifact(
             workspace_id,
-            "application/vnd.clue.agent-stage-snapshot+json",
+            ACCOUNT_RESEARCH_CARD_MEDIA_TYPE,
             {
                 "schema_version": "1",
+                "card_kind": "account_research",
                 "surface": "account_research",
                 "project_run_id": str(project_run_id),
                 "account_run_id": str(account_run_id),
                 "account_entity_id": str(account_entity_id),
                 "tier": tier,
                 "plan": plan.model_dump(mode="json"),
-            },
-            account_entity_id,
-        )
-        readiness_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-readiness-snapshot+json",
-            {
-                "schema_version": "1",
-                "admitted": True,
-                "authority": "deep_phase_account_admission",
-                "account_run_status": account_run.status.value,
+                "admission": {
+                    "admitted": True,
+                    "authority": "deep_phase_account_admission",
+                    "account_run_status": account_run.status.value,
+                },
             },
             account_entity_id,
         )
@@ -361,8 +366,7 @@ class PreparedAccountResearchTurnRunner:
                 brand_id=project.brand_id,
                 product_id=project.product_id,
                 workspace_root_id=lease.identity.workspace_root_id,
-                stage_snapshot_ref=stage_ref,
-                readiness_snapshot_ref=readiness_ref,
+                project_card_ref=card_ref,
                 budget_envelope_ref=budget_ref,
                 profile_ref=resolved.profile_ref,
                 resource_manifest_ref=manifest_ref,

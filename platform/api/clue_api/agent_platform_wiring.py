@@ -472,15 +472,23 @@ def build_agent_context_assembler(
     memory_recipe: str,
     requested_memory_types: tuple[MemoryType, ...],
     policy: ContextAssemblyPolicy,
+    captured_turns: CapturedTurnBinder | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> DeterministicAgentContextAssembler:
-    """Compose the one exact L1-L7 production assembler for a resolved role/profile."""
+    """Compose the one exact L1-L7 production assembler for a resolved role/profile.
+
+    ``captured_turns`` (PC-C8 §6b) is the binder L7 names the turn's capture from. A composition
+    root that also builds the execution seam passes *its* binder here so one turn is resolved once
+    (the trial does); a caller with no execution seam of its own gets a private one. Either way the
+    binding is derived from durable state, so two instances could only ever agree — sharing saves
+    the second read and the second cache, not correctness.
+    """
 
     return DeterministicAgentContextAssembler(
         sources=(
             IdentityLayerSource(resolved_profile),
             WorkspaceProductLayerSource(cards),
-            ProjectLayerSource(artifacts=artifacts, cards=cards),
+            ProjectLayerSource(artifacts=artifacts),
             MemoryLayerSource(
                 assembly=memory,
                 recipe=memory_recipe,
@@ -492,15 +500,8 @@ def build_agent_context_assembler(
                 artifacts,
                 # PC-C8 §6b: L7 names the turn's capture so the model can reference it; a surface
                 # whose turn is not a captured onboarding input simply gets no envelope.
-                # This binder is independent of the one the execution seam builds
-                # (``head_of_abm_wiring``), including its cache — the two resolve the same turn
-                # twice per turn. Harmless (the binding is derived, so both answers agree) and not
-                # worth sharing from here: consolidating means threading one instance through the
-                # trial composition root, which is task 1.3's wiring call, not this seam's.
-                captured_turn=CapturedTurnBinder(
-                    artifacts=artifacts,
-                    conn_factory=conn_factory,
-                ),
+                captured_turn=captured_turns
+                or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
             ),
         ),
         policy=policy,

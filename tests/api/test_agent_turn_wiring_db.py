@@ -159,8 +159,7 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                     media_type="text/plain",
                 )
 
-            stage = await put('{"stage":"planning"}')
-            readiness = await put('{"ready":true}')
+            card = await put('{"card_kind":"stage0_project","project":{}}')
             budget = await put('{"remaining":100}')
             manifest = await put('{"resources":[]}')
             user_message = await put("Research this person")
@@ -182,8 +181,7 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                     workspace_root_id=harness.lease.identity.workspace_root_id,
                     brand_id=project.brand_id,
                     product_id=None,
-                    stage_snapshot_ref=stage,
-                    readiness_snapshot_ref=readiness,
+                    project_card_ref=card,
                     budget_envelope_ref=budget,
                     resource_manifest_ref=manifest,
                     resource_manifest_sha256=SHA_B,

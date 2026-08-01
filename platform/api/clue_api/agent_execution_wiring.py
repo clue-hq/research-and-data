@@ -216,10 +216,16 @@ def _rewrite_refs(value: object, prefix: str) -> object:
 
 
 def _trusted_authority(constitution: AgentConstitution) -> dict[str, JsonValue]:
-    """The authority values a tool body may receive, sourced only from the constitution."""
+    """The authority values a tool body may receive, sourced only from the constitution.
+
+    A ``None`` here is *not* a value: ``_trusted_tool_arguments`` skips it, so a tool that requires
+    the field is refused by its own validator instead of being served a fabricated scope.
+    """
 
     return {
         "actor_id": constitution.actor_id,
+        "brand_id": constitution.brand_id,
+        "client_entity_id": constitution.client_entity_id,
         "execution_id": str(constitution.execution_id),
         "project_id": constitution.project_id,
         "workspace_id": constitution.workspace_id,
