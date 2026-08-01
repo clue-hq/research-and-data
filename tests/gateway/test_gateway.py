@@ -15,7 +15,13 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
-from clue_config import ConfigOverlay, GatewayConfig, ModelPrice, get_config
+from clue_config import (
+    ConfigOverlay,
+    GatewayConfig,
+    ModelPrice,
+    default_gateway_config,
+    get_config,
+)
 from clue_config.loader import OverlayStore
 from clue_core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
 from clue_gateway import (
@@ -386,8 +392,16 @@ def test_model_id_is_config_swappable() -> None:
     )
     default_model = get_config("nobody").gateway.judge_model
     swapped_model = get_config("acme", store=store).gateway.judge_model
-    assert default_model == "anthropic/claude-3.5-sonnet"
+    # The base layer is `default_gateway_config()`, which applies the deploy-time env overrides
+    # (`CLUE_SYNTHESIS_MODEL`, and since PC-C8 §6c-b `CLUE_JUDGE_MODEL`) — and `Settings` reads the
+    # on-disk `.env` through `env_file`, so a hardcoded id here asserts a *deployment's* config
+    # rather than this test's property. The property is "an overlay swaps the id with no code
+    # change": the base is whatever the deployment resolved, and the overlay differs from it.
+    assert default_model == default_gateway_config().judge_model
     assert swapped_model == "openai/gpt-4o"
+    assert swapped_model != default_model
+    # The unoverlaid *code* default is separately a code fact, independent of any deployment.
+    assert GatewayConfig().judge_model == "anthropic/claude-3.5-sonnet"
 
 
 def test_completion_cost_is_returned_to_caller() -> None:

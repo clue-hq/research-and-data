@@ -13,11 +13,7 @@ from decimal import Decimal
 
 from pydantic import JsonValue
 
-from clue_api.claim_entailment import (
-    ENTAILMENT_JUDGMENT_NAMESPACE,
-    FaithfulnessClaimEntailmentJudge,
-    entailment_judgment_id,
-)
+from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_core import (
     Claim,
     EntityId,
@@ -26,6 +22,7 @@ from clue_core import (
     JudgeVerdict,
     new_entity_id,
 )
+from clue_research.claimstore import ENTAILMENT_JUDGMENT_NAMESPACE, entailment_judgment_id
 from clue_research.stage0 import ClaimEntailment, ClaimEntailmentJudge
 from tests.db.conftest import run_async
 
@@ -96,6 +93,9 @@ def test_the_judgment_id_is_content_addressed_and_never_a_claim_id() -> None:
         field_key="a", value=1, quote="bc"
     )
     assert ENTAILMENT_JUDGMENT_NAMESPACE == "stage0-interview-entailment"
+    # The definition lives in the claim substrate, not here: `compliance.dsar` recomputes it to
+    # redact an erased claim's verdict rationale and may import neither `clue_api` nor `stage0`.
+    assert entailment_judgment_id.__module__ == "clue_research.claimstore.entailment_identity"
 
 
 def test_the_probe_claim_carries_the_span_as_evidence_and_never_tier_four() -> None:

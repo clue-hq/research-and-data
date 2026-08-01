@@ -46,6 +46,10 @@ from clue_research.claimstore.derivations import (
     derivation_supports_batch,
     support_set_sha256,
 )
+from clue_research.claimstore.entailment_identity import (
+    ENTAILMENT_JUDGMENT_NAMESPACE,
+    entailment_judgment_id,
+)
 from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
     FreshnessMode,
@@ -123,6 +127,9 @@ __all__ = [
     "FreshnessMode",
     "DEFAULT_MERGE_POLICY",
     "canonical_json",
+    # entailment-question identity (PC-C8 §6c-b) — one definition three packages agree on
+    "ENTAILMENT_JUDGMENT_NAMESPACE",
+    "entailment_judgment_id",
     # tenant scoping (M2.5)
     "WorkspaceScope",
     "PUBLIC_ONLY",

@@ -50,6 +50,7 @@ from clue_research.claimstore import (
     claims_for,
     current_value,
     current_values,
+    entailment_judgment_id,
     insert_claim,
     provenance_index,
 )
@@ -529,6 +530,77 @@ def test_dsar_erases_faithfulness_rationale_body_but_retains_audit_metadata() ->
                 )
             ).scalar_one()
             assert sentinel not in raw
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_compliance_db")
+def test_dsar_erases_the_rationale_of_a_verdict_keyed_on_the_entailment_question() -> None:
+    """PC-C8 §6c-b: a judged claim's verdict is NOT keyed on the claim id, and erasure must still
+    reach it.
+
+    A typed interview value is vouched for before its claim exists, so its verdict rides the
+    content-addressed entailment-question id (field_key + value + span). Redacting only
+    ``claim_id = <erased claim>`` matched zero of those rows — the claim vanished while the
+    rationale went on quoting the subject's own words. This test fails loud (rationale still
+    present) against the claim-id-only redaction.
+    """
+
+    sentinel = "C8_JUDGED_PERSONAL_SENTINEL_4f21ab90"
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            contact = await _contact(conn)
+            claim = await _insert_facet(conn, contact, use_class=_PRO)
+            # The key the §6c-b judge actually wrote under: recomputed from the claim's own
+            # content, exactly as `dsar._tombstone` must recompute it.
+            question_id = entailment_judgment_id(
+                field_key=claim.field_key,
+                value=claim.value_json,
+                quote=claim.evidence_span or "",
+            )
+            assert question_id != claim.id
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO faithfulness_verdict
+                        (claim_id, verdict, score, rationale, judge_model, answering_model,
+                         prompt_version, cost_cents)
+                    VALUES
+                        (:claim_id, 'supported', 0.98, :rationale, 'judge-requested',
+                         'judge-answered', 'c8-test-v1', 0)
+                    """
+                ),
+                {"claim_id": str(question_id), "rationale": sentinel},
+            )
+
+            await _rights(conn).erase(contact)
+
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT rationale, rationale_redacted_at, rationale_redaction_reason, "
+                        "verdict, judge_model FROM faithfulness_verdict WHERE claim_id = :cid"
+                    ),
+                    {"cid": str(question_id)},
+                )
+            ).one()
+            assert row[0] is None, "the judged claim's rationale survived erasure"
+            assert row[1] is not None
+            assert row[2] == TombstoneReason.ERASURE.value
+            # The bounded audit metadata is preserved, exactly as on the claim-id path.
+            assert tuple(row[3:]) == ("supported", "judge-requested")
+
+            raw = (
+                (
+                    await conn.execute(
+                        text("SELECT coalesce(rationale, '') FROM faithfulness_verdict")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert all(sentinel not in body for body in raw)
 
     run_async(_run())
 

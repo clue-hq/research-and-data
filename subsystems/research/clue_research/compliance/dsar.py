@@ -93,6 +93,7 @@ from clue_research.claimstore import (
     affected_derivations,
     claims_by_ids,
     claims_for,
+    entailment_judgment_id,
     supersede_claim,
     supersede_claims,
 )
@@ -303,6 +304,26 @@ async def _apply_tombstone(
     # same transaction as the claim tombstone. Reachability is the existing
     # faithfulness_verdict.claim_id -> claim.entity_id relation; no subject/body copy is added.
     # COALESCE keeps this one-way and idempotent if a future caller reaches an already-redacted row.
+    #
+    # PC-C8 §6c-b adds a SECOND reachability path that the claim-id relation alone does not cover.
+    # A judged interview value is vouched for *before* its claim exists, so its verdict is keyed on
+    # the entailment-question id — a content address over (field_key, value, span) — not on the
+    # claim id. Matching only `claim_id = target.id` silently redacted nothing for every such row
+    # while the rationale went on quoting the client's own words. The question id is recomputable
+    # from the claim being erased, which is the whole point of deriving it from content, so erasure
+    # recomputes it here and redacts both rows. A span-less claim was never judged this way, so it
+    # contributes no second id.
+    verdict_ids = [str(target.id)]
+    if target.evidence_span:
+        verdict_ids.append(
+            str(
+                entailment_judgment_id(
+                    field_key=target.field_key,
+                    value=target.value_json,
+                    quote=target.evidence_span,
+                )
+            )
+        )
     await conn.execute(
         text(
             """
@@ -311,12 +332,12 @@ async def _apply_tombstone(
                 rationale_redacted_at = COALESCE(rationale_redacted_at, now()),
                 rationale_redaction_reason =
                     COALESCE(rationale_redaction_reason, :redaction_reason)
-            WHERE claim_id = :claim_id
+            WHERE claim_id = ANY(CAST(:claim_ids AS uuid[]))
               AND rationale IS NOT NULL
             """
         ),
         {
-            "claim_id": str(target.id),
+            "claim_ids": verdict_ids,
             "redaction_reason": reason.value,
         },
     )
