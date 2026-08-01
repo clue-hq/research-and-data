@@ -81,10 +81,16 @@ def test_the_judgment_id_is_content_addressed_and_never_a_claim_id() -> None:
     assert base != entailment_judgment_id(field_key=_FIELD, value=False, quote=_QUOTE)
     assert base != entailment_judgment_id(field_key=_FIELD, value=True, quote=_QUOTE[:20])
     assert base != entailment_judgment_id(field_key="client.other", value=True, quote=_QUOTE)
-    # Canonical JSON, so two spellings of one value are one question.
+    # Key-sorted canonical JSON, so a value round-tripped through jsonb (which does NOT preserve
+    # object key order) recomputes the same id — the property that makes "which verdict admitted
+    # this claim?" answerable from the stored claim. The live §6c probe caught this.
+    assert entailment_judgment_id(
+        field_key=_FIELD, value={"a": 1, "b": 2}, quote=_QUOTE
+    ) == entailment_judgment_id(field_key=_FIELD, value={"b": 2, "a": 1}, quote=_QUOTE)
+    # Order still matters where it is part of the value: a list is a sequence, not a set.
     assert entailment_judgment_id(
         field_key=_FIELD, value=["a", "b"], quote=_QUOTE
-    ) == entailment_judgment_id(field_key=_FIELD, value=["a", "b"], quote=_QUOTE)
+    ) != entailment_judgment_id(field_key=_FIELD, value=["b", "a"], quote=_QUOTE)
     # The separator is load-bearing: field/quote boundaries cannot be shifted into each other.
     assert entailment_judgment_id(field_key="ab", value=1, quote="c") != entailment_judgment_id(
         field_key="a", value=1, quote="bc"

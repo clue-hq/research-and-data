@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     # OpenRouter model id for ICP synthesis (M5.2) and other grounded-synthesis call sites that
     # reuse ``GatewayConfig.synthesis_model``. Env: ``CLUE_SYNTHESIS_MODEL``.
     synthesis_model: str = DEFAULT_SYNTHESIS_MODEL
+    # OpenRouter model id for every LLM-as-judge call site (the M9.3 faithfulness judge, and
+    # through it PC-C8 §6c-b's typed-interview-value entailment). ``None`` keeps the code default
+    # in ``GatewayConfig.judge_model``. Env: ``CLUE_JUDGE_MODEL``.
+    #
+    # This exists because the code default is a *code* default: model ids rot, and the 2026-08-01
+    # §6c probe found `anthropic/claude-3.5-sonnet` no longer served ("No endpoints found"), which
+    # made every judged claim fail closed as `judge_unavailable`. Picking the platform's judge is a
+    # deployment decision, so it gets the same env seam ``synthesis_model`` already has rather than
+    # a rewritten constant.
+    judge_model: str | None = None
 
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.

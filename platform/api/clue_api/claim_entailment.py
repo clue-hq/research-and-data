@@ -28,11 +28,18 @@ judgment is asked under a **content-addressed question id** (:func:`entailment_j
   written claim (``field_key`` + ``value_json`` + ``evidence_span``), so "which verdict admitted
   this claim?" stays a deterministic lookup, and ``claim.source_key =
   'client_interview_judged'`` is the per-claim flag that says to go looking.
+
+That last property is why the digest sorts object keys (:func:`entailment_judgment_id`) rather than
+reusing ``serialize_value_json``: ``jsonb`` does not preserve key order, so an object value read
+back out of ``claim`` is spelled differently from the one that was judged, and an order-sensitive
+digest would make the recomputation miss every time. The 2026-08-01 §6c live probe found exactly
+that.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from decimal import Decimal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -48,7 +55,6 @@ from clue_core import (
     ResearchMode,
     UnitInterval,
     new_run_id,
-    serialize_value_json,
 )
 from clue_core.verification import FaithfulnessJudge
 from clue_obs import get_logger
@@ -77,10 +83,12 @@ _PROBE_TIER = 1
 def entailment_judgment_id(*, field_key: str, value: JsonValue, quote: str) -> ClaimId:
     """The content-addressed id of one entailment question (see the module docstring).
 
-    Canonical JSON for the value (so ``[1, 2]`` and ``[1,2]`` are one question) and a NUL separator
-    (so ``field="a", quote="bc"`` and ``field="ab", quote="c"`` are two)."""
+    Key-sorted canonical JSON for the value — so whitespace and object key order do not split one
+    question in two, and a value round-tripped through ``jsonb`` recomputes the same id — plus a
+    NUL separator, so ``field="a", quote="bc"`` and ``field="ab", quote="c"`` are two questions."""
 
-    payload = "\x00".join((field_key, serialize_value_json(value), quote))
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    payload = "\x00".join((field_key, canonical, quote))
     digest = hashlib.sha256(payload.encode()).hexdigest()
     return ClaimId(uuid5(NAMESPACE_URL, f"{ENTAILMENT_JUDGMENT_NAMESPACE}:{digest}"))
 
