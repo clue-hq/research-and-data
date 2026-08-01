@@ -1076,6 +1076,19 @@ class EvaluateStage0ReadinessTool(_Stage0Tool):
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        """Evaluate one gate, compiling the product context first when the lineage is complete.
+
+        **Behavior change, PC-C8 task 1.3.** ``client_entity_id`` used to be optional *in practice*
+        as well as in the schema: the model filled it, and a model that omitted it fell through to
+        the no-context branch. It is now engine-injected from the constitution on every agent call,
+        so whenever ``product_id`` and ``client_kb_version`` are also present the
+        ``compile_product_context`` branch below runs where it previously often did not. That is
+        the correct direction — a readiness decision that *could* pin a product-context version and
+        silently did not was under-evidenced — but it is a real change in what this tool does per
+        call, and it costs one extra compile+write. The C4 recipe path is unaffected: it supplied
+        the id already.
+        """
+
         assert isinstance(inputs, EvaluateStage0ReadinessInput)
         client_uuid = _uuid(inputs.client_entity_id) if inputs.client_entity_id else None
         context_uuid = (

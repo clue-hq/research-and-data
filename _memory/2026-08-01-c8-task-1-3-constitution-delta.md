@@ -39,8 +39,14 @@ field does not move `input_schema_sha256`. Verified: all six Stage-0 tool digest
 to the ones profile `head-of-abm@v8` / skill `stage0-interview@v6` pin. Field `description` text was
 therefore left alone (it *is* in the schema hash, and the model never sees a stripped field), with
 an explicit source comment at `stage0_tools.py` handing the rewording to **task 1.4's** one
-coordinated bump. **1.4 must reword `brand_id`/`client_entity_id` on all four/seven inputs to the
-"supplied by the platform, never by you" phrasing `project_id` already uses.**
+coordinated bump. **1.4's reword list, enumerated (an earlier draft of this note said "all
+four/seven inputs" — three of them have no description at all):** `brand_id` on
+`submit_onboarding_input`, `start_recon`, `record_interview_answer`, `evaluate_stage0_readiness`
+(4/4 carry descriptions); `client_entity_id` on `submit_onboarding_input`,
+`record_interview_answer`, `evaluate_stage0_readiness`, `start_confirmed_project_run` (4 of the 7
+declaring tools). `confirm_icp`, `import_accounts` and `synthesize_icps` declare `client_entity_id`
+with **no** description — nothing to reword there, and adding one now would move their pinned
+digests for no model-visible gain.
 
 ## The F-finding: journal role labels
 
@@ -134,12 +140,64 @@ Pre-existing failures NOT caused here (reproduced with the work stashed): `tests
 `source_manifest`/promoted-recipe state and those suites ERROR at setup on a clean tree too.
 `tests/db/test_db_migrations.py` deliberately not run (needs a clean throwaway DB).
 
+## Review fix round (NEEDS-FIX-ROUND → second commit)
+
+Reviewed against spec v2.2 (`0cf1a52`, which added the §8 owner row this round's blocker exposed).
+
+1. **B1 (blocker) — the model could no longer learn the client entity id.** 1.3 closed *both*
+   channels (the tool field became engine-injected; the stage snapshot that said "use the supplied
+   client entity id" was deleted), while `InterviewStatement._route_shape` still refuses a `claim`
+   route without `entity_id` — so every claim-route statement would either fail into the
+   `NO_ROUTING_RECEIPT` loop or carry an invented UUID that `_write_claim` accepts unchecked.
+   **Layer 1 shipped here:** `Stage0CardProject.client_entity_id`, threaded from the compiler's
+   existing `client_entity_id` parameter (the same id the Client-KB read is scoped to, so the card
+   cannot advertise an entity its claims section was not compiled against). ~40 B.
+   **Layer 2 — engine-defaulting `entity_id` + an existence check — is 1.4's, per spec v2.2.**
+   `Stage0ProjectCard` gained a written `schema_version` policy: it stays `"1"` while the card only
+   *grows* fields (nothing reads it by version; the sole consumers are the L3 assembler and this
+   module), and bumps on a removal/rename/meaning change.
+2. **M2 (medium) — account research silently lost its project row.** "The card subsumes it" holds
+   only for the Stage-0 card. Extracted `account_research_card_payload(...)` (pure, exported,
+   testable without a project run) and added a `project` block (id/name/status/workspace/brand/
+   product).
+3. **Minor — the `MODEL_FORBIDDEN_AUTHORITY_KEYS` docstring over-claimed.** The strip is
+   **top-level only**; three granted tools expose a forbidden name one level down —
+   `propose_field`/`propose_source` (`scope.brand_id`, `scope.project_id`) and `submit_ingestion`
+   (`declared_context.*`). Documented, with the honest fence (proposal `preconditions` refuse an
+   unknown scope; ingestion is fenced by composite workspace FKs — but a wrong-yet-existing sibling
+   scope in the same workspace is reachable there). Recursion is 1.4's.
+4. **Minor — fail-closed constitution test added**, and it records *what surfaces* the refusal
+   today: a bare `ValidationError` at `executor.py:992`, not the typed model-visible plan issue
+   `CapturedTurnUnavailable` gets. Same outcome, different legibility; flagged for the whole-branch
+   review.
+5. **Minor — `evaluate_stage0_readiness` behaviour note.** Injection now always supplies
+   `client_entity_id`, so the `compile_product_context` branch runs whenever `product_id` +
+   `client_kb_version` are present, where a model that omitted the id previously fell through.
+   Correct direction (a decision that could pin a product-context version and silently did not was
+   under-evidenced), one extra compile+write per call; stated in the tool's own docstring.
+6. **Minor — F8 gate comment block** added for the newly-stripped fields, mirroring 1.2's, and it
+   names where the client entity id now comes from (the card, not a description).
+7. **Minor — determinism subprocess workspace id** now carries a per-invocation uuid suffix passed
+   via argv (same suffix to both processes of one comparison), so xdist/parallel branches cannot
+   collide on `c8-determinism-ws`.
+
+The card's bytes changed (one new `project` field), so every card sha moves — expected, and the
+subprocess determinism test re-ran green, which is the property that actually matters. No tool
+input digest moved (re-verified): still no catalog bump.
+
 ## Handoff to 1.4
 
-1. Reword the `brand_id`/`client_entity_id` descriptions on the Stage-0 inputs inside its bump
-   (profile v9 / skill v7) — 1.3 deliberately left them so no third bump was forced.
+1. Reword the `brand_id`/`client_entity_id` descriptions inside its bump (profile v9 / skill v7) —
+   1.3 deliberately left them so no third bump was forced. Exact list above (8 fields across 5
+   tools; 3 of the 7 `client_entity_id` declarations have no description to reword).
 2. Re-home the deleted trial `instruction` prose per spec §8 (trial profile variant / surface
    policy). Until then the trial ships without that framing.
-3. `docs/specs/PC-C6-platform-deepagent-and-skills.md:347–348` still lists the retired
-   `stage_snapshot_ref`/`readiness_snapshot_ref` on the constitution; PC-C8 §10 is the newer
-   authority, but a dated supersession note there would help.
+3. `docs/specs/PC-C6-platform-deepagent-and-skills.md:347–348` — **resolved by the coordinator in
+   `0cf1a52`** (supersession notes added alongside spec v2.2).
+4. **Layer 2 of the B1 fix (spec §8, v2.2):** default `InterviewStatement.entity_id` from the
+   constitution's trusted `client_entity_id` when `entity_type=account`, and existence-check it,
+   replacing today's accept-any-UUID behaviour in `_write_claim`. 1.3 shipped only layer 1 (the
+   card shows the id).
+5. **Recurse the top-level strip** (contracts.py note): `scope.brand_id`/`scope.project_id` on
+   `propose_field`/`propose_source` and `declared_context.*` on `submit_ingestion` are one level
+   down and therefore neither hidden nor injected.
