@@ -344,8 +344,8 @@ AgentConstitution
   role
   brand_id
   product_id
-  stage_snapshot_ref
-  readiness_snapshot_ref
+  stage_snapshot_ref    <!-- SUPERSEDED 2026-08-01 (PC-C8 §10, commit 2013b34): replaced with project_card_ref -->
+  readiness_snapshot_ref  <!-- SUPERSEDED 2026-08-01 (PC-C8 §10): folded into project_card_ref; budget stays separate -->
   budget_envelope_ref
   profile_ref
   resource_manifest_ref
