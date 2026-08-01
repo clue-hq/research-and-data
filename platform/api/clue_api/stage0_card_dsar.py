@@ -66,13 +66,17 @@ class Stage0StatementErasure(BaseModel):
     ``evidence_artifact_key`` is the captured turn the quote was sliced from. Both are inside
     ``erase.tombstoned_artifact_keys`` — they are reported separately so an auditor can see the
     dependency edge the bindings made queryable, not just the union that was purged.
+
+    ``affected_statement_ids`` is every statement that **lost its words**, the requested one
+    included. It is deliberately not "siblings": the target is affected too, and a DSAR record that
+    named only the collateral would understate what the erasure did.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     workspace_id: str
     statement_id: UUID
-    sibling_statement_ids: tuple[UUID, ...]
+    affected_statement_ids: tuple[UUID, ...]
     evidence_artifact_key: str
     card_artifact_keys: tuple[str, ...]
     erase: PrivacyEraseResult
@@ -160,14 +164,14 @@ class Stage0StatementEraser:
             evidence_key = await self._evidence_key(
                 conn, workspace_id=workspace_id, statement_id=statement_id
             )
-            siblings = await self._statements_citing(
+            affected = await self._statements_citing(
                 conn, workspace_id=workspace_id, artifact_key=evidence_key
             )
             card_keys: set[str] = set()
-            for sibling in siblings:
+            for affected_id in affected:
                 card_keys.update(
                     await card_artifacts_quoting_statement(
-                        conn, workspace_id=workspace_id, statement_id=sibling
+                        conn, workspace_id=workspace_id, statement_id=affected_id
                     )
                 )
 
@@ -180,7 +184,7 @@ class Stage0StatementEraser:
         return Stage0StatementErasure(
             workspace_id=workspace_id,
             statement_id=statement_id,
-            sibling_statement_ids=siblings,
+            affected_statement_ids=affected,
             evidence_artifact_key=evidence_key,
             card_artifact_keys=tuple(sorted(card_keys)),
             erase=erase,
@@ -208,7 +212,11 @@ class Stage0StatementEraser:
     async def _statements_citing(
         conn: AsyncConnection, *, workspace_id: str, artifact_key: str
     ) -> tuple[UUID, ...]:
-        """Every statement whose words live in the same captured body (the erasure blast radius)."""
+        """Every statement whose words live in the same captured body — the erasure blast radius.
+
+        Includes the requested statement itself (it cites that body too), which is why the result
+        is named ``affected``, not "siblings".
+        """
 
         rows = await conn.execute(
             text(

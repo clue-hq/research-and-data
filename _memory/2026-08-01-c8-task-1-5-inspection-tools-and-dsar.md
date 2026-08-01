@@ -160,10 +160,57 @@ child_wake_and_rolls_up_reference_result` (`AgentCatalogError: tool 'evaluate_st
 schema digest changed`; recorded as pre-existing in the 1.1 and 1.3 notes). Structural guards
 (`test_{package_layout,structure_guards,dependency_contracts,seams,beat0_contracts,
 project_rename_guard}`) green. `uv run mypy` clean (458 source files). `lint-imports` 24/24.
-`ruff check`/`format` clean on every touched file (the repo-wide `ruff format --check` drift on
-~18 untouched files is pre-existing and deliberately not fixed). `tests/db/test_db_migrations.py`
-and the live trial deliberately not run. No migration was needed — the binding rides the existing
-`agent_artifact_subject` table.
+`ruff check`/`format` clean on every touched file — **corrected in the fix round**: the first
+round's claim was false. `tests/api/test_agent_registry_wiring.py` was left format-drifting, which
+made it the branch's 18th such file and would have failed `make check` (the format gate is
+repo-wide, so "clean on my new files" is not the bar — every file the change *touches* must be
+formatted). `tests/db/test_db_migrations.py` and the live trial deliberately not run. No migration
+was needed — the binding rides the existing `agent_artifact_subject` table.
+
+## Review fix round (NEEDS-FIX-ROUND → fourth commit)
+
+The DSAR core was approved in full (the `erase_subject` equivalence independently re-derived, the
+AC-DSAR test verified genuine). Fixed:
+
+1. **B1 — the `excluded_statement_evidence` view dropped rows and said it was done.** The inner
+   loop kept scanning after the page filled but advanced `index` by a whole *chunk*, so the rows it
+   had refused to append were skipped and the scan ran off the end reporting `has_more: False`.
+   Reviewer's repro: 40 candidates / 35 excluded → returned 20, candidates 25..39 unreachable
+   forever. Now: `consumed` counts rows **actually examined**, and the loop breaks the moment the
+   page fills. Verified genuine by restoring the buggy loop and watching
+   `test_the_excluded_view_cursor_walk_partitions_the_excluded_set` fail, then restoring the fix.
+   Also: `total_matching` was `len(candidates)` in that view — meaningless there and actively
+   misleading. It is now `int | None` and **null for the exclusion view** (the true excluded total
+   is unknowable without the whole-ledger scan the bound exists to prevent); a new
+   `candidates_scanned` names what the page examined. `has_more`/`next_cursor` are the traversal
+   contract.
+2. **B2 — `ruff format` on `tests/api/test_agent_registry_wiring.py`** (the branch's 18th
+   format-drifting file; the gate is repo-wide). The first round's "format clean on every touched
+   file" claim was false and is corrected above.
+3. (#3) **Blast radius now tested** — every prior fixture wrote one artifact per statement, so the
+   affected set was trivially `{X}` and the widening was untested.
+   `test_erasing_one_statement_takes_its_capture_mates_words_with_it` builds two statements on one
+   onboarding input and asserts erasing X kills Y's quote, both omissions surface, and the result
+   names both.
+4. (#4) **`sibling_statement_ids` → `affected_statement_ids`** — kept inclusive of the target
+   rather than excluding it. The target *is* affected, and a DSAR record naming only the collateral
+   would understate the erasure; the name was the thing that was wrong.
+5. (#5) **Correction forks are now honest, not documented-away.** Two statements may name the same
+   `correction_of_id`; the old `dict[str, str]` kept whichever was iterated last. `superseded_by`
+   is now a **list**, `_corrections` returns `dict[str, list[str]]`, and `_lineage` is a
+   breadth-first walk so a fork returns both branches from any anchor. Silently choosing one
+   version of what replaced a client's words is the wrong failure on an audit surface — hence the
+   honest shape over a caveat.
+6. (#6) `_project_failure` now reads through the injected `self._conn_factory`, matching `invoke`
+   and `toolbelt_wiring._load_run`.
+7. (#7) `ANY(:keys)` → `ANY(CAST(:keys AS text[]))` per `readiness_override_refs`' precedent, plus
+   `test_erasing_a_subject_with_no_bound_artifacts_is_a_clean_no_op` covering the empty set through
+   both `erase_subject` and `erase_artifacts`.
+8. (#8) `tool_outputs.__all__` ordering.
+
+**Deferred, not mine (already ledgered):** the compile-vs-erase race (integration-owned; no
+production caller yet) and the `model_input` artifact DSAR gap (platform backlog, same family as
+the `faithfulness_verdict.rationale` gap).
 
 ## Handoff
 

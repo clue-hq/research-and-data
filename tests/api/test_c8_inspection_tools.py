@@ -346,6 +346,104 @@ def test_an_erased_quote_is_reported_as_excluded_and_never_fabricated(
             assert [row["statement_id"] for row in excluded_page.references["statements"]] == [
                 target["statement_id"]
             ]
+            # The exclusion view abstains from `total_matching` rather than reporting the candidate
+            # pool: knowing the true total would mean resolving the whole ledger's evidence, and a
+            # number that meant something else let a truncated page read as a complete one.
+            assert excluded_page.references["total_matching"] is None
+            assert excluded_page.references["candidates_scanned"] >= 1
+            # The plain view still reports an exact total.
+            assert after.references["total_matching"] == len(rows)
+
+    run_async(scenario())
+
+
+def test_the_excluded_view_cursor_walk_partitions_the_excluded_set(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """The B1 regression: >20 exclusions must all be reachable, and each exactly once.
+
+    The first implementation kept scanning after the page filled but advanced the cursor past the
+    rows it had refused to append — so with 40 candidates and 35 exclusions it returned 20, said
+    ``has_more: False``, and made candidates 25..39 unreachable *forever*. Two failures at once:
+    silent row loss, and a completion signal that hid it.
+
+    So this asserts the same property the statements-view walk asserts — the pages are a
+    **partition** of the excluded set (no row missed, none repeated) — plus the specific lie:
+    ``has_more`` must not go false while excluded rows remain.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"exclwalk-{uuid4().hex[:8]}") as (
+            trial,
+            conn,
+            artifacts,
+            connection_factory,
+        ):
+            # 40 candidates in total, of which 35 lose their evidence: more than one page of
+            # exclusions, and enough live rows in between that a chunk-advancing bug skips some.
+            await _seed_material_turns(
+                conn, artifacts, state=trial.state, statements=34, decisions=0, first_turn=6
+            )
+            registry = _registry(artifacts, connection_factory)
+            ctx = _ctx(trial.state.workspace_id, connection_factory)
+            body: dict[str, object] = {"project_id": trial.state.project_id}
+
+            everything = await _statements(registry, body, ctx)
+            assert everything.references["total_matching"] == 40
+            ordered = [row["statement_id"] for row in everything.references["statements"]]
+            second = await _statements(
+                registry, {**body, "cursor": everything.references["next_cursor"]}, ctx
+            )
+            ordered.extend(row["statement_id"] for row in second.references["statements"])
+            assert len(ordered) == 40
+
+            # Erase 35 of them, spread across the order so the survivors interleave.
+            doomed = [sid for index, sid in enumerate(ordered) if index % 8 != 0]
+            assert len(doomed) == 35
+            for statement_id in doomed:
+                key = (
+                    await conn.execute(
+                        text(
+                            "SELECT i.artifact_key FROM volunteered_statement s "
+                            "JOIN onboarding_input i ON i.id = s.onboarding_input_id "
+                            "WHERE s.id = :id"
+                        ),
+                        {"id": statement_id},
+                    )
+                ).scalar_one()
+                await mark_erased(conn, key)
+
+            seen: list[str] = []
+            cursor: str | None = None
+            pages = 0
+            while True:
+                page = await _statements(
+                    registry,
+                    {
+                        **body,
+                        "cursor": cursor
+                        or encode_card_cursor({"kind": "excluded_statement_evidence"}),
+                    },
+                    ctx,
+                )
+                pages += 1
+                assert page.references["view"] == "excluded_statement_evidence"
+                assert page.references["returned"] <= MAX_INSPECTION_PAGE
+                seen.extend(row["statement_id"] for row in page.references["statements"])
+                cursor = page.references["next_cursor"]
+                if cursor is None:
+                    break
+                assert pages < 20, "the excluded-view cursor walk did not terminate"
+
+            # A partition of the excluded set: every one reached, none twice, nothing else.
+            assert len(seen) == len(set(seen)), "an excluded row was returned on two pages"
+            assert set(seen) == set(doomed), "the walk did not cover every excluded statement"
+            # And the specific defect: the first page must not have claimed completion.
+            assert pages >= 2
 
     run_async(scenario())
 
@@ -359,6 +457,12 @@ def test_statement_history_returns_the_whole_correction_lineage_for_one_statemen
     A superseded statement is invisible to the card by design (latest-correction-wins), so this is
     the only surface that can explain a change of mind, and it has to work from *either* end of
     the chain.
+
+    It also has to survive a **fork**. ``volunteered_statement`` is append-only and nothing stops
+    two rows naming the same ``correction_of_id`` (a re-routed answer, a retry landing twice, an
+    operator repair), so ``superseded_by`` is a list and the lineage walk is breadth-first. A
+    last-write-wins map would have returned a chain that looked complete while one branch of what
+    replaced the client's words was invisible — the wrong failure on an audit surface.
     """
 
     if not stage0_db_available:
@@ -382,40 +486,43 @@ def test_statement_history_returns_the_whole_correction_lineage_for_one_statemen
                 )
             ).scalar_one()
 
-            ref = await artifacts.persist_body(
-                workspace_id=state.workspace_id,
-                data=f"{_ANSWER} (correction)".encode(),
-                media_type="text/plain",
-            )
-            captured = await submit_onboarding_input(
-                conn,
-                workspace_id=state.workspace_id,
-                brand_id=state.brand_id,
-                product_id=state.product_id,
-                project_id=state.project_id,
-                client_entity_id=EntityId(state.client_entity_id),
-                kind=OnboardingInputKind.USER_TURN,
-                artifact_key=ref.artifact_key,
-                content_sha256=ref.sha256,
-                actor="human",
-            )
-            correction = await record_statement(
-                conn,
-                onboarding_input_id=captured.onboarding_input_id,
-                workspace_id=state.workspace_id,
-                brand_id=state.brand_id,
-                product_id=state.product_id,
-                project_id=state.project_id,
-                client_entity_id=EntityId(state.client_entity_id),
-                entity_id=EntityId(state.client_entity_id),
-                route_kind=StatementRoute.PROJECT_STATE,
-                route_key="target_segment",
-                quote=_ANSWER[_QUOTE_START:_QUOTE_END],
-                quote_start=_QUOTE_START,
-                quote_end=_QUOTE_END,
-                created_by_actor="agent",
-                correction_of_id=VolunteeredStatementId(original),
-            )
+            async def _correct(label: str) -> Any:
+                ref = await artifacts.persist_body(
+                    workspace_id=state.workspace_id,
+                    data=f"{_ANSWER} ({label})".encode(),
+                    media_type="text/plain",
+                )
+                captured = await submit_onboarding_input(
+                    conn,
+                    workspace_id=state.workspace_id,
+                    brand_id=state.brand_id,
+                    product_id=state.product_id,
+                    project_id=state.project_id,
+                    client_entity_id=EntityId(state.client_entity_id),
+                    kind=OnboardingInputKind.USER_TURN,
+                    artifact_key=ref.artifact_key,
+                    content_sha256=ref.sha256,
+                    actor="human",
+                )
+                return await record_statement(
+                    conn,
+                    onboarding_input_id=captured.onboarding_input_id,
+                    workspace_id=state.workspace_id,
+                    brand_id=state.brand_id,
+                    product_id=state.product_id,
+                    project_id=state.project_id,
+                    client_entity_id=EntityId(state.client_entity_id),
+                    entity_id=EntityId(state.client_entity_id),
+                    route_kind=StatementRoute.PROJECT_STATE,
+                    route_key="target_segment",
+                    quote=_ANSWER[_QUOTE_START:_QUOTE_END],
+                    quote_start=_QUOTE_START,
+                    quote_end=_QUOTE_END,
+                    created_by_actor="agent",
+                    correction_of_id=VolunteeredStatementId(original),
+                )
+
+            correction = await _correct("correction")
 
             registry = _registry(artifacts, connection_factory)
             ctx = _ctx(state.workspace_id, connection_factory)
@@ -428,9 +535,25 @@ def test_statement_history_returns_the_whole_correction_lineage_for_one_statemen
                 rows = {row["statement_id"]: row for row in page.references["statements"]}
                 assert set(rows) == {str(original), str(correction)}
                 assert rows[str(original)]["superseded"] is True
-                assert rows[str(original)]["superseded_by"] == str(correction)
+                assert rows[str(original)]["superseded_by"] == [str(correction)]
                 assert rows[str(correction)]["supersedes"] == str(original)
                 assert rows[str(correction)]["superseded"] is False
+                assert rows[str(correction)]["superseded_by"] == []
+
+            # The fork: a second correction of the same parent. Both branches must be visible, and
+            # reachable from either branch — not only from the parent.
+            fork = await _correct("fork")
+            for anchor in (original, correction, fork):
+                page = await _statements(
+                    registry,
+                    {"project_id": state.project_id, "statement_id": str(anchor)},
+                    ctx,
+                )
+                rows = {row["statement_id"]: row for row in page.references["statements"]}
+                assert set(rows) == {str(original), str(correction), str(fork)}
+                assert sorted(rows[str(original)]["superseded_by"]) == sorted(
+                    [str(correction), str(fork)]
+                )
 
             # Both selectors at once is a refusal, never a silent intersection.
             with pytest.raises(PreconditionFailed) as ei:
