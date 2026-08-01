@@ -430,8 +430,7 @@ def test_a_claim_route_statement_from_the_cards_id_lands_as_a_tier_1_claim(
                     InterviewStatement(
                         route=InterviewRoute.CLAIM,
                         route_key=CLIENT_PRODUCT,
-                        quote_start=0,
-                        quote_end=len(_ANSWER),
+                        quote=_ANSWER,
                         entity_id=EntityId(UUID(shown)),
                         entity_type=EntityType.ACCOUNT,
                         field_key=CLIENT_PRODUCT,
@@ -520,8 +519,7 @@ def test_an_account_claim_defaults_its_entity_and_an_unknown_one_is_refused(
                 InterviewStatement(
                     route=InterviewRoute.CLAIM,
                     route_key=CLIENT_PRODUCT,
-                    quote_start=0,
-                    quote_end=len(_ANSWER),
+                    quote=_ANSWER,
                     entity_type=EntityType.ACCOUNT,
                     field_key=CLIENT_PRODUCT,
                     value=_ANSWER,
@@ -542,8 +540,7 @@ def test_an_account_claim_defaults_its_entity_and_an_unknown_one_is_refused(
                     InterviewStatement(
                         route=InterviewRoute.CLAIM,
                         route_key=CLIENT_PRODUCT,
-                        quote_start=0,
-                        quote_end=len(_ANSWER),
+                        quote=_ANSWER,
                         entity_id=EntityId(uuid4()),
                         entity_type=EntityType.ACCOUNT,
                         field_key=CLIENT_PRODUCT,
@@ -558,8 +555,7 @@ def test_an_account_claim_defaults_its_entity_and_an_unknown_one_is_refused(
                 InterviewStatement(
                     route=InterviewRoute.CLAIM,
                     route_key="contact.facet.interest",
-                    quote_start=0,
-                    quote_end=len(_ANSWER),
+                    quote=_ANSWER,
                     entity_type=EntityType.CONTACT,
                     field_key="contact.facet.interest",
                     value=_ANSWER,
@@ -574,8 +570,7 @@ def _claim_statement(entity_id: EntityId | None) -> InterviewStatement:
     return InterviewStatement(
         route=InterviewRoute.CLAIM,
         route_key=CLIENT_PRODUCT,
-        quote_start=0,
-        quote_end=len(_ANSWER),
+        quote=_ANSWER,
         entity_id=entity_id,
         entity_type=EntityType.ACCOUNT,
         field_key=CLIENT_PRODUCT,

@@ -137,14 +137,12 @@ _INTERVIEW_ARGS: dict[str, Any] = {
         {
             "route": "project_state",
             "route_key": "product.category",
-            "quote_start": 0,
-            "quote_end": 26,
+            "quote": "We sell surgical planning software",
         },
         {
             "route": "memory",
             "route_key": "tone.preference",
-            "quote_start": 27,
-            "quote_end": 61,
+            "quote": "neurosurgery departments",
             "memory_type": "preference",
             "memory_scope_type": "brand",
             "memory_scope_id": "brand-1",
@@ -165,8 +163,8 @@ def test_record_interview_answer_statements_reach_the_plan_as_json() -> None:
         {
             "route": "project_state",
             "route_key": "product.category",
-            "quote_start": 0,
-            "quote_end": 26,
+            "quote": "We sell surgical planning software",
+            "occurrence": 1,
             "entity_id": None,
             "entity_type": None,
             "field_key": None,
@@ -183,8 +181,8 @@ def test_record_interview_answer_statements_reach_the_plan_as_json() -> None:
         {
             "route": "memory",
             "route_key": "tone.preference",
-            "quote_start": 27,
-            "quote_end": 61,
+            "quote": "neurosurgery departments",
+            "occurrence": 1,
             "entity_id": None,
             "entity_type": None,
             "field_key": None,
@@ -219,8 +217,7 @@ def test_record_interview_answer_plan_arguments_revalidate_for_the_executor() ->
         InterviewStatement(
             route=InterviewRoute.PROJECT_STATE,
             route_key="product.category",
-            quote_start=0,
-            quote_end=26,
+            quote="We sell surgical planning software",
         ),
         InterviewStatement.model_validate(_INTERVIEW_ARGS["statements"][1]),
     ]

@@ -58,6 +58,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
         "skill:stage0-interview@v7",
+        "skill:stage0-interview@v8",
     ]
     assert [item.ref.address for item in profiles.list()] == [
         "profile:account-research@v1",
@@ -70,6 +71,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",
+        "profile:head-of-abm@v11",
         "profile:head-of-abm@v2",
         "profile:head-of-abm@v3",
         "profile:head-of-abm@v4",

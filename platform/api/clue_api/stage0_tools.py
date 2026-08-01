@@ -49,18 +49,20 @@ from clue_research.durable import (
 )
 from clue_research.icp import get_icp_version
 from clue_research.stage0 import (
+    ClaimEntailmentJudge,
     ClientInput,
     InterviewClaimEntityRefused,
-    InterviewRoute,
+    InterviewEvidenceRefused,
     InterviewStatement,
     ReconLaneStatus,
     compile_product_context,
     evaluate_readiness,
     get_onboarding_input,
     get_readiness_decision,
+    judge_interview_values,
     override_readiness,
+    prepare_interview_statements,
     recon_dedupe_hash,
-    resolve_claim_entity,
     reverse_profile,
     route_interview_answer,
     start_recon,
@@ -541,6 +543,7 @@ class _Stage0Tool(Tool):
         scrape_binder: Callable[[AccountEntity], None] | None = None,
         storage: StorageBackend | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
+        entailment_judge: ClaimEntailmentJudge | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._policy = policy
@@ -550,6 +553,7 @@ class _Stage0Tool(Tool):
         self._scrape_binder = scrape_binder
         self._storage = storage
         self._project_execution_router = project_execution_router
+        self._entailment_judge = entailment_judge
 
     async def _project_audit_snapshot(self, project_id: str, ctx: ToolContext) -> dict[str, object]:
         async with self._conn_factory() as conn:
@@ -945,25 +949,27 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 "memory_not_configured",
                 "memory-routed interview statements require the MemoryWriteSeam",
             )
-        # PC-C8 §8 (B1 layer 2): a claim-route statement's entity is resolved before any write —
-        # engine-defaulted to the trusted client entity when absent, existence-checked when
-        # supplied. Running it here, through the *same* function the routing engine runs, turns
-        # what used to be a silent tier downgrade into a typed refusal the model can read and act
-        # on; `route_interview_answer` still refuses independently, so the guarantee does not
-        # depend on this precondition being called.
-        async with self._conn_factory() as conn:
-            for statement in inputs.statements:
-                if statement.route is not InterviewRoute.CLAIM:
-                    continue
-                try:
-                    await resolve_claim_entity(
-                        conn,
-                        classified=statement,
-                        workspace_id=ctx.workspace_id,
-                        client_entity_id=EntityId(client_uuid),
-                    )
-                except InterviewClaimEntityRefused as exc:
-                    return _failure(exc.reason_code, str(exc))
+        # PC-C8 §8 (B1 layer 2) + §6c: every statement's evidence is located, its entity resolved,
+        # and its value vouched for before any write — through the *same* function the routing
+        # engine runs as its own pass one. That turns what used to be a silent tier downgrade (and,
+        # since §6c, a mid-write `ValueError`) into a typed refusal the model can read and act on;
+        # `route_interview_answer` still runs the pass independently, so the guarantee does not
+        # depend on this precondition being called, and the judge's content-addressed cache means
+        # the second run asks no second question.
+        try:
+            async with self._conn_factory() as conn:
+                prepared = await prepare_interview_statements(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    answer=inputs.answer,
+                    statements=tuple(inputs.statements),
+                    client_entity_id=EntityId(client_uuid),
+                )
+            # Outside the connection scope on purpose: the entailment judge makes a (synchronous,
+            # multi-second) gateway call, and no pooled transaction stays open across it.
+            await judge_interview_values(prepared, entailment_judge=self._entailment_judge)
+        except (InterviewClaimEntityRefused, InterviewEvidenceRefused) as exc:
+            return _failure(exc.reason_code, str(exc))
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -987,6 +993,7 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 statements=tuple(inputs.statements),
                 actor=ctx.actor,
                 memory_write=memory_write,
+                entailment_judge=self._entailment_judge,
                 run_id=RunId(ctx.operation_id),
             )
         return ToolResult(
@@ -1325,6 +1332,7 @@ def stage0_tools(
     storage: StorageBackend | None,
     memory_write_factory: MemoryWriteFactory | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
+    entailment_judge: ClaimEntailmentJudge | None = None,
 ) -> tuple[Tool, ...]:
     def make(tool_type: type[_Stage0Tool]) -> _Stage0Tool:
         return tool_type(
@@ -1336,6 +1344,7 @@ def stage0_tools(
             scrape_binder=scrape_binder,
             storage=storage,
             project_execution_router=project_execution_router,
+            entailment_judge=entailment_judge,
         )
 
     return (

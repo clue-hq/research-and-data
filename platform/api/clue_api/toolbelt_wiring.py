@@ -64,6 +64,7 @@ from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
 from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
@@ -178,6 +179,7 @@ from clue_research.stage0 import (
     reverse_profile,
     synthesize_icps,
 )
+from clue_research.verification import FaithfulnessJudgeImpl
 from clue_spine import get_project
 from clue_storage import StorageBackend
 from clue_toolbelt import (
@@ -1745,6 +1747,17 @@ def build_toolbelt(
         scrape_binder=stage0_scrape_binder,
         storage=storage,
         project_execution_router=project_execution_router,
+        # PC-C8 §6c-b: typed interview values are admitted by the shipped M9.3 faithfulness judge,
+        # never by a second entailment mechanism. Without a gateway there is no judge, and a typed
+        # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
+        # behaviour, so an ungatewayed composition is never *worse* than before.
+        entailment_judge=(
+            None
+            if gateway is None
+            else FaithfulnessClaimEntailmentJudge(
+                judge=FaithfulnessJudgeImpl(gateway=gateway, conn_factory=conn_factory)
+            )
+        ),
     ):
         registry.register(tool, make_default=True)
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors

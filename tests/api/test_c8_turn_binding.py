@@ -1,8 +1,9 @@
 """PC-C8 §6a / AC-6: the engine owns the turn's identity and its captured bytes.
 
-The model classifies a turn — route kind/key, quote offsets, correction lineage, proposed typed
-values. Everything that *identifies* the turn (``onboarding_input_id``, ``artifact_key``) and the
-captured body itself (``answer``) is stripped from the model surface and served at the execution
+The model classifies a turn — route kind/key, the verbatim quote (PC-C8 §6c-a took the offsets
+too), correction lineage, proposed typed values. Everything that *identifies* the turn
+(``onboarding_input_id``, ``artifact_key``) and the captured body itself (``answer``) is stripped
+from the model surface and served at the execution
 seam from a binding compiled off the turn's own artifact and its capture record
 (:mod:`clue_api.turn_binding`).
 
@@ -10,15 +11,17 @@ What each test here pins:
 
 * the binding is derived, never accepted — the id comes from the ``onboarding_input`` row that
   cites this turn's artifact, so a forged or foreign id has no path into the call;
-* a governed call carrying only offsets lands the statement against the **engine-loaded** bytes;
-* an out-of-range offset and a non-entailing quote are refused fail-closed, with nothing written;
+* a governed call carrying only the copied span lands the statement against the **engine-loaded**
+  bytes, at offsets the engine located;
+* a quote absent from the message and a non-entailing claim value are refused fail-closed, with
+  nothing written;
 * the stripped fields cannot be smuggled back — the model-facing schema refuses them
   (``extra='forbid'``) and the seam refuses them again in plan arguments;
 * a step that needs turn authority on an execution with no binding is refused rather than run
   unbound;
-* the sha/offset semantics survive the move engine-side: offsets are **character** positions into
-  the decoded capture while the digest and byte count are over the raw bytes, so multi-byte text
-  behaves identically to ASCII.
+* the sha/offset semantics survive the move engine-side: the search and the offsets it produces are
+  in the **character** domain of the decoded capture while the digest and byte count are over the
+  raw bytes, so multi-byte text behaves identically to ASCII.
 
 The absence of the three fields from the model-facing schema is guarded next door, in
 ``test_c8_slice0_evidence.py::
@@ -63,7 +66,11 @@ from clue_config import DEFAULT_STAGE0_POLICY
 from clue_core import AccountStatus, EntityId, OnboardingInputId, OnboardingInputKind, OperationId
 from clue_db import db_lifespan
 from clue_research.identity import insert_account_entity
-from clue_research.stage0 import load_client_knowledge_pack, submit_onboarding_input
+from clue_research.stage0 import (
+    InterviewEvidenceRefused,
+    load_client_knowledge_pack,
+    submit_onboarding_input,
+)
 from clue_spine import create_brand, create_product, create_project, create_workspace
 from clue_storage import FsStorage
 from clue_toolbelt import ToolContext
@@ -77,7 +84,8 @@ ANSWER = (
     "matter more than the ads 🎯 and the administrators own the scheduling pain."
 )
 QUOTE_START = 37
-QUOTE_END = 59  # "neurosurgery practices"
+QUOTE_END = 59
+QUOTE = "neurosurgery practices"  # ANSWER[QUOTE_START:QUOTE_END]
 
 
 @pytest.fixture
@@ -633,11 +641,15 @@ def test_offsets_stay_character_positions_while_the_digest_stays_over_bytes(
 # --- the governed call ----------------------------------------------------------------------
 
 
-def test_a_governed_call_of_offsets_alone_lands_the_statement_on_engine_loaded_bytes(
+def test_a_governed_call_of_a_quote_alone_lands_the_statement_on_engine_loaded_bytes(
     tmp_path: Path,
     db_available: bool,
 ) -> None:
-    """AC-6: model-supplied offsets, engine-supplied body — and a durable, verbatim quote."""
+    """AC-6, as PC-C8 §6c-a leaves it: model-supplied *text*, engine-supplied body and offsets.
+
+    The offsets are no longer authored anywhere on this path — the engine locates the quote and
+    computes them — so this test now proves the located pair equals the hand-computed one.
+    """
 
     if not db_available:
         pytest.skip("requires a migrated per-branch Postgres database")
@@ -666,8 +678,7 @@ def test_a_governed_call_of_offsets_alone_lands_the_statement_on_engine_loaded_b
                 {
                     "route": "project_state",
                     "route_key": "target_segment",
-                    "quote_start": QUOTE_START,
-                    "quote_end": QUOTE_END,
+                    "quote": QUOTE,
                 }
             ],
         )
@@ -705,9 +716,9 @@ def test_a_governed_call_of_offsets_alone_lands_the_statement_on_engine_loaded_b
             .one()
         )
         # The durable evidence hash is the hash of the slice taken from the bytes the *engine*
-        # loaded — text the model never sent, at offsets the model chose.
+        # loaded, at offsets the *engine* located from the span the model copied.
         quote = ANSWER[QUOTE_START:QUOTE_END]
-        assert quote == "neurosurgery practices"
+        assert quote == QUOTE == "neurosurgery practices"
         assert stored["quote_sha256"] == hashlib.sha256(quote.encode()).hexdigest()
         assert (stored["quote_start"], stored["quote_end"]) == (QUOTE_START, QUOTE_END)
         assert stored["onboarding_input_id"] == captured_id
@@ -721,10 +732,11 @@ def test_a_governed_quote_after_a_multi_byte_character_lands_the_characters_not_
 ) -> None:
     """The discriminating case: a span whose character and byte offsets disagree.
 
-    ``QUOTE_START``/``QUOTE_END`` above sit entirely before the first multi-byte character, so a
-    byte-offset implementation would pass that test unnoticed. This span starts after the astral
-    emoji, where the two denominations have drifted by five bytes: reading it as bytes yields
-    ``"d the administ"`` instead of ``"administrators"``, and the durable evidence hash says so.
+    ``QUOTE`` above sits entirely before the first multi-byte character, so a byte-domain
+    implementation would pass that test unnoticed. This span starts after the astral emoji, where
+    the two denominations have drifted by five bytes: a byte-domain *search* would record offsets
+    five short, and the durable evidence hash — plus the recorded offsets — say so. §6c-a moves the
+    search engine-side, so this is now a test of :func:`locate_quote`'s domain, not the model's.
     """
 
     if not db_available:
@@ -756,8 +768,7 @@ def test_a_governed_quote_after_a_multi_byte_character_lands_the_characters_not_
                     {
                         "route": "project_state",
                         "route_key": "buying_committee_shape",
-                        "quote_start": start,
-                        "quote_end": end,
+                        "quote": "administrators",
                     }
                 ],
             ),
@@ -773,24 +784,39 @@ def test_a_governed_quote_after_a_multi_byte_character_lands_the_characters_not_
 
         statement_ids = result.references["statement_ids"]
         assert isinstance(statement_ids, list) and len(statement_ids) == 1
-        stored_sha = (
-            await conn.execute(
-                text("SELECT quote_sha256 FROM volunteered_statement WHERE id = :id"),
-                {"id": UUID(str(statement_ids[0]))},
+        stored = (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT quote_sha256, quote_start, quote_end "
+                        "FROM volunteered_statement WHERE id = :id"
+                    ),
+                    {"id": UUID(str(statement_ids[0]))},
+                )
             )
-        ).scalar_one()
+            .mappings()
+            .one()
+        )
         assert ANSWER[start:end] == "administrators"
-        assert stored_sha == hashlib.sha256(ANSWER[start:end].encode()).hexdigest()
-        assert stored_sha != hashlib.sha256(ANSWER.encode()[start:end]).hexdigest()
+        # Character offsets, located engine-side: the byte positions differ and are NOT what landed.
+        assert (stored["quote_start"], stored["quote_end"]) == (start, end)
+        assert (stored["quote_start"], stored["quote_end"]) != (
+            ANSWER.encode().index(b"administrators"),
+            ANSWER.encode().index(b"administrators") + len("administrators"),
+        )
+        assert stored["quote_sha256"] == hashlib.sha256(ANSWER[start:end].encode()).hexdigest()
+        assert stored["quote_sha256"] != hashlib.sha256(ANSWER.encode()[start:end]).hexdigest()
 
     run_async(_scenario(tmp_path, body=body))
 
 
-def test_an_offset_past_the_captured_message_is_refused_and_writes_nothing(
+def test_a_quote_absent_from_the_captured_message_is_refused_and_writes_nothing(
     tmp_path: Path,
     db_available: bool,
 ) -> None:
-    """Fail-closed against the *engine-loaded* bytes, exactly as it used to be against the echo."""
+    """Fail-closed against the *engine-loaded* bytes — the §6c-a successor of the out-of-range
+    offset refusal. A span the model retyped rather than copied is simply not in the message, and
+    the refusal is typed (`quote_not_found_verbatim`) so the model can repair it by re-copying."""
 
     if not db_available:
         pytest.skip("requires a migrated per-branch Postgres database")
@@ -814,8 +840,9 @@ def test_an_offset_past_the_captured_message_is_refused_and_writes_nothing(
                     {
                         "route": "project_state",
                         "route_key": "target_segment",
-                        "quote_start": QUOTE_START,
-                        "quote_end": len(ANSWER) + 500,
+                        # A tidied-up retype of a span that IS in the message ("neurosurgery
+                        # practices"), which is exactly how the live offset drift arose.
+                        "quote": "Neurosurgery Practices",
                     }
                 ],
             ),
@@ -826,8 +853,13 @@ def test_an_offset_past_the_captured_message_is_refused_and_writes_nothing(
         tool = _tool(connection_factory)
         ctx = _ctx(scope, connection_factory, label="out-of-range")
         inputs = RecordInterviewAnswerInput.model_validate(merged)
-        with pytest.raises(ValueError, match="offsets fall outside the captured answer"):
+        assert [failure.reason_code for failure in await tool.preconditions(inputs, ctx)] == [
+            "quote_not_found_verbatim"
+        ]
+        with pytest.raises(InterviewEvidenceRefused, match="was not found") as refused:
             await tool.invoke(inputs, ctx)
+        assert refused.value.reason_code == "quote_not_found_verbatim"
+        assert "copy the span exactly" in str(refused.value).casefold()
 
         written = (
             await conn.execute(
@@ -870,8 +902,7 @@ def test_a_claim_value_the_engine_loaded_quote_does_not_entail_is_refused(
                     {
                         "route": "claim",
                         "route_key": "client.product.description",
-                        "quote_start": QUOTE_START,
-                        "quote_end": QUOTE_END,
+                        "quote": QUOTE,
                         "entity_id": str(scope.client_entity_id),
                         "entity_type": "account",
                         "field_key": "client.product.description",
@@ -913,8 +944,7 @@ def test_the_model_facing_schema_refuses_smuggled_turn_authority() -> None:
             {
                 "route": "project_state",
                 "route_key": "target_segment",
-                "quote_start": 0,
-                "quote_end": 5,
+                "quote": "We sell",
             }
         ],
         "runtime": None,
