@@ -36,10 +36,10 @@ The five defects, and what happens to each:
   tool-surface middleware then completes with the same resource map. Recorded here; **fixed in
   Slice 2**, not Slice 1.
 
-Measured by this fixture at 22 statements / 20 readiness decisions (2026-08-01): stage 33,671 B +
-readiness 16,942 B + budget 140 B = 50,753 B against the 48,000 B budget; the duplicated ledger is
-16,832 B of that (~35% of the whole layer budget); required L3 grows ~2,324 B per material turn.
-The same shape as the failing run, reached two turns later.
+Measured by this fixture at 26 statements / 24 readiness decisions (2026-08-01): stage 39,655 B +
+readiness 20,314 B + budget 140 B = 60,109 B against the 48,000 B budget; the duplicated ledger is
+20,200 B of that (~42% of the whole layer budget); required L3 grows ~2,324 B per material turn.
+The same shape as the failing run, reached a few turns later.
 
 DB-backed tests reuse the ``tests/api`` conventions: a per-branch ``CLUE_DATABASE_URL``, one
 rollback-only transaction per scenario, and ``pytest.skip`` when no database is reachable, so
@@ -124,10 +124,13 @@ HISTORICAL_STATEMENTS = 20
 HISTORICAL_DECISIONS = 18
 # What this fixture seeds. The synthetic rows are slightly *smaller* than the failing run's (its
 # ids, route keys, KB claims and metrics were longer), so the historical 20/18 measures ~46 KB
-# here — a faithful shape, a couple of turns short of the cliff. Two more material turns cross it,
-# which is itself the point: the overflow is a function of conversation length, not content.
-REPRO_STATEMENTS = 22
-REPRO_DECISIONS = 20
+# here — a faithful shape, a few turns short of the cliff. More material turns cross it, which is
+# itself the point: the overflow is a function of conversation length, not content. Sized for
+# headroom rather than the exact cliff: 22/20 clears the budget by well under one material turn,
+# so ordinary content drift could flip the over-budget test red for the wrong reason. At 26/24 the
+# bundle measures ~60,000 B against the 48,000 B budget — ~5 turns of margin.
+REPRO_STATEMENTS = 26
+REPRO_DECISIONS = 24
 
 # One plausible interview answer per turn; the statement quote is a real span of it, exactly as
 # ``record_interview_answer`` records one (offsets + sha into the captured artifact, no text).
@@ -271,6 +274,11 @@ async def _required_l3_artifacts(
     marks ``required=True`` (``context.py:304-319``). ``run_turn`` cannot be called here because it
     needs a live model call, so the composition (not the whole turn) is what is reproduced.
     """
+
+    # Tripwire: these payloads duplicate stage0_trial.py:729/756/766. Task 1.3's §10 constitution
+    # delta removes these two fields; when it lands, every test built on this helper must be
+    # *flipped*, not left measuring a retired shape.
+    assert {"stage_snapshot_ref", "readiness_snapshot_ref"} <= set(AgentConstitution.model_fields)
 
     stage_ref = await trial._artifact(
         "application/vnd.clue.agent-stage-snapshot+json",
@@ -655,8 +663,9 @@ def test_the_identity_prompt_is_injected_into_every_model_call_twice() -> None:
     as the required L1 candidate, and ``DeepAgentTurnRuntime.run`` (``runtime.py:297``) separately
     passes ``resolved_profile.prompt_body`` as the deepagent's own system prompt, which
     ``ExactAgentToolSurfaceMiddleware`` then completes with the same generated resource map. The
-    model therefore receives the identical prompt twice on every call — verified here against the
-    real runtime's captured model input, not by reading source.
+    identity prompt body and the generated resource map each reach the model twice (the two system
+    messages are not byte-identical — the deepagent copy adds the framework preamble) — verified
+    here against the real runtime's captured model input, not by reading source.
 
     Recorded, not fixed, by Slice 1: identity single-injection is **Slice 2**.
     """
