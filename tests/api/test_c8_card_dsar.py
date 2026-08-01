@@ -46,11 +46,18 @@ from clue_api.stage0_card_dsar import (
     stage0_card_subject_bindings,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_core import EntityId, OnboardingInputKind
 from clue_projections import Stage0CardOmissionKind, Stage0ProjectCard
+from clue_research.stage0 import StatementRoute, record_statement, submit_onboarding_input
 from clue_storage import ArtifactNotFound, FsStorage
 from tests.agents.workspace_helpers import make_workspace
 from tests.api.test_c8_project_card_wiring import _seeded_trial
-from tests.api.test_c8_slice0_evidence import _ANSWER, _turn_request
+from tests.api.test_c8_slice0_evidence import (
+    _ANSWER,
+    _QUOTE_END,
+    _QUOTE_START,
+    _turn_request,
+)
 from tests.db.conftest import _db_available, run_async
 
 
@@ -428,6 +435,168 @@ def test_erasing_a_statement_from_another_workspace_is_refused_not_served(
                         workspace_id=trial.state.workspace_id, statement_id=uuid4()
                     )
                 # And the refusal really was a refusal: nothing was tombstoned.
+                assert (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM agent_artifact_tombstone WHERE workspace_id = :ws"
+                        ),
+                        {"ws": trial.state.workspace_id},
+                    )
+                ).scalar_one() == 0
+            finally:
+                harness.close()
+
+    run_async(scenario())
+
+
+def test_erasing_one_statement_takes_its_capture_mates_words_with_it(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """The headline claim of the erasure design, on the fixture that can actually test it.
+
+    A statement's evidence is not private to it: the captured artifact is the *whole client turn*,
+    and two statements routed out of one answer quote spans of the same body. Erasing X therefore
+    destroys Y's words too, so the eraser widens to every statement citing that capture before
+    collecting dependent cards. Erasing only X's cards would leave a card body on disk quoting a
+    turn that no longer exists.
+
+    Every other fixture in this suite writes one artifact per statement, which makes the affected
+    set trivially ``{X}`` and this widening untested — hence a purpose-built two-statements /
+    one-onboarding-input fixture.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"blast-{uuid4().hex[:8]}") as (
+            trial,
+            conn,
+            artifacts,
+            connection_factory,
+        ):
+            state = trial.state
+            eraser, _replay, harness = _erasure_stack(tmp_path, trial, connection_factory)
+            try:
+                # One capture, two statements — the shape the widening exists for.
+                ref = await artifacts.persist_body(
+                    workspace_id=state.workspace_id,
+                    data=f"{_ANSWER} (shared capture)".encode(),
+                    media_type="text/plain",
+                )
+                captured = await submit_onboarding_input(
+                    conn,
+                    workspace_id=state.workspace_id,
+                    brand_id=state.brand_id,
+                    product_id=state.product_id,
+                    project_id=state.project_id,
+                    client_entity_id=EntityId(state.client_entity_id),
+                    kind=OnboardingInputKind.USER_TURN,
+                    artifact_key=ref.artifact_key,
+                    content_sha256=ref.sha256,
+                    actor="human",
+                )
+                pair = []
+                for route_key in ("shared_capture_a", "shared_capture_b"):
+                    pair.append(
+                        await record_statement(
+                            conn,
+                            onboarding_input_id=captured.onboarding_input_id,
+                            workspace_id=state.workspace_id,
+                            brand_id=state.brand_id,
+                            product_id=state.product_id,
+                            project_id=state.project_id,
+                            client_entity_id=EntityId(state.client_entity_id),
+                            entity_id=EntityId(state.client_entity_id),
+                            route_kind=StatementRoute.PROJECT_STATE,
+                            route_key=route_key,
+                            quote=_ANSWER[_QUOTE_START:_QUOTE_END],
+                            quote_start=_QUOTE_START,
+                            quote_end=_QUOTE_END,
+                            created_by_actor="agent",
+                        )
+                    )
+                target, capture_mate = (UUID(str(item)) for item in pair)
+
+                card_ref = await trial._project_card_ref()
+                card = Stage0ProjectCard.model_validate_json(await artifacts.read(card_ref))
+                quoted = {
+                    entry.statement_id for entry in card.interview.current_effective_statements
+                }
+                assert {str(target), str(capture_mate)} <= quoted
+
+                erasure = await eraser.erase_statement(
+                    workspace_id=state.workspace_id, statement_id=target
+                )
+
+                # The blast radius is named, and it includes the target itself (hence
+                # `affected_statement_ids`, not "siblings").
+                assert set(erasure.affected_statement_ids) == {target, capture_mate}
+                assert erasure.card_artifact_keys == (card_ref.artifact_key,)
+
+                # Both statements lost their words, and the recompile surfaces BOTH omissions
+                # rather than one — an under-counted omission would understate the erasure.
+                recompiled = Stage0ProjectCard.model_validate_json(
+                    await artifacts.read(await trial._project_card_ref())
+                )
+                still_shown = {
+                    entry.statement_id
+                    for entry in recompiled.interview.current_effective_statements
+                }
+                assert not {str(target), str(capture_mate)} & still_shown
+                omissions = {omission.kind: omission.count for omission in recompiled.omissions}
+                assert omissions[Stage0CardOmissionKind.EXCLUDED_STATEMENT_EVIDENCE_MISSING] == 2
+            finally:
+                harness.close()
+
+    run_async(scenario())
+
+
+def test_erasing_a_subject_with_no_bound_artifacts_is_a_clean_no_op(
+    tmp_path: Path,
+    stage0_db_available: bool,
+) -> None:
+    """The empty key set is a real case, not a theoretical one.
+
+    A DSAR request for a subject that never had an artifact bound must succeed with nothing
+    erased. The affected-turn lookup passes the key set as a Postgres array, so an untyped empty
+    list would leave the server inferring an element type from no evidence — hence the explicit
+    ``CAST(:keys AS text[])``. This is the test that would have caught it.
+    """
+
+    if not stage0_db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def scenario() -> None:
+        async with _seeded_trial(tmp_path, slug=f"empty-{uuid4().hex[:8]}") as (
+            trial,
+            conn,
+            _artifacts,
+            connection_factory,
+        ):
+            _eraser, _replay, harness = _erasure_stack(tmp_path, trial, connection_factory)
+            try:
+                privacy = AgentPrivacyService(
+                    storage=FsStorage(tmp_path / "artifacts"),
+                    workspaces=harness.factory,
+                    conn_factory=connection_factory,
+                )
+                unbound = uuid4()
+                result = await privacy.erase_subject(
+                    workspace_id=trial.state.workspace_id, subject_entity_id=unbound
+                )
+                assert result.tombstoned_artifact_keys == ()
+                assert result.affected_turn_ids == ()
+                assert result.purged_workspace_root_ids == ()
+
+                # The explicit key-set form takes the same empty path.
+                direct = await privacy.erase_artifacts(
+                    workspace_id=trial.state.workspace_id,
+                    subject_entity_id=unbound,
+                    artifact_keys=(),
+                )
+                assert direct.tombstoned_artifact_keys == ()
                 assert (
                     await conn.execute(
                         text(

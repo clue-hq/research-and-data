@@ -157,9 +157,16 @@ class _Stage0InspectionTool(Tool):
     async def _project_failure(
         self, project_id: str, ctx: ToolContext
     ) -> tuple[PreconditionFailure, ...]:
-        """B3/B4 guard: a foreign or absent project gets the identical refusal (no leak)."""
+        """B3/B4 guard: a foreign or absent project gets the identical refusal (no leak).
 
-        async with ctx.conn_factory() as conn:
+        Reads through the **injected** ``self._conn_factory``, the same one :meth:`invoke` uses
+        (and the same posture as ``toolbelt_wiring._load_run``). A precondition that proved scope
+        on one connection while the body then read another would be checking something other than
+        what it serves — the two are identical in every current composition, and this makes that
+        structural rather than incidental.
+        """
+
+        async with self._conn_factory() as conn:
             project = await get_project(conn, project_id)
         if project is None or project.workspace_id != ctx.workspace_id:
             log.warning(
@@ -271,33 +278,37 @@ class InspectStatementHistoryTool(_Stage0InspectionTool):
             rows = await _statement_history(
                 conn, workspace_id=ctx.workspace_id, project_id=inputs.project_id
             )
-        superseded_by = {
-            str(row.correction_of_id): str(row.id)
-            for row in rows
-            if row.correction_of_id is not None
-        }
+        superseded_by = _corrections(rows)
         candidates = _selected_statements(
             rows, statement_id=inputs.statement_id, route_key=inputs.route_key
         )
         start = _resume_index([str(row.id) for row in candidates], after)
 
         if view == "excluded_statement_evidence":
-            page, resolutions, scanned_to = await self._excluded_page(
+            page, resolutions, consumed = await self._excluded_page(
                 candidates, start=start, workspace_id=ctx.workspace_id
             )
+            # Unknowable within the bound: counting *all* excluded statements would mean resolving
+            # evidence for the whole ledger, which is the very scan this view exists to avoid. A
+            # number that silently meant "all candidates" let a caller mistake a truncated page for
+            # a complete one, so the honest answer is no number — `has_more`/`next_cursor` are the
+            # complete-traversal contract for this view.
+            total_matching: int | None = None
         else:
             page = list(candidates[start : start + MAX_INSPECTION_PAGE])
             resolutions = list(
                 await self._evidence.resolve_quotes(workspace_id=ctx.workspace_id, statements=page)
             )
-            scanned_to = start + len(page)
+            consumed = len(page)
+            total_matching = len(candidates)
 
+        scanned_to = start + consumed
         has_more = scanned_to < len(candidates)
         next_cursor = (
             encode_card_cursor(
                 {"kind": view, "before_statement_id": str(candidates[scanned_to - 1].id)}
             )
-            if has_more and scanned_to
+            if has_more and consumed
             else None
         )
         return ToolResult(
@@ -308,7 +319,8 @@ class InspectStatementHistoryTool(_Stage0InspectionTool):
                 view=view,
                 page_size=MAX_INSPECTION_PAGE,
                 returned=len(page),
-                total_matching=len(candidates),
+                total_matching=total_matching,
+                candidates_scanned=consumed,
                 has_more=has_more,
                 next_cursor=next_cursor,
                 statements=[
@@ -331,32 +343,41 @@ class InspectStatementHistoryTool(_Stage0InspectionTool):
     ]:
         """The ``excluded_statement_evidence_missing`` omission, resolved.
 
-        Scanned in page-sized chunks so both the response *and* the evidence reads stay bounded
-        when matches are sparse; the returned scan position is what the next cursor resumes from,
-        so a sparse region costs several cheap calls rather than one unbounded one.
+        Returns the page plus **how many candidate rows it actually consumed**, counted per row
+        rather than per chunk. That distinction is load-bearing: the cursor resumes at
+        ``candidates[start + consumed - 1]``, so advancing by a whole chunk after the page filled
+        would skip every unexamined row in that chunk *and* report ``has_more=False`` once the scan
+        ran off the end — the excluded rows past the boundary would be unreachable forever.
+
+        Scanned in page-sized chunks (one body cache per chunk) under a ``MAX_EXCLUSION_SCAN``
+        budget, so both the response and the evidence reads stay bounded when matches are sparse;
+        a sparse region costs several cheap calls rather than one unbounded one. Resolving a whole
+        chunk and then breaking part-way through it over-reads at most one chunk's evidence, which
+        is bounded and cheap — unlike the row loss the alternative bought.
         """
 
         assert self._evidence is not None
         page: list[VolunteeredStatementRow] = []
         resolutions: list[ResolvedQuote | ExcludedEvidence] = []
-        index = start
-        scanned = 0
+        consumed = 0
         while (
-            index < len(candidates)
+            start + consumed < len(candidates)
             and len(page) < MAX_INSPECTION_PAGE
-            and scanned < MAX_EXCLUSION_SCAN
+            and consumed < MAX_EXCLUSION_SCAN
         ):
-            chunk = list(candidates[index : index + MAX_INSPECTION_PAGE])
+            head = start + consumed
+            chunk = list(candidates[head : head + MAX_INSPECTION_PAGE])
             resolved = await self._evidence.resolve_quotes(
                 workspace_id=workspace_id, statements=chunk
             )
             for row, resolution in zip(chunk, resolved, strict=True):
-                if isinstance(resolution, ExcludedEvidence) and len(page) < MAX_INSPECTION_PAGE:
+                consumed += 1
+                if isinstance(resolution, ExcludedEvidence):
                     page.append(row)
                     resolutions.append(resolution)
-            index += len(chunk)
-            scanned += len(chunk)
-        return page, resolutions, index
+                if len(page) >= MAX_INSPECTION_PAGE:
+                    break
+        return page, resolutions, consumed
 
 
 class InspectReadinessHistoryTool(_Stage0InspectionTool):
@@ -481,41 +502,69 @@ def _selected_statements(
     return tuple(rows)
 
 
+def _corrections(rows: Sequence[VolunteeredStatementRow]) -> dict[str, list[str]]:
+    """``{corrected_id: [correcting_ids…]}`` — a **list**, because corrections can fork.
+
+    ``volunteered_statement`` is append-only and nothing stops two statements naming the same
+    ``correction_of_id`` (two agent turns re-routing the same answer, a retry that lands twice, an
+    operator repair). A ``dict[str, str]`` would have kept whichever row happened to be iterated
+    last and made the other branch invisible — on an audit/DSAR surface, silently choosing one
+    version of what replaced a client's words is the wrong failure. The ids are emitted in the
+    shared newest-first order, so a reader can see which branch is most recent.
+    """
+
+    corrections: dict[str, list[str]] = {}
+    for row in rows:
+        if row.correction_of_id is not None:
+            corrections.setdefault(str(row.correction_of_id), []).append(str(row.id))
+    return corrections
+
+
 def _lineage(
     rows: Sequence[VolunteeredStatementRow], *, statement_id: UUID
 ) -> tuple[VolunteeredStatementRow, ...]:
+    """Every statement connected to ``statement_id`` through corrections, in either direction.
+
+    A breadth-first walk rather than two linear chains: a fork means one row can have several
+    successors, and following only the first would return a partial lineage that *looks* complete.
+    ``seen`` is both the visited set and the cycle guard — the table is append-only, but a
+    malformed lineage must not hang a read.
+    """
+
     by_id = {str(row.id): row for row in rows}
-    corrects: dict[str, str] = {}
-    for row in rows:
-        if row.correction_of_id is not None:
-            corrects[str(row.correction_of_id)] = str(row.id)
-    chain: set[str] = set()
+    corrections = _corrections(rows)
     root = str(statement_id)
     if root not in by_id:
         return ()
-    # Backwards along `correction_of_id`, then forwards along its inverse. `chain` membership is
-    # the cycle guard: the table is append-only, but a malformed lineage must not hang a read.
-    cursor: str | None = root
-    while cursor is not None and cursor not in chain:
-        chain.add(cursor)
-        parent = by_id[cursor].correction_of_id if cursor in by_id else None
-        cursor = str(parent) if parent is not None else None
-    cursor = corrects.get(root)
-    while cursor is not None and cursor not in chain:
-        chain.add(cursor)
-        cursor = corrects.get(cursor)
-    return tuple(row for row in rows if str(row.id) in chain)
+    seen = {root}
+    frontier = [root]
+    while frontier:
+        current = frontier.pop()
+        parent = by_id[current].correction_of_id if current in by_id else None
+        neighbours = [*corrections.get(current, [])]
+        if parent is not None:
+            neighbours.append(str(parent))
+        for neighbour in neighbours:
+            if neighbour in by_id and neighbour not in seen:
+                seen.add(neighbour)
+                frontier.append(neighbour)
+    return tuple(row for row in rows if str(row.id) in seen)
 
 
 def _statement_payload(
     row: VolunteeredStatementRow,
     resolution: ResolvedQuote | ExcludedEvidence,
     *,
-    superseded_by: dict[str, str],
+    superseded_by: dict[str, list[str]],
 ) -> dict[str, object]:
-    """One history row. The words are present, or their absence is named — never both silent."""
+    """One history row. The words are present, or their absence is named — never both silent.
+
+    ``superseded_by`` is a *list* (usually empty or one id): see :func:`_corrections` for why a
+    fork must not be collapsed.
+    """
 
     excluded = isinstance(resolution, ExcludedEvidence)
+    successors = superseded_by.get(str(row.id), [])
     return {
         "statement_id": str(row.id),
         "onboarding_input_id": str(row.onboarding_input_id),
@@ -523,8 +572,8 @@ def _statement_payload(
         "route_key": row.route_key,
         "route_ref": row.route_ref,
         "supersedes": (str(row.correction_of_id) if row.correction_of_id is not None else None),
-        "superseded_by": superseded_by.get(str(row.id)),
-        "superseded": str(row.id) in superseded_by,
+        "superseded_by": successors,
+        "superseded": bool(successors),
         "quote_start": row.quote_start,
         "quote_end": row.quote_end,
         "quoted_text": None if excluded else resolution.quote,  # type: ignore[union-attr]

@@ -108,12 +108,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # honest state until task 1.4's coordinated profile bump carries the grants.
     assert len(by_address) == 38
     assert (
-        by_address["inspect_statement_history@1"].status
-        is AgentCapabilityStatus.ROLE_UNAVAILABLE
+        by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     )
     assert (
-        by_address["inspect_readiness_history@1"].status
-        is AgentCapabilityStatus.ROLE_UNAVAILABLE
+        by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     )
     assert available == {
         "evaluate_stage0_readiness@1",

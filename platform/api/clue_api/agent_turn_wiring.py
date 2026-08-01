@@ -1527,7 +1527,11 @@ class AgentPrivacyService:
 
         Affected turns are found by artifact key rather than by re-joining the subject bindings;
         for ``erase_subject`` the two are the same set, and for a caller-supplied closure the key
-        form is the one that is actually true.
+        form is the one that is actually true. The array parameter is explicitly ``CAST(… AS
+        text[])`` — the codebase's own precedent (``readiness_override_refs``) — so an **empty**
+        key set stays a well-typed "matches nothing" instead of leaving Postgres to infer an
+        element type it has no evidence for. An empty set is a real case: a subject with no
+        artifact bindings must erase to a clean no-op, not an error.
         """
 
         keys = tuple(dict.fromkeys(sorted(artifact_keys)))
@@ -1538,7 +1542,7 @@ class AgentPrivacyService:
                     "FROM agent_turn t WHERE t.workspace_id=:workspace AND ("
                     " EXISTS (SELECT 1 FROM agent_artifact_ref r "
                     "         WHERE r.turn_id=t.id AND r.workspace_id=t.workspace_id "
-                    "         AND r.artifact_key = ANY(:keys))"
+                    "         AND r.artifact_key = ANY(CAST(:keys AS text[])))"
                     " OR EXISTS (SELECT 1 FROM agent_context_bundle b "
                     "            JOIN agent_context_ref r ON r.context_bundle_id=b.id "
                     "            JOIN memory m ON r.object_type='scoped_memory' "
