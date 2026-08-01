@@ -1312,7 +1312,12 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                 ],
             }
 
-            def _adapter(pin_provider: Any, *, key: str = answer_key) -> C5AgentExecutionAdapter:
+            def _adapter(
+                pin_provider: Any,
+                *,
+                key: str = answer_key,
+                bound: bool = True,
+            ) -> C5AgentExecutionAdapter:
                 return C5AgentExecutionAdapter(
                     turn_id=request.turn_id,
                     constitution=trusted,
@@ -1331,10 +1336,14 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
                     journal=cast(Any, _PlanJournal()),
                     checkpointer_factory=cast(Any, lambda _: None),
                     pin_provider=cast(Any, pin_provider),
-                    captured_turn=_BoundTurn(
-                        onboarding_input_id=str(onboarding_input_id),
-                        artifact_key=key,
-                        answer=_ANSWER,
+                    captured_turn=(
+                        _BoundTurn(
+                            onboarding_input_id=str(onboarding_input_id),
+                            artifact_key=key,
+                            answer=_ANSWER,
+                        )
+                        if bound
+                        else None
                     ),
                     conn_factory=_nested_conn_factory(conn),
                 )
@@ -1371,5 +1380,20 @@ def test_the_agent_path_still_refuses_unresolvable_and_out_of_slot_pins() -> Non
             )
             with pytest.raises(AgentPlanRejected, match="c5_pin_kind_not_allowed"):
                 await _adapter(_OutOfSlot()).validate_plan(plan=allowed, constitution=trusted)
+
+            # (3) an execution that cannot bind the turn refuses the step — and says so as an
+            # engine-side failure, not as a fault in arguments the model cannot repair.
+            with pytest.raises(AgentPlanRejected) as unbound:
+                await _adapter(
+                    Stage0StepPinProvider(
+                        compatibility=compatibility,
+                        conn_factory=_nested_conn_factory(conn),
+                    ),
+                    bound=False,
+                ).validate_plan(plan=allowed, constitution=trusted)
+            codes = {issue.code for issue in unbound.value.review.issues}
+            assert codes == {"turn_binding_unavailable"}
+            locations = {issue.location for issue in unbound.value.review.issues}
+            assert not any(location.endswith(".arguments") for location in locations)
 
     run_async(scenario())

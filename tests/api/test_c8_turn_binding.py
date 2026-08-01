@@ -35,6 +35,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -45,11 +46,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import AgentTurnRequest, ArtifactRef
 from clue_agents.contracts import AgentConstitution, ExecutionId
+from clue_api import turn_binding as turn_binding_module
 from clue_api.agent_execution_wiring import _trusted_tool_arguments
 from clue_api.agent_runtime_wiring import _with_trusted_runtime
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_tools import RecordInterviewAnswerInput, RecordInterviewAnswerTool
 from clue_api.turn_binding import (
+    CAPTURE_NOT_FOUND,
     CapturedTurn,
     CapturedTurnBinder,
     CapturedTurnUnavailable,
@@ -118,16 +121,22 @@ def _constitution(
     )
 
 
-def _request(scope: _Scope, ref: ArtifactRef) -> AgentTurnRequest:
+def _request(
+    scope: _Scope,
+    ref: ArtifactRef,
+    *,
+    project_id: str | None = None,
+) -> AgentTurnRequest:
     """A turn request shaped exactly like the one the Stage-0 trial builds."""
 
-    turn_id = uuid5(NAMESPACE_URL, f"c8-turn-binding:{scope.workspace_id}")
+    project = project_id or scope.project_id
+    turn_id = uuid5(NAMESPACE_URL, f"c8-turn-binding:{scope.workspace_id}:{project}")
     return AgentTurnRequest(
         turn_id=turn_id,
-        thread_id=f"thread-{scope.workspace_id}",
+        thread_id=f"thread-{project}",
         constitution=_constitution(
             workspace_id=scope.workspace_id,
-            project_id=scope.project_id,
+            project_id=project,
             brand_id=scope.brand_id,
             product_id=scope.product_id,
             execution_id=ExecutionId(uuid5(turn_id, "execution")),
@@ -284,6 +293,128 @@ def test_the_engine_derives_the_turn_binding_from_the_artifact_and_its_capture_r
     run_async(_scenario(tmp_path, body=body))
 
 
+#: A capture id chosen to sort *after* any ``uuid5``-derived id, so these tests fail if the
+#: selection ever falls back to "newest row wins". Rows written inside one transaction share a
+#: ``created_at`` (``now()`` is transaction-scoped), so ``id DESC`` is the live tie-break.
+HIGHEST_ID = UUID("ffffffff-ffff-4fff-8fff-ffffffffffff")
+
+
+def test_a_row_the_model_could_write_cannot_become_this_turns_capture_record(
+    tmp_path: Path,
+    db_available: bool,
+) -> None:
+    """The agent holds ``submit_onboarding_input``, so selection must not be "newest row wins".
+
+    The artifact key is content-addressed and L7 hands the model that exact key and digest, so an
+    agent-written ``user_turn`` row citing this turn's artifact is trivial to produce. If the
+    binder selected it, the model would choose its own turn's attribution — and every statement it
+    then routes would land against a capture record ``Stage0RoutingReceiptGuard`` is not counting,
+    producing an unrepairable repair loop. ``actor='human'`` is what forecloses it.
+    """
+
+    if not db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def body(
+        *,
+        scope: _Scope,
+        conn: AsyncConnection,
+        artifacts: DurableAgentArtifactStore,
+        connection_factory: Any,
+        ref: ArtifactRef,
+        captured_id: OnboardingInputId | None,
+        **_: Any,
+    ) -> None:
+        forged = await submit_onboarding_input(
+            conn,
+            workspace_id=scope.workspace_id,
+            brand_id=scope.brand_id,
+            product_id=scope.product_id,
+            project_id=scope.project_id,
+            client_entity_id=scope.client_entity_id,
+            kind=OnboardingInputKind.USER_TURN,
+            artifact_key=ref.artifact_key,
+            content_sha256=ref.sha256,
+            actor="agent",
+            onboarding_input_id=OnboardingInputId(HIGHEST_ID),
+        )
+        # The forged row really would win a newest-first race: same scope, same artifact, and an
+        # id that outranks the human capture on the tie-break.
+        assert forged.onboarding_input_id > cast(UUID, captured_id)
+
+        binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
+        binding = await binder.bind(_request(scope, ref))
+
+        assert binding.onboarding_input_id == str(captured_id)
+        assert binding.onboarding_input_id != str(forged.onboarding_input_id)
+
+    run_async(_scenario(tmp_path, body=body))
+
+
+def test_two_projects_answering_identically_each_bind_their_own_capture_record(
+    tmp_path: Path,
+    db_available: bool,
+) -> None:
+    """Byte-identical answers share one artifact key; they must not share a capture record.
+
+    "confirm", "yes", "go ahead" — short answers collide across projects by construction, because
+    the artifact is content-addressed. Without the project scope the two turns cross-select, and
+    one project's statements are attributed to the other's capture (and can be silently dropped by
+    the ``uuid5`` ``ON CONFLICT DO NOTHING`` statement ids).
+    """
+
+    if not db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    async def body(
+        *,
+        scope: _Scope,
+        conn: AsyncConnection,
+        artifacts: DurableAgentArtifactStore,
+        connection_factory: Any,
+        ref: ArtifactRef,
+        captured_id: OnboardingInputId | None,
+        **_: Any,
+    ) -> None:
+        other_project = f"{scope.project_id}-second"
+        await create_project(
+            conn,
+            workspace_id=scope.workspace_id,
+            brand_id=scope.brand_id,
+            product_id=scope.product_id,
+            name="Aura Stage 0 (second project)",
+            project_id=other_project,
+        )
+        # The same bytes, so the same content-addressed artifact — and an id that would win a
+        # workspace-wide newest-first selection.
+        other = await submit_onboarding_input(
+            conn,
+            workspace_id=scope.workspace_id,
+            brand_id=scope.brand_id,
+            product_id=scope.product_id,
+            project_id=other_project,
+            client_entity_id=scope.client_entity_id,
+            kind=OnboardingInputKind.USER_TURN,
+            artifact_key=ref.artifact_key,
+            content_sha256=ref.sha256,
+            actor="human",
+            onboarding_input_id=OnboardingInputId(HIGHEST_ID),
+        )
+        assert other.artifact_key == ref.artifact_key
+        assert other.onboarding_input_id > cast(UUID, captured_id)
+
+        binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
+        first = await binder.bind(_request(scope, ref))
+        second = await binder.bind(_request(scope, ref, project_id=other_project))
+
+        assert first.onboarding_input_id == str(captured_id)
+        assert second.onboarding_input_id == str(other.onboarding_input_id)
+        # Same bytes on both sides; only the attribution differs.
+        assert first.answer == second.answer == ANSWER
+
+    run_async(_scenario(tmp_path, body=body))
+
+
 def test_a_turn_that_is_not_a_captured_input_binds_nothing(
     tmp_path: Path,
     db_available: bool,
@@ -303,9 +434,13 @@ def test_a_turn_that_is_not_a_captured_input_binds_nothing(
     ) -> None:
         binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
         request = _request(scope, ref)
-        with pytest.raises(CapturedTurnUnavailable, match="not a captured onboarding input"):
+        with pytest.raises(
+            CapturedTurnUnavailable, match="not a captured onboarding input"
+        ) as raised:
             await binder.bind(request)
-        # Context assembly must still work: describing an unbound turn is None, not a failure.
+        assert raised.value.reason_code == CAPTURE_NOT_FOUND
+        # Context assembly must still work: describing an unbound turn is None, not a failure —
+        # and this is the one reason that is ordinary, so it is not logged as an alarm.
         assert await binder.describe(request) is None
 
     run_async(_scenario(tmp_path, body=body, capture=False))
@@ -342,6 +477,43 @@ def test_bytes_that_do_not_hash_to_the_turn_ref_bind_nothing_and_never_reach_the
     )
     with pytest.raises(CapturedTurnUnavailable, match="does not hash to its own artifact"):
         run_async(binder.bind(_request(scope, ref)))
+
+
+def test_an_integrity_disagreement_fails_soft_at_l7_but_never_silently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``describe`` must not turn "these two records disagree" into an absent envelope and nothing.
+
+    Failing soft is right — L7 has to assemble either way — but only ``capture_not_found`` is
+    ordinary. A digest disagreement is an integrity alarm and is logged as one.
+    """
+
+    emitted: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        turn_binding_module,
+        "log",
+        SimpleNamespace(warning=lambda event, **fields: emitted.append((event, fields))),
+    )
+
+    async def unusable_conn_factory() -> Any:  # pragma: no cover - must never be called
+        raise AssertionError("digest mismatch must be refused before the capture lookup")
+
+    scope = _Scope()
+    ref = artifact("user-message.txt", workspace_id=scope.workspace_id)
+    binder = CapturedTurnBinder(
+        artifacts=_DisagreeingArtifacts(b"a different turn entirely"),
+        conn_factory=cast(Any, unusable_conn_factory),
+    )
+
+    assert run_async(binder.describe(_request(scope, ref))) is None
+
+    assert [event for event, _ in emitted] == ["stage0.captured_turn.unavailable"]
+    fields = emitted[0][1]
+    assert fields["reason_code"] == "artifact_digest_mismatch"
+    assert fields["reason_code"] != CAPTURE_NOT_FOUND
+    assert fields["workspace_id"] == scope.workspace_id
+    assert fields["project_id"] == scope.project_id
+    assert fields["artifact_key"] == ref.artifact_key
 
 
 @pytest.mark.parametrize(
@@ -466,6 +638,76 @@ def test_a_governed_call_of_offsets_alone_lands_the_statement_on_engine_loaded_b
         assert stored["quote_sha256"] == hashlib.sha256(quote.encode()).hexdigest()
         assert (stored["quote_start"], stored["quote_end"]) == (QUOTE_START, QUOTE_END)
         assert stored["onboarding_input_id"] == captured_id
+
+    run_async(_scenario(tmp_path, body=body))
+
+
+def test_a_governed_quote_after_a_multi_byte_character_lands_the_characters_not_the_bytes(
+    tmp_path: Path,
+    db_available: bool,
+) -> None:
+    """The discriminating case: a span whose character and byte offsets disagree.
+
+    ``QUOTE_START``/``QUOTE_END`` above sit entirely before the first multi-byte character, so a
+    byte-offset implementation would pass that test unnoticed. This span starts after the astral
+    emoji, where the two denominations have drifted by five bytes: reading it as bytes yields
+    ``"d the administ"`` instead of ``"administrators"``, and the durable evidence hash says so.
+    """
+
+    if not db_available:
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+    start = ANSWER.index("administrators")
+    end = start + len("administrators")
+
+    async def body(
+        *,
+        scope: _Scope,
+        conn: AsyncConnection,
+        artifacts: DurableAgentArtifactStore,
+        connection_factory: Any,
+        ref: ArtifactRef,
+        **_: Any,
+    ) -> None:
+        # The premise: this span is past a multi-byte character, so the two readings differ.
+        assert ANSWER.index("🎯") < start
+        assert ANSWER.encode()[start:end] != ANSWER[start:end].encode()
+
+        request = _request(scope, ref)
+        binder = CapturedTurnBinder(artifacts=artifacts, conn_factory=connection_factory)
+        merged = _trusted_tool_arguments(
+            arguments=_model_arguments(
+                scope,
+                statements=[
+                    {
+                        "route": "project_state",
+                        "route_key": "buying_committee_shape",
+                        "quote_start": start,
+                        "quote_end": end,
+                    }
+                ],
+            ),
+            input_model=RecordInterviewAnswerInput,
+            constitution=request.constitution,
+            captured_turn=await binder.bind(request),
+        )
+        tool = _tool(connection_factory)
+        result = await tool.invoke(
+            RecordInterviewAnswerInput.model_validate(merged),
+            _ctx(scope, connection_factory, label="multibyte"),
+        )
+
+        statement_ids = result.references["statement_ids"]
+        assert isinstance(statement_ids, list) and len(statement_ids) == 1
+        stored_sha = (
+            await conn.execute(
+                text("SELECT quote_sha256 FROM volunteered_statement WHERE id = :id"),
+                {"id": UUID(str(statement_ids[0]))},
+            )
+        ).scalar_one()
+        assert ANSWER[start:end] == "administrators"
+        assert stored_sha == hashlib.sha256(ANSWER[start:end].encode()).hexdigest()
+        assert stored_sha != hashlib.sha256(ANSWER.encode()[start:end]).hexdigest()
 
     run_async(_scenario(tmp_path, body=body))
 

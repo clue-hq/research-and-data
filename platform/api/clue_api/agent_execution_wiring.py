@@ -269,7 +269,8 @@ def _trusted_tool_arguments(
     for key in turn_fields:
         if captured_turn is None:
             raise CapturedTurnUnavailable(
-                f"{key!r} is served from this turn's captured input, which is unavailable"
+                f"{key!r} is served from this turn's captured input, which is unavailable",
+                reason_code="no_binding",
             )
         merged[key] = captured_turn.value_for(key)
     return merged
@@ -1235,14 +1236,15 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         """Serve this turn's binding, or refuse loudly enough for the model to see it.
 
         The refusal is a ``ValueError`` on purpose: the caller turns it into a
-        ``tool_input_invalid`` plan issue, so a step needing turn authority on an execution that
-        has none is rejected with visible feedback instead of running unbound.
+        ``turn_binding_unavailable`` plan issue, so a step needing turn authority on an execution
+        that has none is rejected with visible feedback instead of running unbound.
         """
 
         if self._captured_turn is None:
             raise CapturedTurnUnavailable(
                 "this execution carries no captured-turn binding, so the platform cannot supply "
-                "the turn's captured input, artifact, or body"
+                "the turn's captured input, artifact, or body",
+                reason_code="no_binding",
             )
         return await self._captured_turn.captured_turn()
 
@@ -1349,6 +1351,21 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                     ),
                 )
                 descriptor.input_model.model_validate(merged)
+            except CapturedTurnUnavailable as exc:
+                # Attribution matters: this step is unrunnable because the *platform* cannot bind
+                # the turn, not because the model's arguments are wrong. Reporting it as
+                # ``tool_input_invalid`` on ``.arguments`` sends the model into a repair loop over
+                # arguments it did not get wrong and cannot fix. Same fail-closed outcome, honest
+                # cause — and the location names the step, not the model's proposal.
+                issues.append(
+                    _agent_issue(
+                        GraphIssue(
+                            "turn_binding_unavailable",
+                            f"plan.steps[{ordinal}]",
+                            str(exc),
+                        )
+                    )
+                )
             except Exception as exc:
                 issues.append(
                     _agent_issue(
