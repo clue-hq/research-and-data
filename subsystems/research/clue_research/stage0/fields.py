@@ -56,7 +56,7 @@ CLIENT_KB_VERSION = "client.kb_version"
 
 # The substantive client-knowledge fields reverse-profiling fills (excludes the version marker).
 # M5.2 ICP synthesis and M12 positioning read these via current_value over the client entity.
-CLIENT_KNOWLEDGE_FIELDS: tuple[str, ...] = (
+CLIENT_BASELINE_FIELDS: tuple[str, ...] = (
     CLIENT_VALUE_PROP,
     CLIENT_PRODUCT,
     CLIENT_DIFFERENTIATOR,
@@ -67,6 +67,10 @@ CLIENT_KNOWLEDGE_FIELDS: tuple[str, ...] = (
     CLIENT_MARKET_REPUTATION,
     CLIENT_DELIVERED_VALUE,
 )
+
+# Backward-compatible import name for callers that have not yet migrated. It is the baseline set
+# only; Client-KB *content* reads no longer use it as an allowlist.
+CLIENT_KNOWLEDGE_FIELDS = CLIENT_BASELINE_FIELDS
 
 
 def _seed(

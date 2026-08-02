@@ -34,13 +34,27 @@ from __future__ import annotations
 
 from clue_config.settings import DEFAULT_SYNTHESIS_MODEL
 from clue_research.stage0.client_kb import (
+    ClientKbWriteTarget,
     client_kb_readiness_metrics,
+    client_kb_write_target_for_materialization,
     current_kb_version,
     read_client_kb,
     read_client_kb_claims,
     reverse_profile,
 )
+from clue_research.stage0.dynamic_client_kb import (
+    DynamicClientKbRefused,
+    FieldMaterializationPlan,
+    FieldMaterializationReceipt,
+    FieldMaterializationStatus,
+    get_field_materialization,
+    materialize_approved_field,
+    prepare_field_materialization,
+    record_field_materialization_refusal,
+    statement_evidence_ref,
+)
 from clue_research.stage0.fields import (
+    CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
     CLIENT_KNOWLEDGE_FIELDS,
     CLIENT_KNOWLEDGE_PACK,
@@ -137,6 +151,7 @@ from clue_research.stage0.interview import (
     InterviewRoute,
     InterviewRoutingResult,
     InterviewStatement,
+    check_claim_value_entailment,
     is_judged_value,
     judge_interview_values,
     locate_quote,
@@ -144,6 +159,12 @@ from clue_research.stage0.interview import (
     register_client_interview_source,
     resolve_claim_entity,
     route_interview_answer,
+)
+from clue_research.stage0.readiness_policy import (
+    WorkspaceClientKbReadinessPolicy,
+    get_workspace_client_kb_readiness_policy,
+    set_workspace_client_kb_readiness_policy,
+    workspace_required_field_metrics,
 )
 from clue_research.stage0.reuse import (
     CLIENT_KNOWLEDGE_REUSE_POLICY,
@@ -179,6 +200,17 @@ __all__ = [
     "read_client_kb_claims",
     "client_kb_readiness_metrics",
     "current_kb_version",
+    "ClientKbWriteTarget",
+    "client_kb_write_target_for_materialization",
+    "DynamicClientKbRefused",
+    "FieldMaterializationPlan",
+    "FieldMaterializationReceipt",
+    "FieldMaterializationStatus",
+    "get_field_materialization",
+    "materialize_approved_field",
+    "prepare_field_materialization",
+    "record_field_materialization_refusal",
+    "statement_evidence_ref",
     "ReverseProfilingHandler",
     "reverse_profiling_run_id",
     # M5.1 input / output contracts
@@ -192,6 +224,11 @@ __all__ = [
     "load_client_knowledge_pack",
     "CLIENT_KNOWLEDGE_PACK",
     "CLIENT_KNOWLEDGE_FIELDS",
+    "CLIENT_BASELINE_FIELDS",
+    "WorkspaceClientKbReadinessPolicy",
+    "get_workspace_client_kb_readiness_policy",
+    "set_workspace_client_kb_readiness_policy",
+    "workspace_required_field_metrics",
     "CLIENT_KB_VERSION",
     "CLIENT_PACK",
     "SurfaceClass",
@@ -294,6 +331,7 @@ __all__ = [
     "InterviewRoute",
     "InterviewRoutingResult",
     "InterviewStatement",
+    "check_claim_value_entailment",
     "is_judged_value",
     "judge_interview_values",
     "locate_quote",

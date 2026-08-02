@@ -6,9 +6,14 @@ import hashlib
 from collections.abc import Callable
 
 from pydantic import JsonValue
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_config.proposals import DEFAULT_PROPOSAL_POLICY, ProposalPolicy
+from clue_config.proposals import (
+    DEFAULT_PROPOSAL_POLICY,
+    ClientFieldPromotionMode,
+    ProposalPolicy,
+)
 from clue_core import (
     FieldDef,
     PassKind,
@@ -22,7 +27,16 @@ from clue_core.proposals import (
     ProposalStatus,
     SourceProposalId,
 )
-from clue_research.claimstore import register_field
+from clue_research.claimstore import (
+    ValueSchemaError,
+    WorkspaceFieldDefinitionError,
+    get_field,
+    get_workspace_field,
+    register_field,
+    register_workspace_field,
+    validate_value_against_schema,
+    validate_workspace_field_schema,
+)
 from clue_research.proposals.models import (
     FieldProposal,
     FieldProposalPayload,
@@ -66,6 +80,18 @@ class ComplianceApprovalRequired(PermissionError):
     """A personal-data source lacks explicit compliance-policy approval."""
 
 
+class ClientFieldPromotionDisabled(PermissionError):
+    """The selected policy posture permits proposals but not promotion."""
+
+
+class ClientFieldPolicyRefused(PermissionError):
+    """Policy authority attempted to promote a field outside the safe autonomous class."""
+
+
+class ClientFieldEvidenceRefused(ValueError):
+    """A dynamic field proposal does not cite a live statement in its own object-spine scope."""
+
+
 def _payload_hash(payload: FieldProposalPayload | SourceProposalPayload) -> str:
     dumped = payload.model_dump(mode="json")
     return hashlib.sha256(canonical_json(dumped).encode("utf-8")).hexdigest()
@@ -74,12 +100,86 @@ def _payload_hash(payload: FieldProposalPayload | SourceProposalPayload) -> str:
 def field_required_authority(
     payload: FieldProposalPayload, policy: ProposalPolicy
 ) -> ProposalAuthority:
+    if payload.field_def.field_key.startswith("client."):
+        eligible, _ = evaluate_safe_client_field(payload, policy)
+        if policy.client_field_mode is ClientFieldPromotionMode.SAFE_AUTO_PROMOTE and eligible:
+            return ProposalAuthority.POLICY
+        return ProposalAuthority.HUMAN
     if (
         payload.sensitive
         or classify_field_key(payload.field_def.field_key) in policy.human_field_classes
     ):
         return ProposalAuthority.HUMAN
     return ProposalAuthority.POLICY
+
+
+def evaluate_safe_client_field(
+    payload: FieldProposalPayload, policy: ProposalPolicy
+) -> tuple[bool, tuple[str, ...]]:
+    """Return the complete, bounded safe-auto predicate as explicit reason codes."""
+
+    details = payload.client_kb
+    reasons: list[str] = []
+    if not payload.field_def.field_key.startswith("client.") or details is None:
+        reasons.append("not_dynamic_client_field")
+        return False, tuple(reasons)
+    if (
+        payload.field_def.reuse_scope is None
+        or payload.field_def.reuse_scope.value != "tenant_private"
+    ):
+        reasons.append("reuse_scope_not_tenant_private")
+    if payload.pack != "client" or details.client_kb_role != "extended":
+        reasons.append("not_supplemental_client_kb")
+    if payload.sensitive:
+        reasons.append("sensitive")
+    if details.contains_personal_data:
+        reasons.append("personal_data")
+    if details.readiness_requested:
+        reasons.append("readiness_authority")
+    if details.scoring_authoritative:
+        reasons.append("scoring_authority")
+    if details.qualification_authoritative:
+        reasons.append("qualification_authority")
+    if details.outreach_authoritative:
+        reasons.append("outreach_authority")
+    if details.compliance_authoritative:
+        reasons.append("compliance_authority")
+    if payload.field_def.pass_kind is PassKind.SCORING:
+        reasons.append("scoring_pass")
+    if payload.field_def.gate is not None:
+        reasons.append("use_gate")
+    if payload.field_def.signal_class is not None:
+        reasons.append("signal_class_authority")
+    if details.introduces_new_source:
+        reasons.append("new_source")
+    if details.elevates_source_trust:
+        reasons.append("trust_elevation")
+    # The first autonomous posture intentionally admits no refresh-source authority. A non-empty
+    # plan is not necessarily unsafe, but deciding that its sources/tier are appropriate belongs
+    # to a human until a source-visibility policy seam is available here.
+    if payload.field_def.tier_plan:
+        reasons.append("source_plan_requires_human")
+    if not payload.evidence_refs:
+        reasons.append("missing_evidence")
+    if len(payload.evidence_refs) > policy.max_client_field_evidence_refs:
+        reasons.append("too_many_evidence_refs")
+    if payload.value_schema is None:
+        reasons.append("missing_value_schema")
+    else:
+        if (
+            len(canonical_json(payload.value_schema).encode("utf-8"))
+            > policy.max_client_field_schema_bytes
+        ):
+            reasons.append("schema_over_cap")
+        try:
+            validate_workspace_field_schema(payload.value_schema)
+        except WorkspaceFieldDefinitionError:
+            reasons.append("invalid_schema")
+        try:
+            validate_value_against_schema(details.candidate_value, payload.value_schema)
+        except ValueSchemaError:
+            reasons.append("candidate_schema_mismatch")
+    return not reasons, tuple(reasons)
 
 
 def source_required_authority(payload: SourceProposalPayload) -> ProposalAuthority:
@@ -97,6 +197,47 @@ async def _validate_scope(conn: AsyncConnection, scope: ProposalScope) -> None:
         raise ProposalScopeError("proposal scope not found")
 
 
+async def _validate_client_field_evidence(
+    conn: AsyncConnection, *, scope: ProposalScope, payload: FieldProposalPayload
+) -> None:
+    details = payload.client_kb
+    if details is None:
+        return
+    found = (
+        await conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM volunteered_statement statement
+                WHERE statement.id = :statement_id
+                  AND statement.workspace_id = :workspace_id
+                  AND statement.brand_id = :brand_id
+                  AND statement.product_id IS NOT DISTINCT FROM :product_id
+                  AND statement.project_id IS NOT DISTINCT FROM :project_id
+                  AND statement.client_entity_id IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM volunteered_statement correction
+                      WHERE correction.workspace_id = statement.workspace_id
+                        AND correction.correction_of_id = statement.id
+                  )
+                """
+            ),
+            {
+                "statement_id": details.source_statement_id,
+                "workspace_id": scope.workspace_id,
+                "brand_id": scope.brand_id,
+                "product_id": scope.product_id,
+                "project_id": scope.project_id,
+            },
+        )
+    ).scalar_one_or_none()
+    if found is None:
+        raise ClientFieldEvidenceRefused(
+            "dynamic Client-KB source statement is absent, superseded, or outside the "
+            "proposal's trusted workspace/object-spine scope"
+        )
+
+
 async def propose_field(
     conn: AsyncConnection,
     *,
@@ -107,15 +248,62 @@ async def propose_field(
     policy: ProposalPolicy = DEFAULT_PROPOSAL_POLICY,
 ) -> FieldProposal:
     await _validate_scope(conn, scope)
-    return await insert_field_proposal(
+    is_client_field = payload.field_def.field_key.startswith("client.")
+    global_collision = False
+    local_collision = False
+    if is_client_field:
+        await _validate_client_field_evidence(conn, scope=scope, payload=payload)
+        global_collision = await get_field(conn, payload.field_def.field_key) is not None
+        local_collision = (
+            await get_workspace_field(
+                conn,
+                workspace_id=scope.workspace_id,
+                field_key=payload.field_def.field_key,
+                include_retired=True,
+            )
+            is not None
+        )
+    required_authority = field_required_authority(payload, policy)
+    if global_collision or local_collision:
+        required_authority = ProposalAuthority.HUMAN
+    proposal = await insert_field_proposal(
         conn,
         scope=scope,
         payload=payload,
         payload_hash=_payload_hash(payload),
-        required_authority=field_required_authority(payload, policy),
+        required_authority=required_authority,
         proposed_by_actor=proposed_by_actor,
         proposed_by_ref=proposed_by_ref,
     )
+    if not is_client_field:
+        return proposal
+    # Exact proposal replay returns its already-promoted row before collision checks. A different
+    # proposal may never squat on platform vocabulary or an existing local meaning.
+    if proposal.status is ProposalStatus.PROMOTED:
+        return proposal
+    if global_collision or local_collision:
+        return proposal
+    if (
+        policy.client_field_mode is ClientFieldPromotionMode.SAFE_AUTO_PROMOTE
+        and proposal.required_authority is ProposalAuthority.POLICY
+    ):
+        eligible, reasons = evaluate_safe_client_field(payload, policy)
+        if eligible:
+            return await decide_field_proposal(
+                conn,
+                proposal_id=proposal.id,
+                workspace_id=scope.workspace_id,
+                decision=ProposalDecision.PROMOTE,
+                reason=(f"{policy.client_field_policy_version}:safe_auto_promote:eligible"),
+                authority=ProposalAuthority.POLICY,
+                decided_by="policy:dynamic_client_kb",
+                policy=policy,
+            )
+        # Defensive: ``field_required_authority`` and this predicate are the same function. If they
+        # ever drift, fail closed and preserve the pending proposal for a human.
+        if reasons:
+            return proposal
+    return proposal
 
 
 async def reject_field_concept(
@@ -236,6 +424,15 @@ async def decide_field_proposal(
         if proposal.status is target:
             return proposal
         raise ProposalAlreadyDecided(str(proposal_id))
+    is_client_field = proposal.payload.field_def.field_key.startswith("client.")
+    if (
+        decision is ProposalDecision.PROMOTE
+        and is_client_field
+        and policy.client_field_mode is ClientFieldPromotionMode.PROPOSAL_ONLY
+    ):
+        raise ClientFieldPromotionDisabled(
+            "proposal policy permits staging dynamic Client-KB fields but not promotion"
+        )
     required = field_required_authority(proposal.payload, policy)
     if not _has_authority(authority, required):
         raise InsufficientProposalAuthority(
@@ -243,17 +440,43 @@ async def decide_field_proposal(
         )
     if decision is ProposalDecision.PROMOTE:
         payload = proposal.payload
-        await register_field(
-            conn,
-            payload.field_def,
-            value_schema=payload.value_schema,
-            corroboration_min=payload.corroboration_min,
-            single_source_sufficient=payload.single_source_sufficient,
-            equality_mode=payload.equality_mode.value,
-            description=payload.description,
-            version=payload.version,
-            pack=payload.pack,
-        )
+        if is_client_field:
+            if authority is ProposalAuthority.POLICY:
+                eligible, reasons = evaluate_safe_client_field(payload, policy)
+                if (
+                    policy.client_field_mode is not ClientFieldPromotionMode.SAFE_AUTO_PROMOTE
+                    or not eligible
+                ):
+                    reason_codes = ",".join(reasons) if reasons else "policy_mode"
+                    raise ClientFieldPolicyRefused(
+                        f"dynamic Client-KB field is not safe-auto eligible: {reason_codes}"
+                    )
+            await register_workspace_field(
+                conn,
+                payload.field_def,
+                workspace_id=proposal.scope.workspace_id,
+                promoted_from_proposal_id=proposal.id,
+                promotion_policy_version=policy.client_field_policy_version,
+                promoted_by=decided_by,
+                value_schema=payload.value_schema,
+                corroboration_min=payload.corroboration_min,
+                single_source_sufficient=payload.single_source_sufficient,
+                equality_mode=payload.equality_mode.value,
+                description=payload.description,
+                definition_version=payload.version,
+            )
+        else:
+            await register_field(
+                conn,
+                payload.field_def,
+                value_schema=payload.value_schema,
+                corroboration_min=payload.corroboration_min,
+                single_source_sufficient=payload.single_source_sufficient,
+                equality_mode=payload.equality_mode.value,
+                description=payload.description,
+                version=payload.version,
+                pack=payload.pack,
+            )
         return await stamp_field_decision(
             conn,
             proposal_id=proposal.id,

@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v11",
+    AgentRole.HEAD_OF_ABM: "v12",
     AgentRole.RESEARCH: "v4",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
@@ -188,6 +188,8 @@ _RESERVED_REASON: dict[str, str] = {
 def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     """Resolve authority by exact address where versions have different safety proofs."""
 
+    if name == "propose_field":
+        return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "research_account_gaps":
         return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())

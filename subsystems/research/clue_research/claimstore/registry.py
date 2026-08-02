@@ -23,7 +23,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
+from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
@@ -67,6 +69,76 @@ class ReuseScopeError(ValueError):
     ``crm_import`` of a public-class field is correctly tenant-private)."""
 
 
+class FieldRegistryOrigin(StrEnum):
+    """Which durable registry layer supplied an effective field definition."""
+
+    GLOBAL = "global"
+    WORKSPACE = "workspace"
+
+
+class FieldRegistryScope(BaseModel):
+    """Trusted tenant scope for effective registry reads.
+
+    ``workspace_id=None`` is deliberately global-only. A caller never receives every workspace's
+    definitions through this seam; privileged inventory/erasure code uses explicit store queries.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: str | None = None
+
+    @classmethod
+    def global_only(cls) -> FieldRegistryScope:
+        return cls()
+
+    @classmethod
+    def for_workspace(cls, workspace_id: str) -> FieldRegistryScope:
+        if not workspace_id:
+            raise ValueError("workspace field-registry scope requires workspace_id")
+        return cls(workspace_id=workspace_id)
+
+
+class FieldFilters(BaseModel):
+    """Deterministic filters shared by global and workspace registry list reads."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    pass_kind: PassKind | None = None
+    field_class: FieldClass | None = None
+    pack: str | None = None
+    active: bool | None = True
+
+
+class ResolvedFieldDefinition(BaseModel):
+    """One complete field contract plus the registry layer that owns it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    field_def: FieldDef
+    value_schema: dict[str, Any] | None = None
+    corroboration_min: int = 1
+    single_source_sufficient: bool = False
+    equality_mode: str = "exact"
+    description: str | None = None
+    active: bool = True
+    pack: str | None = None
+    definition_version: int = 1
+    origin: FieldRegistryOrigin
+    workspace_id: str | None = None
+    client_kb_role: str | None = None
+    promoted_from_proposal_id: UUID | None = None
+    promotion_policy_version: str | None = None
+    promoted_by: str | None = None
+
+
+class WorkspaceFieldDefinitionError(ValueError):
+    """A proposed workspace definition violates the tenant-local registry contract."""
+
+
+class WorkspaceFieldRetiredError(ValueError):
+    """A caller attempted to retire an absent/already-retired workspace field."""
+
+
 # --- the value_schema validator --------------------------------------------
 # A deliberately small JSON-shape vocabulary — enough for the seed pack and typed payloads, with no
 # extra dependency. Supported: {"type": object|array|string|integer|number|boolean|null,
@@ -78,6 +150,55 @@ _SCALAR_CHECKS = {
     "boolean": lambda v: isinstance(v, bool),
     "null": lambda v: v is None,
 }
+_WORKSPACE_SCHEMA_MAX_BYTES = 65_536
+_WORKSPACE_SCHEMA_MAX_DEPTH = 6
+_WORKSPACE_SCHEMA_MAX_ITEMS = 256
+_WORKSPACE_SCHEMA_MAX_STRING = 8_192
+
+
+def _validate_workspace_schema(
+    schema: Mapping[str, Any], *, path: str = "value_schema", depth: int = 0
+) -> None:
+    """Validate the bounded JSON-schema subset tenant-local fields may register."""
+
+    if depth > _WORKSPACE_SCHEMA_MAX_DEPTH:
+        raise WorkspaceFieldDefinitionError(f"{path}: schema nesting exceeds bounded depth")
+    declared = schema.get("type")
+    if declared not in {*_SCALAR_CHECKS, "object", "array"}:
+        raise WorkspaceFieldDefinitionError(f"{path}: unsupported or missing schema type")
+    enum = schema.get("enum")
+    if enum is not None and (not isinstance(enum, list) or not enum or len(enum) > 128):
+        raise WorkspaceFieldDefinitionError(f"{path}.enum must contain 1..128 values")
+    if declared == "string" and enum is None:
+        maximum = schema.get("maxLength")
+        if not isinstance(maximum, int) or not 1 <= maximum <= _WORKSPACE_SCHEMA_MAX_STRING:
+            raise WorkspaceFieldDefinitionError(
+                f"{path}: an open string requires maxLength in 1..{_WORKSPACE_SCHEMA_MAX_STRING}"
+            )
+    if declared == "array":
+        maximum = schema.get("maxItems")
+        if not isinstance(maximum, int) or not 1 <= maximum <= _WORKSPACE_SCHEMA_MAX_ITEMS:
+            raise WorkspaceFieldDefinitionError(
+                f"{path}: an array requires maxItems in 1..{_WORKSPACE_SCHEMA_MAX_ITEMS}"
+            )
+        items = schema.get("items")
+        if not isinstance(items, dict):
+            raise WorkspaceFieldDefinitionError(f"{path}: an array requires one items schema")
+        _validate_workspace_schema(items, path=f"{path}.items", depth=depth + 1)
+    if declared == "object":
+        properties = schema.get("properties")
+        if not isinstance(properties, dict) or not properties or len(properties) > 64:
+            raise WorkspaceFieldDefinitionError(
+                f"{path}: object properties must contain 1..64 keys"
+            )
+        if schema.get("additionalProperties") is not False:
+            raise WorkspaceFieldDefinitionError(
+                f"{path}: bounded objects require additionalProperties=false"
+            )
+        for key, child in properties.items():
+            if not isinstance(key, str) or not isinstance(child, dict):
+                raise WorkspaceFieldDefinitionError(f"{path}: invalid object property schema")
+            _validate_workspace_schema(child, path=f"{path}.{key}", depth=depth + 1)
 
 
 def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value") -> None:
@@ -96,6 +217,10 @@ def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value"
         for prop, subschema in schema.get("properties", {}).items():
             if prop in value:
                 _validate_payload(value[prop], subschema, f"{path}.{prop}")
+        if schema.get("additionalProperties") is False:
+            unexpected = set(value) - set(schema.get("properties", {}))
+            if unexpected:
+                raise ValueSchemaError(f"{path}: unexpected keys {sorted(unexpected)!r}")
     elif declared == "array":
         if not isinstance(value, list):
             raise ValueSchemaError(f"{path}: expected array, got {type(value).__name__}")
@@ -103,12 +228,20 @@ def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value"
         if items is not None:
             for index, item in enumerate(value):
                 _validate_payload(item, items, f"{path}[{index}]")
+        if isinstance(schema.get("maxItems"), int) and len(value) > schema["maxItems"]:
+            raise ValueSchemaError(f"{path}: contains more than {schema['maxItems']} items")
     else:
         check = _SCALAR_CHECKS.get(declared)
         if check is None:
             raise ValueSchemaError(f"{path}: unknown schema type {declared!r}")
         if not check(value):
             raise ValueSchemaError(f"{path}: expected {declared}, got {type(value).__name__}")
+        if (
+            declared == "string"
+            and isinstance(schema.get("maxLength"), int)
+            and len(value) > schema["maxLength"]
+        ):
+            raise ValueSchemaError(f"{path}: exceeds maxLength {schema['maxLength']}")
 
 
 # --- row <-> FieldDef helpers ----------------------------------------------
@@ -116,6 +249,15 @@ _SELECT = (
     "field_key, value_type, validation, tier_plan, freshness_ttl, pass_kind, gate, signal_class, "
     "reuse_scope, field_class, value_schema, corroboration_min, single_source_sufficient, "
     "equality_mode, description, active, pack, version, created_at"
+)
+
+_WORKSPACE_SELECT = (
+    "w.field_key, w.value_type, w.validation, w.tier_plan, w.freshness_ttl, w.pass_kind, "
+    "w.gate, w.signal_class, w.reuse_scope, w.field_class, w.value_schema, "
+    "w.corroboration_min, w.single_source_sufficient, w.equality_mode, w.description, "
+    "(w.active AND r.field_key IS NULL) AS active, w.pack, "
+    "w.definition_version AS version, w.promoted_at AS created_at, w.workspace_id, "
+    "w.client_kb_role, w.promoted_from_proposal_id, w.promotion_policy_version, w.promoted_by"
 )
 
 
@@ -131,6 +273,44 @@ def _row_to_field_def(row: Mapping[str, Any]) -> FieldDef:
         signal_class=row["signal_class"],
         reuse_scope=row["reuse_scope"],
     )
+
+
+def _row_to_resolved(
+    row: Mapping[str, Any], *, origin: FieldRegistryOrigin
+) -> ResolvedFieldDefinition:
+    schema = decode_jsonb(row["value_schema"])
+    return ResolvedFieldDefinition(
+        field_def=_row_to_field_def(row),
+        value_schema=dict(schema) if schema is not None else None,
+        corroboration_min=row["corroboration_min"],
+        single_source_sufficient=row["single_source_sufficient"],
+        equality_mode=row["equality_mode"],
+        description=row["description"],
+        active=row["active"],
+        pack=row["pack"],
+        definition_version=row["version"],
+        origin=origin,
+        workspace_id=row.get("workspace_id"),
+        client_kb_role=row.get("client_kb_role"),
+        promoted_from_proposal_id=row.get("promoted_from_proposal_id"),
+        promotion_policy_version=row.get("promotion_policy_version"),
+        promoted_by=row.get("promoted_by"),
+    )
+
+
+def validate_workspace_field_schema(value_schema: Mapping[str, Any]) -> None:
+    """Validate the bounded schema contract allowed for a tenant-local Client-KB field."""
+
+    encoded_schema = serialize_value_json(value_schema)
+    if len(encoded_schema.encode()) > _WORKSPACE_SCHEMA_MAX_BYTES:
+        raise WorkspaceFieldDefinitionError("tenant-local field value_schema exceeds 65536 bytes")
+    _validate_workspace_schema(value_schema)
+
+
+def validate_value_against_schema(value_json: JsonValue, value_schema: Mapping[str, Any]) -> None:
+    """Validate a candidate without requiring the field to be registered first."""
+
+    _validate_payload(value_json, value_schema)
 
 
 _INSERT = text(
@@ -149,11 +329,52 @@ _INSERT = text(
     """
 )
 
+_WORKSPACE_INSERT = text(
+    """
+    INSERT INTO workspace_field_definition (
+        workspace_id, field_key, value_type, validation, value_schema, tier_plan, freshness_ttl,
+        pass_kind, gate, signal_class, reuse_scope, field_class, corroboration_min,
+        single_source_sufficient, equality_mode, description, pack, client_kb_role, active,
+        definition_version, promoted_from_proposal_id, promotion_policy_version, promoted_by
+    ) VALUES (
+        :workspace_id, :field_key, :value_type, CAST(:validation AS jsonb),
+        CAST(:value_schema AS jsonb), CAST(:tier_plan AS jsonb), :freshness_ttl,
+        CAST(:pass_kind AS field_pass), :gate, :signal_class,
+        CAST(:reuse_scope AS reuse_scope), CAST(:field_class AS field_class),
+        :corroboration_min, :single_source_sufficient, CAST(:equality_mode AS equality_mode),
+        :description, :pack, :client_kb_role, :active, :definition_version,
+        :promoted_from_proposal_id, :promotion_policy_version, :promoted_by
+    )
+    """
+)
+
 
 async def _get_row(conn: AsyncConnection, field_key: str) -> Mapping[str, Any] | None:
     result = await conn.execute(
         text(f"SELECT {_SELECT} FROM field_definition WHERE field_key = :k"),
         {"k": field_key},
+    )
+    row = result.mappings().first()
+    return dict(row) if row is not None else None
+
+
+async def _get_workspace_row(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    include_retired: bool = False,
+) -> Mapping[str, Any] | None:
+    retired = "" if include_retired else "AND r.field_key IS NULL"
+    result = await conn.execute(
+        text(
+            f"SELECT {_WORKSPACE_SELECT} FROM workspace_field_definition w "
+            "LEFT JOIN workspace_field_retirement r "
+            "ON r.workspace_id = w.workspace_id AND r.field_key = w.field_key "
+            "WHERE w.workspace_id = :workspace_id AND w.field_key = :field_key "
+            f"{retired}"
+        ),
+        {"workspace_id": workspace_id, "field_key": field_key},
     )
     row = result.mappings().first()
     return dict(row) if row is not None else None
@@ -322,10 +543,228 @@ async def register_field(
     )
 
 
+async def register_workspace_field(
+    conn: AsyncConnection,
+    field_def: FieldDef,
+    *,
+    workspace_id: str,
+    promoted_from_proposal_id: UUID,
+    promotion_policy_version: str,
+    promoted_by: str,
+    value_schema: Mapping[str, Any] | None = None,
+    corroboration_min: int = 1,
+    single_source_sufficient: bool = False,
+    equality_mode: str = "exact",
+    description: str | None = None,
+    definition_version: int = 1,
+) -> ResolvedFieldDefinition:
+    """Register one immutable, tenant-local extended Client-KB field.
+
+    The service forces every authority-bearing property instead of trusting the proposal payload:
+    ``client.*`` namespace, ``pack=client``, ``tenant_private`` reuse, extended-only role, and the
+    owning workspace. A global collision is always refused; workspace rows never shadow platform
+    vocabulary.
+    """
+
+    if not workspace_id:
+        raise WorkspaceFieldDefinitionError("workspace field registration requires workspace_id")
+    if not field_def.field_key.startswith("client."):
+        raise WorkspaceFieldDefinitionError(
+            "tenant-local Client-KB fields must use the client.* namespace"
+        )
+    if classify_field_key(field_def.field_key) is not FieldClass.PACK:
+        raise WorkspaceFieldDefinitionError("tenant-local Client-KB fields must be pack fields")
+    if field_def.reuse_scope is not ReuseScope.TENANT_PRIVATE:
+        raise WorkspaceFieldDefinitionError(
+            "tenant-local Client-KB fields must declare reuse_scope=tenant_private"
+        )
+    if value_schema is None:
+        raise WorkspaceFieldDefinitionError("tenant-local Client-KB fields require value_schema")
+    validate_workspace_field_schema(value_schema)
+    if await _get_row(conn, field_def.field_key) is not None:
+        raise WorkspaceFieldDefinitionError(
+            f"field_key {field_def.field_key!r} collides with platform-global vocabulary; "
+            "propose a different workspace key"
+        )
+
+    incoming = _comparable(
+        value_type=field_def.value_type,
+        validation=field_def.validation,
+        tier_plan=field_def.tier_plan,
+        freshness_ttl=field_def.freshness_ttl,
+        pass_kind=field_def.pass_kind.value,
+        gate=field_def.gate,
+        signal_class=field_def.signal_class,
+        reuse_scope=ReuseScope.TENANT_PRIVATE.value,
+        field_class=FieldClass.PACK.value,
+        value_schema=value_schema,
+        corroboration_min=corroboration_min,
+        single_source_sufficient=single_source_sufficient,
+        equality_mode=equality_mode,
+        description=description,
+        active=True,
+        pack="client",
+    )
+    existing = await _get_workspace_row(
+        conn, workspace_id=workspace_id, field_key=field_def.field_key, include_retired=True
+    )
+    if existing is not None:
+        current = _comparable(
+            value_type=existing["value_type"],
+            validation=decode_jsonb(existing["validation"]),
+            tier_plan=decode_jsonb(existing["tier_plan"]) or [],
+            freshness_ttl=existing["freshness_ttl"],
+            pass_kind=existing["pass_kind"],
+            gate=existing["gate"],
+            signal_class=existing["signal_class"],
+            reuse_scope=existing["reuse_scope"],
+            field_class=existing["field_class"],
+            value_schema=decode_jsonb(existing["value_schema"]),
+            corroboration_min=existing["corroboration_min"],
+            single_source_sufficient=existing["single_source_sufficient"],
+            equality_mode=existing["equality_mode"],
+            description=existing["description"],
+            active=True,
+            pack=existing["pack"],
+        )
+        if (
+            current == incoming
+            and existing["promoted_from_proposal_id"] == promoted_from_proposal_id
+        ):
+            return _row_to_resolved(existing, origin=FieldRegistryOrigin.WORKSPACE)
+        raise FieldRedefinitionError(
+            f"workspace field {workspace_id}/{field_def.field_key} is already registered; "
+            "a material schema change requires a new field_key"
+        )
+
+    await conn.execute(
+        _WORKSPACE_INSERT,
+        {
+            "workspace_id": workspace_id,
+            "field_key": field_def.field_key,
+            "value_type": field_def.value_type,
+            "validation": (
+                serialize_value_json(field_def.validation)
+                if field_def.validation is not None
+                else None
+            ),
+            "value_schema": (
+                serialize_value_json(value_schema) if value_schema is not None else None
+            ),
+            "tier_plan": serialize_value_json(list(field_def.tier_plan)),
+            "freshness_ttl": field_def.freshness_ttl,
+            "pass_kind": field_def.pass_kind.value,
+            "gate": field_def.gate,
+            "signal_class": field_def.signal_class,
+            "reuse_scope": ReuseScope.TENANT_PRIVATE.value,
+            "field_class": FieldClass.PACK.value,
+            "corroboration_min": corroboration_min,
+            "single_source_sufficient": single_source_sufficient,
+            "equality_mode": equality_mode,
+            "description": description,
+            "pack": "client",
+            "client_kb_role": "extended",
+            "active": True,
+            "definition_version": definition_version,
+            "promoted_from_proposal_id": promoted_from_proposal_id,
+            "promotion_policy_version": promotion_policy_version,
+            "promoted_by": promoted_by,
+        },
+    )
+    created = await _get_workspace_row(
+        conn, workspace_id=workspace_id, field_key=field_def.field_key
+    )
+    assert created is not None
+    return _row_to_resolved(created, origin=FieldRegistryOrigin.WORKSPACE)
+
+
+async def retire_workspace_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    retired_by: str,
+    reason: str,
+) -> None:
+    """Append one human governance retirement without rewriting the definition or its history."""
+
+    if not retired_by.startswith("human:"):
+        raise PermissionError("workspace field retirement requires human authority")
+    existing = await _get_workspace_row(
+        conn, workspace_id=workspace_id, field_key=field_key, include_retired=True
+    )
+    if existing is None:
+        raise WorkspaceFieldRetiredError("workspace field not found")
+    result = await conn.execute(
+        text(
+            "INSERT INTO workspace_field_retirement "
+            "(workspace_id, field_key, retired_by, reason) "
+            "VALUES (:workspace_id, :field_key, :retired_by, :reason) "
+            "ON CONFLICT (workspace_id, field_key) DO NOTHING RETURNING field_key"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "field_key": field_key,
+            "retired_by": retired_by,
+            "reason": reason,
+        },
+    )
+    if result.scalar_one_or_none() is None:
+        raise WorkspaceFieldRetiredError("workspace field is already retired")
+
+
 async def get_field(conn: AsyncConnection, field_key: str) -> FieldDef | None:
-    """Return the :class:`FieldDef` for ``field_key``, or ``None`` if it is not registered."""
+    """Return a platform-global field, or ``None``.
+
+    This is intentionally global-only compatibility for seed/pack and platform vocabulary paths.
+    Tenant-aware business paths use :func:`get_effective_field` with trusted scope.
+    """
     row = await _get_row(conn, field_key)
     return _row_to_field_def(row) if row is not None else None
+
+
+async def get_workspace_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    include_retired: bool = False,
+) -> ResolvedFieldDefinition | None:
+    """Return exactly one workspace-owned field without falling back to global vocabulary."""
+
+    row = await _get_workspace_row(
+        conn,
+        workspace_id=workspace_id,
+        field_key=field_key,
+        include_retired=include_retired,
+    )
+    return _row_to_resolved(row, origin=FieldRegistryOrigin.WORKSPACE) if row is not None else None
+
+
+async def get_effective_field(
+    conn: AsyncConnection,
+    *,
+    scope: FieldRegistryScope,
+    field_key: str,
+    include_retired: bool = False,
+) -> ResolvedFieldDefinition | None:
+    """Resolve workspace overlay then platform global, without cross-workspace disclosure."""
+
+    if scope.workspace_id is not None:
+        local = await get_workspace_field(
+            conn,
+            workspace_id=scope.workspace_id,
+            field_key=field_key,
+            include_retired=include_retired,
+        )
+        if local is not None:
+            return local
+    global_row = await _get_row(conn, field_key)
+    return (
+        _row_to_resolved(global_row, origin=FieldRegistryOrigin.GLOBAL)
+        if global_row is not None
+        else None
+    )
 
 
 class CorroborationConfig(BaseModel):
@@ -344,26 +783,26 @@ class CorroborationConfig(BaseModel):
 
 
 async def get_corroboration_config(
-    conn: AsyncConnection, field_key: str
+    conn: AsyncConnection,
+    field_key: str,
+    *,
+    scope: FieldRegistryScope | None = None,
 ) -> CorroborationConfig | None:
     """Return the :class:`CorroborationConfig` for ``field_key`` (the M9.2 corroborator's input), or
     ``None`` if the field is not registered. One small read of the corroboration columns — keeping
     the ``field_definition`` SQL in its owning module (the registry), as the merge layer's
     ``_freshness_ttl`` does for the TTL column."""
-    row = await conn.execute(
-        text(
-            "SELECT corroboration_min, single_source_sufficient, equality_mode "
-            "FROM field_definition WHERE field_key = :k"
-        ),
-        {"k": field_key},
+    definition = await get_effective_field(
+        conn,
+        scope=scope if scope is not None else FieldRegistryScope.global_only(),
+        field_key=field_key,
     )
-    found = row.mappings().first()
-    if found is None:
+    if definition is None:
         return None
     return CorroborationConfig(
-        corroboration_min=found["corroboration_min"],
-        single_source_sufficient=found["single_source_sufficient"],
-        equality_mode=found["equality_mode"],
+        corroboration_min=definition.corroboration_min,
+        single_source_sufficient=definition.single_source_sufficient,
+        equality_mode=definition.equality_mode,
     )
 
 
@@ -407,6 +846,96 @@ async def list_fields(
     return [_row_to_field_def(dict(row)) for row in result.mappings().all()]
 
 
+async def list_effective_fields(
+    conn: AsyncConnection,
+    *,
+    scope: FieldRegistryScope,
+    filters: FieldFilters | None = None,
+    include_retired: bool = False,
+) -> tuple[ResolvedFieldDefinition, ...]:
+    """List the deterministic global-plus-workspace registry visible in ``scope``.
+
+    Workspace results carry origin metadata and never appear in global-only scope. A key collision
+    is treated as corruption rather than silently choosing a meaning, even though the write service
+    and migration both prevent that state.
+    """
+
+    selected = filters if filters is not None else FieldFilters()
+    params = {
+        "active": selected.active,
+        "pass_kind": selected.pass_kind.value if selected.pass_kind is not None else None,
+        "field_class": selected.field_class.value if selected.field_class is not None else None,
+        "pack": selected.pack,
+    }
+    global_rows = (
+        await conn.execute(
+            text(
+                f"""
+                SELECT {_SELECT} FROM field_definition
+                WHERE (CAST(:active AS boolean) IS NULL OR active = CAST(:active AS boolean))
+                  AND (CAST(:pass_kind AS text) IS NULL
+                       OR pass_kind = CAST(:pass_kind AS field_pass))
+                  AND (CAST(:field_class AS text) IS NULL
+                       OR field_class = CAST(:field_class AS field_class))
+                  AND (CAST(:pack AS text) IS NULL OR pack = :pack)
+                ORDER BY field_key
+                """
+            ),
+            params,
+        )
+    ).mappings()
+    resolved = [
+        _row_to_resolved(dict(row), origin=FieldRegistryOrigin.GLOBAL) for row in global_rows.all()
+    ]
+
+    if scope.workspace_id is not None:
+        active_expr = "(w.active AND r.field_key IS NULL)"
+        retired_clause = "" if include_retired else "AND r.field_key IS NULL"
+        local_rows = (
+            await conn.execute(
+                text(
+                    f"""
+                    SELECT {_WORKSPACE_SELECT}
+                    FROM workspace_field_definition w
+                    LEFT JOIN workspace_field_retirement r
+                      ON r.workspace_id = w.workspace_id AND r.field_key = w.field_key
+                    WHERE w.workspace_id = :workspace_id
+                      AND (CAST(:active AS boolean) IS NULL
+                           OR {active_expr} = CAST(:active AS boolean))
+                      AND (CAST(:pass_kind AS text) IS NULL
+                           OR w.pass_kind = CAST(:pass_kind AS field_pass))
+                      AND (CAST(:field_class AS text) IS NULL
+                           OR w.field_class = CAST(:field_class AS field_class))
+                      AND (CAST(:pack AS text) IS NULL OR w.pack = :pack)
+                      {retired_clause}
+                    ORDER BY w.field_key
+                    """
+                ),
+                {**params, "workspace_id": scope.workspace_id},
+            )
+        ).mappings()
+        locals_resolved = [
+            _row_to_resolved(dict(row), origin=FieldRegistryOrigin.WORKSPACE)
+            for row in local_rows.all()
+        ]
+        global_keys = {item.field_def.field_key for item in resolved}
+        collision = next(
+            (
+                item.field_def.field_key
+                for item in locals_resolved
+                if item.field_def.field_key in global_keys
+            ),
+            None,
+        )
+        if collision is not None:
+            raise WorkspaceFieldDefinitionError(
+                f"workspace field {collision!r} shadows platform-global vocabulary"
+            )
+        resolved.extend(locals_resolved)
+
+    return tuple(sorted(resolved, key=lambda item: item.field_def.field_key))
+
+
 async def validate_value(
     conn: AsyncConnection, field_key: FieldKey | str, value_json: JsonValue
 ) -> None:
@@ -428,12 +957,32 @@ async def validate_value(
     _validate_payload(value_json, schema)
 
 
+async def validate_effective_value(
+    conn: AsyncConnection,
+    *,
+    scope: FieldRegistryScope,
+    field_key: FieldKey | str,
+    value_json: JsonValue,
+) -> ResolvedFieldDefinition:
+    """Validate against the definition visible in trusted scope and return that definition."""
+
+    resolved = await get_effective_field(conn, scope=scope, field_key=str(field_key))
+    if resolved is None:
+        raise UnknownFieldError(
+            f"field_key {field_key!r} is not registered in the effective field registry"
+        )
+    if resolved.value_schema is not None:
+        _validate_payload(value_json, resolved.value_schema)
+    return resolved
+
+
 async def check_claim_writable(
     conn: AsyncConnection,
     *,
     field_key: FieldKey | str,
     value_json: JsonValue,
     reuse_scope: ReuseScope,
+    workspace_id: str | None,
 ) -> None:
     """The field-claim write gate (M1.3 + M2.5/ENG-165 W5) — one registry lookup, two checks.
 
@@ -454,24 +1003,29 @@ async def check_claim_writable(
     This is the unbypassable backstop: even if a caller forgets :func:`identity.stamp_reuse`, a
     private field cannot be written public through :func:`insert_claim`.
     """
-    row = await _get_row(conn, field_key)
-    if row is None:
-        raise UnknownFieldError(
-            f"field_key {field_key!r} is not registered; register it before writing claims "
-            "(the registry is the single source of valid field_keys — conventions §2)"
+    if reuse_scope is ReuseScope.TENANT_PRIVATE and workspace_id is None:
+        raise ReuseScopeError(
+            f"field_key {field_key!r} is being written tenant_private without workspace_id; "
+            "refusing an unscoped private claim"
         )
-    schema = decode_jsonb(row["value_schema"])
-    if schema is not None:
-        _validate_payload(value_json, schema)
-
-    resolved = resolve_reuse_scope(_row_to_field_def(row))
-    if resolved is None:
+    # Public claims can resolve only platform vocabulary. Private claims may use their workspace
+    # overlay and then fall back to the same global vocabulary.
+    scope = (
+        FieldRegistryScope.for_workspace(workspace_id)
+        if reuse_scope is ReuseScope.TENANT_PRIVATE and workspace_id is not None
+        else FieldRegistryScope.global_only()
+    )
+    definition = await validate_effective_value(
+        conn, scope=scope, field_key=field_key, value_json=value_json
+    )
+    declared_scope = resolve_reuse_scope(definition.field_def)
+    if declared_scope is None:
         raise ReuseScopeError(
             f"field_key {field_key!r} has no resolvable reuse_scope (an undeclared <pack>.* "
             "field); declare its reuse_scope before writing claims — refusing to write a claim "
             "that cannot be tenant-classified (fail-closed; substrate §2 / ENG-165)"
         )
-    if resolved is ReuseScope.TENANT_PRIVATE and reuse_scope is ReuseScope.PUBLIC_FOOTPRINT:
+    if declared_scope is ReuseScope.TENANT_PRIVATE and reuse_scope is ReuseScope.PUBLIC_FOOTPRINT:
         raise ReuseScopeError(
             f"field_key {field_key!r} is declared tenant_private but the claim is stamped "
             "public_footprint — refusing the write (it would leak tenant-private data into the "

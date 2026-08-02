@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
+from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -41,6 +42,7 @@ from clue_core import (
     new_recon_run_id,
     serialize_value_json,
 )
+from clue_research.stage0.readiness_policy import get_workspace_client_kb_readiness_policy
 
 
 class ReconLaneStatus(StrEnum):
@@ -934,6 +936,9 @@ async def evaluate_readiness(
     agent_sufficiency_ref: str | None = None,
     readiness_decision_id: ReadinessDecisionId | None = None,
 ) -> ReadinessSnapshotRef:
+    workspace_policy = await get_workspace_client_kb_readiness_policy(
+        conn, workspace_id=workspace_id
+    )
     floor = spec.floors[gate]
     coverage = _number(metrics.get("coverage_ratio"), default=0.0)
     verified = int(_number(metrics.get("verified_claims"), default=0.0))
@@ -943,6 +948,20 @@ async def evaluate_readiness(
         {item for item in raw_available_fields if isinstance(item, str)}
         if isinstance(raw_available_fields, list)
         else set()
+    )
+    metrics_for_record: dict[str, JsonValue] = dict(metrics)
+    workspace_required = (
+        workspace_policy.required_field_keys if workspace_policy is not None else ()
+    )
+    workspace_missing = sorted(set(workspace_required) - available_fields)
+    metrics_for_record.update(
+        {
+            "workspace_readiness_policy_version": (
+                workspace_policy.version if workspace_policy is not None else 0
+            ),
+            "workspace_required_field_keys": cast(list[JsonValue], list(workspace_required)),
+            "workspace_required_missing_field_keys": cast(list[JsonValue], workspace_missing),
+        }
     )
     reasons: list[str] = []
     if coverage < floor.min_coverage_ratio:
@@ -959,6 +978,7 @@ async def evaluate_readiness(
         reasons.append("agent_sufficiency_insufficient")
     if missing := sorted(set(floor.required_field_keys) - available_fields):
         reasons.extend(f"missing_field:{key}" for key in missing)
+    reasons.extend(f"missing_workspace_field:{key}" for key in workspace_missing)
     spec_version = await ensure_readiness_spec(conn, workspace_id=workspace_id, spec=spec)
     decision_id = (
         readiness_decision_id if readiness_decision_id is not None else new_readiness_decision_id()
@@ -1003,7 +1023,7 @@ async def evaluate_readiness(
             "field_refs": serialize_value_json(list(field_proposal_refs)),
             "source_refs": serialize_value_json(list(source_proposal_refs)),
             "ingestion_refs": serialize_value_json(list(ingestion_refs)),
-            "metrics": serialize_value_json(dict(metrics)),
+            "metrics": serialize_value_json(metrics_for_record),
             "reasons": serialize_value_json(reasons),
             "agent_status": agent_sufficiency_status,
             "agent_ref": agent_sufficiency_ref,

@@ -612,8 +612,10 @@ async def judge_interview_values(
             checked.append(item)
             continue
         assert item.entity_id is not None
-        judged = await _check_value_entailment(
-            item.classified,
+        assert item.classified.field_key is not None
+        judged = await check_claim_value_entailment(
+            field_key=item.classified.field_key,
+            value=item.classified.value,
             quote=item.quote,
             entity_id=item.entity_id,
             entailment_judge=entailment_judge,
@@ -639,17 +641,20 @@ def is_judged_value(value: JsonValue) -> bool:
     return not isinstance(value, str)
 
 
-async def _check_value_entailment(
-    classified: InterviewStatement,
+async def check_claim_value_entailment(
     *,
+    field_key: str,
+    value: JsonValue,
     quote: str,
     entity_id: EntityId,
     entailment_judge: ClaimEntailmentJudge | None,
 ) -> bool:
-    """Prove a claim's value is supported by its own quote. Returns whether the judge did it."""
+    """Prove any interview-derived value against its exact quote.
 
-    assert classified.field_key is not None
-    value = classified.value
+    This is the one evidence-admission rule shared by direct claim routing and post-promotion
+    dynamic-field materialization. It returns whether the typed-value judge, rather than the text
+    substring rule, admitted the value.
+    """
     if not is_judged_value(value):
         # Unchanged since C4, deliberately byte-for-byte: a text value must be inside its quote.
         rendered = str(value)
@@ -673,7 +678,7 @@ async def _check_value_entailment(
         )
     entailment = await entailment_judge.entails(
         entity_id=entity_id,
-        field_key=classified.field_key,
+        field_key=field_key,
         value=value,
         quote=quote,
     )
@@ -875,6 +880,7 @@ __all__ = [
     "InterviewRoute",
     "InterviewRoutingResult",
     "InterviewStatement",
+    "check_claim_value_entailment",
     "is_judged_value",
     "judge_interview_values",
     "locate_quote",

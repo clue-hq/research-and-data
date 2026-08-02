@@ -42,6 +42,7 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v2.json",
     "recipe0-stage0-v3.json",
     "recipe0-stage0-v4.json",
+    "recipe0-stage0-v5.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     "account-research-unit-v1.json",
