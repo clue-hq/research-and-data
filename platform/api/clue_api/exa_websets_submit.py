@@ -5,8 +5,9 @@ independent packages.  The composition reserves budget and request bytes in Post
 storage, claims one dispatch, performs HTTP outside the transaction, and then makes the response
 durable.  Exact replays return the D1 operation without network I/O.
 
-Polling, webhooks, pagination, final cost settlement, items, account identity, claims, and batch
-sealing are D3+ concerns and are not smuggled into this slice.
+Webhooks, pagination, final cost settlement, items, account identity, claims, and batch sealing are
+D3+ concerns. D3 extends this boundary only by transactionally enqueueing the initial poll after a
+successful submit; that is lifecycle wiring, not provider retrieval.
 """
 
 from __future__ import annotations
@@ -32,6 +33,8 @@ from clue_core import (
     DiscoveryRequestFingerprintInput,
     DiscoverySearchPlan,
     DiscoverySpendOutcome,
+    DiscoveryWakeReason,
+    DiscoveryWakeRequest,
     discovery_provider_external_id,
     discovery_request_fingerprint,
     new_discovery_operation_id,
@@ -69,6 +72,7 @@ from clue_research.durable import (
     get_discovery_plan,
     reconcile_discovery_batch_costs,
     reserve_discovery_operation,
+    schedule_discovery_wake,
     update_discovery_batch_state,
     update_discovery_operation,
 )
@@ -238,7 +242,7 @@ def _search_for(plan: DiscoveryPlan, search_key: str) -> DiscoverySearchPlan:
     return matches[0]
 
 
-def _assert_response_matches_request(
+def assert_exa_response_matches_request(
     request: ExaCreateWebsetRequest,
     exchange: ExaWebsetExchange,
 ) -> None:
@@ -498,7 +502,7 @@ class DurableExaWebsetSubmitter:
                 )
 
             try:
-                _assert_response_matches_request(request, exchange)
+                assert_exa_response_matches_request(request, exchange)
             except ExaWebsetsContractDrift as exc:
                 return await self._lookup_after_create_error(
                     workspace_id=workspace_id,
@@ -672,6 +676,7 @@ class DurableExaWebsetSubmitter:
             )
             if current is None:
                 raise DiscoveryNotFound(f"discovery operation {operation.operation_id}")
+            next_poll_at = datetime.now(UTC) + self._poll_after
             updated = current.model_copy(
                 update={
                     "provider_operation_id": exchange.webset.id,
@@ -683,7 +688,7 @@ class DurableExaWebsetSubmitter:
                     "provider_units_charged": Decimal(0),
                     "cost_cents_charged": Decimal(0),
                     "submitted_receipt_ref": receipt_key,
-                    "next_poll_at": datetime.now(UTC) + self._poll_after,
+                    "next_poll_at": next_poll_at,
                 }
             )
             stored = await update_discovery_operation(
@@ -702,6 +707,24 @@ class DurableExaWebsetSubmitter:
                 batch_id=operation.batch_id,
                 state=DiscoveryBatchState.WAITING_EXTERNAL,
             )
+            batch = await get_discovery_batch(
+                conn, workspace_id=workspace_id, batch_id=operation.batch_id
+            )
+            if batch is None:
+                raise DiscoveryNotFound(f"discovery batch {operation.batch_id}")
+            await schedule_discovery_wake(
+                conn,
+                workspace_id=workspace_id,
+                request=DiscoveryWakeRequest(
+                    workspace_id=workspace_id,
+                    project_run_id=batch.project_run_id,
+                    discovery_batch_id=batch.id,
+                    operation_id=operation.operation_id,
+                    reason=DiscoveryWakeReason.SCHEDULED_POLL,
+                    available_at=next_poll_at,
+                    dedupe_key=f"exa-initial-poll:{operation.operation_id}",
+                ),
+            )
             return stored
 
     async def _lookup_after_create_error(
@@ -715,7 +738,7 @@ class DurableExaWebsetSubmitter:
     ) -> ExaSubmitResult:
         try:
             exchange = await self._transport.get_webset(request.external_id)
-            _assert_response_matches_request(request, exchange)
+            assert_exa_response_matches_request(request, exchange)
         except ExaWebsetsError as lookup_error:
             receipt = _receipt_envelope(
                 kind="duplicate_lookup_failed" if duplicate else "uncertain_lookup_failed",
@@ -768,7 +791,7 @@ class DurableExaWebsetSubmitter:
     ) -> ExaSubmitResult:
         try:
             exchange = await self._transport.get_webset(request.external_id)
-            _assert_response_matches_request(request, exchange)
+            assert_exa_response_matches_request(request, exchange)
         except ExaWebsetsError as lookup_error:
             receipt = _receipt_envelope(
                 kind="stale_submit_lookup_failed",

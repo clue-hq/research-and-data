@@ -55,6 +55,10 @@ from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
+from clue_api.exa_websets_lifecycle import (
+    DurableExaWebsetLifecycle,
+    ExaDiscoveryWakeWorker,
+)
 from clue_api.execution_tools import (
     ExecutionControlServices,
     register_execution_control_tools,
@@ -102,6 +106,7 @@ from clue_execution import (
 from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
+from clue_research.adapters.exa_websets import ExaWebsetsClient
 from clue_storage import StorageBackend
 from clue_toolbelt import DbIdempotencyStore
 
@@ -190,6 +195,50 @@ def _start_agent_cleanup(
     return asyncio.create_task(_agent_cleanup_loop(settings, job))
 
 
+async def _exa_discovery_loop(
+    settings: Settings,
+    *,
+    api_key: object,
+    storage: StorageBackend,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    from pydantic import SecretStr
+
+    if not isinstance(api_key, SecretStr):
+        raise TypeError("Exa discovery worker requires a SecretStr API key")
+    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+        worker = ExaDiscoveryWakeWorker(
+            lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage)
+        )
+        while True:
+            try:
+                completed = await worker.run_due()
+                if completed:
+                    log.info("fleet.exa_discovery.completed", wake_count=completed)
+            except Exception:  # noqa: BLE001 - one provider fault cannot sink run execution
+                log.warning("fleet.exa_discovery.error", exc_info=True)
+            await sleep(settings.exa_websets_poll_worker_interval_s)
+
+
+def _start_exa_discovery(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> asyncio.Task[None] | None:
+    if not settings.exa_websets_lifecycle_enabled:
+        log.info("fleet.exa_discovery.disabled")
+        return None
+    if secrets.exa_api_key is None:
+        raise RuntimeError(
+            "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    loop = asyncio.get_running_loop()
+    return loop.create_task(
+        _exa_discovery_loop(settings, api_key=secrets.exa_api_key, storage=storage)
+    )
+
+
 async def _account_agent_runtime_required(
     settings: Settings,
     *,
@@ -221,6 +270,7 @@ async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
+    secrets = Secrets()
     storage = build_storage_backend(settings)
     async with db_lifespan(), redis_lifespan():
         register_compliance_wiring()
@@ -266,9 +316,7 @@ async def _serve() -> None:
             research_view_snapshots=(
                 research_views.snapshots if research_views is not None else None
             ),
-            research_view_recheck=(
-                research_views.recheck if research_views is not None else None
-            ),
+            research_view_recheck=(research_views.recheck if research_views is not None else None),
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -318,7 +366,7 @@ async def _serve() -> None:
         if await _account_agent_runtime_required(settings):
             agent_components = build_agent_platform_components(
                 settings=settings,
-                secrets=Secrets(),
+                secrets=secrets,
                 gateway_config=default_gateway_config(),
                 storage=storage,
                 tools=registry,
@@ -426,10 +474,15 @@ async def _serve() -> None:
                 else None
             ),
         )
+        exa_discovery = _start_exa_discovery(
+            settings,
+            secrets=secrets,
+            storage=storage,
+        )
         try:
             await run_worker(worker)
         finally:
-            for background in (sweep, agent_cleanup):
+            for background in (sweep, agent_cleanup, exa_discovery):
                 if background is None:
                     continue
                 background.cancel()

@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
+from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook_router
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
@@ -18,7 +19,7 @@ from clue_api.research_view_runtime import (
 )
 from clue_api.storage_wiring import build_storage_backend
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_config import Settings, load_settings
+from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
 from clue_obs import get_logger
 from clue_research.durable import BudgetEngine, DbBudgetStore
@@ -40,15 +41,16 @@ def _c7_enabled(settings: Settings) -> bool:
     )
 
 
-def build_application(settings: Settings | None = None) -> FastAPI:
+def build_application(
+    settings: Settings | None = None, *, secrets: Secrets | None = None
+) -> FastAPI:
     """Build one fully wired process application; no enabled C7 collaborator is optional."""
 
     resolved = settings if settings is not None else load_settings()
+    resolved_secrets = secrets if secrets is not None else Secrets()
     storage = build_storage_backend(resolved)
     research_views: ProductionResearchViewRuntime | None = (
-        build_production_research_view_runtime(storage=storage)
-        if _c7_enabled(resolved)
-        else None
+        build_production_research_view_runtime(storage=storage) if _c7_enabled(resolved) else None
     )
     if research_views is not None:
         register_compliance_wiring()
@@ -56,15 +58,9 @@ def build_application(settings: Settings | None = None) -> FastAPI:
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
-        research_view_composer=(
-            research_views.composer if research_views is not None else None
-        ),
-        research_view_snapshots=(
-            research_views.snapshots if research_views is not None else None
-        ),
-        research_view_recheck=(
-            research_views.recheck if research_views is not None else None
-        ),
+        research_view_composer=(research_views.composer if research_views is not None else None),
+        research_view_snapshots=(research_views.snapshots if research_views is not None else None),
+        research_view_recheck=(research_views.recheck if research_views is not None else None),
     )
     invoker = build_tool_invoker(
         registry=registry,
@@ -115,9 +111,7 @@ def build_application(settings: Settings | None = None) -> FastAPI:
                 route_count = int(
                     (
                         await conn.execute(
-                            text(
-                                "SELECT count(*) FROM research_view_field_route WHERE active"
-                            )
+                            text("SELECT count(*) FROM research_view_field_route WHERE active")
                         )
                     ).scalar_one()
                 )
@@ -139,12 +133,8 @@ def build_application(settings: Settings | None = None) -> FastAPI:
         tool_invoker=invoker,
         settings=resolved,
         ingestion_storage=storage,
-        research_view_composer=(
-            research_views.composer if research_views is not None else None
-        ),
-        research_view_snapshots=(
-            research_views.snapshots if research_views is not None else None
-        ),
+        research_view_composer=(research_views.composer if research_views is not None else None),
+        research_view_snapshots=(research_views.snapshots if research_views is not None else None),
         research_view_evidence_access=(
             research_views.evidence_access if research_views is not None else None
         ),
@@ -152,6 +142,16 @@ def build_application(settings: Settings | None = None) -> FastAPI:
             research_views.owner_references if research_views is not None else None
         ),
         startup_check=startup_check,
+        discovery_webhook_router=(
+            build_exa_webhook_router(
+                ExaWebhookIngestor(
+                    secret=resolved_secrets.exa_websets_webhook_secret,
+                    storage=storage,
+                )
+            )
+            if resolved_secrets.exa_websets_webhook_secret is not None
+            else None
+        ),
     )
 
 

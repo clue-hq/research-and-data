@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
     fleet_deep_window: int = 16
 
+    # --- Exa Websets durable discovery lifecycle (M6A D3) -------------------------------
+    # Default-off until the deployment has Websets API entitlement. The webhook HTTP route is
+    # independently exposed when its secret is configured; this switch starts the poll worker.
+    # Env: CLUE_EXA_WEBSETS_LIFECYCLE_ENABLED / CLUE_EXA_WEBSETS_POLL_WORKER_INTERVAL_S.
+    exa_websets_lifecycle_enabled: bool = False
+    exa_websets_poll_worker_interval_s: float = Field(default=1.0, gt=0)
+
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are
     # never backfilled. Env: ``CLUE_RECIPE1_ROUTING_ENABLED``.

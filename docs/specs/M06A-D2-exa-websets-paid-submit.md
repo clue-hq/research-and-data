@@ -99,8 +99,9 @@ is stored byte-for-byte. A duplicate or uncertain outcome stores an envelope con
 available create/lookup bodies as base64 plus independent hashes. Terminal errors use that envelope.
 
 An accepted create records provider id, submit receipt, next poll time, and `provider_running`; the
-batch becomes `waiting_external`. Create does not report final credits, so D2 records the 20-credit
-maximum reservation and zero realized units. D3 settles realized units after completion.
+batch becomes `waiting_external`. D3 now transactionally adds one stable initial-poll wake at this
+same boundary. Create does not report final credits, so D2 records the 20-credit maximum reservation
+and zero realized units. D3 settles modeled realized units after completion.
 
 The composition emits `discovery.exa_websets.submit`; the adapter emits
 `provider.exa_websets.create`/`lookup`. Attributes contain ids, fingerprint, count, reservation,
@@ -153,7 +154,7 @@ with zero second create.
 
 ## 8. Boundary into D3
 
-D3 remains blocked until the successful-live row in §7 exists. It will consume the D1 operation
-and provider ids, not submit a new Webset. D3 owns webhook verification, scheduled polling, cursor
-pagination, page/item receipts, final reconciliation, and realized-credit settlement. D2 does not
-materialize accounts or advance the project.
+The user authorized D3 mechanical implementation while the live D2 entitlement gate remains open.
+`M06A-D3-exa-websets-lifecycle.md` records that completed boundary and keeps its live-provider gate
+explicitly open. D3 consumes the D1 operation and provider ids; it does not submit a new Webset.
+D2 does not materialize accounts or advance the project.
