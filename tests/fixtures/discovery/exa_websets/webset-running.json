@@ -1,0 +1,45 @@
+{
+  "id": "ws_fixture_running",
+  "object": "webset",
+  "status": "running",
+  "externalId": "clue-fixture-running",
+  "searches": [
+    {
+      "id": "ws_search_fixture_1",
+      "object": "webset_search",
+      "status": "running",
+      "query": "Independent specialty practices in the United States",
+      "entity": {"type": "company"},
+      "criteria": [
+        {"description": "Organization is an independent specialty practice", "successRate": 50.0}
+      ],
+      "count": 2,
+      "maxPeoplePerCompany": null,
+      "progress": {"found": 1, "completion": 50.0},
+      "metadata": {},
+      "canceledAt": null,
+      "canceledReason": null,
+      "createdAt": "2026-08-02T08:00:00Z",
+      "updatedAt": "2026-08-02T08:01:00Z"
+    }
+  ],
+  "enrichments": [
+    {
+      "id": "enr_fixture_linkedin",
+      "object": "webset_enrichment",
+      "status": "pending",
+      "websetId": "ws_fixture_running",
+      "title": "LinkedIn company URL",
+      "description": "Find the canonical LinkedIn company page URL",
+      "format": "url",
+      "options": null,
+      "instructions": "Synthetic fixture instructions",
+      "metadata": {"fieldKey": "core.company_linkedin_url"},
+      "createdAt": "2026-08-02T08:00:00Z",
+      "updatedAt": "2026-08-02T08:00:00Z"
+    }
+  ],
+  "metadata": {"fixture": "d0"},
+  "createdAt": "2026-08-02T08:00:00Z",
+  "updatedAt": "2026-08-02T08:01:00Z"
+}

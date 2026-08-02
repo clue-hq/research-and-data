@@ -741,6 +741,10 @@ does not close any Exa or Sumble provider slice.
 
 ### Slice D0 — Contract freeze and executable fixtures
 
+**Implementation record:** `docs/specs/M06A-D0-contract-freeze.md` freezes the shared types,
+fingerprint vectors, account-envelope policy, fourteen-condition truth table, fixture matrix, and
+D1 tenancy/retention/DSAR schema review.
+
 **Purpose:** Freeze request, lifecycle, field, state, receipt, seal, and error contracts before
 provider code.
 

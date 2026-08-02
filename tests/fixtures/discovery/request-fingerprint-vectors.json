@@ -1,0 +1,76 @@
+[
+  {
+    "name": "insight_health_company_two_rows",
+    "input": {
+      "workspace_id": "insight-health-fixture",
+      "source_key": "exa_websets",
+      "provider_api_version": "v0",
+      "entity_type": "company",
+      "custom_entity_description": null,
+      "normalized_query": "  Independent neurosurgery and spine practices   in the United States  ",
+      "criteria": [
+        {"description": "U.S.-based independent neurosurgery or spine specialty practice"},
+        {"description": "Not a general hospital, health system, or hospital-employed department"}
+      ],
+      "requested_count": 2,
+      "search_behaviour": "override",
+      "enrichments": [
+        {
+          "field_key": "core.company_linkedin_url",
+          "description": "Find the canonical LinkedIn company page URL",
+          "format": "url",
+          "options": []
+        },
+        {
+          "field_key": "core.revenue_band",
+          "description": "Classify annual revenue into the configured range",
+          "format": "options",
+          "options": [
+            {"label": "Under $1M"},
+            {"label": "$1M-$10M"},
+            {"label": "$10M-$50M"}
+          ]
+        },
+        {
+          "field_key": "core.company_email",
+          "description": "Find a public general company contact email",
+          "format": "email",
+          "options": []
+        }
+      ],
+      "max_people_per_company": null,
+      "icp_key": "independent_neurosurgery_spine_practices_us",
+      "icp_version": 1,
+      "discovery_plan_version": 1,
+      "field_policy_version": "discovery-envelope-v1",
+      "provider_contract_version": "exa-websets-v0-2026-08-02",
+      "observation_window": "2026-08"
+    },
+    "canonical_json": "{\"criteria\":[{\"description\":\"U.S.-based independent neurosurgery or spine specialty practice\"},{\"description\":\"Not a general hospital, health system, or hospital-employed department\"}],\"custom_entity_description\":null,\"discovery_plan_version\":1,\"enrichments\":[{\"description\":\"Find the canonical LinkedIn company page URL\",\"field_key\":\"core.company_linkedin_url\",\"format\":\"url\",\"options\":[]},{\"description\":\"Classify annual revenue into the configured range\",\"field_key\":\"core.revenue_band\",\"format\":\"options\",\"options\":[{\"label\":\"Under $1M\"},{\"label\":\"$1M-$10M\"},{\"label\":\"$10M-$50M\"}]},{\"description\":\"Find a public general company contact email\",\"field_key\":\"core.company_email\",\"format\":\"email\",\"options\":[]}],\"entity_type\":\"company\",\"field_policy_version\":\"discovery-envelope-v1\",\"icp_key\":\"independent_neurosurgery_spine_practices_us\",\"icp_version\":1,\"max_people_per_company\":null,\"normalized_query\":\"Independent neurosurgery and spine practices in the United States\",\"observation_window\":\"2026-08\",\"provider_api_version\":\"v0\",\"provider_contract_version\":\"exa-websets-v0-2026-08-02\",\"requested_count\":2,\"search_behaviour\":\"override\",\"source_key\":\"exa_websets\",\"workspace_id\":\"insight-health-fixture\"}",
+    "sha256": "194958fe706876ccd8d6b56ccef92e659c3c8d603944e11074b2ee071b1f9e5c"
+  },
+  {
+    "name": "person_search_max_people",
+    "input": {
+      "workspace_id": "fixture-workspace",
+      "source_key": "exa_websets",
+      "provider_api_version": "v0",
+      "entity_type": "person",
+      "custom_entity_description": null,
+      "normalized_query": "Practice administrators at independent specialty practices",
+      "criteria": [{"description": "Person currently works at the practice"}],
+      "requested_count": 10,
+      "search_behaviour": "override",
+      "enrichments": [],
+      "max_people_per_company": 2,
+      "icp_key": "specialty_practices",
+      "icp_version": 3,
+      "discovery_plan_version": 4,
+      "field_policy_version": "committee-discovery-v1",
+      "provider_contract_version": "exa-websets-v0-2026-08-02",
+      "observation_window": "2026-W31"
+    },
+    "canonical_json": "{\"criteria\":[{\"description\":\"Person currently works at the practice\"}],\"custom_entity_description\":null,\"discovery_plan_version\":4,\"enrichments\":[],\"entity_type\":\"person\",\"field_policy_version\":\"committee-discovery-v1\",\"icp_key\":\"specialty_practices\",\"icp_version\":3,\"max_people_per_company\":2,\"normalized_query\":\"Practice administrators at independent specialty practices\",\"observation_window\":\"2026-W31\",\"provider_api_version\":\"v0\",\"provider_contract_version\":\"exa-websets-v0-2026-08-02\",\"requested_count\":10,\"search_behaviour\":\"override\",\"source_key\":\"exa_websets\",\"workspace_id\":\"fixture-workspace\"}",
+    "sha256": "6530fb4da35465ae6d96992d33b9d6d83c85426a7754f658e3adce1bba1cad39"
+  }
+]

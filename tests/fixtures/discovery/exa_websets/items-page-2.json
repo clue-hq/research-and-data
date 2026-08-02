@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "wsi_fixture_central_hospital",
+      "object": "webset_item",
+      "source": "import",
+      "sourceId": "import_fixture_1",
+      "websetId": "ws_fixture_running",
+      "properties": {
+        "type": "company",
+        "url": "https://central-hospital.example",
+        "description": "A fictional general hospital that does not fit the ICP.",
+        "content": "Synthetic hospital content.",
+        "company": {
+          "name": "Central General Hospital",
+          "location": "Columbus, Ohio, United States",
+          "employees": 1800,
+          "industry": "Hospital and Health Care",
+          "about": "Fictional general acute-care hospital.",
+          "logoUrl": null
+        }
+      },
+      "evaluations": [
+        {
+          "criterion": "Organization is an independent specialty practice",
+          "reasoning": "The synthetic site identifies the organization as a general hospital.",
+          "satisfied": "no",
+          "references": [
+            {
+              "title": "Central General Hospital",
+              "snippet": "General acute-care hospital.",
+              "url": "https://central-hospital.example/about"
+            }
+          ]
+        }
+      ],
+      "enrichments": [],
+      "createdAt": "2026-08-02T08:02:30Z",
+      "updatedAt": "2026-08-02T08:04:00Z"
+    }
+  ],
+  "hasMore": false,
+  "nextCursor": null
+}

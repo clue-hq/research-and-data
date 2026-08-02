@@ -1,0 +1,35 @@
+{
+  "id": "wsi_fixture_future",
+  "object": "webset_item",
+  "source": "search",
+  "sourceId": "ws_search_fixture_1",
+  "websetId": "ws_fixture_running",
+  "properties": {
+    "type": "company",
+    "url": "https://future-fields.example",
+    "description": "Synthetic additive-schema fixture.",
+    "company": {
+      "name": "Future Fields Practice",
+      "location": "Portland, Oregon, United States",
+      "employees": 17,
+      "industry": "Medical Practice",
+      "about": "Synthetic company with additive fields.",
+      "logoUrl": null,
+      "futureHeadcountConfidence": 0.93
+    },
+    "futureProperty": {"version": 2}
+  },
+  "evaluations": [
+    {
+      "criterion": "Organization is an independent specialty practice",
+      "reasoning": "Synthetic evidence.",
+      "satisfied": "yes",
+      "references": [],
+      "futureEvaluationMetadata": {"model": "future"}
+    }
+  ],
+  "enrichments": [],
+  "createdAt": "2026-08-02T08:04:00Z",
+  "updatedAt": "2026-08-02T08:04:00Z",
+  "futureTopLevelField": ["must", "remain", "in", "raw", "artifact"]
+}
