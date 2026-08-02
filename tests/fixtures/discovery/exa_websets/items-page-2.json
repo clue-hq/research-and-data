@@ -3,8 +3,8 @@
     {
       "id": "wsi_fixture_central_hospital",
       "object": "webset_item",
-      "source": "import",
-      "sourceId": "import_fixture_1",
+      "source": "search",
+      "sourceId": "ws_search_fixture_1",
       "websetId": "ws_fixture_running",
       "properties": {
         "type": "company",
@@ -17,7 +17,15 @@
           "employees": 1800,
           "industry": "Hospital and Health Care",
           "about": "Fictional general acute-care hospital.",
-          "logoUrl": null
+          "logoUrl": null,
+          "foundedYear": null,
+          "headquarters": null,
+          "financials": {
+            "revenueAnnual": 250000000,
+            "fundingTotal": null,
+            "fundingLatestRound": null
+          },
+          "webTraffic": null
         }
       },
       "evaluations": [
@@ -34,9 +42,43 @@
           ]
         }
       ],
-      "enrichments": [],
-      "createdAt": "2026-08-02T08:02:30Z",
-      "updatedAt": "2026-08-02T08:04:00Z"
+      "enrichments": [
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_linkedin",
+          "format": "url",
+          "result": null,
+          "reasoning": "No canonical company page was confirmed.",
+          "references": []
+        },
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_email",
+          "format": "email",
+          "result": null,
+          "reasoning": "No public general mailbox was found.",
+          "references": []
+        },
+        {
+          "object": "enrichment_result",
+          "status": "completed",
+          "enrichmentId": "enr_fixture_phone",
+          "format": "phone",
+          "result": ["+1-555-0199"],
+          "reasoning": "A public switchboard number was found.",
+          "references": [
+            {
+              "title": "Central contact",
+              "snippet": "Main switchboard.",
+              "url": "https://central-hospital.example/contact"
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-08-03T08:02:30Z",
+      "updatedAt": "2026-08-03T08:04:00Z"
     }
   ],
   "hasMore": false,

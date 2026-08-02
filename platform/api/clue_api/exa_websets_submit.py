@@ -250,30 +250,81 @@ def assert_exa_response_matches_request(
     mismatches: list[str] = []
     if webset.external_id != request.external_id:
         mismatches.append("external_id")
-    if webset.metadata.get("clueFingerprint") != request.metadata.get("clueFingerprint"):
-        mismatches.append("metadata.clueFingerprint")
-    matching_searches = [
-        search
-        for search in webset.searches
-        if search.query == request.search.query and search.count == request.search.count
-    ]
-    if len(matching_searches) != 1:
-        mismatches.append("search.query_count")
+    if any(webset.metadata.get(key) != value for key, value in request.metadata.items()):
+        mismatches.append("metadata")
+    if webset.imports:
+        mismatches.append("imports")
+    if webset.excludes:
+        mismatches.append("excludes")
+    if len(webset.searches) != 1:
+        mismatches.append("search.count")
     else:
-        response_search = matching_searches[0]
+        response_search = webset.searches[0]
+        if response_search.webset_id != webset.id:
+            mismatches.append("search.webset_id")
+        if response_search.query != request.search.query:
+            mismatches.append("search.query")
+        if response_search.count != request.search.count:
+            mismatches.append("search.count_requested")
         requested_entity = request.search.entity
-        if requested_entity is not None and response_search.entity != requested_entity:
+        if response_search.entity != requested_entity:
             mismatches.append("search.entity")
         if response_search.behavior.value != "override":
             mismatches.append("search.behavior")
-        requested_criteria = tuple(item.description for item in request.search.criteria)
-        response_criteria = tuple(item.description for item in response_search.criteria)
-        if response_criteria != requested_criteria:
+        if response_search.max_people_per_company != request.search.max_people_per_company:
+            mismatches.append("search.max_people_per_company")
+        if response_search.exclude:
+            mismatches.append("search.exclude")
+        if response_search.scope:
+            mismatches.append("search.scope")
+        if request.search.recall is None and response_search.recall is not None:
+            mismatches.append("search.recall")
+        requested_criteria = {item.description for item in request.search.criteria}
+        response_criteria = {item.description for item in response_search.criteria}
+        if (
+            len(response_search.criteria) != len(response_criteria)
+            or response_criteria != requested_criteria
+        ):
             mismatches.append("search.criteria")
-    requested_enrichments = tuple((item.description, item.format) for item in request.enrichments)
-    response_enrichments = tuple((item.description, item.format) for item in webset.enrichments)
-    if response_enrichments != requested_enrichments:
-        mismatches.append("enrichments")
+    requested_enrichments = {
+        item.metadata.get("clueFieldKey"): item for item in request.enrichments
+    }
+    response_enrichments = {
+        item.metadata.get("clueFieldKey"): item for item in webset.enrichments
+    }
+    if (
+        None in requested_enrichments
+        or None in response_enrichments
+        or len(requested_enrichments) != len(request.enrichments)
+        or len(response_enrichments) != len(webset.enrichments)
+        or requested_enrichments.keys() != response_enrichments.keys()
+    ):
+        mismatches.append("enrichments.identity")
+    else:
+        for field_key, requested in requested_enrichments.items():
+            response = response_enrichments[field_key]
+            if response.webset_id != webset.id:
+                mismatches.append(f"enrichments.{field_key}.webset_id")
+            if response.description != requested.description:
+                mismatches.append(f"enrichments.{field_key}.description")
+            requested_format = requested.format
+            allowed_formats = {requested_format}
+            # Live Websets v0 normalizes email/phone definitions to text while item-level results
+            # retain the requested email/phone format.  The field-key metadata remains the stable
+            # definition identity and terminal result reconciliation checks the original format.
+            if requested_format in {
+                ExaWebsetEnrichmentFormat.EMAIL,
+                ExaWebsetEnrichmentFormat.PHONE,
+            }:
+                allowed_formats.add(ExaWebsetEnrichmentFormat.TEXT)
+            if response.format not in allowed_formats:
+                mismatches.append(f"enrichments.{field_key}.format")
+            requested_options = tuple(option.label for option in requested.options)
+            response_options = tuple(option.label for option in (response.options or ()))
+            if response_options != requested_options:
+                mismatches.append(f"enrichments.{field_key}.options")
+            if any(response.metadata.get(key) != value for key, value in requested.metadata.items()):
+                mismatches.append(f"enrichments.{field_key}.metadata")
     if mismatches:
         raise ExaWebsetsContractDrift(
             "reconciled Exa Webset does not match the durable request: " + ", ".join(mismatches),
