@@ -1,6 +1,7 @@
 # M6A — Durable Exa Websets account discovery and gated Sumble enrichment
 
-**Status:** Binding implementation plan; implementation not started
+**Status:** Binding implementation plan; Stage-0 discovery fixture (Slice P0) implemented, provider
+slices not started
 
 **Branch:** `platform/c8-exa-sumble-discovery` (branched from `platform/c8-context-card`)
 
@@ -704,6 +705,39 @@ trust tiers, freshness, and whether the result can influence scoring.
 Slices are sequential. A later slice may not begin merely because earlier unit tests are green.
 The gate named for each slice must be recorded in `_memory/` with commands, artifacts, provider ids
 where applicable, database evidence, cost, and unresolved failures.
+
+### Slice P0 — Reproducible Stage-0 handoff fixture
+
+**Purpose:** Test discovery against a realistic, already-confirmed Stage-0 result without making
+Stage 0 part of every discovery acceptance run.
+
+**Scope and deliverables:**
+
+- one isolated, migrated Postgres database containing an Insight Health AI workspace, brand, Aura
+  AI product, and discovery project;
+- a human website-onboarding receipt over an immutable homepage artifact (the current backend has
+  no separate application-user table, so it does not fabricate one for the fixture);
+- content-addressed snapshots of the official Insight Health homepage, Aura Ambient page, Aura
+  Anywhere page, and neurosurgery-referral case-study page;
+- seven product-scoped Client-KB claims: value proposition, product, differentiator, pricing
+  posture, proof point, named testimonial organization, and ICP evidence;
+- every website-derived fact stamped `source_tier=2`, `extraction_method=scrape`,
+  `verification_status=unverified`, exact evidence span, source URL, source key, and artifact key;
+- a confirmed `independent_neurosurgery_spine_practices_us` ICP carrying Client-KB and Aura product
+  lineage, a two-row Exa discovery strategy, required/optional discovery fields, and an initial
+  explainable rubric;
+- one immutable product-context version and one `READY` discovery-spend decision; and
+- one durable project run stopped exactly at `ProjectPhase.DISCOVERY`.
+
+The fixture builder is network-free. It consumes prior Firecrawl `search --scrape` results, and a
+fixed Stage-0 run id makes an exact rerun reuse the same claims and lineage. It must never downgrade
+the official-site numbers into “verified results”: Insight Health is authoritative for what its
+site asserts, not independent proof of its savings, ROI, compliance, or customer relationship.
+
+**Gate P0:** pure loader/evidence tests pass; a real migrated Postgres + filesystem-artifact test
+proves claim provenance, ICP/context/readiness/run lineage, and exact replay with unchanged table
+counts; the builder is then run twice over the real harvested pages and returns the same ids. P0
+does not close any Exa or Sumble provider slice.
 
 ### Slice D0 — Contract freeze and executable fixtures
 

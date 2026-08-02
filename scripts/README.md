@@ -16,6 +16,7 @@ don't pass one).
 | 05 | `05_committee_discovery.py` | M3 committee discovery | `profiling.discover_committee` |
 | 06 | `06_contact_profiling.py` | M4 contact profiling | `profiling.profile_contact` |
 | 07 | `07_research_view_trial.py` | Read-only C7 production research-view inspection | `ProductionResearchViewComposer` |
+| 08 | `08_seed_discovery_fixture.py` | Reproducible Stage-0 handoff for discovery tests | `trial.discovery_fixture.seed_insight_health_discovery_fixture` |
 
 ## One-time setup
 
@@ -143,3 +144,20 @@ Script 07 is intentionally different: it never seeds data and never performs acq
 the exact workspace/project/project-run/account-or-contact IDs produced by a normal governed
 research run. It then composes the persisted state through the same production readers used by the
 API. See `docs/runbooks/research-views.md` for the Exa-first inspection sequence.
+
+## Insight Health/Aura discovery fixture
+
+Script 08 builds the already-confirmed Stage-0 side of the account-discovery acceptance setup. It
+does not scrape or call a provider during seeding: first harvest the required public pages into the
+two default `.firecrawl/*.json` paths, create a dedicated database, migrate it, and run:
+
+```bash
+uv run python scripts/08_seed_discovery_fixture.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_discovery_fixture
+```
+
+It captures the page bodies into the configured artifact store, writes tier-2 unverified
+official-site claims, confirms the Aura neurosurgery ICP, evaluates discovery readiness, and leaves
+the durable project run at `discovery`. The default reference bundle is written under
+`.context/discovery-fixtures/insight-health-aura/`; Postgres and the artifact store remain
+authoritative. Repeating the exact command reuses the same claims, ICP, context, decision, and run.
