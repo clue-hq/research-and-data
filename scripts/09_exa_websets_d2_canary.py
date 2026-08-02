@@ -45,7 +45,7 @@ from clue_research.icp import get_active_icp
 from clue_storage import FsStorage
 
 SEARCH_KEY = "aura-neurosurgery-account-discovery-d2"
-PROVIDER_POLICY_VERSION = "exa-websets-public-credit-policy-2026-08-02"
+PROVIDER_POLICY_VERSION = "exa-websets-public-credit-policy-2026-08-03+pro-usd-allocation"
 EXPECTED_MAX_CREDITS = 20
 
 

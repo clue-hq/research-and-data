@@ -41,7 +41,7 @@ def test_production_http_app_mounts_webhook_only_when_secret_is_configured(
             exa_websets_webhook_secret=SecretStr("fixture-webhook-secret"),
         ),
     )
-    path = "/v1/webhooks/exa-websets/{workspace_id}/{operation_id}"
+    path = "/v1/webhooks/exa-websets"
     assert path not in _paths(without)
     assert path in _paths(with_secret)
 

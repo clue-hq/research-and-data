@@ -320,11 +320,10 @@ def test_response_matching_is_identity_keyed_and_catches_paid_semantic_drift() -
             "enrichments.identity",
         ),
         (
-            lambda value: value["enrichments"][0].update(
-                {"options": [{"label": "Wrong"}]}
-            ),
+            lambda value: value["enrichments"][0].update({"options": [{"label": "Wrong"}]}),
             "options",
         ),
+        (lambda value: value.update({"monitors": [{"id": "monitor_foreign"}]}), "monitors"),
     ):
         changed = json.loads(json.dumps(payload))
         mutate(changed)

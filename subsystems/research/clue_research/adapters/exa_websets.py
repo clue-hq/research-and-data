@@ -85,6 +85,28 @@ class ExaWebsetEnrichmentFormat(StrEnum):
     URL = "url"
 
 
+class ExaWebhookEventType(StrEnum):
+    WEBSET_CREATED = "webset.created"
+    WEBSET_DELETED = "webset.deleted"
+    WEBSET_PAUSED = "webset.paused"
+    WEBSET_IDLE = "webset.idle"
+    SEARCH_CREATED = "webset.search.created"
+    SEARCH_CANCELED = "webset.search.canceled"
+    SEARCH_COMPLETED = "webset.search.completed"
+    SEARCH_UPDATED = "webset.search.updated"
+    IMPORT_CREATED = "import.created"
+    IMPORT_COMPLETED = "import.completed"
+    ITEM_CREATED = "webset.item.created"
+    ITEM_ENRICHED = "webset.item.enriched"
+    MONITOR_CREATED = "monitor.created"
+    MONITOR_UPDATED = "monitor.updated"
+    MONITOR_DELETED = "monitor.deleted"
+    MONITOR_RUN_CREATED = "monitor.run.created"
+    MONITOR_RUN_COMPLETED = "monitor.run.completed"
+    EXPORT_CREATED = "webset.export.created"
+    EXPORT_COMPLETED = "webset.export.completed"
+
+
 class ExaWebsetEntity(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -446,9 +468,7 @@ class ExaWebsetItemCompanyProperties(BaseModel):
         financials = self.company.financials
         headquarters = self.company.headquarters
         latest = financials.funding_latest_round if financials else None
-        financial_values = (
-            financials.model_dump(mode="json", by_alias=True) if financials else {}
-        )
+        financial_values = financials.model_dump(mode="json", by_alias=True) if financials else {}
         return {
             "name": self.company.name,
             "url": self.url,
@@ -602,6 +622,43 @@ class ExaEventPageExchange(BaseModel):
     page: ExaEventPage
 
 
+class ExaCreateWebhookRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    events: tuple[ExaWebhookEventType, ...] = Field(min_length=1, max_length=19)
+    url: NonEmptyStr
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class ExaWebhook(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    id: NonEmptyStr
+    object: Literal["webhook"]
+    status: Literal["active", "inactive"]
+    events: tuple[ExaWebhookEventType, ...]
+    url: NonEmptyStr
+    # Exa returns this only once, on creation.  SecretStr prevents accidental repr/log exposure.
+    secret: SecretStr | None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class ExaWebhookPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    data: tuple[ExaWebhook, ...]
+    has_more: bool = Field(alias="hasMore")
+    next_cursor: str | None = Field(alias="nextCursor")
+
+    @model_validator(mode="after")
+    def _cursor_matches_has_more(self) -> ExaWebhookPage:
+        if self.has_more != bool(self.next_cursor):
+            raise ValueError("Exa webhook page cursor does not match hasMore")
+        return self
+
+
 class ExaWebhookVerificationError(ValueError):
     """A webhook signature is absent, malformed, stale, or invalid."""
 
@@ -749,6 +806,14 @@ class ExaWebsetsLifecycleTransport(Protocol):
     async def list_events(
         self, *, cursor: str | None = None, limit: int = 200
     ) -> ExaEventPageExchange: ...
+
+
+class ExaWebsetsWebhookAdminTransport(Protocol):
+    async def create_webhook(self, request: ExaCreateWebhookRequest) -> ExaWebhook: ...
+
+    async def list_webhooks(
+        self, *, cursor: str | None = None, limit: int = 200
+    ) -> ExaWebhookPage: ...
 
 
 type AsyncSleep = Callable[[float], Awaitable[None]]
@@ -932,6 +997,48 @@ class ExaWebsetsClient:
             status_code=status, request_id=request_id, response_body=body, page=page
         )
 
+    async def create_webhook(self, request: ExaCreateWebhookRequest) -> ExaWebhook:
+        status, request_id, body = await self._raw_request(
+            method="POST",
+            url=f"{self._base_url}/webhooks",
+            body=request.model_dump_json(by_alias=True, exclude_defaults=True).encode(),
+            expected_status=200,
+            create=True,
+        )
+        try:
+            return ExaWebhook.model_validate_json(body)
+        except (ValueError, TypeError) as exc:
+            raise ExaWebsetsContractDrift(
+                "Exa webhook response does not match the pinned v0 contract",
+                status_code=status,
+                request_id=request_id,
+                response_body=body,
+            ) from exc
+
+    async def list_webhooks(self, *, cursor: str | None = None, limit: int = 200) -> ExaWebhookPage:
+        if not 1 <= limit <= 200:
+            raise ValueError("Exa webhook page limit must be between 1 and 200")
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        status, request_id, body = await self._raw_request(
+            method="GET",
+            url=f"{self._base_url}/webhooks",
+            body=None,
+            expected_status=200,
+            create=False,
+            params=params,
+        )
+        try:
+            return ExaWebhookPage.model_validate_json(body)
+        except (ValueError, TypeError) as exc:
+            raise ExaWebsetsContractDrift(
+                "Exa webhook list does not match the pinned v0 contract",
+                status_code=status,
+                request_id=request_id,
+                response_body=body,
+            ) from exc
+
     async def _request(
         self,
         *,
@@ -1077,6 +1184,7 @@ __all__ = [
     "ExaCreateCriterion",
     "ExaCreateEnrichment",
     "ExaCreateSearch",
+    "ExaCreateWebhookRequest",
     "ExaCreateWebsetRequest",
     "ExaEnrichmentOption",
     "ExaEventPage",
@@ -1092,6 +1200,7 @@ __all__ = [
     "ExaWebsetEvent",
     "ExaWebsetExchange",
     "ExaWebsetItem",
+    "ExaWebsetItemCompanyProperties",
     "ExaWebsetNotFound",
     "ExaWebsetSearchBehavior",
     "ExaWebsetSearchStatus",
@@ -1109,6 +1218,10 @@ __all__ = [
     "ExaWebsetsTransientError",
     "ExaWebsetsLifecycleTransport",
     "ExaWebsetsTransport",
+    "ExaWebsetsWebhookAdminTransport",
+    "ExaWebhook",
+    "ExaWebhookEventType",
+    "ExaWebhookPage",
     "ExaWebhookVerificationError",
     "verify_exa_webhook_signature",
 ]

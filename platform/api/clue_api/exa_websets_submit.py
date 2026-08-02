@@ -71,6 +71,7 @@ from clue_research.durable import (
     get_discovery_operation,
     get_discovery_plan,
     reconcile_discovery_batch_costs,
+    reconcile_discovery_batch_state,
     reserve_discovery_operation,
     schedule_discovery_wake,
     update_discovery_batch_state,
@@ -91,14 +92,23 @@ class ExaSubmitOutcome(StrEnum):
 
 
 class ExaWebsetsPricingPolicy(BaseModel):
-    """Versioned maximum-credit estimate used before a Webset is dispatched."""
+    """Versioned credit rules plus the deployment's explicit credit valuation.
+
+    Exa settles Websets in credits rather than returning a dollar amount per operation.  The
+    monetary fields are therefore an allocation-equivalent attribution, not a claim that Exa
+    charged a card for this operation.  The default values the public Pro-plan allocation
+    (USD 449 / 100,000 credits); deployments on another plan must inject a differently-versioned
+    policy instead of silently reusing this conversion.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: str = "exa-websets-public-credit-policy-2026-08-02"
+    version: str = "exa-websets-public-credit-policy-2026-08-03+pro-usd-allocation"
     base_result_credits: Decimal = Field(default=Decimal("10"), ge=0)
     standard_enrichment_credits: Decimal = Field(default=Decimal("2"), ge=0)
     contact_enrichment_credits: Decimal = Field(default=Decimal("5"), ge=0)
+    import_resolution_credits: Decimal = Field(default=Decimal("2"), ge=0)
+    credit_value_cents: Decimal = Field(default=Decimal("0.449"), gt=0)
 
     def maximum_units(self, search: DiscoverySearchPlan) -> Decimal:
         per_result = self.base_result_credits
@@ -111,6 +121,57 @@ class ExaWebsetsPricingPolicy(BaseModel):
             else:
                 per_result += self.standard_enrichment_credits
         return per_result * search.requested_count
+
+    def monetary_value(self, units: Decimal) -> Decimal:
+        return units * self.credit_value_cents
+
+    def maximum_cost_cents(self, search: DiscoverySearchPlan) -> Decimal:
+        return self.monetary_value(self.maximum_units(search))
+
+    def realized_units(
+        self,
+        *,
+        matching_search_results: int,
+        ordinary_enrichment_rows: int,
+        contact_values: int,
+        resolved_import_results: int = 0,
+    ) -> ExaWebsetsChargeBreakdown:
+        return ExaWebsetsChargeBreakdown(
+            matching_search_results=matching_search_results,
+            ordinary_enrichment_rows=ordinary_enrichment_rows,
+            contact_values=contact_values,
+            resolved_import_results=resolved_import_results,
+            search_credits=self.base_result_credits * matching_search_results,
+            ordinary_enrichment_credits=(
+                self.standard_enrichment_credits * ordinary_enrichment_rows
+            ),
+            contact_enrichment_credits=self.contact_enrichment_credits * contact_values,
+            import_credits=self.import_resolution_credits * resolved_import_results,
+        )
+
+
+class ExaWebsetsChargeBreakdown(BaseModel):
+    """Auditable application of Exa's public credit rules to terminal provider facts."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    matching_search_results: int = Field(ge=0)
+    ordinary_enrichment_rows: int = Field(ge=0)
+    contact_values: int = Field(ge=0)
+    resolved_import_results: int = Field(ge=0)
+    search_credits: Decimal = Field(ge=0)
+    ordinary_enrichment_credits: Decimal = Field(ge=0)
+    contact_enrichment_credits: Decimal = Field(ge=0)
+    import_credits: Decimal = Field(ge=0)
+
+    @property
+    def total_units(self) -> Decimal:
+        return (
+            self.search_credits
+            + self.ordinary_enrichment_credits
+            + self.contact_enrichment_credits
+            + self.import_credits
+        )
 
 
 DEFAULT_EXA_WEBSETS_PRICING = ExaWebsetsPricingPolicy()
@@ -256,6 +317,8 @@ def assert_exa_response_matches_request(
         mismatches.append("imports")
     if webset.excludes:
         mismatches.append("excludes")
+    if webset.monitors:
+        mismatches.append("monitors")
     if len(webset.searches) != 1:
         mismatches.append("search.count")
     else:
@@ -289,9 +352,7 @@ def assert_exa_response_matches_request(
     requested_enrichments = {
         item.metadata.get("clueFieldKey"): item for item in request.enrichments
     }
-    response_enrichments = {
-        item.metadata.get("clueFieldKey"): item for item in webset.enrichments
-    }
+    response_enrichments = {item.metadata.get("clueFieldKey"): item for item in webset.enrichments}
     if (
         None in requested_enrichments
         or None in response_enrichments
@@ -323,7 +384,9 @@ def assert_exa_response_matches_request(
             response_options = tuple(option.label for option in (response.options or ()))
             if response_options != requested_options:
                 mismatches.append(f"enrichments.{field_key}.options")
-            if any(response.metadata.get(key) != value for key, value in requested.metadata.items()):
+            if any(
+                response.metadata.get(key) != value for key, value in requested.metadata.items()
+            ):
                 mismatches.append(f"enrichments.{field_key}.metadata")
     if mismatches:
         raise ExaWebsetsContractDrift(
@@ -442,6 +505,7 @@ class DurableExaWebsetSubmitter:
                 observation_window=observation_window,
                 request=request,
                 reserved_units=self._pricing.maximum_units(search),
+                reserved_cost_cents=self._pricing.maximum_cost_cents(search),
             )
             apply_attributes(
                 span,
@@ -450,6 +514,7 @@ class DurableExaWebsetSubmitter:
                     "provider.external_id": request.external_id,
                     "operation.id": str(operation.operation_id),
                     "provider.units_reserved": str(operation.provider_units_reserved),
+                    "provider.cost_cents_reserved": str(operation.cost_cents_reserved),
                     "replay.hit": not created,
                 },
             )
@@ -609,6 +674,10 @@ class DurableExaWebsetSubmitter:
             )
             if plan_row is None:
                 raise DiscoveryNotFound(f"discovery plan {batch.discovery_plan_id}")
+            if plan_row.plan.provider_policy_version != self._pricing.version:
+                raise ExaSubmitContractError(
+                    "discovery plan pricing policy does not match the configured Exa policy"
+                )
             return plan_row.plan, _search_for(plan_row.plan, search_key)
 
     async def _reserve(
@@ -620,6 +689,7 @@ class DurableExaWebsetSubmitter:
         observation_window: str,
         request: ExaCreateWebsetRequest,
         reserved_units: Decimal,
+        reserved_cost_cents: Decimal,
     ) -> tuple[DiscoveryOperation, bool]:
         async with self._conn_factory() as conn:
             existing = await find_reusable_discovery_operation(
@@ -658,6 +728,7 @@ class DurableExaWebsetSubmitter:
                 spend_outcome=DiscoverySpendOutcome.NOT_DISPATCHED,
                 raw_request_artifact_key=request_key,
                 provider_units_reserved=reserved_units,
+                cost_cents_reserved=reserved_cost_cents,
             )
             stored, created = await reserve_discovery_operation(
                 conn,
@@ -752,11 +823,8 @@ class DurableExaWebsetSubmitter:
                 workspace_id=workspace_id,
                 batch_id=operation.batch_id,
             )
-            await update_discovery_batch_state(
-                conn,
-                workspace_id=workspace_id,
-                batch_id=operation.batch_id,
-                state=DiscoveryBatchState.WAITING_EXTERNAL,
+            await reconcile_discovery_batch_state(
+                conn, workspace_id=workspace_id, batch_id=operation.batch_id
             )
             batch = await get_discovery_batch(
                 conn, workspace_id=workspace_id, batch_id=operation.batch_id

@@ -76,6 +76,9 @@ def test_event_fixture_is_both_duplicate_and_out_of_order() -> None:
     typed = ExaEventPage.model_validate(payload)
     assert typed.data[0].data["object"] == "webset_item"
     assert typed.data[-1].data["object"] == "webset"
+    nullable_item = ExaWebsetItem.model_validate(typed.data[1].data)
+    assert nullable_item.enrichments is None
+    assert nullable_item.enrichment_results == ()
 
 
 def test_cancellation_fixture_keeps_canceled_operations_distinct_from_success() -> None:
@@ -106,9 +109,7 @@ def test_additive_schema_drift_is_preserved_in_the_raw_item_artifact() -> None:
     assert payload["properties"]["company"]["futureHeadcountConfidence"] == 0.93
     assert snapshot.item_sha256 == hashlib.sha256(raw).hexdigest()
     typed = ExaWebsetItem.model_validate_json(raw)
-    assert typed.model_extra == {
-        "futureTopLevelField": ["must", "remain", "in", "raw", "artifact"]
-    }
+    assert typed.model_extra == {"futureTopLevelField": ["must", "remain", "in", "raw", "artifact"]}
 
 
 def test_all_exa_fixtures_are_secret_free_and_require_no_network(
