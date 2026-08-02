@@ -19,6 +19,7 @@ import hmac
 import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Protocol
 
@@ -31,6 +32,7 @@ from pydantic import (
     JsonValue,
     SecretStr,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -39,7 +41,7 @@ from clue_obs.otel import apply_attributes, traced_step
 EXA_WEBSETS_SOURCE_KEY = "exa_websets"
 EXA_WEBSETS_API_VERSION = "v0"
 EXA_WEBSETS_API_BASE = "https://api.exa.ai/websets/v0"
-EXA_WEBSETS_CONTRACT_VERSION = "exa-websets-v0-openapi-2026-05-22"
+EXA_WEBSETS_CONTRACT_VERSION = "exa-websets-v0-openapi-2026-08-03"
 EXA_WEBSETS_AUTH_REF = "CLUE_EXA_API_KEY"
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -191,6 +193,68 @@ class ExaResponseCriterion(BaseModel):
     )
 
 
+class ExaWebsetSourceRef(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    source: Literal["import", "webset"]
+    id: NonEmptyStr
+
+
+class ExaWebsetScopeRelationship(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    definition: NonEmptyStr
+    limit: int = Field(ge=1, le=10)
+
+
+class ExaWebsetScopeRef(ExaWebsetSourceRef):
+    relationship: ExaWebsetScopeRelationship | None = None
+
+
+class ExaWebsetSearchProgress(BaseModel):
+    """Current required progress shape.
+
+    Exa documents counters as JSON ``number`` and returns integral values in production.  Decimal
+    preserves a valid ``3.0`` so terminal reconciliation can require integral semantics without
+    accidentally skipping the check on account of Python's runtime number type.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    found: Decimal = Field(ge=0)
+    analyzed: Decimal = Field(ge=0)
+    completion: Decimal = Field(ge=0, le=100)
+    time_left: Decimal | None = Field(alias="timeLeft")
+
+
+class ExaWebsetRecallBounds(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    min: Decimal = Field(ge=0)
+    max: Decimal = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> ExaWebsetRecallBounds:
+        if self.max < self.min:
+            raise ValueError("Exa recall maximum is below its minimum")
+        return self
+
+
+class ExaWebsetRecallExpected(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    total: Decimal = Field(ge=0)
+    confidence: Literal["high", "medium", "low"]
+    bounds: ExaWebsetRecallBounds
+
+
+class ExaWebsetRecall(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    expected: ExaWebsetRecallExpected
+    reasoning: str
+
+
 class ExaResponseSearch(BaseModel):
     """Typed identity-bearing portion of ``WebsetSearch``; future additive fields are retained."""
 
@@ -208,6 +272,15 @@ class ExaResponseSearch(BaseModel):
     count: Annotated[int, Ge(1)]
     max_people_per_company: int | None = Field(alias="maxPeoplePerCompany")
     behavior: ExaWebsetSearchBehavior = ExaWebsetSearchBehavior.OVERRIDE
+    exclude: tuple[ExaWebsetSourceRef, ...]
+    scope: tuple[ExaWebsetScopeRef, ...]
+    progress: ExaWebsetSearchProgress
+    recall: ExaWebsetRecall | None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    canceled_at: datetime | None = Field(alias="canceledAt")
+    canceled_reason: Literal["webset_deleted", "webset_canceled", "out_of_credits"] | None = Field(
+        alias="canceledReason"
+    )
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
 
@@ -219,8 +292,12 @@ class ExaResponseEnrichment(BaseModel):
     object: Literal["webset_enrichment"]
     status: Literal["pending", "canceled", "completed"]
     webset_id: NonEmptyStr = Field(alias="websetId")
+    title: str | None
     description: NonEmptyStr
     format: ExaWebsetEnrichmentFormat | None
+    options: tuple[ExaEnrichmentOption, ...] | None
+    instructions: str | None
+    metadata: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
 
@@ -244,6 +321,7 @@ class ExaWebset(BaseModel):
     imports: tuple[dict[str, JsonValue], ...]
     enrichments: tuple[ExaResponseEnrichment, ...]
     monitors: tuple[dict[str, JsonValue], ...]
+    excludes: tuple[ExaWebsetSourceRef, ...]
     metadata: dict[str, str] = Field(default_factory=dict)
     dashboard_url: str = Field(alias="dashboardUrl")
     created_at: datetime = Field(alias="createdAt")
@@ -261,6 +339,166 @@ class ExaWebsetExchange(BaseModel):
     webset: ExaWebset
 
 
+class ExaWebsetReference(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    title: str | None
+    snippet: str | None
+    url: NonEmptyStr
+
+
+class ExaWebsetItemEvaluation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    criterion: NonEmptyStr
+    reasoning: str
+    satisfied: Literal["yes", "no", "unclear"]
+    references: tuple[ExaWebsetReference, ...] = ()
+
+
+class ExaWebsetEnrichmentResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    object: Literal["enrichment_result"]
+    status: Literal["pending", "completed", "canceled"]
+    format: ExaWebsetEnrichmentFormat
+    result: tuple[str, ...] | None
+    reasoning: str | None
+    references: tuple[ExaWebsetReference, ...]
+    enrichment_id: NonEmptyStr = Field(alias="enrichmentId")
+
+    @field_validator("result")
+    @classmethod
+    def _nonempty_results(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is not None and any(not item.strip() for item in value):
+            raise ValueError("Exa enrichment result values must be non-empty")
+        return value
+
+
+class ExaCompanyHeadquarters(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    address: str | None
+    city: str | None
+    state: str | None
+    postal_code: str | None = Field(alias="postalCode")
+    country: str | None
+    country_code: str | None = Field(alias="countryCode")
+
+
+class ExaCompanyFundingRound(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    name: str | None
+    date: str | None
+    amount: Decimal | None
+
+
+class ExaCompanyFinancials(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    revenue_annual: Decimal | None = Field(alias="revenueAnnual")
+    funding_total: Decimal | None = Field(alias="fundingTotal")
+    funding_latest_round: ExaCompanyFundingRound | None = Field(alias="fundingLatestRound")
+
+
+class ExaCompanyWebTraffic(BaseModel):
+    """Raw provider-only field; it is intentionally absent from the platform projection."""
+
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    visits_monthly: Decimal | None = Field(alias="visitsMonthly")
+    unique_visitors: Decimal | None = Field(alias="uniqueVisitors")
+
+
+class ExaCompanyProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    name: NonEmptyStr
+    location: str | None
+    employees: int | None = Field(ge=0)
+    industry: str | None
+    about: str | None
+    logo_url: str | None = Field(alias="logoUrl")
+    # Current provider-required raw fields.  Product policy deliberately does not project them.
+    founded_year: Decimal | None = Field(alias="foundedYear")
+    headquarters: ExaCompanyHeadquarters | None
+    financials: ExaCompanyFinancials | None
+    web_traffic: ExaCompanyWebTraffic | None = Field(alias="webTraffic")
+
+
+class ExaWebsetItemCompanyProperties(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    type: Literal["company"]
+    url: NonEmptyStr
+    description: str
+    content: str | None
+    company: ExaCompanyProfile
+
+    def discovery_fields(self) -> dict[str, JsonValue]:
+        """Return only the built-in company fields approved for account discovery.
+
+        ``foundedYear`` and ``webTraffic`` remain in the immutable raw artifact but are excluded
+        here by construction, as requested by the discovery field policy.
+        """
+
+        financials = self.company.financials
+        headquarters = self.company.headquarters
+        latest = financials.funding_latest_round if financials else None
+        financial_values = (
+            financials.model_dump(mode="json", by_alias=True) if financials else {}
+        )
+        return {
+            "name": self.company.name,
+            "url": self.url,
+            "location": self.company.location,
+            "employees": self.company.employees,
+            "industry": self.company.industry,
+            "about": self.company.about,
+            "headquarters": (
+                headquarters.model_dump(mode="json", by_alias=True) if headquarters else None
+            ),
+            "revenueAnnual": financial_values.get("revenueAnnual"),
+            "fundingTotal": financial_values.get("fundingTotal"),
+            "fundingLatestRound": latest.model_dump(mode="json") if latest else None,
+        }
+
+
+class ExaWebsetItemPersonProperties(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    type: Literal["person"]
+
+
+class ExaWebsetItemArticleProperties(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    type: Literal["article"]
+
+
+class ExaWebsetItemResearchPaperProperties(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    type: Literal["research_paper"]
+
+
+class ExaWebsetItemCustomProperties(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    type: Literal["custom"]
+
+
+ExaWebsetItemProperties = Annotated[
+    ExaWebsetItemCompanyProperties
+    | ExaWebsetItemPersonProperties
+    | ExaWebsetItemArticleProperties
+    | ExaWebsetItemResearchPaperProperties
+    | ExaWebsetItemCustomProperties,
+    Field(discriminator="type"),
+]
+
+
 class ExaWebsetItem(BaseModel):
     """Identity-bearing Websets item; raw bytes remain the authoritative evidence."""
 
@@ -268,14 +506,20 @@ class ExaWebsetItem(BaseModel):
 
     id: NonEmptyStr
     object: Literal["webset_item"]
-    source: NonEmptyStr
+    source: Literal["search", "import"]
     source_id: NonEmptyStr = Field(alias="sourceId")
+    source_entity_id: str | None = Field(default=None, alias="sourceEntityId")
+    scope_id: str | None = Field(default=None, alias="scopeId")
     webset_id: NonEmptyStr = Field(alias="websetId")
-    properties: dict[str, JsonValue]
-    evaluations: tuple[dict[str, JsonValue], ...]
-    enrichments: tuple[dict[str, JsonValue], ...]
+    properties: ExaWebsetItemProperties
+    evaluations: tuple[ExaWebsetItemEvaluation, ...]
+    enrichments: tuple[ExaWebsetEnrichmentResult, ...] | None
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
+
+    @property
+    def enrichment_results(self) -> tuple[ExaWebsetEnrichmentResult, ...]:
+        return self.enrichments or ()
 
 
 class ExaWebsetEvent(BaseModel):
@@ -288,6 +532,21 @@ class ExaWebsetEvent(BaseModel):
     type: NonEmptyStr
     data: dict[str, JsonValue]
     created_at: datetime = Field(alias="createdAt")
+
+    @model_validator(mode="after")
+    def _resource_matches_event_type(self) -> ExaWebsetEvent:
+        if self.type.startswith("webset.item."):
+            ExaWebsetItem.model_validate(self.data)
+        elif self.type.startswith("webset.search."):
+            ExaResponseSearch.model_validate(self.data)
+        elif self.type in {
+            "webset.created",
+            "webset.deleted",
+            "webset.idle",
+            "webset.paused",
+        }:
+            ExaWebset.model_validate(self.data)
+        return self
 
     @property
     def webset_id(self) -> str | None:

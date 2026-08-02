@@ -3,41 +3,51 @@
   "object": "webset",
   "status": "idle",
   "externalId": "clue-fixture-cancelled",
+  "title": "Cancelled fictional discovery",
   "searches": [
     {
       "id": "ws_search_fixture_cancelled",
       "object": "webset_search",
+      "websetId": "ws_fixture_cancelled",
       "status": "canceled",
-      "query": "Fictional cancelled company search",
+      "query": "Cancelled fixture search",
       "entity": {"type": "company"},
       "criteria": [],
       "count": 2,
       "maxPeoplePerCompany": null,
-      "progress": {"found": 0, "completion": 0.0},
+      "behavior": "override",
+      "exclude": [],
+      "scope": [],
+      "progress": {"found": 0, "analyzed": 0, "completion": 0, "timeLeft": 0},
+      "recall": null,
       "metadata": {},
-      "canceledAt": "2026-08-02T09:01:00Z",
+      "canceledAt": "2026-08-03T09:01:00Z",
       "canceledReason": "webset_canceled",
-      "createdAt": "2026-08-02T09:00:00Z",
-      "updatedAt": "2026-08-02T09:01:00Z"
+      "createdAt": "2026-08-03T09:00:00Z",
+      "updatedAt": "2026-08-03T09:01:00Z"
     }
   ],
+  "imports": [],
   "enrichments": [
     {
       "id": "enr_fixture_cancelled",
       "object": "webset_enrichment",
       "status": "canceled",
       "websetId": "ws_fixture_cancelled",
-      "title": "Cancelled enrichment",
-      "description": "Find a fictional company page",
-      "format": "url",
+      "title": null,
+      "description": "Cancelled fixture enrichment",
+      "format": "text",
       "options": null,
-      "instructions": "Synthetic fixture instructions",
+      "instructions": null,
       "metadata": {},
-      "createdAt": "2026-08-02T09:00:00Z",
-      "updatedAt": "2026-08-02T09:01:00Z"
+      "createdAt": "2026-08-03T09:00:00Z",
+      "updatedAt": "2026-08-03T09:01:00Z"
     }
   ],
-  "metadata": {"fixture": "d0"},
-  "createdAt": "2026-08-02T09:00:00Z",
-  "updatedAt": "2026-08-02T09:01:00Z"
+  "monitors": [],
+  "excludes": [],
+  "metadata": {},
+  "dashboardUrl": "https://websets.exa.ai/websets/ws_fixture_cancelled",
+  "createdAt": "2026-08-03T09:00:00Z",
+  "updatedAt": "2026-08-03T09:01:00Z"
 }

@@ -17,6 +17,7 @@ from clue_core import (
     new_discovery_item_snapshot_id,
     new_discovery_operation_id,
 )
+from clue_research.adapters.exa_websets import ExaEventPage, ExaItemPage, ExaWebsetItem
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/discovery/exa_websets"
 
@@ -46,6 +47,22 @@ def test_company_item_pages_cover_evaluations_nulls_and_cursor_exhaustion() -> N
     }
     assert any(enrichment["result"] is None for item in items for enrichment in item["enrichments"])
 
+    typed = [
+        *ExaItemPage.model_validate(first).data,
+        *ExaItemPage.model_validate(second).data,
+    ]
+    projected = typed[0].properties.discovery_fields()
+    assert projected["revenueAnnual"] == "12500000"
+    assert projected["fundingTotal"] == "3500000"
+    assert projected["fundingLatestRound"] == {
+        "name": "Growth round",
+        "date": "2025-11-10",
+        "amount": "3500000",
+    }
+    assert projected["headquarters"]["countryCode"] == "US"
+    assert "foundedYear" not in projected
+    assert "webTraffic" not in projected
+
 
 def test_event_fixture_is_both_duplicate_and_out_of_order() -> None:
     payload = _load("events-duplicate-out-of-order.json")
@@ -56,6 +73,9 @@ def test_event_fixture_is_both_duplicate_and_out_of_order() -> None:
     assert ids["evt_fixture_item_created"] == 2
     assert created != sorted(created)
     assert any(event["type"] == "webset.idle" for event in events)
+    typed = ExaEventPage.model_validate(payload)
+    assert typed.data[0].data["object"] == "webset_item"
+    assert typed.data[-1].data["object"] == "webset"
 
 
 def test_cancellation_fixture_keeps_canceled_operations_distinct_from_success() -> None:
@@ -85,6 +105,10 @@ def test_additive_schema_drift_is_preserved_in_the_raw_item_artifact() -> None:
     assert payload["futureTopLevelField"] == ["must", "remain", "in", "raw", "artifact"]
     assert payload["properties"]["company"]["futureHeadcountConfidence"] == 0.93
     assert snapshot.item_sha256 == hashlib.sha256(raw).hexdigest()
+    typed = ExaWebsetItem.model_validate_json(raw)
+    assert typed.model_extra == {
+        "futureTopLevelField": ["must", "remain", "in", "raw", "artifact"]
+    }
 
 
 def test_all_exa_fixtures_are_secret_free_and_require_no_network(

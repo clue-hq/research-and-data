@@ -15,8 +15,13 @@
       "industry": "Medical Practice",
       "about": "Synthetic company with additive fields.",
       "logoUrl": null,
+      "foundedYear": null,
+      "headquarters": null,
+      "financials": null,
+      "webTraffic": null,
       "futureHeadcountConfidence": 0.93
     },
+    "content": null,
     "futureProperty": {"version": 2}
   },
   "evaluations": [
@@ -29,7 +34,7 @@
     }
   ],
   "enrichments": [],
-  "createdAt": "2026-08-02T08:04:00Z",
-  "updatedAt": "2026-08-02T08:04:00Z",
+  "createdAt": "2026-08-03T08:04:00Z",
+  "updatedAt": "2026-08-03T08:04:00Z",
   "futureTopLevelField": ["must", "remain", "in", "raw", "artifact"]
 }

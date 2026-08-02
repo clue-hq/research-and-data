@@ -9,13 +9,19 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from clue_api.exa_websets_submit import assert_exa_response_matches_request
 from clue_research.adapters.exa_websets import (
     ExaCreateCriterion,
+    ExaCreateEnrichment,
     ExaCreateSearch,
     ExaCreateWebsetRequest,
+    ExaEnrichmentOption,
+    ExaWebsetEnrichmentFormat,
     ExaWebsetEntity,
     ExaWebsetEntityType,
+    ExaWebsetExchange,
     ExaWebsetsClient,
+    ExaWebsetsContractDrift,
     ExaWebsetsIndeterminateDispatch,
     ExaWebsetsRateLimited,
     ExaWebsetsTransientError,
@@ -223,6 +229,128 @@ def test_lookup_exhaustion_preserves_rate_limit_taxonomy() -> None:
         )
         with pytest.raises(ExaWebsetsRateLimited):
             await client.get_webset(_request().external_id)
+        await http.aclose()
+
+    asyncio.run(_run())
+
+
+def test_response_matching_is_identity_keyed_and_catches_paid_semantic_drift() -> None:
+    request = ExaCreateWebsetRequest(
+        search=ExaCreateSearch(
+            query="Independent specialty practices",
+            count=2,
+            entity=ExaWebsetEntity(type=ExaWebsetEntityType.COMPANY),
+            criteria=(
+                ExaCreateCriterion(description="Based in the United States"),
+                ExaCreateCriterion(description="Independent specialty practice"),
+            ),
+        ),
+        enrichments=(
+            ExaCreateEnrichment(
+                description="Find one public company email",
+                format=ExaWebsetEnrichmentFormat.EMAIL,
+                metadata={"clueFieldKey": "core.company_email"},
+            ),
+            ExaCreateEnrichment(
+                description="Classify the revenue band",
+                format=ExaWebsetEnrichmentFormat.OPTIONS,
+                options=(
+                    ExaEnrichmentOption(label="Under $1M"),
+                    ExaEnrichmentOption(label="$1M-$10M"),
+                ),
+                metadata={"clueFieldKey": "core.revenue_band"},
+            ),
+        ),
+        external_id="clue-" + "b" * 48,
+        metadata={"clueFingerprint": "b" * 64},
+    )
+    payload = _response_payload(request)
+    search = payload["searches"][0]
+    search["criteria"] = list(reversed(search["criteria"]))
+    payload["enrichments"] = [
+        {
+            "id": "enrichment_revenue",
+            "object": "webset_enrichment",
+            "status": "pending",
+            "websetId": payload["id"],
+            "title": "Revenue band",
+            "description": request.enrichments[1].description,
+            "format": "options",
+            "options": [{"label": "Under $1M"}, {"label": "$1M-$10M"}],
+            "instructions": None,
+            "metadata": request.enrichments[1].metadata,
+            "createdAt": payload["createdAt"],
+            "updatedAt": payload["updatedAt"],
+        },
+        {
+            "id": "enrichment_email",
+            "object": "webset_enrichment",
+            "status": "pending",
+            "websetId": payload["id"],
+            "title": "Company email",
+            "description": request.enrichments[0].description,
+            # Observed live: contact definitions normalize to text while item results retain email.
+            "format": "text",
+            "options": None,
+            "instructions": None,
+            "metadata": request.enrichments[0].metadata,
+            "createdAt": payload["createdAt"],
+            "updatedAt": payload["updatedAt"],
+        },
+    ]
+    raw = json.dumps(payload).encode()
+    exchange = ExaWebsetExchange(
+        status_code=201,
+        response_body=raw,
+        webset=payload,
+    )
+    # Neither provider array is ordered like the request, but stable identities still match.
+    assert_exa_response_matches_request(request, exchange)
+
+    for mutate, expected in (
+        (lambda value: value["searches"][0].update({"websetId": "foreign"}), "webset_id"),
+        (
+            lambda value: value["searches"][0].update({"maxPeoplePerCompany": 2}),
+            "max_people_per_company",
+        ),
+        (
+            lambda value: value["enrichments"][0]["metadata"].update(
+                {"clueFieldKey": "core.wrong_field"}
+            ),
+            "enrichments.identity",
+        ),
+        (
+            lambda value: value["enrichments"][0].update(
+                {"options": [{"label": "Wrong"}]}
+            ),
+            "options",
+        ),
+    ):
+        changed = json.loads(json.dumps(payload))
+        mutate(changed)
+        changed_raw = json.dumps(changed).encode()
+        changed_exchange = ExaWebsetExchange(
+            status_code=201,
+            response_body=changed_raw,
+            webset=changed,
+        )
+        with pytest.raises(ExaWebsetsContractDrift, match=expected):
+            assert_exa_response_matches_request(request, changed_exchange)
+
+
+def test_missing_required_progress_is_contract_drift_at_transport_boundary() -> None:
+    async def _run() -> None:
+        request = _request()
+
+        def respond(http_request: httpx.Request) -> httpx.Response:
+            payload = _response_payload(request)
+            del payload["searches"][0]["progress"]
+            return httpx.Response(201, json=payload, request=http_request)
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client = ExaWebsetsClient(api_key=SecretStr("test-secret"), client=http)
+        with pytest.raises(ExaWebsetsContractDrift):
+            await client.create_webset(request)
         await http.aclose()
 
     asyncio.run(_run())
