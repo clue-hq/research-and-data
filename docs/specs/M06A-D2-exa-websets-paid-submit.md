@@ -1,7 +1,6 @@
 # M6A D2 — Exa Websets typed client and paid submit
 
-Status: **implementation complete; successful live-provider gate OPEN because the configured Exa
-team does not have Websets API access**
+Status: **implementation complete; successful live-provider gate CLOSED on 2026-08-03**
 
 Parent plan: `docs/specs/M06A-exa-websets-sumble-discovery-integration.md`
 
@@ -26,9 +25,11 @@ D2 adds the first provider-specific discovery adapter without weakening D1:
 | Provider + durable composition | `clue_api.exa_websets_submit` | API-root-only import of adapter and durable worker |
 | Bounded live/replay operator surface | `scripts/09_exa_websets_d2_canary.py` | Explicit DB, observation window, and live-create flag |
 
-No migration or provider-specific lifecycle table was added. The operation remains a D1
+No provider-specific lifecycle table was added. The operation remains a D1
 `DiscoveryOperation`, the request/receipt remain D1 content-addressed artifacts, and the project
-remains in discovery.
+remains in discovery. Review hardening added migration `fe7d6c0aee8a`, which adds provider-neutral
+`cost_cents_reserved` columns to the existing batch and operation tables so the monetary cap is
+enforced before dispatch rather than remaining a zero-valued reporting field.
 
 ## 2. Pinned provider contract
 
@@ -66,11 +67,19 @@ The full SHA-256 becomes the D1 request fingerprint. `clue-<first-48-hex>` becom
 `externalId`; the full fingerprint and contract version are provider metadata. A duplicate or
 uncertain result can therefore be looked up and target-checked without a second create.
 
-The injected maximum-credit policy is versioned: 10 credits per result, 2 per ordinary enrichment
-per result, and 5 per email/phone enrichment per result. The canary requests two companies and no
-enrichment, so it reserves at most 20 credits. Reservation locks the batch, reads the immutable
-plan cap, sums existing reservations, and inserts one operation transactionally. A 19-credit plan
-fails before provider traffic. Create starts only after request artifact and reservation commit.
+The injected maximum-credit policy is versioned: 10 credits per all-criteria match, 2 per row for
+each ordinary enrichment, 5 per returned email/phone value, and 2 per resolved import. The canary
+requests two companies and no enrichment, so it reserves at most 20 credits. Reservation locks the
+batch, reads both immutable plan caps, sums existing provider-unit and monetary reservations, and
+inserts one operation transactionally. A 19-credit cap or a monetary cap below 8.980 cents fails
+before provider traffic.
+
+Exa does not return operation-level dollars. `cost_cents_*` therefore has the explicit semantics
+`subscription-credit-allocation-equivalent`, not “card charged for this call.” The default runtime
+policy is pinned to the public Pro allocation: USD 449 / 100,000 credits = 0.449 cents per credit.
+Its version is `exa-websets-public-credit-policy-2026-08-03+pro-usd-allocation`. A plan with a
+different policy version is rejected; a deployment on Starter or Enterprise must inject and pin
+its own valuation instead of silently using the Pro quotient.
 
 ## 4. Dispatch and replay matrix
 
@@ -99,9 +108,10 @@ is stored byte-for-byte. A duplicate or uncertain outcome stores an envelope con
 available create/lookup bodies as base64 plus independent hashes. Terminal errors use that envelope.
 
 An accepted create records provider id, submit receipt, next poll time, and `provider_running`; the
-batch becomes `waiting_external`. D3 now transactionally adds one stable initial-poll wake at this
+aggregate batch becomes `provider_running` once every planned operation exists in that state. D3
+transactionally adds one stable initial-poll wake at this
 same boundary. Create does not report final credits, so D2 records the 20-credit maximum reservation
-and zero realized units. D3 settles modeled realized units after completion.
+and zero realized units. D3 settles credits from terminal item facts after completion.
 
 The composition emits `discovery.exa_websets.submit`; the adapter emits
 `provider.exa_websets.create`/`lookup`. Attributes contain ids, fingerprint, count, reservation,
@@ -111,50 +121,44 @@ status, and replay outcome, never query text, response body, or credential.
 
 ```text
 pytest -q tests/adapters/test_exa_websets_d2.py
-5 passed
+passed
 
 CLUE_DATABASE_URL=.../clue_discovery_fixture \
   pytest -q tests/api/test_exa_websets_submit_d2.py
-5 passed
+passed
 ```
 
 The named fixture database was migrated from `933c7b604f1c` to D1 head `283ab57486e8`. Tests prove
 typed/canonical transport, one-attempt POST, safe GET retry, secret-safe errors, exact request and
-response artifacts, 20-credit reservation, 19-credit pre-HTTP rejection, `409` reconciliation,
-pre-dispatch same-operation retry, terminal replay with zero calls, batch counters, traces, and a
-fresh submitter instance with zero second provider call. `ruff check`, `ruff format --check`, and
-`mypy` pass for the complete changed Python surface.
+response artifacts, 20-credit/8.980-cent reservation, provider-unit and monetary pre-HTTP
+rejection, `409` reconciliation, pre-dispatch same-operation retry, terminal replay with zero
+calls, batch counters, traces, and a fresh submitter instance with zero second provider call.
+`ruff`, full `mypy` (467 source files), and all 24 import contracts pass. Migration smoke passed on
+a clean disposable database through `head -> base -> head` and that database was removed.
 
-## 7. Live-provider evidence and open gate
+## 7. Live-provider evidence and closed gate
 
-On 2026-08-02 the canary attempted the approved two-company request from the persisted Insight
-Health/Aura fixture:
+The two earlier 401/not-charged operations remain immutable historical evidence. After an
+API-enabled team/key became available, generation 4 used observation
+`2026-08-03-d3-live-v1` for the approved two-company Insight Health/Aura workload:
 
 ```text
-batch_id:                 3ba6c1c8-a086-5048-9f61-7bc7813342c6
-operation_id:             302fd31e-9b2d-4a9d-a2c5-d6d0cc04c726
-request_fingerprint:      7b69772be54f9cbc325c6ceed8f26d29caa1deaa029bed65867629f058411482
-provider_external_id:     clue-7b69772be54f9cbc325c6ceed8f26d29caa1deaa029bed65
-provider_request_id:      0712a0c5dc125016c3296230e8a4e1ef
-units reserved/realized:  20 / 0
-spend outcome:            not_charged
-operation/batch state:    failed_terminal / failed_terminal
+batch_id:                 14be6f08-3838-5b9a-9899-f0765ef42c08
+operation_id:             38a236b2-52ef-43f7-a98c-e26de5671521
+provider_operation_id:    webset_01kz2b6wcyb25pzt3c83s7vhs2
+request_fingerprint:      c8f8c45854b22f5cb347ff396e50077f833b235d52c90826d33f3ae901566c36
+units reserved/realized:  20 / 20
+cost reserved/realized:   8.980 / 8.980 cents allocation-equivalent
+operation/batch state:    succeeded / identity_resolution
 ```
 
-Exa returned HTTP 401 stating that the configured team lacks Websets API access and needs an
-API-enabled plan. The exact response is retained only in the tenant-bound artifact. A fresh-process
-replay then produced zero create calls, zero lookup calls, the same ids/artifacts, and one
-`discovery.exa_websets.submit` trace.
-
-This proves the live auth failure and idempotency paths, but it does **not** close Gate D2. Closure
-still requires a `201` and real provider operation id visible in Exa. After an API-enabled team/key
-is configured, an operator must approve a new observation/generation; the terminal fingerprint
-above must not be mutated into success. The successful run must then be replayed in a new process
-with zero second create.
+The create returned a real provider operation visible in Exa. A replay-only fresh process then
+reported `create_calls_this_process=0`, `lookup_calls_this_process=0`, the same operation and
+artifacts, and the terminal settled counters. This closes Gate D2 without mutating either historical
+failed fingerprint.
 
 ## 8. Boundary into D3
 
-The user authorized D3 mechanical implementation while the live D2 entitlement gate remains open.
-`M06A-D3-exa-websets-lifecycle.md` records that completed boundary and keeps its live-provider gate
-explicitly open. D3 consumes the D1 operation and provider ids; it does not submit a new Webset.
-D2 does not materialize accounts or advance the project.
+`M06A-D3-exa-websets-lifecycle.md` records the completed asynchronous retrieval boundary. D3
+consumes the D1 operation and provider ids; it does not submit a new Webset. D2 does not
+materialize accounts or advance the project.
