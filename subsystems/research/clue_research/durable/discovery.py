@@ -38,12 +38,14 @@ from clue_core import (
     DiscoveryNormalizationState,
     DiscoveryOperation,
     DiscoveryOperationId,
+    DiscoveryOperationState,
     DiscoveryPageReceipt,
     DiscoveryPlan,
     DiscoveryPlanId,
     DiscoveryProviderEvent,
     DiscoverySealBlocker,
     DiscoverySealReadiness,
+    DiscoverySpendOutcome,
     DiscoveryWakeRequest,
     DiscoveryWakeScheduler,
     EntityId,
@@ -69,6 +71,10 @@ class DiscoveryNotFound(DiscoveryRepositoryError):
 
 class DiscoveryReplayConflict(DiscoveryRepositoryError):
     """A stable idempotency key was reused with different immutable content."""
+
+
+class DiscoveryBudgetExceeded(DiscoveryRepositoryError):
+    """A paid discovery reservation would exceed its immutable plan cap."""
 
 
 class DiscoverySealBlocked(DiscoveryRepositoryError):
@@ -524,6 +530,152 @@ async def put_discovery_operation(
     return row
 
 
+async def reserve_discovery_operation(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation: DiscoveryOperation,
+) -> tuple[DiscoveryOperation, bool]:
+    """Atomically reserve one potentially-paid operation under the persisted plan cap.
+
+    The batch row serializes competing reservations.  The cap is read from the immutable plan,
+    never accepted from a caller.  An exact concurrent/restarted request returns the existing row
+    with ``created=False``; it does not mint a second operation or increment the batch reservation.
+    """
+
+    if operation.workspace_id != workspace_id:
+        raise ValueError("discovery operation workspace does not match repository scope")
+    if operation.state is not DiscoveryOperationState.PLANNED:
+        raise ValueError("a new discovery reservation must start in planned state")
+    if operation.spend_outcome is not DiscoverySpendOutcome.NOT_DISPATCHED:
+        raise ValueError("a new discovery reservation must start as not_dispatched")
+    locked = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT batch.id, batch.state, batch.discovery_plan_id, plan.plan_json
+                    FROM discovery_batch batch
+                    JOIN discovery_plan plan
+                      ON plan.workspace_id = batch.workspace_id
+                     AND plan.id = batch.discovery_plan_id
+                    WHERE batch.workspace_id = :workspace_id AND batch.id = :batch_id
+                    FOR UPDATE OF batch
+                    """
+                ),
+                {"workspace_id": workspace_id, "batch_id": operation.batch_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if locked is None:
+        raise DiscoveryNotFound(f"discovery batch {operation.batch_id}")
+    if str(locked["state"]) in {
+        DiscoveryBatchState.SEALED.value,
+        DiscoveryBatchState.FAILED_TERMINAL.value,
+        DiscoveryBatchState.CANCELLED_UNSEALED.value,
+    }:
+        raise DiscoveryReplayConflict("discovery batch no longer accepts paid reservations")
+
+    existing = await find_reusable_discovery_operation(
+        conn,
+        workspace_id=workspace_id,
+        source_key=operation.source_key,
+        request_fingerprint=operation.request_fingerprint,
+        observation_window=operation.observation_window,
+    )
+    if existing is not None:
+        immutable_matches = (
+            existing.batch_id == operation.batch_id
+            and existing.provider_api_version == operation.provider_api_version
+            and existing.provider_external_id == operation.provider_external_id
+            and existing.raw_request_artifact_key == operation.raw_request_artifact_key
+            and existing.provider_units_reserved == operation.provider_units_reserved
+        )
+        if not immutable_matches:
+            raise DiscoveryReplayConflict(
+                "request fingerprint already belongs to different discovery operation content"
+            )
+        return existing, False
+
+    plan_payload = decode_jsonb(locked["plan_json"])
+    plan = DiscoveryPlan.model_validate(plan_payload)
+    reserved_before = Decimal(
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT COALESCE(sum(provider_units_reserved), 0)
+                    FROM discovery_operation
+                    WHERE workspace_id = :workspace_id AND batch_id = :batch_id
+                    """
+                ),
+                {"workspace_id": workspace_id, "batch_id": operation.batch_id},
+            )
+        ).scalar_one()
+    )
+    reserved_after = reserved_before + operation.provider_units_reserved
+    if reserved_after > Decimal(plan.provider_credit_cap):
+        raise DiscoveryBudgetExceeded(
+            "discovery provider-unit reservation exceeds the immutable plan cap"
+        )
+    if operation.cost_cents_charged > plan.money_budget_cap_cents:
+        raise DiscoveryBudgetExceeded(
+            "discovery operation's realized money exceeds the immutable plan cap"
+        )
+
+    stored = await put_discovery_operation(
+        conn,
+        workspace_id=workspace_id,
+        operation=operation,
+    )
+    await reconcile_discovery_batch_costs(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=operation.batch_id,
+    )
+    return stored, True
+
+
+async def claim_discovery_operation_dispatch(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: DiscoveryOperationId,
+) -> DiscoveryOperation | None:
+    """Claim the one create dispatch transition or return ``None`` to a replaying caller.
+
+    Only a never-dispatched planned row, or a proven pre-dispatch retryable row, can win.  Moving
+    to ``submitting`` commits before HTTP starts; every competing process observes that state and
+    must join/reconcile instead of creating again.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"""
+                    UPDATE discovery_operation
+                    SET state = 'submitting', spend_outcome = 'not_dispatched',
+                        started_at = COALESCE(started_at, now()), updated_at = now()
+                    WHERE workspace_id = :workspace_id AND id = :id
+                      AND state IN ('planned', 'failed_retryable')
+                      AND spend_outcome = 'not_dispatched'
+                      AND provider_operation_id IS NULL
+                      AND submitted_receipt_ref IS NULL
+                    RETURNING {_OPERATION_COLUMNS}
+                    """
+                ),
+                {"workspace_id": workspace_id, "id": operation_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return _operation_row(row) if row is not None else None
+
+
 async def update_discovery_operation(
     conn: AsyncConnection, *, workspace_id: str, operation: DiscoveryOperation
 ) -> DiscoveryOperation:
@@ -549,7 +701,10 @@ async def update_discovery_operation(
                 updated_at = now()
             WHERE workspace_id = :workspace_id AND id = :id AND batch_id = :batch_id
               AND source_key = :source_key AND request_fingerprint = :request_fingerprint
-              AND observation_window = :observation_window AND state <> 'succeeded'
+              AND observation_window = :observation_window
+              AND state NOT IN (
+                  'succeeded', 'accepted_terminal_failure', 'failed_terminal', 'cancelled'
+              )
             """
         ),
         _operation_params(operation),

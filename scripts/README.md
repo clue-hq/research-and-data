@@ -17,6 +17,7 @@ don't pass one).
 | 06 | `06_contact_profiling.py` | M4 contact profiling | `profiling.profile_contact` |
 | 07 | `07_research_view_trial.py` | Read-only C7 production research-view inspection | `ProductionResearchViewComposer` |
 | 08 | `08_seed_discovery_fixture.py` | Reproducible Stage-0 handoff for discovery tests | `trial.discovery_fixture.seed_insight_health_discovery_fixture` |
+| 09 | `09_exa_websets_d2_canary.py` | Bounded live/replay Exa Websets D2 submit | `DurableExaWebsetSubmitter` |
 
 ## One-time setup
 
@@ -161,3 +162,26 @@ official-site claims, confirms the Aura neurosurgery ICP, evaluates discovery re
 the durable project run at `discovery`. The default reference bundle is written under
 `.context/discovery-fixtures/insight-health-aura/`; Postgres and the artifact store remain
 authoritative. Repeating the exact command reuses the same claims, ICP, context, decision, and run.
+
+## Exa Websets D2 canary
+
+Script 09 consumes the named Stage-0 fixture and submits exactly one two-company Webset with no
+paid enrichment (20-credit maximum). It requires an explicit observation window. The first paid
+create is disabled unless `--allow-live-create` is present:
+
+```bash
+uv run python scripts/09_exa_websets_d2_canary.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_discovery_fixture \
+  --observation-window 2026-08-02-d2-live-v2 \
+  --generation 2 \
+  --allow-live-create
+```
+
+Repeat the command without `--allow-live-create` in a fresh process. A successful replay reports
+zero create and lookup calls and returns the same request fingerprint, operation id, provider id,
+and artifacts. A terminal attempt also replays without network I/O; retrying it requires a
+separately approved observation/generation rather than changing the old row.
+
+The configured Exa team must have Websets API access. A key that can use the web application but
+not the Websets API returns a durable, known-not-charged terminal failure and does not satisfy the
+D2 success gate.

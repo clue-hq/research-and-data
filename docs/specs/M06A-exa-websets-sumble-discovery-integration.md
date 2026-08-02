@@ -1,7 +1,7 @@
 # M6A — Durable Exa Websets account discovery and gated Sumble enrichment
 
-**Status:** Binding implementation plan; Stage-0 discovery fixture (Slice P0) implemented, provider
-slices not started
+**Status:** Binding implementation plan; Slices P0/D0/D1 implemented; D2 code complete but its
+successful-live gate is blocked by the configured Exa team's lack of Websets API access
 
 **Branch:** `platform/c8-exa-sumble-discovery` (branched from `platform/c8-context-card`)
 
@@ -783,6 +783,11 @@ seal; concurrent seal attempts produce one identical seal; cross-workspace reads
 migration head -> base -> head passes; no provider fake can bypass the SQL barrier.
 
 ### Slice D2 — Exa Websets typed client and paid submit
+
+**Implementation record:** `docs/specs/M06A-D2-exa-websets-paid-submit.md` records the typed v0
+contract, atomic reservation/dispatch/replay state machine, durable artifacts, tests, and the
+bounded live `401/not_charged` result. The code boundary is implemented; Gate D2 remains open until
+an API-enabled Exa credential returns a real Webset id and fresh-process replay creates none.
 
 **Purpose:** Submit exactly one real two-row company Webset safely.
 
