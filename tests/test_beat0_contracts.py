@@ -74,7 +74,12 @@ def test_project_phase_is_the_canonical_source_for_obs_phase_tokens() -> None:
 
 
 def test_new_enums_carry_their_expected_members() -> None:
-    assert {s.value for s in PhaseStatus} == {"completed", "paused", "failed"}
+    assert {s.value for s in PhaseStatus} == {
+        "completed",
+        "waiting_external",
+        "paused",
+        "failed",
+    }
     assert {s.value for s in WorkerStatus} == {"ok", "partial", "failed", "budget_exceeded"}
     assert {s.value for s in PreSpendVerdict} == {"pass", "reject"}
     assert {s.value for s in JudgeVerdict} == {

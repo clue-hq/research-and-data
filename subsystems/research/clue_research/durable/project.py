@@ -37,6 +37,7 @@ from clue_core import (
     BudgetVerdict,
     BurnDown,
     CostCents,
+    DiscoveryExternalWait,
     Estimate,
     IdempotencyScope,
     PhaseContext,
@@ -435,6 +436,9 @@ class ProjectRun:
         if checkpoint is not None and checkpoint.status == PhaseCheckpointStatus.AWAITING_INPUT:
             # Suspended at a durable gate; the handler does not re-run until a decision arrives.
             return run
+        # WAITING_EXTERNAL deliberately falls through: a scheduled/webhook wake re-enters the same
+        # handler with the persisted batch/operation refs.  It is not a human gate and the run is
+        # already ACTIVE, so no resume action is required.
 
         # Budget pre-gate (M7.5): before running a *fresh* spend phase, if a budget engine is wired
         # and the per-run hard cap is already reached, graceful-stop the run at this boundary rather
@@ -484,6 +488,22 @@ class ProjectRun:
             )
             await self._store.mark_status(
                 project_run_id, status=ProjectRunStatus.PAUSED, stamp_paused=True
+            )
+            return await self.status(project_run_id)
+        if result.status == PhaseStatus.WAITING_EXTERNAL:
+            if phase is not ProjectPhase.DISCOVERY:
+                raise ProjectRunError(
+                    "waiting_external is currently valid only for the discovery phase"
+                )
+            # Fail closed on body-bearing or incomplete wait payloads.  The checkpoint contains
+            # only durable references, next-poll time, and wake reason.
+            DiscoveryExternalWait.model_validate(result.payload)
+            await self._store.put_checkpoint(
+                project_run_id=project_run_id,
+                phase=phase,
+                idempotency_key=key,
+                status=PhaseCheckpointStatus.WAITING_EXTERNAL,
+                payload=result.payload,
             )
             return await self.status(project_run_id)
         # FAILED

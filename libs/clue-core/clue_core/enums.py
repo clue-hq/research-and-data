@@ -376,6 +376,7 @@ class PhaseStatus(StrEnum):
     ``TIER_CHECKPOINT`` gate, or a budget graceful-stop (M7.5) — without failing the run."""
 
     COMPLETED = "completed"
+    WAITING_EXTERNAL = "waiting_external"
     PAUSED = "paused"
     FAILED = "failed"
 
