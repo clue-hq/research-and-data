@@ -763,6 +763,10 @@ seal barrier truth table covers every non-terminal blocker; no external call occ
 
 ### Slice D1 — Durable discovery-batch substrate
 
+**Implementation record:** `docs/specs/M06A-D1-durable-discovery-batch.md` records the final
+schema, repository/replay contracts, external-wait lifecycle, fourteen-condition SQL barrier,
+accepted-terminal-failure semantics, sealed-generation guards, and real-database gate evidence.
+
 **Purpose:** Add database/object-store execution state without a provider dependency.
 
 **Deliverables:**

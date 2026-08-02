@@ -19,7 +19,7 @@ import re
 import unicodedata
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, NewType, cast
+from typing import Annotated, NewType, Protocol, cast, runtime_checkable
 from uuid import UUID, uuid4
 
 from annotated_types import Ge
@@ -199,6 +199,27 @@ class DiscoveryNormalizationState(StrEnum):
     NORMALIZED = "normalized"
     FAILED_RETRYABLE = "failed_retryable"
     FAILED_TERMINAL = "failed_terminal"
+
+
+class DiscoveryCandidateAdmissionState(StrEnum):
+    """Terminal identity disposition for one provider item.
+
+    ``ADMITTED`` means the source item resolved directly to its surviving workspace-local account;
+    ``MERGED`` means it first resolved to another candidate that was collapsed into the survivor.
+    ``EXCLUDED`` is an honest terminal non-admission.  Only ``PENDING`` blocks the batch seal.
+    """
+
+    PENDING = "pending"
+    ADMITTED = "admitted"
+    MERGED = "merged"
+    EXCLUDED = "excluded"
+
+
+class DiscoveryWakeReason(StrEnum):
+    SCHEDULED_POLL = "scheduled_poll"
+    PROVIDER_EVENT = "provider_event"
+    MANUAL_RECONCILE = "manual_reconcile"
+    CRASH_RECOVERY = "crash_recovery"
 
 
 class DiscoveryErrorCode(StrEnum):
@@ -428,6 +449,18 @@ def discovery_request_fingerprint(value: DiscoveryRequestFingerprintInput) -> st
     return value.sha256()
 
 
+def discovery_plan_sha256(plan: DiscoveryPlan) -> str:
+    """Stable content identity for an immutable discovery plan.
+
+    The plan id is included deliberately: a separately-approved plan is a distinct durable object
+    even when every execution knob happens to be equal.
+    """
+
+    payload = cast(JsonValue, plan.model_dump(mode="json", exclude_none=False))
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
 def discovery_provider_external_id(fingerprint: str) -> str:
     """Derive the deterministic Exa-compatible external id from a validated fingerprint."""
 
@@ -510,6 +543,48 @@ class DiscoveryProviderEvent(BaseModel):
     received_at: UtcDatetime
     processed_at: UtcDatetime | None = None
     processing_disposition: DiscoveryEventDisposition = DiscoveryEventDisposition.PENDING
+
+
+class DiscoveryExternalWait(BaseModel):
+    """Reference-only phase payload while discovery waits on provider-owned time.
+
+    This is deliberately not a human pause.  The project run remains active in ``discovery`` and
+    either a scheduled poll or a verified webhook enqueues the same phase operation again.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovery_batch_id: DiscoveryBatchId
+    pending_operation_ids: tuple[DiscoveryOperationId, ...] = Field(min_length=1)
+    next_poll_at: UtcDatetime
+    wake_reason: DiscoveryWakeReason
+
+    @model_validator(mode="after")
+    def _operation_ids_are_unique(self) -> DiscoveryExternalWait:
+        if len(self.pending_operation_ids) != len(set(self.pending_operation_ids)):
+            raise ValueError("pending discovery operation ids must be unique")
+        return self
+
+
+class DiscoveryWakeRequest(BaseModel):
+    """Provider-neutral request handed to a scheduler/outbox implementation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: NonEmptyStr
+    project_run_id: ProjectRunId
+    discovery_batch_id: DiscoveryBatchId
+    operation_id: DiscoveryOperationId | None = None
+    reason: DiscoveryWakeReason
+    available_at: UtcDatetime
+    dedupe_key: NonEmptyStr
+
+
+@runtime_checkable
+class DiscoveryWakeScheduler(Protocol):
+    async def schedule(self, request: DiscoveryWakeRequest) -> str:
+        """Durably enqueue ``request`` and return its stable wake reference."""
+        ...
 
 
 class DiscoveryPageReceipt(BaseModel):
@@ -796,6 +871,7 @@ __all__ = [
     "DiscoveryBatchId",
     "DiscoveryBatchSeal",
     "DiscoveryBatchState",
+    "DiscoveryCandidateAdmissionState",
     "DiscoveryCriterionPlan",
     "DiscoveryEnrichmentFormat",
     "DiscoveryEnrichmentOption",
@@ -807,6 +883,7 @@ __all__ = [
     "DiscoveryEvaluationState",
     "DiscoveryEventDisposition",
     "DiscoveryFailure",
+    "DiscoveryExternalWait",
     "DiscoveryFieldRequirement",
     "DiscoveryFieldResolution",
     "DiscoveryFieldResolutionState",
@@ -828,9 +905,13 @@ __all__ = [
     "DiscoverySealDecision",
     "DiscoverySealReadiness",
     "DiscoverySpendOutcome",
+    "DiscoveryWakeReason",
+    "DiscoveryWakeRequest",
+    "DiscoveryWakeScheduler",
     "ProviderUnits",
     "Sha256Hex",
     "discovery_provider_external_id",
+    "discovery_plan_sha256",
     "discovery_request_fingerprint",
     "evaluate_discovery_seal",
     "new_discovery_batch_id",

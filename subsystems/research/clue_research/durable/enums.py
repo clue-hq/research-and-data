@@ -96,6 +96,8 @@ class PhaseCheckpointStatus(StrEnum):
 
     * ``IN_PROGRESS`` — the phase handler is running (the row is staged before the handler is
       invoked, so a crash *during* the phase leaves a resumable marker, not a silent gap).
+    * ``WAITING_EXTERNAL`` — a non-human provider wait.  The run remains ``ACTIVE`` at the same
+      phase; a durable wake re-enters the handler without a human resume action.
     * ``AWAITING_INPUT`` — the phase returned ``PAUSED`` and the run is suspended at this checkpoint
       waiting for a client action (the M6.4 tier-checkpoint ``awaiting`` state, or a budget
       graceful-stop). ``payload_json`` holds the review payload the surface (M13) reads back.
@@ -105,6 +107,7 @@ class PhaseCheckpointStatus(StrEnum):
     """
 
     IN_PROGRESS = "in_progress"
+    WAITING_EXTERNAL = "waiting_external"
     AWAITING_INPUT = "awaiting_input"
     COMMITTED = "committed"
     FAILED = "failed"
