@@ -1,7 +1,8 @@
 # 2026-08-02 — Exa Websets durable discovery plan
 
-Branch `platform/c8-exa-sumble-discovery`, created from `platform/c8-context-card`. Planning/docs
-only; provider and backend implementation have not started.
+Branch `platform/c8-exa-sumble-discovery`, created from `platform/c8-context-card`. The binding plan
+is frozen and its Stage-0 discovery prerequisite fixture (Slice P0) is implemented. Exa/Sumble
+provider and durable discovery-batch slices have not started.
 
 Binding spec: `docs/specs/M06A-exa-websets-sumble-discovery-integration.md`.
 
@@ -24,4 +25,6 @@ Key rulings:
 - slices D0–D6 are sequential, with live provider and production-composition gates required where
   the slice touches Exa. Unit/fixture tests alone cannot close a provider slice.
 
-No code or provider spend occurred in this planning session.
+Slice P0 implementation/verification evidence is in
+`_memory/2026-08-02-insight-health-stage0-discovery-fixture.md`. P0 made no Exa or Sumble call and
+does not close D0-D6.
