@@ -124,7 +124,7 @@ from clue_projections import (
 )
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.stage0 import (
-    CLIENT_KNOWLEDGE_FIELDS,
+    CLIENT_BASELINE_FIELDS,
     ClientInput,
     ClientKnowledgeBaseRef,
     ICPConfirmation,
@@ -171,7 +171,7 @@ STAGE0_CONTEXT_BINDING_KIND = "context"
 #: same number — and because the C5 interaction slot's tool allowlist lives in that revision: a
 #: tool granted on the profile but absent from the pinned revision is rejected at plan validation
 #: (`c5_tool_not_allowed`), so moving the pin is how a new Stage-0 tool becomes callable at all.
-STAGE0_RECIPE_VERSION = 4
+STAGE0_RECIPE_VERSION = 5
 
 
 class Stage0ProductNotConfirmed(ValueError):
@@ -1050,7 +1050,7 @@ class Stage0Trial:
             live: dict[str, Any] = {}
             for claim in raw:
                 if (
-                    claim.field_key in CLIENT_KNOWLEDGE_FIELDS
+                    claim.field_key in CLIENT_BASELINE_FIELDS
                     and claim.product_id == self.state.product_id
                     and claim.field_key not in live
                 ):

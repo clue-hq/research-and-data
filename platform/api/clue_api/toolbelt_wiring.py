@@ -71,6 +71,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
@@ -78,6 +79,8 @@ from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
+    LegacyDecideFieldProposalTool,
+    LegacyProposeFieldTool,
     ProposeFieldTool,
     ProposeSourceTool,
 )
@@ -1683,6 +1686,29 @@ def build_toolbelt(
         if pre_spend_gate is not None
         else build_pre_spend_gate(conn_factory=conn_factory)
     )
+    entailment_judge = (
+        None
+        if gateway is None
+        else FaithfulnessClaimEntailmentJudge(
+            judge=FaithfulnessJudgeImpl(gateway=gateway, conn_factory=conn_factory)
+        )
+    )
+    statement_evidence = (
+        ArtifactStatementEvidenceReader(
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory),
+            conn_factory=conn_factory,
+        )
+        if storage is not None
+        else None
+    )
+    dynamic_client_kb_materializer = (
+        DynamicClientKbMaterializer(
+            evidence=statement_evidence,
+            entailment_judge=entailment_judge,
+        )
+        if statement_evidence is not None
+        else None
+    )
     locks = lock_factory if lock_factory is not None else lazy_account_lock_factory()
     registry = ToolRegistry()
     for tool_type in _TOOL_TYPES:
@@ -1720,13 +1746,25 @@ def build_toolbelt(
         ),
         make_default=False,
     )
-    registry.register(ProposeFieldTool(), make_default=True)
+    registry.register(
+        ProposeFieldTool(dynamic_client_kb_materializer=dynamic_client_kb_materializer),
+        make_default=True,
+    )
+    registry.register(LegacyProposeFieldTool(), make_default=False)
     registry.register(
         DecideFieldProposalTool(
             credential_ready=proposal_credential_ready,
             personal_source_allowed=proposal_personal_source_allowed,
+            dynamic_client_kb_materializer=dynamic_client_kb_materializer,
         ),
         make_default=True,
+    )
+    registry.register(
+        LegacyDecideFieldProposalTool(
+            credential_ready=proposal_credential_ready,
+            personal_source_allowed=proposal_personal_source_allowed,
+        ),
+        make_default=False,
     )
     registry.register(ProposeSourceTool(), make_default=True)
     registry.register(
@@ -1751,13 +1789,7 @@ def build_toolbelt(
         # never by a second entailment mechanism. Without a gateway there is no judge, and a typed
         # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
         # behaviour, so an ungatewayed composition is never *worse* than before.
-        entailment_judge=(
-            None
-            if gateway is None
-            else FaithfulnessClaimEntailmentJudge(
-                judge=FaithfulnessJudgeImpl(gateway=gateway, conn_factory=conn_factory)
-            )
-        ),
+        entailment_judge=entailment_judge,
     ):
         registry.register(tool, make_default=True)
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
@@ -1770,14 +1802,7 @@ def build_toolbelt(
     # Without a storage backend the evidence reader cannot exist, so the statement tool refuses
     # `statement_evidence_not_configured` rather than serving quote-less rows.
     for tool in build_stage0_inspection_tools(
-        evidence=(
-            ArtifactStatementEvidenceReader(
-                artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory),
-                conn_factory=conn_factory,
-            )
-            if storage is not None
-            else None
-        ),
+        evidence=statement_evidence,
         conn_factory=conn_factory,
     ):
         registry.register(tool, make_default=True)

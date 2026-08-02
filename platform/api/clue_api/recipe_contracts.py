@@ -21,10 +21,11 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "confirm_icp@1",
     "override_stage0_readiness@1",
     "start_confirmed_project_run@1",
-    "propose_field@1",
+    "propose_field@2",
     "propose_source@1",
     "submit_ingestion@1",
-    # PC-C8 §7 (recipe0-stage0@4): the two bounded read-only history tools. A tool the card's
+    # PC-C8 §7 (retained in recipe0-stage0@5): the two bounded read-only history tools. A tool the
+    # card's
     # omission cursors resolve through has to be runnable in the Stage-0 interaction slot, and
     # anything in that slot is certified here first.
     "inspect_statement_history@1",

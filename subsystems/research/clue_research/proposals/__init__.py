@@ -2,6 +2,7 @@
 
 from clue_research.proposals.models import (
     SENSITIVE_OUTREACH_DISABLED_GATE,
+    ClientKbFieldSpec,
     FieldProposal,
     FieldProposalPayload,
     ProposalDecision,
@@ -14,11 +15,15 @@ from clue_research.proposals.models import (
 )
 from clue_research.proposals.service import (
     AssignedTierRequired,
+    ClientFieldEvidenceRefused,
+    ClientFieldPolicyRefused,
+    ClientFieldPromotionDisabled,
     ComplianceApprovalRequired,
     CredentialSetupRequired,
     InsufficientProposalAuthority,
     decide_field_proposal,
     decide_source_proposal,
+    evaluate_safe_client_field,
     evaluate_source_demotion,
     propose_field,
     propose_source,
@@ -38,6 +43,10 @@ from clue_research.proposals.store import (
 __all__ = [
     "AssignedTierRequired",
     "ComplianceApprovalRequired",
+    "ClientFieldPolicyRefused",
+    "ClientFieldEvidenceRefused",
+    "ClientFieldPromotionDisabled",
+    "ClientKbFieldSpec",
     "CredentialSetupRequired",
     "FieldProposal",
     "FieldProposalPayload",
@@ -55,6 +64,7 @@ __all__ = [
     "decide_field_proposal",
     "decide_source_proposal",
     "evaluate_source_demotion",
+    "evaluate_safe_client_field",
     "get_field_proposal",
     "get_source_proposal",
     "list_field_proposals",

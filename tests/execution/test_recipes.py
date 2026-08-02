@@ -126,9 +126,9 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
                 )
             ).mappings()
             assert {row["event_type"]: row["count"] for row in events} == {
-                "promoted": 7,
-                "proposed": 7,
-                "superseded": 4,
+                "promoted": 8,
+                "proposed": 8,
+                "superseded": 5,
             }
 
             mismatch = definitions[0].model_copy(update={"max_nodes": 129})
@@ -160,8 +160,8 @@ def test_c67_account_unit_is_a_one_tool_bounded_system_recipe() -> None:
     assert account.max_fanout == 1
 
 
-def test_recipe0_v4_is_the_only_promoted_executable_stage0_revision() -> None:
-    """v4 adds the PC-C8 §7 inspection tools to the slot; v3 is superseded, never rewritten."""
+def test_recipe0_v5_is_the_only_promoted_executable_stage0_revision() -> None:
+    """v5 pins dynamic Client-KB proposal v2; older revisions remain immutable history."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -182,6 +182,7 @@ def test_recipe0_v4_is_the_only_promoted_executable_stage0_revision() -> None:
                 (2, "executable"),
                 (3, "executable"),
                 (4, "executable"),
+                (5, "executable"),
             ]
             effective = [
                 (
@@ -198,9 +199,10 @@ def test_recipe0_v4_is_the_only_promoted_executable_stage0_revision() -> None:
                 (1, RecipeRevisionEventType.SUPERSEDED),
                 (2, RecipeRevisionEventType.SUPERSEDED),
                 (3, RecipeRevisionEventType.SUPERSEDED),
-                (4, RecipeRevisionEventType.PROMOTED),
+                (4, RecipeRevisionEventType.SUPERSEDED),
+                (5, RecipeRevisionEventType.PROMOTED),
             ]
-            promoted = recipe0[3][0]
+            promoted = recipe0[4][0]
             slot = next(
                 node for node in promoted.graph.nodes if node.node_key == "stage0_interactions"
             )
