@@ -42,6 +42,7 @@ from clue_research.discovery_scoring.coverage import (
 )
 from clue_research.discovery_scoring.discovery import (
     DEFAULT_DISCOVERY_CONFIG,
+    DISCOVERY_ENVELOPE_POLICY_V1,
     LOOKALIKE_CHANNEL,
     CandidateHypothesis,
     CandidateRecord,
@@ -122,6 +123,7 @@ __all__ = [
     "DEFAULT_DISCOVERY_CONFIG",
     "StoppingReason",
     "LOOKALIKE_CHANNEL",
+    "DISCOVERY_ENVELOPE_POLICY_V1",
     # M6.5 — coverage-confidence estimator
     "estimate_coverage",
     "saturation_coverage",

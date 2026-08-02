@@ -51,10 +51,13 @@ relationships are not treated as independently verified truth.
   changed fixture file is among them.
 
 Operational note: the Docker-daemon Postgres and the host-bound Postgres expose different database
-catalogs in this environment. An unused `clue_discovery_fixture` database also exists inside the
-Docker-daemon container; the verified/sealed fixture rows are in the host-bound database above.
+catalogs in this environment. On 2026-08-02 the unused, empty `clue_discovery_fixture` database in
+the Docker container was verified to have zero public tables and zero active connections, then
+dropped. The authoritative host-bound `clue_discovery_fixture` remained intact with all eight
+product-scoped fixture claims. No container or unrelated database was removed.
 
 ## Next boundary
 
-Begin M6A Slice D0 only after reviewing this P0 commit. P0 is test setup; it does not authorize or
-perform Exa/Sumble provider spend and does not relax the closed durable-batch/seal requirement.
+Slice D0 subsequently landed as a separate local commit; see
+`_memory/2026-08-02-m6a-d0-contract-freeze.md`. P0 is test setup; it does not authorize or perform
+Exa/Sumble provider spend and does not relax the closed durable-batch/seal requirement.

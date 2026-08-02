@@ -1,0 +1,43 @@
+{
+  "id": "ws_fixture_cancelled",
+  "object": "webset",
+  "status": "idle",
+  "externalId": "clue-fixture-cancelled",
+  "searches": [
+    {
+      "id": "ws_search_fixture_cancelled",
+      "object": "webset_search",
+      "status": "canceled",
+      "query": "Fictional cancelled company search",
+      "entity": {"type": "company"},
+      "criteria": [],
+      "count": 2,
+      "maxPeoplePerCompany": null,
+      "progress": {"found": 0, "completion": 0.0},
+      "metadata": {},
+      "canceledAt": "2026-08-02T09:01:00Z",
+      "canceledReason": "webset_canceled",
+      "createdAt": "2026-08-02T09:00:00Z",
+      "updatedAt": "2026-08-02T09:01:00Z"
+    }
+  ],
+  "enrichments": [
+    {
+      "id": "enr_fixture_cancelled",
+      "object": "webset_enrichment",
+      "status": "canceled",
+      "websetId": "ws_fixture_cancelled",
+      "title": "Cancelled enrichment",
+      "description": "Find a fictional company page",
+      "format": "url",
+      "options": null,
+      "instructions": "Synthetic fixture instructions",
+      "metadata": {},
+      "createdAt": "2026-08-02T09:00:00Z",
+      "updatedAt": "2026-08-02T09:01:00Z"
+    }
+  ],
+  "metadata": {"fixture": "d0"},
+  "createdAt": "2026-08-02T09:00:00Z",
+  "updatedAt": "2026-08-02T09:01:00Z"
+}

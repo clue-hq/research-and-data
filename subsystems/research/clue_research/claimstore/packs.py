@@ -146,6 +146,137 @@ CORE_PACK: tuple[SeedField, ...] = (
         description="Primary web domain.",
     ),
     _seed(
+        "core.company_linkedin_url",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={"type": "string"},
+        description="Canonical public LinkedIn company page URL.",
+        research_view_route=_account_route(
+            "core.company_linkedin_url", ResearchSectionKind.ABOUT, ordinal=5
+        ),
+    ),
+    _seed(
+        "core.industry",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={"type": "string"},
+        description="Primary industry classification returned with account evidence.",
+        research_view_route=_account_route("core.industry", ResearchSectionKind.ABOUT, ordinal=15),
+    ),
+    _seed(
+        "core.employee_range",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=90),
+        value_schema={
+            "type": "object",
+            "required": ["label"],
+            "properties": {
+                "label": {"type": "string"},
+                "min": {"type": "integer"},
+                "max": {"type": "integer"},
+            },
+        },
+        description="Evidence-backed employee range used only when exact headcount is unavailable.",
+        research_view_route=_account_route(
+            "core.employee_range", ResearchSectionKind.ABOUT, ordinal=11
+        ),
+    ),
+    _seed(
+        "core.hq_location",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("sumble_organizations", "apollo", "exa"),
+        freshness_ttl=timedelta(days=180),
+        value_schema={
+            "type": "object",
+            "required": ["raw"],
+            "properties": {
+                "raw": {"type": "string"},
+                "city": {"type": "string"},
+                "region": {"type": "string"},
+                "country": {"type": "string"},
+                "country_code": {"type": "string"},
+            },
+        },
+        description="Normalized headquarters or primary location plus the source's raw value.",
+        research_view_route=_account_route(
+            "core.hq_location", ResearchSectionKind.ABOUT, ordinal=12
+        ),
+    ),
+    _seed(
+        "core.annual_revenue",
+        "object",
+        PassKind.SCORING,
+        tier_plan=("apollo", "sumble_organizations", "exa"),
+        freshness_ttl=timedelta(days=365),
+        value_schema={
+            "type": "object",
+            "required": ["amount", "currency", "as_of", "estimate_kind"],
+            "properties": {
+                "amount": {"type": "number"},
+                "currency": {"type": "string"},
+                "as_of": {"type": "string"},
+                "estimate_kind": {
+                    "type": "string",
+                    "enum": ["reported", "provider_estimate", "third_party_estimate"],
+                },
+            },
+        },
+        description=(
+            "Annual revenue with currency, as-of date, and explicit reported/estimate semantics."
+        ),
+        research_view_route=_account_route(
+            "core.annual_revenue", ResearchSectionKind.ABOUT, ordinal=18
+        ),
+    ),
+    _seed(
+        "core.revenue_band",
+        "enum:under_1m|1m_10m|10m_50m|50m_100m|100m_500m|500m_1b|1b_plus",
+        PassKind.SCORING,
+        tier_plan=("apollo", "sumble_organizations", "exa"),
+        freshness_ttl=timedelta(days=365),
+        value_schema={
+            "type": "string",
+            "enum": [
+                "under_1m",
+                "1m_10m",
+                "10m_50m",
+                "50m_100m",
+                "100m_500m",
+                "500m_1b",
+                "1b_plus",
+            ],
+        },
+        description="Bounded revenue band used only when exact sourced annual revenue is absent.",
+        research_view_route=_account_route(
+            "core.revenue_band", ResearchSectionKind.ABOUT, ordinal=19
+        ),
+    ),
+    _seed(
+        "core.company_email",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("exa",),
+        freshness_ttl=timedelta(days=30),
+        value_schema={"type": "string"},
+        description="Public general company contact email; not a person's work email.",
+    ),
+    _seed(
+        "core.company_phone",
+        "str",
+        PassKind.SCORING,
+        tier_plan=("exa",),
+        freshness_ttl=timedelta(days=30),
+        value_schema={"type": "string"},
+        description="Public general company contact phone; not a person's direct number.",
+    ),
+    _seed(
         "core.work_email",
         "str",
         PassKind.SCORING,
