@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -13,6 +14,8 @@ import pytest
 from pydantic import SecretStr
 
 from clue_research.adapters.exa_websets import (
+    ExaCreateWebhookRequest,
+    ExaWebhookEventType,
     ExaWebhookVerificationError,
     ExaWebsetsClient,
     ExaWebsetsRateLimited,
@@ -107,5 +110,57 @@ def test_lifecycle_reads_make_one_attempt_and_expose_retry_after() -> None:
         assert calls == 1
         assert caught.value.retry_after_seconds == 7
         await http.aclose()
+
+    asyncio.run(_run())
+
+
+def test_team_webhook_admin_uses_collection_endpoints_and_one_time_secret() -> None:
+    async def _run() -> None:
+        seen: list[httpx.Request] = []
+        now = "2026-08-03T12:00:00Z"
+        webhook = {
+            "id": "webhook_fixture",
+            "object": "webhook",
+            "status": "active",
+            "events": ["webset.idle", "webset.item.enriched"],
+            "url": "https://api.example.test/v1/webhooks/exa-websets",
+            "secret": "one-time-secret",
+            "metadata": {"clueEndpoint": "team-websets-v1"},
+            "createdAt": now,
+            "updatedAt": now,
+        }
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            if request.method == "POST":
+                return httpx.Response(200, json=webhook, request=request)
+            listed = {"data": [{**webhook, "secret": None}], "hasMore": False, "nextCursor": None}
+            return httpx.Response(200, json=listed, request=request)
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client = ExaWebsetsClient(api_key=SecretStr("test-key"), client=http)
+        request = ExaCreateWebhookRequest(
+            url=webhook["url"],
+            events=(
+                ExaWebhookEventType.WEBSET_IDLE,
+                ExaWebhookEventType.ITEM_ENRICHED,
+            ),
+            metadata={"clueEndpoint": "team-websets-v1"},
+        )
+        created = await client.create_webhook(request)
+        listed = await client.list_webhooks(limit=200)
+        await http.aclose()
+
+        assert created.secret is not None
+        assert created.secret.get_secret_value() == "one-time-secret"
+        assert listed.data[0].secret is None
+        assert [item.url.path for item in seen] == [
+            "/websets/v0/webhooks",
+            "/websets/v0/webhooks",
+        ]
+        assert json.loads(seen[0].content) == request.model_dump(
+            mode="json", by_alias=True, exclude_defaults=True
+        )
+        assert dict(seen[1].url.params) == {"limit": "200"}
 
     asyncio.run(_run())

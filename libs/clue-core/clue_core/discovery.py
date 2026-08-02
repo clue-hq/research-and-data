@@ -490,6 +490,7 @@ class DiscoveryOperation(BaseModel):
     raw_response_manifest_key: str | None = None
     provider_units_reserved: ProviderUnits = Decimal(0)
     provider_units_charged: ProviderUnits = Decimal(0)
+    cost_cents_reserved: CostCents = Decimal(0)
     cost_cents_charged: CostCents = Decimal(0)
     started_at: UtcDatetime | None = None
     terminal_at: UtcDatetime | None = None

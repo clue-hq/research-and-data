@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, JsonValue, SecretStr, ValidationError
@@ -22,15 +24,13 @@ from pydantic import BaseModel, ConfigDict, JsonValue, SecretStr, ValidationErro
 from clue_api.exa_websets_submit import (
     DEFAULT_EXA_WEBSETS_PRICING,
     ExaSubmitContractError,
+    ExaWebsetsChargeBreakdown,
     ExaWebsetsPricingPolicy,
     assert_exa_response_matches_request,
 )
 from clue_core import (
     FIRST_PAGE_CURSOR,
     DiscoveryBatchState,
-    DiscoveryEnrichmentFormat,
-    DiscoveryEnrichmentPlan,
-    DiscoveryEntityKind,
     DiscoveryEventDisposition,
     DiscoveryItemSnapshot,
     DiscoveryNormalizationState,
@@ -40,7 +40,6 @@ from clue_core import (
     DiscoveryPageReceipt,
     DiscoveryPageResource,
     DiscoveryProviderEvent,
-    DiscoverySearchPlan,
     DiscoverySpendOutcome,
     DiscoveryWakeReason,
     DiscoveryWakeRequest,
@@ -51,11 +50,16 @@ from clue_obs.otel import apply_attributes, traced_step
 from clue_research.adapters.exa_websets import (
     EXA_WEBSETS_API_BASE,
     EXA_WEBSETS_SOURCE_KEY,
+    ExaCreateEnrichment,
+    ExaCreateWebhookRequest,
     ExaCreateWebsetRequest,
     ExaEventPage,
     ExaItemPage,
+    ExaWebhook,
+    ExaWebhookEventType,
     ExaWebhookVerificationError,
     ExaWebset,
+    ExaWebsetEnrichmentFormat,
     ExaWebsetEvent,
     ExaWebsetItem,
     ExaWebsetsContractDrift,
@@ -64,6 +68,7 @@ from clue_research.adapters.exa_websets import (
     ExaWebsetsPreDispatchError,
     ExaWebsetsRateLimited,
     ExaWebsetsTransientError,
+    ExaWebsetsWebhookAdminTransport,
     verify_exa_webhook_signature,
 )
 from clue_research.durable import (
@@ -74,10 +79,12 @@ from clue_research.durable import (
     claim_discovery_operation_reconciliation,
     claim_due_discovery_wakes,
     complete_discovery_wake,
+    find_discovery_operation_by_provider_id,
     finish_discovery_event,
     get_discovery_batch,
     get_discovery_operation,
     get_discovery_page_row,
+    get_discovery_plan,
     link_discovery_page_item,
     list_discovery_events,
     list_discovery_items,
@@ -86,6 +93,7 @@ from clue_research.durable import (
     put_discovery_item,
     put_discovery_page,
     reconcile_discovery_batch_costs,
+    reconcile_discovery_batch_state,
     record_discovery_event,
     schedule_discovery_wake,
     update_discovery_batch_state,
@@ -121,12 +129,148 @@ class ExaWebhookResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider_event_id: str
+    matched_operation: bool
+    workspace_id: str | None = None
+    operation_id: DiscoveryOperationId | None = None
     duplicate: bool
     wake_scheduled: bool
 
 
+EXA_TEAM_WEBHOOK_EVENTS: tuple[ExaWebhookEventType, ...] = (
+    ExaWebhookEventType.WEBSET_IDLE,
+    ExaWebhookEventType.SEARCH_COMPLETED,
+    ExaWebhookEventType.SEARCH_CANCELED,
+    ExaWebhookEventType.ITEM_ENRICHED,
+)
+
+
+class ExaWebhookProvisionResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    webhook_id: str
+    created: bool
+    # Present exactly once on creation; the deployment must put it in its secret manager.
+    secret: SecretStr | None = None
+
+
+class ExaTeamWebhookProvisioner:
+    """Idempotently provision the one team-level endpoint used by this deployment.
+
+    It deliberately refuses to update/delete a mismatching managed endpoint.  Secret rotation and
+    URL changes are operator-visible external changes, not safe startup side effects.
+    """
+
+    def __init__(self, *, transport: ExaWebsetsWebhookAdminTransport) -> None:
+        self._transport = transport
+
+    async def ensure(self, *, url: str) -> ExaWebhookProvisionResult:
+        cursor: str | None = None
+        managed: list[ExaWebhook] = []
+        while True:
+            page = await self._transport.list_webhooks(cursor=cursor, limit=200)
+            managed.extend(
+                item for item in page.data if item.metadata.get("clueEndpoint") == "team-websets-v1"
+            )
+            if not page.has_more:
+                break
+            cursor = page.next_cursor
+        if len(managed) > 1:
+            raise ExaLifecycleReconciliationError(
+                "multiple Exa webhooks claim the Clue team endpoint identity"
+            )
+        if managed:
+            existing = managed[0]
+            if (
+                existing.url != url
+                or existing.status != "active"
+                or set(existing.events) != set(EXA_TEAM_WEBHOOK_EVENTS)
+            ):
+                raise ExaLifecycleReconciliationError(
+                    "managed Exa team webhook differs from the deployment contract"
+                )
+            return ExaWebhookProvisionResult(webhook_id=existing.id, created=False)
+        created = await self._transport.create_webhook(
+            ExaCreateWebhookRequest(
+                url=url,
+                events=EXA_TEAM_WEBHOOK_EVENTS,
+                metadata={"clueEndpoint": "team-websets-v1"},
+            )
+        )
+        if created.secret is None:
+            raise ExaLifecycleReconciliationError(
+                "new Exa webhook did not return its one-time signing secret"
+            )
+        return ExaWebhookProvisionResult(
+            webhook_id=created.id,
+            created=True,
+            secret=created.secret,
+        )
+
+
 class ExaLifecycleReconciliationError(RuntimeError):
     """Provider terminal state disagrees with the immutable request or persisted pages."""
+
+
+_EMAIL_RESULT = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE_RESULT = re.compile(r"^\+?[0-9][0-9 ().-]{6,}[0-9]$")
+
+
+def _validate_enrichment_result(
+    requested: ExaCreateEnrichment,
+    values: tuple[str, ...] | None,
+) -> None:
+    """Validate the documented string-array result under the requested logical format."""
+
+    if requested.format is None or not values:
+        return
+    if (
+        requested.format
+        in {
+            ExaWebsetEnrichmentFormat.EMAIL,
+            ExaWebsetEnrichmentFormat.PHONE,
+        }
+        and len(values) > 1
+    ):
+        # Discovery asks for one general company contact value.  This also keeps the maximum paid
+        # reservation sound because Exa bills contact formats per returned value.
+        raise ExaLifecycleReconciliationError(
+            "contact enrichment returned more values than the paid request permits"
+        )
+    if requested.format is ExaWebsetEnrichmentFormat.EMAIL:
+        if any(_EMAIL_RESULT.fullmatch(value) is None for value in values):
+            raise ExaLifecycleReconciliationError("email enrichment returned an invalid value")
+    elif requested.format is ExaWebsetEnrichmentFormat.PHONE:
+        if any(_PHONE_RESULT.fullmatch(value) is None for value in values):
+            raise ExaLifecycleReconciliationError("phone enrichment returned an invalid value")
+    elif requested.format is ExaWebsetEnrichmentFormat.URL:
+        if any(
+            urlsplit(value).scheme not in {"http", "https"} or not urlsplit(value).netloc
+            for value in values
+        ):
+            raise ExaLifecycleReconciliationError("URL enrichment returned an invalid value")
+    elif requested.format is ExaWebsetEnrichmentFormat.NUMBER:
+        try:
+            for value in values:
+                if not Decimal(value).is_finite():
+                    raise ArithmeticError
+        except ArithmeticError as exc:
+            raise ExaLifecycleReconciliationError(
+                "number enrichment returned a non-decimal value"
+            ) from exc
+    elif requested.format is ExaWebsetEnrichmentFormat.DATE:
+        try:
+            for value in values:
+                date.fromisoformat(value)
+        except ValueError as exc:
+            raise ExaLifecycleReconciliationError(
+                "date enrichment returned a non-ISO date"
+            ) from exc
+    elif requested.format is ExaWebsetEnrichmentFormat.OPTIONS:
+        labels = {option.label for option in requested.options}
+        if any(value not in labels for value in values):
+            raise ExaLifecycleReconciliationError(
+                "options enrichment returned a value outside the requested vocabulary"
+            )
 
 
 class ExaWebhookIngestor:
@@ -148,8 +292,6 @@ class ExaWebhookIngestor:
     async def ingest(
         self,
         *,
-        workspace_id: str,
-        operation_id: DiscoveryOperationId,
         raw_body: bytes,
         signature_header: str,
         received_at: datetime | None = None,
@@ -162,23 +304,6 @@ class ExaWebhookIngestor:
             now=observed_at,
             tolerance_seconds=self._tolerance_seconds,
         )
-        async with self._conn_factory() as conn:
-            operation = await get_discovery_operation(
-                conn, workspace_id=workspace_id, operation_id=operation_id
-            )
-            if operation is None:
-                raise DiscoveryNotFound(f"discovery operation {operation_id}")
-            artifact_key = await capture_discovery_artifact(
-                conn,
-                self._storage,
-                workspace_id=workspace_id,
-                content=raw_body,
-                media_type=_json_or_binary(raw_body),
-                source_key=EXA_WEBSETS_SOURCE_KEY,
-                source_url=(
-                    f"{EXA_WEBSETS_API_BASE}/websets/{operation.provider_operation_id}/events"
-                ),
-            )
         try:
             provider_event = ExaWebsetEvent.model_validate_json(raw_body)
         except (ValueError, TypeError) as exc:
@@ -187,16 +312,40 @@ class ExaWebhookIngestor:
                 response_body=raw_body,
             ) from exc
 
+        provider_webset_id = provider_event.webset_id
+        if provider_webset_id is None:
+            return ExaWebhookResult(
+                provider_event_id=provider_event.id,
+                matched_operation=False,
+                duplicate=False,
+                wake_scheduled=False,
+            )
         async with self._conn_factory() as conn:
-            operation = await get_discovery_operation(
-                conn, workspace_id=workspace_id, operation_id=operation_id
+            operation = await find_discovery_operation_by_provider_id(
+                conn,
+                source_key=EXA_WEBSETS_SOURCE_KEY,
+                provider_operation_id=provider_webset_id,
             )
             if operation is None:
-                raise DiscoveryNotFound(f"discovery operation {operation_id}")
-            if provider_event.webset_id != operation.provider_operation_id:
-                raise ExaLifecycleReconciliationError(
-                    "webhook event does not target the durable provider operation"
+                # A team webhook legitimately receives events for dashboard-created or unrelated
+                # Websets.  Acknowledge them without creating a tenant artifact.
+                return ExaWebhookResult(
+                    provider_event_id=provider_event.id,
+                    matched_operation=False,
+                    duplicate=False,
+                    wake_scheduled=False,
                 )
+            workspace_id = operation.workspace_id
+            operation_id = operation.operation_id
+            artifact_key = await capture_discovery_artifact(
+                conn,
+                self._storage,
+                workspace_id=workspace_id,
+                content=raw_body,
+                media_type=_json_or_binary(raw_body),
+                source_key=EXA_WEBSETS_SOURCE_KEY,
+                source_url=f"{EXA_WEBSETS_API_BASE}/events/{provider_event.id}",
+            )
             _, created = await record_discovery_event(
                 conn,
                 workspace_id=workspace_id,
@@ -238,6 +387,9 @@ class ExaWebhookIngestor:
                 )
         return ExaWebhookResult(
             provider_event_id=provider_event.id,
+            matched_operation=True,
+            workspace_id=workspace_id,
+            operation_id=operation_id,
             duplicate=not created,
             wake_scheduled=created,
         )
@@ -247,12 +399,10 @@ def build_exa_webhook_router(ingestor: ExaWebhookIngestor) -> APIRouter:
     router = APIRouter()
 
     @router.post(
-        "/v1/webhooks/exa-websets/{workspace_id}/{operation_id}",
+        "/v1/webhooks/exa-websets",
         status_code=status.HTTP_202_ACCEPTED,
     )
     async def receive_exa_event(
-        workspace_id: str,
-        operation_id: DiscoveryOperationId,
         request: Request,
         exa_signature: Annotated[str | None, Header(alias="Exa-Signature")] = None,
     ) -> dict[str, JsonValue]:
@@ -261,8 +411,6 @@ def build_exa_webhook_router(ingestor: ExaWebhookIngestor) -> APIRouter:
         raw_body = await request.body()
         try:
             result = await ingestor.ingest(
-                workspace_id=workspace_id,
-                operation_id=operation_id,
                 raw_body=raw_body,
                 signature_header=exa_signature,
             )
@@ -272,8 +420,6 @@ def build_exa_webhook_router(ingestor: ExaWebhookIngestor) -> APIRouter:
             ExaLifecycleReconciliationError,
         ) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except DiscoveryNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return result.model_dump(mode="json")
 
     return router
@@ -329,6 +475,26 @@ class DurableExaWebsetLifecycle:
                 )
             if operation.state is DiscoveryOperationState.CANCELLED:
                 return ExaLifecycleResult(outcome=ExaLifecycleOutcome.REPLAYED, operation=operation)
+            batch = await get_discovery_batch(
+                conn, workspace_id=workspace_id, batch_id=operation.batch_id
+            )
+            if batch is None:
+                raise DiscoveryNotFound(f"discovery batch {operation.batch_id}")
+            plan_row = await get_discovery_plan(
+                conn, workspace_id=workspace_id, plan_id=batch.discovery_plan_id
+            )
+            if plan_row is None:
+                raise DiscoveryNotFound(f"discovery plan {batch.discovery_plan_id}")
+            if plan_row.plan.provider_policy_version != self._pricing.version:
+                raise ExaLifecycleReconciliationError(
+                    "discovery plan pricing policy does not match the configured Exa policy"
+                )
+            if operation.cost_cents_reserved != self._pricing.monetary_value(
+                operation.provider_units_reserved
+            ):
+                raise ExaLifecycleReconciliationError(
+                    "operation monetary reservation disagrees with the configured Exa policy"
+                )
             claimed = await claim_discovery_operation_reconciliation(
                 conn,
                 workspace_id=workspace_id,
@@ -387,7 +553,7 @@ class DurableExaWebsetLifecycle:
                     raise ExaLifecycleReconciliationError(
                         "final authoritative poll no longer reports idle"
                     )
-                stored_items = await self._reconcile(
+                stored_items, charge = await self._reconcile(
                     workspace_id=workspace_id,
                     operation=claimed,
                     request=request,
@@ -396,9 +562,9 @@ class DurableExaWebsetLifecycle:
                 result = await self._succeed(
                     workspace_id=workspace_id,
                     operation=claimed,
-                    request=request,
                     webset=final_poll.webset,
                     item_count=len(stored_items),
+                    charge=charge,
                     observed_at=observed_at,
                 )
                 apply_attributes(
@@ -531,6 +697,7 @@ class DurableExaWebsetLifecycle:
                 )
                 counters["items"] += 1
                 page = exchange.page
+                raw = exchange.response_body
                 page_row = await self._persist_page(
                     workspace_id=workspace_id,
                     operation=operation,
@@ -550,7 +717,7 @@ class DurableExaWebsetLifecycle:
                 page = ExaItemPage.model_validate_json(raw)
             if self._crash_hook is not None:
                 await self._crash_hook(page_row.receipt)
-            await self._persist_items(workspace_id, operation, page_row.id, page)
+            await self._persist_items(workspace_id, operation, page_row.id, page, raw)
             if not page.has_more:
                 return
             cursor = page.next_cursor
@@ -561,15 +728,29 @@ class DurableExaWebsetLifecycle:
         operation: DiscoveryOperation,
         page_id: object,
         page: ExaItemPage,
+        raw_page: bytes,
     ) -> None:
         from uuid import UUID
 
         if not isinstance(page_id, UUID):
             raise TypeError("page receipt id must be a UUID")
+        raw_payload = json.loads(raw_page)
+        if not isinstance(raw_payload, dict) or not isinstance(raw_payload.get("data"), list):
+            raise ExaLifecycleReconciliationError("persisted Exa item page has no data array")
+        raw_by_id: dict[str, dict[str, object]] = {}
+        for raw_item in raw_payload["data"]:
+            if not isinstance(raw_item, dict) or not isinstance(raw_item.get("id"), str):
+                raise ExaLifecycleReconciliationError("persisted Exa page contains an invalid item")
+            if raw_item["id"] in raw_by_id:
+                raise ExaLifecycleReconciliationError("Exa page repeats an item id")
+            raw_by_id[raw_item["id"]] = raw_item
+        if set(raw_by_id) != {item.id for item in page.data}:
+            raise ExaLifecycleReconciliationError("typed and raw Exa page items disagree")
+
         async with self._conn_factory() as conn:
             for ordinal, provider_item in enumerate(page.data):
                 raw = json.dumps(
-                    provider_item.model_dump(mode="json", by_alias=True),
+                    raw_by_id[provider_item.id],
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()
@@ -717,11 +898,16 @@ class DurableExaWebsetLifecycle:
         operation: DiscoveryOperation,
         request: ExaCreateWebsetRequest,
         webset: ExaWebset,
-    ) -> tuple[DiscoveryItemSnapshot, ...]:
+    ) -> tuple[tuple[DiscoveryItemSnapshot, ...], ExaWebsetsChargeBreakdown]:
         if webset.id != operation.provider_operation_id:
             raise ExaLifecycleReconciliationError("provider Webset id changed")
+        if webset.imports:
+            raise ExaLifecycleReconciliationError("search-only Webset contains imports")
         if len(webset.searches) != 1 or webset.searches[0].status.value != "completed":
             raise ExaLifecycleReconciliationError("terminal Webset search is not completed")
+        search = webset.searches[0]
+        if search.webset_id != webset.id:
+            raise ExaLifecycleReconciliationError("terminal search belongs to another Webset")
         if any(enrichment.status != "completed" for enrichment in webset.enrichments):
             raise ExaLifecycleReconciliationError("terminal Webset enrichment is not completed")
         async with self._conn_factory() as conn:
@@ -738,25 +924,106 @@ class DurableExaWebsetLifecycle:
             raise ExaLifecycleReconciliationError("multiple current snapshots exist for one item")
         if len(items) > request.search.count:
             raise ExaLifecycleReconciliationError("provider returned more items than requested")
-        progress = (webset.searches[0].model_extra or {}).get("progress")
-        if isinstance(progress, dict):
-            found = progress.get("found")
-            if isinstance(found, int) and found != len(items):
-                raise ExaLifecycleReconciliationError(
-                    "terminal search found count disagrees with item pagination"
-                )
-        provider_enrichment_ids = {enrichment.id for enrichment in webset.enrichments}
+        found = search.progress.found
+        if found != found.to_integral_value() or int(found) != len(items):
+            raise ExaLifecycleReconciliationError(
+                "terminal search found count disagrees with item pagination"
+            )
+        if search.progress.completion != 100:
+            raise ExaLifecycleReconciliationError("completed search progress is not 100 percent")
+
+        requested_by_field = {
+            enrichment.metadata.get("clueFieldKey"): enrichment
+            for enrichment in request.enrichments
+        }
+        provider_by_field = {
+            enrichment.metadata.get("clueFieldKey"): enrichment for enrichment in webset.enrichments
+        }
+        if (
+            None in requested_by_field
+            or None in provider_by_field
+            or len(requested_by_field) != len(request.enrichments)
+            or len(provider_by_field) != len(webset.enrichments)
+            or requested_by_field.keys() != provider_by_field.keys()
+        ):
+            raise ExaLifecycleReconciliationError(
+                "terminal enrichment definitions do not map one-to-one to logical fields"
+            )
+        definition_by_id = {
+            provider.id: (requested_by_field[field_key], provider)
+            for field_key, provider in provider_by_field.items()
+        }
+        if len(definition_by_id) != len(provider_by_field):
+            raise ExaLifecycleReconciliationError("terminal Webset repeats an enrichment id")
+
+        expected_criteria = {criterion.description for criterion in request.search.criteria}
         item_ids = {item.provider_item_id for item in items}
+        matching_search_results = 0
+        ordinary_enrichment_rows = 0
+        contact_values = 0
         for item in items:
             provider_item = ExaWebsetItem.model_validate_json(
                 await self._storage.get(item.raw_artifact_key)
             )
-            for result in provider_item.enrichments:
-                enrichment_id = result.get("enrichmentId")
-                if enrichment_id not in provider_enrichment_ids:
+            if provider_item.webset_id != webset.id:
+                raise ExaLifecycleReconciliationError("item belongs to another Webset")
+            if provider_item.source != "search":
+                raise ExaLifecycleReconciliationError(
+                    "search-only operation contains an import item"
+                )
+            if provider_item.source_id != search.id:
+                raise ExaLifecycleReconciliationError("item belongs to another search")
+            if provider_item.source_entity_id is not None or provider_item.scope_id is not None:
+                raise ExaLifecycleReconciliationError("search item carries import/scope identity")
+            requested_entity = request.search.entity
+            if (
+                requested_entity is None
+                or provider_item.properties.type != requested_entity.type.value
+            ):
+                raise ExaLifecycleReconciliationError("item entity type differs from the request")
+
+            evaluations = {
+                evaluation.criterion: evaluation for evaluation in provider_item.evaluations
+            }
+            if (
+                len(evaluations) != len(provider_item.evaluations)
+                or evaluations.keys() != expected_criteria
+            ):
+                raise ExaLifecycleReconciliationError(
+                    "item evaluations do not cover each requested criterion exactly once"
+                )
+            if all(evaluation.satisfied == "yes" for evaluation in evaluations.values()):
+                matching_search_results += 1
+
+            results = {result.enrichment_id: result for result in provider_item.enrichment_results}
+            if (
+                len(results) != len(provider_item.enrichment_results)
+                or results.keys() != definition_by_id.keys()
+            ):
+                raise ExaLifecycleReconciliationError(
+                    "item enrichments do not cover each requested field exactly once"
+                )
+            for enrichment_id, result in results.items():
+                requested_enrichment, _provider_definition = definition_by_id[enrichment_id]
+                if result.status != "completed":
                     raise ExaLifecycleReconciliationError(
-                        "item references an unknown Webset enrichment"
+                        "terminal item has an incomplete enrichment result"
                     )
+                if (
+                    requested_enrichment.format is None
+                    or result.format != requested_enrichment.format
+                ):
+                    raise ExaLifecycleReconciliationError(
+                        "item enrichment result format differs from the requested format"
+                    )
+                _validate_enrichment_result(requested_enrichment, result.result)
+                if result.format in {
+                    ExaWebsetEnrichmentFormat.EMAIL,
+                    ExaWebsetEnrichmentFormat.PHONE,
+                }:
+                    contact_values += len(result.result or ())
+                else:
+                    ordinary_enrichment_rows += 1
         for event in events:
             raw_event = ExaWebsetEvent.model_validate_json(
                 await self._storage.get(event.payload_artifact_key)
@@ -781,30 +1048,29 @@ class DurableExaWebsetLifecycle:
                     raise ExaLifecycleReconciliationError(
                         "event pagination references an item absent from item pagination"
                     )
-        return items
+        charge = self._pricing.realized_units(
+            matching_search_results=matching_search_results,
+            ordinary_enrichment_rows=ordinary_enrichment_rows,
+            contact_values=contact_values,
+        )
+        return items, charge
 
     async def _succeed(
         self,
         *,
         workspace_id: str,
         operation: DiscoveryOperation,
-        request: ExaCreateWebsetRequest,
         webset: ExaWebset,
         item_count: int,
+        charge: ExaWebsetsChargeBreakdown,
         observed_at: datetime,
     ) -> ExaLifecycleResult:
-        per_row = self._pricing.maximum_units(
-            # The ratio is stable because maximum_units is linear in requested count.
-            # Avoid a second pricing implementation while settling only returned rows.
-            _search_plan_for_pricing(request)
-        )
-        realized_units = (
-            per_row / Decimal(request.search.count) * Decimal(item_count)
-            if request.search.count
-            else Decimal(0)
-        )
+        realized_units = charge.total_units
         if realized_units > operation.provider_units_reserved:
             raise ExaLifecycleReconciliationError("realized units exceed reserved units")
+        realized_cost_cents = self._pricing.monetary_value(realized_units)
+        if realized_cost_cents > operation.cost_cents_reserved:
+            raise ExaLifecycleReconciliationError("realized monetary value exceeds reservation")
         async with self._conn_factory() as conn:
             pages = await list_discovery_pages(
                 conn, workspace_id=workspace_id, operation_id=operation.operation_id
@@ -838,7 +1104,10 @@ class DurableExaWebsetLifecycle:
                     "providerStatus": webset.status.value,
                     "itemCount": item_count,
                     "providerUnitsCharged": str(realized_units),
-                    "settlementMethod": "public-credit-formula-times-durable-item-count",
+                    "costCentsAttributed": str(realized_cost_cents),
+                    "costSemantics": "subscription-credit-allocation-equivalent",
+                    "chargeBreakdown": charge.model_dump(mode="json"),
+                    "settlementMethod": "public-credit-rules-applied-to-terminal-item-facts",
                     "pricingPolicyVersion": self._pricing.version,
                     "reconciledAt": observed_at.isoformat(),
                 },
@@ -861,6 +1130,7 @@ class DurableExaWebsetLifecycle:
                     "final_receipt_ref": receipt_key,
                     "raw_response_manifest_key": manifest_key,
                     "provider_units_charged": realized_units,
+                    "cost_cents_charged": realized_cost_cents,
                     "terminal_at": observed_at,
                 }
             )
@@ -875,11 +1145,8 @@ class DurableExaWebsetLifecycle:
             await reconcile_discovery_batch_costs(
                 conn, workspace_id=workspace_id, batch_id=operation.batch_id
             )
-            await update_discovery_batch_state(
-                conn,
-                workspace_id=workspace_id,
-                batch_id=operation.batch_id,
-                state=DiscoveryBatchState.IDENTITY_RESOLUTION,
+            await reconcile_discovery_batch_state(
+                conn, workspace_id=workspace_id, batch_id=operation.batch_id
             )
         return ExaLifecycleResult(
             outcome=ExaLifecycleOutcome.SUCCEEDED,
@@ -924,11 +1191,8 @@ class DurableExaWebsetLifecycle:
             waiting = await update_discovery_operation(
                 conn, workspace_id=workspace_id, operation=waiting
             )
-            await update_discovery_batch_state(
-                conn,
-                workspace_id=workspace_id,
-                batch_id=operation.batch_id,
-                state=DiscoveryBatchState.WAITING_EXTERNAL,
+            await reconcile_discovery_batch_state(
+                conn, workspace_id=workspace_id, batch_id=operation.batch_id
             )
             await schedule_discovery_wake(
                 conn,
@@ -1088,36 +1352,6 @@ class ExaDiscoveryWakeWorker:
         return completed
 
 
-def _search_plan_for_pricing(request: ExaCreateWebsetRequest) -> DiscoverySearchPlan:
-    """Rebuild the provider-neutral subset consumed by the shared linear pricing policy."""
-
-    return DiscoverySearchPlan(
-        search_key=request.metadata.get("clueSearchKey", "exa-webset"),
-        channel_key=EXA_WEBSETS_SOURCE_KEY,
-        normalized_query=request.search.query,
-        entity_type=DiscoveryEntityKind(request.search.entity.type.value)
-        if request.search.entity is not None
-        else DiscoveryEntityKind.COMPANY,
-        custom_entity_description=(
-            request.search.entity.description
-            if request.search.entity is not None and request.search.entity.type.value == "custom"
-            else None
-        ),
-        requested_count=request.search.count,
-        enrichments=tuple(
-            DiscoveryEnrichmentPlan(
-                field_key=item.metadata.get("clueFieldKey", f"exa.unmapped.{index}"),
-                description=item.description,
-                format=DiscoveryEnrichmentFormat(
-                    item.format.value if item.format is not None else "text"
-                ),
-            )
-            for index, item in enumerate(request.enrichments)
-        ),
-        max_people_per_company=request.search.max_people_per_company,
-    )
-
-
 def _json_or_binary(content: bytes) -> str:
     try:
         json.loads(content)
@@ -1133,6 +1367,9 @@ __all__ = [
     "ExaLifecycleReconciliationError",
     "ExaLifecycleResult",
     "ExaWebhookIngestor",
+    "ExaTeamWebhookProvisioner",
+    "ExaWebhookProvisionResult",
     "ExaWebhookResult",
+    "EXA_TEAM_WEBHOOK_EVENTS",
     "build_exa_webhook_router",
 ]

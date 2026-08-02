@@ -187,6 +187,7 @@ async def _start_batch(
     *,
     workspace_id: str,
     provider_credit_cap: int = 20,
+    money_budget_cap_cents: Decimal = Decimal("100"),
 ) -> tuple[DiscoveryPlan, DiscoveryBatchId]:
     project = await seed_project(conn, workspace_id, name="D2 Exa submit integration")
     icp = await create_icp_spec(
@@ -216,7 +217,7 @@ async def _start_batch(
         project_run_id=run_id,
         icp_key=icp.icp_key,
         icp_version=icp.version,
-        provider_policy_version="exa-websets-public-credit-policy-2026-08-02",
+        provider_policy_version=("exa-websets-public-credit-policy-2026-08-03+pro-usd-allocation"),
         field_policy_version=DISCOVERY_ENVELOPE_POLICY_V1.version,
         provider_contract_version=EXA_WEBSETS_CONTRACT_VERSION,
         channels=("exa_websets",),
@@ -239,7 +240,7 @@ async def _start_batch(
         required_account_fields=DISCOVERY_ENVELOPE_POLICY_V1.required_fields,
         optional_account_fields=DISCOVERY_ENVELOPE_POLICY_V1.optional_fields,
         provider_credit_cap=provider_credit_cap,
-        money_budget_cap_cents=Decimal("100"),
+        money_budget_cap_cents=money_budget_cap_cents,
         stopping_policy={"requested_count": 2},
         snapshot_reuse_policy="same_observation_window",
     )
@@ -324,8 +325,9 @@ def test_real_db_submit_persists_receipts_costs_traces_and_restart_replay(
                 batch_id=batch_id,
             )
             assert batch is not None
-            assert batch.state is DiscoveryBatchState.WAITING_EXTERNAL
+            assert batch.state is DiscoveryBatchState.PROVIDER_RUNNING
             assert batch.provider_units_reserved == Decimal("20")
+            assert batch.cost_cents_reserved == Decimal("8.980")
             assert batch.provider_units_charged == 0
             initial_wake_count = int(
                 (
@@ -462,6 +464,53 @@ def test_pre_spend_cap_blocks_before_transport_or_operation_insert(tmp_path: Pat
                     observation_window="2026-08-02",
                 )
             assert transport.create_calls == 0
+
+    run_async(_run())
+
+
+def test_monetary_reservation_cap_blocks_before_transport_or_operation_insert(
+    tmp_path: Path,
+) -> None:
+    async def _run() -> None:
+        workspace_id = "ws_d2_money_budget_block"
+        storage = FsStorage(tmp_path / "artifacts")
+        transport = _RecordingTransport()
+        async with rollback_conn(seed_pack=True) as conn:
+            _, batch_id = await _start_batch(
+                conn,
+                workspace_id=workspace_id,
+                provider_credit_cap=20,
+                money_budget_cap_cents=Decimal("8.979"),
+            )
+
+            @asynccontextmanager
+            async def same_connection() -> AsyncIterator[AsyncConnection]:
+                yield conn
+
+            with pytest.raises(DiscoveryBudgetExceeded, match="monetary reservation"):
+                await DurableExaWebsetSubmitter(
+                    transport=transport,
+                    storage=storage,
+                    conn_factory=same_connection,
+                ).submit(
+                    workspace_id=workspace_id,
+                    batch_id=batch_id,
+                    search_key="account-discovery",
+                    observation_window="2026-08-02",
+                )
+            assert transport.create_calls == 0
+            operation_count = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM discovery_operation "
+                            "WHERE workspace_id=:workspace_id"
+                        ),
+                        {"workspace_id": workspace_id},
+                    )
+                ).scalar_one()
+            )
+            assert operation_count == 0
 
     run_async(_run())
 

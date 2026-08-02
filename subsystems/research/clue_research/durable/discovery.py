@@ -111,6 +111,7 @@ class DiscoveryBatchRow(BaseModel):
     generation: int
     provider_units_reserved: Decimal
     provider_units_charged: Decimal
+    cost_cents_reserved: Decimal
     cost_cents_charged: Decimal
     failure_code: str | None
     replacement_batch_id: DiscoveryBatchId | None
@@ -366,7 +367,8 @@ async def get_discovery_plan(
 
 _BATCH_COLUMNS = (
     "id, workspace_id, project_id, project_run_id, icp_key, icp_version, discovery_plan_id, "
-    "state, generation, provider_units_reserved, provider_units_charged, cost_cents_charged, "
+    "state, generation, provider_units_reserved, provider_units_charged, cost_cents_reserved, "
+    "cost_cents_charged, "
     "failure_code, replacement_batch_id, started_at, updated_at, sealed_at"
 )
 
@@ -487,7 +489,7 @@ _OPERATION_COLUMNS = (
     "observation_window, provider_external_id, provider_operation_id, state, spend_outcome, "
     "next_poll_at, submitted_receipt_ref, final_receipt_ref, raw_request_artifact_key, "
     "raw_response_manifest_key, provider_units_reserved, provider_units_charged, "
-    "cost_cents_charged, started_at, terminal_at"
+    "cost_cents_reserved, cost_cents_charged, started_at, terminal_at"
 )
 
 
@@ -505,7 +507,7 @@ async def put_discovery_operation(
                 provider_operation_id, state, spend_outcome, next_poll_at,
                 submitted_receipt_ref, final_receipt_ref, raw_request_artifact_key,
                 raw_response_manifest_key, provider_units_reserved, provider_units_charged,
-                cost_cents_charged, started_at, terminal_at
+                cost_cents_reserved, cost_cents_charged, started_at, terminal_at
             ) VALUES (
                 :id, :workspace_id, :batch_id, :source_key, :provider_api_version,
                 :request_fingerprint, :observation_window, :provider_external_id,
@@ -513,7 +515,7 @@ async def put_discovery_operation(
                 CAST(:spend_outcome AS discovery_spend_outcome), :next_poll_at,
                 :submitted_receipt_ref, :final_receipt_ref, :raw_request_artifact_key,
                 :raw_response_manifest_key, :provider_units_reserved, :provider_units_charged,
-                :cost_cents_charged, :started_at, :terminal_at
+                :cost_cents_reserved, :cost_cents_charged, :started_at, :terminal_at
             )
             ON CONFLICT (workspace_id, source_key, request_fingerprint, observation_window)
             DO NOTHING
@@ -599,6 +601,7 @@ async def reserve_discovery_operation(
             and existing.provider_external_id == operation.provider_external_id
             and existing.raw_request_artifact_key == operation.raw_request_artifact_key
             and existing.provider_units_reserved == operation.provider_units_reserved
+            and existing.cost_cents_reserved == operation.cost_cents_reserved
         )
         if not immutable_matches:
             raise DiscoveryReplayConflict(
@@ -627,9 +630,23 @@ async def reserve_discovery_operation(
         raise DiscoveryBudgetExceeded(
             "discovery provider-unit reservation exceeds the immutable plan cap"
         )
-    if operation.cost_cents_charged > plan.money_budget_cap_cents:
+    cost_reserved_before = Decimal(
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT COALESCE(sum(cost_cents_reserved), 0)
+                    FROM discovery_operation
+                    WHERE workspace_id = :workspace_id AND batch_id = :batch_id
+                    """
+                ),
+                {"workspace_id": workspace_id, "batch_id": operation.batch_id},
+            )
+        ).scalar_one()
+    )
+    if cost_reserved_before + operation.cost_cents_reserved > plan.money_budget_cap_cents:
         raise DiscoveryBudgetExceeded(
-            "discovery operation's realized money exceeds the immutable plan cap"
+            "discovery monetary reservation exceeds the immutable plan cap"
         )
 
     stored = await put_discovery_operation(
@@ -779,6 +796,39 @@ async def get_discovery_operation(
     return _operation_row(row) if row is not None else None
 
 
+async def find_discovery_operation_by_provider_id(
+    conn: AsyncConnection,
+    *,
+    source_key: str,
+    provider_operation_id: str,
+) -> DiscoveryOperation | None:
+    """Resolve signed team-level provider ingress to its tenant-local durable operation.
+
+    This intentionally has no caller-supplied workspace: the globally unique provider operation id
+    is the routing identity, and the returned operation supplies the workspace under which any raw
+    event may subsequently be persisted.  It is for verified provider ingress only.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_OPERATION_COLUMNS} FROM discovery_operation "
+                    "WHERE source_key = :source_key "
+                    "AND provider_operation_id = :provider_operation_id"
+                ),
+                {
+                    "source_key": source_key,
+                    "provider_operation_id": provider_operation_id,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return _operation_row(row) if row is not None else None
+
+
 async def find_reusable_discovery_operation(
     conn: AsyncConnection,
     *,
@@ -830,6 +880,7 @@ def _operation_params(operation: DiscoveryOperation) -> dict[str, object]:
         "raw_response_manifest_key": operation.raw_response_manifest_key,
         "provider_units_reserved": operation.provider_units_reserved,
         "provider_units_charged": operation.provider_units_charged,
+        "cost_cents_reserved": operation.cost_cents_reserved,
         "cost_cents_charged": operation.cost_cents_charged,
         "started_at": operation.started_at,
         "terminal_at": operation.terminal_at,
@@ -857,6 +908,7 @@ def _operation_row(row: Any) -> DiscoveryOperation:
             "raw_response_manifest_key": row["raw_response_manifest_key"],
             "provider_units_reserved": row["provider_units_reserved"],
             "provider_units_charged": row["provider_units_charged"],
+            "cost_cents_reserved": row["cost_cents_reserved"],
             "cost_cents_charged": row["cost_cents_charged"],
             "started_at": row["started_at"],
             "terminal_at": row["terminal_at"],
@@ -2238,6 +2290,7 @@ async def claim_due_discovery_wakes(
     now: datetime | None = None,
     claim_stale_after: timedelta = timedelta(minutes=5),
     source_key: str | None = None,
+    workspace_id: str | None = None,
 ) -> tuple[DiscoveryWakeRow, ...]:
     if not 1 <= limit <= 100:
         raise ValueError("discovery wake claim limit must be between 1 and 100")
@@ -2253,6 +2306,10 @@ async def claim_due_discovery_wakes(
                     SELECT wake.id FROM discovery_wake_outbox wake
                     WHERE wake.processed_at IS NULL AND wake.available_at <= :now
                       AND (wake.claimed_at IS NULL OR wake.claimed_at <= :stale_before)
+                      AND (
+                          CAST(:workspace_id AS text) IS NULL
+                          OR wake.workspace_id = CAST(:workspace_id AS text)
+                      )
                       AND (
                           CAST(:source_key AS text) IS NULL
                           OR EXISTS (
@@ -2280,6 +2337,7 @@ async def claim_due_discovery_wakes(
                     "stale_before": claim_now - claim_stale_after,
                     "limit": limit,
                     "source_key": source_key,
+                    "workspace_id": workspace_id,
                 },
             )
         )
@@ -2336,11 +2394,13 @@ async def reconcile_discovery_batch_costs(
             UPDATE discovery_batch batch
             SET provider_units_reserved = totals.reserved,
                 provider_units_charged = totals.charged,
+                cost_cents_reserved = totals.cost_reserved,
                 cost_cents_charged = totals.cost,
                 updated_at = now()
             FROM (
                 SELECT COALESCE(sum(provider_units_reserved), 0) AS reserved,
                        COALESCE(sum(provider_units_charged), 0) AS charged,
+                       COALESCE(sum(cost_cents_reserved), 0) AS cost_reserved,
                        COALESCE(sum(cost_cents_charged), 0) AS cost
                 FROM discovery_operation
                 WHERE workspace_id = :workspace_id AND batch_id = :batch_id
@@ -2356,6 +2416,105 @@ async def reconcile_discovery_batch_costs(
     row = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
     assert row is not None
     return row
+
+
+async def reconcile_discovery_batch_state(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    batch_id: DiscoveryBatchId,
+) -> DiscoveryBatchRow:
+    """Fold every planned operation into one truthful pre-identity batch state.
+
+    In particular, a successful operation cannot advance a multi-search plan while another planned
+    operation is absent or non-terminal.  Final/paused/user-owned states are never overwritten.
+    """
+
+    locked = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT batch.state, jsonb_array_length(plan.plan_json -> 'searches') AS planned
+                    FROM discovery_batch batch
+                    JOIN discovery_plan plan
+                      ON plan.id = batch.discovery_plan_id
+                     AND plan.workspace_id = batch.workspace_id
+                    WHERE batch.workspace_id = :workspace_id AND batch.id = :batch_id
+                    FOR UPDATE OF batch
+                    """
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if locked is None:
+        raise DiscoveryNotFound(f"discovery batch {batch_id}")
+    current = DiscoveryBatchState(str(locked["state"]))
+    protected = {
+        DiscoveryBatchState.IDENTITY_RESOLUTION,
+        DiscoveryBatchState.FIELD_MATERIALIZATION,
+        DiscoveryBatchState.SEAL_PENDING,
+        DiscoveryBatchState.SEALED,
+        DiscoveryBatchState.PAUSED_BY_USER,
+        DiscoveryBatchState.FAILED_TERMINAL,
+        DiscoveryBatchState.CANCELLED_UNSEALED,
+    }
+    if current in protected:
+        row = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
+        assert row is not None
+        return row
+
+    states = tuple(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    "SELECT state FROM discovery_operation "
+                    "WHERE workspace_id = :workspace_id AND batch_id = :batch_id"
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        ).scalars()
+    )
+    planned = int(locked["planned"])
+    terminal = {
+        DiscoveryOperationState.SUCCEEDED.value,
+        DiscoveryOperationState.ACCEPTED_TERMINAL_FAILURE.value,
+    }
+    if len(states) == planned and states and all(state in terminal for state in states):
+        target = DiscoveryBatchState.IDENTITY_RESOLUTION
+    elif DiscoveryOperationState.SPEND_OUTCOME_UNKNOWN.value in states:
+        target = DiscoveryBatchState.SPEND_OUTCOME_UNKNOWN
+    elif len(states) < planned:
+        target = DiscoveryBatchState.SUBMITTING
+    elif DiscoveryOperationState.RECONCILING.value in states:
+        target = DiscoveryBatchState.RECONCILING
+    elif DiscoveryOperationState.INGESTING.value in states:
+        target = DiscoveryBatchState.INGESTING_EVENTS_AND_PAGES
+    elif DiscoveryOperationState.PROVIDER_RUNNING.value in states:
+        target = DiscoveryBatchState.PROVIDER_RUNNING
+    elif any(
+        state
+        in {
+            DiscoveryOperationState.WAITING_EXTERNAL.value,
+            DiscoveryOperationState.FAILED_RETRYABLE.value,
+        }
+        for state in states
+    ):
+        target = DiscoveryBatchState.WAITING_EXTERNAL
+    elif states:
+        target = DiscoveryBatchState.SUBMITTING
+    else:
+        target = DiscoveryBatchState.PLANNED
+    return await update_discovery_batch_state(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=batch_id,
+        state=target,
+    )
 
 
 async def claim_discovery_operation_reconciliation(
