@@ -1,7 +1,7 @@
 # M6A — Durable Exa Websets account discovery and gated Sumble enrichment
 
-**Status:** Binding implementation plan; Slices P0/D0/D1 implemented; D2 code complete but its
-successful-live gate is blocked by the configured Exa team's lack of Websets API access
+**Status:** Binding implementation plan; Slices P0/D0/D1 implemented; D2 and both bounded D3 live
+gates (two-row search-only and one-row enriched) closed on 2026-08-03
 
 **Branch:** `platform/c8-exa-sumble-discovery` (branched from `platform/c8-context-card`)
 
@@ -245,9 +245,13 @@ This distinction prevents “field completeness” from becoming a fabrication r
 
 ### 5.1 Base company properties
 
-The Exa company item already exposes company name, URL/domain, location, employees, industry,
-about text, and logo when available. The normalizer consumes those properties first. It must not
-purchase a duplicate enrichment merely to obtain a second copy of a populated base property.
+The current Exa company item exposes company name, URL/domain, location, employees, industry,
+about text, structured headquarters, and financials (annual revenue, total funding, and latest
+funding round) when available. The raw snapshot preserves the full provider object. D4 may project
+only the approved discovery fields: name, URL/domain, location, employees, industry/about,
+headquarters, annual revenue, total funding, and latest funding round. It must deliberately ignore
+`foundedYear` and `webTraffic`, and it must not purchase a duplicate enrichment merely to obtain a
+second copy of a populated base property.
 
 ### 5.2 First-wave enrichments
 
@@ -378,7 +382,7 @@ tables coordinate execution but never replace field claims as truth.
 ```text
 id, workspace_id, project_id, project_run_id, icp_key, icp_version,
 discovery_plan_id, state, generation, started_at, updated_at, sealed_at,
-provider_units_reserved, provider_units_charged, cost_cents_charged,
+provider_units_reserved, provider_units_charged, cost_cents_reserved, cost_cents_charged,
 failure_code, replacement_batch_id
 UNIQUE(project_run_id, generation)
 ```
@@ -391,7 +395,7 @@ observation_window,
 provider_external_id, provider_operation_id, state, next_poll_at,
 submitted_receipt_ref, final_receipt_ref, raw_request_artifact_key,
 raw_response_manifest_key, provider_units_reserved, provider_units_charged,
-cost_cents_charged, spend_outcome, started_at, terminal_at
+cost_cents_reserved, cost_cents_charged, spend_outcome, started_at, terminal_at
 UNIQUE(workspace_id, source_key, request_fingerprint, observation_window)
 UNIQUE(source_key, provider_external_id)
 ```
@@ -524,7 +528,12 @@ ordinary append-only supersession/merge; cache reuse must not suppress legitimat
 ### 9.1 Webhooks are wake-ups, not truth
 
 - Verify the Exa HMAC signature over the exact raw request body before accepting an event.
-- Store the verified raw event before acknowledging success.
+- Use one team-level subscription and endpoint, not one webhook per operation.
+- Parse the signed event and resolve its globally unique `websetId` to a durable operation before
+  choosing a workspace or persisting the raw body. A valid event for an unrelated team Webset is
+  acknowledged without entering any tenant artifact store.
+- Store a matched verified raw event in the resolved operation's workspace before acknowledging
+  success.
 - Deduplicate on provider event id.
 - Accept duplicate and out-of-order delivery.
 - Never mark an operation complete solely because an `idle` webhook arrived.
@@ -634,9 +643,14 @@ maximum modeled Websets credits =
   + preview/recall/import units when those operations are in the plan
 ```
 
-This is a conservative reservation, not final settlement. Realized usage is reconciled from the
-provider account/operation evidence available under the contract. Pricing is versioned config,
-never embedded in the normalizer.
+This is a conservative reservation, not final settlement. The current account-discovery contract
+requests at most one value for each email/phone enrichment and rejects a provider result that
+violates that shape. Final credits are derived from terminal item facts under the pinned public
+rules: 10 only for rows whose every requested criterion is `yes`; 2 per ordinary enrichment row,
+including a terminal null; 5 per actual returned email/phone value; and 2 per resolved import when
+imports are part of a future plan. Exa does not return operation-level dollars, so monetary
+reservation/settlement is a versioned subscription-allocation equivalent, not card telemetry.
+Pricing is versioned config, never embedded in the normalizer.
 
 ### 11.2 Spend invariants
 
@@ -785,9 +799,10 @@ migration head -> base -> head passes; no provider fake can bypass the SQL barri
 ### Slice D2 — Exa Websets typed client and paid submit
 
 **Implementation record:** `docs/specs/M06A-D2-exa-websets-paid-submit.md` records the typed v0
-contract, atomic reservation/dispatch/replay state machine, durable artifacts, tests, and the
-bounded live `401/not_charged` result. The code boundary is implemented; Gate D2 remains open until
-an API-enabled Exa credential returns a real Webset id and fresh-process replay creates none.
+contract, atomic provider-unit and monetary reservation, dispatch/replay state machine, durable
+artifacts, historical `401/not_charged` evidence, and the successful generation-4 live run. Gate D2
+closed on 2026-08-03: the real two-row Webset completed, and fresh-process replay made zero create
+or lookup calls.
 
 **Purpose:** Submit exactly one real two-row company Webset safely.
 
@@ -805,10 +820,12 @@ artifacts, reserved/realized units, and traces reconcile. A mock-only test canno
 
 ### Slice D3 — Webhooks, polling, pagination, and reconciliation
 
-**Implementation record:** `docs/specs/M06A-D3-exa-websets-lifecycle.md` records the signed
-webhook, scheduled poll worker, cursor/page/item durability, final reconciliation, cost model,
-production wiring, and real-Postgres crash/replay evidence. The mechanical boundary is complete;
-the live-provider row remains open until an API-entitled Exa account can complete a Webset.
+**Implementation record:** `docs/specs/M06A-D3-exa-websets-lifecycle.md` records the team-level
+signed webhook, tenant-safe routing, scheduled poll worker, cursor/page/item durability, strict
+terminal schema/identity/evaluation/enrichment reconciliation, exact credit settlement, production
+wiring, and real-Postgres crash/replay evidence. Both bounded live gates closed on 2026-08-03: the
+two-row search-only operation settled 20 credits, and the one-row URL/revenue/email/phone operation
+settled 24 credits from exact terminal item facts. Each terminal replay made zero provider calls.
 
 **Purpose:** Retrieve the entire asynchronous operation and survive missing/duplicate delivery.
 
@@ -914,6 +931,14 @@ contact reveals run only for selected candidates and replay without spend.
 - Sumble signals/priority signals/briefs: no slice until separately approved.
 - General Exa Search tool: separate spec and acceptance run; it must not share Websets billing or
   automatically promote search output into claims.
+
+The 2026-08-03 live characterization made one bounded synchronous `/search` request for two neural
+results. It returned the documented request/result/cost envelope plus additive production fields
+such as top-level `searchTime` and per-result `score`; the call reported USD 0.007. Production also
+accepted the legacy `neural` search type even though the current published OpenAPI enum has moved.
+This confirms the architectural boundary: Search needs its own tolerant response adapter, request
+contract/version, dollar receipt, and acceptance tests. It must not reuse the asynchronous Websets
+lifecycle, credit policy, or terminal account-admission semantics.
 
 ---
 
