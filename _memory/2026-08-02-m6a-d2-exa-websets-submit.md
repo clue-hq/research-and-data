@@ -62,3 +62,20 @@ Configure a key from an Exa team with Websets API access. Then approve a new obs
 generation (for example `--observation-window ...-v2 --generation 2 --allow-live-create`). Do not
 reuse or mutate the terminal v1 fingerprint. A successful 201 plus a fresh-process zero-create
 replay closes D2; only then begin D3.
+
+## Live attempt v2 — 2026-08-03
+
+After the configured key was replaced, the bounded two-company workload was attempted once using
+observation `2026-08-02-d2-live-v2`, generation `2`. Exa again returned HTTP 401: the key resolved
+to a team without Websets API entitlement, and the provider response explicitly required a Pro
+plan for API access. This was not an exhausted-credit response. The attempt remained
+`failed_terminal/not_charged`, with 20 units reserved and 0 realized. IDs:
+
+- batch `25edb477-bdc1-502d-a66c-48a69b695ed2`;
+- operation `9786885d-bb90-4e6f-8f6d-4526ab5fb606`;
+- provider request `4f2db4f51d90f391896b09b7cf4a8cb7`; and
+- fingerprint `aad721b7c0690189ff74daad32c2a1ffe99d7a3a9a9c6b8938e1c98166959c0d`.
+
+A fresh-process replay made zero create and zero lookup calls and returned the same durable
+operation/artifacts. The next paid attempt requires an API-enabled team/key plus a separately
+approved observation and generation (v3/generation 3); neither terminal attempt may be reused.
