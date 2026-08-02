@@ -79,3 +79,12 @@ plan for API access. This was not an exhausted-credit response. The attempt rema
 A fresh-process replay made zero create and zero lookup calls and returned the same durable
 operation/artifacts. The next paid attempt requires an API-enabled team/key plus a separately
 approved observation and generation (v3/generation 3); neither terminal attempt may be reused.
+
+### Authentication-header diagnostic
+
+The replacement key was tested against read-only `GET /websets/v0/teams/me` using both officially
+supported authentication forms. `x-api-key` returned 401 (request
+`513d8c8739e2237b4d34744b498f047a`) and `Authorization: Bearer` returned the same 401 (request
+`de5a3317c74fecbbd19b995291bfca14`). Both responses said the resolved team lacks API access and
+must upgrade to Pro. Therefore key formatting/header selection and exhausted credits are ruled out;
+the remaining blocker is provider-side team entitlement/provisioning.
