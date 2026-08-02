@@ -48,6 +48,7 @@ issue spec states the exact interface it exposes/consumes.
 | M4 | Source Layer & Source Intelligence | `layer:source-layer` | M1, M2, M3 | High | 6 | [M04](./M04-source-layer-and-source-intelligence.md) |
 | M5 | Stage 0 Front Edge | `layer:stage0` | M2, M3, M4 | Medium | 4 | [M05](./M05-stage0-front-edge.md) |
 | M6 | Discovery (mode M1) + Pass A Scoring | `layer:discovery-scoring` | M2, M3, M4 | High | 5 | [M06](./M06-discovery-and-pass-a-scoring.md) |
+| M6A | Durable Exa Websets discovery + gated Sumble enrichment | `layer:discovery-scoring` | M1–M4, M6, M7, M9 | High | Integration slices D0–D6, E1, S1–S2 | [M06A](./M06A-exa-websets-sumble-discovery-integration.md) |
 | M7 | Durable Execution | `layer:durable-exec` | M1, M4 | High | 5 | [M07](./M07-durable-execution.md) |
 | M8 | Deep Profiling (modes M2/M3/M4) | `layer:deep-profiling` | M4, M6, M7 | Medium | 5 | [M08](./M08-deep-profiling.md) |
 | M9 | Verification Layer | `layer:verification` | M1, M4 | High | 6 | [M09](./M09-verification-layer.md) |
