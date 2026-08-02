@@ -14,9 +14,11 @@ the durable composition layer may decide what happens next, by looking up the de
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Protocol
 
@@ -259,6 +261,133 @@ class ExaWebsetExchange(BaseModel):
     webset: ExaWebset
 
 
+class ExaWebsetItem(BaseModel):
+    """Identity-bearing Websets item; raw bytes remain the authoritative evidence."""
+
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    id: NonEmptyStr
+    object: Literal["webset_item"]
+    source: NonEmptyStr
+    source_id: NonEmptyStr = Field(alias="sourceId")
+    webset_id: NonEmptyStr = Field(alias="websetId")
+    properties: dict[str, JsonValue]
+    evaluations: tuple[dict[str, JsonValue], ...]
+    enrichments: tuple[dict[str, JsonValue], ...]
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class ExaWebsetEvent(BaseModel):
+    """One Exa event as delivered by webhook or the cursor-paginated event feed."""
+
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    id: NonEmptyStr
+    object: Literal["event"]
+    type: NonEmptyStr
+    data: dict[str, JsonValue]
+    created_at: datetime = Field(alias="createdAt")
+
+    @property
+    def webset_id(self) -> str | None:
+        value = self.data.get("websetId")
+        if not isinstance(value, str):
+            value = self.data.get("id") if self.type.startswith("webset.") else None
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+class ExaItemPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    data: tuple[ExaWebsetItem, ...]
+    has_more: bool = Field(alias="hasMore")
+    next_cursor: str | None = Field(alias="nextCursor")
+
+    @model_validator(mode="after")
+    def _cursor_matches_has_more(self) -> ExaItemPage:
+        if self.has_more != bool(self.next_cursor):
+            raise ValueError("Exa item page cursor does not match hasMore")
+        return self
+
+
+class ExaEventPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    data: tuple[ExaWebsetEvent, ...]
+    has_more: bool = Field(alias="hasMore")
+    next_cursor: str | None = Field(alias="nextCursor")
+
+    @model_validator(mode="after")
+    def _cursor_matches_has_more(self) -> ExaEventPage:
+        if self.has_more != bool(self.next_cursor):
+            raise ValueError("Exa event page cursor does not match hasMore")
+        return self
+
+
+class ExaItemPageExchange(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    status_code: int
+    request_id: str | None = None
+    response_body: bytes
+    page: ExaItemPage
+
+
+class ExaEventPageExchange(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    status_code: int
+    request_id: str | None = None
+    response_body: bytes
+    page: ExaEventPage
+
+
+class ExaWebhookVerificationError(ValueError):
+    """A webhook signature is absent, malformed, stale, or invalid."""
+
+
+def verify_exa_webhook_signature(
+    *,
+    raw_body: bytes,
+    signature_header: str,
+    secret: SecretStr,
+    now: datetime | None = None,
+    tolerance_seconds: int = 300,
+) -> datetime:
+    """Verify Exa's ``HMAC-SHA256(timestamp + '.' + raw_body)`` signature."""
+
+    if tolerance_seconds < 1:
+        raise ValueError("webhook tolerance_seconds must be positive")
+    timestamp_values: list[str] = []
+    signatures: list[str] = []
+    for part in signature_header.split(","):
+        key, separator, value = part.strip().partition("=")
+        if not separator or not value:
+            continue
+        if key == "t":
+            timestamp_values.append(value)
+        elif key == "v1":
+            signatures.append(value.lower())
+    if len(timestamp_values) != 1 or not signatures:
+        raise ExaWebhookVerificationError("malformed Exa webhook signature header")
+    try:
+        timestamp_seconds = int(timestamp_values[0])
+        timestamp = datetime.fromtimestamp(timestamp_seconds, tz=UTC)
+    except (ValueError, OverflowError, OSError) as exc:
+        raise ExaWebhookVerificationError("invalid Exa webhook timestamp") from exc
+    observed_now = now or datetime.now(UTC)
+    if abs((observed_now - timestamp).total_seconds()) > tolerance_seconds:
+        raise ExaWebhookVerificationError("stale Exa webhook timestamp")
+    signed = timestamp_values[0].encode("ascii") + b"." + raw_body
+    expected = hmac.new(
+        secret.get_secret_value().encode("utf-8"), signed, hashlib.sha256
+    ).hexdigest()
+    if not any(hmac.compare_digest(expected, candidate) for candidate in signatures):
+        raise ExaWebhookVerificationError("invalid Exa webhook signature")
+    return timestamp
+
+
 class ExaWebsetsError(RuntimeError):
     """Base provider error whose string representation contains no response body or secret."""
 
@@ -347,6 +476,20 @@ class ExaWebsetsTransport(Protocol):
     async def create_webset(self, request: ExaCreateWebsetRequest) -> ExaWebsetExchange: ...
 
     async def get_webset(self, webset_id_or_external_id: str) -> ExaWebsetExchange: ...
+
+
+class ExaWebsetsLifecycleTransport(Protocol):
+    """Single-attempt reads; the durable worker, not the client, owns retry timing."""
+
+    async def poll_webset(self, webset_id: str) -> ExaWebsetExchange: ...
+
+    async def list_items(
+        self, webset_id: str, *, cursor: str | None = None, limit: int = 100
+    ) -> ExaItemPageExchange: ...
+
+    async def list_events(
+        self, *, cursor: str | None = None, limit: int = 200
+    ) -> ExaEventPageExchange: ...
 
 
 type AsyncSleep = Callable[[float], Awaitable[None]]
@@ -459,6 +602,77 @@ class ExaWebsetsClient:
             assert last_error is not None
             raise last_error
 
+    async def poll_webset(self, webset_id: str) -> ExaWebsetExchange:
+        if not webset_id.strip():
+            raise ValueError("Exa Webset id must be non-empty")
+        return await self._request(
+            method="GET",
+            url=f"{self._base_url}/websets/{webset_id}",
+            body=None,
+            expected_status=200,
+            create=False,
+        )
+
+    async def list_items(
+        self, webset_id: str, *, cursor: str | None = None, limit: int = 100
+    ) -> ExaItemPageExchange:
+        if not webset_id.strip():
+            raise ValueError("Exa Webset id must be non-empty")
+        if not 1 <= limit <= 100:
+            raise ValueError("Exa item page limit must be between 1 and 100")
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        status, request_id, body = await self._raw_request(
+            method="GET",
+            url=f"{self._base_url}/websets/{webset_id}/items",
+            body=None,
+            expected_status=200,
+            create=False,
+            params=params,
+        )
+        try:
+            page = ExaItemPage.model_validate_json(body)
+        except (ValueError, TypeError) as exc:
+            raise ExaWebsetsContractDrift(
+                "Exa item page does not match the pinned v0 contract",
+                status_code=status,
+                request_id=request_id,
+                response_body=body,
+            ) from exc
+        return ExaItemPageExchange(
+            status_code=status, request_id=request_id, response_body=body, page=page
+        )
+
+    async def list_events(
+        self, *, cursor: str | None = None, limit: int = 200
+    ) -> ExaEventPageExchange:
+        if not 1 <= limit <= 200:
+            raise ValueError("Exa event page limit must be between 1 and 200")
+        params: dict[str, str | int] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        status, request_id, body = await self._raw_request(
+            method="GET",
+            url=f"{self._base_url}/events",
+            body=None,
+            expected_status=200,
+            create=False,
+            params=params,
+        )
+        try:
+            page = ExaEventPage.model_validate_json(body)
+        except (ValueError, TypeError) as exc:
+            raise ExaWebsetsContractDrift(
+                "Exa event page does not match the pinned v0 contract",
+                status_code=status,
+                request_id=request_id,
+                response_body=body,
+            ) from exc
+        return ExaEventPageExchange(
+            status_code=status, request_id=request_id, response_body=body, page=page
+        )
+
     async def _request(
         self,
         *,
@@ -468,6 +682,39 @@ class ExaWebsetsClient:
         expected_status: int,
         create: bool,
     ) -> ExaWebsetExchange:
+        status_code, request_id, response_body = await self._raw_request(
+            method=method,
+            url=url,
+            body=body,
+            expected_status=expected_status,
+            create=create,
+        )
+        try:
+            webset = ExaWebset.model_validate_json(response_body)
+        except (ValueError, TypeError) as exc:
+            raise ExaWebsetsContractDrift(
+                "Exa Websets response does not match the pinned v0 contract",
+                status_code=status_code,
+                request_id=request_id,
+                response_body=response_body,
+            ) from exc
+        return ExaWebsetExchange(
+            status_code=status_code,
+            request_id=request_id,
+            response_body=response_body,
+            webset=webset,
+        )
+
+    async def _raw_request(
+        self,
+        *,
+        method: Literal["GET", "POST"],
+        url: str,
+        body: bytes | None,
+        expected_status: int,
+        create: bool,
+        params: dict[str, str | int] | None = None,
+    ) -> tuple[int, str | None, bytes]:
         headers = {
             "accept": "application/json",
             "x-api-key": self._api_key.get_secret_value(),
@@ -475,7 +722,9 @@ class ExaWebsetsClient:
         if body is not None:
             headers["content-type"] = "application/json"
         try:
-            response = await self._client.request(method, url, headers=headers, content=body)
+            response = await self._client.request(
+                method, url, headers=headers, content=body, params=params
+            )
         except (httpx.ConnectTimeout, httpx.PoolTimeout, httpx.ConnectError) as exc:
             raise ExaWebsetsPreDispatchError(
                 "Exa Websets connection failed before dispatch"
@@ -496,21 +745,7 @@ class ExaWebsetsClient:
                 response_body=response_body,
                 retry_after=response.headers.get("retry-after"),
             )
-        try:
-            webset = ExaWebset.model_validate_json(response_body)
-        except (ValueError, TypeError) as exc:
-            raise ExaWebsetsContractDrift(
-                "Exa Websets response does not match the pinned v0 contract",
-                status_code=response.status_code,
-                request_id=request_id,
-                response_body=response_body,
-            ) from exc
-        return ExaWebsetExchange(
-            status_code=response.status_code,
-            request_id=request_id,
-            response_body=response_body,
-            webset=webset,
-        )
+        return response.status_code, request_id, response_body
 
 
 def _provider_error(
@@ -585,13 +820,19 @@ __all__ = [
     "ExaCreateSearch",
     "ExaCreateWebsetRequest",
     "ExaEnrichmentOption",
+    "ExaEventPage",
+    "ExaEventPageExchange",
+    "ExaItemPage",
+    "ExaItemPageExchange",
     "ExaResponseEnrichment",
     "ExaResponseSearch",
     "ExaWebsetDuplicateExternalId",
     "ExaWebsetEnrichmentFormat",
     "ExaWebsetEntity",
     "ExaWebsetEntityType",
+    "ExaWebsetEvent",
     "ExaWebsetExchange",
+    "ExaWebsetItem",
     "ExaWebsetNotFound",
     "ExaWebsetSearchBehavior",
     "ExaWebsetSearchStatus",
@@ -607,5 +848,8 @@ __all__ = [
     "ExaWebsetsPreDispatchError",
     "ExaWebsetsRateLimited",
     "ExaWebsetsTransientError",
+    "ExaWebsetsLifecycleTransport",
     "ExaWebsetsTransport",
+    "ExaWebhookVerificationError",
+    "verify_exa_webhook_signature",
 ]

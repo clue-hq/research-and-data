@@ -805,6 +805,11 @@ artifacts, reserved/realized units, and traces reconcile. A mock-only test canno
 
 ### Slice D3 — Webhooks, polling, pagination, and reconciliation
 
+**Implementation record:** `docs/specs/M06A-D3-exa-websets-lifecycle.md` records the signed
+webhook, scheduled poll worker, cursor/page/item durability, final reconciliation, cost model,
+production wiring, and real-Postgres crash/replay evidence. The mechanical boundary is complete;
+the live-provider row remains open until an API-entitled Exa account can complete a Webset.
+
 **Purpose:** Retrieve the entire asynchronous operation and survive missing/duplicate delivery.
 
 **Deliverables:**

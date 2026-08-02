@@ -10,6 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.exa_websets_submit import (
@@ -326,6 +327,24 @@ def test_real_db_submit_persists_receipts_costs_traces_and_restart_replay(
             assert batch.state is DiscoveryBatchState.WAITING_EXTERNAL
             assert batch.provider_units_reserved == Decimal("20")
             assert batch.provider_units_charged == 0
+            initial_wake_count = int(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT count(*) FROM discovery_wake_outbox "
+                            "WHERE workspace_id=:workspace_id "
+                            "AND operation_id=:operation_id "
+                            "AND dedupe_key=:dedupe_key"
+                        ),
+                        {
+                            "workspace_id": workspace_id,
+                            "operation_id": first.operation.operation_id,
+                            "dedupe_key": f"exa-initial-poll:{first.operation.operation_id}",
+                        },
+                    )
+                ).scalar_one()
+            )
+            assert initial_wake_count == 1
 
             spans = exporter.get_finished_spans()
             submit_spans = [span for span in spans if span.name == "discovery.exa_websets.submit"]

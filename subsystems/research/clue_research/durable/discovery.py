@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlsplit
@@ -163,6 +163,13 @@ class DiscoveryWakeRow(BaseModel):
     created_at: UtcDatetime
     claimed_at: UtcDatetime | None
     processed_at: UtcDatetime | None
+
+
+class DiscoveryPageRow(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: UUID
+    receipt: DiscoveryPageReceipt
 
 
 class DiscoverySealDraft(BaseModel):
@@ -861,10 +868,10 @@ def _batch_row(row: Any) -> DiscoveryBatchRow:
     return DiscoveryBatchRow.model_validate(dict(row))
 
 
-async def put_discovery_event(
+async def record_discovery_event(
     conn: AsyncConnection, *, workspace_id: str, event: DiscoveryProviderEvent
-) -> UUID:
-    """Persist an event idempotently without assuming delivery order."""
+) -> tuple[UUID, bool]:
+    """Persist an event without assuming order and report whether this call inserted it."""
 
     batch_state = (
         await conn.execute(
@@ -887,9 +894,10 @@ async def put_discovery_event(
         )
 
     event_id = uuid4()
-    await conn.execute(
-        text(
-            """
+    inserted = (
+        await conn.execute(
+            text(
+                """
             INSERT INTO discovery_provider_event (
                 id, workspace_id, operation_id, provider_event_id, event_type,
                 signature_verified, payload_artifact_key, provider_created_at, received_at,
@@ -900,22 +908,24 @@ async def put_discovery_event(
                 :processed_at, CAST(:processing_disposition AS discovery_event_disposition)
             )
             ON CONFLICT (workspace_id, operation_id, provider_event_id) DO NOTHING
+            RETURNING id
             """
-        ),
-        {
-            "id": event_id,
-            "workspace_id": workspace_id,
-            "operation_id": event.operation_id,
-            "provider_event_id": event.provider_event_id,
-            "event_type": event.event_type,
-            "signature_verified": event.signature_verified,
-            "payload_artifact_key": event.payload_artifact_key,
-            "provider_created_at": event.provider_created_at,
-            "received_at": event.received_at,
-            "processed_at": event.processed_at,
-            "processing_disposition": event.processing_disposition.value,
-        },
-    )
+            ),
+            {
+                "id": event_id,
+                "workspace_id": workspace_id,
+                "operation_id": event.operation_id,
+                "provider_event_id": event.provider_event_id,
+                "event_type": event.event_type,
+                "signature_verified": event.signature_verified,
+                "payload_artifact_key": event.payload_artifact_key,
+                "provider_created_at": event.provider_created_at,
+                "received_at": event.received_at,
+                "processed_at": event.processed_at,
+                "processing_disposition": event.processing_disposition.value,
+            },
+        )
+    ).scalar_one_or_none()
     row = (
         (
             await conn.execute(
@@ -956,7 +966,14 @@ async def put_discovery_event(
         raise DiscoveryReplayConflict(
             f"provider event {event.provider_event_id!r} was replayed with different content"
         )
-    return cast(UUID, row["id"])
+    return cast(UUID, row["id"]), inserted is not None
+
+
+async def put_discovery_event(
+    conn: AsyncConnection, *, workspace_id: str, event: DiscoveryProviderEvent
+) -> UUID:
+    event_id, _ = await record_discovery_event(conn, workspace_id=workspace_id, event=event)
+    return event_id
 
 
 async def finish_discovery_event(
@@ -1008,6 +1025,34 @@ async def finish_discovery_event(
             raise DiscoveryReplayConflict(
                 f"provider event {provider_event_id!r} already has disposition {row!r}"
             )
+
+
+async def list_discovery_events(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: DiscoveryOperationId,
+) -> tuple[DiscoveryProviderEvent, ...]:
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT operation_id, provider_event_id, event_type, signature_verified,
+                           payload_artifact_key, provider_created_at, received_at, processed_at,
+                           processing_disposition
+                    FROM discovery_provider_event
+                    WHERE workspace_id = :workspace_id AND operation_id = :operation_id
+                    ORDER BY provider_created_at, provider_event_id
+                    """
+                ),
+                {"workspace_id": workspace_id, "operation_id": operation_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(DiscoveryProviderEvent.model_validate(dict(row)) for row in rows)
 
 
 async def put_discovery_page(
@@ -1126,6 +1171,87 @@ async def get_discovery_page(
     data = dict(row)
     data["request_cursor"] = data.pop("request_cursor_key")
     return DiscoveryPageReceipt.model_validate(data)
+
+
+async def get_discovery_page_row(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: DiscoveryOperationId,
+    resource_kind: str,
+    request_cursor: str = FIRST_PAGE_CURSOR,
+) -> DiscoveryPageRow | None:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT id, operation_id, resource_kind, request_cursor_key, next_cursor,
+                           has_more, payload_artifact_key, payload_sha256, item_count, fetched_at
+                    FROM discovery_page_receipt
+                    WHERE workspace_id = :workspace_id AND operation_id = :operation_id
+                      AND resource_kind = CAST(:resource_kind AS discovery_page_resource)
+                      AND request_cursor_key = :request_cursor
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "operation_id": operation_id,
+                    "resource_kind": resource_kind,
+                    "request_cursor": request_cursor,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    data = dict(row)
+    page_id = data.pop("id")
+    data["request_cursor"] = data.pop("request_cursor_key")
+    return DiscoveryPageRow(
+        id=page_id,
+        receipt=DiscoveryPageReceipt.model_validate(data),
+    )
+
+
+async def list_discovery_pages(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: DiscoveryOperationId,
+) -> tuple[DiscoveryPageRow, ...]:
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT id, operation_id, resource_kind, request_cursor_key, next_cursor,
+                           has_more, payload_artifact_key, payload_sha256, item_count, fetched_at
+                    FROM discovery_page_receipt
+                    WHERE workspace_id = :workspace_id AND operation_id = :operation_id
+                    ORDER BY fetched_at, resource_kind, request_cursor_key
+                    """
+                ),
+                {"workspace_id": workspace_id, "operation_id": operation_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    result: list[DiscoveryPageRow] = []
+    for row in rows:
+        data = dict(row)
+        page_id = data.pop("id")
+        data["request_cursor"] = data.pop("request_cursor_key")
+        result.append(
+            DiscoveryPageRow(
+                id=page_id,
+                receipt=DiscoveryPageReceipt.model_validate(data),
+            )
+        )
+    return tuple(result)
 
 
 async def put_discovery_item(
@@ -1277,6 +1403,39 @@ async def get_discovery_item(
     data = dict(row)
     data["item_snapshot_id"] = data.pop("id")
     return DiscoveryItemSnapshot.model_validate(data)
+
+
+async def list_discovery_items(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: DiscoveryOperationId,
+) -> tuple[DiscoveryItemSnapshot, ...]:
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT id, operation_id, provider_item_id, source_kind, source_id,
+                           raw_artifact_key, item_sha256, observed_at, normalization_state,
+                           normalized_at
+                    FROM discovery_item_snapshot
+                    WHERE workspace_id = :workspace_id AND operation_id = :operation_id
+                    ORDER BY observed_at, provider_item_id, item_sha256
+                    """
+                ),
+                {"workspace_id": workspace_id, "operation_id": operation_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    result: list[DiscoveryItemSnapshot] = []
+    for row in rows:
+        data = dict(row)
+        data["item_snapshot_id"] = data.pop("id")
+        result.append(DiscoveryItemSnapshot.model_validate(data))
+    return tuple(result)
 
 
 async def link_discovery_page_item(
@@ -2073,19 +2232,37 @@ async def schedule_discovery_wake(
 
 
 async def claim_due_discovery_wakes(
-    conn: AsyncConnection, *, limit: int = 100, now: datetime | None = None
+    conn: AsyncConnection,
+    *,
+    limit: int = 100,
+    now: datetime | None = None,
+    claim_stale_after: timedelta = timedelta(minutes=5),
+    source_key: str | None = None,
 ) -> tuple[DiscoveryWakeRow, ...]:
     if not 1 <= limit <= 100:
         raise ValueError("discovery wake claim limit must be between 1 and 100")
+    if claim_stale_after.total_seconds() <= 0:
+        raise ValueError("discovery wake claim_stale_after must be positive")
+    claim_now = now or datetime.now(UTC)
     rows = (
         (
             await conn.execute(
                 text(
                     """
                 WITH due AS (
-                    SELECT id FROM discovery_wake_outbox
-                    WHERE processed_at IS NULL AND claimed_at IS NULL AND available_at <= :now
-                    ORDER BY available_at, id
+                    SELECT wake.id FROM discovery_wake_outbox wake
+                    WHERE wake.processed_at IS NULL AND wake.available_at <= :now
+                      AND (wake.claimed_at IS NULL OR wake.claimed_at <= :stale_before)
+                      AND (
+                          CAST(:source_key AS text) IS NULL
+                          OR EXISTS (
+                              SELECT 1 FROM discovery_operation operation
+                              WHERE operation.workspace_id = wake.workspace_id
+                                AND operation.id = wake.operation_id
+                                AND operation.source_key = CAST(:source_key AS text)
+                          )
+                      )
+                    ORDER BY wake.available_at, wake.id
                     LIMIT :limit
                     FOR UPDATE SKIP LOCKED
                 )
@@ -2098,7 +2275,12 @@ async def claim_due_discovery_wakes(
                           wake.created_at, wake.claimed_at, wake.processed_at
                 """
                 ),
-                {"now": now or datetime.now(UTC), "limit": limit},
+                {
+                    "now": claim_now,
+                    "stale_before": claim_now - claim_stale_after,
+                    "limit": limit,
+                    "source_key": source_key,
+                },
             )
         )
         .mappings()
@@ -2174,6 +2356,54 @@ async def reconcile_discovery_batch_costs(
     row = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
     assert row is not None
     return row
+
+
+async def claim_discovery_operation_reconciliation(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    operation_id: DiscoveryOperationId,
+    now: datetime | None = None,
+    lease_for: timedelta = timedelta(minutes=2),
+) -> DiscoveryOperation | None:
+    """Atomically claim one poll/reconciliation driver, including an expired crash lease."""
+
+    if lease_for.total_seconds() <= 0:
+        raise ValueError("discovery reconciliation lease_for must be positive")
+    claim_now = now or datetime.now(UTC)
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"""
+                    UPDATE discovery_operation
+                    SET state = 'reconciling', next_poll_at = :lease_until, updated_at = now()
+                    WHERE workspace_id = :workspace_id AND id = :id
+                      AND provider_operation_id IS NOT NULL
+                      AND submitted_receipt_ref IS NOT NULL
+                      AND spend_outcome = 'charged'
+                      AND (
+                          state IN (
+                              'provider_running', 'waiting_external', 'ingesting',
+                              'failed_retryable'
+                          )
+                          OR (state = 'reconciling' AND next_poll_at <= :now)
+                      )
+                    RETURNING {_OPERATION_COLUMNS}
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "id": operation_id,
+                    "now": claim_now,
+                    "lease_until": claim_now + lease_for,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return _operation_row(row) if row is not None else None
 
 
 _READINESS_SQL = text(
@@ -2262,7 +2492,11 @@ _READINESS_SQL = text(
             SELECT 1 FROM discovery_provider_event event
             WHERE event.workspace_id = :workspace_id
               AND event.operation_id IN (SELECT id FROM operations)
-              AND (event.processing_disposition = 'pending' OR event.processed_at IS NULL)
+              AND (
+                  NOT event.signature_verified
+                  OR event.processing_disposition = 'pending'
+                  OR event.processed_at IS NULL
+              )
         ) AS provider_events_accounted,
 
         NOT EXISTS (
@@ -2300,6 +2534,7 @@ _READINESS_SQL = text(
             SELECT 1 FROM discovery_page_receipt page
             WHERE page.workspace_id = :workspace_id
               AND page.operation_id IN (SELECT id FROM operations)
+              AND page.resource_kind = 'items'
               AND page.item_count <> (
                   SELECT count(*) FROM discovery_page_item page_item
                   WHERE page_item.workspace_id = page.workspace_id
