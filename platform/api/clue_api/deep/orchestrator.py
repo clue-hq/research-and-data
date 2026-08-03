@@ -59,6 +59,10 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from clue_api.deep.committee_preparation import (
+    CommitteePreparer,
+    ExternalCommitteePreparationFailed,
+)
 from clue_api.deep.run_io import AccountRunIO
 from clue_api.deep.spend import (
     ExactlyOnceSpend,
@@ -74,6 +78,8 @@ from clue_core import (
     ClaimId,
     CostCents,
     EntityId,
+    ExternalResearchPreparation,
+    ExternalResearchPreparationOutcome,
     ICPSpec,
     LLMGateway,
     PreSpendGate,
@@ -116,6 +122,10 @@ _DEEP_RUN_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "deep-orchestration.clue-re
 # The ``references_index`` key under which the admitted committee member contact-ids are persisted —
 # the contact fan-out's resume work-list (ids only, never claim bodies).
 _COMMITTEE_CONTACTS_KEY = "committee_contacts"
+_COMMITTEE_OPERATION_KEY = "external:committee:operation"
+_COMMITTEE_SNAPSHOTS_KEY = "external:committee:snapshots"
+_COMMITTEE_COST_RECEIPT_KEY = "external:committee:cost_receipt"
+_COMMITTEE_AUDIT_KEY = "external:committee:audit"
 
 
 def deep_account_run_id(project_run_id: ProjectRunId, entity_id: EntityId) -> RunId:
@@ -154,6 +164,7 @@ class AccountDeepResult(BaseModel):
     cost_cents: CostCents = Decimal(0)
     sub_phase: AccountRunSubPhase | None = None
     budget_stop: BudgetVerdict | None = None
+    external_preparation: ExternalResearchPreparation | None = None
 
     @property
     def claim_refs(self) -> tuple[ClaimId, ...]:
@@ -245,6 +256,7 @@ class AccountDeepOrchestrator:
         pre_spend_gate: PreSpendGate | None = None,
         synthesis_guard: SynthesisGuard | None = None,
         budget_cap_cents: CostCents | None = None,
+        committee_preparer: CommitteePreparer | None = None,
     ) -> None:
         self._profile_account = profile_account
         self._discover_committee = discover_committee
@@ -267,6 +279,7 @@ class AccountDeepOrchestrator:
         self._pre_spend_gate = pre_spend_gate
         self._synthesis_guard = synthesis_guard
         self._budget_cap_cents = budget_cap_cents
+        self._committee_preparer = committee_preparer
 
     async def run_one(
         self, spec: AccountSpec, *, project_run_id: ProjectRunId
@@ -293,6 +306,7 @@ class AccountDeepOrchestrator:
         committee_result: CommitteeResult | None = None
         contact_results: tuple[ContactProfileResult, ...] = ()
         budget_stop: BudgetVerdict | None = None
+        external_preparation: ExternalResearchPreparation | None = None
 
         # --- Stage 1: account axis (M8.1) — the direct callable carries the ICP spec +
         # workspace_id as
@@ -373,7 +387,71 @@ class AccountDeepOrchestrator:
                 cost += info.cost_cents
             done = AccountRunSubPhase.ACCOUNT_PROFILED
 
-        # --- Stage 2: committee axis (M8.3) — direct callable (no AspectContext, so the ctx.params
+        # --- Stage 2A: prepare external committee inputs OUTSIDE the committee claim transaction.
+        # A pending provider operation keeps the last-completed marker at ACCOUNT_PROFILED, folds
+        # only durable references in a short transaction, and returns control to the project
+        # machine. Re-entry therefore skips account profiling and asks the preparer to reconcile the
+        # same idempotent operation. The orchestrator knows no provider names or lifecycle details.
+        committee_sources = self._sources
+        if done is AccountRunSubPhase.ACCOUNT_PROFILED and self._committee_preparer is not None:
+            prepared = await self._committee_preparer.prepare(
+                account_entity_id=spec.entity_id,
+                account_run_id=run_id,
+                project_run_id=project_run_id,
+                workspace_id=workspace_id,
+                tier=spec.tier,
+            )
+            external_preparation = prepared.preparation
+            self._fold_external_preparation_refs(refs, external_preparation)
+            preparation_outcome = external_preparation.outcome
+            if preparation_outcome is ExternalResearchPreparationOutcome.WAITING_EXTERNAL:
+                async with self._session_factory() as conn:
+                    await self._io.fold(
+                        conn,
+                        run_id,
+                        references_index=refs,
+                        status=AccountRunStatus.RUNNING,
+                        sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
+                    )
+                return AccountDeepResult(
+                    account_run_id=run_id,
+                    entity_id=spec.entity_id,
+                    tier=spec.tier,
+                    account=account_result,
+                    cost_cents=cost,
+                    sub_phase=done,
+                    external_preparation=external_preparation,
+                )
+            if preparation_outcome is ExternalResearchPreparationOutcome.FAILED:
+                async with self._session_factory() as conn:
+                    await self._io.fold(
+                        conn,
+                        run_id,
+                        references_index=refs,
+                        status=AccountRunStatus.RUNNING,
+                        sub_phase=AccountRunSubPhase.ACCOUNT_PROFILED,
+                    )
+                raise ExternalCommitteePreparationFailed(
+                    external_preparation.reason_code or "external_committee_preparation_failed"
+                )
+            if preparation_outcome is ExternalResearchPreparationOutcome.INELIGIBLE:
+                # Committee ineligibility does not erase the account profile. It is an honest,
+                # governed account-only result: no committee callable, claims, or contact fan-out.
+                refs["committee"] = []
+                refs[_COMMITTEE_CONTACTS_KEY] = []
+                async with self._session_factory() as conn:
+                    await self._io.fold(
+                        conn,
+                        run_id,
+                        references_index=refs,
+                        status=AccountRunStatus.RUNNING,
+                        sub_phase=AccountRunSubPhase.COMMITTEE_DISCOVERED,
+                    )
+                done = AccountRunSubPhase.COMMITTEE_DISCOVERED
+            elif prepared.sources is not None:
+                committee_sources = prepared.sources
+
+        # --- Stage 2B: committee axis (M8.3) — direct callable (no AspectContext, so the ctx.params
         # KeyError hazard never arises). The committee's claim writes, its charge, the ledger
         # ``succeed``, the member-id work-list, and the marker all commit in one transaction (M8A.4)
         # so the contact fan-out resumes WITHOUT re-discovering the committee and the work-list is
@@ -391,7 +469,7 @@ class AccountDeepOrchestrator:
                         account_entity_id=spec.entity_id,
                         run_id=run_id,
                         workspace_id=workspace_id,
-                        sources=self._sources,
+                        sources=committee_sources,
                         gateway=self._gateway,
                         spec=self._spec,
                         role_model=self._role_model,
@@ -465,7 +543,22 @@ class AccountDeepOrchestrator:
             cost_cents=cost,
             sub_phase=done,
             budget_stop=budget_stop,
+            external_preparation=external_preparation,
         )
+
+    @staticmethod
+    def _fold_external_preparation_refs(
+        refs: dict[str, list[str]], preparation: ExternalResearchPreparation
+    ) -> None:
+        """Fold reference-only external acquisition lineage into the account-run cursor."""
+        if preparation.operation_ref is not None:
+            refs[_COMMITTEE_OPERATION_KEY] = [preparation.operation_ref]
+        if preparation.snapshot_refs:
+            refs[_COMMITTEE_SNAPSHOTS_KEY] = list(preparation.snapshot_refs)
+        if preparation.cost_receipt_ref is not None:
+            refs[_COMMITTEE_COST_RECEIPT_KEY] = [preparation.cost_receipt_ref]
+        if preparation.audit_refs:
+            refs[_COMMITTEE_AUDIT_KEY] = list(preparation.audit_refs)
 
     def _committee_contact_ids(
         self, committee: CommitteeResult | None, refs: dict[str, list[str]]

@@ -208,6 +208,13 @@ from clue_core.execution_graph import (
     new_recipe_revision_id,
     operation_id_from_key,
 )
+from clue_core.external_research import (
+    DeepAccountExternalWait,
+    DeepExternalWait,
+    DeepExternalWakeReason,
+    ExternalResearchPreparation,
+    ExternalResearchPreparationOutcome,
+)
 from clue_core.factories import (
     TIER_ORDER,
     account_claim,
@@ -645,6 +652,12 @@ __all__ = [
     "PreSpendKind",
     "EnumerationScope",
     "JudgeVerdict",
+    # provider-neutral external research preparation / DEEP waits
+    "ExternalResearchPreparationOutcome",
+    "ExternalResearchPreparation",
+    "DeepAccountExternalWait",
+    "DeepExternalWakeReason",
+    "DeepExternalWait",
     # enums — M13.1 review surface
     "ReviewAction",
     "ReviewSessionStatus",

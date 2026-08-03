@@ -37,6 +37,7 @@ from clue_core import (
     BudgetVerdict,
     BurnDown,
     CostCents,
+    DeepExternalWait,
     DiscoveryExternalWait,
     Estimate,
     IdempotencyScope,
@@ -491,13 +492,19 @@ class ProjectRun:
             )
             return await self.status(project_run_id)
         if result.status == PhaseStatus.WAITING_EXTERNAL:
-            if phase is not ProjectPhase.DISCOVERY:
+            if phase is ProjectPhase.DISCOVERY:
+                # Fail closed on body-bearing or incomplete wait payloads. The checkpoint contains
+                # only durable references, next-poll time, and wake reason.
+                DiscoveryExternalWait.model_validate(result.payload)
+            elif phase is ProjectPhase.DEEP:
+                # Account-deep uses the same active, non-human wait semantics. Its typed payload
+                # pins account-run and provider-operation references so a wake resumes the exact
+                # acquisition before short committee materialization.
+                DeepExternalWait.model_validate(result.payload)
+            else:
                 raise ProjectRunError(
-                    "waiting_external is currently valid only for the discovery phase"
+                    "waiting_external is valid only for discovery and deep phases"
                 )
-            # Fail closed on body-bearing or incomplete wait payloads.  The checkpoint contains
-            # only durable references, next-poll time, and wake reason.
-            DiscoveryExternalWait.model_validate(result.payload)
             await self._store.put_checkpoint(
                 project_run_id=project_run_id,
                 phase=phase,
