@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    DiscoveryAccountManifest,
     DiscoveryBatchId,
     DiscoveryCandidateAdmissionState,
     DiscoveryCriterionPlan,
@@ -60,15 +62,18 @@ from clue_db import db_lifespan
 from clue_research.claimstore import insert_claim, load_core_pack
 from clue_research.discovery_scoring import DISCOVERY_ENVELOPE_POLICY_V1
 from clue_research.durable import (
+    DiscoveryBatchManifestBundle,
     DiscoveryNotFound,
     DiscoveryReplayConflict,
     DiscoverySealBlocked,
+    DiscoverySealConflict,
     DiscoverySealDraft,
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
     claim_due_discovery_wakes,
     complete_discovery_wake,
     create_discovery_batch,
+    discovery_manifest_members,
     ensure_project_run,
     enumerate_discovery_subject_artifacts,
     find_reusable_discovery_operation,
@@ -83,6 +88,7 @@ from clue_research.durable import (
     link_discovery_page_item,
     mark_discovery_operation_reconciled,
     normalize_discovery_item,
+    put_discovery_batch_manifest,
     put_discovery_candidate_link,
     put_discovery_event,
     put_discovery_field_resolution,
@@ -295,6 +301,7 @@ async def _complete_batch(
     storage: FsStorage,
     *,
     started: _StartedBatch,
+    persist_manifest: bool = True,
 ) -> _ReadyBatch:
     workspace_id = started.workspace_id
     assert started.page_id is not None
@@ -506,39 +513,146 @@ async def _complete_batch(
         account_entity_id=account_id,
     )
 
-    account_manifest_bytes = b'{"accounts":["insighthealth.ai"]}'
-    account_manifest_key = await capture_discovery_artifact(
+    bundle = await _build_manifest_bundle(
         conn,
         storage,
-        workspace_id=workspace_id,
-        content=account_manifest_bytes,
-        media_type="application/json",
-        source_key="discovery_seal",
-    )
-    raw_manifest_key = await _artifact(
-        conn, storage, workspace_id=workspace_id, name="raw-manifest", body="all-raw-refs"
-    )
-    claim_manifest_key = await _artifact(
-        conn, storage, workspace_id=workspace_id, name="claim-manifest", body="all-claim-ids"
-    )
-    coverage_key = await _artifact(
-        conn, storage, workspace_id=workspace_id, name="coverage", body="one-of-one"
-    )
-    draft = DiscoverySealDraft(
-        account_manifest_artifact_key=account_manifest_key,
-        account_manifest_sha256=content_address(account_manifest_bytes),
-        raw_artifact_manifest_key=raw_manifest_key,
-        claim_id_manifest_key=claim_manifest_key,
-        coverage_report_ref=coverage_key,
+        started=started,
+        persist=persist_manifest,
     )
     return _ReadyBatch(
         started=started,
         item_id=item_id,
         account_id=account_id,
         event_ids=tuple(event_ids),
-        draft=draft,
+        draft=bundle.seal_draft,
         raw_operation_artifacts=raw_refs,
     )
+
+
+async def _build_manifest_bundle(
+    conn: AsyncConnection,
+    storage: FsStorage,
+    *,
+    started: _StartedBatch,
+    persist: bool = True,
+) -> DiscoveryBatchManifestBundle:
+    """Build the current D5 manifest contract without importing the API composition root."""
+
+    batch = await get_discovery_batch(
+        conn, workspace_id=started.workspace_id, batch_id=started.batch_id
+    )
+    assert batch is not None
+    plan_row = await get_discovery_plan(
+        conn, workspace_id=started.workspace_id, plan_id=batch.discovery_plan_id
+    )
+    assert plan_row is not None
+    account_ids, claim_ids, raw_keys = await discovery_manifest_members(
+        conn, workspace_id=started.workspace_id, batch_id=started.batch_id
+    )
+    observed = int(
+        (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM discovery_item_snapshot item "
+                    "JOIN discovery_operation operation ON operation.id = item.operation_id "
+                    "AND operation.workspace_id = item.workspace_id "
+                    "WHERE operation.workspace_id = :workspace_id "
+                    "AND operation.batch_id = :batch_id"
+                ),
+                {"workspace_id": started.workspace_id, "batch_id": started.batch_id},
+            )
+        ).scalar_one()
+    )
+    account_payload = DiscoveryAccountManifest(
+        workspace_id=started.workspace_id,
+        discovery_batch_id=batch.id,
+        project_id=batch.project_id,
+        project_run_id=batch.project_run_id,
+        icp_key=batch.icp_key,
+        icp_version=batch.icp_version,
+        discovery_plan_id=batch.discovery_plan_id,
+        plan_sha256=plan_row.plan_sha256,
+        generation=batch.generation,
+        account_ids=account_ids,
+    ).model_dump(mode="json")
+    claim_payload = {
+        "contract": "discovery-claim-manifest-v1",
+        "workspace_id": started.workspace_id,
+        "discovery_batch_id": str(batch.id),
+        "project_id": batch.project_id,
+        "project_run_id": str(batch.project_run_id),
+        "claim_ids": [str(value) for value in claim_ids],
+    }
+    raw_payload = {
+        "contract": "discovery-raw-artifact-manifest-v1",
+        "workspace_id": started.workspace_id,
+        "discovery_batch_id": str(batch.id),
+        "project_id": batch.project_id,
+        "project_run_id": str(batch.project_run_id),
+        "artifact_keys": list(raw_keys),
+    }
+    coverage_payload = {
+        "contract": "discovery-coverage-report-v1",
+        "workspace_id": started.workspace_id,
+        "discovery_batch_id": str(batch.id),
+        "project_id": batch.project_id,
+        "project_run_id": str(batch.project_run_id),
+        "icp_key": batch.icp_key,
+        "icp_version": batch.icp_version,
+        "generation": batch.generation,
+        "requested_result_count": sum(search.requested_count for search in plan_row.plan.searches),
+        "observed_item_count": observed,
+        "admitted_account_count": len(account_ids),
+        "excluded_candidate_count": 0,
+        "searched_channels": ["exa_websets"],
+        "unsearched_channels": [],
+        "coverage_is_exhaustive": False,
+    }
+
+    async def _capture(payload: object) -> tuple[str, str]:
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        key = await capture_discovery_artifact(
+            conn,
+            storage,
+            workspace_id=started.workspace_id,
+            content=body,
+            media_type="application/json",
+            source_key="discovery_seal",
+        )
+        return key, content_address(body)
+
+    account_key, account_sha = await _capture(account_payload)
+    claim_key, claim_sha = await _capture(claim_payload)
+    raw_key, raw_sha = await _capture(raw_payload)
+    coverage_key, coverage_sha = await _capture(coverage_payload)
+    bundle = DiscoveryBatchManifestBundle(
+        batch_id=batch.id,
+        workspace_id=started.workspace_id,
+        project_id=batch.project_id,
+        project_run_id=batch.project_run_id,
+        icp_key=batch.icp_key,
+        icp_version=batch.icp_version,
+        discovery_plan_id=batch.discovery_plan_id,
+        plan_sha256=plan_row.plan_sha256,
+        generation=batch.generation,
+        account_ids=account_ids,
+        claim_ids=claim_ids,
+        raw_artifact_keys=raw_keys,
+        coverage_payload=coverage_payload,
+        account_manifest_artifact_key=account_key,
+        account_manifest_sha256=account_sha,
+        claim_manifest_artifact_key=claim_key,
+        claim_manifest_sha256=claim_sha,
+        raw_manifest_artifact_key=raw_key,
+        raw_manifest_sha256=raw_sha,
+        coverage_report_artifact_key=coverage_key,
+        coverage_report_sha256=coverage_sha,
+    )
+    if persist:
+        return await put_discovery_batch_manifest(
+            conn, workspace_id=started.workspace_id, bundle=bundle
+        )
+    return bundle
 
 
 def test_repository_roundtrip_replay_barrier_wake_and_subject_index(tmp_path: Path) -> None:
@@ -604,7 +718,7 @@ def test_repository_roundtrip_replay_barrier_wake_and_subject_index(tmp_path: Pa
             invalid_draft = ready.draft.model_copy(
                 update={"coverage_report_ref": f"{workspace_id}/missing"}
             )
-            with pytest.raises(DiscoverySealBlocked):
+            with pytest.raises(DiscoverySealConflict):
                 await seal_discovery_batch(
                     conn,
                     workspace_id=workspace_id,
@@ -871,6 +985,13 @@ def test_all_fourteen_sql_readiness_predicates_can_independently_block(tmp_path:
                             batch_id=started.batch_id,
                             draft=ready.draft,
                         )
+                    with pytest.raises(
+                        DBAPIError, match="requires exact current discovery batch seal"
+                    ):
+                        await conn.execute(
+                            text("UPDATE project_run SET phase = 'scoring' WHERE id = :run_id"),
+                            {"run_id": started.project_run_id},
+                        )
                 finally:
                     await savepoint.rollback()
 
@@ -884,13 +1005,22 @@ def test_all_fourteen_sql_readiness_predicates_can_independently_block(tmp_path:
                 draft=missing_manifest,
             )
             assert manifest_readiness.final_manifests_exist is False
-            with pytest.raises(DiscoverySealBlocked):
+            with pytest.raises(DiscoverySealConflict):
                 await seal_discovery_batch(
                     conn,
                     workspace_id=workspace_id,
                     batch_id=started.batch_id,
                     draft=missing_manifest,
                 )
+            savepoint = await conn.begin_nested()
+            try:
+                with pytest.raises(DBAPIError, match="requires exact current discovery batch seal"):
+                    await conn.execute(
+                        text("UPDATE project_run SET phase = 'scoring' WHERE id = :run_id"),
+                        {"run_id": started.project_run_id},
+                    )
+            finally:
+                await savepoint.rollback()
 
             # Immutable pages cannot be rewritten to make the barrier say something convenient.
             assert started.page_id is not None
@@ -959,35 +1089,8 @@ def test_accepted_terminal_failure_seals_without_fabricating_items(tmp_path: Pat
             await reconcile_discovery_batch_costs(
                 conn, workspace_id=workspace_id, batch_id=started.batch_id
             )
-            account_bytes = b'{"accounts":[]}'
-            account_key = await capture_discovery_artifact(
-                conn,
-                storage,
-                workspace_id=workspace_id,
-                content=account_bytes,
-                media_type="application/json",
-                source_key="discovery_seal",
-            )
-            raw_key = await _artifact(
-                conn, storage, workspace_id=workspace_id, name="raw-manifest", body="failure"
-            )
-            claim_key = await _artifact(
-                conn, storage, workspace_id=workspace_id, name="claim-manifest", body="empty"
-            )
-            coverage_key = await _artifact(
-                conn,
-                storage,
-                workspace_id=workspace_id,
-                name="coverage",
-                body="accepted-terminal-failure",
-            )
-            draft = DiscoverySealDraft(
-                account_manifest_artifact_key=account_key,
-                account_manifest_sha256=content_address(account_bytes),
-                raw_artifact_manifest_key=raw_key,
-                claim_id_manifest_key=claim_key,
-                coverage_report_ref=coverage_key,
-            )
+            bundle = await _build_manifest_bundle(conn, storage, started=started)
+            draft = bundle.seal_draft
             readiness = await read_discovery_seal_readiness(
                 conn,
                 workspace_id=workspace_id,

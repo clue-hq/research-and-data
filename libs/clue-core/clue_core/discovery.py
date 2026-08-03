@@ -19,7 +19,7 @@ import re
 import unicodedata
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, NewType, Protocol, cast, runtime_checkable
+from typing import Annotated, Literal, NewType, Protocol, cast, runtime_checkable
 from uuid import UUID, uuid4
 
 from annotated_types import Ge
@@ -224,6 +224,7 @@ class DiscoveryWakeReason(StrEnum):
     MANUAL_RECONCILE = "manual_reconcile"
     CRASH_RECOVERY = "crash_recovery"
     FIELD_MATERIALIZATION = "field_materialization"
+    BATCH_SEAL = "batch_seal"
 
 
 class DiscoveryErrorCode(StrEnum):
@@ -562,9 +563,12 @@ class DiscoveryExternalWait(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     discovery_batch_id: DiscoveryBatchId
-    pending_operation_ids: tuple[DiscoveryOperationId, ...] = Field(min_length=1)
+    # D5 can be waiting on identity review, field materialization, or the final seal after every
+    # provider operation is terminal.  In those states there is truthfully no pending operation.
+    pending_operation_ids: tuple[DiscoveryOperationId, ...] = ()
     next_poll_at: UtcDatetime
     wake_reason: DiscoveryWakeReason
+    blockers: tuple[DiscoverySealBlocker, ...] = ()
 
     @model_validator(mode="after")
     def _operation_ids_are_unique(self) -> DiscoveryExternalWait:
@@ -849,6 +853,67 @@ class DiscoveryBatchSeal(BaseModel):
         return self
 
 
+class DiscoveryAccountManifest(BaseModel):
+    """Canonical D5 account-membership artifact consumed by scoring."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    contract: Literal["discovery-account-manifest-v1"] = "discovery-account-manifest-v1"
+    workspace_id: NonEmptyStr
+    discovery_batch_id: DiscoveryBatchId
+    project_id: NonEmptyStr
+    project_run_id: ProjectRunId
+    icp_key: NonEmptyStr
+    icp_version: int = Field(ge=1)
+    discovery_plan_id: DiscoveryPlanId
+    plan_sha256: Sha256Hex
+    generation: int = Field(ge=1)
+    account_ids: tuple[EntityId, ...]
+
+    @model_validator(mode="after")
+    def _accounts_are_unique(self) -> DiscoveryAccountManifest:
+        if len(self.account_ids) != len(set(self.account_ids)):
+            raise ValueError("discovery account manifest ids must be unique")
+        return self
+
+
+class SealedDiscoveryAccounts(BaseModel):
+    """Reference-only verified result returned by the sealed-manifest reader seam."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovery_batch_id: DiscoveryBatchId
+    seal_sha256: Sha256Hex
+    account_manifest_ref: NonEmptyStr
+    account_ids: tuple[EntityId, ...]
+
+
+@runtime_checkable
+class SealedDiscoveryAccountReader(Protocol):
+    async def read(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        icp_key: str,
+        icp_version: int,
+    ) -> SealedDiscoveryAccounts | None:
+        """Read the exact sealed generation, or ``None`` when this run has no durable batch."""
+
+
+class DiscoveryPhaseCompletion(BaseModel):
+    """Reference-only D5 payload committed before the guarded scoring transition."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    discovery_batch_id: DiscoveryBatchId
+    discovery_batch_seal_ref: Sha256Hex
+    account_manifest_ref: NonEmptyStr
+    claim_manifest_ref: NonEmptyStr
+    coverage_report_ref: NonEmptyStr
+    provider_receipt_manifest_ref: NonEmptyStr
+
+
 class DiscoveryFailure(BaseModel):
     """Secret-safe typed failure persisted by D1 and produced by provider adapters in D2+."""
 
@@ -878,6 +943,7 @@ __all__ = [
     "DiscoveryBatchId",
     "DiscoveryBatchSeal",
     "DiscoveryBatchState",
+    "DiscoveryAccountManifest",
     "DiscoveryCandidateAdmissionState",
     "DiscoveryCriterionPlan",
     "DiscoveryEnrichmentFormat",
@@ -891,6 +957,7 @@ __all__ = [
     "DiscoveryEventDisposition",
     "DiscoveryFailure",
     "DiscoveryExternalWait",
+    "DiscoveryPhaseCompletion",
     "DiscoveryFieldRequirement",
     "DiscoveryFieldResolution",
     "DiscoveryFieldResolutionState",
@@ -917,6 +984,8 @@ __all__ = [
     "DiscoveryWakeScheduler",
     "ProviderUnits",
     "Sha256Hex",
+    "SealedDiscoveryAccountReader",
+    "SealedDiscoveryAccounts",
     "discovery_provider_external_id",
     "discovery_plan_sha256",
     "discovery_request_fingerprint",

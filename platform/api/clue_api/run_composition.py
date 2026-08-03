@@ -61,6 +61,7 @@ from clue_api.deep.composition import (
     build_deep_phase_handler,
     build_high_tier_resolver,
 )
+from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.fleet_wiring import (
     build_fleet_deep_scheduler,
     register_boot_handlers,
@@ -440,10 +441,22 @@ class ComposingRunDriver:
         register_discovery_handler(
             channels=self._channels,
             gateway=self._gateway,
+            # The provider flag controls new Exa work, not whether an already-created durable
+            # generation keeps its hard barrier after a rollout switch is reduced.
+            durable_batches=True,
+            session_factory=self._session_factory,
             storage=self._storage,
             register=registry.register,
         )
-        register_scoring_handler(storage=self._storage, register=registry.register)
+        register_scoring_handler(
+            storage=self._storage,
+            session_factory=self._session_factory,
+            sealed_account_reader=DbSealedDiscoveryAccountManifestReader(
+                storage=self._storage,
+                conn_factory=self._session_factory,
+            ),
+            register=registry.register,
+        )
         register_tier_checkpoint_handler(storage=self._storage, register=registry.register)
 
         # DEEP — campaign-scoped (one ICPSpec) over the fleet scheduler; single-flight + rubric

@@ -36,6 +36,7 @@ from clue_core import (
     ProjectPhase,
     ProjectRunId,
     RunId,
+    SealedDiscoveryAccountReader,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import ALL_WORKSPACES
@@ -266,15 +267,27 @@ class ScoringPhaseHandler:
         thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
         session_factory: ConnFactory = transaction,
         pre_spend_gate: PreSpendGate | None = None,
+        sealed_account_reader: SealedDiscoveryAccountReader | None = None,
     ) -> None:
         self._config = config
         self._thresholds = thresholds
         self._session_factory = session_factory
         self._pre_spend_gate = pre_spend_gate
+        self._sealed_account_reader = sealed_account_reader
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
         discovery_run = discovery_run_id(ctx)
         scoring_run = _scoring_run_id(ctx)
+        sealed_accounts = (
+            await self._sealed_account_reader.read(
+                workspace_id=ctx.workspace_id,
+                project_run_id=ctx.project_run_id,
+                icp_key=ctx.icp_key,
+                icp_version=ctx.icp_version,
+            )
+            if self._sealed_account_reader is not None
+            else None
+        )
         async with self._session_factory() as conn:
             spec = await get_icp_version(conn, ctx.workspace_id, ctx.icp_key, ctx.icp_version)
             if spec is None:
@@ -308,8 +321,10 @@ class ScoringPhaseHandler:
             fill_fields = await pass_a_fill_fields(
                 conn, field_plan, rubric, max_source_tier=self._config.max_source_tier
             )
-            account_ids = await admitted_account_ids(
-                conn, run_id=discovery_run, scope=ALL_WORKSPACES
+            account_ids = (
+                sealed_accounts.account_ids
+                if sealed_accounts is not None
+                else await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
             )
 
             scored = written = replayed = errors = 0
@@ -378,6 +393,12 @@ class ScoringPhaseHandler:
                 "written": written,
                 "replayed": replayed,
                 "errors": errors,
+                "discovery_batch_id": (
+                    str(sealed_accounts.discovery_batch_id) if sealed_accounts is not None else None
+                ),
+                "discovery_batch_seal_ref": (
+                    sealed_accounts.seal_sha256 if sealed_accounts is not None else None
+                ),
             },
         )
 

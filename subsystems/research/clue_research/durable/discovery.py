@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     FIRST_PAGE_CURSOR,
+    DiscoveryAccountManifest,
     DiscoveryBatchId,
     DiscoveryBatchSeal,
     DiscoveryBatchState,
@@ -118,6 +119,116 @@ class DiscoveryBatchRow(BaseModel):
     started_at: UtcDatetime
     updated_at: UtcDatetime
     sealed_at: UtcDatetime | None
+
+
+class DiscoveryBatchManifestBundle(BaseModel):
+    """Immutable relational proof behind the four D5 manifest artifacts."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    batch_id: DiscoveryBatchId
+    workspace_id: str
+    project_id: str
+    project_run_id: ProjectRunId
+    icp_key: str
+    icp_version: int
+    discovery_plan_id: DiscoveryPlanId
+    plan_sha256: str
+    generation: int
+    contract_version: str = "discovery-batch-manifest-v1"
+    account_ids: tuple[EntityId, ...]
+    claim_ids: tuple[UUID, ...]
+    raw_artifact_keys: tuple[str, ...]
+    coverage_payload: dict[str, JsonValue]
+    account_manifest_artifact_key: str
+    account_manifest_sha256: str
+    claim_manifest_artifact_key: str
+    claim_manifest_sha256: str
+    raw_manifest_artifact_key: str
+    raw_manifest_sha256: str
+    coverage_report_artifact_key: str
+    coverage_report_sha256: str
+    created_at: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def _canonical_bundle(self) -> DiscoveryBatchManifestBundle:
+        if self.generation < 1:
+            raise ValueError("discovery manifest generation must be positive")
+        if self.contract_version != "discovery-batch-manifest-v1":
+            raise ValueError("unsupported discovery manifest contract")
+        for label, values in (
+            ("account_ids", self.account_ids),
+            ("claim_ids", self.claim_ids),
+            ("raw_artifact_keys", self.raw_artifact_keys),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"discovery manifest {label} must be unique")
+        for value in (
+            self.account_manifest_sha256,
+            self.claim_manifest_sha256,
+            self.raw_manifest_sha256,
+            self.coverage_report_sha256,
+        ):
+            if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                raise ValueError("discovery manifest hashes must be canonical SHA-256")
+        if self.icp_version < 1 or re.fullmatch(r"[0-9a-f]{64}", self.plan_sha256) is None:
+            raise ValueError("discovery manifest ICP and plan lineage is invalid")
+        account_payload = DiscoveryAccountManifest(
+            workspace_id=self.workspace_id,
+            discovery_batch_id=self.batch_id,
+            project_id=self.project_id,
+            project_run_id=self.project_run_id,
+            icp_key=self.icp_key,
+            icp_version=self.icp_version,
+            discovery_plan_id=self.discovery_plan_id,
+            plan_sha256=self.plan_sha256,
+            generation=self.generation,
+            account_ids=self.account_ids,
+        ).model_dump(mode="json")
+        claim_payload = {
+            "contract": "discovery-claim-manifest-v1",
+            "workspace_id": self.workspace_id,
+            "discovery_batch_id": str(self.batch_id),
+            "project_id": self.project_id,
+            "project_run_id": str(self.project_run_id),
+            "claim_ids": [str(value) for value in self.claim_ids],
+        }
+        raw_payload = {
+            "contract": "discovery-raw-artifact-manifest-v1",
+            "workspace_id": self.workspace_id,
+            "discovery_batch_id": str(self.batch_id),
+            "project_id": self.project_id,
+            "project_run_id": str(self.project_run_id),
+            "artifact_keys": list(self.raw_artifact_keys),
+        }
+        expected = (
+            (self.account_manifest_artifact_key, self.account_manifest_sha256, account_payload),
+            (self.claim_manifest_artifact_key, self.claim_manifest_sha256, claim_payload),
+            (self.raw_manifest_artifact_key, self.raw_manifest_sha256, raw_payload),
+            (
+                self.coverage_report_artifact_key,
+                self.coverage_report_sha256,
+                self.coverage_payload,
+            ),
+        )
+        for key, expected_sha, payload in expected:
+            body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+            if (
+                content_address(body) != expected_sha
+                or artifact_key(self.workspace_id, expected_sha) != key
+            ):
+                raise ValueError("discovery manifest artifact does not match its canonical payload")
+        return self
+
+    @property
+    def seal_draft(self) -> DiscoverySealDraft:
+        return DiscoverySealDraft(
+            account_manifest_artifact_key=self.account_manifest_artifact_key,
+            account_manifest_sha256=self.account_manifest_sha256,
+            raw_artifact_manifest_key=self.raw_manifest_artifact_key,
+            claim_id_manifest_key=self.claim_manifest_artifact_key,
+            coverage_report_ref=self.coverage_report_artifact_key,
+        )
 
 
 class DiscoveryCandidateLinkRow(BaseModel):
@@ -384,6 +495,56 @@ async def create_discovery_batch(
 ) -> DiscoveryBatchRow:
     if generation < 1:
         raise ValueError("discovery batch generation must be positive")
+    replay = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
+    if replay is not None:
+        if replay.discovery_plan_id != plan_id or replay.generation != generation:
+            raise DiscoveryReplayConflict(f"discovery batch {batch_id} identity changed")
+        return replay
+    plan = await get_discovery_plan(conn, workspace_id=workspace_id, plan_id=plan_id)
+    if plan is None:
+        raise DiscoveryNotFound(f"discovery plan {plan_id} in workspace {workspace_id}")
+    # Serialize current-generation creation on the owning run. This prevents a second active
+    # generation from appearing beside provider work that is already in flight.
+    locked_run = (
+        await conn.execute(
+            text(
+                "SELECT id FROM project_run WHERE id = :run_id AND workspace_id = :workspace_id "
+                "FOR UPDATE"
+            ),
+            {"run_id": plan.plan.project_run_id, "workspace_id": workspace_id},
+        )
+    ).scalar_one_or_none()
+    if locked_run is None:
+        raise DiscoveryNotFound(f"project run {plan.plan.project_run_id}")
+    latest_row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_BATCH_COLUMNS} FROM discovery_batch "
+                    "WHERE workspace_id = :workspace_id AND project_run_id = :run_id "
+                    "ORDER BY generation DESC LIMIT 1 FOR UPDATE"
+                ),
+                {"workspace_id": workspace_id, "run_id": plan.plan.project_run_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    latest = _batch_row(latest_row) if latest_row is not None else None
+    if latest is not None:
+        if latest.state is DiscoveryBatchState.SEALED:
+            raise DiscoveryReplayConflict("a sealed discovery generation cannot be replaced")
+        if latest.state not in {
+            DiscoveryBatchState.FAILED_TERMINAL,
+            DiscoveryBatchState.CANCELLED_UNSEALED,
+        }:
+            raise DiscoveryReplayConflict(
+                "an active discovery generation requires replace_discovery_batch"
+            )
+        if latest.replacement_batch_id is not None:
+            raise DiscoveryReplayConflict("the current terminal generation was already replaced")
+        if generation != latest.generation + 1:
+            raise DiscoveryReplayConflict("a replacement must use the next discovery generation")
     await conn.execute(
         text(
             """
@@ -428,8 +589,21 @@ async def create_discovery_batch(
         if existing is None:
             raise DiscoveryNotFound(f"discovery plan {plan_id} in workspace {workspace_id}")
         row = _batch_row(existing)
-    if row.discovery_plan_id != plan_id or row.generation != generation:
+    if row.id != batch_id or row.discovery_plan_id != plan_id or row.generation != generation:
         raise DiscoveryReplayConflict(f"discovery batch {batch_id} identity changed")
+    if latest is not None:
+        await conn.execute(
+            text(
+                "UPDATE discovery_batch SET replacement_batch_id = :replacement, "
+                "updated_at = now() WHERE workspace_id = :workspace_id AND id = :id "
+                "AND replacement_batch_id IS NULL"
+            ),
+            {
+                "replacement": row.id,
+                "workspace_id": workspace_id,
+                "id": latest.id,
+            },
+        )
     return row
 
 
@@ -444,6 +618,31 @@ async def get_discovery_batch(
                     "WHERE workspace_id = :workspace_id AND id = :id"
                 ),
                 {"workspace_id": workspace_id, "id": batch_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return _batch_row(row) if row is not None else None
+
+
+async def get_current_discovery_batch(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_run_id: ProjectRunId,
+    for_update: bool = False,
+) -> DiscoveryBatchRow | None:
+    suffix = " FOR UPDATE" if for_update else ""
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_BATCH_COLUMNS} FROM discovery_batch "
+                    "WHERE workspace_id = :workspace_id AND project_run_id = :project_run_id "
+                    f"ORDER BY generation DESC LIMIT 1{suffix}"
+                ),
+                {"workspace_id": workspace_id, "project_run_id": project_run_id},
             )
         )
         .mappings()
@@ -533,6 +732,168 @@ async def update_discovery_batch_state(
     row = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
     assert row is not None
     return row
+
+
+async def pause_discovery_batch(
+    conn: AsyncConnection, *, workspace_id: str, batch_id: DiscoveryBatchId
+) -> DiscoveryBatchRow:
+    batch = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
+    if batch is None:
+        raise DiscoveryNotFound(f"discovery batch {batch_id}")
+    if batch.state is DiscoveryBatchState.PAUSED_BY_USER:
+        return batch
+    if batch.state in {
+        DiscoveryBatchState.SEALED,
+        DiscoveryBatchState.FAILED_TERMINAL,
+        DiscoveryBatchState.CANCELLED_UNSEALED,
+    }:
+        raise DiscoveryReplayConflict(f"terminal batch {batch_id} cannot be paused")
+    return await update_discovery_batch_state(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=batch_id,
+        state=DiscoveryBatchState.PAUSED_BY_USER,
+    )
+
+
+async def resume_discovery_batch(
+    conn: AsyncConnection, *, workspace_id: str, batch_id: DiscoveryBatchId
+) -> DiscoveryBatchRow:
+    batch = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
+    if batch is None:
+        raise DiscoveryNotFound(f"discovery batch {batch_id}")
+    if batch.state is not DiscoveryBatchState.PAUSED_BY_USER:
+        return batch
+    # Leave the protected paused state, then use the one existing operation-folding function to
+    # derive the truthful resumable state. No operation identity or receipt is reset.
+    await update_discovery_batch_state(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=batch_id,
+        state=DiscoveryBatchState.PLANNED,
+    )
+    return await reconcile_discovery_batch_state(conn, workspace_id=workspace_id, batch_id=batch_id)
+
+
+async def _retire_discovery_wakes(
+    conn: AsyncConnection, *, workspace_id: str, batch_id: DiscoveryBatchId
+) -> None:
+    await conn.execute(
+        text(
+            "UPDATE discovery_wake_outbox "
+            "SET claimed_at = COALESCE(claimed_at, now()), "
+            "processed_at = COALESCE(processed_at, now()) "
+            "WHERE workspace_id = :workspace_id AND batch_id = :batch_id "
+            "AND processed_at IS NULL"
+        ),
+        {"workspace_id": workspace_id, "batch_id": batch_id},
+    )
+
+
+async def cancel_discovery_batch(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    batch_id: DiscoveryBatchId,
+    reason_code: str = "cancelled_by_user",
+) -> DiscoveryBatchRow:
+    if not reason_code.strip():
+        raise ValueError("discovery cancellation reason must be non-empty")
+    selected = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=batch_id)
+    if selected is None:
+        raise DiscoveryNotFound(f"discovery batch {batch_id}")
+    batch = await get_current_discovery_batch(
+        conn,
+        workspace_id=workspace_id,
+        project_run_id=selected.project_run_id,
+        for_update=True,
+    )
+    if batch is None or batch.id != batch_id:
+        raise DiscoveryReplayConflict(
+            "only the exact current discovery generation can be cancelled"
+        )
+    if batch.state is DiscoveryBatchState.CANCELLED_UNSEALED:
+        return batch
+    if batch.state in {DiscoveryBatchState.SEALED, DiscoveryBatchState.FAILED_TERMINAL}:
+        raise DiscoveryReplayConflict(f"terminal batch {batch_id} cannot be cancelled")
+    cancelled = await update_discovery_batch_state(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=batch_id,
+        state=DiscoveryBatchState.CANCELLED_UNSEALED,
+        failure_code=reason_code.strip(),
+    )
+    await _retire_discovery_wakes(conn, workspace_id=workspace_id, batch_id=batch_id)
+    return cancelled
+
+
+async def replace_discovery_batch(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    old_batch_id: DiscoveryBatchId,
+    new_batch_id: DiscoveryBatchId,
+    new_plan_id: DiscoveryPlanId,
+) -> DiscoveryBatchRow:
+    old = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=old_batch_id)
+    if old is None:
+        raise DiscoveryNotFound(f"discovery batch {old_batch_id}")
+    await conn.execute(
+        text(
+            "SELECT id FROM project_run WHERE id = :run_id AND workspace_id = :workspace_id "
+            "FOR UPDATE"
+        ),
+        {"run_id": old.project_run_id, "workspace_id": workspace_id},
+    )
+    current = await get_current_discovery_batch(
+        conn,
+        workspace_id=workspace_id,
+        project_run_id=old.project_run_id,
+        for_update=True,
+    )
+    if current is None or current.id != old_batch_id:
+        if old.replacement_batch_id == new_batch_id:
+            replay = await get_discovery_batch(
+                conn, workspace_id=workspace_id, batch_id=new_batch_id
+            )
+            if replay is not None and replay.discovery_plan_id == new_plan_id:
+                return replay
+        raise DiscoveryReplayConflict("only the exact current discovery generation can be replaced")
+    if current.state is DiscoveryBatchState.SEALED:
+        raise DiscoveryReplayConflict("a sealed discovery generation cannot be replaced")
+    new_plan = await get_discovery_plan(conn, workspace_id=workspace_id, plan_id=new_plan_id)
+    old_plan = await get_discovery_plan(
+        conn, workspace_id=workspace_id, plan_id=current.discovery_plan_id
+    )
+    if new_plan is None or old_plan is None:
+        raise DiscoveryNotFound("replacement discovery plan")
+    if (
+        new_plan.plan.project_run_id != current.project_run_id
+        or new_plan.plan.project_id != current.project_id
+        or new_plan.plan.icp_key != current.icp_key
+        or new_plan.plan.icp_version != current.icp_version
+        or new_plan.plan.plan_version <= old_plan.plan.plan_version
+    ):
+        raise DiscoveryReplayConflict("replacement plan lineage or version is invalid")
+    if current.state not in {
+        DiscoveryBatchState.FAILED_TERMINAL,
+        DiscoveryBatchState.CANCELLED_UNSEALED,
+    }:
+        await update_discovery_batch_state(
+            conn,
+            workspace_id=workspace_id,
+            batch_id=current.id,
+            state=DiscoveryBatchState.CANCELLED_UNSEALED,
+            failure_code="replaced_by_new_generation",
+        )
+        await _retire_discovery_wakes(conn, workspace_id=workspace_id, batch_id=current.id)
+    return await create_discovery_batch(
+        conn,
+        workspace_id=workspace_id,
+        batch_id=new_batch_id,
+        plan_id=new_plan_id,
+        generation=current.generation + 1,
+    )
 
 
 _OPERATION_COLUMNS = (
@@ -1023,6 +1384,17 @@ async def record_discovery_event(
                 "processing_disposition": DiscoveryEventDisposition.LATE_AFTER_SEAL,
             }
         )
+    elif batch_state in {
+        DiscoveryBatchState.FAILED_TERMINAL.value,
+        DiscoveryBatchState.CANCELLED_UNSEALED.value,
+    }:
+        event = DiscoveryProviderEvent.model_validate(
+            {
+                **event.model_dump(mode="python"),
+                "processed_at": event.processed_at or event.received_at,
+                "processing_disposition": DiscoveryEventDisposition.SUPERSEDED,
+            }
+        )
 
     event_id = uuid4()
     inserted = (
@@ -1150,7 +1522,10 @@ async def finish_discovery_event(
                 },
             )
         ).scalar_one_or_none()
-        if row == DiscoveryEventDisposition.LATE_AFTER_SEAL.value:
+        if row in {
+            DiscoveryEventDisposition.LATE_AFTER_SEAL.value,
+            DiscoveryEventDisposition.SUPERSEDED.value,
+        }:
             return
         if row != disposition.value:
             raise DiscoveryReplayConflict(
@@ -2461,7 +2836,12 @@ async def claim_due_discovery_wakes(
                     """
                 WITH due AS (
                     SELECT wake.id FROM discovery_wake_outbox wake
+                    JOIN discovery_batch batch
+                      ON batch.id = wake.batch_id AND batch.workspace_id = wake.workspace_id
                     WHERE wake.processed_at IS NULL AND wake.available_at <= :now
+                      AND batch.state NOT IN (
+                          'paused_by_user', 'failed_terminal', 'cancelled_unsealed', 'sealed'
+                      )
                       AND (wake.claimed_at IS NULL OR wake.claimed_at <= :stale_before)
                       AND (
                           CAST(:workspace_id AS text) IS NULL
@@ -2722,6 +3102,260 @@ async def claim_discovery_operation_reconciliation(
     return _operation_row(row) if row is not None else None
 
 
+_MANIFEST_COLUMNS = (
+    "batch_id, workspace_id, project_id, project_run_id, icp_key, icp_version, "
+    "discovery_plan_id, plan_sha256, generation, contract_version, "
+    "account_ids, claim_ids, raw_artifact_keys, coverage_payload, "
+    "account_manifest_artifact_key, account_manifest_sha256, "
+    "claim_manifest_artifact_key, claim_manifest_sha256, "
+    "raw_manifest_artifact_key, raw_manifest_sha256, "
+    "coverage_report_artifact_key, coverage_report_sha256, created_at"
+)
+
+
+def _manifest_bundle(row: Any) -> DiscoveryBatchManifestBundle:
+    data = dict(row)
+    data["account_ids"] = tuple(
+        EntityId(UUID(value)) for value in decode_jsonb(data["account_ids"])
+    )
+    data["claim_ids"] = tuple(UUID(value) for value in decode_jsonb(data["claim_ids"]))
+    data["raw_artifact_keys"] = tuple(decode_jsonb(data["raw_artifact_keys"]))
+    data["coverage_payload"] = decode_jsonb(data["coverage_payload"])
+    return DiscoveryBatchManifestBundle.model_validate(data)
+
+
+async def get_discovery_batch_manifest(
+    conn: AsyncConnection, *, workspace_id: str, batch_id: DiscoveryBatchId
+) -> DiscoveryBatchManifestBundle | None:
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_MANIFEST_COLUMNS} FROM discovery_batch_manifest "
+                    "WHERE workspace_id = :workspace_id AND batch_id = :batch_id"
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return _manifest_bundle(row) if row is not None else None
+
+
+async def discovery_manifest_members(
+    conn: AsyncConnection, *, workspace_id: str, batch_id: DiscoveryBatchId
+) -> tuple[tuple[EntityId, ...], tuple[UUID, ...], tuple[str, ...]]:
+    account_ids = tuple(
+        EntityId(value)
+        for value in (
+            await conn.execute(
+                text(
+                    "SELECT DISTINCT survivor_entity_id FROM discovery_candidate_link "
+                    "WHERE workspace_id = :workspace_id AND batch_id = :batch_id "
+                    "AND admission_status IN ('admitted', 'merged') "
+                    "ORDER BY survivor_entity_id"
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        ).scalars()
+    )
+    claim_ids = tuple(
+        UUID(str(value))
+        for value in (
+            await conn.execute(
+                text(
+                    "SELECT DISTINCT edge.claim_id FROM discovery_field_claim edge "
+                    "JOIN discovery_field_resolution resolution "
+                    "ON resolution.id = edge.resolution_id "
+                    "AND resolution.workspace_id = edge.workspace_id "
+                    "WHERE resolution.workspace_id = :workspace_id "
+                    "AND resolution.batch_id = :batch_id ORDER BY edge.claim_id"
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        ).scalars()
+    )
+    raw_keys = tuple(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    """
+                    WITH operations AS (
+                        SELECT * FROM discovery_operation
+                        WHERE workspace_id = :workspace_id AND batch_id = :batch_id
+                    ), refs AS (
+                        SELECT ref.key
+                        FROM operations operation
+                        CROSS JOIN LATERAL (VALUES
+                            (operation.submitted_receipt_ref),
+                            (operation.final_receipt_ref),
+                            (operation.raw_request_artifact_key),
+                            (operation.raw_response_manifest_key)
+                        ) ref(key)
+                        WHERE ref.key IS NOT NULL
+                        UNION
+                        SELECT event.payload_artifact_key
+                        FROM discovery_provider_event event
+                        WHERE event.workspace_id = :workspace_id
+                          AND event.operation_id IN (SELECT id FROM operations)
+                          AND event.processing_disposition NOT IN (
+                              'late_after_seal', 'superseded'
+                          )
+                        UNION
+                        SELECT page.payload_artifact_key
+                        FROM discovery_page_receipt page
+                        WHERE page.workspace_id = :workspace_id
+                          AND page.operation_id IN (SELECT id FROM operations)
+                        UNION
+                        SELECT item.raw_artifact_key
+                        FROM discovery_item_snapshot item
+                        WHERE item.workspace_id = :workspace_id
+                          AND item.operation_id IN (SELECT id FROM operations)
+                    )
+                    SELECT key FROM refs ORDER BY key
+                    """
+                ),
+                {"workspace_id": workspace_id, "batch_id": batch_id},
+            )
+        ).scalars()
+    )
+    return account_ids, claim_ids, raw_keys
+
+
+async def put_discovery_batch_manifest(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    bundle: DiscoveryBatchManifestBundle,
+) -> DiscoveryBatchManifestBundle:
+    if bundle.workspace_id != workspace_id:
+        raise ValueError("discovery manifest workspace does not match repository scope")
+    existing = await get_discovery_batch_manifest(
+        conn, workspace_id=workspace_id, batch_id=bundle.batch_id
+    )
+    if existing is not None:
+        if existing.model_copy(update={"created_at": None}) != bundle.model_copy(
+            update={"created_at": None}
+        ):
+            raise DiscoveryReplayConflict("discovery batch manifest content changed")
+        return existing
+    batch = await get_discovery_batch(conn, workspace_id=workspace_id, batch_id=bundle.batch_id)
+    if batch is None:
+        raise DiscoveryNotFound(f"discovery batch {bundle.batch_id}")
+    if batch.state in {
+        DiscoveryBatchState.SEALED,
+        DiscoveryBatchState.FAILED_TERMINAL,
+        DiscoveryBatchState.CANCELLED_UNSEALED,
+    }:
+        raise DiscoveryReplayConflict(
+            f"batch {bundle.batch_id} in state {batch.state.value} cannot create final manifests"
+        )
+    plan_row = await get_discovery_plan(
+        conn, workspace_id=workspace_id, plan_id=batch.discovery_plan_id
+    )
+    if plan_row is None:
+        raise DiscoveryNotFound(f"discovery plan {batch.discovery_plan_id}")
+    if (
+        bundle.project_id != batch.project_id
+        or bundle.project_run_id != batch.project_run_id
+        or bundle.icp_key != batch.icp_key
+        or bundle.icp_version != batch.icp_version
+        or bundle.discovery_plan_id != batch.discovery_plan_id
+        or bundle.plan_sha256 != plan_row.plan_sha256
+        or bundle.generation != batch.generation
+    ):
+        raise DiscoveryReplayConflict("discovery manifest lineage does not match its batch")
+    account_ids, claim_ids, raw_keys = await discovery_manifest_members(
+        conn, workspace_id=workspace_id, batch_id=bundle.batch_id
+    )
+    if (
+        bundle.account_ids != account_ids
+        or bundle.claim_ids != claim_ids
+        or bundle.raw_artifact_keys != raw_keys
+    ):
+        raise DiscoveryReplayConflict("discovery manifest members differ from durable ledgers")
+    coverage = bundle.coverage_payload
+    required_coverage = {
+        "contract": "discovery-coverage-report-v1",
+        "workspace_id": workspace_id,
+        "discovery_batch_id": str(batch.id),
+        "project_id": batch.project_id,
+        "project_run_id": str(batch.project_run_id),
+        "generation": batch.generation,
+        "admitted_account_count": len(account_ids),
+    }
+    if any(coverage.get(key) != value for key, value in required_coverage.items()):
+        raise DiscoveryReplayConflict("discovery coverage payload lineage or counts changed")
+    readiness = await read_discovery_seal_readiness(
+        conn, workspace_id=workspace_id, batch_id=bundle.batch_id
+    )
+    blockers = tuple(
+        blocker
+        for blocker in evaluate_discovery_seal(readiness).blockers
+        if blocker is not DiscoverySealBlocker.FINAL_MANIFESTS
+    )
+    if blockers:
+        raise DiscoverySealBlocked(blockers)
+    await conn.execute(
+        text(
+            """
+            INSERT INTO discovery_batch_manifest (
+                batch_id, workspace_id, project_id, project_run_id, icp_key, icp_version,
+                discovery_plan_id, plan_sha256, generation, contract_version,
+                account_ids, claim_ids, raw_artifact_keys, coverage_payload,
+                account_manifest_artifact_key, account_manifest_sha256,
+                claim_manifest_artifact_key, claim_manifest_sha256,
+                raw_manifest_artifact_key, raw_manifest_sha256,
+                coverage_report_artifact_key, coverage_report_sha256
+            ) VALUES (
+                :batch_id, :workspace_id, :project_id, :project_run_id, :icp_key, :icp_version,
+                :discovery_plan_id, :plan_sha256, :generation,
+                :contract_version, CAST(:account_ids AS jsonb), CAST(:claim_ids AS jsonb),
+                CAST(:raw_artifact_keys AS jsonb), CAST(:coverage_payload AS jsonb),
+                :account_manifest_artifact_key, :account_manifest_sha256,
+                :claim_manifest_artifact_key, :claim_manifest_sha256,
+                :raw_manifest_artifact_key, :raw_manifest_sha256,
+                :coverage_report_artifact_key, :coverage_report_sha256
+            ) ON CONFLICT (batch_id) DO NOTHING
+            """
+        ),
+        {
+            **bundle.model_dump(
+                mode="python",
+                exclude={
+                    "account_ids",
+                    "claim_ids",
+                    "raw_artifact_keys",
+                    "coverage_payload",
+                    "created_at",
+                },
+            ),
+            "account_ids": serialize_value_json(
+                cast(JsonValue, [str(value) for value in bundle.account_ids])
+            ),
+            "claim_ids": serialize_value_json(
+                cast(JsonValue, [str(value) for value in bundle.claim_ids])
+            ),
+            "raw_artifact_keys": serialize_value_json(
+                cast(JsonValue, list(bundle.raw_artifact_keys))
+            ),
+            "coverage_payload": serialize_value_json(cast(JsonValue, bundle.coverage_payload)),
+        },
+    )
+    stored = await get_discovery_batch_manifest(
+        conn, workspace_id=workspace_id, batch_id=bundle.batch_id
+    )
+    if stored is None:
+        raise DiscoveryNotFound(f"discovery batch manifest {bundle.batch_id}")
+    if stored.model_copy(update={"created_at": None}) != bundle.model_copy(
+        update={"created_at": None}
+    ):
+        raise DiscoveryReplayConflict("discovery batch manifest content changed")
+    return stored
+
+
 _READINESS_SQL = text(
     """
     WITH target AS (
@@ -2747,6 +3381,43 @@ _READINESS_SQL = text(
         CROSS JOIN LATERAL jsonb_array_elements_text(
             target.plan_json -> 'required_account_fields'
         ) required(value)
+    ), manifest AS (
+        SELECT bundle.*
+        FROM discovery_batch_manifest bundle
+        WHERE bundle.workspace_id = :workspace_id AND bundle.batch_id = :batch_id
+    ), manifest_claims AS (
+        SELECT DISTINCT field_claim.claim_id
+        FROM discovery_field_claim field_claim
+        JOIN discovery_field_resolution resolution
+          ON resolution.id = field_claim.resolution_id
+         AND resolution.workspace_id = field_claim.workspace_id
+        WHERE resolution.workspace_id = :workspace_id AND resolution.batch_id = :batch_id
+    ), raw_artifacts AS (
+        SELECT ref.key
+        FROM operations operation
+        CROSS JOIN LATERAL (VALUES
+            (operation.submitted_receipt_ref),
+            (operation.final_receipt_ref),
+            (operation.raw_request_artifact_key),
+            (operation.raw_response_manifest_key)
+        ) ref(key)
+        WHERE ref.key IS NOT NULL
+        UNION
+        SELECT event.payload_artifact_key
+        FROM discovery_provider_event event
+        WHERE event.workspace_id = :workspace_id
+          AND event.operation_id IN (SELECT id FROM operations)
+          AND event.processing_disposition NOT IN ('late_after_seal', 'superseded')
+        UNION
+        SELECT page.payload_artifact_key
+        FROM discovery_page_receipt page
+        WHERE page.workspace_id = :workspace_id
+          AND page.operation_id IN (SELECT id FROM operations)
+        UNION
+        SELECT item.raw_artifact_key
+        FROM discovery_item_snapshot item
+        WHERE item.workspace_id = :workspace_id
+          AND item.operation_id IN (SELECT id FROM operations)
     )
     SELECT
         EXISTS (
@@ -3010,31 +3681,71 @@ _READINESS_SQL = text(
             SELECT 1 FROM operations WHERE spend_outcome IN ('unknown', 'not_dispatched')
         ) AS spend_reconciled,
 
-        CAST(:account_manifest AS text) IS NOT NULL
-        AND CAST(:raw_manifest AS text) IS NOT NULL
-        AND CAST(:claim_manifest AS text) IS NOT NULL
-        AND CAST(:coverage_ref AS text) IS NOT NULL
-        AND NOT EXISTS (
-            SELECT required.key
-            FROM (VALUES
-                (CAST(:account_manifest AS text)),
-                (CAST(:raw_manifest AS text)),
-                (CAST(:claim_manifest AS text)),
-                (CAST(:coverage_ref AS text))
-            ) required(key)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM artifact
-                WHERE artifact.storage_key = required.key
-                  AND artifact.workspace_id = :workspace_id
-                  AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
-            )
-        )
-        AND EXISTS (
-            SELECT 1 FROM artifact
-            WHERE artifact.storage_key = CAST(:account_manifest AS text)
-              AND artifact.workspace_id = :workspace_id
-              AND artifact.content_sha256 = CAST(:account_manifest_sha256 AS text)
-              AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
+        EXISTS (
+            SELECT 1
+            FROM manifest bundle
+            CROSS JOIN target
+            WHERE bundle.project_run_id = target.project_run_id
+              AND bundle.project_id = target.project_id
+              AND bundle.icp_key = target.icp_key
+              AND bundle.icp_version = target.icp_version
+              AND bundle.discovery_plan_id = target.discovery_plan_id
+              AND bundle.plan_sha256 = target.plan_sha256
+              AND bundle.generation = target.generation
+              AND bundle.contract_version = 'discovery-batch-manifest-v1'
+              AND bundle.account_manifest_artifact_key = CAST(:account_manifest AS text)
+              AND bundle.account_manifest_sha256 = CAST(:account_manifest_sha256 AS text)
+              AND bundle.raw_manifest_artifact_key = CAST(:raw_manifest AS text)
+              AND bundle.claim_manifest_artifact_key = CAST(:claim_manifest AS text)
+              AND bundle.coverage_report_artifact_key = CAST(:coverage_ref AS text)
+              AND jsonb_array_length(bundle.account_ids) = (SELECT count(*) FROM admitted)
+              AND NOT EXISTS (
+                  SELECT 1 FROM admitted
+                  WHERE NOT bundle.account_ids ? admitted.account_entity_id::text
+              )
+              AND jsonb_array_length(bundle.claim_ids) = (SELECT count(*) FROM manifest_claims)
+              AND NOT EXISTS (
+                  SELECT 1 FROM manifest_claims
+                  WHERE NOT bundle.claim_ids ? manifest_claims.claim_id::text
+              )
+              AND jsonb_array_length(bundle.raw_artifact_keys) =
+                  (SELECT count(*) FROM raw_artifacts)
+              AND NOT EXISTS (
+                  SELECT 1 FROM raw_artifacts
+                  WHERE NOT bundle.raw_artifact_keys ? raw_artifacts.key
+              )
+              AND bundle.coverage_payload ->> 'contract' = 'discovery-coverage-report-v1'
+              AND bundle.coverage_payload ->> 'workspace_id' = target.workspace_id
+              AND bundle.coverage_payload ->> 'discovery_batch_id' = target.id::text
+              AND bundle.coverage_payload ->> 'project_run_id' = target.project_run_id::text
+              AND bundle.coverage_payload ->> 'project_id' = target.project_id
+              AND (bundle.coverage_payload ->> 'generation')::integer = target.generation
+              AND (bundle.coverage_payload ->> 'admitted_account_count')::integer =
+                  (SELECT count(*) FROM admitted)
+              AND NOT EXISTS (
+                  SELECT 1 FROM (VALUES
+                      (bundle.account_manifest_artifact_key, bundle.account_manifest_sha256),
+                      (bundle.claim_manifest_artifact_key, bundle.claim_manifest_sha256),
+                      (bundle.raw_manifest_artifact_key, bundle.raw_manifest_sha256),
+                      (bundle.coverage_report_artifact_key, bundle.coverage_report_sha256)
+                  ) required(key, sha256)
+                  WHERE NOT EXISTS (
+                      SELECT 1 FROM artifact
+                      WHERE artifact.storage_key = required.key
+                        AND artifact.workspace_id = :workspace_id
+                        AND artifact.content_sha256 = required.sha256
+                        AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
+                  )
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM raw_artifacts raw
+                  WHERE NOT EXISTS (
+                      SELECT 1 FROM artifact
+                      WHERE artifact.storage_key = raw.key
+                        AND artifact.workspace_id = :workspace_id
+                        AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
+                  )
+              )
         ) AS final_manifests_exist
     """
 )
@@ -3119,6 +3830,14 @@ async def seal_discovery_batch(
     if existing is not None:
         _assert_seal_draft_matches(existing, draft)
         return existing
+
+    manifest = await get_discovery_batch_manifest(
+        conn, workspace_id=workspace_id, batch_id=batch_id
+    )
+    if manifest is None:
+        raise DiscoverySealBlocked((DiscoverySealBlocker.FINAL_MANIFESTS,))
+    if manifest.seal_draft != draft:
+        raise DiscoverySealConflict("seal draft differs from immutable discovery manifest bundle")
 
     readiness = await read_discovery_seal_readiness(
         conn, workspace_id=workspace_id, batch_id=batch_id, draft=draft
@@ -3328,6 +4047,9 @@ async def get_discovery_batch_status(
     if batch is None:
         raise DiscoveryNotFound(f"discovery batch {batch_id}")
     seal = await get_discovery_batch_seal(conn, workspace_id=workspace_id, batch_id=batch_id)
+    manifest = await get_discovery_batch_manifest(
+        conn, workspace_id=workspace_id, batch_id=batch_id
+    )
     draft = (
         DiscoverySealDraft(
             account_manifest_artifact_key=seal.account_manifest_artifact_key,
@@ -3337,7 +4059,7 @@ async def get_discovery_batch_status(
             coverage_report_ref=seal.coverage_report_ref,
         )
         if seal is not None
-        else None
+        else (manifest.seal_draft if manifest is not None else None)
     )
     readiness = await read_discovery_seal_readiness(
         conn, workspace_id=workspace_id, batch_id=batch_id, draft=draft
