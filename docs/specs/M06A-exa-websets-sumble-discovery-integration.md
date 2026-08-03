@@ -896,7 +896,8 @@ selected accounts and writes seal/run-bound tier decisions without synthetic fit
 
 ### Slice D6 — Full live Exa discovery acceptance
 
-**Status:** not implemented. The D5 review and repair do not claim or substitute for this slice.
+**Status:** `PASS` on 2026-08-03. The implementation and live/replay evidence are recorded in
+`docs/specs/M06A-D6-production-composition-acceptance.md`.
 
 **Purpose:** Prove the complete production composition, not isolated adapters.
 
@@ -920,6 +921,12 @@ LinkedIn URL + revenue-band enrichments, optional email/phone enabled only after
 
 Failure of any row leaves D6 open. Exit code zero, “completed,” or a green fixture suite is not a
 substitute for this evidence.
+
+**Observed scoring-bypass result:** both live accounts passed all three required Exa criteria, but
+required discovery fields remained terminally missing. The project correctly paused at the human
+checkpoint with `selected=0, hold=2, excluded=0`, wrote no numeric scores, and did not enter deep
+research. The positive selected -> approved -> deep path remains database-backed; the live holds
+are inputs to the later Sumble gap waterfall, not grounds for weakening the admission policy.
 
 ### Slice E1 — Targeted Exa import enrichment for selected accounts
 
