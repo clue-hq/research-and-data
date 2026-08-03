@@ -77,6 +77,13 @@ _OUTSTANDING_SQL = text(
           AND operation.state NOT IN (
               'succeeded', 'failed_terminal', 'spend_outcome_unknown', 'cancelled'
           )
+        UNION ALL
+        SELECT operation.cost_cents_reserved AS reserved
+        FROM committee_acquisition_operation operation
+        WHERE operation.project_run_id = :project_run_id
+          AND operation.state NOT IN (
+              'ready', 'failed_terminal', 'spend_outcome_unknown', 'cancelled'
+          )
     ) reservations
     """
 )

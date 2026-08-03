@@ -27,6 +27,19 @@ from clue_core.account_gap_enrichment import (
     new_account_gap_operation_id,
 )
 from clue_core.claim import Claim, DiscoveryProvenance, can_be_promoted, reference_time
+from clue_core.committee_acquisition import (
+    CommitteeAcquisitionAttempt,
+    CommitteeAcquisitionOperation,
+    CommitteeAcquisitionOperationId,
+    CommitteeAcquisitionRequest,
+    CommitteeAcquisitionSnapshot,
+    CommitteeAcquisitionState,
+    CommitteeAttemptKind,
+    CommitteeAttemptState,
+    CommitteeSnapshotState,
+    CommitteeSpendOutcome,
+    new_committee_acquisition_operation_id,
+)
 from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_core.coverage import (
     CoverageAttemptId,
@@ -439,6 +452,18 @@ __all__ = [
     "AccountGapSnapshotState",
     "AccountGapSpendOutcome",
     "new_account_gap_operation_id",
+    # durable Sumble committee acquisition (M6A S2B)
+    "CommitteeAcquisitionAttempt",
+    "CommitteeAcquisitionOperation",
+    "CommitteeAcquisitionOperationId",
+    "CommitteeAcquisitionRequest",
+    "CommitteeAcquisitionSnapshot",
+    "CommitteeAcquisitionState",
+    "CommitteeAttemptKind",
+    "CommitteeAttemptState",
+    "CommitteeSnapshotState",
+    "CommitteeSpendOutcome",
+    "new_committee_acquisition_operation_id",
     # durable asynchronous discovery contracts (M6A D0)
     "FIRST_PAGE_CURSOR",
     "SEAL_TERMINAL_FIELD_STATES",
