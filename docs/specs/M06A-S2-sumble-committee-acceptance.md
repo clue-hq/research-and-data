@@ -3,6 +3,7 @@
 - **Parent boundary:** `M06A-exa-websets-sumble-discovery-integration.md`, Slice S2
 - **Expanded roadmap:** `M8B-exa-sumble-account-deep-integration-roadmap.md`, A0 and S2A
 - **Implementation branch:** `platform/c8-account-profiling-integration`
+- **Implementation commit:** `2810dcf`
 - **S1 dependency:** consume commit `ae05542`; do not rebuild S1 in this slice
 - **Provider API:** Sumble REST `v9`
 - **Pinned OpenAPI SHA-256:**
