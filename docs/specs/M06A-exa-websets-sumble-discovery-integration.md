@@ -844,6 +844,11 @@ created.
 
 ### Slice D4 — Identity admission and discovery-field materialization
 
+**Implementation record:** `docs/specs/M06A-D4-exa-identity-field-materialization.md` records the
+snapshot-only composition boundary, approved company-field mappings, M2 admission and durable
+review continuation, transitive survivor replay, append-only claim/artifact evidence, field
+resolution policy, and the exact adversarial/live acceptance matrix.
+
 **Purpose:** Turn provider items into canonical accounts and typed claims without losing evidence.
 
 **Deliverables:**

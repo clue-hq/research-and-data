@@ -202,14 +202,17 @@ class DiscoveryNormalizationState(StrEnum):
 
 
 class DiscoveryCandidateAdmissionState(StrEnum):
-    """Terminal identity disposition for one provider item.
+    """Identity disposition for one provider item.
 
     ``ADMITTED`` means the source item resolved directly to its surviving workspace-local account;
     ``MERGED`` means it first resolved to another candidate that was collapsed into the survivor.
-    ``EXCLUDED`` is an honest terminal non-admission.  Only ``PENDING`` blocks the batch seal.
+    ``REVIEW_REQUIRED`` retains the exact M2 review task and blocks the batch rather than guessing.
+    ``EXCLUDED`` is an honest terminal non-admission. ``PENDING`` and ``REVIEW_REQUIRED`` block the
+    batch seal.
     """
 
     PENDING = "pending"
+    REVIEW_REQUIRED = "review_required"
     ADMITTED = "admitted"
     MERGED = "merged"
     EXCLUDED = "excluded"
@@ -220,6 +223,7 @@ class DiscoveryWakeReason(StrEnum):
     PROVIDER_EVENT = "provider_event"
     MANUAL_RECONCILE = "manual_reconcile"
     CRASH_RECOVERY = "crash_recovery"
+    FIELD_MATERIALIZATION = "field_materialization"
 
 
 class DiscoveryErrorCode(StrEnum):
@@ -494,6 +498,8 @@ class DiscoveryOperation(BaseModel):
     cost_cents_charged: CostCents = Decimal(0)
     started_at: UtcDatetime | None = None
     terminal_at: UtcDatetime | None = None
+    final_reconciled_at: UtcDatetime | None = None
+    pagination_exhausted_at: UtcDatetime | None = None
 
     @model_validator(mode="after")
     def _validate_lifecycle_and_spend(self) -> DiscoveryOperation:

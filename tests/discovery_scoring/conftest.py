@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -56,12 +57,17 @@ def candidate(
     matched_channel: str = "exa",
     record_ref: str = "rec:1",
     domain: str | None = None,
+    geo: dict[str, JsonValue] | None = None,
     name: str | None = None,
     url: str | None = None,
     signal: str = "series-b saas",
     confidence: float = 0.8,
     cost_cents: Decimal = Decimal(0),
     seed_entity_id: EntityId | None = None,
+    artifact_key: str | None = None,
+    evidence_span: str | None = None,
+    discovery_evidence: dict[str, JsonValue] | None = None,
+    observed_at: datetime | None = None,
 ) -> CandidateHypothesis:
     """Build a grounded :class:`CandidateHypothesis` (the M6.1 output the gate admits)."""
     return CandidateHypothesis(
@@ -69,11 +75,16 @@ def candidate(
         source_record_ref=record_ref,
         source_url=url,
         candidate_domain=domain,
+        candidate_geo=geo,
         raw_name=name,
         matched_signal=signal,
         resolver_confidence=confidence,
         cost_cents=cost_cents,
         seed_entity_id=seed_entity_id,
+        artifact_key=artifact_key,
+        evidence_span=evidence_span,
+        discovery_evidence=discovery_evidence or {},
+        observed_at=observed_at,
     )
 
 

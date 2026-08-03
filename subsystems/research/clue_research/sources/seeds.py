@@ -62,6 +62,34 @@ def _entry(
 
 # Tier-1 deterministic structured providers (substrate §4/§12; "real verifiable data, zero LLM").
 SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
+    # Exa Websets is a structured API transport over Exa's web verification/research system. The
+    # API transport does not make every returned web fact tier 1: field materialization chooses the
+    # claim tier from its references. The manifest tier is the conservative discovery-provenance
+    # default only (discovery claims never win current-value merge).
+    _entry(
+        "exa_websets",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=2,
+        yields=(
+            "core.account_name",
+            "core.primary_domain",
+            "core.employee_count",
+            "core.industry",
+            "core.company_about",
+            "core.hq_location",
+            "core.annual_revenue",
+            "core.revenue_band",
+            "core.company_linkedin_url",
+            "core.company_email",
+            "core.company_phone",
+            "account.total_funding",
+            "account.recent_funding",
+        ),
+        provider="exa",
+        auth_ref="CLUE_EXA_API_KEY",
+        freshness_profile="operation_window",
+    ),
     _entry(
         "clay",
         modality=Modality.STRUCTURED,
