@@ -29,7 +29,7 @@ from typing import Any, TypeVar, overload
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict
 
-from clue_core import EntityId, EntityType, ProjectRunId
+from clue_core import EntityId, EntityType, ProjectRunId, ResearchDirectivePin
 from clue_locks import DEFAULT_TTL_MS, entity_lock
 from clue_research.durable.graph import AccountResearchGraph, AccountRunResult
 
@@ -50,6 +50,7 @@ class AccountSpec(BaseModel):
     tier: str
     workspace_id: str | None = None
     field_keys: tuple[str, ...] | None = None
+    research_directive: ResearchDirectivePin | None = None
 
 
 # A per-account callback the deep handler (M8A.2) supplies to drive a *custom* pipeline — the M8A.1
@@ -171,11 +172,13 @@ class AccountScheduler:
         project_run_id: ProjectRunId,
         checkpointer: BaseCheckpointSaver[Any],
     ) -> AccountRunResult:
-        return await self._graph.run(
-            spec.entity_id,
-            tier=spec.tier,
-            project_run_id=project_run_id,
-            checkpointer=checkpointer,
-            workspace_id=spec.workspace_id,
-            field_keys=spec.field_keys,
-        )
+        kwargs: dict[str, Any] = {
+            "tier": spec.tier,
+            "project_run_id": project_run_id,
+            "checkpointer": checkpointer,
+            "workspace_id": spec.workspace_id,
+            "field_keys": spec.field_keys,
+        }
+        if spec.research_directive is not None:
+            kwargs["research_directive"] = spec.research_directive
+        return await self._graph.run(spec.entity_id, **kwargs)

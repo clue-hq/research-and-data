@@ -106,6 +106,14 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("confirmed_stage0_context_not_found",),
     ),
+    "draft_account_research_directive": (
+        "precondition",
+        ("memory_write_not_configured",),
+    ),
+    "confirm_account_research_directive": (
+        "precondition",
+        ("research_directive_not_found",),
+    ),
 }
 
 
@@ -261,6 +269,36 @@ def _bodies() -> dict[str, dict[str, object]]:
             "readiness_decision_id": _UUID(),
             "icp_key": "matrix",
             "icp_version": 1,
+        },
+        "draft_account_research_directive": {
+            "project_id": "project_missing",
+            "product_id": "product_missing",
+            "icp_key": "matrix",
+            "icp_version": 1,
+            "body": {
+                "account_scope": {"explicit_account_ids": [_UUID()]},
+                "field_keys": ["account.strategic_moves"],
+                "committee_plan": {},
+                "source_policy": {"allowed_source_keys": ["exa_deep"]},
+                "privacy_policy": {},
+                "effort_policy": {
+                    "tier": "top",
+                    "max_depth": 1,
+                    "max_fanout": 2,
+                    "budget_cap_cents": "100",
+                    "budget_envelope_ref": "budget:matrix",
+                    "recursion_policy_ref": "recursion:matrix",
+                    "freshness_policy_ref": "freshness:matrix",
+                },
+            },
+            "user_instruction": "Research the named account.",
+            "source_turn_ref": "turn:matrix",
+        },
+        "confirm_account_research_directive": {
+            "directive_id": _UUID(),
+            "expected_sha256": "0" * 64,
+            "confirmed_by": "human:matrix",
+            "confirming_turn_ref": "turn:matrix-confirm",
         },
     }
 
@@ -651,10 +689,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
     # 35 → 37 names with PC-C8's two read-only inspection tools, then 38 with E1's explicit
-    # targeted-enrichment boundary, then 39 with S1's explicit Sumble gap boundary; the two
+    # targeted-enrichment boundary, 39 with S1's explicit Sumble gap boundary, and 41 with A2's
+    # draft/human-confirm direction tools; the two
     # proposal writes and research_account_gaps retain @1 compatibility contracts alongside @2.
-    assert len(registry.names()) == 39
-    assert len(registry) == 42
+    assert len(registry.names()) == 41
+    assert len(registry) == 44
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

@@ -308,6 +308,7 @@ class CommitteeEligibilityService:
             and authorization.committee_plan_ref == request.committee_plan_ref
             and request.research_direction_ref is not None
             and authorization.research_direction_ref == request.research_direction_ref
+            and authorization.research_directive == request.research_directive
         )
         if not authorization_matches:
             plan_reasons.append("confirmed_directive_lineage_mismatch")

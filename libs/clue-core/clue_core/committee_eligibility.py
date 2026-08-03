@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 from clue_core.committee_acquisition import CommitteeAcquisitionOperationId
 from clue_core.enums import UseClass
 from clue_core.primitives import EntityId, ProjectRunId, UtcDatetime
+from clue_core.research_directive import ResearchDirectivePin
 
 CommitteeEligibilityDecisionId = NewType("CommitteeEligibilityDecisionId", UUID)
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -53,6 +54,7 @@ class CommitteeExecutionAuthorization(BaseModel):
     project_run_id: ProjectRunId
     account_id: EntityId
     research_direction_ref: NonEmptyStr
+    research_directive: ResearchDirectivePin | None = None
     committee_plan_ref: NonEmptyStr
     confirmation_ref: NonEmptyStr
     confirmed_by_human: bool
@@ -71,6 +73,10 @@ class CommitteeExecutionAuthorization(BaseModel):
             raise ValueError("committee authorization use classes must be unique")
         if self.contact_reveals_allowed:
             raise ValueError("S2 committee acquisition authorization cannot allow contact reveals")
+        if self.research_directive is not None and (
+            self.research_direction_ref != self.research_directive.directive_ref
+        ):
+            raise ValueError("committee authorization directive ref and exact pin must agree")
         return self
 
     @property

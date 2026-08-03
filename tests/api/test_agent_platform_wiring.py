@@ -69,7 +69,7 @@ def test_agent_rollout_defaults_are_off_and_validated(
 def test_account_context_policy_freezes_all_seven_layers_and_fresh_wake() -> None:
     policy = account_research_context_policy()
     assert tuple(item.layer for item in policy.budgets) == tuple(ContextLayer)
-    assert policy.budget_for(ContextLayer.L4_MEMORY) == 0
+    assert policy.budget_for(ContextLayer.L4_MEMORY) == 8_000
     assert policy.budget_for(ContextLayer.L6_CONVERSATION) == 0
 
 

@@ -291,12 +291,15 @@ class AccountDeepOrchestrator:
         run_id = deep_account_run_id(project_run_id, spec.entity_id)
         workspace_id = spec.workspace_id or self._spec.workspace_id
 
-        await self._io.ensure(
-            account_run_id=run_id,
-            project_run_id=project_run_id,
-            entity_id=spec.entity_id,
-            tier=spec.tier,
-        )
+        ensure_args: dict[str, object] = {
+            "account_run_id": run_id,
+            "project_run_id": project_run_id,
+            "entity_id": spec.entity_id,
+            "tier": spec.tier,
+        }
+        if spec.research_directive is not None:
+            ensure_args["research_directive"] = spec.research_directive
+        await self._io.ensure(**ensure_args)  # type: ignore[arg-type]
         state = await self._io.load(run_id)
         refs: dict[str, list[str]] = {k: list(v) for k, v in state.references_index.items()}
         cost = state.cost_cents
@@ -313,20 +316,23 @@ class AccountDeepOrchestrator:
         # explicit kwargs (no AspectContext / ctx.params), so the planner loads the spec and the
         # tenant-private resonance writes bind their tenant without the "#2" graph param-threading.
         if done is None:
-            account_result = await self._profile_account(
-                account_entity_id=spec.entity_id,
-                spec=self._spec,
-                tier=spec.tier,
-                run_id=run_id,
-                project_run_id=project_run_id,
-                workspace_id=workspace_id,
-                budget_cap_cents=self._budget_cap_cents,
-                recursion_policy=self._recursion_policy,
-                gateway=self._gateway,
-                planner_model=self._planner_model,
-                pre_spend_gate=self._pre_spend_gate,
-                synthesis_guard=self._synthesis_guard,
-            )
+            profile_args: dict[str, object] = {
+                "account_entity_id": spec.entity_id,
+                "spec": self._spec,
+                "tier": spec.tier,
+                "run_id": run_id,
+                "project_run_id": project_run_id,
+                "workspace_id": workspace_id,
+                "budget_cap_cents": self._budget_cap_cents,
+                "recursion_policy": self._recursion_policy,
+                "gateway": self._gateway,
+                "planner_model": self._planner_model,
+                "pre_spend_gate": self._pre_spend_gate,
+                "synthesis_guard": self._synthesis_guard,
+            }
+            if spec.research_directive is not None:
+                profile_args["research_directive"] = spec.research_directive
+            account_result = await self._profile_account(**profile_args)
             if account_result.status is WorkerStatus.FAILED and not account_result.aspects:
                 # The account did not resolve (``profile_account`` returns FAILED with no aspects
                 # when the entity is absent, cost 0). Committee/contact have no account to target,
