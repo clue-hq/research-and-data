@@ -35,7 +35,13 @@ from clue_core import (
     VolunteeredStatementId,
     new_run_id,
 )
-from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim, supersede_claim
+from clue_research.claimstore import (
+    SOURCE_CLIENT_INTERVIEW_JUDGED,
+    WorkspaceScope,
+    claims_by_ids,
+    insert_claim,
+    supersede_claim,
+)
 from clue_research.identity import get_account, get_contact
 from clue_research.sources import RegistrySourceManifest, register_source
 from clue_research.stage0.governed import StatementRoute, record_statement
@@ -389,14 +395,8 @@ class InterviewRoutingResult(BaseModel):
 
 #: The client's own words, admitted because the value is literally inside the cited span.
 SOURCE_CLIENT_INTERVIEW = "client_interview"
-#: The client's own words, admitted because the M9.3 faithfulness judge found the cited span
-#: entails a *typed* value that cannot appear verbatim in prose (PC-C8 §6c-b). Same conversation,
-#: same tier, same evidence span — a different way of earning entry, and `claim.source_key` is
-#: where that stays visible per claim. (`extraction_method` cannot carry it: its enum is closed and
-#: `llm_synthesis` is pinned to tier 4 by a DB CHECK, which this claim is not.) The matching
-#: `faithfulness_verdict` row is the deep provenance; see `entailment_judgment_id` at the api root
-#: for how a claim is joined back to the verdict that admitted it.
-SOURCE_CLIENT_INTERVIEW_JUDGED = "client_interview_judged"
+# ``SOURCE_CLIENT_INTERVIEW_JUDGED`` is imported from claimstore beside the authoritative A→(Q,A)
+# mapping. Stage 0 re-exports it for compatibility, but does not own a duplicate discriminator.
 
 _INTERVIEW_SOURCES = (SOURCE_CLIENT_INTERVIEW, SOURCE_CLIENT_INTERVIEW_JUDGED)
 

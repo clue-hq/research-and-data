@@ -24,7 +24,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ClaimId, decode_jsonb
+from clue_core import Claim, ClaimId, decode_jsonb
+from clue_research.claimstore import read_faithfulness_attributions
 
 
 class ClaimSupport(BaseModel):
@@ -126,36 +127,32 @@ class FaithfulnessCitation(BaseModel):
 
 
 async def read_faithfulness_citation(
-    conn: AsyncConnection, claim_id: ClaimId
+    conn: AsyncConnection, claim: Claim
 ) -> FaithfulnessCitation | None:
-    """Read the latest M9.3 ``faithfulness_verdict`` for ``claim_id``, or ``None`` if the claim was
-    never judged.
+    """Read the selected verdict for one already-scoped real claim ``A``.
 
-    Reads the verification-layer side table directly (the shared claim-store substrate — the same
-    way the assembler reads any claim/side-table row), NOT by importing the ``verification`` package
-    (the import-linter independence contract forbids ``narrative → verification``). One row per
-    ``(claim_id, judge_model, prompt_version)``; the most recently judged wins (a re-judge under a
-    new prompt mints a fresh row). ``answering_model`` falls back to ``judge_model`` if a legacy row
-    predates the column (the migration backfills it, so this is belt-and-braces)."""
-    row = (
-        await conn.execute(
-            text(
-                "SELECT verdict, score, judge_model, answering_model, prompt_version "
-                "FROM faithfulness_verdict WHERE claim_id = :claim_id "
-                "ORDER BY judged_at DESC, judge_model DESC LIMIT 1"
-            ),
-            {"claim_id": str(claim_id)},
+    The claim object is intentional: the shared claimstore attribution seam needs immutable
+    ``source_key`` / value / evidence provenance to choose ``Q`` or ``A`` without an unscoped
+    re-read. The returned citation is always keyed by ``A`` and never exposes ``Q``.
+    """
+
+    return (await read_faithfulness_citations(conn, (claim,))).get(claim.id)
+
+
+async def read_faithfulness_citations(
+    conn: AsyncConnection, claims: Sequence[Claim]
+) -> dict[ClaimId, FaithfulnessCitation]:
+    """Batch narrative citations through the shared A/Q attribution store (one verdict query)."""
+
+    attributions = await read_faithfulness_attributions(conn, claims)
+    return {
+        actual_id: FaithfulnessCitation(
+            claim_id=actual_id,
+            verdict=attribution.verdict.value,
+            score=float(attribution.score),
+            judge_model=attribution.judge_model,
+            answering_model=attribution.answering_model,
+            prompt_version=attribution.prompt_version,
         )
-    ).first()
-    if row is None:
-        return None
-    judge_model = str(row[2])
-    answering_model = str(row[3]) if row[3] is not None else judge_model
-    return FaithfulnessCitation(
-        claim_id=claim_id,
-        verdict=str(row[0]),
-        score=float(row[1]),
-        judge_model=judge_model,
-        answering_model=answering_model,
-        prompt_version=str(row[4]),
-    )
+        for actual_id, attribution in attributions.items()
+    }

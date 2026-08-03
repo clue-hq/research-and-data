@@ -89,11 +89,12 @@ from clue_obs.otel import (
 )
 from clue_research.claimstore import (
     ALL_WORKSPACES,
+    FaithfulnessSubjectIdentityError,
     WorkspaceScope,
     affected_derivations,
     claims_by_ids,
     claims_for,
-    entailment_judgment_id,
+    faithfulness_lookup_plan,
     supersede_claim,
     supersede_claims,
 )
@@ -107,6 +108,9 @@ _log = get_logger(__name__)
 METRIC_DSAR_OPERATIONS = "research.compliance.dsar.operations"  # by op
 METRIC_DSAR_TOMBSTONED = "research.compliance.dsar.tombstoned"  # by reason
 METRIC_DSAR_SNAPSHOT_ERASED = "research.compliance.dsar.snapshot_erased"  # by reason (PB-B2.5)
+METRIC_DSAR_FAITHFULNESS_IDENTITY_ERRORS = (
+    "research.compliance.dsar.faithfulness_subject_identity.errors"
+)
 METRIC_RETENTION_EXPIRED = "research.compliance.retention.expired"
 
 # --- M10-local span attribute keys (short, non-secret enum/int values) ------------------------
@@ -305,24 +309,23 @@ async def _apply_tombstone(
     # faithfulness_verdict.claim_id -> claim.entity_id relation; no subject/body copy is added.
     # COALESCE keeps this one-way and idempotent if a future caller reaches an already-redacted row.
     #
-    # PC-C8 §6c-b adds a SECOND reachability path that the claim-id relation alone does not cover.
-    # A judged interview value is vouched for *before* its claim exists, so its verdict is keyed on
-    # the entailment-question id — a content address over (field_key, value, span) — not on the
-    # claim id. Matching only `claim_id = target.id` silently redacted nothing for every such row
-    # while the rationale went on quoting the client's own words. The question id is recomputable
-    # from the claim being erased, which is the whole point of deriving it from content, so erasure
-    # recomputes it here and redacts both rows. A span-less claim was never judged this way, so it
-    # contributes no second id.
-    verdict_ids = [str(target.id)]
-    if target.evidence_span:
-        verdict_ids.append(
-            str(
-                entailment_judgment_id(
-                    field_key=target.field_key,
-                    value=target.value_json,
-                    quote=target.evidence_span,
-                )
-            )
+    # The reader and erasure paths share the exact source-marker-aware A→(Q,A) plan. This is
+    # intentionally NOT "any claim with a span": only the judged-interview producer owns Q. A
+    # malformed marked claim must not block the erasure transaction; it has no reconstructable Q,
+    # so redact A, emit one bounded reason, and continue fail-closed.
+    try:
+        verdict_ids = [str(cid) for cid in faithfulness_lookup_plan(target).subject_ids]
+    except FaithfulnessSubjectIdentityError as exc:
+        verdict_ids = [str(target.id)]
+        sink.add(
+            METRIC_DSAR_FAITHFULNESS_IDENTITY_ERRORS,
+            1,
+            {"reason": exc.reason_code},
+        )
+        _log.warning(
+            "compliance.dsar.faithfulness_subject_identity_error reason=%s claim_id=%s",
+            exc.reason_code,
+            exc.actual_claim_id,
         )
     await conn.execute(
         text(

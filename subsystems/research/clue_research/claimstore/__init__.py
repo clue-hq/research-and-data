@@ -48,7 +48,16 @@ from clue_research.claimstore.derivations import (
 )
 from clue_research.claimstore.entailment_identity import (
     ENTAILMENT_JUDGMENT_NAMESPACE,
+    SOURCE_CLIENT_INTERVIEW_JUDGED,
+    FaithfulnessLookupPlan,
+    FaithfulnessSubjectIdentityError,
     entailment_judgment_id,
+    faithfulness_lookup_plan,
+)
+from clue_research.claimstore.faithfulness_attribution import (
+    METRIC_FAITHFULNESS_SUBJECT_IDENTITY_ERRORS,
+    FaithfulnessAttribution,
+    read_faithfulness_attributions,
 )
 from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
@@ -143,7 +152,14 @@ __all__ = [
     "canonical_json",
     # entailment-question identity (PC-C8 §6c-b) — one definition three packages agree on
     "ENTAILMENT_JUDGMENT_NAMESPACE",
+    "SOURCE_CLIENT_INTERVIEW_JUDGED",
+    "FaithfulnessLookupPlan",
+    "FaithfulnessSubjectIdentityError",
     "entailment_judgment_id",
+    "faithfulness_lookup_plan",
+    "FaithfulnessAttribution",
+    "read_faithfulness_attributions",
+    "METRIC_FAITHFULNESS_SUBJECT_IDENTITY_ERRORS",
     # tenant scoping (M2.5)
     "WorkspaceScope",
     "PUBLIC_ONLY",

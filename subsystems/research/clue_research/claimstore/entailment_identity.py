@@ -15,8 +15,8 @@ and none of them may import the others** (conventions §2 / the milestone-indepe
 * ``clue_research.compliance.dsar`` recomputes it from an erased claim to redact that verdict's
   free-text rationale — which quotes the client's own words, so a mismatch here is a silent
   erasure hole, not a cosmetic one (it was exactly that for one commit);
-* M12 provenance / the review projector will need the same recompute to report a judged claim as
-  judged.
+* ``claimstore.faithfulness_attribution`` uses it to report the verdict through M12 narrative and
+  the review projector while continuing to label the public object with the real claim id.
 
 The recompute is what makes the indirection honest: given any written claim, ``field_key`` +
 ``value_json`` + ``evidence_span`` reproduce the question id, so "which verdict admitted this
@@ -38,17 +38,55 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import JsonValue
 
-from clue_core import ClaimId
+from clue_core import Claim, ClaimId
 
-__all__ = ["ENTAILMENT_JUDGMENT_NAMESPACE", "entailment_judgment_id"]
+__all__ = [
+    "ENTAILMENT_JUDGMENT_NAMESPACE",
+    "SOURCE_CLIENT_INTERVIEW_JUDGED",
+    "FaithfulnessLookupPlan",
+    "FaithfulnessSubjectIdentityError",
+    "entailment_judgment_id",
+    "faithfulness_lookup_plan",
+]
 
 #: The uuid5 name prefix for an entailment *question*. Distinct from the interview's claim prefix
 #: (``stage0-interview-claim:``) so a question id can never collide with a claim id.
 ENTAILMENT_JUDGMENT_NAMESPACE = "stage0-interview-entailment"
+
+#: The single durable producer marker for claims admitted by the pre-write entailment judge.
+#: It lives beside the A→(Q,A) mapping — not in Stage 0 — so every reader and DSAR use exactly the
+#: same discriminator without importing the producing subsystem.
+SOURCE_CLIENT_INTERVIEW_JUDGED = "client_interview_judged"
+
+
+@dataclass(frozen=True, slots=True)
+class FaithfulnessLookupPlan:
+    """The ordered verdict subjects for one public/actual claim ``A``.
+
+    ``subject_ids`` is priority-ordered. Ordinary claims have ``(A,)``; a judged interview claim
+    has ``(Q, A)`` so the content-addressed pre-write judgment wins and ``A`` remains a legacy
+    fallback. Consumers must key and label their result with ``actual_claim_id`` only.
+    """
+
+    actual_claim_id: ClaimId
+    subject_ids: tuple[ClaimId, ...]
+
+
+class FaithfulnessSubjectIdentityError(ValueError):
+    """A marked judged claim lacks the immutable evidence needed to reconstruct ``Q``."""
+
+    reason_code = "judged_interview_evidence_span_missing"
+
+    def __init__(self, actual_claim_id: ClaimId) -> None:
+        self.actual_claim_id = actual_claim_id
+        super().__init__(
+            f"cannot resolve faithfulness subject for claim {actual_claim_id}: {self.reason_code}"
+        )
 
 
 def entailment_judgment_id(*, field_key: str, value: JsonValue, quote: str) -> ClaimId:
@@ -62,3 +100,27 @@ def entailment_judgment_id(*, field_key: str, value: JsonValue, quote: str) -> C
     payload = "\x00".join((field_key, canonical, quote))
     digest = hashlib.sha256(payload.encode()).hexdigest()
     return ClaimId(uuid5(NAMESPACE_URL, f"{ENTAILMENT_JUDGMENT_NAMESPACE}:{digest}"))
+
+
+def faithfulness_lookup_plan(claim: Claim) -> FaithfulnessLookupPlan:
+    """Map a real claim ``A`` to its ordered faithfulness-verdict subjects.
+
+    The source marker is authoritative. Merely having an evidence span never opts an ordinary claim
+    into Q lookup. Conversely, a marked claim without a non-empty span is internally inconsistent:
+    silently falling back to A could turn a missing attribution into a false verdict, so callers
+    receive a typed, bounded identity error and may isolate that claim.
+    """
+
+    if claim.source_key != SOURCE_CLIENT_INTERVIEW_JUDGED:
+        return FaithfulnessLookupPlan(actual_claim_id=claim.id, subject_ids=(claim.id,))
+    if not claim.evidence_span:
+        raise FaithfulnessSubjectIdentityError(claim.id)
+    question_id = entailment_judgment_id(
+        field_key=claim.field_key,
+        value=claim.value_json,
+        quote=claim.evidence_span,
+    )
+    return FaithfulnessLookupPlan(
+        actual_claim_id=claim.id,
+        subject_ids=(question_id, claim.id),
+    )
