@@ -64,6 +64,7 @@ from clue_api.deep.composition import (
 from clue_api.discovery_seal import (
     DbSealedDiscoveryAccountManifestReader,
     DiscoveryBatchStarter,
+    DiscoveryRequiredFieldResolver,
 )
 from clue_api.fleet_wiring import (
     build_fleet_deep_scheduler,
@@ -281,6 +282,7 @@ class ComposingRunDriver:
         committee_sources: Sequence[CommitteeSource] = (),
         channels: ChannelRegistry | None = None,
         discovery_batch_starter: DiscoveryBatchStarter | None = None,
+        discovery_required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
         spec_loader: SpecLoader | None = None,
         client_input_provider: ClientInputProvider | None = None,
         cache_size: int | None = None,
@@ -305,6 +307,7 @@ class ComposingRunDriver:
         self._committee_sources = tuple(committee_sources)
         self._channels = channels if channels is not None else ChannelRegistry()
         self._discovery_batch_starter = discovery_batch_starter
+        self._discovery_required_field_resolver = discovery_required_field_resolver
         self._client_input_provider = client_input_provider
         self._session_factory = session_factory
         self._controls = controls
@@ -450,6 +453,7 @@ class ComposingRunDriver:
             # generation keeps its hard barrier after a rollout switch is reduced.
             durable_batches=True,
             durable_batch_starter=self._discovery_batch_starter,
+            discovery_required_field_resolver=self._discovery_required_field_resolver,
             session_factory=self._session_factory,
             storage=self._storage,
             register=registry.register,

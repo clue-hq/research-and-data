@@ -37,7 +37,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from clue_api.composition import build_pre_spend_gate
-from clue_api.discovery_seal import DiscoveryBatchStarter, DurableDiscoveryPhaseHandler
+from clue_api.discovery_seal import (
+    DiscoveryBatchStarter,
+    DiscoveryRequiredFieldResolver,
+    DurableDiscoveryPhaseHandler,
+)
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_core import (
     FaithfulnessJudge,
@@ -149,6 +153,7 @@ def build_discovery_handler(
     gateway: LLMGateway | None = None,
     durable_batches: bool = False,
     durable_batch_starter: DiscoveryBatchStarter | None = None,
+    discovery_required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
     storage: StorageBackend | None = None,
     session_factory: ConnFactory = transaction,
 ) -> PhaseHandler:
@@ -167,6 +172,7 @@ def build_discovery_handler(
         storage=storage,
         fallback=legacy,
         starter=durable_batch_starter,
+        required_field_resolver=discovery_required_field_resolver,
         conn_factory=session_factory,
     )
 
@@ -177,6 +183,7 @@ def register_discovery_handler(
     gateway: LLMGateway | None = None,
     durable_batches: bool = False,
     durable_batch_starter: DiscoveryBatchStarter | None = None,
+    discovery_required_field_resolver: DiscoveryRequiredFieldResolver | None = None,
     session_factory: ConnFactory = transaction,
     storage: StorageBackend | None,
     register: _Register = register_phase_handler,
@@ -189,6 +196,7 @@ def register_discovery_handler(
             gateway=gateway,
             durable_batches=durable_batches,
             durable_batch_starter=durable_batch_starter,
+            discovery_required_field_resolver=discovery_required_field_resolver,
             storage=storage,
             session_factory=session_factory,
         ),

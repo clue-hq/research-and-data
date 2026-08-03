@@ -693,11 +693,19 @@ async def _resolve_survivor_fields(
         elif envelope.requirement is DiscoveryFieldRequirement.HARD_IDENTITY:
             raise ValueError(f"hard identity {logical_key!r} has no evidence claim")
         elif any(field_key in enrichment_missing for field_key in attempts):
-            state = DiscoveryFieldResolutionState.CONFIRMED_MISSING
-            reason = "exa_terminal_attempt_returned_null"
+            if envelope.requirement is DiscoveryFieldRequirement.REQUIRED_ATTEMPT:
+                state = DiscoveryFieldResolutionState.PENDING
+                reason = None
+            else:
+                state = DiscoveryFieldResolutionState.CONFIRMED_MISSING
+                reason = "exa_terminal_attempt_returned_null"
         elif any(field_key in missing or field_key in attempted for field_key in attempts):
-            state = DiscoveryFieldResolutionState.CONFIRMED_MISSING
-            reason = "exa_terminal_base_property_absent"
+            if envelope.requirement is DiscoveryFieldRequirement.REQUIRED_ATTEMPT:
+                state = DiscoveryFieldResolutionState.PENDING
+                reason = None
+            else:
+                state = DiscoveryFieldResolutionState.CONFIRMED_MISSING
+                reason = "exa_terminal_base_property_absent"
         elif envelope.requirement is DiscoveryFieldRequirement.OPTIONAL_ATTEMPT:
             continue
         else:

@@ -23,6 +23,10 @@ from clue_api.sumble_account_gaps import (
     SumbleAccountGapStarter,
     build_production_sumble_account_gap_starter,
 )
+from clue_api.sumble_discovery_gaps import (
+    SumbleDiscoveryGapResolver,
+    build_production_sumble_discovery_gap_resolver,
+)
 from clue_config import Secrets, Settings
 from clue_storage import FsStorage
 
@@ -189,3 +193,30 @@ def test_sumble_account_gaps_are_independently_default_off_and_fail_closed(
         storage=storage,
     )
     assert isinstance(starter, SumbleAccountGapStarter)
+
+
+def test_preseal_sumble_waterfall_has_independent_authorization(tmp_path: Path) -> None:
+    storage = FsStorage(tmp_path / "discovery-gap-artifacts")
+    no_secrets = Secrets(_env_file=None, sumble_api_key=None)
+    disabled = build_production_sumble_discovery_gap_resolver(
+        Settings(_env_file=None), secrets=no_secrets, storage=storage
+    )
+    assert isinstance(disabled, SumbleDiscoveryGapResolver)
+
+    with pytest.raises(RuntimeError, match="CLUE_SUMBLE_API_KEY"):
+        build_production_sumble_discovery_gap_resolver(
+            Settings(_env_file=None, sumble_discovery_gap_enrichment_enabled=True),
+            secrets=no_secrets,
+            storage=storage,
+        )
+    enabled = build_production_sumble_discovery_gap_resolver(
+        Settings(
+            _env_file=None,
+            sumble_discovery_gap_enrichment_enabled=True,
+            sumble_account_gap_enrichment_enabled=False,
+            sumble_cents_per_credit="0.5",
+        ),
+        secrets=Secrets(_env_file=None, sumble_api_key=SecretStr("fixture-sumble-key")),
+        storage=storage,
+    )
+    assert isinstance(enabled, SumbleDiscoveryGapResolver)
