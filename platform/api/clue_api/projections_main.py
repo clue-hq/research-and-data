@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
+from clue_api.exa_targeted_enrichment import build_production_exa_targeted_starter
 from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook_router
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.narrative_wiring import register_narrative_wiring
@@ -61,6 +62,11 @@ def build_application(
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),
         research_view_recheck=(research_views.recheck if research_views is not None else None),
+        targeted_enrichment_starter=build_production_exa_targeted_starter(
+            resolved,
+            secrets=resolved_secrets,
+            storage=storage,
+        ),
     )
     invoker = build_tool_invoker(
         registry=registry,

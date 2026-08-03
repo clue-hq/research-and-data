@@ -50,6 +50,7 @@ from clue_core import (
     DiscoveryWakeRequest,
     DiscoveryWakeScheduler,
     EntityId,
+    ProjectPhase,
     ProjectRunId,
     UtcDatetime,
     decode_jsonb,
@@ -58,6 +59,10 @@ from clue_core import (
     serialize_value_json,
 )
 from clue_db import ConnFactory, transaction
+from clue_research.durable.provider_spend import (
+    ProviderSpendGuardError,
+    require_provider_spend_capacity,
+)
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import erase_if_unreferenced, record_artifact
 
@@ -1061,6 +1066,16 @@ async def reserve_discovery_operation(
         raise DiscoveryBudgetExceeded(
             "discovery monetary reservation exceeds the immutable plan cap"
         )
+
+    try:
+        await require_provider_spend_capacity(
+            conn,
+            project_run_id=plan.project_run_id,
+            proposed_cents=operation.cost_cents_reserved,
+            allowed_phases=frozenset({ProjectPhase.DISCOVERY}),
+        )
+    except ProviderSpendGuardError as exc:
+        raise DiscoveryBudgetExceeded(str(exc)) from exc
 
     stored = await put_discovery_operation(
         conn,

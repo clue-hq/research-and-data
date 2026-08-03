@@ -53,6 +53,7 @@ from clue_research.discovery_scoring.discovery import (
 from clue_research.durable import (
     DiscoveryBudgetExceeded,
     DiscoveryReplayConflict,
+    ProjectRunStatus,
     create_discovery_batch,
     get_current_discovery_batch,
     get_project_run,
@@ -284,7 +285,11 @@ class ExaWebsetsDiscoveryStarter:
             raise ExaDiscoveryAcquisitionError("pinned ICP spec is missing")
         if run is None or run.workspace_id != ctx.workspace_id or run.project_id != ctx.project_id:
             raise ExaDiscoveryAcquisitionError("project run is missing or outside the phase scope")
-        if run.phase is not ProjectPhase.DISCOVERY or run.phase is not ctx.phase:
+        if (
+            run.status is not ProjectRunStatus.ACTIVE
+            or run.phase is not ProjectPhase.DISCOVERY
+            or run.phase is not ctx.phase
+        ):
             raise ExaDiscoveryAcquisitionError("project run is not currently in discovery")
         result = compile_exa_discovery_preflight(
             ctx=ctx,

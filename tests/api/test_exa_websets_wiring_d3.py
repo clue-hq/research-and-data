@@ -8,8 +8,16 @@ import pytest
 from fastapi import FastAPI
 from pydantic import SecretStr
 
+from clue_api.exa_targeted_enrichment import (
+    ExaTargetedEnrichmentStarter,
+    build_production_exa_targeted_starter,
+)
 from clue_api.exa_websets_acquisition import ExaWebsetsDiscoveryStarter
-from clue_api.fleet_main import _build_exa_discovery_starter, _start_exa_discovery
+from clue_api.fleet_main import (
+    _build_exa_discovery_starter,
+    _start_exa_discovery,
+    _start_exa_targeted_enrichment,
+)
 from clue_api.projections_main import build_application
 from clue_config import Secrets, Settings
 from clue_storage import FsStorage
@@ -105,3 +113,46 @@ def test_paid_acquisition_is_default_off_and_enabled_without_api_key_fails_close
         storage=storage,
     )
     assert isinstance(starter, ExaWebsetsDiscoveryStarter)
+
+
+def test_targeted_enrichment_is_independently_default_off_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    storage = FsStorage(tmp_path / "artifacts")
+    off = Settings(_env_file=None)
+    no_secrets = Secrets(_env_file=None, exa_api_key=None)
+    assert build_production_exa_targeted_starter(off, secrets=no_secrets, storage=storage) is None
+    assert _start_exa_targeted_enrichment(off, secrets=no_secrets, storage=storage) is None
+
+    with pytest.raises(RuntimeError, match="lifecycle worker is disabled"):
+        build_production_exa_targeted_starter(
+            Settings(_env_file=None, exa_targeted_enrichment_enabled=True),
+            secrets=Secrets(_env_file=None, exa_api_key=SecretStr("fixture-exa-key")),
+            storage=storage,
+        )
+    with pytest.raises(RuntimeError, match="CLUE_EXA_API_KEY"):
+        build_production_exa_targeted_starter(
+            Settings(
+                _env_file=None,
+                exa_websets_lifecycle_enabled=True,
+                exa_targeted_enrichment_enabled=True,
+            ),
+            secrets=no_secrets,
+            storage=storage,
+        )
+    with pytest.raises(RuntimeError, match="CLUE_EXA_API_KEY"):
+        _start_exa_targeted_enrichment(
+            Settings(_env_file=None, exa_websets_lifecycle_enabled=True),
+            secrets=no_secrets,
+            storage=storage,
+        )
+    starter = build_production_exa_targeted_starter(
+        Settings(
+            _env_file=None,
+            exa_websets_lifecycle_enabled=True,
+            exa_targeted_enrichment_enabled=True,
+        ),
+        secrets=Secrets(_env_file=None, exa_api_key=SecretStr("fixture-exa-key")),
+        storage=storage,
+    )
+    assert isinstance(starter, ExaTargetedEnrichmentStarter)

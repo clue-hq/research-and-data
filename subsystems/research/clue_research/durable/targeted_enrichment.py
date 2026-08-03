@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     EntityId,
+    ProjectPhase,
     TargetedEnrichmentFieldResult,
     TargetedEnrichmentOperation,
     TargetedEnrichmentOperationId,
@@ -17,6 +19,10 @@ from clue_core import (
     TargetedEnrichmentSpendOutcome,
     TargetedEnrichmentState,
     UtcDatetime,
+)
+from clue_research.durable.provider_spend import (
+    ProviderSpendGuardError,
+    require_provider_spend_capacity,
 )
 
 
@@ -74,6 +80,9 @@ _OPERATION_COLUMNS = (
     "provider_units_reserved, provider_units_charged, cost_cents_reserved, cost_cents_charged, "
     "next_poll_at, failure_code, started_at, terminal_at, created_at, updated_at"
 )
+_QUALIFIED_OPERATION_COLUMNS = ", ".join(
+    f"operation.{column.strip()}" for column in _OPERATION_COLUMNS.split(",")
+)
 
 
 def _operation(row: object) -> TargetedEnrichmentOperation:
@@ -112,6 +121,41 @@ async def reserve_targeted_enrichment_operation(
         raise TargetedEnrichmentBudgetExceeded("targeted enrichment provider cap exceeded")
     if operation.cost_cents_reserved > Decimal(request.money_budget_cap_cents):
         raise TargetedEnrichmentBudgetExceeded("targeted enrichment money cap exceeded")
+
+    existing = await find_targeted_enrichment_operation(
+        conn,
+        workspace_id=request.workspace_id,
+        source_key=request.source_key,
+        request_fingerprint=operation.request_fingerprint,
+        observation_window=request.observation_window,
+    )
+    if existing is not None:
+        _assert_targeted_enrichment_replay(existing, operation)
+        return existing, False
+
+    try:
+        await require_provider_spend_capacity(
+            conn,
+            project_run_id=request.project_run_id,
+            proposed_cents=operation.cost_cents_reserved,
+            allowed_phases=frozenset({ProjectPhase.DEEP}),
+        )
+    except ProviderSpendGuardError as exc:
+        raise TargetedEnrichmentBudgetExceeded(str(exc)) from exc
+
+    # A competing reservation for this run had to release the same project-run lock before this
+    # transaction acquired it. Recheck the fingerprint under the lock so an exact replay never
+    # consumes capacity and a conflicting replay fails before any child rows are written.
+    existing = await find_targeted_enrichment_operation(
+        conn,
+        workspace_id=request.workspace_id,
+        source_key=request.source_key,
+        request_fingerprint=operation.request_fingerprint,
+        observation_window=request.observation_window,
+    )
+    if existing is not None:
+        _assert_targeted_enrichment_replay(existing, operation)
+        return existing, False
 
     inserted = await conn.execute(
         text(
@@ -168,18 +212,7 @@ async def reserve_targeted_enrichment_operation(
     )
     if stored is None:
         raise TargetedEnrichmentNotFound("reserved targeted enrichment operation")
-    immutable_match = (
-        stored.request == operation.request
-        and stored.provider_external_id == operation.provider_external_id
-        and stored.input_artifact_key == operation.input_artifact_key
-        and stored.csv_artifact_key == operation.csv_artifact_key
-        and stored.provider_units_reserved == operation.provider_units_reserved
-        and stored.cost_cents_reserved == operation.cost_cents_reserved
-    )
-    if not immutable_match:
-        raise TargetedEnrichmentReplayConflict(
-            "targeted enrichment fingerprint was reused with different immutable content"
-        )
+    _assert_targeted_enrichment_replay(stored, operation)
     if created:
         for ordinal, target in enumerate(request.targets):
             await conn.execute(
@@ -214,6 +247,24 @@ async def reserve_targeted_enrichment_operation(
                     },
                 )
     return stored, created
+
+
+def _assert_targeted_enrichment_replay(
+    stored: TargetedEnrichmentOperation,
+    proposed: TargetedEnrichmentOperation,
+) -> None:
+    immutable_match = (
+        stored.request == proposed.request
+        and stored.provider_external_id == proposed.provider_external_id
+        and stored.input_artifact_key == proposed.input_artifact_key
+        and stored.csv_artifact_key == proposed.csv_artifact_key
+        and stored.provider_units_reserved == proposed.provider_units_reserved
+        and stored.cost_cents_reserved == proposed.cost_cents_reserved
+    )
+    if not immutable_match:
+        raise TargetedEnrichmentReplayConflict(
+            "targeted enrichment fingerprint was reused with different immutable content"
+        )
 
 
 async def get_targeted_enrichment_operation(
@@ -282,6 +333,50 @@ async def claim_targeted_enrichment_dispatch(
         )
     ).one_or_none()
     return _operation(row) if row is not None else None
+
+
+async def claim_due_targeted_enrichment_operations(
+    conn: AsyncConnection,
+    *,
+    now: datetime,
+    limit: int = 10,
+    lease_seconds: int = 60,
+) -> tuple[TargetedEnrichmentOperation, ...]:
+    """Lease due provider-running E1 operations for crash-resumable fleet polling.
+
+    Moving ``next_poll_at`` forward is the lease. A killed worker makes the row due again after the
+    bounded interval; ``FOR UPDATE SKIP LOCKED`` prevents two healthy workers polling it together.
+    """
+
+    if not 1 <= limit <= 100:
+        raise ValueError("targeted enrichment claim limit must be between 1 and 100")
+    if lease_seconds < 1:
+        raise ValueError("targeted enrichment lease must be positive")
+    rows = (
+        await conn.execute(
+            text(
+                f"""
+                    WITH due AS (
+                        SELECT id
+                        FROM targeted_enrichment_operation
+                        WHERE state IN ('provider_running', 'waiting_external', 'reconciling')
+                          AND next_poll_at IS NOT NULL AND next_poll_at <= :now
+                        ORDER BY next_poll_at, id
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT :limit
+                    )
+                    UPDATE targeted_enrichment_operation operation
+                    SET next_poll_at = :now + (:lease_seconds * interval '1 second'),
+                        updated_at = now()
+                    FROM due
+                    WHERE operation.id = due.id
+                    RETURNING {_QUALIFIED_OPERATION_COLUMNS}
+                    """
+            ),
+            {"now": now, "limit": limit, "lease_seconds": lease_seconds},
+        )
+    ).all()
+    return tuple(_operation(row) for row in rows)
 
 
 async def update_targeted_enrichment_operation(
@@ -626,6 +721,7 @@ __all__ = [
     "TargetedEnrichmentRepositoryError",
     "append_targeted_enrichment_artifact",
     "claim_targeted_enrichment_dispatch",
+    "claim_due_targeted_enrichment_operations",
     "fail_targeted_enrichment_predispatch",
     "find_targeted_enrichment_operation",
     "get_targeted_enrichment_field_result",

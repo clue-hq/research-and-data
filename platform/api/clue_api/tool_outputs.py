@@ -38,6 +38,14 @@ class DiscoverAccountsOutput(ToolOutput):
     stopping_reason: str | None
 
 
+class TargetedEnrichmentOutput(ToolOutput):
+    operation_id: str
+    state: str
+    outcome: str
+    provider_units_reserved: str
+    cost_cents_reserved: str
+
+
 class PhaseAccountsOutput(ToolOutput):
     status: str
     accounts_processed: int

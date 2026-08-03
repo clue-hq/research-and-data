@@ -639,6 +639,8 @@ def test_discovery_criteria_checkpoint_approves_only_selected_without_numeric_sc
                 "hold": 1,
                 "excluded": 0,
             }
+            assert initial.payload["review"]["estimate"]["discovered_count"] == 2
+            assert initial.payload["review"]["estimate"]["projected_deep_count"] == 1
             review_accounts = initial.payload["review"]["accounts"]
             assert all(
                 row["criteria"][0]["observations"][0]["reasoning"].startswith("provider verdict")

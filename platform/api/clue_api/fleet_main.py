@@ -55,6 +55,11 @@ from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
+from clue_api.exa_targeted_enrichment import (
+    ExaTargetedEnrichmentCoordinator,
+    ExaTargetedEnrichmentWorker,
+    build_production_exa_targeted_starter,
+)
 from clue_api.exa_websets_acquisition import ExaWebsetsDiscoveryStarter
 from clue_api.exa_websets_lifecycle import (
     DurableExaWebsetLifecycle,
@@ -269,6 +274,58 @@ def _build_exa_discovery_starter(
     )
 
 
+async def _exa_targeted_enrichment_loop(
+    settings: Settings,
+    *,
+    api_key: object,
+    storage: StorageBackend,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    from pydantic import SecretStr
+
+    if not isinstance(api_key, SecretStr):
+        raise TypeError("Exa targeted enrichment worker requires a SecretStr API key")
+    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+        worker = ExaTargetedEnrichmentWorker(
+            coordinator=ExaTargetedEnrichmentCoordinator(
+                transport=client,
+                storage=storage,
+            )
+        )
+        while True:
+            try:
+                completed = await worker.run_due()
+                if completed:
+                    log.info("fleet.exa_targeted_enrichment.completed", operation_count=completed)
+            except Exception:  # noqa: BLE001 - one provider fault cannot sink run execution
+                log.warning("fleet.exa_targeted_enrichment.error", exc_info=True)
+            await sleep(settings.exa_websets_poll_worker_interval_s)
+
+
+def _start_exa_targeted_enrichment(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> asyncio.Task[None] | None:
+    # Draining is controlled by the lifecycle switch, not the new-spend switch: turning off new
+    # E1 starts must never strand an operation that was already accepted by Exa.
+    if not settings.exa_websets_lifecycle_enabled:
+        log.info("fleet.exa_targeted_enrichment.disabled")
+        return None
+    if secrets.exa_api_key is None:
+        raise RuntimeError(
+            "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    return asyncio.get_running_loop().create_task(
+        _exa_targeted_enrichment_loop(
+            settings,
+            api_key=secrets.exa_api_key,
+            storage=storage,
+        )
+    )
+
+
 async def _account_agent_runtime_required(
     settings: Settings,
     *,
@@ -347,6 +404,11 @@ async def _serve() -> None:
                 research_views.snapshots if research_views is not None else None
             ),
             research_view_recheck=(research_views.recheck if research_views is not None else None),
+            targeted_enrichment_starter=build_production_exa_targeted_starter(
+                settings,
+                secrets=secrets,
+                storage=storage,
+            ),
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -514,10 +576,20 @@ async def _serve() -> None:
             secrets=secrets,
             storage=storage,
         )
+        exa_targeted_enrichment = _start_exa_targeted_enrichment(
+            settings,
+            secrets=secrets,
+            storage=storage,
+        )
         try:
             await run_worker(worker)
         finally:
-            for background in (sweep, agent_cleanup, exa_discovery):
+            for background in (
+                sweep,
+                agent_cleanup,
+                exa_discovery,
+                exa_targeted_enrichment,
+            ):
                 if background is None:
                     continue
                 background.cancel()

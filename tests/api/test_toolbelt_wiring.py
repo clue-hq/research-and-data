@@ -61,6 +61,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "import_accounts": ("precondition", ("no_active_icp",)),
     "discover_accounts": ("precondition", ("run_not_found",)),
     "score_accounts": ("precondition", ("run_not_found",)),
+    "enrich_selected_accounts": (
+        "precondition",
+        ("targeted_enrichment_not_configured",),
+    ),
     "submit_tier_checkpoint": ("precondition", ("run_not_found",)),
     "submit_project_checkpoint": ("precondition", ("run_not_found",)),
     "run_deep_account": ("precondition", ("no_active_icp",)),
@@ -112,6 +116,11 @@ def _bodies() -> dict[str, dict[str, object]]:
         "import_accounts": {"client_entity_id": _UUID(), "icp_key": "matrix", "rows": []},
         "discover_accounts": {"project_run_id": _UUID()},
         "score_accounts": {"project_run_id": _UUID()},
+        "enrich_selected_accounts": {
+            "project_run_id": _UUID(),
+            "account_entity_ids": [_UUID()],
+            "field_keys": ["core.company_linkedin_url"],
+        },
         "submit_tier_checkpoint": {"project_run_id": _UUID()},
         "submit_project_checkpoint": {"project_run_id": _UUID()},
         "run_deep_account": {"account_entity_id": _UUID(), "icp_key": "matrix", "tier": "top"},
@@ -631,11 +640,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    # 35 → 37 names with PC-C8's two read-only inspection tools; the two proposal writes and
-    # research_account_gaps retain @1 compatibility contracts alongside @2, yielding three
-    # additional descriptors.
-    assert len(registry.names()) == 37
-    assert len(registry) == 40
+    # 35 → 37 names with PC-C8's two read-only inspection tools, then 38 with E1's explicit
+    # targeted-enrichment boundary; the two proposal writes and research_account_gaps retain @1
+    # compatibility contracts alongside @2, yielding three additional descriptors.
+    assert len(registry.names()) == 38
+    assert len(registry) == 41
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

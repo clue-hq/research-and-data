@@ -565,7 +565,9 @@ class TierCheckpointPhaseHandler:
                 },
             )
         deep_distribution = {policy.approved_tier: len(effective_ids)}
-        estimate = estimate_cost(deep_distribution, self._config)
+        estimate = estimate_cost(deep_distribution, self._config).model_copy(
+            update={"discovered_count": len(selection.accounts)}
+        )
         effective_cap = (
             decision.budget_cap_cents
             if decision.budget_cap_cents is not None

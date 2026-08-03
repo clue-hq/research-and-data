@@ -244,6 +244,16 @@ def test_real_db_phase_originates_once_waits_and_restart_replays_without_http(
             assert transport.create_calls == 1
             assert transport.lookup_calls == 0
 
+            paused_savepoint = await conn.begin_nested()
+            await conn.execute(
+                text("UPDATE project_run SET status='paused' WHERE id=:run"),
+                {"run": run_id},
+            )
+            with pytest.raises(ExaDiscoveryAcquisitionError, match="currently in discovery"):
+                await restarted.preflight(ctx)
+            await paused_savepoint.rollback()
+            assert transport.create_calls == 1
+
             batch = await get_current_discovery_batch(
                 conn, workspace_id=workspace_id, project_run_id=run_id
             )

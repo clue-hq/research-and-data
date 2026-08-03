@@ -237,3 +237,15 @@ CLUE_EXA_WEBSETS_ACQUISITION_ENABLED=true
 
 Keeping acquisition false while lifecycle is true drains existing work without allowing new
 Webset spend. Acquisition fails closed when the lifecycle worker or API key is absent.
+
+Provision the single team-level webhook separately after the projections service has a public URL:
+
+```bash
+python scripts/12_exa_websets_webhook_provision.py \
+  --url https://api.example.com/v1/webhooks/exa-websets \
+  --secret-output .secrets/exa-websets-webhook.env
+```
+
+On first creation, move the mode-0600 output into the deployment secret manager as
+`CLUE_EXA_WEBSETS_WEBHOOK_SECRET`. The command never prints the secret. Re-running against the
+same active URL/events is a zero-change replay; it refuses drift or multiple managed endpoints.

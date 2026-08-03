@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # Production also requires lifecycle_enabled so originated work cannot be left undrained.
     # Env: CLUE_EXA_WEBSETS_ACQUISITION_ENABLED.
     exa_websets_acquisition_enabled: bool = False
+    # Independent authorization for post-seal, explicitly targeted E1 imports. The lifecycle
+    # worker still drains already-created E1 operations whenever Websets lifecycle is enabled.
+    # Env: CLUE_EXA_TARGETED_ENRICHMENT_ENABLED.
+    exa_targeted_enrichment_enabled: bool = False
 
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are
