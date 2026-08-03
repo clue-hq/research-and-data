@@ -43,6 +43,7 @@ from clue_core import (
 )
 from clue_research.claimstore import (
     ALL_WORKSPACES,
+    SOURCE_CLIENT_INTERVIEW_JUDGED,
     DerivationDependencyResolver,
     DerivationDependencyState,
     WorkspaceScope,
@@ -551,7 +552,12 @@ def test_dsar_erases_the_rationale_of_a_verdict_keyed_on_the_entailment_question
     async def _run() -> None:
         async with rollback_conn() as conn:
             contact = await _contact(conn)
-            claim = await _insert_facet(conn, contact, use_class=_PRO)
+            claim = await _insert_facet(
+                conn,
+                contact,
+                use_class=_PRO,
+                source_key=SOURCE_CLIENT_INTERVIEW_JUDGED,
+            )
             # The key the §6c-b judge actually wrote under: recomputed from the claim's own
             # content, exactly as `dsar._tombstone` must recompute it.
             question_id = entailment_judgment_id(
@@ -568,10 +574,16 @@ def test_dsar_erases_the_rationale_of_a_verdict_keyed_on_the_entailment_question
                          prompt_version, cost_cents)
                     VALUES
                         (:claim_id, 'supported', 0.98, :rationale, 'judge-requested',
-                         'judge-answered', 'c8-test-v1', 0)
+                         'judge-answered', 'c8-test-v1', 0),
+                        (:actual_id, 'unsupported', 0.02, :rationale, 'legacy-requested',
+                         'legacy-answered', 'c8-legacy-v1', 0)
                     """
                 ),
-                {"claim_id": str(question_id), "rationale": sentinel},
+                {
+                    "claim_id": str(question_id),
+                    "actual_id": str(claim.id),
+                    "rationale": sentinel,
+                },
             )
 
             await _rights(conn).erase(contact)
@@ -590,6 +602,19 @@ def test_dsar_erases_the_rationale_of_a_verdict_keyed_on_the_entailment_question
             assert row[2] == TombstoneReason.ERASURE.value
             # The bounded audit metadata is preserved, exactly as on the claim-id path.
             assert tuple(row[3:]) == ("supported", "judge-requested")
+
+            legacy_row = (
+                await conn.execute(
+                    text(
+                        "SELECT rationale, rationale_redacted_at, rationale_redaction_reason "
+                        "FROM faithfulness_verdict WHERE claim_id = :cid"
+                    ),
+                    {"cid": str(claim.id)},
+                )
+            ).one()
+            assert legacy_row[0] is None, "the judged claim's legacy A rationale survived erasure"
+            assert legacy_row[1] is not None
+            assert legacy_row[2] == TombstoneReason.ERASURE.value
 
             raw = (
                 (
@@ -812,7 +837,11 @@ def _sweep(conn: AsyncConnection, candidates: tuple[AgeOutCandidate, ...] = ()) 
 
 
 def _facet_claim(
-    contact: EntityId, *, use_class: UseClass, value: str = "runs the Berlin marathon"
+    contact: EntityId,
+    *,
+    use_class: UseClass,
+    value: str = "runs the Berlin marathon",
+    source_key: str | None = None,
 ) -> Claim:
     return Claim(
         entity_id=contact,
@@ -821,6 +850,7 @@ def _facet_claim(
         value_json=value,
         source_url="https://www.linkedin.com/in/jana",
         evidence_span=f"Jana Doe {value}.",
+        source_key=source_key,
         source_tier=2,
         extraction_method=ExtractionMethod.SCRAPE,
         identity_binding=IdentityBinding.STRONG,
@@ -855,8 +885,14 @@ async def _insert_facet(
     *,
     use_class: UseClass,
     value: str = "runs the Berlin marathon",
+    source_key: str | None = None,
 ) -> Claim:
-    claim = _facet_claim(contact, use_class=use_class, value=value)
+    claim = _facet_claim(
+        contact,
+        use_class=use_class,
+        value=value,
+        source_key=source_key,
+    )
     await insert_claim(conn, stamp_reuse(claim, workspace_id=_CLIENT))
     return claim
 
