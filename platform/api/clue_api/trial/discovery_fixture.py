@@ -75,6 +75,7 @@ from clue_research.stage0 import (
     evaluate_readiness,
     get_onboarding_input,
     get_readiness_decision,
+    get_workspace_client_kb_readiness_policy,
     load_client_knowledge_pack,
     load_icp_feedback_pack,
     load_import_pack,
@@ -798,7 +799,28 @@ async def seed_insight_health_discovery_fixture(
         readiness.readiness_decision_id,
         workspace_id=WORKSPACE_ID,
     )
-    if stored_readiness is None or stored_readiness.metrics != readiness_metrics:
+    # ``evaluate_readiness`` augments the caller metrics with the resolved workspace readiness
+    # policy.  Compare against that persisted contract, not only the caller-owned base metrics;
+    # otherwise the fixture rejects its own first write after tenant-local readiness policy landed.
+    workspace_policy = await get_workspace_client_kb_readiness_policy(
+        conn, workspace_id=WORKSPACE_ID
+    )
+    workspace_required = (
+        workspace_policy.required_field_keys if workspace_policy is not None else ()
+    )
+    raw_available_fields = readiness_metrics.get("available_field_keys", [])
+    available_fields = (
+        {item for item in raw_available_fields if isinstance(item, str)}
+        if isinstance(raw_available_fields, list)
+        else set()
+    )
+    expected_readiness_metrics = {
+        **readiness_metrics,
+        "workspace_readiness_policy_version": workspace_policy.version if workspace_policy else 0,
+        "workspace_required_field_keys": list(workspace_required),
+        "workspace_required_missing_field_keys": sorted(set(workspace_required) - available_fields),
+    }
+    if stored_readiness is None or stored_readiness.metrics != expected_readiness_metrics:
         raise FixtureStateConflict("fixture readiness replayed with different metrics")
 
     await start_confirmed_project_run(
