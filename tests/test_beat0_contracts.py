@@ -26,6 +26,8 @@ from clue_core import (
     BudgetScope,
     BudgetVerdict,
     BurnDown,
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
     EntityType,
     Estimate,
     FaithfulnessJudge,
@@ -46,6 +48,7 @@ from clue_core import (
     PreSpendVerdict,
     ProjectPhase,
     ReResearchCandidate,
+    SourceTier,
     Staleness,
     TargetLock,
     WorkerResult,
@@ -168,13 +171,27 @@ def test_execution_value_types_construct() -> None:
 
 
 def test_verification_value_types_construct() -> None:
+    effective_plan = EffectiveFieldSourcePlan.compile(
+        workspace_id="acme",
+        icp_key="default",
+        icp_version=1,
+        field_key="core.employee_count",
+        sources=(EffectiveSourceAuthorization(source_key="clay", source_tier=SourceTier(1)),),
+    )
     PreSpendRequest(
         entity_id=new_entity_id(),
         entity_type=EntityType.ACCOUNT,
         field_key="core.employee_count",
         source_tier=1,
+        source_key="clay",
+        effective_source_plan=effective_plan,
         run_id=new_run_id(),
     )
+    assert effective_plan.authorization_for("clay") is not None
+    with pytest.raises(ValidationError, match="digest"):
+        EffectiveFieldSourcePlan.model_validate(
+            {**effective_plan.model_dump(mode="json"), "plan_sha256": "0" * 64}
+        )
     assert PreSpendDecision(verdict=PreSpendVerdict.REJECT, reasons=("field unknown",)).reasons
     TargetLock(entity_id=new_entity_id(), no_drift_instruction="only acme.com")
     JudgeResult(claim_id=new_claim_id(), verdict=JudgeVerdict.SUPPORTED, score=0.95)

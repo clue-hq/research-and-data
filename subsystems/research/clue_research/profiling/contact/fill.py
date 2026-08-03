@@ -33,6 +33,7 @@ from clue_core import (
     ClaimId,
     ContactEntity,
     CostCents,
+    EffectiveFieldSourcePlan,
     EntityId,
     EntityScope,
     EntityType,
@@ -85,14 +86,14 @@ async def _planned_source_keys(
     spec: ICPSpec | None,
     tier: str,
     plan_policy: SourcePlanPolicy,
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], EffectiveFieldSourcePlan | None]:
     """The ordered, modality-gated source keys to consult for this field.
 
     Uses the M4 Source Planner when an ICP spec is available (so the expensive-modality gate +
     source-profile ordering apply); otherwise falls back to the field's declared ``tier_plan``.
     ``plan_policy`` sets how deep the plan reaches (tier scope / deep-research preference)."""
     if spec is None:
-        return field_def.tier_plan
+        return field_def.tier_plan, None
     plan = await plan_sources(
         conn,
         spec=spec,
@@ -103,7 +104,7 @@ async def _planned_source_keys(
         entity_tier=tier,
         entity_scope=EntityScope.CONTACT,
     )
-    return plan.tier_plan()
+    return plan.tier_plan(), getattr(plan, "effective_source_plan", None)
 
 
 async def fill_contact_field(
@@ -130,7 +131,7 @@ async def fill_contact_field(
     ``use_class`` (hint + evidence escalation) before each write, dropping a tier-4 same-name claim
     outright, and the injected ``source_gate`` consults the M9.1 pre-spend gate per source. A
     resolver-absent plan yields an empty, flagged result (correct, not a crash)."""
-    plan_keys = await _planned_source_keys(
+    plan_keys, effective_source_plan = await _planned_source_keys(
         conn, contact, field_def, spec=spec, tier=tier, plan_policy=plan_policy
     )
     field_for_run = field_def.model_copy(update={"tier_plan": tuple(plan_keys)})
@@ -186,6 +187,7 @@ async def fill_contact_field(
                     field_key=field_def.field_key,
                     source_tier=SourceTier(manifest.tier),
                     source_key=manifest.source_key,
+                    effective_source_plan=effective_source_plan,
                     run_id=run_id,
                 )
             )

@@ -183,6 +183,36 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
     ),
+    # S2 bounded organization-map / committee enumeration. These are not waterfall field
+    # resolvers, but they still need registry identities so the shared pre-spend gate can validate
+    # the exact source key instead of accepting an arbitrary tier-1 people provider. Provider
+    # credits are settled by the durable committee-acquisition receipt, so manifest cost is zero.
+    _entry(
+        "sumble_teams",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("contact",),
+        provider="sumble",
+        cost_cents=Decimal(0),
+        identity_binding=IdentityBinding.WEAK,
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
+    ),
+    _entry(
+        "sumble_people",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=1,
+        yields=("contact",),
+        provider="sumble",
+        cost_cents=Decimal(0),
+        identity_binding=IdentityBinding.WEAK,
+        auth_ref="CLUE_SUMBLE_API_KEY",
+        rate_limit={"requests_per_second": 10},
+        freshness_profile="daily",
+    ),
     # Authoritative registries — deterministic, tier-1, vertical/jurisdiction-flavored. They yield
     # account-level authoritative facts; finer per-vertical field yields (e.g. healthcare.npi) are
     # added when that vertical pack loads. NPI/CIK/EDGAR are public (no auth_ref).
@@ -290,6 +320,20 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         provider="parallel",
         cost_cents=Decimal(10),
         auth_ref="CLUE_PARALLEL_API_KEY",
+    ),
+    # Internal, governed LLM source used only after person admission to classify an already known
+    # contact's committee role. It is not a people-discovery source or waterfall resolver;
+    # registration gives the exact-source pre-spend gate a real authority row. Gateway receipts
+    # own the model cost, so the manifest stays zero-cost to avoid double counting.
+    _entry(
+        "llm_role_inference",
+        modality=Modality.CONVERSATION,
+        entity_scope=EntityScope.CONTACT,
+        tier=4,
+        yields=("contact",),
+        provider="llm_gateway",
+        cost_cents=Decimal(0),
+        freshness_profile="operation_window",
     ),
 )
 

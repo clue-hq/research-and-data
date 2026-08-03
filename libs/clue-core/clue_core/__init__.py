@@ -443,6 +443,8 @@ from clue_core.targeted_enrichment import (
 from clue_core.verification import (
     AgeOutCandidate,
     Binding,
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
     FaithfulnessJudge,
     Freshness,
     IdentityBindingGate,
@@ -828,6 +830,8 @@ __all__ = [
     # verification gate seam (M9 contracts; impl in clue_research.verification)
     "PreSpendRequest",
     "PreSpendDecision",
+    "EffectiveFieldSourcePlan",
+    "EffectiveSourceAuthorization",
     "TargetLock",
     "PreSpendGate",
     "JudgeResult",

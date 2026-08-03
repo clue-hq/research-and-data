@@ -33,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     BudgetTracker,
+    EffectiveFieldSourcePlan,
+    EffectiveSourceAuthorization,
     Entity,
     EntityScope,
     GateDecision,
@@ -42,6 +44,7 @@ from clue_core import (
     Modality,
     ResearchMode,
     Role,
+    SourceTier,
 )
 from clue_obs.otel import (
     ATTR_FIELD_KEY,
@@ -53,6 +56,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.icp import ResolvedSourceProfile, SourceWeight
+from clue_research.sources.authority import load_effective_source_plan
 from clue_research.sources.source_profile import (
     AllowedSource,
     resolve_allowed_set,
@@ -124,6 +128,9 @@ class OrderedSourcePlan(BaseModel):
     # source_keys an LLM named that were NOT in the allowed set — dropped by the hard guard (audit).
     dropped_off_set: tuple[str, ...] = ()
     rationale: str = ""
+    # The exact authorization floor used to build this plan. ``None`` is retained only for callers
+    # that construct a static plan value directly; ``plan_sources`` always supplies it.
+    effective_source_plan: EffectiveFieldSourcePlan | None = None
 
     def tier_plan(self) -> tuple[str, ...]:
         """The executable ``tier_plan`` for the waterfall: the **RUN** sources' keys, in plan order.
@@ -317,8 +324,41 @@ async def plan_sources(
     or entities; a downstream consumer that drives them must target-lock each to the resolved
     ``entity_id`` (the discovery existence-gate), never letting a query string introduce an entity.
     """
-    allowed = await resolve_allowed_set(
-        conn, spec, field, max_tier=tier_scope, entity_scope=entity_scope, served=served
+    # Authority is compiled from the complete profile/registry intersection. Run-specific tier,
+    # modality, fan-out and budget choices may only narrow it. If a pre-spend check has already
+    # frozen this ICP/field, load that exact row so later profile/registry drift cannot widen it.
+    canonical_candidates = await resolve_allowed_set(
+        conn, spec, field, entity_scope=entity_scope, served=served
+    )
+    effective_source_plan = await load_effective_source_plan(
+        conn,
+        workspace_id=spec.workspace_id,
+        icp_key=spec.icp_key,
+        icp_version=spec.version,
+        field_key=field,
+    )
+    if effective_source_plan is None:
+        effective_source_plan = EffectiveFieldSourcePlan.compile(
+            workspace_id=spec.workspace_id,
+            icp_key=spec.icp_key,
+            icp_version=spec.version,
+            field_key=field,
+            sources=tuple(
+                EffectiveSourceAuthorization(
+                    source_key=source.source_key,
+                    source_tier=SourceTier(source.tier),
+                )
+                for source in canonical_candidates
+            ),
+        )
+    authorized = {
+        source.source_key: int(source.source_tier) for source in effective_source_plan.sources
+    }
+    allowed = tuple(
+        source
+        for source in canonical_candidates
+        if authorized.get(source.source_key) == source.tier
+        and (tier_scope is None or source.tier <= tier_scope)
     )
     icp_id = f"{spec.workspace_id}/{spec.icp_key}@{spec.version}"
 
@@ -331,6 +371,7 @@ async def plan_sources(
             return OrderedSourcePlan(
                 field=field,
                 mode=mode,
+                effective_source_plan=effective_source_plan,
                 rationale=(
                     "no registered, profile-weighted source can yield this field at the requested "
                     "tier (empty allowed set) — nothing to plan"
@@ -399,6 +440,7 @@ async def plan_sources(
             mode=mode,
             ordered_sources=tuple(included),
             dropped_off_set=tuple(dropped),
+            effective_source_plan=effective_source_plan,
             rationale=_rationale(
                 used_llm=used_llm,
                 n_allowed=len(allowed),
