@@ -206,7 +206,12 @@ class ExaCreateImportRequest(BaseModel):
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(
-            self.model_dump(mode="json", exclude_defaults=True),
+            # ``format`` is a required discriminator in Exa's live import contract.  It has a
+            # single legal value and therefore a local default, but omitting model defaults from
+            # the wire body removes the required field and Exa rejects the request before creating
+            # an import.  Keep the complete pinned request shape here; unlike optional Webset
+            # collections, these CSV defaults are provider-significant contract fields.
+            self.model_dump(mode="json", exclude_none=True),
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")

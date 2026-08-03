@@ -70,6 +70,18 @@ def test_import_create_and_upload_use_exact_distinct_auth_boundaries() -> None:
 
         assert len(seen) == 2
         assert seen[0].headers["x-api-key"] == "exa-test-secret"
+        # Independent provider-contract oracle.  Do not compare the transport with the same
+        # serializer that produced its body: that allowed the required CSV discriminator to
+        # disappear while this test remained green.
+        assert json.loads(seen[0].content) == {
+            "size": 31,
+            "count": 1,
+            "format": "csv",
+            "entity": {"type": "company"},
+            "title": "Selected accounts",
+            "csv": {"identifier": 0},
+            "metadata": {"clueFingerprint": "a" * 64},
+        }
         assert seen[0].content == request.canonical_bytes()
         assert "x-api-key" not in seen[1].headers
         assert seen[1].headers["content-type"] == "text/csv"
