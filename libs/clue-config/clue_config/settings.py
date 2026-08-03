@@ -80,6 +80,16 @@ class Settings(BaseSettings):
     # worker still drains already-created E1 operations whenever Websets lifecycle is enabled.
     # Env: CLUE_EXA_TARGETED_ENRICHMENT_ENABLED.
     exa_targeted_enrichment_enabled: bool = False
+    # Independent default-off authorization and bounded wire-policy knobs for target-locked Exa
+    # Search account-deep acquisition (M8B A0/E0). This is not Websets discovery or post-seal
+    # Websets import; neither existing Exa flag implicitly enables it.
+    # Env: CLUE_EXA_ACCOUNT_DEEP_ACQUISITION_ENABLED / CLUE_EXA_ACCOUNT_DEEP_SEARCH_TYPE /
+    # CLUE_EXA_ACCOUNT_DEEP_MAX_RESULTS / CLUE_EXA_ACCOUNT_DEEP_MAX_ADDITIONAL_QUERIES.
+    exa_account_deep_acquisition_enabled: bool = False
+    exa_account_deep_search_type: Literal["deep", "deep-reasoning"] = "deep-reasoning"
+    # Exa's public endpoint currently admits up to 100, but the accepted Clue policy cap is 50.
+    exa_account_deep_max_results: int = Field(default=50, ge=1, le=50)
+    exa_account_deep_max_additional_queries: int = Field(default=10, ge=0, le=10)
     # Independent authorization and plan-specific monetary conversion for post-selection Sumble
     # S1. Provider credits remain the authoritative charged unit; zero means no honest subscription
     # allocation has been configured and monetary reporting stays zero rather than being invented.

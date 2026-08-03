@@ -1,0 +1,41 @@
+{
+  "additionalQueries": [
+    "Cascade Gastroenterology Associates referral intake fax workflow Portland Oregon",
+    "Cascade Gastroenterology Associates patient access expansion official source"
+  ],
+  "contents": {
+    "highlights": {
+      "highlightsPerUrl": 3,
+      "numSentences": 4,
+      "query": "Find direct evidence for the requested account fields."
+    },
+    "text": true
+  },
+  "numResults": 50,
+  "outputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "account.operational_pain": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "account.strategic_moves": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "account.operational_pain",
+      "account.strategic_moves"
+    ],
+    "type": "object"
+  },
+  "query": "Research the exact account Cascade Gastroenterology Associates at cascade-gastro.example for grounded operational and strategic evidence.",
+  "stream": false,
+  "systemPrompt": "Research only the exact account at cascade-gastro.example. Prefer primary sources, retain every source URL, do not drift to similarly named organizations, and leave the field null when target-locked evidence is absent.",
+  "type": "deep-reasoning"
+}

@@ -1,0 +1,60 @@
+{
+  "costDollars": {
+    "search": {
+      "deep-reasoning": 0.42
+    },
+    "total": 0.42
+  },
+  "output": {
+    "content": {
+      "account.operational_pain": "Referral-document indexing and patient-call routing create recurring administrative work.",
+      "account.strategic_moves": "The practice is expanding centralized patient-access and referral operations."
+    },
+    "grounding": [
+      {
+        "citations": [
+          {
+            "title": "Referral Coordinator",
+            "url": "https://cascade-gastro.example/careers/referral-coordinator"
+          }
+        ],
+        "confidence": "high",
+        "field": "account.operational_pain"
+      },
+      {
+        "citations": [
+          {
+            "title": "Patient access expansion",
+            "url": "https://cascade-gastro.example/news/patient-access-expansion"
+          }
+        ],
+        "confidence": "medium",
+        "field": "account.strategic_moves"
+      }
+    ],
+    "providerAdditiveMetadata": {
+      "ignoredByNormalizer": true
+    }
+  },
+  "providerAdditiveTopLevel": "accepted",
+  "requestId": "exa-deep-fixture-request-1",
+  "results": [
+    {
+      "highlights": [
+        "The Referral Coordinator indexes incoming fax documents and routes patient calls."
+      ],
+      "providerAdditiveResultField": 1,
+      "text": "The Referral Coordinator indexes incoming fax documents, follows missing records, and routes patient calls to clinical teams.",
+      "title": "Referral Coordinator",
+      "url": "https://cascade-gastro.example/careers/referral-coordinator"
+    },
+    {
+      "highlights": [
+        "The practice announced centralized patient-access operations across its locations."
+      ],
+      "text": "Cascade Gastroenterology Associates announced a centralized patient-access and referral-operations program across its Oregon locations.",
+      "title": "Patient access expansion",
+      "url": "https://cascade-gastro.example/news/patient-access-expansion"
+    }
+  ]
+}
