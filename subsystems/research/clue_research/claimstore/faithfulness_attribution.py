@@ -21,12 +21,14 @@ from clue_research.claimstore.entailment_identity import (
     FaithfulnessLookupPlan,
     FaithfulnessSubjectIdentityError,
     faithfulness_lookup_plan,
+    faithfulness_redaction_subject_ids,
 )
 
 __all__ = [
     "METRIC_FAITHFULNESS_SUBJECT_IDENTITY_ERRORS",
     "FaithfulnessAttribution",
     "read_faithfulness_attributions",
+    "redact_faithfulness_rationale",
 ]
 
 METRIC_FAITHFULNESS_SUBJECT_IDENTITY_ERRORS = (
@@ -47,6 +49,42 @@ class FaithfulnessAttribution(BaseModel):
     judge_model: str
     answering_model: str
     prompt_version: str
+
+
+async def redact_faithfulness_rationale(
+    conn: AsyncConnection,
+    claim: Claim,
+    *,
+    reason_code: str,
+) -> FaithfulnessSubjectIdentityError | None:
+    """One-way redact every rationale attributable to ``claim`` through the shared A/Q plan.
+
+    A malformed judged-source claim still redacts its actual-claim fallback and returns the typed
+    identity error so the caller can emit its domain-specific bounded metric. Keeping the subject
+    lookup and SQL here gives DSAR and workspace erasure one owner for this privacy-critical edge.
+    """
+
+    identity_error: FaithfulnessSubjectIdentityError | None = None
+    try:
+        subject_ids = [str(item) for item in faithfulness_redaction_subject_ids(claim)]
+    except FaithfulnessSubjectIdentityError as exc:
+        subject_ids = [str(claim.id)]
+        identity_error = exc
+    await conn.execute(
+        text(
+            """
+            UPDATE faithfulness_verdict
+            SET rationale = NULL,
+                rationale_redacted_at = COALESCE(rationale_redacted_at, now()),
+                rationale_redaction_reason =
+                    COALESCE(rationale_redaction_reason, :reason_code)
+            WHERE claim_id = ANY(CAST(:claim_ids AS uuid[]))
+              AND rationale IS NOT NULL
+            """
+        ),
+        {"claim_ids": subject_ids, "reason_code": reason_code},
+    )
+    return identity_error
 
 
 async def read_faithfulness_attributions(

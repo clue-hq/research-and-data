@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -23,6 +24,10 @@ class ProposalPolicy(BaseModel):
     auto_promote_tier3_sources: bool = False
     client_field_mode: ClientFieldPromotionMode = ClientFieldPromotionMode.HUMAN_CONFIRM
     client_field_policy_version: str = "dynamic-client-kb-v1"
+    # Safe-auto is fail-closed on a policy-owned semantic contract. The proposing model can describe
+    # sensitivity/authority, but it cannot add a hash to this set: only trusted configuration can
+    # pre-authorize the exact field meaning/schema/use contract for autonomous promotion.
+    safe_auto_client_field_contract_hashes: frozenset[str] = Field(default_factory=frozenset)
     max_client_field_schema_bytes: int = Field(default=4_096, ge=128, le=65_536)
     max_client_field_evidence_refs: int = Field(default=8, ge=1, le=64)
     human_field_classes: frozenset[FieldClass] = Field(
@@ -43,6 +48,11 @@ class ProposalPolicy(BaseModel):
             raise ValueError("human_source_tiers entries must be in 1..4")
         if not self.client_field_policy_version.strip():
             raise ValueError("client_field_policy_version must not be blank")
+        if any(
+            re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in self.safe_auto_client_field_contract_hashes
+        ):
+            raise ValueError("safe-auto client field contract hashes must be lowercase SHA-256")
         return self
 
 

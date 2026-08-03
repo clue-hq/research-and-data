@@ -23,8 +23,10 @@ def test_faithfulness_verdict_sql_ownership_is_closed() -> None:
                 found[str(path.relative_to(root))] = matches
 
     assert found == {
-        "subsystems/research/clue_research/claimstore/faithfulness_attribution.py": {"FROM"},
-        "subsystems/research/clue_research/compliance/dsar.py": {"UPDATE"},
+        "subsystems/research/clue_research/claimstore/faithfulness_attribution.py": {
+            "FROM",
+            "UPDATE",
+        },
         "subsystems/research/clue_research/verification/faithfulness.py": {
             "FROM",
             "INSERT INTO",

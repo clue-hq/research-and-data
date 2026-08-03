@@ -20,6 +20,7 @@ from clue_core import (
     ExtractionMethod,
     JudgeVerdict,
     ResearchMode,
+    ReuseScope,
     new_entity_id,
     new_run_id,
 )
@@ -30,6 +31,7 @@ from clue_research.claimstore import (
     FaithfulnessSubjectIdentityError,
     entailment_judgment_id,
     faithfulness_lookup_plan,
+    faithfulness_redaction_subject_ids,
     read_faithfulness_attributions,
 )
 from tests.db.conftest import run_async
@@ -55,6 +57,8 @@ def _claim(
         confidence=0.95,
         run_id=new_run_id(),
         research_mode=ResearchMode.ACCOUNT_PROFILING,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id="faithfulness-attribution-test",
     )
 
 
@@ -67,6 +71,7 @@ def test_lookup_plan_uses_a_for_ordinary_claim_even_when_it_has_evidence() -> No
 def test_lookup_plan_prefers_q_then_a_only_for_the_judged_source() -> None:
     claim = _claim(source_key=SOURCE_CLIENT_INTERVIEW_JUDGED)
     question_id = entailment_judgment_id(
+        workspace_id=claim.workspace_id,
         field_key=claim.field_key,
         value=claim.value_json,
         quote=claim.evidence_span or "",
@@ -74,6 +79,10 @@ def test_lookup_plan_prefers_q_then_a_only_for_the_judged_source() -> None:
     plan = faithfulness_lookup_plan(claim)
     assert plan.actual_claim_id == claim.id
     assert plan.subject_ids == (question_id, claim.id)
+    redaction_subjects = faithfulness_redaction_subject_ids(claim)
+    assert redaction_subjects[:2] == plan.subject_ids
+    assert len(redaction_subjects) == 3
+    assert redaction_subjects[2] not in plan.subject_ids
 
 
 def test_lookup_plan_fails_typed_and_bounded_for_a_malformed_judged_claim() -> None:

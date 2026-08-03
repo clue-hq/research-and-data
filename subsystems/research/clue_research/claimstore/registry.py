@@ -21,6 +21,7 @@ definition is rejected (a field's contract does not silently change underneath i
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from enum import StrEnum
@@ -139,10 +140,54 @@ class WorkspaceFieldRetiredError(ValueError):
     """A caller attempted to retire an absent/already-retired workspace field."""
 
 
+class WorkspaceDynamicClientKbErasedError(ValueError):
+    """A C8 write was attempted after this workspace's dynamic Client-KB was erased."""
+
+
+async def workspace_dynamic_client_kb_is_erased(
+    conn: AsyncConnection, *, workspace_id: str
+) -> bool:
+    return (
+        await conn.execute(
+            text(
+                "SELECT 1 FROM workspace_dynamic_client_kb_erasure "
+                "WHERE workspace_id = :workspace_id"
+            ),
+            {"workspace_id": workspace_id},
+        )
+    ).scalar_one_or_none() is not None
+
+
+async def assert_workspace_dynamic_client_kb_active(
+    conn: AsyncConnection, *, workspace_id: str
+) -> None:
+    """Take the write-side workspace lock and enforce the no-resurrection marker.
+
+    Workspace erasure takes ``FOR UPDATE`` on the same row. A racing C8 writer therefore either
+    commits before the eraser scans it or waits, observes the marker, and fails closed.
+    """
+
+    workspace = (
+        await conn.execute(
+            text(
+                "SELECT workspace_id FROM workspace WHERE workspace_id = :workspace_id "
+                "FOR KEY SHARE"
+            ),
+            {"workspace_id": workspace_id},
+        )
+    ).scalar_one_or_none()
+    if workspace is None:
+        raise WorkspaceFieldDefinitionError("workspace field-registry scope does not exist")
+    if await workspace_dynamic_client_kb_is_erased(conn, workspace_id=workspace_id):
+        raise WorkspaceDynamicClientKbErasedError(
+            f"workspace {workspace_id!r} dynamic Client-KB has been erased"
+        )
+
+
 # --- the value_schema validator --------------------------------------------
 # A deliberately small JSON-shape vocabulary — enough for the seed pack and typed payloads, with no
-# extra dependency. Supported: {"type": object|array|string|integer|number|boolean|null,
-# "properties": {...}, "required": [...], "items": {...}, "enum": [...]}.
+# extra dependency. Every accepted keyword is enforced at write time; accepting a constraint and
+# silently ignoring it would make a policy-approved schema less restrictive than it appears.
 _SCALAR_CHECKS = {
     "string": lambda v: isinstance(v, str),
     "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
@@ -154,6 +199,20 @@ _WORKSPACE_SCHEMA_MAX_BYTES = 65_536
 _WORKSPACE_SCHEMA_MAX_DEPTH = 6
 _WORKSPACE_SCHEMA_MAX_ITEMS = 256
 _WORKSPACE_SCHEMA_MAX_STRING = 8_192
+_COMMON_SCHEMA_KEYS = frozenset({"type", "enum"})
+_TYPE_SCHEMA_KEYS = {
+    "string": frozenset({"maxLength"}),
+    "integer": frozenset({"minimum", "maximum"}),
+    "number": frozenset({"minimum", "maximum"}),
+    "boolean": frozenset(),
+    "null": frozenset(),
+    "array": frozenset({"maxItems", "items"}),
+    "object": frozenset({"properties", "required", "additionalProperties"}),
+}
+
+
+def _is_json_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _validate_workspace_schema(
@@ -166,18 +225,53 @@ def _validate_workspace_schema(
     declared = schema.get("type")
     if declared not in {*_SCALAR_CHECKS, "object", "array"}:
         raise WorkspaceFieldDefinitionError(f"{path}: unsupported or missing schema type")
+    unsupported = set(schema) - _COMMON_SCHEMA_KEYS - _TYPE_SCHEMA_KEYS[declared]
+    if unsupported:
+        raise WorkspaceFieldDefinitionError(
+            f"{path}: unsupported schema keywords {sorted(unsupported)!r}"
+        )
     enum = schema.get("enum")
-    if enum is not None and (not isinstance(enum, list) or not enum or len(enum) > 128):
+    if "enum" in schema and (not isinstance(enum, list) or not enum or len(enum) > 128):
         raise WorkspaceFieldDefinitionError(f"{path}.enum must contain 1..128 values")
-    if declared == "string" and enum is None:
+    if enum is not None:
+        encoded_members = [serialize_value_json(member) for member in enum]
+        if len(encoded_members) != len(set(encoded_members)):
+            raise WorkspaceFieldDefinitionError(f"{path}.enum must not contain duplicates")
+    if declared == "string":
         maximum = schema.get("maxLength")
-        if not isinstance(maximum, int) or not 1 <= maximum <= _WORKSPACE_SCHEMA_MAX_STRING:
+        if "maxLength" in schema and (
+            not isinstance(maximum, int)
+            or isinstance(maximum, bool)
+            or not 1 <= maximum <= _WORKSPACE_SCHEMA_MAX_STRING
+        ):
+            raise WorkspaceFieldDefinitionError(
+                f"{path}.maxLength must be in 1..{_WORKSPACE_SCHEMA_MAX_STRING}"
+            )
+        if enum is None and maximum is None:
             raise WorkspaceFieldDefinitionError(
                 f"{path}: an open string requires maxLength in 1..{_WORKSPACE_SCHEMA_MAX_STRING}"
             )
+    if declared in {"integer", "number"}:
+        for keyword in ("minimum", "maximum"):
+            bound = schema.get(keyword)
+            if keyword in schema and (
+                not _is_json_number(bound)
+                or (isinstance(bound, float) and not math.isfinite(bound))
+            ):
+                raise WorkspaceFieldDefinitionError(
+                    f"{path}.{keyword} must be a finite JSON number"
+                )
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise WorkspaceFieldDefinitionError(f"{path}: minimum must not exceed maximum")
     if declared == "array":
         maximum = schema.get("maxItems")
-        if not isinstance(maximum, int) or not 1 <= maximum <= _WORKSPACE_SCHEMA_MAX_ITEMS:
+        if (
+            not isinstance(maximum, int)
+            or isinstance(maximum, bool)
+            or not 1 <= maximum <= _WORKSPACE_SCHEMA_MAX_ITEMS
+        ):
             raise WorkspaceFieldDefinitionError(
                 f"{path}: an array requires maxItems in 1..{_WORKSPACE_SCHEMA_MAX_ITEMS}"
             )
@@ -195,10 +289,26 @@ def _validate_workspace_schema(
             raise WorkspaceFieldDefinitionError(
                 f"{path}: bounded objects require additionalProperties=false"
             )
+        required = schema.get("required", [])
+        if (
+            not isinstance(required, list)
+            or any(not isinstance(key, str) for key in required)
+            or len(required) != len(set(required))
+            or not set(required).issubset(properties)
+        ):
+            raise WorkspaceFieldDefinitionError(
+                f"{path}.required must be unique property names declared by the object"
+            )
         for key, child in properties.items():
-            if not isinstance(key, str) or not isinstance(child, dict):
+            if not isinstance(key, str) or not key or not isinstance(child, dict):
                 raise WorkspaceFieldDefinitionError(f"{path}: invalid object property schema")
             _validate_workspace_schema(child, path=f"{path}.{key}", depth=depth + 1)
+    if enum is not None:
+        for index, member in enumerate(enum):
+            try:
+                _validate_payload(member, schema, f"{path}.enum[{index}]")
+            except ValueSchemaError as exc:
+                raise WorkspaceFieldDefinitionError(str(exc)) from exc
 
 
 def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value") -> None:
@@ -236,6 +346,15 @@ def _validate_payload(value: Any, schema: Mapping[str, Any], path: str = "value"
             raise ValueSchemaError(f"{path}: unknown schema type {declared!r}")
         if not check(value):
             raise ValueSchemaError(f"{path}: expected {declared}, got {type(value).__name__}")
+        if declared in {"integer", "number"}:
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueSchemaError(f"{path}: expected a finite {declared}")
+            minimum = schema.get("minimum")
+            maximum = schema.get("maximum")
+            if minimum is not None and value < minimum:
+                raise ValueSchemaError(f"{path}: must be at least {minimum}")
+            if maximum is not None and value > maximum:
+                raise ValueSchemaError(f"{path}: must be at most {maximum}")
         if (
             declared == "string"
             and isinstance(schema.get("maxLength"), int)
@@ -372,6 +491,8 @@ async def _get_workspace_row(
             "LEFT JOIN workspace_field_retirement r "
             "ON r.workspace_id = w.workspace_id AND r.field_key = w.field_key "
             "WHERE w.workspace_id = :workspace_id AND w.field_key = :field_key "
+            "AND NOT EXISTS (SELECT 1 FROM workspace_dynamic_client_kb_erasure e "
+            "WHERE e.workspace_id = w.workspace_id) "
             f"{retired}"
         ),
         {"workspace_id": workspace_id, "field_key": field_key},
@@ -568,6 +689,7 @@ async def register_workspace_field(
 
     if not workspace_id:
         raise WorkspaceFieldDefinitionError("workspace field registration requires workspace_id")
+    await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
     if not field_def.field_key.startswith("client."):
         raise WorkspaceFieldDefinitionError(
             "tenant-local Client-KB fields must use the client.* namespace"
@@ -690,6 +812,7 @@ async def retire_workspace_field(
 
     if not retired_by.startswith("human:"):
         raise PermissionError("workspace field retirement requires human authority")
+    await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
     existing = await _get_workspace_row(
         conn, workspace_id=workspace_id, field_key=field_key, include_retired=True
     )
@@ -900,6 +1023,10 @@ async def list_effective_fields(
                     LEFT JOIN workspace_field_retirement r
                       ON r.workspace_id = w.workspace_id AND r.field_key = w.field_key
                     WHERE w.workspace_id = :workspace_id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM workspace_dynamic_client_kb_erasure e
+                          WHERE e.workspace_id = w.workspace_id
+                      )
                       AND (CAST(:active AS boolean) IS NULL
                            OR {active_expr} = CAST(:active AS boolean))
                       AND (CAST(:pass_kind AS text) IS NULL

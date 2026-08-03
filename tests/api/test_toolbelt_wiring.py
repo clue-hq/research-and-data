@@ -537,9 +537,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    # 35 → 37 with PC-C8 task 1.5's two read-only Stage-0 inspection tools.
+    # 35 → 37 names with PC-C8's two read-only inspection tools; the two proposal writes and
+    # research_account_gaps retain @1 compatibility contracts alongside @2, yielding three
+    # additional descriptors.
     assert len(registry.names()) == 37
-    assert len(registry) == 38
+    assert len(registry) == 40
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

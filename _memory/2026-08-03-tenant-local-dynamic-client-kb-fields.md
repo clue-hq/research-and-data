@@ -107,3 +107,77 @@ it in the next session turn.
 
 Part II is implemented, locally committed as one bounded change, and paused for user review. Keep
 all pre-existing unrelated modifications and untracked artifacts out of the commit.
+
+## Pre-PR adversarial audit
+
+The 2026-08-03 pre-PR review found five release blockers; no implementation fix was made during
+the review:
+
+- The bounded workspace-schema validator accepts `minimum`/`maximum` but does not validate or
+  enforce either keyword. A real Postgres safe-auto flow promoted and materialized `-1` under an
+  integer schema declaring `minimum: 0`.
+- `claim_value_judge_unavailable` is persisted as the same terminal materialization refusal as an
+  actual non-entailment. A second attempt with a healthy judge returned the original refusal and
+  wrote no claim, contradicting the retry instruction and the durable-materializer retry goal.
+- The safe-auto predicate treats the agent-authored `sensitive`, `contains_personal_data`, and
+  downstream-authority flags as authoritative policy facts. A pure adversarial probe described
+  `client.founder_home_address` and outreach use while setting those booleans false; policy returned
+  eligible with no reason codes. The model can therefore self-attest around every semantic safety
+  guard unless an independent classifier/policy input owns those facts.
+- Q is global over `(field_key, canonical value, exact quote)` while tenant-local definitions allow
+  the same key to have different semantics. Two workspaces with different definitions for
+  `client.capacity_limit` reused one verdict: two successful materializations, one gateway call,
+  and one Q verdict row. This follows Part II's literal Q formula but conflicts with Part I's rule
+  that caches/identities involving tenant-local definitions carry workspace scope; the combined
+  contract needs an explicit ruling.
+- No workspace-erasure owner reaches `workspace_field_definition`, field proposal/decision payloads,
+  `workspace_field_materialization`, retirements, or local readiness policies. The existing test
+  injects an already-erased evidence double; it does not erase/redact the newly introduced durable
+  surfaces required by AC-30/DCKB-7.
+
+Verification remained green where coverage exists: 86 focused tests passed on isolated Postgres;
+changed-file Ruff/format passed; mypy passed 464 source files; all 24 import contracts passed; and a
+full Alembic base-down/head-up smoke returned to the single `282b9c7278c2` head. The repository-wide
+format gate remains red on 16 pre-existing untouched files, while repository-wide Ruff additionally
+sees untracked `.claude`/`.codex` skill copies. A fresh full DB-backed run completed with `3038
+passed, 22 skipped, 10 failed`; most failures are branch baselines, but the toolbelt-count failure is
+directly exposed by this slice (`40` installed versions versus the stale expected `38` after adding
+both v1 compatibility tools). No live provider canary or spend occurred. The exact disposable audit
+containers were stopped and removed. Do not push or open a PR until the blockers are resolved and
+the adversarial examples become committed regression tests.
+
+## Adversarial blocker remediation
+
+All five pre-PR blockers were resolved on `platform/c8-context-card`:
+
+- Safe-auto promotion is now fail-closed on a trusted-policy whitelist of exact semantic-contract
+  hashes. Model-authored sensitivity/authority booleans remain inputs to the conservative predicate
+  but can no longer make an unapproved field autonomous. Human promotion also cannot waive schema
+  validity or candidate conformance.
+- The bounded workspace schema subset now rejects unknown/unenforced keywords and enforces finite
+  numeric `minimum`/`maximum`, string/array caps, enum validity, and closed object shape. The real
+  `-1` under `minimum: 0` probe is a committed negative regression.
+- Entailment Q is workspace-scoped in every production path and the low-level identity constructor
+  now requires a non-empty workspace. Attribution never falls back to unsafe unscoped Q. The
+  redaction-only subject set still reconstructs the historical Q so legacy rationale is removable.
+  A real two-workspace probe now records two gateway calls/two verdict rows and retains a same-
+  workspace cache hit.
+- `claim_value_judge_unavailable` is retryable and writes no terminal receipt; a healthy retry of
+  the exact operation materializes successfully. Evidence unsupported/missing remains terminal.
+- Added migration `b0fa1743c982` and a transaction-locked workspace erasure owner. It deletes local
+  definitions/proposals/decisions/receipts/retirements/readiness policy, append-only redacts direct
+  and transitively derived claims, redacts current and legacy faithfulness rationale, tombstones and
+  purges unreferenced artifacts, clears projections, preserves neighboring tenants, and blocks every
+  C8 write/read replay through a durable no-resurrection marker. Replay is idempotent and storage
+  purge is a post-commit recoverable phase.
+
+Final verification used only `codex-roseau-c8-review-019fc488`, a uniquely named tmpfs pgvector
+container on `127.0.0.1:55483`; the configured shared database was not touched. The primary focused
+suite passed 70 tests, and the final stricter-Q/redaction pass passed 64 tests. Alembic completed
+head-to-base-to-head and reports one head (`b0fa1743c982`). Ruff/format passed for all touched Python,
+mypy passed 466 source files, and all 24 import contracts passed. A clean full suite completed with
+`3040 passed, 22 skipped, 9 failed`; none of the nine failures touches C8 (old catalog pin, logging,
+Recipe 1/B4 checkpoint, ICP fixture, memory/static-secret guards, and two toolbelt logging baselines).
+No live provider call or spend occurred; real persistence/cache behavior used the production judge
+adapter with a deterministic counting gateway. The disposable container was verified by exact
+name/port, stopped, and removed after the final pass. No push or PR was performed.

@@ -53,11 +53,13 @@ from clue_research.claimstore.entailment_identity import (
     FaithfulnessSubjectIdentityError,
     entailment_judgment_id,
     faithfulness_lookup_plan,
+    faithfulness_redaction_subject_ids,
 )
 from clue_research.claimstore.faithfulness_attribution import (
     METRIC_FAITHFULNESS_SUBJECT_IDENTITY_ERRORS,
     FaithfulnessAttribution,
     read_faithfulness_attributions,
+    redact_faithfulness_rationale,
 )
 from clue_research.claimstore.merge import (
     DEFAULT_MERGE_POLICY,
@@ -84,8 +86,10 @@ from clue_research.claimstore.registry import (
     ReuseScopeError,
     UnknownFieldError,
     ValueSchemaError,
+    WorkspaceDynamicClientKbErasedError,
     WorkspaceFieldDefinitionError,
     WorkspaceFieldRetiredError,
+    assert_workspace_dynamic_client_kb_active,
     check_claim_writable,
     get_corroboration_config,
     get_effective_field,
@@ -100,6 +104,7 @@ from clue_research.claimstore.registry import (
     validate_value,
     validate_value_against_schema,
     validate_workspace_field_schema,
+    workspace_dynamic_client_kb_is_erased,
 )
 from clue_research.claimstore.research_view_queries import (
     ResolvedCurrentClaim,
@@ -157,8 +162,10 @@ __all__ = [
     "FaithfulnessSubjectIdentityError",
     "entailment_judgment_id",
     "faithfulness_lookup_plan",
+    "faithfulness_redaction_subject_ids",
     "FaithfulnessAttribution",
     "read_faithfulness_attributions",
+    "redact_faithfulness_rationale",
     "METRIC_FAITHFULNESS_SUBJECT_IDENTITY_ERRORS",
     # tenant scoping (M2.5)
     "WorkspaceScope",
@@ -194,7 +201,10 @@ __all__ = [
     "FieldRedefinitionError",
     "ReuseScopeError",
     "WorkspaceFieldDefinitionError",
+    "WorkspaceDynamicClientKbErasedError",
     "WorkspaceFieldRetiredError",
+    "assert_workspace_dynamic_client_kb_active",
+    "workspace_dynamic_client_kb_is_erased",
     # C7 registered semantic field placement
     "ResearchViewFieldRoute",
     "ResearchViewRouteRedefinitionError",

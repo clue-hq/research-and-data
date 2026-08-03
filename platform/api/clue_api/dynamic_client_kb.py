@@ -15,6 +15,7 @@ from clue_db import ConnFactory
 from clue_projections.stage0 import ExcludedEvidence, ResolvedQuote, StatementEvidenceReader
 from clue_research.proposals import FieldProposal
 from clue_research.stage0 import (
+    VALUE_JUDGE_UNAVAILABLE,
     ClaimEntailmentJudge,
     InterviewEvidenceRefused,
     VolunteeredStatementRow,
@@ -88,6 +89,7 @@ class DynamicClientKbMaterializer:
         assert isinstance(evidence, ResolvedQuote)
         try:
             judged = await check_claim_value_entailment(
+                workspace_id=workspace_id,
                 field_key=plan.field_key,
                 value=plan.candidate_value,
                 quote=evidence.quote,
@@ -95,6 +97,12 @@ class DynamicClientKbMaterializer:
                 entailment_judge=self._entailment_judge,
             )
         except InterviewEvidenceRefused as exc:
+            # An unavailable judge made no semantic decision. Persisting it in the terminal,
+            # content-addressed receipt would turn a temporary dependency outage into a permanent
+            # refusal and make every healthy retry return before asking the judge. Leave no receipt
+            # so the exact same operation can retry; unsupported evidence remains terminal below.
+            if exc.reason_code == VALUE_JUDGE_UNAVAILABLE:
+                raise
             async with conn_factory() as conn:
                 receipt = await record_field_materialization_refusal(
                     conn, plan=plan, reason_code=exc.reason_code

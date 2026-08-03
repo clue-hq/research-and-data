@@ -89,12 +89,11 @@ from clue_obs.otel import (
 )
 from clue_research.claimstore import (
     ALL_WORKSPACES,
-    FaithfulnessSubjectIdentityError,
     WorkspaceScope,
     affected_derivations,
     claims_by_ids,
     claims_for,
-    faithfulness_lookup_plan,
+    redact_faithfulness_rationale,
     supersede_claim,
     supersede_claims,
 )
@@ -313,37 +312,18 @@ async def _apply_tombstone(
     # intentionally NOT "any claim with a span": only the judged-interview producer owns Q. A
     # malformed marked claim must not block the erasure transaction; it has no reconstructable Q,
     # so redact A, emit one bounded reason, and continue fail-closed.
-    try:
-        verdict_ids = [str(cid) for cid in faithfulness_lookup_plan(target).subject_ids]
-    except FaithfulnessSubjectIdentityError as exc:
-        verdict_ids = [str(target.id)]
+    identity_error = await redact_faithfulness_rationale(conn, target, reason_code=reason.value)
+    if identity_error is not None:
         sink.add(
             METRIC_DSAR_FAITHFULNESS_IDENTITY_ERRORS,
             1,
-            {"reason": exc.reason_code},
+            {"reason": identity_error.reason_code},
         )
         _log.warning(
             "compliance.dsar.faithfulness_subject_identity_error reason=%s claim_id=%s",
-            exc.reason_code,
-            exc.actual_claim_id,
+            identity_error.reason_code,
+            identity_error.actual_claim_id,
         )
-    await conn.execute(
-        text(
-            """
-            UPDATE faithfulness_verdict
-            SET rationale = NULL,
-                rationale_redacted_at = COALESCE(rationale_redacted_at, now()),
-                rationale_redaction_reason =
-                    COALESCE(rationale_redaction_reason, :redaction_reason)
-            WHERE claim_id = ANY(CAST(:claim_ids AS uuid[]))
-              AND rationale IS NOT NULL
-            """
-        ),
-        {
-            "claim_ids": verdict_ids,
-            "redaction_reason": reason.value,
-        },
-    )
     # validate_field=False: the redaction sentinel is intentionally not a valid field value (the
     # tombstone is REJECTED, so it never wins the merge regardless). This is one of the sanctioned
     # compliance redaction callers documented on claimstore.supersede_claim.
