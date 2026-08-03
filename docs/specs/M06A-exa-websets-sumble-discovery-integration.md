@@ -1015,6 +1015,12 @@ approved paid canary and fresh-process replay.
 
 **Blocked by:** S1, the committee eligibility gate, and personal-data governance acceptance.
 
+**Expanded implementation plan:** `M8B-exa-sumble-account-deep-integration-roadmap.md`. That
+companion owns the accepted harness interaction contract, durable project research direction,
+synthetic deep-eligible fixture, Exa Deep account-profile integration, Sumble Teams/People
+acquisition, provider-neutral DEEP wait seam, full `AccountDeepOrchestrator` fleet/tool composition,
+and combined acceptance. This discovery spec retains the S2 eligibility and release boundary.
+
 **Gate S2:** a non-eligible account causes zero Sumble people/team calls; an eligible account
 produces identity-resolved committee candidates with inferred relationships explicitly labeled;
 contact reveals run only for selected candidates and replay without spend.
@@ -1022,8 +1028,10 @@ contact reveals run only for selected candidates and replay without spend.
 ### Separate future work
 
 - Sumble signals/priority signals/briefs: no slice until separately approved.
-- General Exa Search tool: separate spec and acceptance run; it must not share Websets billing or
-  automatically promote search output into claims.
+- General-purpose Exa Search agent tool: separate spec and acceptance run; it must not share
+  Websets billing or automatically promote search output into claims. Target-locked Exa
+  Deep/Deep-Reasoning inside account profiling is narrower and is governed by
+  `M8B-exa-sumble-account-deep-integration-roadmap.md`.
 
 The 2026-08-03 live characterization made one bounded synchronous `/search` request for two neural
 results. It returned the documented request/result/cost envelope plus additive production fields
