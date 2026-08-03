@@ -1,7 +1,7 @@
 # M6A — Durable Exa Websets account discovery and gated Sumble enrichment
 
-**Status:** Binding implementation plan; Slices P0/D0/D1 implemented; D2 and both bounded D3 live
-gates (two-row search-only and one-row enriched) closed on 2026-08-03
+**Status:** Binding implementation plan; D0-D6 implemented; E1 and S1 mechanical integration
+closed; their separately bounded live canaries remain open on 2026-08-03
 
 **Branch:** `platform/c8-exa-sumble-discovery` (branched from `platform/c8-context-card`)
 
@@ -663,9 +663,11 @@ Pricing is versioned config, never embedded in the normalizer.
 - prevent aggregate reservation from exceeding the project cap under concurrency; and
 - show the optional email/phone increment independently before dispatch.
 
-The existing Sumble spend-safety backlog—request-versioned keys, durable aggregate caps,
-concurrency-safe resolver composition, correct retry/spend-unknown classification, and cumulative
-cost reporting—must close before the later Sumble live slices.
+S1 closes the account-gap portion of the Sumble spend-safety backlog with request-versioned keys,
+one project-run aggregate reservation, coalesced endpoint snapshots, conservative
+spend-outcome-unknown quarantine, exact response-credit receipts, cumulative project cost, and
+terminal zero-call replay. S2 must reuse these guarantees rather than calling the legacy live
+resolver path directly.
 
 ---
 
@@ -985,11 +987,29 @@ provider-contract portion; until then mechanical integration may pass while E1 r
 
 ### Slice S1 — Sumble account gaps after scoring
 
-**Blocked by:** D6 and closure of the recorded Sumble spend-safety backlog.
+**Status:** overall S1 provider gate `OPEN`; mechanical REST-v9/ledger/claim integration `PASS` on
+2026-08-03; the separately authorized one-account/one-field paid live canary remains `OPEN`. See
+`M06A-S1-sumble-account-gap-acceptance.md`. Implementation commit `ae05542`.
+
+**Eligibility:** one canonical account from the exact current seal, one exact human-selected tier
+claim, an active `DEEP` project run, and an explicit positive-value field plan. The approved first
+wave is limited to organization employee count/domain/industry/headquarters, engineering hiring,
+and confirmed technology. A confident current value, absent Sumble source in the field's tier plan,
+unjustified provider cap, stale/foreign lineage, or unapproved unbounded technology call fails
+before the operation ledger or HTTP boundary.
+
+**Durability and reconciliation:** the parent operation reserves the whole authorized bundle before
+dispatch. Organization, jobs, and confirmed-tech calls have independent request/response snapshots
+and credit receipts. A possible paid response without a durable receipt becomes terminal
+`spend_outcome_unknown`; it is never blindly retried. Terminal replay is database-only. Sumble
+claims retain their own source/artifact/evidence identity, Exa claims remain live, and the shared
+field merge/corroborator chooses a current value or records a conflict without provider overwrite.
 
 **Gate S1:** the same selected account's organization/jobs/confirmed-tech snapshots are acquired by
 REST v9, stored once, replayed without spend, normalized into claims, and merged/corroborated against
-Exa without deleting either provider's claim.
+Exa without deleting either provider's claim. The mechanical portion proves this against real
+PostgreSQL and the pinned v9 wire contract; the overall gate closes only after the separately
+approved paid canary and fresh-process replay.
 
 ### Slice S2 — Top-tier buying-committee discovery
 
