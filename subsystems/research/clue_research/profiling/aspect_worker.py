@@ -65,9 +65,9 @@ from clue_core import (
     Claim,
     ClaimId,
     CostCents,
+    EntityScope,
     EntityType,
     FieldDef,
-    GateDecision,
     ICPSpec,
     LLMGateway,
     PreSpendGate,
@@ -359,16 +359,15 @@ class AspectProfilingWorker:
                 # none — the policy-as-data tier reach (lever 2).
                 tier_scope=plan_policy.effective_max_tier(self._tier_scope),
                 entity_tier=tier,
+                entity_scope=EntityScope.ACCOUNT,
                 budget_envelope=budget_remaining,
                 gateway=self._gateway,
                 planner_model=self._planner_model,
                 config=self._planner_config,
             )
 
-        # 4. pre-spend gate (M9.1; injected). Use the tier of the first source that will actually
-        # RUN — not ordered_sources[0], whose modality may be gated SKIP (it would spend nothing and
-        # the waterfall walks only the RUN sources via tier_plan()). The per-source callback below
-        # reuses this first decision and gates every later fallback source before its own call.
+        # 4. pre-spend gate (M9.1; injected). Every bound fallback is checked immediately before its
+        # own resolver call. A rejected source is skipped locally and the waterfall continues.
         source_gate: SourceGate | None = None
         gate_results: dict[str, bool] = {}
         if self._pre_spend_gate is not None:
@@ -385,6 +384,9 @@ class AspectProfilingWorker:
                         field_key=field_key,
                         source_tier=manifest.tier,
                         source_key=manifest.source_key,
+                        effective_source_plan=(
+                            plan.effective_source_plan if plan is not None else None
+                        ),
                         run_id=run_id,
                     )
                 )
@@ -393,29 +395,6 @@ class AspectProfilingWorker:
                 return allowed
 
             source_gate = check_source
-
-        if self._pre_spend_gate is not None and plan is not None:
-            first_run = next(
-                (s for s in plan.ordered_sources if s.gate_decision is GateDecision.RUN), None
-            )
-            if first_run is not None:
-                decision = await self._pre_spend_gate.check(
-                    PreSpendRequest(
-                        entity_id=account.id,
-                        entity_type=EntityType.ACCOUNT,
-                        field_key=field_key,
-                        source_tier=first_run.tier,
-                        source_key=first_run.source_key,
-                        run_id=run_id,
-                    )
-                )
-                if decision.verdict is PreSpendVerdict.REJECT:
-                    return _FieldFill(
-                        field_key=field_key,
-                        disposition=ProfilingFieldDisposition.GATE_REJECTED,
-                        reasons=decision.reasons,
-                    )
-                gate_results[first_run.source_key] = True
 
         # 5. waterfall fill (the only composer: writes + stamps + reuse + idempotency).
         field_for_run = (

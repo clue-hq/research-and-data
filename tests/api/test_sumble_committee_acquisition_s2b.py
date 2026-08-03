@@ -46,6 +46,7 @@ from clue_research.resolvers.sumble import SUMBLE_API_VERSION
 from clue_research.resolvers.sumble.committee_transport import SumbleRawPayload
 from clue_research.resolvers.sumble.people import SumblePeopleResponse
 from clue_research.resolvers.sumble.teams import SumbleTeamsResponse
+from clue_research.sources import seed_source_manifests
 from clue_storage import FsStorage
 from tests.api.test_exa_targeted_enrichment_e1 import _advance_sealed_run_to_deep
 from tests.db.conftest import run_async
@@ -115,6 +116,10 @@ async def _setup(
     strict_s2d: bool = False,
     s2d_criterion_state: str = "yes",
 ) -> CommitteeAcquisitionRequest:
+    # Production composition seeds the shared source registry before any provider path is
+    # reachable. S2D's real pre-spend gate now validates the exact Teams/People keys, so this
+    # shared fixture must reproduce that bootstrap rather than relying on tier-only admission.
+    await seed_source_manifests(conn)
     strategy = (
         {
             "scoring_mode": "disabled",
