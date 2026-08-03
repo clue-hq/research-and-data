@@ -53,6 +53,7 @@ from clue_api.trial.discovery_fixture import (
 from clue_api.trial.discovery_fixture import (
     PROJECT_RUN_ID as DISCOVERY_PROJECT_RUN_ID,
 )
+from clue_config import ConfigOverlay, ConfigVersion, OverlayStore
 from clue_core import (
     DiscoveryBatchState,
     DiscoveryOperationState,
@@ -202,6 +203,22 @@ def _bind_recorded_resolvers(
     for source_key, resolver in resolvers.items():
         bind_resolver(source_key, resolver)
     return resolvers
+
+
+def _fixture_config_store() -> OverlayStore:
+    policies = DEFAULT_RESEARCH_DIRECTIVE.policies
+    store = OverlayStore()
+    store.set_icp_overlay(
+        WORKSPACE_ID,
+        DEEP_ICP_KEY,
+        ConfigOverlay(
+            version=ConfigVersion(layer="icp", version=1, label="account-deep-fixture"),
+            policy=policies.jurisdiction_policy,
+            recursion_policy=policies.recursion_policy,
+            source_plan_policy=policies.source_plan_policy,
+        ),
+    )
+    return store
 
 
 class _TaskReentrantConnectionFactory:
@@ -386,6 +403,32 @@ def test_a1_fixture_is_deep_eligible_additive_and_read_only_on_replay(
             assert directive == DEFAULT_RESEARCH_DIRECTIVE.model_dump(mode="json")
             assert directive["status"] == "confirmed"
             assert directive["contact_reveals_allowed"] is False
+            assert directive["policies"]["account_budget_cap_cents"] == "500"
+            assert directive["policies"]["jurisdiction_policy"]["jurisdiction"] == "us_state"
+            assert (
+                directive["policies"]["jurisdiction_policy"]["posture"]
+                == "professional_public_only"
+            )
+            assert (
+                directive["policies"]["jurisdiction_policy"]["allow_map"]["sensitive"]
+                == "stored_unusable"
+            )
+            assert directive["policies"]["field_freshness_days"] == {
+                "account.hiring_velocity_eng": 30,
+                "core.primary_tech_stack": 90,
+                "account.operational_pain": 90,
+                "account.strategic_moves": 90,
+                "account.resonance.culture": 60,
+            }
+            assert (
+                directive["policies"]["recursion_policy"]["by_tier"]["high"]["max_aspect_workers"]
+                == 6
+            )
+            assert directive["policies"]["source_plan_policy"] == {
+                "prefer_deep_sources": True,
+                "tier_scope": None,
+                "version": 1,
+            }
             assert {question["question_id"] for question in directive["questions"]} == {
                 "referral-coordination",
                 "fax-workflow",
@@ -487,6 +530,9 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
             resolvers = _bind_recorded_resolvers(fixture)
             account_run_id = new_run_id()
             session_factory = _TaskReentrantConnectionFactory(conn)
+            policies = DEFAULT_RESEARCH_DIRECTIVE.policies
+            gate = PreSpendGateImpl(conn_factory=session_factory)
+            config_store = _fixture_config_store()
 
             # The upstream discovery fixture's shallow ICP is deliberately unsuitable for deep
             # account research.  It must converge as an explicit zero-gap result instead of
@@ -500,9 +546,12 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
                 run_id=new_run_id(),
                 project_run_id=fixture.project_run_id,
                 workspace_id=WORKSPACE_ID,
-                budget_cap_cents=Decimal("500"),
+                budget_cap_cents=policies.account_budget_cap_cents,
                 session_factory=session_factory,
+                recursion_policy=policies.recursion_policy,
                 gateway=FakeGateway(),
+                pre_spend_gate=gate,
+                config_store=config_store,
             )
             assert shallow.status is WorkerStatus.OK
             assert shallow.gap_field_count == 0
@@ -516,9 +565,12 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
                 run_id=account_run_id,
                 project_run_id=fixture.project_run_id,
                 workspace_id=WORKSPACE_ID,
-                budget_cap_cents=Decimal("500"),
+                budget_cap_cents=policies.account_budget_cap_cents,
                 session_factory=session_factory,
+                recursion_policy=policies.recursion_policy,
                 gateway=FakeGateway(),
+                pre_spend_gate=gate,
+                config_store=config_store,
             )
             assert result.status is WorkerStatus.OK
             assert result.gap_field_count == 4
@@ -567,6 +619,29 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
                 assert ACCOUNT_DOMAIN in claim.evidence_span or ACCOUNT_NAME in claim.evidence_span
                 assert claim.artifact_key == fixture.provider_artifact_keys[source_key]
 
+            governed = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT field_key, source_key, decision, effective_plan_sha256 "
+                            "FROM gate_decision WHERE run_id=:run_id "
+                            "AND effective_plan_sha256 IS NOT NULL ORDER BY field_key"
+                        ),
+                        {"run_id": account_run_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert [(row["field_key"], row["source_key"]) for row in governed] == [
+                ("account.hiring_velocity_eng", "sumble_jobs"),
+                ("account.operational_pain", "exa_deep"),
+                ("account.resonance.culture", "exa_deep"),
+                ("account.strategic_moves", "exa_deep"),
+            ]
+            assert all(row["decision"] == "pass" for row in governed)
+            assert all(row["effective_plan_sha256"] for row in governed)
+
             calls_before = {
                 source_key: tuple(resolver.calls) for source_key, resolver in resolvers.items()
             }
@@ -580,9 +655,12 @@ def test_a1_direct_profiler_fills_non_empty_deep_gaps_and_replays_without_calls(
                 run_id=account_run_id,
                 project_run_id=fixture.project_run_id,
                 workspace_id=WORKSPACE_ID,
-                budget_cap_cents=Decimal("500"),
+                budget_cap_cents=policies.account_budget_cap_cents,
                 session_factory=session_factory,
+                recursion_policy=policies.recursion_policy,
                 gateway=FakeGateway(),
+                pre_spend_gate=gate,
+                config_store=config_store,
             )
             assert replay.status is WorkerStatus.OK
             # Tier-4 unverified claims remain honest gaps until verification, but the same run id
@@ -616,6 +694,8 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             committee = build_recorded_committee_source(fixture)
             gateway = FakeGateway()
             session_factory = _TaskReentrantConnectionFactory(conn)
+            policies = DEFAULT_RESEARCH_DIRECTIVE.policies
+            config_store = _fixture_config_store()
 
             async def _profile_account_in_fixture_transaction(**kwargs: Any) -> Any:
                 return await profile_account(session_factory=session_factory, **kwargs)
@@ -624,14 +704,16 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
                 spec=spec,
                 gateway=gateway,
                 committee_sources=(committee,),
+                recursion_policy=policies.recursion_policy,
                 role_model="fixture-role-model",
                 budget=BudgetEngine(store=DbBudgetStore(conn_factory=session_factory)),
                 pre_spend_gate=PreSpendGateImpl(conn_factory=session_factory),
                 session_factory=session_factory,
                 storage=storage,
                 lock_factory=None,
-                budget_cap_cents=Decimal("500"),
+                budget_cap_cents=policies.account_budget_cap_cents,
                 profile_account_fn=_profile_account_in_fixture_transaction,
+                config_store=config_store,
             )
             ctx = PhaseContext(
                 project_run_id=fixture.project_run_id,
@@ -665,11 +747,7 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             assert len(manifest["committee_member_ids"]) == 2
             references_index = cast(dict[str, list[str]], manifest["references_index"])
             assert set(references_index) >= {"account", "committee"}
-            # The real gate admits Sumble jobs and resonance/Exa. The two generic account fields
-            # currently encounter the authorized tier-2 official source first, while their shared
-            # field contracts sanction only tier 4; fail-closed is the correct production result
-            # until a later integration slice resolves that pre-existing field-plan mismatch.
-            assert len(references_index["account"]) == 2
+            assert len(references_index["account"]) == 4
             assert all(
                 isinstance(claim_id, str)
                 for section in references_index.values()
@@ -684,13 +762,14 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
             assert account_run.status is AccountRunStatus.DONE
             assert account_run.sub_phase is AccountRunSubPhase.CONTACTS_COMPLETE
             assert set(account_run.references_index) >= {"account", "committee"}
-            assert len(account_run.references_index["account"]) == 2
-            rejected_rows = (
+            assert len(account_run.references_index["account"]) == 4
+            governed_rows = (
                 (
                     await conn.execute(
                         text(
-                            "SELECT field_key, source_tier, reasons FROM gate_decision "
-                            "WHERE run_id = :run_id AND decision = 'reject' ORDER BY field_key"
+                            "SELECT field_key, source_key, decision, effective_plan_sha256 "
+                            "FROM gate_decision WHERE run_id = :run_id "
+                            "AND effective_plan_sha256 IS NOT NULL ORDER BY field_key"
                         ),
                         {"run_id": fixture.expected_account_run_id},
                     )
@@ -698,9 +777,35 @@ def test_a1_full_production_entry_creates_and_completes_real_account_run(
                 .mappings()
                 .all()
             )
-            assert [(row["field_key"], row["source_tier"]) for row in rejected_rows] == [
-                ("account.operational_pain", 2),
-                ("account.strategic_moves", 2),
+            assert [(row["field_key"], row["source_key"]) for row in governed_rows] == [
+                ("account.hiring_velocity_eng", "sumble_jobs"),
+                ("account.operational_pain", "exa_deep"),
+                ("account.resonance.culture", "exa_deep"),
+                ("account.strategic_moves", "exa_deep"),
+            ]
+            assert all(row["decision"] == "pass" for row in governed_rows)
+            assert all(row["effective_plan_sha256"] for row in governed_rows)
+            production_claims = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT field_key, source_key FROM claim WHERE run_id=:run_id "
+                            "AND field_key = ANY(:field_keys) ORDER BY field_key"
+                        ),
+                        {
+                            "run_id": fixture.expected_account_run_id,
+                            "field_keys": list(DEEP_FIELD_KEYS),
+                        },
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert [(row["field_key"], row["source_key"]) for row in production_claims] == [
+                ("account.hiring_velocity_eng", "sumble_jobs"),
+                ("account.operational_pain", "exa_deep"),
+                ("account.resonance.culture", "exa_deep"),
+                ("account.strategic_moves", "exa_deep"),
             ]
             assert committee.calls and committee.calls[0][0] == fixture.selected_account_id
             assert gateway.complete_calls == 2

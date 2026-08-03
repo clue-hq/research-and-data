@@ -30,7 +30,7 @@ from decimal import Decimal
 from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.composition import load_research_packs
@@ -50,7 +50,14 @@ from clue_api.trial.discovery_fixture import (
     OfficialSitePage,
     seed_insight_health_discovery_fixture,
 )
-from clue_config import DEFAULT_STAGE0_POLICY
+from clue_config import (
+    DEFAULT_STAGE0_POLICY,
+    Jurisdiction,
+    JurisdictionPolicy,
+    Posture,
+    RecursionPolicy,
+    SourcePlanPolicy,
+)
 from clue_core import (
     AccountEntity,
     AccountStatus,
@@ -235,6 +242,40 @@ class FixtureResearchQuestion(BaseModel):
     stop_rule: str = "retain only target-locked evidence; otherwise leave empty"
 
 
+class FixtureResearchPolicies(BaseModel):
+    """The exact non-provider policies A1 pins into its immutable directive artifact."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    budget_policy_version: str = "account-deep-fixture-budget-v1"
+    account_budget_cap_cents: Decimal = Decimal("500")
+    jurisdiction_policy_version: str = "account-deep-fixture-us-professional-v1"
+    jurisdiction_policy: JurisdictionPolicy = Field(
+        default_factory=lambda: JurisdictionPolicy(
+            jurisdiction=Jurisdiction.US_STATE,
+            posture=Posture.PROFESSIONAL_PUBLIC_ONLY,
+        )
+    )
+    use_class_policy_version: str = "account-deep-fixture-use-class-v1"
+    freshness_policy_version: str = "account-deep-fixture-freshness-v1"
+    field_freshness_days: dict[str, int] = Field(
+        default_factory=lambda: {
+            "account.hiring_velocity_eng": 30,
+            "core.primary_tech_stack": 90,
+            "account.operational_pain": 90,
+            "account.strategic_moves": 90,
+            "account.resonance.culture": 60,
+        }
+    )
+    recursion_policy_version: str = "account-deep-fixture-recursion-v1"
+    recursion_policy: RecursionPolicy = Field(default_factory=RecursionPolicy)
+    source_plan_policy_version: str = "account-deep-fixture-source-plan-v1"
+    source_plan_policy: SourcePlanPolicy = Field(
+        default_factory=lambda: SourcePlanPolicy(prefer_deep_sources=True)
+    )
+    committee_policy_version: str = "account-deep-fixture-committee-v1"
+
+
 class FixtureResearchDirective(BaseModel):
     """A1's immutable execution-input double; it is not A2's production authority record."""
 
@@ -251,6 +292,7 @@ class FixtureResearchDirective(BaseModel):
     field_keys: tuple[str, ...] = DEEP_FIELD_KEYS
     questions: tuple[FixtureResearchQuestion, ...]
     committee_plan: FixtureCommitteePlan
+    policies: FixtureResearchPolicies = Field(default_factory=FixtureResearchPolicies)
     allowed_sources: tuple[str, ...]
     excluded_sources: tuple[str, ...]
     expected_cost_cents: Decimal = Decimal("75")
@@ -819,10 +861,10 @@ async def _ensure_deep_project_run(
     discovery: InsightHealthDiscoveryFixtureResult,
     deep_icp: ICPSpec,
 ) -> None:
-    client_id = EntityId(UUID(discovery.client_entity_id))
+    client_entity_id = EntityId(UUID(discovery.client_entity_id))
     claims = await read_client_kb_claims(
         conn,
-        client_id,
+        client_entity_id,
         workspace_id=WORKSPACE_ID,
         version=discovery.client_kb_version,
         product_id=PRODUCT_ID,
@@ -835,7 +877,7 @@ async def _ensure_deep_project_run(
         brand_id=BRAND_ID,
         product_id=PRODUCT_ID,
         project_id=PROJECT_ID,
-        client_entity_id=client_id,
+        client_entity_id=client_entity_id,
         client_kb_version=discovery.client_kb_version,
         icp_key=deep_icp.icp_key,
         icp_version=deep_icp.version,
@@ -857,7 +899,7 @@ async def _ensure_deep_project_run(
             project_run_id=PROJECT_RUN_ID,
             workspace_id=WORKSPACE_ID,
             project_id=PROJECT_ID,
-            client_entity_id=client_id,
+            client_entity_id=client_entity_id,
             client_kb_version=discovery.client_kb_version,
             product_id=PRODUCT_ID,
             product_context_version_id=ProductContextVersionId(
@@ -875,7 +917,7 @@ async def _ensure_deep_project_run(
         PRODUCT_ID,
         deep_icp.icp_key,
         deep_icp.version,
-        client_id,
+        client_entity_id,
         discovery.client_kb_version,
         READINESS_DECISION_ID,
     )
