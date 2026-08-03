@@ -30,6 +30,26 @@ def test_gateway_config_picks_up_env_synthesis_model(monkeypatch: pytest.MonkeyP
     assert default_gateway_config().synthesis_model == "openai/gpt-4o-mini"
 
 
+def test_exa_account_deep_controls_are_independent_bounded_and_default_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.exa_account_deep_acquisition_enabled is False
+    assert settings.exa_account_deep_search_type == "deep-reasoning"
+    assert settings.exa_account_deep_max_results == 50
+    assert settings.exa_account_deep_max_additional_queries == 10
+
+    monkeypatch.setenv("CLUE_EXA_ACCOUNT_DEEP_ACQUISITION_ENABLED", "true")
+    monkeypatch.setenv("CLUE_EXA_ACCOUNT_DEEP_SEARCH_TYPE", "deep")
+    monkeypatch.setenv("CLUE_EXA_ACCOUNT_DEEP_MAX_RESULTS", "20")
+    monkeypatch.setenv("CLUE_EXA_ACCOUNT_DEEP_MAX_ADDITIONAL_QUERIES", "4")
+    configured = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert configured.exa_account_deep_acquisition_enabled is True
+    assert configured.exa_account_deep_search_type == "deep"
+    assert configured.exa_account_deep_max_results == 20
+    assert configured.exa_account_deep_max_additional_queries == 4
+
+
 def test_get_config_gateway_uses_env_synthesis_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLUE_SYNTHESIS_MODEL", "anthropic/claude-3.5-sonnet")
     assert get_config("acme").gateway.synthesis_model == "anthropic/claude-3.5-sonnet"
