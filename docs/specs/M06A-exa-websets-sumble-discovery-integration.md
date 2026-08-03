@@ -1,7 +1,8 @@
 # M6A — Durable Exa Websets account discovery and gated Sumble enrichment
 
-**Status:** Binding implementation plan; D0-D6 implemented; E1 and S1 mechanical integration
-closed; their separately bounded live canaries remain open on 2026-08-03
+**Status:** Binding implementation plan; D0-D6 implemented; the P0-P3 pre-seal sequencing repair
+passed mechanical, PostgreSQL, concurrency, and bounded live-provider acceptance on 2026-08-03.
+E1 and the post-selection S1 jobs/technology surface retain their separately bounded live gates.
 
 **Branch:** `platform/c8-exa-sumble-discovery` (branched from `platform/c8-context-card`)
 
@@ -663,17 +664,30 @@ Pricing is versioned config, never embedded in the normalizer.
 - prevent aggregate reservation from exceeding the project cap under concurrency; and
 - show the optional email/phone increment independently before dispatch.
 
-S1 closes the account-gap portion of the Sumble spend-safety backlog with request-versioned keys,
-one project-run aggregate reservation, coalesced endpoint snapshots, conservative
-spend-outcome-unknown quarantine, exact response-credit receipts, cumulative project cost, and
-terminal zero-call replay. S2 must reuse these guarantees rather than calling the legacy live
-resolver path directly.
+The pre-seal required-field waterfall and post-selection S1 use distinct operation ledgers but one
+shared project-run reservation, snapshot-to-claim materializer, reconciliation policy, and provider
+adapter. Both use request-versioned keys, conservative spend-outcome-unknown quarantine, exact
+response-credit receipts, and terminal zero-call replay. S2 must reuse these guarantees rather than
+calling the legacy live resolver path directly.
 
 ---
 
 ## 12. Sumble and contact-level boundaries
 
-### 12.1 Account-level Sumble gap enrichment
+### 12.1 Required discovery-field Sumble waterfall
+
+After Exa reconciliation and D4 materialization, but before D5 can seal, every missing required
+field remains `pending`. A source planner may authorize a bounded Sumble `/organizations` request
+only for an admitted canonical account whose required Exa criteria are all `yes`, whose field
+registry names `sumble_organizations`, and whose expected value covers the provider cap. Unclear or
+negative criteria, disabled configuration, a stale generation, a merged loser, a foreign tenant,
+or insufficient budget cause zero provider calls and an explicit terminal disposition.
+
+The pre-seal ledger is separate from S1 because it has no seal or human tier yet. D5 includes its
+claims, request/response/receipt artifacts, provider units, monetary allocation, and field outcomes
+in the immutable manifest and cannot seal while an operation is non-terminal or spend-unknown.
+
+### 12.2 Optional post-selection Sumble gap enrichment
 
 After the Exa batch is sealed and Pass A identifies accounts worth further work, Sumble may fill
 native account gaps through REST v9:
@@ -686,7 +700,7 @@ Each endpoint is a distinct governed source key and durable snapshot. Sumble is 
 because “something is missing”; the field plan must identify Sumble as the native next source and
 the expected value must justify the credit reservation.
 
-### 12.2 Committee eligibility gate
+### 12.3 Committee eligibility gate
 
 No Sumble people/team/related-person request may execute unless all are true:
 
@@ -702,7 +716,7 @@ No Sumble people/team/related-person request may execute unless all are true:
 The platform first buys role/person/team data without contact reveals. Email/phone reveals occur
 only for the final selected committee candidates and use separate operation keys/budgets.
 
-### 12.3 Deferred Sumble capabilities
+### 12.4 Deferred Sumble capabilities
 
 There is intentionally no implementation task here for:
 
@@ -924,11 +938,31 @@ LinkedIn URL + revenue-band enrichments, optional email/phone enabled only after
 Failure of any row leaves D6 open. Exit code zero, “completed,” or a green fixture suite is not a
 substitute for this evidence.
 
-**Observed scoring-bypass result:** both live accounts passed all three required Exa criteria, but
-required discovery fields remained terminally missing. The project correctly paused at the human
-checkpoint with `selected=0, hold=2, excluded=0`, wrote no numeric scores, and did not enter deep
-research. The positive selected -> approved -> deep path remains database-backed; the live holds
-are inputs to the later Sumble gap waterfall, not grounds for weakening the admission policy.
+**Historical first D6 result:** before the P0-P3 sequencing repair, both live accounts passed all
+three required Exa criteria but missing industries had already been terminalized before Sumble
+could run. The project therefore held both accounts. That run exposed the sequencing defect; it is
+not the current production contract.
+
+### P0-P3 adversarial sequencing repair
+
+**Status:** `PASS` on 2026-08-03. Detailed design and acceptance evidence are in
+`M06A-P0-P3-adversarial-repair-plan.md`.
+
+The repaired production path leaves unresolved required attempted fields pending after D4, runs a
+separate durable Sumble organization waterfall while the project remains in `DISCOVERY`, and only
+then permits D5 to materialize and seal. Post-selection S1 remains seal- and human-tier-bound for
+optional organization, jobs, and technology work.
+
+The bounded live run started from the Insight Health/Aura Stage-0 handoff, recovered the existing
+two-row Exa Webset through its deterministic external id, polled and re-read its current provider
+payload, and made two new Sumble REST-v9 `/organizations` requests. Sumble charged 2 credits per
+account and returned the pinned response envelope. Both missing industries became sourced claims;
+the final seal contains 2 accounts, 17 claims, 14 field resolutions, 32 total provider credits
+(28 Exa + 4 Sumble), and exact separated reporting counts. One account became selected and was
+human-approved into `DEEP`; the other remained held solely because revenue had no implemented
+post-Exa source. The seal has 14 field-resolution rows: 13 resolved rows link to distinct claims and
+one row is an honest terminal missing result. A fresh-process replay returned the same seal and
+accounts with zero Exa traffic; the sealed path never invokes the Sumble resolver.
 
 ### Slice E1 — Targeted Exa import enrichment for selected accounts
 
