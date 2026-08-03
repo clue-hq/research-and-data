@@ -19,6 +19,7 @@ don't pass one).
 | 08 | `08_seed_discovery_fixture.py` | Reproducible Stage-0 handoff for discovery tests | `trial.discovery_fixture.seed_insight_health_discovery_fixture` |
 | 09 | `09_exa_websets_d2_canary.py` | Bounded live/replay Exa Websets D2 submit | `DurableExaWebsetSubmitter` |
 | 10 | `10_exa_websets_d4_materialization.py` | Zero-provider-call D4 materialization/replay | `ExaWebsetsD4Materializer` |
+| 11 | `11_exa_websets_d6_acceptance.py` | Bounded live/replay D6 production composition | `ComposingRunDriver` + durable Exa slices |
 
 ## One-time setup
 
@@ -202,3 +203,37 @@ uv run python scripts/10_exa_websets_d4_materialization.py \
 The first run reports created claims and admission/field-resolution summaries. Repeating it in a
 fresh process must report `outcome=replayed`, `claims_created=0`, stable claim ids, and
 `provider_calls_this_process=0`. D4 stops at `seal_pending`; D5 owns the actual batch seal.
+
+## Exa Websets D6 production-composition acceptance
+
+Script 11 consumes the Insight Health/Aura fixture from script 08 and drives the production
+composition through durable acquisition, reconciliation, D4 materialization, D5 seal, the explicit
+no-numeric-score selection mode, and the human tier checkpoint. It permits one two-row live create
+only with `--allow-live-create`; email and phone remain disabled unless
+`--include-contact-enrichments` is also supplied.
+
+```bash
+uv run python scripts/11_exa_websets_d6_acceptance.py \
+  --database-url postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue_d6_acceptance \
+  --storage-root .context/discovery-fixtures/d6-acceptance/artifacts \
+  --allow-live-create \
+  --output .context/discovery-fixtures/d6-acceptance/d6-live-report.json
+```
+
+Run it again in a fresh process with `--replay-only` and without `--allow-live-create`. The replay
+must return the identical sealed account set while every provider-call counter remains zero.
+
+The runner does not manufacture a passing account. If all live rows satisfy the Exa criteria but
+have mandatory field gaps, it leaves the project paused with `held_for_waterfall`. A selected row
+is approved into deep research only when every required criterion is `yes`, every required field is
+resolved, and the human checkpoint approves it.
+
+Production deployments separately enable reconciliation and new paid acquisition:
+
+```dotenv
+CLUE_EXA_WEBSETS_LIFECYCLE_ENABLED=true
+CLUE_EXA_WEBSETS_ACQUISITION_ENABLED=true
+```
+
+Keeping acquisition false while lifecycle is true drains existing work without allowing new
+Webset spend. Acquisition fails closed when the lifecycle worker or API key is absent.
