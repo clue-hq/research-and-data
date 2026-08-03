@@ -24,7 +24,17 @@ from pydantic import (
     model_validator,
 )
 
+from clue_core import FieldKey
+
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+BoundedQueryStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=2000),
+]
+BoundedPromptStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=8000),
+]
 _FIELD_KEY = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
 
 
@@ -33,6 +43,35 @@ class ExaDeepFailureClass(StrEnum):
     HARD = "hard"
     BUDGET = "budget"
     SPEND_UNKNOWN = "spend_unknown"
+
+
+class ExaDeepFieldSpec(BaseModel):
+    """One admitted effective-registry field and its exact value schema.
+
+    A2 supplies directional text later; it never supplies schema members. E1 resolves these specs
+    from the effective field registry before compiling a provider request. Keeping the schema
+    beside the validated key makes E0 independent of database/directive implementation details and
+    prevents a fallback to guesses from ``FieldDef.value_type``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field_key: FieldKey
+    value_schema: dict[str, JsonValue]
+
+    @field_validator("value_schema")
+    @classmethod
+    def _requires_typed_registry_schema(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        schema_type = value.get("type")
+        if isinstance(schema_type, str):
+            return value
+        if (
+            isinstance(schema_type, list)
+            and schema_type
+            and all(isinstance(item, str) for item in schema_type)
+        ):
+            return value
+        raise ValueError("effective field value_schema must declare a JSON schema type")
 
 
 def classify_exa_deep_http_failure(
@@ -63,16 +102,16 @@ class ExaDeepSearchRequest(BaseModel):
         serialize_by_alias=True,
     )
 
-    query: NonEmptyStr
+    query: BoundedQueryStr
     search_type: Literal["deep", "deep-reasoning"] = Field(alias="type")
     num_results: int = Field(alias="numResults", ge=1, le=50)
     # Exa accepts this member only when it has 1-10 entries. ``None`` represents the zero-query
     # case and must be omitted (or serialized as the documented nullable value) by the transport;
     # an empty JSON array is not a valid wire request.
-    additional_queries: tuple[NonEmptyStr, ...] | None = Field(
+    additional_queries: tuple[BoundedQueryStr, ...] | None = Field(
         default=None, alias="additionalQueries", min_length=1, max_length=10
     )
-    system_prompt: NonEmptyStr = Field(alias="systemPrompt")
+    system_prompt: BoundedPromptStr = Field(alias="systemPrompt")
     output_schema: dict[str, JsonValue] = Field(alias="outputSchema")
     contents: dict[str, JsonValue]
     stream: Literal[False] = False
@@ -219,6 +258,7 @@ def validate_exa_deep_exchange(
 __all__ = [
     "ExaDeepCitation",
     "ExaDeepCostDollars",
+    "ExaDeepFieldSpec",
     "ExaDeepFailureClass",
     "ExaDeepGrounding",
     "ExaDeepOutput",
