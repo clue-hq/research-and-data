@@ -36,11 +36,17 @@
 
 ## Verification
 
-- Consolidated A0/A1 and adjacent integration suite: 232 passed.
+- Final committed-HEAD A0/A1 and adjacent integration matrix: 239 passed with the database enabled;
+  no skips or failures.
 - Mypy: 501 source files passed.
 - Import-linter: 24 contracts kept, 0 broken.
 - Scoped Ruff formatting/check: passed.
-- Clean disposable database `roseau_a0_a1_20260804`: base → head → base → head passed. Its public schema was intentionally reset; no shared database was touched.
+- Clean branch-specific `clue-pg-roseau` database (`localhost:55010/clue`): base → head → base
+  → head passed. Its public schema was intentionally reset; no shared database was touched.
+- The first post-commit DB run correctly exposed that this two-day-old disposable schema was stale:
+  its Alembic stamp did not match the checked-in S2 table shape and old source-registry rows polluted
+  rollback-based tests. The run was not counted. Rebuilding from the committed migration chain removed
+  both conditions, after which all 239 cases passed.
 - Five isolated full-suite failures remain outside this change: one stale Stage-0 tool-schema digest, three tests expecting an older tier-checkpoint guard, and one pre-existing memory import-boundary assertion. Full-repository Ruff also sees unrelated existing/untracked files; all files in this slice pass scoped Ruff.
 
 ## Next boundary
