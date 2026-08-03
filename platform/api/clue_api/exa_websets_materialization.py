@@ -62,6 +62,7 @@ from clue_research.claimstore import (
 )
 from clue_research.discovery_scoring.discovery import (
     DISCOVERY_ENVELOPE_POLICY_V1,
+    REVENUE_BAND_OPTIONS,
     CandidateHypothesis,
     CandidateRecord,
     DiscoveryQuery,
@@ -104,9 +105,7 @@ from clue_storage import StorageBackend, content_address
 _ENRICHMENT_COLLECTION = TypeAdapter(tuple[ExaResponseEnrichment, ...])
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PHONE = re.compile(r"^\+?[0-9][0-9 ().-]{6,}[0-9]$")
-_REVENUE_BANDS = frozenset(
-    {"under_1m", "1m_10m", "10m_50m", "50m_100m", "100m_500m", "500m_1b", "1b_plus"}
-)
+_REVENUE_BANDS = frozenset(REVENUE_BAND_OPTIONS)
 
 
 class ExaD4Outcome(StrEnum):

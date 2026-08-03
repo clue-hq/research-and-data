@@ -55,6 +55,7 @@ from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import load_research_packs
+from clue_api.exa_websets_acquisition import ExaWebsetsDiscoveryStarter
 from clue_api.exa_websets_lifecycle import (
     DurableExaWebsetLifecycle,
     ExaDiscoveryWakeWorker,
@@ -243,6 +244,31 @@ def _start_exa_discovery(
     )
 
 
+def _build_exa_discovery_starter(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> ExaWebsetsDiscoveryStarter | None:
+    """Bind paid acquisition only under its explicit spend switch and a live reconciler."""
+
+    if not settings.exa_websets_acquisition_enabled:
+        return None
+    if not settings.exa_websets_lifecycle_enabled:
+        raise RuntimeError(
+            "Exa Websets acquisition is enabled but its lifecycle worker is disabled"
+        )
+    api_key = secrets.exa_api_key
+    if api_key is None:
+        raise RuntimeError(
+            "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    return ExaWebsetsDiscoveryStarter(
+        transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
+        storage=storage,
+    )
+
+
 async def _account_agent_runtime_required(
     settings: Settings,
     *,
@@ -415,6 +441,11 @@ async def _serve() -> None:
             settings=settings,
             gateway=gateway,
             storage=storage,
+            discovery_batch_starter=_build_exa_discovery_starter(
+                settings,
+                secrets=secrets,
+                storage=storage,
+            ),
             lock_factory=build_account_lock_factory(),
             event_emitter=build_run_event_emitter(),
             controls=controls,

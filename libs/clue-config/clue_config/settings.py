@@ -66,9 +66,15 @@ class Settings(BaseSettings):
     # --- Exa Websets durable discovery lifecycle (M6A D3) -------------------------------
     # Default-off until the deployment has Websets API entitlement. The webhook HTTP route is
     # independently exposed when its secret is configured; this switch starts the poll worker.
+    # It deliberately does NOT authorize new paid Websets: deployments may need to drain/reconcile
+    # existing operations while preventing any new spend.
     # Env: CLUE_EXA_WEBSETS_LIFECYCLE_ENABLED / CLUE_EXA_WEBSETS_POLL_WORKER_INTERVAL_S.
     exa_websets_lifecycle_enabled: bool = False
     exa_websets_poll_worker_interval_s: float = Field(default=1.0, gt=0)
+    # Independent master authorization for confirmed-ICP -> paid Webset acquisition (M6A D6).
+    # Production also requires lifecycle_enabled so originated work cannot be left undrained.
+    # Env: CLUE_EXA_WEBSETS_ACQUISITION_ENABLED.
+    exa_websets_acquisition_enabled: bool = False
 
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are

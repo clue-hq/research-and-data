@@ -27,6 +27,7 @@ from clue_api.run_composition import (
     _default_gateway,
     _MissingClientInputHandler,
 )
+from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_config import GatewayConfig, load_settings
 from clue_core import (
     ICPCreatedFrom,
@@ -154,6 +155,23 @@ def test_composed_registry_holds_every_phase() -> None:
         assert composed.phases == _ALL_PHASES
         assert composed.spec.icp_key == "a"
         assert isinstance(composed.run, ProjectRun)
+
+    run_async(scenario())
+
+
+def test_composed_discovery_retains_injected_durable_batch_starter() -> None:
+    class _Starter:
+        async def ensure_started(self, ctx: PhaseContext):
+            raise AssertionError(f"construction-only test invoked starter for {ctx.project_run_id}")
+
+    async def scenario() -> None:
+        starter = _Starter()
+        composed = await _driver(
+            {("ws", "a", 1): _spec("a")}, discovery_batch_starter=starter
+        ).composed(_row("a"))
+        wrapped = composed.registry.get(ProjectPhase.DISCOVERY)
+        assert isinstance(wrapped, SnapshotBindingPhaseHandler)
+        assert wrapped._inner._starter is starter
 
     run_async(scenario())
 
