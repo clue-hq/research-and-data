@@ -1,4 +1,4 @@
-"""Current C6 replay/authority audit over the complete 35-tool C7 registry."""
+"""Current C6 replay/authority audit over the complete 39-tool registry."""
 
 from __future__ import annotations
 
@@ -36,10 +36,9 @@ _C65_CERTIFIED = {
 def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(C6_AGENT_TOOL_AUTHORITY) == set(registry.names())
-    # 35 → 37 with PC-C8 task 1.5's two inspection tools, granted to the Head of ABM in the
-    # slice-1 closing round (profile v10) — they are read-only, effect-free, and the only way the
-    # project card's `omissions` cursors resolve.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 37
+    # 35 → 37 with PC-C8's inspection tools, then 38/39 with the E1 and S1 explicit provider-spend
+    # boundaries. Every addition must have a reviewed role decision here.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 39
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
 

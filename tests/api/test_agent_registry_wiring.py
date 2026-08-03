@@ -47,7 +47,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v13 / stage0-interview@v9 — explicit E1 targeted-enrichment authority plus
+        # head-of-abm@v14 / stage0-interview@v9 — explicit S1 account-gap and E1 targeted-
+        # enrichment authority plus
         # dynamic Client-KB proposal/materialization
         # guidance and propose_field@2, on top of PC-C8 §6c's quote-by-text bump. The statement
         # authors the verbatim span instead of character offsets, and a typed claim value is
@@ -55,7 +56,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: "78d65924b80a7b8224659f2fa5f46b1417f6bb11f2477bcedaa50aad64bc1610",
+        AgentRole.HEAD_OF_ABM: "8baf6cddf4c060b499217b4546c42ca80199a33b7193a84211a21713bfe636d5",
         AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
@@ -113,10 +114,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The two proposal v1 addresses remain installed only for historical recipe replay. They add
     # inventory entries but cannot enter the current model surface; only propose_field@2 carries
     # the dynamic Client-KB authority.
-    assert len(by_address) == 41
+    assert len(by_address) == 42
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
+        "enrich_account_gaps@1",
         "enrich_selected_accounts@1",
         "evaluate_stage0_readiness@1",
         "get_research_view@1",

@@ -65,6 +65,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("targeted_enrichment_not_configured",),
     ),
+    "enrich_account_gaps": (
+        "precondition",
+        ("sumble_account_gap_not_configured",),
+    ),
     "submit_tier_checkpoint": ("precondition", ("run_not_found",)),
     "submit_project_checkpoint": ("precondition", ("run_not_found",)),
     "run_deep_account": ("precondition", ("no_active_icp",)),
@@ -120,6 +124,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_run_id": _UUID(),
             "account_entity_ids": [_UUID()],
             "field_keys": ["core.company_linkedin_url"],
+        },
+        "enrich_account_gaps": {
+            "project_run_id": _UUID(),
+            "account_entity_id": _UUID(),
+            "field_expected_value_credits": {"core.employee_count": "2"},
+            "provider_credit_cap": 2,
         },
         "submit_tier_checkpoint": {"project_run_id": _UUID()},
         "submit_project_checkpoint": {"project_run_id": _UUID()},
@@ -641,10 +651,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
     # 35 → 37 names with PC-C8's two read-only inspection tools, then 38 with E1's explicit
-    # targeted-enrichment boundary; the two proposal writes and research_account_gaps retain @1
-    # compatibility contracts alongside @2, yielding three additional descriptors.
-    assert len(registry.names()) == 38
-    assert len(registry) == 41
+    # targeted-enrichment boundary, then 39 with S1's explicit Sumble gap boundary; the two
+    # proposal writes and research_account_gaps retain @1 compatibility contracts alongside @2.
+    assert len(registry.names()) == 39
+    assert len(registry) == 42
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

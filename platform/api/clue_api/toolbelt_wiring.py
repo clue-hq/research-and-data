@@ -98,7 +98,13 @@ from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_tools import stage0_tools
 from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
+from clue_api.sumble_account_gaps import (
+    DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY,
+    SumbleAccountGapEligibilityError,
+    SumbleAccountGapResult,
+)
 from clue_api.tool_outputs import (
+    AccountGapEnrichmentOutput,
     CommitteeOutput,
     ConfirmIcpOutput,
     ContactProfileOutput,
@@ -284,6 +290,14 @@ class EnrichSelectedAccountsInput(ToolInput):
     project_run_id: str
     account_entity_ids: tuple[str, ...]
     field_keys: tuple[str, ...]
+
+
+class EnrichAccountGapsInput(ToolInput):
+    project_run_id: str
+    account_entity_id: str
+    field_expected_value_credits: dict[str, Decimal]
+    provider_credit_cap: int
+    allow_unbounded_tech: bool = False
 
 
 class SubmitTierCheckpointInput(ToolInput):
@@ -921,6 +935,137 @@ class TargetedEnrichmentStarter(Protocol):
         account_ids: Sequence[EntityId],
         field_keys: Sequence[str],
     ) -> ExaTargetedResult: ...
+
+
+class AccountGapEnrichmentStarter(Protocol):
+    async def start(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_id: EntityId,
+        field_expected_value_credits: dict[str, Decimal],
+        provider_credit_cap: int,
+        allow_unbounded_tech: bool,
+    ) -> SumbleAccountGapResult: ...
+
+
+class EnrichAccountGapsTool(Tool):
+    """Explicit S1 spend for native Sumble fields on one selected account."""
+
+    name = "enrich_account_gaps"
+    input_model = EnrichAccountGapsInput
+    output_model = AccountGapEnrichmentOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="project run + discovery seal + account + field set + policy window",
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "project_run_id",
+            "account_entity_id",
+            "field_expected_value_credits",
+            "provider_credit_cap",
+            "allow_unbounded_tech",
+        )
+    )
+    pin_requirements = (
+        "project_run",
+        "discovery_seal",
+        "tier_checkpoint",
+        "field_policy",
+        "budget_policy",
+    )
+
+    def __init__(
+        self,
+        *,
+        starter: AccountGapEnrichmentStarter | None,
+        conn_factory: ConnFactory,
+        cents_per_credit: Decimal,
+    ) -> None:
+        self._starter = starter
+        self._conn_factory = conn_factory
+        self._cents_per_credit = cents_per_credit
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, EnrichAccountGapsInput)
+        if self._starter is None:
+            return _fail(
+                "sumble_account_gap_not_configured",
+                "Sumble account-gap enrichment is disabled or unavailable",
+            )
+        run_id = _parse_run_id(inputs.project_run_id)
+        account_id = _parse_entity_id(inputs.account_entity_id)
+        if run_id is None:
+            return _fail("run_not_found", "no such project run")
+        if account_id is None:
+            return _fail("account_not_found", "no such account")
+        if (
+            not inputs.field_expected_value_credits
+            or len(inputs.field_expected_value_credits)
+            > DEFAULT_SUMBLE_ACCOUNT_GAP_POLICY.maximum_fields
+            or any(value <= 0 for value in inputs.field_expected_value_credits.values())
+        ):
+            return _fail("invalid_sumble_field_plan", "field expected values must be positive")
+        if inputs.provider_credit_cap <= 0:
+            return _fail("invalid_sumble_budget", "provider credit cap must be positive")
+        async with self._conn_factory() as conn:
+            run = await get_project_run(conn, run_id)
+        if run is None or run.workspace_id != ctx.workspace_id:
+            return _fail("run_not_found", "no such project run")
+        if run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
+            return _fail(
+                "sumble_account_gap_phase_ineligible",
+                "Sumble account-gap enrichment requires an active deep-phase run",
+            )
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, EnrichAccountGapsInput)
+        return ToolEstimate(
+            cost_cents=Decimal(inputs.provider_credit_cap) * self._cents_per_credit,
+            detail={
+                "basis": "sumble_explicit_provider_credit_cap",
+                "provider_units": str(inputs.provider_credit_cap),
+                "unbounded_tech_approved": inputs.allow_unbounded_tech,
+            },
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, EnrichAccountGapsInput)
+        assert self._starter is not None
+        run_id = _parse_run_id(inputs.project_run_id)
+        account_id = _parse_entity_id(inputs.account_entity_id)
+        assert run_id is not None and account_id is not None
+        try:
+            result = await self._starter.start(
+                workspace_id=ctx.workspace_id,
+                project_run_id=run_id,
+                account_id=account_id,
+                field_expected_value_credits=inputs.field_expected_value_credits,
+                provider_credit_cap=inputs.provider_credit_cap,
+                allow_unbounded_tech=inputs.allow_unbounded_tech,
+            )
+        except SumbleAccountGapEligibilityError as exc:
+            raise PreconditionFailed(_fail("sumble_account_gap_ineligible", str(exc))) from exc
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "operation_id": str(result.operation.operation_id),
+                "account_entity_id": str(result.operation.request.account_id),
+                "state": result.operation.state.value,
+                "outcome": result.outcome.value,
+                "provider_units_reserved": str(result.operation.provider_units_reserved),
+                "provider_units_charged": str(result.operation.provider_units_charged),
+                "claim_ids": list(result.claim_ids),
+            },
+        )
 
 
 class EnrichSelectedAccountsTool(Tool):
@@ -1834,6 +1979,7 @@ def build_toolbelt(
     research_view_snapshots: ResearchViewSnapshotService | None = None,
     research_view_recheck: ResearchViewRecheckService | None = None,
     targeted_enrichment_starter: TargetedEnrichmentStarter | None = None,
+    account_gap_enrichment_starter: AccountGapEnrichmentStarter | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1939,6 +2085,14 @@ def build_toolbelt(
         EnrichSelectedAccountsTool(
             starter=targeted_enrichment_starter,
             conn_factory=conn_factory,
+        ),
+        make_default=True,
+    )
+    registry.register(
+        EnrichAccountGapsTool(
+            starter=account_gap_enrichment_starter,
+            conn_factory=conn_factory,
+            cents_per_credit=resolved_settings.sumble_cents_per_credit,
         ),
         make_default=True,
     )

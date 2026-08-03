@@ -12,6 +12,20 @@ Implements ENG-108 (docs/specs/M00-foundations-and-shared-contracts.md §M0.2).
 
 from __future__ import annotations
 
+from clue_core.account_gap_enrichment import (
+    AccountGapFieldPlan,
+    AccountGapFieldResult,
+    AccountGapFieldState,
+    AccountGapOperation,
+    AccountGapOperationId,
+    AccountGapOperationState,
+    AccountGapReason,
+    AccountGapRequest,
+    AccountGapSnapshot,
+    AccountGapSnapshotState,
+    AccountGapSpendOutcome,
+    new_account_gap_operation_id,
+)
 from clue_core.claim import Claim, DiscoveryProvenance, can_be_promoted, reference_time
 from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_core.coverage import (
@@ -413,6 +427,18 @@ from clue_core.verification import (
 )
 
 __all__ = [
+    "AccountGapFieldPlan",
+    "AccountGapFieldResult",
+    "AccountGapFieldState",
+    "AccountGapOperation",
+    "AccountGapOperationId",
+    "AccountGapOperationState",
+    "AccountGapReason",
+    "AccountGapRequest",
+    "AccountGapSnapshot",
+    "AccountGapSnapshotState",
+    "AccountGapSpendOutcome",
+    "new_account_gap_operation_id",
     # durable asynchronous discovery contracts (M6A D0)
     "FIRST_PAGE_CURSOR",
     "SEAL_TERMINAL_FIELD_STATES",

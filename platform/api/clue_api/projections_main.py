@@ -19,6 +19,7 @@ from clue_api.research_view_runtime import (
     build_production_research_view_runtime,
 )
 from clue_api.storage_wiring import build_storage_backend
+from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, load_settings
 from clue_db import transaction
@@ -63,6 +64,11 @@ def build_application(
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),
         research_view_recheck=(research_views.recheck if research_views is not None else None),
         targeted_enrichment_starter=build_production_exa_targeted_starter(
+            resolved,
+            secrets=resolved_secrets,
+            storage=storage,
+        ),
+        account_gap_enrichment_starter=build_production_sumble_account_gap_starter(
             resolved,
             secrets=resolved_secrets,
             storage=storage,
