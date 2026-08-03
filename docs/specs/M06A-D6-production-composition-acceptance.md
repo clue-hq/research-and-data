@@ -173,6 +173,28 @@ Additional gates:
 - Alembic upgrade from base to the single head `3f41f54d6238`: pass.
 - live fresh-process replay: pass, zero provider calls.
 
+### Post-adversarial repair supplement — 2026-08-03
+
+Commit `3b7458a` closes the production-composition gaps found in the D6/E1 review:
+
+- D6 creation now requires an active run still in `DISCOVERY` and reserves against the shared
+  project-run cap, including every outstanding D6/E1 reservation.
+- Terminal D6 reconciliation settles the realized internal charge into
+  `project_run.spent_cents` transactionally and exactly once; replay adds zero spend.
+- E1 is composed as a default-off Head-of-ABM spend tool plus a lifecycle-controlled fleet poller.
+- `scripts/12_exa_websets_webhook_provision.py` supplies the missing idempotent team-webhook
+  provisioning operation and writes a newly issued signing secret only to a mode-0600 file, never
+  to stdout.
+- The scoring-bypass estimate reports all sealed discovery rows as discovered while projecting
+  expensive work only for selected rows.
+- Hardening migration `fffa2a8ba17c` restores the workspace-composite D4 review-task lineage on
+  long-lived databases that applied the older single-column contract.
+
+The repaired D2-D6/E1 set is **81 passed**; mypy checks **481 files**; all **24** import contracts
+hold; the single migration head is `fffa2a8ba17c`; and a clean throwaway database passed the full
+`head -> base -> head` migration smoke before being removed. These repairs do not change the
+already-completed live D6 provider evidence and do not repeat its paid Webset.
+
 The repository-wide `make check` is not globally green for pre-existing reasons outside this D6
 change. Fourteen untouched tracked files fail the repository formatter. The full suite initially
 reported 11 failures; re-running those 11 in a clean environment removed four environment/order
