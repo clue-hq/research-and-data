@@ -1,8 +1,9 @@
 # M8B — Account-deep provider integration roadmap
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
-> **Status:** accepted requirements and implementation plan; implementation not started on this
-> branch. **Recorded:** 2026-08-03. **Working branch:**
+> **Status:** implementation in progress. M06A S2A–S2D, the provider-neutral O1 DEEP wait seam,
+> and the Sumble portion of O2 composition are implemented mechanically; Exa E0–E2, A1/A2, the
+> full-unit launch surface, O3, and live canaries remain open. **Recorded:** 2026-08-03. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
 >
@@ -134,13 +135,31 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 | Account profiling | M8 account profiler and C6.7 governed account research agent exist | Supply a deep-field ICP, directive context, real production resolver/acquisition bindings, and provider acceptance |
 | Exa Deep | `ExaDeepResolver` exists but is an older synchronous, field-at-a-time Search adapter using `search_type="neural"`, highlights, and direct HTTP | Freeze the current `/search` Deep/Deep-Reasoning contract; compile structured output; coalesce bounded fields/questions; persist request/response/cost; materialize snapshot-backed fields |
 | Committee worker | Provider-neutral `CommitteeSource`, admission, role plausibility, persona claims, and coverage exist | Implement Sumble-backed source and preserve provider-vs-inferred semantics |
-| Sumble committee acquisition | No People/Teams production implementation; no S2 acceptance doc | Add pinned v9 models, bounded Teams/People requests, async People polling, durable snapshot/receipt, and replay |
-| Deep orchestrator | `profile_account -> discover_committee -> profile_contact` exists | Add a provider-neutral prepare/wait seam; never call external sources from its committee transaction |
-| Project wait state | `PhaseStatus.WAITING_EXTERNAL` exists but the durable project machine currently admits it only for discovery | Admit a DEEP provider wait and preserve account/run identity across wake-up |
-| Production committee composition | `committee_sources` defaults empty and emits a warning | Bind `SumbleCommitteeSource` only when its feature flag, credentials, policy, and durable acquisition store are present |
+| Sumble committee acquisition | S2A–S2D now implement the pinned no-reveal contract, durable async acquisition, snapshot source, and seven-condition gate | Pass the separately authorized live S2 canary and fresh-process replay |
+| Deep orchestrator | Provider-neutral preparation now runs between account profiling and the short committee transaction | Retain this seam while the A2 resolver and full launch tool are bound; never add a provider branch |
+| Project wait state | DEEP and discovery now both admit typed active `WAITING_EXTERNAL` checkpoints | Bind the production wake scheduler/event path and prove it in the combined canary |
+| Production committee composition | Sumble S2 composition is default-off and injectable into the per-run composer; A2 inputs are intentionally unbound | Implement the durable A2 input resolver, then enable only with credential/policy/live gates |
 | Main-agent toolbelt | `run_deep_account@1` invokes M2 `profile_account` only; `resolve_committee@1` is separate | Keep fine-grained tools; add an unambiguous set-scoped full-unit launcher that uses the existing fleet and `AccountDeepOrchestrator` |
 | Research direction | Project-scoped memory and `project_instruction` ingestion exist; account plans currently contain only gap-field aspects | Add a versioned confirmed directive, pin it into plan/run context, and layer account-specific overrides without treating memory as authority |
 | Synthetic upstream state | Existing Insight Health fixture stops at discovery and its active ICP has scoring fields only | Add a separate profiling fixture layer with deep fields, selected sealed account, tier approval, directive, source override, provider snapshots/doubles, and real orchestrator entry |
+
+### 3.1 Implementation checkpoint — 2026-08-03
+
+| Slice | State | Evidence |
+|---|---|---|
+| S2A | Complete mechanically | `2810dcf`; pinned v9 Teams/People request, response, credit, no-reveal, identity, and normalizer contract |
+| S2B | Complete mechanically | `0f8715b`; durable async operation/snapshot/attempt/receipt and exact spend/replay |
+| S2C | Complete mechanically | `69295ee`; exact-account snapshot-backed `SumbleCommitteeSource` through existing M8 committee worker |
+| S2D | Complete mechanically | `00a3e90`; immutable seven-condition decision and zero-call ineligible matrix |
+| O1 | Complete mechanically | `6fbf14b`; provider-neutral prepare/wait seam, DEEP wait checkpoint, same account-run resume, no transaction during provider work |
+| O2 — Sumble composition | Complete mechanically | `cc5b62a`; S2D -> S2B -> S2C adapter, independent default-off setting, credential failure, per-run composer injection, durable combined test |
+| O2 — full capability | Open | awaits A2 input resolver, Exa E2, `launch_account_deep@1`, and full tool/fleet binding |
+
+The current Sumble production builder deliberately requires an injected
+`SumbleCommitteeInputResolver`. That seam is the A2 ownership boundary: it must read the pinned
+directive/committee plan and authorization receipts from durable project state. Supplying a static
+or session-only object in production would violate this roadmap. With the feature disabled or no
+resolver bound, production performs zero S2 calls.
 
 ## 4. Provider roles and field-level waterfall
 

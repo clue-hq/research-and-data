@@ -1,20 +1,23 @@
-# M06A S2A — Sumble committee contract and normalizer acceptance
+# M06A S2 — Sumble committee acquisition and account-deep acceptance
 
 - **Parent boundary:** `M06A-exa-websets-sumble-discovery-integration.md`, Slice S2
 - **Expanded roadmap:** `M8B-exa-sumble-account-deep-integration-roadmap.md`, A0 and S2A
 - **Implementation branch:** `platform/c8-account-profiling-integration`
-- **Implementation commit:** `2810dcf`
+- **Implementation commits:** S2A `2810dcf`; S2B `0f8715b`; S2C `69295ee`; S2D `00a3e90`;
+  O1 `6fbf14b`; Sumble O2 composition `cc5b62a`
 - **S1 dependency:** consume commit `ae05542`; do not rebuild S1 in this slice
 - **Provider API:** Sumble REST `v9`
 - **Pinned OpenAPI SHA-256:**
   `8eac8f9b74afb74f1bd4f593ee2baa4547d2ca80947feea581e91e551a97c887`
 - **Contract captured:** 2026-08-03
-- **S2A status:** mechanical contract/normalizer gate `PASS`; S2B durability not started
+- **Status:** S2A–S2D and the provider-neutral DEEP wait/composition path pass mechanically;
+  live-provider and full O2 launch acceptance remain open
 
-This acceptance record freezes the wire-level contract for Sumble Teams and People before durable
-acquisition is added. S2A is pure provider-local modeling, request construction, normalization, and
-recorded-fixture verification. It makes no live Sumble request, adds no operation table, binds no
-production committee source, and reveals no email or phone.
+This acceptance record began as the S2A wire-level freeze and now records the implemented M06A S2
+boundary. The branch contains bounded no-reveal Teams/People models, durable asynchronous
+acquisition, immutable snapshots and receipts, a snapshot-backed provider-neutral committee source,
+the complete seven-condition gate, and the provider-neutral account-deep wait/resume seam. It makes
+no live Sumble request in mechanical acceptance and reveals no email or phone.
 
 ## 1. Authoritative sources
 
@@ -111,9 +114,8 @@ roles:
 - additive unknown fields are tolerated and preserved only in the raw immutable snapshot; they do
   not silently enter the normalized contract.
 
-S2C later maps ready snapshot records into the stable `CommitteeSource` seam. The existing M8
-worker—not Sumble—owns champion, economic-buyer, technical-evaluator, blocker, and persona
-classification.
+S2C maps ready snapshot records into the stable `CommitteeSource` seam. The existing M8 worker—not
+Sumble—owns champion, economic-buyer, technical-evaluator, blocker, and persona classification.
 
 ## 5. S2A exit gate
 
@@ -152,5 +154,47 @@ S2A passes only when recorded contract tests prove:
 - No live Sumble endpoint, provider credit, database migration, durable provider operation,
   contact entity, claim, or production source binding was created.
 
-S2A is closed mechanically. S2B is the next implementation slice: durable Teams request and People
-submit/poll acquisition over immutable snapshots and exactly-once provider-credit settlement.
+## 7. Implemented S2B–S2D and account-deep composition
+
+- **S2B:** `committee_acquisition_operation`, snapshot, and attempt ledgers own stable request
+  fingerprints, immutable request/response artifacts, asynchronous People submit/poll, exact credit
+  settlement, spend-unknown handling, and crash-safe replay. Provider I/O occurs outside database
+  transactions.
+- **S2C:** `SumbleCommitteeSource` reads one exact ready operation for one workspace-local account,
+  verifies live artifact ownership, normalizes Teams/People, preserves provider person/team/source
+  identifiers, and returns grounded `CommitteePersonCandidate` records. It performs no provider I/O
+  and no contact reveal.
+- **S2D:** `CommitteeEligibilityService` records an immutable seven-condition decision before the
+  coordinator can run. It proves exact sealed-batch membership, Pass A, evidence-backed must-haves,
+  human tier approval, confirmed plan/directive lineage, privacy/use/identity/pre-spend/budget
+  approval, and fresh-snapshot reuse. Every ineligible case creates zero paid operation rows.
+- **O1:** `AccountDeepOrchestrator` calls a provider-neutral `CommitteePreparer` after account
+  profiling and before opening the committee claim transaction. A pending operation folds only
+  durable references, returns DEEP `WAITING_EXTERNAL`, and remains at `ACCOUNT_PROFILED`.
+  Re-entry skips account profiling and reconciles the same operation before materialization.
+- **Sumble O2 composition:** `SumbleCommitteePreparer` composes S2D -> S2B -> S2C and supplies a
+  per-account snapshot source only when ready. The production builder is independently default-off,
+  requires `CLUE_SUMBLE_API_KEY` when enabled, and consumes an injected A2-owned durable
+  directive/authorization resolver. No provider branch exists in the orchestrator.
+
+## 8. Combined mechanical evidence
+
+- Clean disposable Postgres migration to Alembic head succeeded.
+- 13 combined S2B/S2C/S2D/O2 durable tests passed against that database, including submit, pending,
+  poll, ready snapshots, candidate materialization, fresh reuse, one operation, and zero resubmit.
+- The provider-neutral O1 account-deep, handler, and project-state tests pass; a transaction-depth
+  assertion proves provider preparation runs outside the claim transaction.
+- The relevant API/deep regression set passes; mypy passes across 498 source files; Ruff passes;
+  all 24 import-linter contracts remain intact.
+- The disposable test database was dropped after acceptance. No live Sumble request or credit was
+  used.
+
+## 9. Remaining release gates
+
+- A2 must persist and resolve the confirmed versioned research directive, committee plan, human
+  confirmation, privacy/identity policy receipts, and bounded per-account Sumble preflight. Until
+  that resolver is bound, the default production composer performs no S2 acquisition.
+- Full O2 still needs the set-scoped `launch_account_deep@1` tool and Exa Deep E0–E2 composition.
+- S2 live release still requires the prerequisite S1 acceptance ruling and a separately authorized,
+  capped one-account Sumble canary plus fresh-process zero-spend replay.
+- Email/phone reveal remains a later separately governed slice.
