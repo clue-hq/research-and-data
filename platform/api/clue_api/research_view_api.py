@@ -9,14 +9,21 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import text
 
+from clue_api.research_view_owner_refs import (
+    OwnerReferenceResolutionError,
+    ProductionOwnerReferenceResolver,
+)
+from clue_config import Settings
 from clue_core import (
     ClaimId,
     EntityId,
+    EntityType,
     EvidenceAccessRequest,
     EvidenceAccessService,
     EvidenceActionKind,
     OperationId,
     ProjectRunId,
+    ResearchOwnedReference,
     ResearchSectionKind,
     ResearchStatementId,
     ResearchView,
@@ -68,6 +75,7 @@ class ComposeResearchViewRequest(BaseModel):
     project_id: str = Field(min_length=1)
     project_run_id: UUID
     subject_entity_id: UUID
+    subject_entity_type: EntityType | None = None
     product_id: str | None = Field(default=None, min_length=1)
     supersedes_snapshot_id: UUID | None = None
 
@@ -89,6 +97,16 @@ class EvidenceActionRequestBody(BaseModel):
     claim_id: UUID
     action_id: UUID
     desired_action: EvidenceActionKind
+
+
+class ResolveOwnerReferencesRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    project_run_id: UUID
+    subject_entity_id: UUID
+    subject_entity_type: EntityType
+    product_id: str | None = Field(default=None, min_length=1)
+    references: tuple[ResearchOwnedReference, ...] = Field(max_length=100)
 
 
 def _etag(source_state_sha256: str) -> str:
@@ -154,10 +172,17 @@ def build_research_view_router(
     evidence_access: EvidenceAccessService,
     tool_invoker: ToolInvoker,
     conn_factory: ConnFactory,
+    settings: Settings,
+    owner_references: ProductionOwnerReferenceResolver | None = None,
 ) -> APIRouter:
     """Build canonical and legacy-alias routes over one authorization/composition path."""
 
     router = APIRouter()
+
+    def require_workspace_admitted(workspace_id: str) -> None:
+        admitted = settings.c7_workspace_canary_ids
+        if admitted and workspace_id not in admitted:
+            raise HTTPException(status_code=404, detail="research view not found")
 
     async def scope_request(
         *,
@@ -166,6 +191,7 @@ def build_research_view_router(
         subject_entity_id: UUID,
         subject_type: Literal["account", "contact"],
     ) -> ResearchViewReadRequest:
+        require_workspace_admitted(workspace_id)
         async with conn_factory() as conn:
             row = (
                 await conn.execute(
@@ -229,6 +255,7 @@ def build_research_view_router(
             project_id=project_id,
             project_run_id=ProjectRunId(row[0]),
             subject_entity_id=EntityId(subject_entity_id),
+            subject_entity_type=EntityType(subject_type),
             product_id=row[1],
         )
 
@@ -246,6 +273,7 @@ def build_research_view_router(
         actor: Actor,
         idempotency_key: str | None,
     ) -> dict[str, Any]:
+        require_workspace_admitted(workspace_id)
         if not idempotency_key:
             raise HTTPException(status_code=422, detail="missing Idempotency-Key header")
         operation_id: OperationId = operation_id_from_key(
@@ -313,7 +341,6 @@ def build_research_view_router(
         response.headers["X-Research-Source-State-Sha256"] = view.source_state_sha256
         return _page_view(view, section_kind=section_kind, cursor=cursor, limit=limit)
 
-    @router.get("/v1/projects/{project_id}/accounts/{account_id}/research-view")
     async def get_account_view(
         project_id: str,
         account_id: UUID,
@@ -334,7 +361,6 @@ def build_research_view_router(
             limit=limit,
         )
 
-    @router.get("/v1/projects/{project_id}/contacts/{contact_id}/research-view")
     async def get_contact_view(
         project_id: str,
         contact_id: UUID,
@@ -355,7 +381,6 @@ def build_research_view_router(
             limit=limit,
         )
 
-    @router.get("/v1/research-view-snapshots/{snapshot_id}")
     async def get_snapshot(
         snapshot_id: UUID,
         response: Response,
@@ -364,6 +389,7 @@ def build_research_view_router(
         cursor: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> dict[str, Any]:
+        require_workspace_admitted(workspace_id)
         try:
             view = await snapshots.resolve(
                 workspace_id=workspace_id,
@@ -377,7 +403,6 @@ def build_research_view_router(
         response.headers["X-Research-Source-State-Sha256"] = view.source_state_sha256
         return _page_view(view, section_kind=section_kind, cursor=cursor, limit=limit)
 
-    @router.post("/v1/research-view-snapshots")
     async def post_snapshot(
         body: ComposeResearchViewRequest,
         workspace_id: WorkspaceDep,
@@ -392,7 +417,6 @@ def build_research_view_router(
             idempotency_key=idempotency_key,
         )
 
-    @router.post("/v1/research-view-snapshots/{snapshot_id}/recheck")
     async def post_recheck(
         snapshot_id: UUID,
         body: RecheckResearchViewRequestBody,
@@ -408,13 +432,13 @@ def build_research_view_router(
             idempotency_key=idempotency_key,
         )
 
-    @router.post("/v1/research-statements/{statement_id}/evidence-action")
     async def post_evidence_action(
         statement_id: UUID,
         body: EvidenceActionRequestBody,
         workspace_id: WorkspaceDep,
         actor: ActorDep,
     ) -> dict[str, Any]:
+        require_workspace_admitted(workspace_id)
         result = await evidence_access.request_access(
             EvidenceAccessRequest(
                 workspace_id=workspace_id,
@@ -432,7 +456,6 @@ def build_research_view_router(
             "result": result.model_dump(mode="json"),
         }
 
-    @router.get("/v1/projects/{project_id}/research-view-status")
     async def get_statuses(
         project_id: str,
         workspace_id: WorkspaceDep,
@@ -440,6 +463,7 @@ def build_research_view_router(
         cursor: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> dict[str, Any]:
+        require_workspace_admitted(workspace_id)
         try:
             page = await research_view_statuses(
                 workspace_id=workspace_id,
@@ -456,12 +480,38 @@ def build_research_view_router(
             "status": page.model_dump(mode="json"),
         }
 
+    async def resolve_owner_references(
+        project_id: str,
+        body: ResolveOwnerReferencesRequest,
+        workspace_id: WorkspaceDep,
+    ) -> dict[str, Any]:
+        require_workspace_admitted(workspace_id)
+        if owner_references is None:
+            raise HTTPException(status_code=503, detail="owner reference resolution unavailable")
+        try:
+            resolved = await owner_references.resolve(
+                ResearchViewReadRequest(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    project_run_id=ProjectRunId(body.project_run_id),
+                    subject_entity_id=EntityId(body.subject_entity_id),
+                    subject_entity_type=body.subject_entity_type,
+                    product_id=body.product_id,
+                ),
+                body.references,
+            )
+        except (OwnerReferenceResolutionError, ResearchViewCompositionError) as exc:
+            raise HTTPException(status_code=404, detail="owner reference not found") from exc
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "items": [item.model_dump(mode="json") for item in resolved],
+        }
+
     def legacy_headers(response: Response) -> None:
         response.headers["Deprecation"] = "true"
         response.headers["Link"] = '</v1/research-view-snapshots>; rel="successor-version"'
         response.headers["X-Clue-Canonical-Resource"] = "research-view"
 
-    @router.get("/v1/projects/{project_id}/accounts/{account_id}/dossier")
     async def get_legacy_account_dossier(
         project_id: str,
         account_id: UUID,
@@ -484,7 +534,6 @@ def build_research_view_router(
         legacy_headers(response)
         return payload
 
-    @router.get("/v1/projects/{project_id}/contacts/{contact_id}/dossier")
     async def get_legacy_contact_dossier(
         project_id: str,
         contact_id: UUID,
@@ -507,7 +556,6 @@ def build_research_view_router(
         legacy_headers(response)
         return payload
 
-    @router.post("/v1/dossier")
     async def post_legacy_dossier(
         body: ComposeResearchViewRequest,
         response: Response,
@@ -524,6 +572,68 @@ def build_research_view_router(
         )
         legacy_headers(response)
         return payload
+
+    if settings.c7_research_view_read_enabled:
+        router.add_api_route(
+            "/v1/projects/{project_id}/accounts/{account_id}/research-view",
+            get_account_view,
+            methods=["GET"],
+        )
+        router.add_api_route(
+            "/v1/projects/{project_id}/contacts/{contact_id}/research-view",
+            get_contact_view,
+            methods=["GET"],
+        )
+        router.add_api_route(
+            "/v1/research-view-snapshots/{snapshot_id}",
+            get_snapshot,
+            methods=["GET"],
+        )
+        router.add_api_route(
+            "/v1/projects/{project_id}/research-view-status",
+            get_statuses,
+            methods=["GET"],
+        )
+        router.add_api_route(
+            "/v1/projects/{project_id}/research-view-owner-references:resolve",
+            resolve_owner_references,
+            methods=["POST"],
+        )
+    if settings.c7_snapshot_compose_enabled:
+        router.add_api_route(
+            "/v1/research-view-snapshots",
+            post_snapshot,
+            methods=["POST"],
+        )
+    if settings.c7_recheck_enabled:
+        router.add_api_route(
+            "/v1/research-view-snapshots/{snapshot_id}/recheck",
+            post_recheck,
+            methods=["POST"],
+        )
+    if settings.c7_evidence_actions_enabled:
+        router.add_api_route(
+            "/v1/research-statements/{statement_id}/evidence-action",
+            post_evidence_action,
+            methods=["POST"],
+        )
+    if settings.c7_legacy_dossier_alias_enabled and settings.c7_research_view_read_enabled:
+        router.add_api_route(
+            "/v1/projects/{project_id}/accounts/{account_id}/dossier",
+            get_legacy_account_dossier,
+            methods=["GET"],
+        )
+        router.add_api_route(
+            "/v1/projects/{project_id}/contacts/{contact_id}/dossier",
+            get_legacy_contact_dossier,
+            methods=["GET"],
+        )
+    if settings.c7_legacy_dossier_alias_enabled and settings.c7_snapshot_compose_enabled:
+        router.add_api_route(
+            "/v1/dossier",
+            post_legacy_dossier,
+            methods=["POST"],
+        )
 
     return router
 

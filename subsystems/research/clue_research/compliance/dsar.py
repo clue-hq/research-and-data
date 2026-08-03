@@ -93,6 +93,7 @@ from clue_research.claimstore import (
     affected_derivations,
     claims_by_ids,
     claims_for,
+    redact_faithfulness_rationale,
     supersede_claim,
     supersede_claims,
 )
@@ -106,6 +107,9 @@ _log = get_logger(__name__)
 METRIC_DSAR_OPERATIONS = "research.compliance.dsar.operations"  # by op
 METRIC_DSAR_TOMBSTONED = "research.compliance.dsar.tombstoned"  # by reason
 METRIC_DSAR_SNAPSHOT_ERASED = "research.compliance.dsar.snapshot_erased"  # by reason (PB-B2.5)
+METRIC_DSAR_FAITHFULNESS_IDENTITY_ERRORS = (
+    "research.compliance.dsar.faithfulness_subject_identity.errors"
+)
 METRIC_RETENTION_EXPIRED = "research.compliance.retention.expired"
 
 # --- M10-local span attribute keys (short, non-secret enum/int values) ------------------------
@@ -303,23 +307,23 @@ async def _apply_tombstone(
     # same transaction as the claim tombstone. Reachability is the existing
     # faithfulness_verdict.claim_id -> claim.entity_id relation; no subject/body copy is added.
     # COALESCE keeps this one-way and idempotent if a future caller reaches an already-redacted row.
-    await conn.execute(
-        text(
-            """
-            UPDATE faithfulness_verdict
-            SET rationale = NULL,
-                rationale_redacted_at = COALESCE(rationale_redacted_at, now()),
-                rationale_redaction_reason =
-                    COALESCE(rationale_redaction_reason, :redaction_reason)
-            WHERE claim_id = :claim_id
-              AND rationale IS NOT NULL
-            """
-        ),
-        {
-            "claim_id": str(target.id),
-            "redaction_reason": reason.value,
-        },
-    )
+    #
+    # The reader and erasure paths share the exact source-marker-aware A→(Q,A) plan. This is
+    # intentionally NOT "any claim with a span": only the judged-interview producer owns Q. A
+    # malformed marked claim must not block the erasure transaction; it has no reconstructable Q,
+    # so redact A, emit one bounded reason, and continue fail-closed.
+    identity_error = await redact_faithfulness_rationale(conn, target, reason_code=reason.value)
+    if identity_error is not None:
+        sink.add(
+            METRIC_DSAR_FAITHFULNESS_IDENTITY_ERRORS,
+            1,
+            {"reason": identity_error.reason_code},
+        )
+        _log.warning(
+            "compliance.dsar.faithfulness_subject_identity_error reason=%s claim_id=%s",
+            identity_error.reason_code,
+            identity_error.actual_claim_id,
+        )
     # validate_field=False: the redaction sentinel is intentionally not a valid field value (the
     # tombstone is REJECTED, so it never wins the merge regardless). This is one of the sanctioned
     # compliance redaction callers documented on claimstore.supersede_claim.
@@ -405,6 +409,49 @@ async def _purge_legacy_handoff_payloads(
             "contact_entity_id": str(contact_entity_id),
         },
     )
+
+
+async def _tombstone_with_dependents(
+    conn: AsyncConnection,
+    targets: Sequence[Claim],
+    *,
+    reason: TombstoneReason,
+    contact_entity_id: EntityId,
+    workspace_id: str,
+    scope_desc: str | None,
+    run_id: RunId,
+    sink: MetricSink,
+    erased_keys: list[str],
+) -> tuple[list[ClaimId], int]:
+    """Tombstone targets and every transitive derived value that copied their material."""
+
+    dependent_ids = await affected_derivations(conn, [target.id for target in targets])
+    dependents = await claims_by_ids(
+        conn,
+        dependent_ids,
+        scope=WorkspaceScope.private_for_workspace(workspace_id),
+    )
+    expanded: dict[ClaimId, Claim] = {target.id: target for target in targets}
+    expanded.update(dependents)
+    tombstoned: list[ClaimId] = []
+    already = 0
+    for target in sorted(expanded.values(), key=lambda c: (c.artifact_key or "", str(c.id))):
+        tombstone_id = await _apply_tombstone(
+            conn,
+            target,
+            reason=reason,
+            contact_entity_id=contact_entity_id,
+            workspace_id=target.workspace_id or workspace_id,
+            run_id=run_id,
+            scope_desc=scope_desc,
+            sink=sink,
+            erased_keys=erased_keys,
+        )
+        if tombstone_id is None:
+            already += 1
+        else:
+            tombstoned.append(tombstone_id)
+    return tombstoned, already
 
 
 # --- the data-subject rights service (controller-scoped) --------------------
@@ -649,41 +696,17 @@ class DataSubjectRightsImpl:
         run_id: RunId,
         erased_keys: list[str],
     ) -> tuple[list[ClaimId], int]:
-        tombstoned: list[ClaimId] = []
-        already = 0
-        # A derived value may repeat personal material from one of this contact's claims while
-        # targeting an account or another registered field. Reachability therefore follows the
-        # immutable support graph transitively before any target is superseded. C7.2 forbids a
-        # public derivation from depending on private support, so every reachable dependent belongs
-        # to this same controller and can be loaded through its private scope.
-        dependent_ids = await affected_derivations(conn, [target.id for target in targets])
-        dependents = await claims_by_ids(
+        return await _tombstone_with_dependents(
             conn,
-            dependent_ids,
-            scope=WorkspaceScope.private_for_workspace(self._workspace_id),
+            targets,
+            reason=reason,
+            contact_entity_id=contact_entity_id,
+            workspace_id=self._workspace_id,
+            scope_desc=scope_desc,
+            run_id=run_id,
+            sink=self._metric_sink,
+            erased_keys=erased_keys,
         )
-        expanded: dict[ClaimId, Claim] = {target.id: target for target in targets}
-        expanded.update(dependents)
-        # Stable-sorted by artifact ref so two concurrent erasures acquire the artifact row
-        # locks in the same order (no lock-order deadlock across shared snapshots).
-        for target in sorted(expanded.values(), key=lambda c: (c.artifact_key or "", str(c.id))):
-            workspace_id = target.workspace_id or self._workspace_id
-            tombstone_id = await _apply_tombstone(
-                conn,
-                target,
-                reason=reason,
-                contact_entity_id=contact_entity_id,
-                workspace_id=workspace_id,
-                run_id=run_id,
-                scope_desc=scope_desc,
-                sink=self._metric_sink,
-                erased_keys=erased_keys,
-            )
-            if tombstone_id is None:
-                already += 1
-            else:
-                tombstoned.append(tombstone_id)
-        return tombstoned, already
 
 
 # --- the retention / objection sweep (operator-wide maintenance) ------------
@@ -744,11 +767,10 @@ class RetentionSweep:
         with traced_step(SPAN_COMPLIANCE_RETENTION_SWEEP) as span:
             async with self._conn_factory() as conn:
                 for candidate in candidates:
-                    tombstone_id = await self._tombstone_candidate(
+                    tombstone_ids = await self._tombstone_candidate(
                         conn, candidate, run_id=run_id, erased_keys=erased_keys
                     )
-                    if tombstone_id is not None:
-                        tombstoned.append(tombstone_id)
+                    tombstoned.extend(tombstone_ids)
             # Phase 2 with scan_all: the sweep is the operator-wide maintenance pass, so it also
             # converges any erased-but-unpurged marks a crashed earlier purge left behind.
             await _purge_marked(
@@ -776,7 +798,7 @@ class RetentionSweep:
         *,
         run_id: RunId,
         erased_keys: list[str],
-    ) -> ClaimId | None:
+    ) -> tuple[ClaimId, ...]:
         """Resolve the live target claim for an age-out candidate and tombstone it. The candidate
         carries only ids (no value), so the live target is fetched (operator scope) to copy its
         tenancy/use-class into the tombstone; a candidate whose claim is already superseded (raced
@@ -795,7 +817,7 @@ class RetentionSweep:
         if target is None or _is_tombstone(target):
             # already superseded / merged away since the scan, or itself a tombstone — skip
             # (idempotent; a tombstone is never aged out by a subsequent sweep)
-            return None
+            return ()
         if target.workspace_id is None:
             # a public-footprint claim carrying a retention horizon is a contract violation
             # (personal
@@ -806,10 +828,10 @@ class RetentionSweep:
                 candidate.claim_id,
                 candidate.field_key,
             )
-            return None
-        return await _apply_tombstone(
+            return ()
+        tombstoned, _already = await _tombstone_with_dependents(
             conn,
-            target,
+            (target,),
             reason=TombstoneReason.RETENTION_EXPIRY,
             contact_entity_id=candidate.entity_id,
             workspace_id=target.workspace_id,
@@ -818,6 +840,12 @@ class RetentionSweep:
             sink=self._metric_sink,
             erased_keys=erased_keys,
         )
+        await _purge_legacy_handoff_payloads(
+            conn,
+            contact_entity_id=candidate.entity_id,
+            workspace_id=target.workspace_id,
+        )
+        return tuple(tombstoned)
 
     async def sweep_objections(self) -> SweepResult:
         """Re-apply every standing objection: for each ``outreach_objected`` contact, tombstone its
@@ -842,20 +870,23 @@ class RetentionSweep:
                         if _erasable(c) and _is_outreach_hook(c)
                     ]
                     scanned += len(hooks)
-                    for hook in sorted(hooks, key=lambda c: c.artifact_key or ""):
-                        tombstone_id = await _apply_tombstone(
-                            conn,
-                            hook,
-                            reason=TombstoneReason.OBJECTION,
-                            contact_entity_id=contact_id,
-                            workspace_id=hook.workspace_id or str(workspace_id),
-                            run_id=run_id,
-                            scope_desc="contact.facet.*",
-                            sink=self._metric_sink,
-                            erased_keys=erased_keys,
-                        )
-                        if tombstone_id is not None:
-                            tombstoned.append(tombstone_id)
+                    contact_tombstones, _already = await _tombstone_with_dependents(
+                        conn,
+                        hooks,
+                        reason=TombstoneReason.OBJECTION,
+                        contact_entity_id=contact_id,
+                        workspace_id=str(workspace_id),
+                        run_id=run_id,
+                        scope_desc="contact.facet.*",
+                        sink=self._metric_sink,
+                        erased_keys=erased_keys,
+                    )
+                    tombstoned.extend(contact_tombstones)
+                    await _purge_legacy_handoff_payloads(
+                        conn,
+                        contact_entity_id=contact_id,
+                        workspace_id=str(workspace_id),
+                    )
             await _purge_marked(
                 self._conn_factory,
                 self._storage,

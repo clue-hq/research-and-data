@@ -5,6 +5,18 @@
 **Base:** completed C6 head `7755bea`
 **Binding child spec:** [PC-C7](../../specs/PC-C7-research-views-derivations-and-handoff.md)
 **Parent scope:** [PC §C7–C8](../../specs/PC-phase-c-agentic-layer.md)
+**Status:** C7.0–C7.9 IMPLEMENTED; AUTOMATED REMEDIATION CLOSED — all C7 flags remain default-off
+pending the real Exa-first manual quality trial and explicit canary approval. See
+[C7.9](2026-07-30-c7-production-research-view-readers.md) for the production reader closeout.
+
+> **Post-closeout correction (2026-07-30):** the original closeout proved the contract,
+> derivation, deterministic composer, snapshots, evidence seam, recheck, committee/handoff,
+> serving surfaces, default-off flags, and adversarial fixtures. It did not prove a production
+> caller of `build_research_view_composer` or real implementations of the reader/governance
+> protocols. C7.9 subsequently supplied that production stack and closed the two final residual
+> review findings: explicit flagged-root/erased-support precedence coverage and product-exact
+> legacy review projection. Historical C7.0–C7.8 status entries below remain implementation
+> history; neither their closeout nor C7.9 authorizes flag-on without the manual rollout gates.
 
 ## 1. Purpose
 
@@ -1000,6 +1012,11 @@ Commit: `feat(c7): expose research views through tools and API`
 ### Goal
 
 Prove the whole story, remove temporary paths, and leave an exact C8 handoff.
+
+**Outcome:** complete. The adversarial and extended-DSAR manifests are executable, derivation
+reads are breadth-batched and capped, unsafe body caches are forbidden, six independent
+default-off activation flags are wired, repository gates are green, and C8 retains only the
+legacy-write hard-fence residual required before multi-worker production deployment.
 
 ### C7.8a Adversarial fixture suite
 

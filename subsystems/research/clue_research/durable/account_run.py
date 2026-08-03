@@ -167,6 +167,36 @@ async def list_account_runs(
     return [_row_to_account_run(dict(r)) for r in rows]
 
 
+async def find_account_runs_for_entity(
+    conn: AsyncConnection,
+    *,
+    project_run_id: ProjectRunId,
+    entity_id: EntityId,
+    limit: int = 2,
+) -> tuple[AccountRunRow, ...]:
+    """Return the bounded exact project-run/account scope used by fail-closed readers."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_SELECT_COLUMNS} FROM account_run "
+                    "WHERE project_run_id = :project_run_id AND entity_id = :entity_id "
+                    "ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "project_run_id": project_run_id,
+                    "entity_id": entity_id,
+                    "limit": min(max(limit, 1), 10),
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_row_to_account_run(dict(row)) for row in rows)
+
+
 async def save_plan(
     conn: AsyncConnection,
     account_run_id: RunId,

@@ -23,6 +23,7 @@ from clue_api.recipe_wiring import (
     seed_system_recipes,
 )
 from clue_api.stage0_recipe import RecipeStep, Stage0StepPinProvider, ToolbeltRecipeRunner
+from clue_api.stage0_trial import STAGE0_RECIPE_VERSION
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
 from clue_core import (
@@ -186,10 +187,12 @@ async def _recipe_runner(
         lifecycle=lifecycle,
         definitions=definitions,
     )
-    recipe0_v3 = next(
+    # The pinned promoted revision, read from the trial's own constant: only a currently
+    # promoted revision may start, and seeding supersedes every older one.
+    promoted_recipe0 = next(
         revision
         for definition, revision in zip(definitions, revisions, strict=True)
-        if definition.recipe_key == "recipe0-stage0" and definition.version == 3
+        if definition.recipe_key == "recipe0-stage0" and definition.version == STAGE0_RECIPE_VERSION
     )
     artifact_store = StorageParameterArtifactStore(
         storage=storage,
@@ -209,7 +212,7 @@ async def _recipe_runner(
     )
     started = await starter.start(
         workspace_id=workspace_id,
-        recipe_revision_id=recipe0_v3.recipe_revision_id,
+        recipe_revision_id=promoted_recipe0.recipe_revision_id,
         parameters={},
         parameter_artifact_key=artifact_key,
         parameter_manifest_hash=digest,
@@ -494,8 +497,7 @@ async def _url_recon_fingerprint(
                     {
                         "route": "claim",
                         "route_key": CLIENT_VALUE_PROP,
-                        "quote_start": 0,
-                        "quote_end": len(answer),
+                        "quote": answer,
                         "entity_id": client_entity_id,
                         "entity_type": "account",
                         "field_key": CLIENT_VALUE_PROP,
@@ -554,8 +556,7 @@ async def _url_recon_fingerprint(
                     {
                         "route": "claim",
                         "route_key": CLIENT_VALUE_PROP,
-                        "quote_start": 0,
-                        "quote_end": len(correction),
+                        "quote": correction,
                         "entity_id": client_entity_id,
                         "entity_type": "account",
                         "field_key": CLIENT_VALUE_PROP,
@@ -787,5 +788,94 @@ def test_recipe0_pins_disabled_optional_memory_without_reenabling_it() -> None:
             finally:
                 unbind_resolver("firecrawl_site")
             assert fingerprint["interview_claims"] == 1
+
+    run_async(scenario())
+
+
+def test_recipe0_slot_runs_the_c8_inspection_tools_under_the_pinned_revision() -> None:
+    """PC-C8 §7: a granted inspection tool is only callable if the pinned revision allows it.
+
+    The C5 interaction slot is the second, independent ceiling on an agent plan
+    (``agent_execution_wiring.validate_plan`` rejects ``c5_tool_not_allowed`` off exactly the
+    ``tool_allowlist`` asserted here), and the live acceptance run failed on it while every
+    profile-level grant was already in place: the tools were added to the profile at v10 but not
+    to the promoted recipe revision. Running the step through ``ToolbeltRecipeRunner`` proves the
+    whole path — allowlist, recipe-safety, and the ``project`` pin these tools now declare.
+    """
+
+    async def scenario() -> None:
+        workspace_id = "recipe0-inspection-slot"
+        async with rollback_conn(workspace_id=workspace_id) as conn:
+            storage = _MemoryStorage()
+            brand = await create_brand(conn, workspace_id=workspace_id, name="Inspection brand")
+            await create_product(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=brand.brand_id,
+                name="Inspection product",
+            )
+            project = await create_project(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=brand.brand_id,
+                name="Inspection project",
+            )
+            runner, executor, _generation, execution_id = await _recipe_runner(
+                conn,
+                workspace_id=workspace_id,
+                storage=storage,
+                binder=build_stage0_scrape_binder(
+                    extractor=CallableClaimExtractor(_extract),
+                    scraper=_ReconScraper(),
+                ),
+                gate=_PassGate(),
+                project_id=project.project_id,
+            )
+
+            slot = await executor.inspect_interaction_slot(
+                execution_id=execution_id,
+                workspace_id=workspace_id,
+                slot_key="stage0_interactions",
+            )
+            assert "inspect_readiness_history@1" in slot.tool_allowlist
+            assert "inspect_statement_history@1" in slot.tool_allowlist
+
+            result = await runner.run_step(
+                RecipeStep(
+                    step_id="inspect_readiness",
+                    tool_name="inspect_readiness_history",
+                    tool_version="1",
+                    input_refs={"project_id": project.project_id},
+                ),
+                ctx=ToolContext(
+                    workspace_id=workspace_id,
+                    actor="agent",
+                    conn_factory=_factory(conn),
+                    operation_id=new_operation_id(),
+                    execution_id=execution_id,
+                ),
+            )
+
+            # It ran, and it read this project's (empty) ledger rather than refusing.
+            assert result.references["project_id"] == project.project_id
+            assert result.references["decisions"] == []
+            assert result.references["ledger_length"] == 0
+            # The declared `project` pin was resolved and recorded against the appended child, so
+            # the read is replay-determined by the scope it read.
+            pins = {
+                str(row[0])
+                for row in (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT kind FROM execution_pin
+                            WHERE execution_id = :execution_id AND key = :project_id
+                            """
+                        ),
+                        {"execution_id": execution_id, "project_id": project.project_id},
+                    )
+                ).all()
+            }
+            assert "project" in pins
 
     run_async(scenario())

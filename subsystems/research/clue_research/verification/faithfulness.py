@@ -48,7 +48,6 @@ plus the claim's ``verification_status = rejected`` (``rejected`` is a *verifica
 
 from __future__ import annotations
 
-import json
 from decimal import Decimal
 from time import perf_counter
 
@@ -87,6 +86,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import record_verification
+from clue_research.verification.json_response import first_json_object
 
 _log = get_logger(__name__)
 
@@ -218,36 +218,15 @@ def build_judge_messages(claim: Claim, *, prompt_version: str = PROMPT_VERSION) 
     return [Message(role=Role.SYSTEM, content=system), Message(role=Role.USER, content=user)]
 
 
-def _first_json_object(text: str) -> dict[str, object] | None:
-    """Find and decode the first valid top-level JSON object in ``text``.
-
-    Tolerates surrounding prose, markdown fences, and trailing commentary (a real judge routinely
-    appends reasoning) by scanning each ``{`` and ``raw_decode``-ing one object, ignoring trailing
-    data; a ``{`` that does not begin a decodable object (a brace in prose) is skipped. Returns the
-    first decodable object, or ``None``. A greedy ``{...}`` regex would instead span to the *last*
-    ``}`` and choke on any trailing brace — silently mis-rejecting an otherwise-valid verdict."""
-    decoder = json.JSONDecoder()
-    index = text.find("{")
-    while index != -1:
-        try:
-            obj, _end = decoder.raw_decode(text, index)
-        except (json.JSONDecodeError, ValueError):
-            obj = None
-        if isinstance(obj, dict):
-            return obj
-        index = text.find("{", index + 1)
-    return None
-
-
 def parse_judge_response(response_text: str) -> ParsedVerdict:
     """Parse a judge response into a :class:`ParsedVerdict`.
 
     Robust to surrounding prose / markdown fences / trailing commentary (extracts the first
-    *decodable* JSON object — see :func:`_first_json_object`). On any failure — no JSON object, an
+    *decodable* JSON object — see :func:`first_json_object`). On any failure — no JSON object, an
     unknown verdict label, a non-numeric score — it falls back to ``unsupported`` with score 0: an
     unparseable judgment must never *promote* a claim (empty beats fabricated; substrate §6 /
     conventions §5)."""
-    payload = _first_json_object(response_text or "")
+    payload = first_json_object(response_text or "")
     if payload is None:
         return ParsedVerdict(
             verdict=JudgeVerdict.UNSUPPORTED,

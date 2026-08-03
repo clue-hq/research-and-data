@@ -19,7 +19,7 @@ tools:
     output_schema_sha256: a4b0ee832c7a8fda7f62e811ab2651de2255b2d3b5020e29ce3b73b5d2f1e56b
   - name: get_research_view
     version: "1"
-    input_schema_sha256: 0ce6ad0eaa0d4e2dd91461d53119be6dcb1129d36923c3fb720a23c87ad8ee35
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
     output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
   - name: propose_field
     version: "1"
@@ -74,7 +74,7 @@ delegation_tool_grants:
   research:
     - name: get_research_view
       version: "1"
-      input_schema_sha256: 0ce6ad0eaa0d4e2dd91461d53119be6dcb1129d36923c3fb720a23c87ad8ee35
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
       output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
     - name: profile_contact
       version: "1"
@@ -99,7 +99,7 @@ delegation_tool_grants:
       output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
     - name: get_research_view
       version: "1"
-      input_schema_sha256: 0ce6ad0eaa0d4e2dd91461d53119be6dcb1129d36923c3fb720a23c87ad8ee35
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
       output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
   reviewer:
     - name: compose_handoff
@@ -108,7 +108,7 @@ delegation_tool_grants:
       output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
     - name: get_research_view
       version: "1"
-      input_schema_sha256: 0ce6ad0eaa0d4e2dd91461d53119be6dcb1129d36923c3fb720a23c87ad8ee35
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
       output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
 max_delegation_depth: 1
 max_delegations: 6

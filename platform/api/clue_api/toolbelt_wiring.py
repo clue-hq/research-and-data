@@ -63,12 +63,15 @@ from uuid import UUID
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.composition import build_pre_spend_gate
 from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
 from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
@@ -76,11 +79,15 @@ from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
+    LegacyDecideFieldProposalTool,
+    LegacyProposeFieldTool,
     ProposeFieldTool,
     ProposeSourceTool,
 )
 from clue_api.research_view_tools import build_research_view_tools
+from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_tools import stage0_tools
+from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_api.tool_outputs import (
     CommitteeOutput,
@@ -125,7 +132,7 @@ from clue_research.discovery_scoring.discovery import ChannelRegistry
 from clue_research.discovery_scoring.phases import (
     DiscoveryPhaseHandler,
     ScoringPhaseHandler,
-    _discovery_run_id,
+    discovery_run_id,
 )
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
@@ -175,6 +182,7 @@ from clue_research.stage0 import (
     reverse_profile,
     synthesize_icps,
 )
+from clue_research.verification import FaithfulnessJudgeImpl
 from clue_spine import get_project
 from clue_storage import StorageBackend
 from clue_toolbelt import (
@@ -556,13 +564,16 @@ class SynthesizeIcpsTool(_CapabilityTool):
                 client_kb_version=version,
                 product_id=inputs.product_id,
             )
-            proposals = await synthesize_icps(
+            result = await synthesize_icps(
                 conn, ref, workspace_id=ctx.workspace_id, gateway=self._gateway
             )
         return ToolResult(
             tool=self.name,
             version=self.version,
-            references={"proposal_count": len(proposals), "client_kb_version": version},
+            references={
+                "proposal_count": len(result.proposals),
+                "client_kb_version": version,
+            },
         )
 
 
@@ -794,7 +805,7 @@ class ScoreAccountsTool(_CapabilityTool):
         # S8: scoring over an empty admitted set is a silent no-op — refuse it. The admitted set is
         # the accounts carrying a ``core.discovery_provenance`` claim for this run's deterministic
         # discovery run-id (the same id + ALL_WORKSPACES scope ScoringPhaseHandler itself reads).
-        discovery_run = _discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
+        discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
         async with self._conn_factory() as conn:
             admitted = await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
         if not admitted:
@@ -1610,6 +1621,7 @@ def build_toolbelt(
     proposal_credential_ready: Callable[[str], bool] | None = None,
     proposal_personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
     stage0_memory_write: MemoryWriteSeam | None = None,
+    stage0_memory_write_factory: Callable[[AsyncConnection], MemoryWriteSeam] | None = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
     research_view_composer: ResearchViewComposer | None = None,
@@ -1674,6 +1686,29 @@ def build_toolbelt(
         if pre_spend_gate is not None
         else build_pre_spend_gate(conn_factory=conn_factory)
     )
+    entailment_judge = (
+        None
+        if gateway is None
+        else FaithfulnessClaimEntailmentJudge(
+            judge=FaithfulnessJudgeImpl(gateway=gateway, conn_factory=conn_factory)
+        )
+    )
+    statement_evidence = (
+        ArtifactStatementEvidenceReader(
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory),
+            conn_factory=conn_factory,
+        )
+        if storage is not None
+        else None
+    )
+    dynamic_client_kb_materializer = (
+        DynamicClientKbMaterializer(
+            evidence=statement_evidence,
+            entailment_judge=entailment_judge,
+        )
+        if statement_evidence is not None
+        else None
+    )
     locks = lock_factory if lock_factory is not None else lazy_account_lock_factory()
     registry = ToolRegistry()
     for tool_type in _TOOL_TYPES:
@@ -1711,13 +1746,25 @@ def build_toolbelt(
         ),
         make_default=False,
     )
-    registry.register(ProposeFieldTool(), make_default=True)
+    registry.register(
+        ProposeFieldTool(dynamic_client_kb_materializer=dynamic_client_kb_materializer),
+        make_default=True,
+    )
+    registry.register(LegacyProposeFieldTool(), make_default=False)
     registry.register(
         DecideFieldProposalTool(
             credential_ready=proposal_credential_ready,
             personal_source_allowed=proposal_personal_source_allowed,
+            dynamic_client_kb_materializer=dynamic_client_kb_materializer,
         ),
         make_default=True,
+    )
+    registry.register(
+        LegacyDecideFieldProposalTool(
+            credential_ready=proposal_credential_ready,
+            personal_source_allowed=proposal_personal_source_allowed,
+        ),
+        make_default=False,
     )
     registry.register(ProposeSourceTool(), make_default=True)
     registry.register(
@@ -1734,15 +1781,39 @@ def build_toolbelt(
         policy=DEFAULT_STAGE0_POLICY,
         pre_spend_gate=gate,
         memory_write=stage0_memory_write,
+        memory_write_factory=stage0_memory_write_factory,
         scrape_binder=stage0_scrape_binder,
         storage=storage,
         project_execution_router=project_execution_router,
+        # PC-C8 §6c-b: typed interview values are admitted by the shipped M9.3 faithfulness judge,
+        # never by a second entailment mechanism. Without a gateway there is no judge, and a typed
+        # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
+        # behaviour, so an ungatewayed composition is never *worse* than before.
+        entailment_judge=entailment_judge,
+    ):
+        registry.register(tool, make_default=True)
+    # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors
+    # resolve. Both are granted to `AgentRole.HEAD_OF_ABM` in `C6_AGENT_TOOL_AUTHORITY` (the
+    # deferred grant landed against profile v10) and are *not* withheld by the trial's
+    # `C6_SURFACE_POLICIES` entry — §7 sanctions them on that surface explicitly, because they are
+    # read-only, effect-free, page-bounded and fail-closed on workspace/project scope, and a card
+    # that emits an omission kind no installed tool can resolve is what
+    # `test_c8_omission_resolution_contract.py` refuses to let ship.
+    # Without a storage backend the evidence reader cannot exist, so the statement tool refuses
+    # `statement_evidence_not_configured` rather than serving quote-less rows.
+    for tool in build_stage0_inspection_tools(
+        evidence=statement_evidence,
+        conn_factory=conn_factory,
     ):
         registry.register(tool, make_default=True)
     for tool in build_research_view_tools(
         composer=research_view_composer,
         snapshots=research_view_snapshots,
         recheck=research_view_recheck,
+        read_enabled=resolved_settings.c7_research_view_read_enabled,
+        snapshot_compose_enabled=resolved_settings.c7_snapshot_compose_enabled,
+        recheck_enabled=resolved_settings.c7_recheck_enabled,
+        admitted_workspace_ids=frozenset(resolved_settings.c7_workspace_canary_ids),
     ):
         registry.register(tool, make_default=True)
     return registry

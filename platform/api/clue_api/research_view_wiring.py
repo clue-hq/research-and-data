@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from clue_core import EntityType, OperationId, ResearchSubjectRef, ResearchViewComposer
 from clue_db import ConnFactory, transaction
+from clue_research.durable import append_subject_activity
 from clue_research.narrative import (
     ActivityReferenceReader,
     CanonicalSubjectReader,
@@ -81,7 +82,9 @@ class ClaimSnapshotReachabilityReader:
                     text(
                         """
                         SELECT DISTINCT c.entity_id, c.entity_type,
-                               ce.account_entity_id AS parent_account_id
+                               ce.account_entity_id AS parent_account_id,
+                               COALESCE(ce.canonical_version, ae.canonical_version)
+                                   AS canonical_version
                         FROM claim c
                         LEFT JOIN contact_entity ce
                           ON c.entity_type = 'contact' AND ce.id = c.entity_id
@@ -110,10 +113,7 @@ class ClaimSnapshotReachabilityReader:
             ResearchSubjectRef(
                 entity_id=row[0],
                 entity_type=EntityType(row[1]),
-                # Entity rows do not yet expose a durable revision counter. C7.4's reachability
-                # table indexes identity only; version 1 is therefore a non-authoritative adapter
-                # value and is never persisted by the subject index.
-                canonical_entity_version=1,
+                canonical_entity_version=int(row[3]),
                 parent_account_id=row[2],
             )
             for row in rows
@@ -228,6 +228,7 @@ def build_research_view_recheck_service(
     return ResearchViewRecheckService(
         snapshots=snapshots,
         research_requester=requester,
+        subject_activity_appender=append_subject_activity,
         conn_factory=conn_factory,
         clock=clock,
     )

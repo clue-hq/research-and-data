@@ -13,6 +13,7 @@ from clue_agents.catalog import (
 )
 from clue_agents.registry import (
     AgentProfileRegistry,
+    AgentSurfacePolicy,
     AgentToolCatalog,
     AgentToolContract,
 )
@@ -21,17 +22,19 @@ from clue_toolbelt import ToolEffectClass, ToolRegistry, UnknownTool
 __all__ = [
     "C6_ACTIVE_PROFILE_VERSIONS",
     "C6_AGENT_TOOL_AUTHORITY",
+    "C6_SURFACE_POLICIES",
+    "STAGE0_CONVERSATION_TRIAL_SURFACE",
     "c6_roles_for_tool",
     "ToolRegistryAgentCatalog",
     "build_agent_profile_registry",
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v4",
-    AgentRole.RESEARCH: "v3",
-    AgentRole.CONTENT_DRAFTER: "v3",
-    AgentRole.REVIEWER: "v3",
-    AgentRole.ACCOUNT_RESEARCH: "v2",
+    AgentRole.HEAD_OF_ABM: "v12",
+    AgentRole.RESEARCH: "v4",
+    AgentRole.CONTENT_DRAFTER: "v4",
+    AgentRole.REVIEWER: "v4",
+    AgentRole.ACCOUNT_RESEARCH: "v3",
 }
 
 
@@ -58,6 +61,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.ACCOUNT_RESEARCH,
     ),
     "import_accounts": (),
+    # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10). These are the tools the
+    # card's `omissions` cursors are resolvable *through*: read-only, effect-free, page-bounded,
+    # and fail-closed on workspace/project scope. They are granted on the base role *and* stay
+    # installed on the trial surface — §7 sanctions them there explicitly, and a card that emits an
+    # omission kind no installed tool can resolve is the contract
+    # `test_c8_omission_resolution_contract.py` now refuses to let ship.
+    "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
+    "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (AgentRole.RESEARCH,),
@@ -82,6 +93,72 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "submit_tier_checkpoint": (),
     "synthesize_icps": (AgentRole.HEAD_OF_ABM,),
 }
+
+#: The Stage-0 conversation trial (`clue_api.stage0_trial`). One human types, the platform captures
+#: every turn, and the agent's whole job is to converse and route what was said.
+STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
+
+#: PC-C8 §8: surface restrictions are enforced by tools that are *not installed*, never by prose in
+#: a shared skill or a context card. Each entry narrows one role's effective tool set on one named
+#: surface; the registry refuses a policy that withholds a tool the role's profile does not pin, so
+#: a rename cannot quietly restore a withheld capability.
+#:
+#: The trial withholds three tools, all for one reason — this surface is a manual conversation and
+#: does no external research, and neither the model nor the platform captures anything on the
+#: agent's behalf:
+#:
+#: * ``start_recon`` and ``synthesize_icps`` are the two prohibitions the deleted stage-snapshot
+#:   prose used to state (task 1.3 deleted it with its artifact). ``start_recon`` spends against
+#:   external surfaces; ``synthesize_icps`` is driven from the human ``/synthesize-icp`` command,
+#:   which calls the research function directly and never needs the agent tool.
+#: * ``submit_onboarding_input`` is withheld as a **policy call** (PC-C8 §8, task 1.4). The trial's
+#:   rule is that the agent never captures: ``Stage0Trial.run_turn`` writes the ``user_turn``
+#:   capture itself, as ``actor='human'``, before the model is ever woken. Task 1.2's binder made
+#:   an agent-written row harmless to the turn binding (the capture lookup is scoped by project and
+#:   ``actor='human'``), so this is no longer a *safety* fix — it is that the tool has no honest use
+#:   left here. Its only consumers of a fresh capture were ``start_recon`` (withheld) and the human
+#:   upload boundary (absent on this surface), so every reachable call would write an
+#:   ``actor='agent'`` capture record for a turn the platform already captured: durable noise with
+#:   misleading provenance. Defence in depth is unchanged — 1.2's lookup scoping stays.
+#:
+#: ``submit_ingestion`` is deliberately **kept**: it ingests an already-captured workspace artifact
+#: and performs no external research, so it does not cross this surface's boundary. So are the two
+#: §7 inspection tools: read-only, effect-free, and the only way a card omission cursor resolves.
+#:
+#: **Delegation is withheld too, and for the same sentence.** A tool ceiling alone left the trial's
+#: own map promising "no external research" while still advertising ``delegate_specialist`` and the
+#: three specialist roles under it — one of which is *the research role*. The only thing preventing
+#: a delegation was ``stage0_trial._DelegationDisabled.run`` raising at call time, i.e. restriction
+#: by crash, which is exactly what ruling §2.4 rejects and what the withheld tools fixed for tools.
+#: Withholding the roles empties ``delegation_roles``, so ``delegate_specialist`` leaves the
+#: middleware's allowed set, the Delegation block stops naming anyone, and the child runner's
+#: refusal becomes an unreachable backstop rather than the mechanism.
+C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
+    AgentSurfacePolicy(
+        surface=STAGE0_CONVERSATION_TRIAL_SURFACE,
+        role=AgentRole.HEAD_OF_ABM,
+        withheld_tools=frozenset(
+            {
+                "start_recon",
+                "submit_onboarding_input",
+                "synthesize_icps",
+            }
+        ),
+        withheld_delegation_roles=frozenset(
+            {
+                AgentRole.RESEARCH,
+                AgentRole.CONTENT_DRAFTER,
+                AgentRole.REVIEWER,
+            }
+        ),
+        withheld_reason_code="trial_manual_conversation_only",
+        framing=(
+            "This surface is a manual-conversation-only Stage-0 trial: it does no external "
+            "research, and the platform captures every turn before you see it, so you never "
+            "capture, fetch, delegate, or synthesize outside this conversation."
+        ),
+    ),
+)
 
 _HUMAN_ONLY_TOOLS = frozenset(
     {
@@ -111,6 +188,8 @@ _RESERVED_REASON: dict[str, str] = {
 def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     """Resolve authority by exact address where versions have different safety proofs."""
 
+    if name == "propose_field":
+        return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "research_account_gaps":
         return (AgentRole.ACCOUNT_RESEARCH,) if address == "research_account_gaps@2" else ()
     return C6_AGENT_TOOL_AUTHORITY.get(name, ())
@@ -207,6 +286,7 @@ def build_agent_profile_registry(
             )
             for descriptor in tool_registry.all_descriptors()
         ),
+        surface_policies=C6_SURFACE_POLICIES,
     )
     for role in (
         AgentRole.HEAD_OF_ABM,

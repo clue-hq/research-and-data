@@ -1,0 +1,18 @@
+{
+  "id": "fixture-org-attributes-only-drift",
+  "credits_used": 2,
+  "credits_remaining": 998,
+  "organizations": [
+    {
+      "input": {
+        "url": "acme.example"
+      },
+      "attributes": {
+        "employee_count": 120
+      },
+      "entities": []
+    }
+  ],
+  "matched_count": 1,
+  "total": 1
+}

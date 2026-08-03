@@ -50,8 +50,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, UseClass
-from clue_research.claimstore import SeedField, load_pack
+from clue_core import EntityType, FieldDef, PassKind, ResearchSectionKind, UseClass
+from clue_research.claimstore import ResearchViewFieldRoute, SeedField, load_pack
 
 # --- namespaces ------------------------------------------------------------
 NS_RESONANCE = "account.resonance"
@@ -110,6 +110,11 @@ def _resonance(
         ),
         value_schema=value_schema,
         description=description,
+        research_view_route=ResearchViewFieldRoute(
+            field_key=field_key,
+            entity_type=EntityType.ACCOUNT,
+            section_kind=ResearchSectionKind.INSIGHTS,
+        ),
     )
 
 
@@ -121,6 +126,7 @@ def _facet(
     use_class_hint: UseClass,
     value_schema: dict[str, Any],
     description: str,
+    section_kind: ResearchSectionKind,
     escalatable: bool = False,
 ) -> SeedField:
     """A deep-pass ``contact.facet.*`` row: a governed personal hook. Governance is **structural**
@@ -151,6 +157,11 @@ def _facet(
         ),
         value_schema=value_schema,
         description=description,
+        research_view_route=ResearchViewFieldRoute(
+            field_key=field_key,
+            entity_type=EntityType.CONTACT,
+            section_kind=section_kind,
+        ),
     )
 
 
@@ -242,6 +253,7 @@ FACET_PACK: tuple[SeedField, ...] = (
         use_class_hint=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
         value_schema={"type": "string"},
         description="Preferred / known-by name beyond the legal first name (Doc C §2).",
+        section_kind=ResearchSectionKind.BACKGROUND,
     ),
     _facet(
         FACET_STATED_INTERESTS,
@@ -252,6 +264,7 @@ FACET_PACK: tuple[SeedField, ...] = (
         value_schema={"type": "array", "items": {"type": "string"}},
         description="Publicly stated interests / topics (Doc C §2; an interest tied to a "
         "religious/political cause is tagged sensitive per-claim — Doc D §2).",
+        section_kind=ResearchSectionKind.BACKGROUND,
     ),
     _facet(
         FACET_COMMUNICATION_STYLE,
@@ -264,6 +277,7 @@ FACET_PACK: tuple[SeedField, ...] = (
             "properties": {"style_label": {"type": "string"}, "summary": {"type": "string"}},
         },
         description="Inferred communication style / tone from public activity (Doc C §2).",
+        section_kind=ResearchSectionKind.BACKGROUND,
     ),
     _facet(
         FACET_PUBLIC_APPEARANCES,
@@ -284,6 +298,7 @@ FACET_PACK: tuple[SeedField, ...] = (
             },
         },
         description="Podcasts / talks / panels the person appeared in (Doc C §2).",
+        section_kind=ResearchSectionKind.QUOTES,
     ),
     _facet(
         FACET_PUBLICATIONS,
@@ -304,6 +319,7 @@ FACET_PACK: tuple[SeedField, ...] = (
             },
         },
         description="Articles / papers / books the person authored (Doc C §2).",
+        section_kind=ResearchSectionKind.PUBLICATIONS,
     ),
     _facet(
         FACET_CAUSES,
@@ -321,6 +337,7 @@ FACET_PACK: tuple[SeedField, ...] = (
         },
         description="Publicly supported causes — religion/politics-adjacent, so the hint is "
         "sensitive by default (Doc D §2).",
+        section_kind=ResearchSectionKind.BACKGROUND,
     ),
     _facet(
         FACET_ALMA_MATER,
@@ -329,6 +346,7 @@ FACET_PACK: tuple[SeedField, ...] = (
         use_class_hint=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE,
         value_schema={"type": "array", "items": {"type": "string"}},
         description="School(s) / university the person attended (Doc C §2).",
+        section_kind=ResearchSectionKind.EDUCATION,
     ),
     _facet(
         FACET_CAREER_HISTORY,
@@ -349,6 +367,7 @@ FACET_PACK: tuple[SeedField, ...] = (
             },
         },
         description="Professional history beyond the current title — prior roles (Doc C §2).",
+        section_kind=ResearchSectionKind.CAREER,
     ),
 )
 

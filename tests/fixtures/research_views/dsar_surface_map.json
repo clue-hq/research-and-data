@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "c7_extended_dsar_surface_map_v1",
+  "sanitized": true,
+  "surfaces": [
+    {
+      "surface_id": "direct_personal_claim_and_evidence",
+      "disposition": "tombstoned_and_unresolvable",
+      "evidence_test": "tests/compliance/test_dsar.py::test_erase_excludes_from_current_value"
+    },
+    {
+      "surface_id": "derived_claim_value",
+      "disposition": "dependency_redacted",
+      "evidence_test": "tests/compliance/test_dsar.py::test_dsar_reaches_cross_subject_derivations_through_support_edges"
+    },
+    {
+      "surface_id": "legacy_faithfulness_rationale",
+      "disposition": "body_redacted_audit_retained",
+      "evidence_test": "tests/compliance/test_dsar.py::test_dsar_erases_faithfulness_rationale_body_but_retains_audit_metadata"
+    },
+    {
+      "surface_id": "evidence_artifact",
+      "disposition": "marked_erased_and_purged",
+      "evidence_test": "tests/compliance/test_dsar_snapshots.py::test_erase_deletes_the_orphaned_snapshot"
+    },
+    {
+      "surface_id": "research_view_snapshot",
+      "disposition": "reference_only_revalidated_live",
+      "evidence_test": "tests/narrative/test_research_view_snapshots.py::test_snapshot_is_atomic_idempotent_body_free_and_replayed_live"
+    },
+    {
+      "surface_id": "research_view_recheck",
+      "disposition": "reference_only_append_only",
+      "evidence_test": "tests/narrative/test_research_view_recheck.py::test_change_classifier_covers_stale_policy_supersession_and_erasure"
+    },
+    {
+      "surface_id": "legacy_account_handoff_payload",
+      "disposition": "body_purged_subject_index_retained",
+      "evidence_test": "tests/compliance/test_dsar.py::test_erase_purges_legacy_handoff_body_via_reachable_subject_index"
+    },
+    {
+      "surface_id": "projection_cache",
+      "disposition": "absent_no_body_cache",
+      "evidence_test": "tests/architecture/test_c7_evidence_access_boundary.py::test_c7_has_no_unsafe_body_cache"
+    },
+    {
+      "surface_id": "outbox_and_sse",
+      "disposition": "reference_only_body_free",
+      "evidence_test": "tests/api/test_c7_research_view_serving.py::test_c7_serving_is_scoped_replay_safe_body_free_and_alias_exact"
+    },
+    {
+      "surface_id": "c6_workspace_and_history_reference",
+      "disposition": "artifact_tombstoned_workspace_purged_replay_blocked",
+      "evidence_test": "tests/api/test_agent_turn_wiring_db.py::test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed"
+    }
+  ]
+}

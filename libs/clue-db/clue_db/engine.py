@@ -150,3 +150,14 @@ async def transaction() -> AsyncIterator[AsyncConnection]:
     """
     async with get_engine().begin() as conn:
         yield conn
+
+
+@asynccontextmanager
+async def repeatable_read_transaction() -> AsyncIterator[AsyncConnection]:
+    """Yield one read-only, repeatable-read transaction for deterministic projections."""
+
+    async with get_engine().connect() as conn:
+        await conn.execution_options(isolation_level="REPEATABLE READ")
+        async with conn.begin():
+            await conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+            yield conn

@@ -300,9 +300,11 @@ class FreshWakeSpecialistRunner:
             role=request.subagent_role,
             brand_id=parent.brand_id,
             product_id=parent.product_id,
+            client_entity_id=parent.client_entity_id,
             workspace_root_id=lease.identity.workspace_root_id,
-            stage_snapshot_ref=parent.stage_snapshot_ref,
-            readiness_snapshot_ref=parent.readiness_snapshot_ref,
+            # The child inherits the parent's project card verbatim — one project, one compiled
+            # description of it. Only spend authority is re-scoped for the child.
+            project_card_ref=parent.project_card_ref,
             budget_envelope_ref=request.child_budget_envelope_ref,
             profile_ref=resolved_profile.profile_ref,
             resource_manifest_ref=request.resource_manifest_ref,

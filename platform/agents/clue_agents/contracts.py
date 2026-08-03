@@ -48,6 +48,7 @@ __all__ = [
     "DelegationResult",
     "DomainObjectRef",
     "FinalizeStatus",
+    "MODEL_FORBIDDEN_AUTHORITY_KEYS",
     "ModelPolicy",
     "PlanDelegationStep",
     "PlanStep",
@@ -125,9 +126,39 @@ _SOURCE_EXTENSIONS = {
     ".ts",
     ".tsx",
 }
-_MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
+#: Trusted authority a model may never supply. These names are stripped from the **top level** of
+#: every model-visible tool schema and rejected in top-level plan arguments; a tool that declares
+#: one there is served the value from the :class:`AgentConstitution` at the execution seam.
+#:
+#: The set is keyed by *name*, not per tool, because each name means exactly one thing everywhere
+#: it appears: the scope of the execution this constitution governs. ``brand_id`` and
+#: ``client_entity_id`` (PC-C8 §6a) are whole-execution authority in the same sense as
+#: ``project_id`` — a Stage-0 tool's ``brand_id`` is always *this project's* brand, and its
+#: ``client_entity_id`` always *this project's* client account — so letting the model copy them out
+#: of its context and hand them back is the same defect the turn binding removed for the turn's own
+#: ids. Per-turn authority, which is *not* stable for an execution and *is* legitimately
+#: model-authored on other tools, is marked per input model instead
+#: (``clue_api.turn_binding.TRUSTED_TURN_FIELD``).
+#:
+#: **Top-level only — and no tool nests one any more.** ``_with_trusted_runtime`` deletes fields
+#: from the input model itself, so a name nested inside a sub-model would be neither hidden nor
+#: injected. Until PC-C8 task 1.4 three granted tools did exactly that
+#: (``propose_field``/``propose_source`` via ``scope.brand_id``/``scope.project_id``, and
+#: ``submit_ingestion`` via ``declared_context.*``), which let the model author a *wrong yet
+#: existing* sibling scope in the same workspace. Task 1.4 **hoisted** those fields onto the tool
+#: inputs rather than teaching the seam to recurse: the seam stays one simple rule, and the nested
+#: authority it could not reach no longer exists to reach.
+#:
+#: That is now a permanent, repo-wide gate rather than a claim —
+#: ``tests/architecture/test_model_facing_authority.py`` walks every granted tool's model-facing
+#: schema at **every** depth (``$defs`` included) and fails the build if any of these names
+#: reappears. So a future tool that nests one is a red build, not a quiet exception in this
+#: docstring.
+MODEL_FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
         "actor_id",
+        "brand_id",
+        "client_entity_id",
         "execution_id",
         "operation_id",
         "parent_execution_id",
@@ -398,7 +429,18 @@ class AgentResourceManifest(FrozenContract):
 
 
 class AgentConstitution(FrozenContract):
-    """Trusted immutable authority injected into a parent and every child mind."""
+    """Trusted immutable authority injected into a parent and every child mind.
+
+    ``project_card_ref`` (PC-C8 §10) is the single owner of durable project state in L3: it
+    replaced the ``stage_snapshot_ref``/``readiness_snapshot_ref`` pair, whose two bodies
+    re-serialized the same readiness ledger and grew without bound with conversation length.
+    ``budget_envelope_ref`` stays a separate ref because it is *spend authority*, not project
+    state, and its consumers read it directly rather than through context.
+
+    ``client_entity_id`` is the client account this execution speaks for. It is optional because
+    only Stage-0-shaped surfaces have one; a tool that needs it and gets a constitution without one
+    is refused at the execution seam rather than served a guess.
+    """
 
     workspace_id: StableId
     project_id: StableId
@@ -407,9 +449,9 @@ class AgentConstitution(FrozenContract):
     role: AgentRole
     brand_id: StableId | None = None
     product_id: StableId | None = None
+    client_entity_id: StableId | None = None
     workspace_root_id: StableId
-    stage_snapshot_ref: ArtifactRef
-    readiness_snapshot_ref: ArtifactRef
+    project_card_ref: ArtifactRef
     budget_envelope_ref: ArtifactRef
     profile_ref: AgentResourceRef
     resource_manifest_ref: ArtifactRef
@@ -419,8 +461,7 @@ class AgentConstitution(FrozenContract):
     @model_validator(mode="after")
     def refs_match_workspace_and_profile_kind(self) -> AgentConstitution:
         refs = (
-            self.stage_snapshot_ref,
-            self.readiness_snapshot_ref,
+            self.project_card_ref,
             self.budget_envelope_ref,
             self.resource_manifest_ref,
         )
@@ -470,7 +511,7 @@ class PlanToolStep(FrozenContract):
         cls,
         values: dict[str, JsonValue],
     ) -> dict[str, JsonValue]:
-        forbidden = set(values) & _MODEL_FORBIDDEN_AUTHORITY_KEYS
+        forbidden = set(values) & MODEL_FORBIDDEN_AUTHORITY_KEYS
         if forbidden:
             raise ValueError(
                 f"model plan arguments cannot supply trusted authority: {sorted(forbidden)}"

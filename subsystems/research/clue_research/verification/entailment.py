@@ -9,7 +9,6 @@ free-form rationale is requested or persisted.
 from __future__ import annotations
 
 import hashlib
-import json
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -41,6 +40,7 @@ from clue_obs.otel import (
     apply_attributes,
     traced_step,
 )
+from clue_research.verification.json_response import first_json_object
 
 ENTAILMENT_PROMPT_VERSION = "v1"
 
@@ -139,11 +139,13 @@ def build_entailment_messages(
 
 
 def parse_entailment_response(response_text: str) -> _ModelEntailmentResponse | None:
-    """Strict parser: surrounding prose, extra fields, unknown codes, or bad types are malformed."""
+    """Validate the first bounded JSON object; schema violations fail closed."""
     try:
-        payload = json.loads(response_text)
+        payload = first_json_object(response_text)
+        if payload is None:
+            return None
         return _ModelEntailmentResponse.model_validate(payload)
-    except (json.JSONDecodeError, ValueError, TypeError):
+    except (ValueError, TypeError):
         return None
 
 

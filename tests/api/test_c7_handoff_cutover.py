@@ -396,6 +396,7 @@ def test_real_committee_materializes_narrative_and_c7_references() -> None:
                 account_entity_id=account,
                 icp_spec_version=_ICP_VERSION,
                 icp_key=_ICP_KEY,
+                product_id=_PRODUCT_A,
             )
             assert assembled is not None
             assert [member.contact_entity_id for member in assembled.handoff.committee] == [contact]
@@ -532,6 +533,7 @@ def test_weak_merged_and_erased_contacts_fail_closed() -> None:
                 account_entity_id=account,
                 icp_spec_version=_ICP_VERSION,
                 icp_key=_ICP_KEY,
+                product_id=_PRODUCT_A,
             )
             assert assembled is not None and assembled.handoff.committee == ()
 
@@ -647,6 +649,7 @@ def test_product_isolation_and_after_commit_crash_replay() -> None:
                     account_entity_id=account,
                     icp_spec_version=_ICP_VERSION,
                     icp_key=_ICP_KEY,
+                    product_id=_PRODUCT_A,
                 )
                 is not None
             )

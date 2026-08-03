@@ -18,7 +18,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Canonical fallback when ``CLUE_SYNTHESIS_MODEL`` is unset — keep in sync with GatewayConfig docs.
-DEFAULT_SYNTHESIS_MODEL: Final = "anthropic/claude-opus-4-8"
+DEFAULT_SYNTHESIS_MODEL: Final = "openai/gpt-5.6-terra"
 
 
 class Settings(BaseSettings):
@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     # OpenRouter model id for ICP synthesis (M5.2) and other grounded-synthesis call sites that
     # reuse ``GatewayConfig.synthesis_model``. Env: ``CLUE_SYNTHESIS_MODEL``.
     synthesis_model: str = DEFAULT_SYNTHESIS_MODEL
+    # OpenRouter model id for every LLM-as-judge call site (the M9.3 faithfulness judge, and
+    # through it PC-C8 §6c-b's typed-interview-value entailment). ``None`` keeps the code default
+    # in ``GatewayConfig.judge_model``. Env: ``CLUE_JUDGE_MODEL``.
+    #
+    # This exists because the code default is a *code* default: model ids rot, and the 2026-08-01
+    # §6c probe found `anthropic/claude-3.5-sonnet` no longer served ("No endpoints found"), which
+    # made every judged claim fail closed as `judge_unavailable`. Picking the platform's judge is a
+    # deployment decision, so it gets the same env seam ``synthesis_model`` already has rather than
+    # a rewritten constant.
+    judge_model: str | None = None
 
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
@@ -118,6 +128,51 @@ class Settings(BaseSettings):
     # Periodic worker cadence. Non-positive disables scheduling without weakening the job itself.
     # Env: ``CLUE_AGENT_CLEANUP_INTERVAL_S``.
     agent_cleanup_interval_s: float = 3600.0
+
+    # --- C7 structured research-view activation -------------------------------------------
+    # Each externally reachable capability is independently default-off. Deployments can canary
+    # read-only projection first, then enable mutations/evidence, cut production handoff over, and
+    # expose the deprecated dossier aliases last. Rollback disables routes/handlers only; the
+    # append-only receipts, snapshots, and history remain inert and readable after reactivation.
+    # Env: ``CLUE_C7_RESEARCH_VIEW_READ_ENABLED``.
+    c7_research_view_read_enabled: bool = False
+    # Env: ``CLUE_C7_SNAPSHOT_COMPOSE_ENABLED``.
+    c7_snapshot_compose_enabled: bool = False
+    # Env: ``CLUE_C7_EVIDENCE_ACTIONS_ENABLED``.
+    c7_evidence_actions_enabled: bool = False
+    # Env: ``CLUE_C7_RECHECK_ENABLED``.
+    c7_recheck_enabled: bool = False
+    # Env: ``CLUE_C7_PRODUCTION_HANDOFF_ENABLED``.
+    c7_production_handoff_enabled: bool = False
+    # Env: ``CLUE_C7_LEGACY_DOSSIER_ALIAS_ENABLED``.
+    c7_legacy_dossier_alias_enabled: bool = False
+    # Developer-only admission for a future governed-vs-candidate diagnostic comparator. This
+    # setting never weakens statement governance or exposes denied values through normal C7 APIs.
+    # Env: ``CLUE_C7_GOVERNANCE_SHADOW_COMPARE_ENABLED``.
+    c7_governance_shadow_compare_enabled: bool = False
+    # Optional JSON array of workspace ids admitted after a global C7 capability is enabled.
+    # Empty means no additional workspace restriction (useful for local/manual trials).
+    # Env: ``CLUE_C7_WORKSPACE_CANARY_IDS``.
+    c7_workspace_canary_ids: tuple[str, ...] = ()
+
+    # --- local Clue Trial canary ------------------------------------------------------------
+    # The Sumble-only founder acceptance surface is never part of the default production app.
+    # It must be enabled explicitly and binds to loopback by default. Env:
+    # ``CLUE_TRIAL_ENABLED`` / ``CLUE_TRIAL_HOST`` / ``CLUE_TRIAL_PORT`` /
+    # ``CLUE_TRIAL_ROOT``.
+    trial_enabled: bool = False
+    trial_host: str = "127.0.0.1"
+    trial_port: int = Field(default=8010, ge=1, le=65535)
+    trial_root: str = ".context/sumble-trials"
+
+    # --- projections HTTP process ----------------------------------------------------------
+    # Env: ``CLUE_PROJECTIONS_HOST`` / ``CLUE_PROJECTIONS_PORT``.
+    projections_host: str = "127.0.0.1"
+    projections_port: int = Field(default=8000, ge=1, le=65535)
+    # Header tenancy is explicitly local/manual-test only; service auth must be wired before that
+    # mode can be selected in production.
+    # Env: ``CLUE_PROJECTIONS_AUTH_MODE``.
+    projections_auth_mode: Literal["local_header", "service"] = "local_header"
 
     # --- scrape backend (Phase B2.4, founder addition) ---
     # Which ScrapeBackend the tier-2 HTML→markdown adapter uses when none is injected:

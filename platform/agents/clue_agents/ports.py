@@ -46,6 +46,7 @@ __all__ = [
     "ContextMaterialization",
     "ExecutionProgress",
     "HistoryMessageRef",
+    "OperationFailure",
     "WorkspaceEntry",
 ]
 
@@ -113,11 +114,29 @@ class AssembledAgentContext(PortValue):
     materializations: tuple[ContextMaterialization, ...] = ()
 
 
+class OperationFailure(PortValue):
+    """Why exactly one governed operation did not complete.
+
+    The durable record of a failed operation is a *code* (the toolbelt journal stamps the exception
+    class; the plan journal stamps ``operation_failed``), which is enough to audit a run and not
+    enough to repair one: the sentence a tool refuses with ("claim value is not textually entailed
+    by the exact interview quote") exists only as the raised exception. Carrying it on the progress
+    stream — the channel that already reports *which* node failed — lets the caller hand the model
+    back the reason it can act on, without a side channel and without loosening any durable record.
+    """
+
+    node_key: str
+    address: str
+    error_type: str
+    message: str
+
+
 class ExecutionProgress(PortValue):
     execution_id: ExecutionId
     status: str
     completed_node_keys: tuple[str, ...] = ()
     failed_node_keys: tuple[str, ...] = ()
+    failures: tuple[OperationFailure, ...] = ()
 
 
 @runtime_checkable

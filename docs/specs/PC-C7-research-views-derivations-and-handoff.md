@@ -1,6 +1,6 @@
 # C7 — structured research views, derivations, and production handoff
 
-**Status:** ACTIVE — C7.0–C7.7 complete; C7.8 adversarial/eval/closeout gate next
+**Status:** COMPLETE — C7.0–C7.8 implemented and verified (2026-07-28)
 **Layer:** Phase C / harness build step 7
 **Depends on:** C1–C6 complete; M9 verification; M10 governance; M12 narrative/handoff
 **Branch:** `platform/c7-research-views`
@@ -671,6 +671,24 @@ C7 is complete only when:
 14. downstream content can consume the typed block/reference projection without a document body;
 15. dependency/import-contract, migration, DB smoke, unit, integration, eval, lint, and type gates
     are green.
+
+### 11.1 C7.8 closeout evidence
+
+- The executable adversarial manifest now covers all 18 required contamination, governance,
+  scope, injection, and dependency-state cases. Every entry names its expected fail-closed
+  disposition/reason and a collected test node.
+- The extended DSAR surface manifest covers all 10 required surfaces. Copied legacy bodies and
+  artifacts are purged; snapshots, re-checks, projections, events, and C6 history remain
+  reference-only and re-resolve or block replay under current state. C7 has no body cache.
+- Dependency resolution breadth-batches support edges, bulk-loads claims/audit state, and batch
+  merges field state. A 25-node/24-support regression resolves in at most seven SQL statements and
+  proves the configured node cap fails closed.
+- Six independent environment flags default off for research-view reads, snapshot composition,
+  evidence actions, re-check, production handoff, and the legacy dossier alias. Disabling
+  production handoff removes the handler; it never restores the retired fake-success path.
+- Verification on a clean isolated database: 2,733 tests collected, 2,709 passed, 24 external
+  capability skips; Mypy passed across 434 source files; all 24 import contracts passed; one
+  Alembic head `677607ec1cd1`; head → base → head migration smoke passed.
 
 ---
 

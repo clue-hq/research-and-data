@@ -1,8 +1,28 @@
 {
   "schema_version": "1.0",
-  "fixture_id": "synthetic_research_view_adversarial_v1",
+  "fixture_id": "synthetic_research_view_adversarial_v2",
   "sanitized": true,
   "cases": [
+    {
+      "case_id": "same_name_wrong_contact",
+      "category": "identity_binding",
+      "first_guard_stage": "m9.4_identity_binding",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_governance",
+      "expected_reason_code": "weak_identity_binding",
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/verification/test_identity_binding.py::test_same_name_trap_distinct_contacts"
+    },
+    {
+      "case_id": "wrong_employer",
+      "category": "identity_binding",
+      "first_guard_stage": "m9.4_identity_binding",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_target_lock",
+      "expected_reason_code": "employer_mismatch",
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/verification/test_identity_binding.py::test_name_only_web_match_is_weak_and_excluded_from_merge"
+    },
     {
       "case_id": "wrong_person_biography",
       "category": "subject_contamination",
@@ -10,25 +30,8 @@
       "contract_case": "wrong_statement_subject",
       "later_guard_stage": "c7.3_target_lock",
       "expected_reason_code": "subject_mismatch",
-      "expected_outcome": "rejected"
-    },
-    {
-      "case_id": "inconsistent_pronoun_or_identity_signal",
-      "category": "identity_signal_conflict",
-      "first_guard_stage": "c7.3_target_lock",
-      "contract_case": null,
-      "later_guard_stage": "c7.8_adversarial_eval",
-      "expected_reason_code": "identity_signal_conflict",
-      "expected_outcome": "unavailable"
-    },
-    {
-      "case_id": "sensitive_medical_personalization",
-      "category": "governance_violation",
-      "first_guard_stage": "c7.0_contract",
-      "contract_case": "sensitive_outreach",
-      "later_guard_stage": "c7.3_governance_resolver",
-      "expected_reason_code": "sensitive_locked",
-      "expected_outcome": "restricted"
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/unit/core/test_research_view_fixtures.py::test_c70_adversarial_contract_cases_fail_closed"
     },
     {
       "case_id": "wrong_account_activity",
@@ -37,16 +40,158 @@
       "contract_case": "wrong_subject_reference",
       "later_guard_stage": "c7.3_activity_reader",
       "expected_reason_code": "subject_mismatch",
-      "expected_outcome": "rejected"
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/unit/core/test_research_view_fixtures.py::test_c70_adversarial_contract_cases_fail_closed"
     },
     {
-      "case_id": "cross_product_bleed",
+      "case_id": "inconsistent_pronoun_or_identity_signal",
+      "category": "identity_signal_conflict",
+      "first_guard_stage": "c7.3_target_lock",
+      "contract_case": null,
+      "later_guard_stage": "c7.8_adversarial_eval",
+      "expected_reason_code": "identity_signal_conflict",
+      "expected_outcome": "unavailable",
+      "evidence_test": "tests/narrative/test_research_views.py::test_redacted_and_unavailable_statements_fail_closed_without_body_or_actions"
+    },
+    {
+      "case_id": "sensitive_medical_personalization",
+      "category": "governance_violation",
+      "first_guard_stage": "c7.0_contract",
+      "contract_case": "sensitive_outreach",
+      "later_guard_stage": "c7.3_governance_resolver",
+      "expected_reason_code": "sensitive_locked",
+      "expected_outcome": "restricted",
+      "evidence_test": "tests/narrative/test_research_views.py::test_sensitive_or_weak_contact_claim_is_never_selected_for_personalization"
+    },
+    {
+      "case_id": "public_personal_display_only",
+      "category": "governance_distinction",
+      "first_guard_stage": "m10.3_use_gate",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_governance_resolver",
+      "expected_reason_code": "outreach_disallowed",
+      "expected_outcome": "restricted",
+      "evidence_test": "tests/compliance/test_use_gate.py::test_personal_public_configurable"
+    },
+    {
+      "case_id": "weak_binding",
+      "category": "identity_binding",
+      "first_guard_stage": "c7.0_contract",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_governance_resolver",
+      "expected_reason_code": "weak_identity_binding",
+      "expected_outcome": "restricted",
+      "evidence_test": "tests/narrative/test_research_views.py::test_sensitive_or_weak_contact_claim_is_never_selected_for_personalization"
+    },
+    {
+      "case_id": "cross_workspace_support",
+      "category": "tenant_scope_violation",
+      "first_guard_stage": "c7.2_derivation_validation",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_derived_reader",
+      "expected_reason_code": "workspace_restricted",
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/claimstore/test_derivations.py::test_validation_enforces_private_product_and_contact_binding_scope"
+    },
+    {
+      "case_id": "cross_product_fit_or_narrative",
       "category": "product_scope_violation",
       "first_guard_stage": "c7.0_contract",
       "contract_case": "product_mismatch",
-      "later_guard_stage": "c7.3_product_reader",
+      "later_guard_stage": "c7.6_handoff_reader",
       "expected_reason_code": "product_mismatch",
-      "expected_outcome": "rejected"
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/api/test_c7_handoff_cutover.py::test_product_isolation_and_after_commit_crash_replay"
+    },
+    {
+      "case_id": "invalid_cross_entity_support_role",
+      "category": "derivation_scope_violation",
+      "first_guard_stage": "c7.2_derivation_validation",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_derived_reader",
+      "expected_reason_code": "invalid_support_role",
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/claimstore/test_derivations.py::test_validation_rejects_missing_rejected_wrong_subject_and_duplicate"
+    },
+    {
+      "case_id": "prompt_injection_in_support_or_evidence",
+      "category": "untrusted_evidence",
+      "first_guard_stage": "c7.1_entailment",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_reference_only_projection",
+      "expected_reason_code": "untrusted_evidence_is_data",
+      "expected_outcome": "unavailable",
+      "evidence_test": "tests/narrative/test_research_views.py::test_prompt_injection_evidence_never_enters_the_research_view"
+    },
+    {
+      "case_id": "stale_dependency",
+      "category": "live_dependency_state",
+      "first_guard_stage": "c7.2_dependency_resolver",
+      "contract_case": null,
+      "later_guard_stage": "c7.5_recheck",
+      "expected_reason_code": "support_stale",
+      "expected_outcome": "unavailable",
+      "evidence_test": "tests/api/test_research_derivations.py::test_supported_derivation_is_atomic_idempotent_and_not_current_truth"
+    },
+    {
+      "case_id": "superseded_dependency",
+      "category": "live_dependency_state",
+      "first_guard_stage": "c7.2_dependency_resolver",
+      "contract_case": null,
+      "later_guard_stage": "c7.5_recheck",
+      "expected_reason_code": "superseded_or_expired",
+      "expected_outcome": "unavailable",
+      "evidence_test": "tests/api/test_research_derivations.py::test_supported_derivation_is_atomic_idempotent_and_not_current_truth"
+    },
+    {
+      "case_id": "rejected_dependency",
+      "category": "live_dependency_state",
+      "first_guard_stage": "c7.2_derivation_validation",
+      "contract_case": null,
+      "later_guard_stage": "c7.3_derived_reader",
+      "expected_reason_code": "verification_rejected",
+      "expected_outcome": "rejected",
+      "evidence_test": "tests/claimstore/test_derivations.py::test_validation_rejects_missing_rejected_wrong_subject_and_duplicate"
+    },
+    {
+      "case_id": "expired_dependency",
+      "category": "live_dependency_state",
+      "first_guard_stage": "c7.2_dependency_resolver",
+      "contract_case": null,
+      "later_guard_stage": "c7.5_recheck",
+      "expected_reason_code": "superseded_or_expired",
+      "expected_outcome": "unavailable",
+      "evidence_test": "tests/api/test_research_derivations.py::test_supported_derivation_is_atomic_idempotent_and_not_current_truth"
+    },
+    {
+      "case_id": "erased_dependency",
+      "category": "live_dependency_state",
+      "first_guard_stage": "c7.2_dependency_resolver",
+      "contract_case": null,
+      "later_guard_stage": "c7.4_dsar",
+      "expected_reason_code": "erased_support",
+      "expected_outcome": "restricted",
+      "evidence_test": "tests/compliance/test_dsar.py::test_dsar_reaches_cross_subject_derivations_through_support_edges"
+    },
+    {
+      "case_id": "flagged_derived_erased_dependency",
+      "category": "governance_precedence",
+      "first_guard_stage": "c7.2_dependency_resolver",
+      "contract_case": null,
+      "later_guard_stage": "c7.9_governance_reader",
+      "expected_reason_code": "dependency_erased",
+      "expected_outcome": "redacted",
+      "evidence_test": "tests/api/test_c7_production_readers.py::test_flagged_derived_root_cannot_mask_erased_required_support"
+    },
+    {
+      "case_id": "conflicted_dependency",
+      "category": "live_dependency_state",
+      "first_guard_stage": "c7.2_dependency_resolver",
+      "contract_case": null,
+      "later_guard_stage": "c7.5_recheck",
+      "expected_reason_code": "support_field_conflict",
+      "expected_outcome": "restricted",
+      "evidence_test": "tests/api/test_research_derivations.py::test_supported_derivation_is_atomic_idempotent_and_not_current_truth"
     }
   ]
 }

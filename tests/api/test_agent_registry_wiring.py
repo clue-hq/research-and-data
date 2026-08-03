@@ -27,32 +27,47 @@ from clue_api.agent_registry_wiring import (
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from tests.agents.workspace_helpers import make_workspace
+from tests.api.conftest import hermetic_flag_env
 
 CATALOG_ROOT = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
 
 
 @pytest.fixture(scope="module")
 def registry() -> AgentProfileRegistry:
-    return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    # ``build_toolbelt`` falls back to the production ``load_settings()``, so this registry would
+    # otherwise resolve tools against the operator's live activation flags: pytest builds a
+    # module-scoped fixture *before* the autouse function-scoped ``_hermetic_feature_flags``, so
+    # this one enters the shared neutralisation itself. (Kept module-scoped — rebuilding the
+    # catalog per test costs ~5s across this file.)
+    with hermetic_flag_env():
+        return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
 
 
 def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        AgentRole.HEAD_OF_ABM: "c02590daa7b000a2c64e389cbf3cfd4af48e90acdff3248cca5cbb654762d6fd",
-        AgentRole.RESEARCH: "b2e2aba5b7c25795a3c337c7ce01b3486fa3070634ad7ce050c9114007c6d0ea",
+        # head-of-abm@v12 / stage0-interview@v9 — dynamic Client-KB proposal/materialization
+        # guidance and propose_field@2, on top of PC-C8 §6c's quote-by-text bump. The statement
+        # authors the verbatim span instead of character offsets, and a typed claim value is
+        # admitted by the entailment judge, on top of slice 1's closing bump (the §7
+        # inspection-tool grants + delegation withholding) and task 1.4's:
+        # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
+        # nested authority, and B1 layer 2's engine-defaulted claim entity.
+        AgentRole.HEAD_OF_ABM: "d5df9357891f3894e9182331842469aa7f27c53b3040eac8b47966940d7f05c9",
+        AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
-            "14ffe6c4cf091cfd2efca8bf65a721c64af1b43ecfb08198dad67904dde794dd"
+            "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
         ),
-        AgentRole.REVIEWER: "1ae8a797285aaea321e9675a59ad0bfc2fd2497aff30300968ab38a438c1ecbc",
+        AgentRole.REVIEWER: "b4859443637154e4e10a6598f17c2f54b0688f6faea2696e9a7ff4cf3a3f0deb",
         AgentRole.ACCOUNT_RESEARCH: (
-            "05497a3e86d87ec59086ba0f44bab50d0a353f26d011926564c6f60795958e2b"
+            "c4aa0f4f8c3d660d0dc5ef2ee85b7e39077c07f918d22118a5800cb63da35b06"
         ),
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
+        assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
         expected_tools = {
             (
                 "research_account_gaps@2"
@@ -94,11 +109,18 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         if item.status is AgentCapabilityStatus.AVAILABLE
     }
 
-    assert len(by_address) == 36
+    # The two proposal v1 addresses remain installed only for historical recipe replay. They add
+    # inventory entries but cannot enter the current model surface; only propose_field@2 carries
+    # the dynamic Client-KB authority.
+    assert len(by_address) == 40
+    assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
         "evaluate_stage0_readiness@1",
         "get_research_view@1",
-        "propose_field@1",
+        "inspect_readiness_history@1",
+        "inspect_statement_history@1",
+        "propose_field@2",
         "propose_source@1",
         "record_interview_answer@1",
         "start_confirmed_project_run@1",
@@ -110,6 +132,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["confirm_icp@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["override_stage0_readiness@1"].status is AgentCapabilityStatus.HUMAN_ONLY
+    assert by_address["propose_field@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["propose_field@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["research_account_gaps@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
     assert by_address["research_account_gaps@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert "framework task/subagent: unavailable" in head.generated_resource_map
@@ -126,7 +150,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v3"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v9"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -220,7 +244,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v3")
+    body = head.open_skill("skill:stage0-interview@v9")
 
     assert required_guidance in body
 
@@ -282,7 +306,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v3/SKILL.md"
+                ".deepagent/skills/stage0-interview/v9/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

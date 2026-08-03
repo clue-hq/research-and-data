@@ -25,11 +25,13 @@ from clue_api.agent_execution_wiring import (
 )
 from clue_api.agent_runtime_wiring import (
     AgentFinalizationAuthority,
+    CompletionGuard,
     DurableDeepAgentTurnRunner,
     GovernedAgentToolFactory,
 )
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
 from clue_api.stage0_recipe import Stage0StepPinProvider
+from clue_api.turn_binding import CapturedTurnBinder, RequestCapturedTurn
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 from clue_execution import CompatibilityLoader, RecipeExecutor
@@ -64,16 +66,33 @@ def build_head_of_abm_stage0_execution(
     budget_limit_millicents: int,
     max_fanout: int = 4,
     max_parallelism: int = 4,
+    captured_turns: CapturedTurnBinder | None = None,
+    surface: str | None = None,
     crash_hook: AgentExecutionCrashHook = _no_crash,
     conn_factory: ConnFactory = transaction,
 ) -> C5AgentExecutionAdapter:
-    """Build the only C6.5 agent-to-C5 path, including C4-equivalent exact pins."""
+    """Build the only C6.5 agent-to-C5 path, including C4-equivalent exact pins.
 
-    resolved = profiles.resolve(AgentRole.HEAD_OF_ABM)
+    ``surface`` names the declared capability surface this execution runs on (PC-C8 §8). It must
+    match the surface the caller resolved the turn's constitution against, because the effective
+    tool set — the authority the plan is validated against — is narrower on a restricted surface.
+    """
+
+    resolved = profiles.resolve(AgentRole.HEAD_OF_ABM, surface=surface)
     if request.constitution.role is not AgentRole.HEAD_OF_ABM:
         raise ValueError("Stage-0 vertical requires a Head-of-ABM constitution")
     if request.constitution.profile_ref != resolved.profile_ref:
         raise ValueError("Stage-0 turn does not pin the promoted Head-of-ABM profile")
+    # A surface narrows the *effective tool set*, not the profile resource, so `profile_ref` alone
+    # cannot tell a trial turn from a full-surface one — only the manifest digest can. Without this
+    # check a caller who forgot `surface=` would build an adapter whose plan authority is wider
+    # than the constitution the model was given, silently. `HeadOfAbmStage0Runtime.run` makes the
+    # same assertion; this one exists because the two are independently callable.
+    if request.constitution.resource_manifest_sha256 != resolved.resource_manifest.aggregate_sha256:
+        raise ValueError(
+            "Stage-0 turn constitution pins a different resource manifest than this surface "
+            "resolves; the execution surface and the constitution's surface disagree"
+        )
     return C5AgentExecutionAdapter(
         turn_id=request.turn_id,
         constitution=request.constitution,
@@ -95,6 +114,16 @@ def build_head_of_abm_stage0_execution(
             compatibility=compatibility,
             conn_factory=conn_factory,
         ),
+        # PC-C8 §6a: the captured turn is derived here, from the request's own artifact and its
+        # capture record, so no caller has to hand the engine a turn-shaped argument it could get
+        # wrong — and so the model can never author one. A composition root that also builds the
+        # context assembler passes the same binder to both, so one turn is resolved and cached
+        # once; a caller that passes none gets a private binder that derives the same answer.
+        captured_turn=RequestCapturedTurn(
+            binder=captured_turns
+            or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+            request=request,
+        ),
         crash_hook=crash_hook,
         conn_factory=conn_factory,
     )
@@ -115,6 +144,7 @@ class HeadOfAbmStage0Runtime:
         materializer: AgentResourceMaterializer | None = None,
         max_runtime_s: float = 300.0,
         max_rounds: int = 24,
+        surface: str | None = None,
         crash_hook: AgentExecutionCrashHook = _no_crash,
         conn_factory: ConnFactory = transaction,
     ) -> None:
@@ -127,6 +157,7 @@ class HeadOfAbmStage0Runtime:
         self._materializer = materializer or AgentResourceMaterializer()
         self._max_runtime_s = max_runtime_s
         self._max_rounds = max_rounds
+        self._surface = surface
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
 
@@ -137,8 +168,16 @@ class HeadOfAbmStage0Runtime:
         context: AssembledAgentContext,
         lease: AgentWorkspaceLease,
         execution: C5AgentExecutionAdapter,
+        completion_guard: CompletionGuard | None = None,
     ) -> AgentTurnOutcome:
-        resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM)
+        """Run one Stage-0 turn.
+
+        ``completion_guard`` is the surface's veto over a non-failing terminal proposal — the seam
+        the Stage-0 routing-receipt honesty check rides. It is optional because the guard needs the
+        captured onboarding input of *this* turn, which only the calling surface knows.
+        """
+
+        resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
         constitution = request.constitution
         if constitution.role is not AgentRole.HEAD_OF_ABM:
             raise ValueError("Stage-0 vertical requires the Head-of-ABM role")
@@ -193,6 +232,7 @@ class HeadOfAbmStage0Runtime:
             execution=execution,
             lease=lease,
             artifacts=self._artifacts,
+            completion_guard=completion_guard,
         ).build()
         runtime = DeepAgentTurnRuntime(
             models=self._models,

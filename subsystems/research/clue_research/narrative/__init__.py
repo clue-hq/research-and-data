@@ -110,6 +110,7 @@ from clue_research.narrative.research_view_recheck import (
     ResearchViewRecheckService,
     ResearchViewRecheckUnavailable,
     ResearchViewSectionStalenessService,
+    SubjectActivityAppender,
     append_research_view_event,
 )
 from clue_research.narrative.research_view_snapshots import (
@@ -174,6 +175,7 @@ from clue_research.narrative.support import (
     FaithfulnessCitation,
     read_claim_support,
     read_faithfulness_citation,
+    read_faithfulness_citations,
     write_claim_support,
 )
 
@@ -220,6 +222,7 @@ __all__ = [
     "ResearchViewRecheckUnavailable",
     "ResearchViewRecheckService",
     "ResearchViewSectionStalenessService",
+    "SubjectActivityAppender",
     "append_research_view_event",
     # policy-as-data (M12.1 AC8)
     "PositioningPolicy",
@@ -255,6 +258,7 @@ __all__ = [
     # faithfulness citation (M12.2 provenance — the answering judge model)
     "FaithfulnessCitation",
     "read_faithfulness_citation",
+    "read_faithfulness_citations",
     # the positioning step
     "Positioner",
     "PositioningResult",

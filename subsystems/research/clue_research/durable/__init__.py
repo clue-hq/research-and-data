@@ -22,6 +22,7 @@ from clue_research.durable.account_run import (
     AccountRunRow,
     ReferencesIndex,
     ensure_account_run,
+    find_account_runs_for_entity,
     fold_references,
     get_account_run,
     insert_account_run,
@@ -140,6 +141,11 @@ from clue_research.durable.scheduler import (
     RunOne,
     account_entity_lock_factory,
 )
+from clue_research.durable.subject_activity import (
+    SubjectActivityRow,
+    append_subject_activity,
+    list_subject_activity,
+)
 from clue_research.durable.workers import (
     WorkerRegistry,
     default_worker_registry,
@@ -173,6 +179,7 @@ __all__ = [
     "ReferencesIndex",
     "insert_account_run",
     "ensure_account_run",
+    "find_account_runs_for_entity",
     "fold_references",
     "get_account_run",
     "list_account_runs",
@@ -180,6 +187,9 @@ __all__ = [
     "save_references",
     "set_account_sub_phase",
     "set_status",
+    "SubjectActivityRow",
+    "append_subject_activity",
+    "list_subject_activity",
     # planning (orchestrator/lead)
     "AspectPlan",
     "ResearchPlan",

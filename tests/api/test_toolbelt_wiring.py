@@ -57,9 +57,14 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "profile_contact": ("precondition", ("account_not_found",)),
     "run_verification": ("precondition", ("run_not_found",)),
     "compose_handoff": ("precondition", ("run_not_found",)),
-    "compose_dossier": ("precondition", ("research_view_not_configured",)),
-    "get_research_view": ("precondition", ("research_view_not_configured",)),
-    "recheck_research_view": ("precondition", ("research_view_not_configured",)),
+    "compose_dossier": ("precondition", ("research_view_feature_disabled",)),
+    "get_research_view": ("precondition", ("research_view_feature_disabled",)),
+    "recheck_research_view": ("precondition", ("research_view_feature_disabled",)),
+    # PC-C8 §7: `build_toolbelt(storage=None)` composes no evidence reader, so the statement tool
+    # refuses fail-closed rather than serving quote-less rows; the readiness tool needs no reader
+    # and refuses on scope, which is the guard that actually matters for it.
+    "inspect_statement_history": ("precondition", ("statement_evidence_not_configured",)),
+    "inspect_readiness_history": ("precondition", ("stage0_project_not_found",)),
     "estimate_project": ("success", "estimated_cost_cents"),
     "start_project_run": ("success", "project_run_id"),
     "pause_run": ("precondition", ("run_not_found",)),
@@ -122,6 +127,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "subject_entity_id": _UUID(),
             "snapshot_id": _UUID(),
         },
+        "inspect_statement_history": {"project_id": "project_missing"},
+        "inspect_readiness_history": {"project_id": "project_missing"},
         "estimate_project": {},
         "start_project_run": {
             "project_id": "prj_replaced_by_test",
@@ -138,7 +145,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "gap_fields": ["account.strategic_moves"],
         },
         "propose_field": {
-            "scope": {"brand_id": "brand_missing"},
+            "brand_id": "brand_missing",
+            "scope": {},
             "payload": {
                 "field_def": {
                     "field_key": "account.proposed_signal",
@@ -154,7 +162,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "reason": "matrix decision",
         },
         "propose_source": {
-            "scope": {"brand_id": "brand_missing"},
+            "brand_id": "brand_missing",
+            "scope": {},
             "payload": {
                 "manifest": {
                     "source_key": "matrix_source",
@@ -175,7 +184,8 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "submit_ingestion": {
             "artifact_key": "missing-artifact",
-            "declared_context": {"brand_id": "brand_missing"},
+            "brand_id": "brand_missing",
+            "declared_context": {},
         },
         "retry_ingestion": {"ingestion_job_id": _UUID()},
         "submit_onboarding_input": {
@@ -527,8 +537,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     so the full set is assertable without a database."""
     registry = build_toolbelt(storage=None, gateway=None)
     assert set(registry.names()) == set(_MATRIX)
-    assert len(registry.names()) == 35
-    assert len(registry) == 36
+    # 35 → 37 names with PC-C8's two read-only inspection tools; the two proposal writes and
+    # research_account_gaps retain @1 compatibility contracts alongside @2, yielding three
+    # additional descriptors.
+    assert len(registry.names()) == 37
+    assert len(registry) == 40
     assert {
         item.address for item in registry.all_descriptors() if item.name == "research_account_gaps"
     } == {

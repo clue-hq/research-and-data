@@ -41,6 +41,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.deep import ProfileAccountFn
+from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import Secrets, Settings
 from clue_config.gateway import GatewayConfig
 from clue_core import ContextAssembly, MemoryType
@@ -471,15 +472,23 @@ def build_agent_context_assembler(
     memory_recipe: str,
     requested_memory_types: tuple[MemoryType, ...],
     policy: ContextAssemblyPolicy,
+    captured_turns: CapturedTurnBinder | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> DeterministicAgentContextAssembler:
-    """Compose the one exact L1-L7 production assembler for a resolved role/profile."""
+    """Compose the one exact L1-L7 production assembler for a resolved role/profile.
+
+    ``captured_turns`` (PC-C8 §6b) is the binder L7 names the turn's capture from. A composition
+    root that also builds the execution seam passes *its* binder here so one turn is resolved once
+    (the trial does); a caller with no execution seam of its own gets a private one. Either way the
+    binding is derived from durable state, so two instances could only ever agree — sharing saves
+    the second read and the second cache, not correctness.
+    """
 
     return DeterministicAgentContextAssembler(
         sources=(
             IdentityLayerSource(resolved_profile),
             WorkspaceProductLayerSource(cards),
-            ProjectLayerSource(artifacts=artifacts, cards=cards),
+            ProjectLayerSource(artifacts=artifacts),
             MemoryLayerSource(
                 assembly=memory,
                 recipe=memory_recipe,
@@ -487,7 +496,13 @@ def build_agent_context_assembler(
             ),
             FocusLayerSource(cards),
             HistoryLayerSource(artifacts),
-            TurnLayerSource(artifacts),
+            TurnLayerSource(
+                artifacts,
+                # PC-C8 §6b: L7 names the turn's capture so the model can reference it; a surface
+                # whose turn is not a captured onboarding input simply gets no envelope.
+                captured_turn=captured_turns
+                or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+            ),
         ),
         policy=policy,
         receipts=DbAgentContextReceiptStore(conn_factory=conn_factory),

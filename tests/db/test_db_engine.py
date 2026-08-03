@@ -22,6 +22,7 @@ from clue_db import (
     db_lifespan,
     get_engine,
     get_pool,
+    repeatable_read_transaction,
     transaction,
 )
 
@@ -103,6 +104,24 @@ def test_transaction_commits_on_success_and_rolls_back_on_error() -> None:
             # If we got here, the rollback path executed cleanly (no leaked open transaction).
             async with connection() as conn:
                 assert (await conn.execute(text("SELECT 1"))).scalar_one() == 1
+
+    run_async(_run())
+
+
+@pytest.mark.usefixtures("require_db")
+def test_repeatable_read_transaction_is_read_only() -> None:
+    """C7 production projections receive one repeatable, mutation-proof MVCC snapshot."""
+
+    async def _run() -> None:
+        async with db_lifespan(), repeatable_read_transaction() as conn:
+            isolation = (
+                await conn.execute(text("SHOW transaction_isolation"))
+            ).scalar_one()
+            read_only = (
+                await conn.execute(text("SHOW transaction_read_only"))
+            ).scalar_one()
+            assert isolation == "repeatable read"
+            assert read_only == "on"
 
     run_async(_run())
 

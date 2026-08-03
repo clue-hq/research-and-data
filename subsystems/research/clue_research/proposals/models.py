@@ -5,9 +5,18 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from clue_core import (
     CostCents,
@@ -17,7 +26,9 @@ from clue_core import (
     FieldDef,
     IdentityBinding,
     Modality,
+    ReuseScope,
     UtcDatetime,
+    VolunteeredStatementId,
     classify_field_key,
     field_namespace,
     is_field_key_or_class,
@@ -33,6 +44,26 @@ from clue_core.proposals import (
 _SOURCE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _AUTH_REF_RE = re.compile(r"^CLUE_[A-Z][A-Z0-9_]*$")
 SENSITIVE_OUTREACH_DISABLED_GATE = "outreach-disabled"
+
+
+class ClientKbFieldSpec(BaseModel):
+    """Immutable materialization value and downstream-authority declarations."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    candidate_value: JsonValue
+    source_statement_id: VolunteeredStatementId
+    intended_use: str = Field(min_length=1, max_length=1_000)
+    client_kb_role: Literal["extended"] = "extended"
+    non_expiring_rationale: str | None = Field(default=None, max_length=1_000)
+    readiness_requested: bool = False
+    scoring_authoritative: bool = False
+    qualification_authoritative: bool = False
+    outreach_authoritative: bool = False
+    compliance_authoritative: bool = False
+    contains_personal_data: bool = False
+    introduces_new_source: bool = False
+    elevates_source_trust: bool = False
 
 
 class ProposalDecision(StrEnum):
@@ -74,9 +105,10 @@ class FieldProposalPayload(BaseModel):
     sensitive: bool = False
     rationale: str
     evidence_refs: tuple[str, ...] = ()
+    client_kb: ClientKbFieldSpec | None = None
 
     @model_validator(mode="after")
-    def _check_namespace_and_reuse(self) -> FieldProposalPayload:
+    def _check_namespace_and_reuse(self, info: ValidationInfo) -> FieldProposalPayload:
         field_class = classify_field_key(self.field_def.field_key)
         namespace = field_namespace(self.field_def.field_key)
         if field_class is FieldClass.PACK:
@@ -92,6 +124,33 @@ class FieldProposalPayload(BaseModel):
             raise ValueError("canonical field namespaces must not declare a pack")
         if self.sensitive and self.field_def.gate != SENSITIVE_OUTREACH_DISABLED_GATE:
             raise ValueError("sensitive fields must declare gate='outreach-disabled'")
+        if self.field_def.field_key.startswith("client."):
+            if self.field_def.field_key == "client.kb_version":
+                raise ValueError("client.kb_version is platform-owned internal vocabulary")
+            if self.pack != "client":
+                raise ValueError("dynamic Client-KB fields must declare pack='client'")
+            if self.field_def.reuse_scope is not ReuseScope.TENANT_PRIVATE:
+                raise ValueError("dynamic Client-KB fields must declare reuse_scope=tenant_private")
+            if self.client_kb is None:
+                if info.context and info.context.get("allow_legacy_promoted_client_field"):
+                    return self
+                raise ValueError("dynamic Client-KB fields require client_kb proposal details")
+            if not self.description:
+                raise ValueError("dynamic Client-KB fields require a semantic description")
+            if not self.evidence_refs:
+                raise ValueError("dynamic Client-KB fields require durable evidence_refs")
+            statement_ref = f"volunteered_statement:{self.client_kb.source_statement_id}"
+            if statement_ref not in self.evidence_refs:
+                raise ValueError(
+                    "dynamic Client-KB evidence_refs must include the canonical "
+                    "volunteered_statement:<source_statement_id> ref"
+                )
+            if self.field_def.freshness_ttl is None and not self.client_kb.non_expiring_rationale:
+                raise ValueError(
+                    "a non-expiring dynamic Client-KB field requires non_expiring_rationale"
+                )
+        elif self.client_kb is not None:
+            raise ValueError("client_kb proposal details are valid only for client.* fields")
         return self
 
 
@@ -233,6 +292,7 @@ def source_yields_personal_data(payload: SourceProposalPayload) -> bool:
 
 
 __all__ = [
+    "ClientKbFieldSpec",
     "FieldProposal",
     "FieldProposalPayload",
     "ProposalDecision",

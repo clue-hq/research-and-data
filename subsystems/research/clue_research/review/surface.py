@@ -113,6 +113,7 @@ def _build_correction(target: Claim, corrected_value: JsonValue, *, note: str | 
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
         workspace_id=target.workspace_id,
+        product_id=target.product_id,
     )
 
 
@@ -139,6 +140,7 @@ def _build_reject(target: Claim, *, reason: ReviewRejectReason, note: str | None
         use_class=target.use_class,
         reuse_scope=target.reuse_scope,
         workspace_id=target.workspace_id,
+        product_id=target.product_id,
     )
 
 
@@ -208,7 +210,13 @@ class ReviewSurfaceImpl:
                 raise SessionNotOpen(f"{session_id}: {row.status.value}")
             scope = WorkspaceScope.for_workspace(row.workspace_id)
             target = (await claims_by_ids(conn, [claim_id], scope=scope)).get(claim_id)
-            if target is None:
+            if target is None or not await self._projector.claim_is_reviewable(
+                conn,
+                claim=target,
+                account_entity_id=row.account_entity_id,
+                project_run_id=row.project_run_id,
+                workspace_id=row.workspace_id,
+            ):
                 raise ClaimNotInSession(str(claim_id))
 
             superseding_id: ClaimId | None = None

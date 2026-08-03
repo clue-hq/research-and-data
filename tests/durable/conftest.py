@@ -404,6 +404,18 @@ class RecordingPhaseHandler:
         self.events.append(ctx.phase.value)
         if self._on_run is not None:
             await self._on_run(ctx)
+        decision = ctx.params.get("checkpoint_decision")
+        if (
+            self.phase is ProjectPhase.TIER_CHECKPOINT
+            and self._status is PhaseStatus.PAUSED
+            and isinstance(decision, dict)
+            and decision.get("action") == "approve"
+        ):
+            return PhaseResult(
+                status=PhaseStatus.COMPLETED,
+                payload=dict(self._payload),
+                cost_cents=self._cost,
+            )
         return PhaseResult(status=self._status, payload=dict(self._payload), cost_cents=self._cost)
 
 

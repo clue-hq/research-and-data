@@ -403,8 +403,7 @@ class DbAgentTurnJournal:
                 status=AgentTurnStatus.REQUESTED,
             )
             turn_refs = (
-                ("stage_snapshot", 0, constitution.stage_snapshot_ref),
-                ("readiness_snapshot", 0, constitution.readiness_snapshot_ref),
+                ("project_card", 0, constitution.project_card_ref),
                 ("budget_envelope", 0, constitution.budget_envelope_ref),
                 ("resource_manifest", 0, constitution.resource_manifest_ref),
                 ("user_message", 0, request.user_message_artifact_ref),
@@ -1491,6 +1490,8 @@ class AgentPrivacyService:
         subject_entity_id: UUID,
         reason_code: str = "dsar_subject_erasure",
     ) -> PrivacyEraseResult:
+        """Erase every artifact bound to this subject through ``agent_artifact_subject``."""
+
         async with self._conn_factory() as conn:
             artifact_result = await conn.execute(
                 text(
@@ -1501,14 +1502,47 @@ class AgentPrivacyService:
                 {"workspace": workspace_id, "subject": subject_entity_id},
             )
             keys = tuple(artifact_result.scalars())
+        return await self.erase_artifacts(
+            workspace_id=workspace_id,
+            subject_entity_id=subject_entity_id,
+            artifact_keys=keys,
+            reason_code=reason_code,
+        )
+
+    async def erase_artifacts(
+        self,
+        *,
+        workspace_id: str,
+        subject_entity_id: UUID,
+        artifact_keys: Sequence[str],
+        reason_code: str = "dsar_subject_erasure",
+    ) -> PrivacyEraseResult:
+        """Erase an explicit artifact-key set on behalf of one subject.
+
+        The body :meth:`erase_subject` has always run, with the key set as a parameter rather than
+        derived from the subject bindings alone. A caller that resolves its own dependency closure
+        — PC-C8 §9's card erasure walks the per-statement reverse bindings *and* the captured
+        evidence the quote was sliced from — reuses this whole path (tombstone → ``mark_erased`` →
+        purge → turn event → isolated-workspace purge) instead of re-implementing it.
+
+        Affected turns are found by artifact key rather than by re-joining the subject bindings;
+        for ``erase_subject`` the two are the same set, and for a caller-supplied closure the key
+        form is the one that is actually true. The array parameter is explicitly ``CAST(… AS
+        text[])`` — the codebase's own precedent (``readiness_override_refs``) — so an **empty**
+        key set stays a well-typed "matches nothing" instead of leaving Postgres to infer an
+        element type it has no evidence for. An empty set is a real case: a subject with no
+        artifact bindings must erase to a clean no-op, not an error.
+        """
+
+        keys = tuple(dict.fromkeys(sorted(artifact_keys)))
+        async with self._conn_factory() as conn:
             affected_result = await conn.execute(
                 text(
                     "SELECT DISTINCT t.id, t.execution_id, t.project_id, t.workspace_root_id "
                     "FROM agent_turn t WHERE t.workspace_id=:workspace AND ("
                     " EXISTS (SELECT 1 FROM agent_artifact_ref r "
-                    "         JOIN agent_artifact_subject s ON s.artifact_key=r.artifact_key "
-                    "          AND s.workspace_id=r.workspace_id "
-                    "         WHERE r.turn_id=t.id AND s.subject_entity_id=:subject)"
+                    "         WHERE r.turn_id=t.id AND r.workspace_id=t.workspace_id "
+                    "         AND r.artifact_key = ANY(CAST(:keys AS text[])))"
                     " OR EXISTS (SELECT 1 FROM agent_context_bundle b "
                     "            JOIN agent_context_ref r ON r.context_bundle_id=b.id "
                     "            JOIN memory m ON r.object_type='scoped_memory' "
@@ -1516,7 +1550,11 @@ class AgentPrivacyService:
                     "            WHERE b.turn_id=t.id AND m.subject_entity_id=:subject)"
                     ") ORDER BY t.id"
                 ),
-                {"workspace": workspace_id, "subject": subject_entity_id},
+                {
+                    "workspace": workspace_id,
+                    "subject": subject_entity_id,
+                    "keys": list(keys),
+                },
             )
             turns = tuple(affected_result.mappings())
             for key in keys:
