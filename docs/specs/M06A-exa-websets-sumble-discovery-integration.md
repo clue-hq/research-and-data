@@ -1013,7 +1013,10 @@ approved paid canary and fresh-process replay.
 
 ### Slice S2 — Top-tier buying-committee discovery
 
-**Blocked by:** S1, the committee eligibility gate, and personal-data governance acceptance.
+**Implementation owner:** `platform/c8-account-profiling-integration`. S2 consumes the S1
+organization/jobs/technology seam from commit `ae05542`; it is not implemented on the S1 branch.
+The S1 paid canary, the committee eligibility gate, and personal-data governance acceptance remain
+release prerequisites, not reasons to move S2 implementation out of this branch.
 
 **Expanded implementation plan:** `M8B-exa-sumble-account-deep-integration-roadmap.md`. That
 companion owns the accepted harness interaction contract, durable project research direction,
@@ -1023,7 +1026,8 @@ and combined acceptance. This discovery spec retains the S2 eligibility and rele
 
 **Gate S2:** a non-eligible account causes zero Sumble people/team calls; an eligible account
 produces identity-resolved committee candidates with inferred relationships explicitly labeled;
-contact reveals run only for selected candidates and replay without spend.
+the first S2 release performs no email or phone reveal and replays without spend. Selected-contact
+reveals and independent validation are a later, separately budgeted slice.
 
 ### Separate future work
 

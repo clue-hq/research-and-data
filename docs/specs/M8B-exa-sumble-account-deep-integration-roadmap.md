@@ -168,8 +168,9 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 - **Teams:** organization-scoped hierarchy, breadcrumbs, activity, technologies, functions,
   locations, related people, and job-post references.
 - **People:** organization-scoped non-contact attributes first: person id, name, LinkedIn URL,
-  title, function, level, location, country, and current employer. A later bounded list-mode request
-  may retrieve managers/direct reports for shortlisted people without revealing email/phone.
+  title, function, level, location, country, and current employer. The documented list-mode
+  manager/direct-report selection has no returned-related-person cap, so the first S2 release does
+  not call it; bounded Teams relationships supply the initial organization map.
 - **Signals/briefs:** not part of this plan.
 
 ### 4.3 Initial healthcare effective source plan
@@ -463,7 +464,8 @@ Deliver:
 - bounded related people/job-post selects with explicit caps;
 - organization-scoped People search selecting non-contact fields only;
 - async People submit/poll status model and exact first-success charging semantics;
-- optional bounded manager/direct-report lookup for shortlisted provider ids, still no reveals;
+- no People manager/direct-report lookup until Sumble exposes a returned-row cap or governance
+  approves a separately bounded spend contract; still no reveals;
 - normalized provider-neutral organization-map records with returned-vs-inferred labels.
 
 **Gate S2A:** request snapshots contain no email/phone selection; max rows/related people/jobs are
@@ -481,7 +483,7 @@ Flow:
 3. compile team/function/level filters from the confirmed committee plan;
 4. submit one bounded People operation;
 5. poll durably outside transactions;
-6. optionally acquire bounded related-person relationships for the shortlist;
+6. retain the bounded provider-inferred person/team relationships from the Teams response;
 7. persist immutable snapshots and one operation-level credit receipt.
 
 **Gate S2B:** eligible submit returns `WAITING_EXTERNAL` while pending; crash/restart does not
