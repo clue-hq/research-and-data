@@ -43,6 +43,7 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
+    get_account_run,
     get_committee_acquisition_operation,
     list_committee_acquisition_snapshots,
 )
@@ -116,6 +117,19 @@ class SumbleCommitteePreparer:
             tier=tier,
         )
         request = inputs.preflight.request
+        async with self._conn_factory() as conn:
+            account_run = await get_account_run(conn, account_run_id)
+        if (
+            account_run is not None
+            and account_run.research_directive is not None
+            and (
+                request.research_directive != account_run.research_directive
+                or inputs.authorization.research_directive != account_run.research_directive
+            )
+        ):
+            raise SumbleCommitteePreparationError(
+                "Sumble committee request does not carry the account run's exact directive pin"
+            )
         if (
             request.account_id != account_entity_id
             or request.project_run_id != project_run_id

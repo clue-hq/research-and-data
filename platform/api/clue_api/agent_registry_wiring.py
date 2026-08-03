@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v14",
+    AgentRole.HEAD_OF_ABM: "v15",
     AgentRole.RESEARCH: "v4",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
@@ -50,6 +50,8 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "confirm_project_product": (),
     "decide_field_proposal": (),
     "decide_source_proposal": (),
+    "draft_account_research_directive": (AgentRole.HEAD_OF_ABM,),
+    "confirm_account_research_directive": (),
     "discover_accounts": (),
     "estimate_project": (),
     "enrich_account_gaps": (AgentRole.HEAD_OF_ABM,),
@@ -172,6 +174,7 @@ _HUMAN_ONLY_TOOLS = frozenset(
         "adjust_budget",
         "confirm_icp",
         "confirm_project_product",
+        "confirm_account_research_directive",
         "decide_field_proposal",
         "decide_source_proposal",
         "override_stage0_readiness",

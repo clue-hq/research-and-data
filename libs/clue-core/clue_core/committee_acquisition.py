@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 from clue_core.discovery import DiscoveryBatchId, Sha256Hex
 from clue_core.primitives import ClaimId, CostCents, EntityId, ProjectRunId, UtcDatetime
+from clue_core.research_directive import ResearchDirectivePin
 
 CommitteeAcquisitionOperationId = NewType("CommitteeAcquisitionOperationId", UUID)
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -80,6 +81,7 @@ class CommitteeAcquisitionRequest(BaseModel):
     tier_claim_id: ClaimId
     committee_plan_ref: NonEmptyStr
     research_direction_ref: str | None = None
+    research_directive: ResearchDirectivePin | None = None
     organization_identity_ref: NonEmptyStr
     provider_organization_id: NonEmptyStr
     provider_api_version: NonEmptyStr
@@ -100,6 +102,10 @@ class CommitteeAcquisitionRequest(BaseModel):
     def _normalized_provider_plan(self) -> CommitteeAcquisitionRequest:
         if self.research_direction_ref is not None and not self.research_direction_ref.strip():
             raise ValueError("committee research direction reference must be non-empty when set")
+        if self.research_directive is not None and (
+            self.research_direction_ref != self.research_directive.directive_ref
+        ):
+            raise ValueError("committee request directive ref and exact pin must agree")
         if self.provider_filter_expression is not None:
             if self.provider_filter_expression != self.provider_filter_expression.strip():
                 raise ValueError("committee provider filter must be pre-normalized")

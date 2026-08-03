@@ -786,8 +786,24 @@ class GovernedAgentToolFactory:
             if role not in self._resolved_profile.profile.delegation_roles:
                 raise ValueError(f"role {role.value!r} is absent from delegated authority")
             workspace_id = self._request.constitution.workspace_id
+            canonical_paths = list(model_input.canonical_paths)
+            domain_ref_inputs = list(model_input.domain_refs)
+            if role is AgentRole.RESEARCH:
+                for artifact in self._request.constitution.project_context_artifacts:
+                    if artifact.name != "research-directive":
+                        continue
+                    directive_path = "context/project/research-directive.json"
+                    if directive_path not in canonical_paths:
+                        canonical_paths.append(directive_path)
+                    candidate_ref = ModelDomainRef(
+                        object_type=artifact.domain_ref.object_type,
+                        object_id=artifact.domain_ref.object_id,
+                        version=artifact.domain_ref.version,
+                    )
+                    if candidate_ref not in domain_ref_inputs:
+                        domain_ref_inputs.append(candidate_ref)
             file_grants: list[DelegatedFileGrant] = []
-            for ordinal, source_path in enumerate(model_input.canonical_paths):
+            for ordinal, source_path in enumerate(canonical_paths):
                 entry = await self._lease.backend.stat_entry(source_path)
                 if entry.kind != "file" or entry.sha256 is None:
                     raise ValueError(f"canonical delegation path {source_path!r} is not a file")
@@ -827,7 +843,7 @@ class GovernedAgentToolFactory:
                     object_id=item.object_id,
                     version=item.version,
                 )
-                for item in model_input.domain_refs
+                for item in domain_ref_inputs
             )
             specialist_role = cast(
                 Literal[

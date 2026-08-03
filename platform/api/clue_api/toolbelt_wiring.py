@@ -93,6 +93,7 @@ from clue_api.proposal_tools import (
     ProposeFieldTool,
     ProposeSourceTool,
 )
+from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_tools import stage0_tools
@@ -1973,6 +1974,9 @@ def build_toolbelt(
     proposal_personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
     stage0_memory_write: MemoryWriteSeam | None = None,
     stage0_memory_write_factory: Callable[[AsyncConnection], MemoryWriteSeam] | None = None,
+    research_directive_memory_write_factory: (
+        Callable[[AsyncConnection], MemoryWriteSeam] | None
+    ) = None,
     stage0_scrape_binder: Callable[[AccountEntity], None] | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
     research_view_composer: ResearchViewComposer | None = None,
@@ -2158,6 +2162,13 @@ def build_toolbelt(
         # value is then refused rather than written unvouched-for — which is exactly the pre-§6c
         # behaviour, so an ungatewayed composition is never *worse* than before.
         entailment_judge=entailment_judge,
+    ):
+        registry.register(tool, make_default=True)
+    for tool in build_research_directive_tools(
+        memory_write_factory=(
+            research_directive_memory_write_factory or stage0_memory_write_factory
+        ),
+        conn_factory=conn_factory,
     ):
         registry.register(tool, make_default=True)
     # PC-C8 §7: the two bounded, read-only Stage-0 history tools the card's `omissions` cursors

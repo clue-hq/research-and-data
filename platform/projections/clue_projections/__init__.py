@@ -67,6 +67,10 @@ from clue_projections.research_coverage import (
     research_attempt_history,
     research_coverage,
 )
+from clue_projections.research_directives import (
+    ResearchDirectivePreview,
+    project_research_directive_preview,
+)
 from clue_projections.research_views import (
     ResearchViewStatus,
     ResearchViewStatusPage,
@@ -141,6 +145,8 @@ __all__ = [
     "ResearchViewStatusPage",
     "research_view_statuses",
     "research_attempt_history",
+    "ResearchDirectivePreview",
+    "project_research_directive_preview",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

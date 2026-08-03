@@ -491,6 +491,31 @@ Deliver:
 directive, reaches a fresh account research agent by reference, and a later edit does not mutate an
 already-running operation.
 
+**Implemented 2026-08-04 — Gate A2 closed.**
+
+- A bounded, immutable, content-addressed directive contract now covers research questions,
+  sealed or explicit account scope, source/committee/privacy/effort policy, account overrides,
+  supersession, and exact effective-account composition. The migration persists append-only
+  versions, immutable child rows, lifecycle events, human confirmation receipts, and full-request
+  fingerprints for exact operation replay.
+- `draft_account_research_directive@1` persists the trusted user instruction to project-scoped
+  user-stated memory and returns a typed preview without provider work. Human-only
+  `confirm_account_research_directive@1` confirms the exact draft digest; agents have no authority
+  to invoke that transition. Head-of-ABM profile v15 carries the drafting authority.
+- Confirmed directive ref/digest pins now flow through account specs, research plans,
+  `account_run`, account-profile execution, Sumble committee requests and authorizations, and run
+  journal state. A pin can be attached only before an account run starts and is immutable
+  thereafter; a confirmed successor supersedes the old directive for future work without changing
+  the exact directive used by an already-running or replayed operation.
+- Fresh account-agent turns materialize the effective directive at
+  `context/project/research-directive.json`. Research-specialist delegations receive both that exact
+  file reference and the typed directive domain ref automatically, independent of model wording.
+  Fresh-thread project memory assembly also exposes the original user-stated direction.
+- DB-backed acceptance covers durable draft/confirm replay, human-only confirmation, future-thread
+  memory visibility, account override composition, exact plan/run pinning, automatic delegation,
+  and frozen replay after supersession. A2 performs no provider call, reveal, credential read, or
+  spend; Exa E0 resolver files remain outside this slice.
+
 ### Slice E0 — Exa Deep structured wire contract
 
 **Owns:** `resolvers/exa` request/response types and recorded fixtures; no composition edits.

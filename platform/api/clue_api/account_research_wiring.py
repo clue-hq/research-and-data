@@ -42,6 +42,7 @@ from clue_core import (
     ExecutionId,
     ICPSpec,
     ProjectRunId,
+    ResearchDirectivePin,
     ResearchTerminalStatus,
     RunId,
     WorkerStatus,
@@ -315,6 +316,7 @@ class GovernedAccountProfiler:
         workspace_id: str,
         budget_cap_cents: Decimal | None = None,
         recursion_policy: RecursionPolicy | None = None,
+        research_directive: ResearchDirectivePin | None = None,
         **_mechanical_collaborators: object,
     ) -> AccountProfileResult:
         store = DbAccountRunStore(
@@ -328,6 +330,7 @@ class GovernedAccountProfiler:
             tier=tier,
             workspace_id=workspace_id,
             field_keys=spec.field_keys or None,
+            research_directive=research_directive,
         )
         planned_fields = tuple(field for aspect in plan.aspects for field in aspect.field_keys)
         if not planned_fields:

@@ -82,6 +82,7 @@ from clue_api.fleet_wiring import (
     enqueue_run_drive,
     register_boot_handlers,
 )
+from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -396,6 +397,7 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
             gateway=gateway,
+            research_directive_memory_write_factory=memory_write_factory_builder(settings, gateway),
             queue=task_queue,
             project_execution_router=project_execution_router,
             research_view_composer=(
@@ -481,6 +483,7 @@ async def _serve() -> None:
                 resolved_profile=agent_components.profiles.resolve(AgentRole.ACCOUNT_RESEARCH),
                 artifacts=agent_components.artifacts,
                 cards=DbCompiledContextCardReader(),
+                memory=memory_assembly_factory(settings, transaction),
             )
             account_turns = PreparedAccountResearchTurnRunner(
                 settings=settings,

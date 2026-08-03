@@ -38,9 +38,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert set(C6_AGENT_TOOL_AUTHORITY) == set(registry.names())
     # 35 → 37 with PC-C8's inspection tools, then 38/39 with the E1 and S1 explicit provider-spend
     # boundaries. Every addition must have a reviewed role decision here.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 39
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 41
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["confirm_account_research_directive"] == ()
 
     for descriptor in registry.all_descriptors():
         roles = c6_roles_for_tool(descriptor.address)

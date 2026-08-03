@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import RecursionPolicy
-from clue_core import CostCents, EntityId, FreshnessState, PassKind
+from clue_core import CostCents, EntityId, FreshnessState, PassKind, ResearchDirectivePin
 from clue_core.field import FieldClass, FieldDef, field_namespace
 from clue_research.claimstore import current_values
 from clue_research.claimstore.registry import get_field, list_fields
@@ -54,6 +54,7 @@ class ResearchPlan(BaseModel):
 
     tier: str
     aspects: tuple[AspectPlan, ...] = ()
+    research_directive: ResearchDirectivePin | None = None
 
     @property
     def gap_field_count(self) -> int:
@@ -75,6 +76,7 @@ def build_plan(
     recursion_policy: RecursionPolicy | None = None,
     worker_count: int = 1,
     depth: int = 0,
+    research_directive: ResearchDirectivePin | None = None,
 ) -> ResearchPlan:
     """Cluster gap fields into aspect plans (pure). Deterministic: aspects are ordered by key and
     field keys within an aspect are sorted, so the same gaps always yield the same plan (a stable
@@ -104,7 +106,11 @@ def build_plan(
         )
         for aspect, keys in sorted(clustered.items())
     )
-    return ResearchPlan(tier=tier, aspects=aspects)
+    return ResearchPlan(
+        tier=tier,
+        aspects=aspects,
+        research_directive=research_directive,
+    )
 
 
 async def compute_gap_fields(
