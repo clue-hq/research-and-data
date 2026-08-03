@@ -63,6 +63,7 @@ from clue_research.claimstore.claims import (
     _retention_eligible_sql,
     _row_to_claim,
 )
+from clue_research.claimstore.registry import FieldRegistryScope, get_effective_field
 from clue_research.claimstore.tenancy import WorkspaceScope
 
 # ``EqualityMode`` / ``values_agree`` come from ``core`` (the substrate's one equality contract):
@@ -319,29 +320,48 @@ def _coerce_mode(raw: object) -> EqualityMode:
 
 
 async def _freshness_ttl(
-    conn: AsyncConnection, field_key: str
+    conn: AsyncConnection, field_key: str, *, workspace_id: str | None
 ) -> tuple[timedelta | None, EqualityMode]:
     """The field's freshness TTL **and** equality mode (one read of the two merge-config columns,
     keeping the ``field_definition`` SQL in the merge seam — as the registry's
     ``get_corroboration_config`` does for the corroboration columns)."""
-    row = await conn.execute(
-        text("SELECT freshness_ttl, equality_mode FROM field_definition WHERE field_key = :k"),
-        {"k": field_key},
+    definition = await get_effective_field(
+        conn,
+        scope=(
+            FieldRegistryScope.for_workspace(workspace_id)
+            if workspace_id is not None
+            else FieldRegistryScope.global_only()
+        ),
+        field_key=field_key,
     )
-    found = row.first()
-    if found is None:
+    if definition is None:
         return None, EqualityMode.EXACT
-    return found[0], _coerce_mode(found[1])
+    return definition.field_def.freshness_ttl, _coerce_mode(definition.equality_mode)
 
 
 async def _freshness_ttls(
-    conn: AsyncConnection, field_keys: Sequence[str]
+    conn: AsyncConnection, field_keys: Sequence[str], *, workspace_id: str | None
 ) -> dict[str, tuple[timedelta | None, EqualityMode]]:
+    local_sql = ""
+    params: dict[str, object] = {"fkeys": list(field_keys)}
+    if workspace_id is not None:
+        local_sql = """
+            UNION ALL
+            SELECT w.field_key, w.freshness_ttl, w.equality_mode
+            FROM workspace_field_definition w
+            LEFT JOIN workspace_field_retirement r
+              ON r.workspace_id = w.workspace_id AND r.field_key = w.field_key
+            WHERE w.workspace_id = :registry_workspace
+              AND w.field_key IN :fkeys
+              AND w.active
+              AND r.field_key IS NULL
+        """
+        params["registry_workspace"] = workspace_id
     stmt = text(
         "SELECT field_key, freshness_ttl, equality_mode "
-        "FROM field_definition WHERE field_key IN :fkeys"
+        "FROM field_definition WHERE field_key IN :fkeys " + local_sql
     ).bindparams(bindparam("fkeys", expanding=True))
-    rows = await conn.execute(stmt, {"fkeys": list(field_keys)})
+    rows = await conn.execute(stmt, params)
     meta: dict[str, tuple[timedelta | None, EqualityMode]] = {}
     for field_key, ttl, mode in rows.all():
         meta[field_key] = (ttl, _coerce_mode(mode))
@@ -391,7 +411,7 @@ async def current_value(
         )
     ).mappings()
     claims = [_row_to_claim(dict(row)) for row in rows.all()]
-    ttl, equality_mode = await _freshness_ttl(conn, str(field_key))
+    ttl, equality_mode = await _freshness_ttl(conn, str(field_key), workspace_id=scope.workspace_id)
     return merge_claims(claims, ttl, policy, now, equality_mode)
 
 
@@ -447,7 +467,7 @@ async def current_values(
         claim = _row_to_claim(dict(row))
         grouped[(EntityId(row["entity_id"]), row["field_key"])].append(claim)
 
-    meta = await _freshness_ttls(conn, fields)
+    meta = await _freshness_ttls(conn, fields, workspace_id=scope.workspace_id)
     result: dict[tuple[EntityId, str], CurrentValue] = {}
     for (entity_id, field_key), claim_list in grouped.items():
         ttl, equality_mode = meta.get(field_key, (None, EqualityMode.EXACT))

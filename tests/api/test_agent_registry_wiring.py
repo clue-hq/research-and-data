@@ -47,13 +47,14 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
     registry: AgentProfileRegistry,
 ) -> None:
     expected_manifests = {
-        # head-of-abm@v11 / stage0-interview@v8 — PC-C8 §6c's bump (quote-by-text: the statement
+        # head-of-abm@v12 / stage0-interview@v9 — dynamic Client-KB proposal/materialization
+        # guidance and propose_field@2, on top of PC-C8 §6c's quote-by-text bump. The statement
         # authors the verbatim span instead of character offsets, and a typed claim value is
-        # admitted by the entailment judge) on top of slice 1's closing bump (the §7
+        # admitted by the entailment judge, on top of slice 1's closing bump (the §7
         # inspection-tool grants + delegation withholding) and task 1.4's:
         # the trial capability surface, the 8 rewritten trusted-field descriptions, the hoisted
         # nested authority, and B1 layer 2's engine-defaulted claim entity.
-        AgentRole.HEAD_OF_ABM: "8fd96075e17a52b33763261e206e4f95c86110d60ad7e175d0564f6a09dd6cf1",
+        AgentRole.HEAD_OF_ABM: "d5df9357891f3894e9182331842469aa7f27c53b3040eac8b47966940d7f05c9",
         AgentRole.RESEARCH: "4bf40eee2b8e6f6d98a0ee295e3ff900243e162eae53cc6c8852e70521aef391",
         AgentRole.CONTENT_DRAFTER: (
             "f4095d62dfc9bc734aa2acb111270a3f10e2242a252e96c229d464435b7a90bc"
@@ -108,11 +109,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         if item.status is AgentCapabilityStatus.AVAILABLE
     }
 
-    # 36 → 38 with PC-C8 task 1.5's two inspection tools, granted to this role in the slice-1
-    # closing bump (profile v10). They are the tools the card's `omissions` cursors resolve
-    # through, so `test_c8_omission_resolution_contract.py` fails the build if either leaves the
-    # effective surface while the card can still emit its kind.
-    assert len(by_address) == 38
+    # The two proposal v1 addresses remain installed only for historical recipe replay. They add
+    # inventory entries but cannot enter the current model surface; only propose_field@2 carries
+    # the dynamic Client-KB authority.
+    assert len(by_address) == 40
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
     assert available == {
@@ -120,7 +120,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "get_research_view@1",
         "inspect_readiness_history@1",
         "inspect_statement_history@1",
-        "propose_field@1",
+        "propose_field@2",
         "propose_source@1",
         "record_interview_answer@1",
         "start_confirmed_project_run@1",
@@ -132,6 +132,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["confirm_icp@1"].status is AgentCapabilityStatus.HUMAN_ONLY
     assert by_address["override_stage0_readiness@1"].status is AgentCapabilityStatus.HUMAN_ONLY
+    assert by_address["propose_field@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["propose_field@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["research_account_gaps@1"].status is AgentCapabilityStatus.REPLAY_BLOCKED
     assert by_address["research_account_gaps@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert "framework task/subagent: unavailable" in head.generated_resource_map
@@ -148,7 +150,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v8"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v9"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one compact question" in body
@@ -242,7 +244,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v8")
+    body = head.open_skill("skill:stage0-interview@v9")
 
     assert required_guidance in body
 
@@ -304,7 +306,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
         assert harness.lease.resources_frozen
         assert (
             harness.lease.backend.stat_entry_sync(
-                ".deepagent/skills/stage0-interview/v8/SKILL.md"
+                ".deepagent/skills/stage0-interview/v9/SKILL.md"
             ).sha256
             == resolved.profile.skills[0].resource.sha256
         )

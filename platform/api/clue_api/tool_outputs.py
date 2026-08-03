@@ -172,12 +172,22 @@ class FieldProposalOutput(ToolOutput):
     field_proposal_id: str
     field_key: str
     status: str
+    materialization_id: str | None = None
+    materialization_status: str | None = None
+    claim_ref: str | None = None
+    client_kb_version: int | None = None
+    refusal_code: str | None = None
 
 
 class FieldProposalDecisionOutput(ToolOutput):
     field_proposal_id: str
     status: str
     applied_field_key: str | None
+    materialization_id: str | None = None
+    materialization_status: str | None = None
+    claim_ref: str | None = None
+    client_kb_version: int | None = None
+    refusal_code: str | None = None
 
 
 class SourceProposalOutput(ToolOutput):

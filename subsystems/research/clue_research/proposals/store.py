@@ -65,12 +65,16 @@ def _scope_from_row(row: Mapping[str, Any]) -> ProposalScope:
 
 
 def _field_from_row(row: Mapping[str, Any]) -> FieldProposal:
+    status = ProposalStatus(row["status"])
     return FieldProposal(
         id=row["id"],
         scope=_scope_from_row(row),
-        payload=FieldProposalPayload.model_validate(decode_jsonb(row["payload_json"])),
+        payload=FieldProposalPayload.model_validate(
+            decode_jsonb(row["payload_json"]),
+            context={"allow_legacy_promoted_client_field": status is ProposalStatus.PROMOTED},
+        ),
         payload_hash=str(row["payload_hash"]),
-        status=ProposalStatus(row["status"]),
+        status=status,
         proposed_by_actor=str(row["proposed_by_actor"]),
         proposed_by_ref=row["proposed_by_ref"],
         proposed_at=row["proposed_at"],

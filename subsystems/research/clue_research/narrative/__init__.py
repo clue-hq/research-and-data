@@ -175,6 +175,7 @@ from clue_research.narrative.support import (
     FaithfulnessCitation,
     read_claim_support,
     read_faithfulness_citation,
+    read_faithfulness_citations,
     write_claim_support,
 )
 
@@ -257,6 +258,7 @@ __all__ = [
     # faithfulness citation (M12.2 provenance — the answering judge model)
     "FaithfulnessCitation",
     "read_faithfulness_citation",
+    "read_faithfulness_citations",
     # the positioning step
     "Positioner",
     "PositioningResult",

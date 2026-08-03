@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+import pytest
 from pydantic import JsonValue
 
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
@@ -28,6 +29,7 @@ from tests.db.conftest import run_async
 
 _QUOTE = "We are fully HIPAA compliant, and every deployment is BAA-backed."
 _FIELD = "client.hipaa_compliant"
+_WORKSPACE = "c8-entailment-test"
 
 
 @dataclass
@@ -57,6 +59,7 @@ def _entails(judge: _FakeJudge, *, value: JsonValue = True, quote: str = _QUOTE)
     wrapper: ClaimEntailmentJudge = FaithfulnessClaimEntailmentJudge(judge=judge)
     return run_async(
         wrapper.entails(
+            workspace_id=_WORKSPACE,
             entity_id=EntityId(new_entity_id()),
             field_key=_FIELD,
             value=value,
@@ -73,29 +76,65 @@ def test_the_judgment_id_is_content_addressed_and_never_a_claim_id() -> None:
     verdict to its own correction. This is why the judgment has its own identity.
     """
 
-    base = entailment_judgment_id(field_key=_FIELD, value=True, quote=_QUOTE)
-    assert base == entailment_judgment_id(field_key=_FIELD, value=True, quote=_QUOTE)
-    assert base != entailment_judgment_id(field_key=_FIELD, value=False, quote=_QUOTE)
-    assert base != entailment_judgment_id(field_key=_FIELD, value=True, quote=_QUOTE[:20])
-    assert base != entailment_judgment_id(field_key="client.other", value=True, quote=_QUOTE)
+    base = entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key=_FIELD, value=True, quote=_QUOTE
+    )
+    assert base == entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key=_FIELD, value=True, quote=_QUOTE
+    )
+    assert base != entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key=_FIELD, value=False, quote=_QUOTE
+    )
+    assert base != entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key=_FIELD, value=True, quote=_QUOTE[:20]
+    )
+    assert base != entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key="client.other", value=True, quote=_QUOTE
+    )
     # Key-sorted canonical JSON, so a value round-tripped through jsonb (which does NOT preserve
     # object key order) recomputes the same id — the property that makes "which verdict admitted
     # this claim?" answerable from the stored claim. The live §6c probe caught this.
     assert entailment_judgment_id(
-        field_key=_FIELD, value={"a": 1, "b": 2}, quote=_QUOTE
-    ) == entailment_judgment_id(field_key=_FIELD, value={"b": 2, "a": 1}, quote=_QUOTE)
+        workspace_id=_WORKSPACE, field_key=_FIELD, value={"a": 1, "b": 2}, quote=_QUOTE
+    ) == entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key=_FIELD, value={"b": 2, "a": 1}, quote=_QUOTE
+    )
     # Order still matters where it is part of the value: a list is a sequence, not a set.
     assert entailment_judgment_id(
-        field_key=_FIELD, value=["a", "b"], quote=_QUOTE
-    ) != entailment_judgment_id(field_key=_FIELD, value=["b", "a"], quote=_QUOTE)
-    # The separator is load-bearing: field/quote boundaries cannot be shifted into each other.
-    assert entailment_judgment_id(field_key="ab", value=1, quote="c") != entailment_judgment_id(
-        field_key="a", value=1, quote="bc"
+        workspace_id=_WORKSPACE, field_key=_FIELD, value=["a", "b"], quote=_QUOTE
+    ) != entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key=_FIELD, value=["b", "a"], quote=_QUOTE
     )
+    # The separator is load-bearing: field/quote boundaries cannot be shifted into each other.
+    assert entailment_judgment_id(
+        workspace_id=_WORKSPACE, field_key="ab", value=1, quote="c"
+    ) != entailment_judgment_id(workspace_id=_WORKSPACE, field_key="a", value=1, quote="bc")
     assert ENTAILMENT_JUDGMENT_NAMESPACE == "stage0-interview-entailment"
     # The definition lives in the claim substrate, not here: `compliance.dsar` recomputes it to
     # redact an erased claim's verdict rationale and may import neither `clue_api` nor `stage0`.
     assert entailment_judgment_id.__module__ == "clue_research.claimstore.entailment_identity"
+
+
+def test_tenant_private_question_identity_never_crosses_workspaces_or_uses_legacy_q() -> None:
+    scoped = entailment_judgment_id(
+        workspace_id=_WORKSPACE,
+        field_key=_FIELD,
+        value=True,
+        quote=_QUOTE,
+    )
+
+    assert scoped != entailment_judgment_id(
+        workspace_id="another-workspace",
+        field_key=_FIELD,
+        value=True,
+        quote=_QUOTE,
+    )
+    with pytest.raises(TypeError):
+        entailment_judgment_id(  # type: ignore[call-arg]
+            field_key=_FIELD,
+            value=True,
+            quote=_QUOTE,
+        )
 
 
 def test_the_probe_claim_carries_the_span_as_evidence_and_never_tier_four() -> None:
@@ -115,7 +154,13 @@ def test_the_probe_claim_carries_the_span_as_evidence_and_never_tier_four() -> N
     assert probe.source_tier == 1
     assert probe.extraction_method is ExtractionMethod.HUMAN
     assert probe.source_url is None
-    assert probe.id == entailment_judgment_id(field_key=_FIELD, value=True, quote=_QUOTE)
+    assert probe.workspace_id == _WORKSPACE
+    assert probe.id == entailment_judgment_id(
+        workspace_id=_WORKSPACE,
+        field_key=_FIELD,
+        value=True,
+        quote=_QUOTE,
+    )
 
 
 def test_only_a_supported_verdict_over_the_threshold_admits_the_value() -> None:

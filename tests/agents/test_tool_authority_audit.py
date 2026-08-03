@@ -79,6 +79,9 @@ def test_c65_proposal_and_ingestion_certifications_are_live_and_admitted() -> No
         assert descriptors[name].replay.policy is replay_policy
         assert descriptors[name].recipe_safe
 
+    assert c6_roles_for_tool("propose_field@1") == ()
+    assert c6_roles_for_tool("propose_field@2") == (AgentRole.HEAD_OF_ABM,)
+
 
 def test_c1_goal_judge_has_one_explicit_production_construction_owner() -> None:
     assert coverage_evaluator_owner() == "c1.engine.goal_judge"

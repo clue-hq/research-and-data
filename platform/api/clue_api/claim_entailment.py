@@ -48,6 +48,7 @@ from clue_core import (
     ExtractionMethod,
     JudgeVerdict,
     ResearchMode,
+    ReuseScope,
     UnitInterval,
     new_run_id,
 )
@@ -81,10 +82,21 @@ class FaithfulnessClaimEntailmentJudge:
         self._supported_threshold = supported_threshold
 
     async def entails(
-        self, *, entity_id: EntityId, field_key: str, value: JsonValue, quote: str
+        self,
+        *,
+        workspace_id: str,
+        entity_id: EntityId,
+        field_key: str,
+        value: JsonValue,
+        quote: str,
     ) -> ClaimEntailment:
         probe = Claim(
-            id=entailment_judgment_id(field_key=field_key, value=value, quote=quote),
+            id=entailment_judgment_id(
+                workspace_id=workspace_id,
+                field_key=field_key,
+                value=value,
+                quote=quote,
+            ),
             entity_id=entity_id,
             # The probe is a question about text, not a personal-data write: ACCOUNT keeps it clear
             # of the contact-facet governance validator, which asks for provenance this question
@@ -99,6 +111,8 @@ class FaithfulnessClaimEntailmentJudge:
             cost_cents=Decimal(0),
             run_id=new_run_id(),
             research_mode=ResearchMode.ACCOUNT_PROFILING,
+            reuse_scope=ReuseScope.TENANT_PRIVATE,
+            workspace_id=workspace_id,
         )
         try:
             result = await self._judge.judge(probe)
