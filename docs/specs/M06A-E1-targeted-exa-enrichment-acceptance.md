@@ -1,10 +1,12 @@
 # M06A E1 targeted Exa enrichment acceptance
 
-- **Implementation status:** `PASS` on 2026-08-03
+- **Overall E1 gate:** `OPEN` pending the bounded live-provider canary
+- **Mechanical/provider-contract status:** `PASS` after adversarial repair on 2026-08-03
 - **Live-provider status:** `OPEN` pending one eligible human-approved selected account
 - **Branch:** `platform/c8-exa-sumble-discovery`
 - **Implementation commit:** `e8270b4` (`feat(enrichment): add seal-bound Exa E1 imports`)
-- **Migration:** `f2c0b2ed21dd` (single head)
+- **Adversarial-repair commit:** `3b7458a` (`fix(discovery): harden D6 and E1 production lifecycle`)
+- **Migrations:** `f2c0b2ed21dd` plus hardening head `fffa2a8ba17c` (single head)
 - **Dedicated final regression database:** `clue_c8_e1_hardened_20260803`
 
 This record covers E1 only. It does not authorize a held/excluded discovery account, Sumble gap
@@ -76,6 +78,24 @@ and the loser returns `joined_in_flight`. A possibly accepted paid create is rec
 deterministic external id. An ambiguous crash before that create is quarantined rather than
 blindly spending again.
 
+Hardening migration `fffa2a8ba17c` and the repaired runtime additionally enforce:
+
+- terminal and spend-quarantined operation immutability, including receipts and charges;
+- exact workspace/account/field lineage for the human tier claim and every result claim;
+- no second account/field purchase in the same stable observation window, even under a differently
+  bundled request;
+- one shared project-run budget reservation across D6 and E1, with actual charge settlement into
+  `project_run.spent_cents` in the same transaction as terminal success;
+- active `DEEP` phase for new E1 work, while the lifecycle worker can still drain accepted work;
+- DSAR subject indexing for request, CSV, lifecycle, item, receipt, and manifest artifacts; and
+- database-only terminal replay before artifact capture, preventing an erased artifact/subject edge
+  from being resurrected by a retry.
+
+The production Head-of-ABM tool is `enrich_selected_accounts@1`. It accepts only account ids and
+approved field keys; provider descriptions, formats, and option vocabularies come from the pinned
+field policy. New spend has its own default-off switch. Fleet polling is instead controlled by the
+Websets lifecycle switch, so disabling new E1 work cannot strand an already accepted operation.
+
 ## 4. Spend settlement
 
 The bounded database test requested one selected account and two ordinary enrichments:
@@ -91,29 +111,33 @@ The bounded database test requested one selected account and two ordinary enrich
 At the pinned Pro-plan allocation this reserves and settles `2.694` internal cents. The receipt
 records the zero search component. The original sealed discovery operation's charge and state are
 unchanged. Email/phone settlement is value-based at five credits per actual returned value and is
-not charged for null contact results.
+not charged for null contact results. A concurrent request sees the first operation's outstanding
+reservation, and a terminal replay increments neither provider calls nor project spend.
 
 ## 5. Verification evidence
 
-Against the dedicated PostgreSQL database:
+Against PostgreSQL and an isolated migration-smoke database after the repair:
 
-- E1 adapter and database tests: **6 passed**;
-- D2-D6 plus E1 and tier-checkpoint regression set: **71 passed**;
-- Exa D0-D4 adapter/fixture set: **22 passed**;
-- full mypy: **480 source files, no issues**;
+- E1 adapter/tool/fleet/database tests: **4 passed**;
+- repaired D2-D6 plus E1 and scoring-bypass regression set: **81 passed**;
+- full mypy: **481 source files, no issues**;
 - import-linter: **24 contracts kept, 0 broken**;
 - targeted Ruff format/lint: pass; and
-- Alembic `head -> base -> head`: pass with the single head `f2c0b2ed21dd`.
+- Alembic `head -> base -> head`: pass on a newly created throwaway database, which was removed
+  after the run, with the single head `fffa2a8ba17c`.
 
-The repository-wide fail-fast run still reaches the already-recorded Stage-0 fixture failure where
-the pinned `evaluate_stage0_readiness@1` schema digest is stale after the C8 merge. E1 does not
-import or execute that surface; it remains untouched in this slice.
+The DB suite also detected a historical long-lived-database drift from the D4 review-lineage
+migration: an older single-column review-task FK and stricter stale shape check were still present.
+The hardening migration idempotently restores the canonical workspace-composite FK and preserves
+review lineage after admission; the adversarial cross-workspace case now fails at PostgreSQL.
 
 ## 6. Live-provider gate
 
-No paid E1 call was made during this implementation round. The D6 acceptance run has two held
-accounts and zero human-approved selected accounts. Promoting either hold or fabricating a human
-tier claim merely to make a provider call would violate E1's eligibility invariant.
+No paid E1 call was made during this repair round. A read-only eligibility audit returned zero
+active `DEEP` account/run pairs with the exact live human-selected tier and seal lineage. The D6
+acceptance run likewise has two held accounts and zero human-approved selected accounts. Promoting
+either hold or fabricating a human tier claim merely to make a provider call would violate E1's
+eligibility invariant.
 
 To close the remaining provider gate, supply one genuinely approved selected account from an exact
 sealed run and approve a bounded canary. The minimum ordinary-field canary is one account and one

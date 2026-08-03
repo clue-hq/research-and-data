@@ -930,8 +930,9 @@ are inputs to the later Sumble gap waterfall, not grounds for weakening the admi
 
 ### Slice E1 — Targeted Exa import enrichment for selected accounts
 
-**Status:** mechanical/provider-contract implementation `PASS`; bounded live canary `OPEN` on
-2026-08-03. See `M06A-E1-targeted-exa-enrichment-acceptance.md`.
+**Status:** overall E1 gate `OPEN`; adversarially repaired mechanical/provider-contract path
+`PASS`; bounded live canary `OPEN` on 2026-08-03. Repair commit `3b7458a`; see
+`M06A-E1-targeted-exa-enrichment-acceptance.md`.
 
 **Purpose:** Enrich only selected accounts without applying new fields to the entire discovery
 Webset.
