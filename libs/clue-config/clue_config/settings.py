@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     # Env: CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED / CLUE_SUMBLE_CENTS_PER_CREDIT.
     sumble_account_gap_enrichment_enabled: bool = False
     sumble_cents_per_credit: Decimal = Field(default=Decimal(0), ge=0)
+    # Independent, default-off authorization for S2 no-reveal Teams + People acquisition during
+    # account-deep research. Enabling S1 never enables personal-data acquisition implicitly.
+    # Env: CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED / CLUE_SUMBLE_COMMITTEE_POLL_AFTER_S.
+    sumble_committee_acquisition_enabled: bool = False
+    sumble_committee_poll_after_s: int = Field(default=30, ge=1)
 
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are
