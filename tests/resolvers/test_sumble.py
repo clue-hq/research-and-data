@@ -39,6 +39,7 @@ from clue_research.resolvers.sumble import (
     normalize_jobs,
     normalize_organization,
     normalize_tech_stack,
+    organization_request,
 )
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "clue_trial" / "sumble"
@@ -110,6 +111,31 @@ def test_organization_request_is_fixed_and_credit_bounded() -> None:
             "retries": 0,
         }
     ]
+
+
+def test_s1_organization_request_selects_only_planned_paid_fields() -> None:
+    body, maximum = organization_request(
+        "acme.example",
+        field_keys=("core.hq_location", "core.industry", "core.primary_domain"),
+    )
+
+    assert maximum == 3
+    assert body == {
+        "organizations": [{"url": "acme.example"}],
+        "select": {
+            "attributes": [
+                "id",
+                "name",
+                "url",
+                "sumble_url",
+                "headquarters_country",
+                "industry",
+            ]
+        },
+    }
+
+    with pytest.raises(ValueError, match="unsupported Sumble organization fields"):
+        organization_request("acme.example", field_keys=("core.annual_revenue",))
 
 
 def test_jobs_request_wraps_the_advanced_query_in_the_v9_query_object() -> None:
@@ -237,6 +263,21 @@ def test_organization_normalization_produces_direct_fields_and_hard_miss() -> No
     )
 
 
+def test_s1_organization_normalizes_documented_industry_and_headquarters() -> None:
+    payload = _fixture("organizations_match.json")
+    payload["organizations"][0]["attributes"].update(
+        {"industry": "Healthcare", "headquarters_country": "US"}
+    )
+
+    industry = normalize_organization(payload, _field("core.industry"))
+    headquarters = normalize_organization(payload, _field("core.hq_location", "object"))
+
+    assert [item.value for item in industry] == ["Healthcare"]
+    assert [item.value for item in headquarters] == [
+        {"raw": "US", "country": "US", "country_code": "US"}
+    ]
+
+
 def test_matched_organization_id_is_recovered_for_the_jobs_call() -> None:
     assert matched_organization_id(_fixture("organizations_match.json")) == 1726684
     assert matched_organization_id(_fixture("organizations_unmatched.json")) is None
@@ -271,7 +312,7 @@ def test_bound_resolver_raises_rather_than_emitting_zero_claims_on_drift() -> No
     account = _account()
     snapshot = SumbleSnapshot(
         source_key=ORGANIZATIONS_SOURCE_KEY,
-        request_id="fixture-org-attributes-only-drift",
+        request_id="org-attrs-drift",
         credits_used=2,
         credits_remaining=998,
         payload=_fixture("organizations_attributes_only.json"),

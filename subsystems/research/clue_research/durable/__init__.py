@@ -18,6 +18,27 @@ is the resumable execution cursor whose id is the ``claim.run_id`` provenance.
 
 from __future__ import annotations
 
+from clue_research.durable.account_gap_enrichment import (
+    AccountGapBudgetExceeded,
+    AccountGapNotFound,
+    AccountGapReplayConflict,
+    AccountGapRepositoryError,
+    claim_account_gap_operation,
+    claim_account_gap_snapshot,
+    find_account_gap_operation,
+    find_account_gap_operation_for_fields,
+    get_account_gap_operation,
+    get_account_gap_snapshot,
+    list_account_gap_field_results,
+    list_account_gap_snapshots,
+    put_account_gap_field_result,
+    quarantine_dispatching_account_gap_snapshots,
+    reserve_account_gap_operation,
+    reserve_account_gap_snapshot,
+    terminal_now,
+    update_account_gap_operation,
+    update_account_gap_snapshot,
+)
 from clue_research.durable.account_run import (
     AccountRunRow,
     ReferencesIndex,
@@ -255,6 +276,26 @@ from clue_research.durable.workers import (
 )
 
 __all__ = [
+    # post-selection Sumble account-gap waterfall (M6A S1)
+    "AccountGapBudgetExceeded",
+    "AccountGapNotFound",
+    "AccountGapReplayConflict",
+    "AccountGapRepositoryError",
+    "claim_account_gap_operation",
+    "claim_account_gap_snapshot",
+    "find_account_gap_operation",
+    "find_account_gap_operation_for_fields",
+    "get_account_gap_operation",
+    "get_account_gap_snapshot",
+    "list_account_gap_field_results",
+    "list_account_gap_snapshots",
+    "put_account_gap_field_result",
+    "quarantine_dispatching_account_gap_snapshots",
+    "reserve_account_gap_operation",
+    "reserve_account_gap_snapshot",
+    "terminal_now",
+    "update_account_gap_operation",
+    "update_account_gap_snapshot",
     # durable discovery-batch substrate (M6A D1)
     "DbDiscoveryWakeScheduler",
     "DiscoveryArtifactSubjectRow",

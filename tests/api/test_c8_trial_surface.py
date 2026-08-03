@@ -41,6 +41,7 @@ from tests.api.conftest import hermetic_flag_env
 from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 
 _WITHHELD = {
+    "enrich_account_gaps",
     "enrich_selected_accounts",
     "start_recon",
     "submit_onboarding_input",
@@ -68,6 +69,7 @@ def test_the_trial_surface_withholds_exactly_the_prohibited_tools(
     assert "start_recon" not in trial_names
     assert "synthesize_icps" not in trial_names
     assert "enrich_selected_accounts" not in trial_names
+    assert "enrich_account_gaps" not in trial_names
     # The surface narrows authority only — same reviewed profile resource, same prompt.
     assert trial.profile_ref == base.profile_ref
     assert trial.prompt_body == base.prompt_body

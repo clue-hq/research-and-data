@@ -46,6 +46,16 @@ class TargetedEnrichmentOutput(ToolOutput):
     cost_cents_reserved: str
 
 
+class AccountGapEnrichmentOutput(ToolOutput):
+    operation_id: str
+    account_entity_id: str
+    state: str
+    outcome: str
+    provider_units_reserved: str
+    provider_units_charged: str
+    claim_ids: list[str]
+
+
 class PhaseAccountsOutput(ToolOutput):
     status: str
     accounts_processed: int

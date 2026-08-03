@@ -40,6 +40,7 @@ def _entry(
     requires_adapter: str | None = None,
     geo_coverage: tuple[str, ...] = (),
     freshness_profile: str | None = None,
+    version: int = 1,
 ) -> RegistrySourceManifest:
     return RegistrySourceManifest(
         manifest=SourceManifest(
@@ -57,6 +58,7 @@ def _entry(
         auth_ref=auth_ref,
         rate_limit=rate_limit,
         requires_adapter=requires_adapter,
+        version=version,
     )
 
 
@@ -83,12 +85,14 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
             "core.company_linkedin_url",
             "core.company_email",
             "core.company_phone",
+            "core.primary_tech_stack",
             "account.total_funding",
             "account.recent_funding",
         ),
         provider="exa",
         auth_ref="CLUE_EXA_API_KEY",
         freshness_profile="operation_window",
+        version=2,
     ),
     _entry(
         "clay",
@@ -145,11 +149,17 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         modality=Modality.STRUCTURED,
         entity_scope=EntityScope.ACCOUNT,
         tier=1,
-        yields=("core.employee_count", "core.primary_domain"),
+        yields=(
+            "core.employee_count",
+            "core.primary_domain",
+            "core.industry",
+            "core.hq_location",
+        ),
         provider="sumble",
         auth_ref="CLUE_SUMBLE_API_KEY",
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
+        version=2,
     ),
     _entry(
         "sumble_jobs",

@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
-    AgentRole.HEAD_OF_ABM: "v13",
+    AgentRole.HEAD_OF_ABM: "v14",
     AgentRole.RESEARCH: "v4",
     AgentRole.CONTENT_DRAFTER: "v4",
     AgentRole.REVIEWER: "v4",
@@ -52,6 +52,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "decide_source_proposal": (),
     "discover_accounts": (),
     "estimate_project": (),
+    "enrich_account_gaps": (AgentRole.HEAD_OF_ABM,),
     "enrich_selected_accounts": (AgentRole.HEAD_OF_ABM,),
     "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
     "get_research_view": (
@@ -121,8 +122,9 @@ STAGE0_CONVERSATION_TRIAL_SURFACE = "stage0_conversation_trial"
 #:   upload boundary (absent on this surface), so every reachable call would write an
 #:   ``actor='agent'`` capture record for a turn the platform already captured: durable noise with
 #:   misleading provenance. Defence in depth is unchanged — 1.2's lookup scoping stays.
-#: * ``enrich_selected_accounts`` is a post-checkpoint provider-spend boundary. It has no honest
-#:   Stage-0 use even though the broader Head-of-ABM role owns that decision.
+#: * ``enrich_selected_accounts`` and ``enrich_account_gaps`` are post-checkpoint provider-spend
+#:   boundaries. They have no honest Stage-0 use even though the broader Head-of-ABM role owns
+#:   those decisions.
 #:
 #: ``submit_ingestion`` is deliberately **kept**: it ingests an already-captured workspace artifact
 #: and performs no external research, so it does not cross this surface's boundary. So are the two
@@ -143,6 +145,7 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_tools=frozenset(
             {
                 "enrich_selected_accounts",
+                "enrich_account_gaps",
                 "start_recon",
                 "submit_onboarding_input",
                 "synthesize_icps",

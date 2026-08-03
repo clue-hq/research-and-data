@@ -12,6 +12,7 @@ The ICP synthesis model id (M5.2) is the first live setting here; it also feeds
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Final, Literal
 
 from pydantic import Field
@@ -79,6 +80,12 @@ class Settings(BaseSettings):
     # worker still drains already-created E1 operations whenever Websets lifecycle is enabled.
     # Env: CLUE_EXA_TARGETED_ENRICHMENT_ENABLED.
     exa_targeted_enrichment_enabled: bool = False
+    # Independent authorization and plan-specific monetary conversion for post-selection Sumble
+    # S1. Provider credits remain the authoritative charged unit; zero means no honest subscription
+    # allocation has been configured and monetary reporting stays zero rather than being invented.
+    # Env: CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED / CLUE_SUMBLE_CENTS_PER_CREDIT.
+    sumble_account_gap_enrichment_enabled: bool = False
+    sumble_cents_per_credit: Decimal = Field(default=Decimal(0), ge=0)
 
     # --- C5 Recipe #1 new-run routing -------------------------------------------------------
     # Master switch. False is a hard off regardless of allowlist/percentage; existing runs are

@@ -19,6 +19,10 @@ from clue_api.fleet_main import (
     _start_exa_targeted_enrichment,
 )
 from clue_api.projections_main import build_application
+from clue_api.sumble_account_gaps import (
+    SumbleAccountGapStarter,
+    build_production_sumble_account_gap_starter,
+)
 from clue_config import Secrets, Settings
 from clue_storage import FsStorage
 
@@ -156,3 +160,32 @@ def test_targeted_enrichment_is_independently_default_off_and_fails_closed(
         storage=storage,
     )
     assert isinstance(starter, ExaTargetedEnrichmentStarter)
+
+
+def test_sumble_account_gaps_are_independently_default_off_and_fail_closed(
+    tmp_path: Path,
+) -> None:
+    storage = FsStorage(tmp_path / "artifacts")
+    no_secrets = Secrets(_env_file=None, sumble_api_key=None)
+    assert (
+        build_production_sumble_account_gap_starter(
+            Settings(_env_file=None), secrets=no_secrets, storage=storage
+        )
+        is None
+    )
+    with pytest.raises(RuntimeError, match="CLUE_SUMBLE_API_KEY"):
+        build_production_sumble_account_gap_starter(
+            Settings(_env_file=None, sumble_account_gap_enrichment_enabled=True),
+            secrets=no_secrets,
+            storage=storage,
+        )
+    starter = build_production_sumble_account_gap_starter(
+        Settings(
+            _env_file=None,
+            sumble_account_gap_enrichment_enabled=True,
+            sumble_cents_per_credit="0.5",
+        ),
+        secrets=Secrets(_env_file=None, sumble_api_key=SecretStr("fixture-sumble-key")),
+        storage=storage,
+    )
+    assert isinstance(starter, SumbleAccountGapStarter)
