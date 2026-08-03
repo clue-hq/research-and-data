@@ -75,6 +75,19 @@ class ExaWebsetSearchBehavior(StrEnum):
     APPEND = "append"
 
 
+class ExaImportStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class ExaImportFormat(StrEnum):
+    CSV = "csv"
+    WEBSET = "webset"
+
+
 class ExaWebsetEnrichmentFormat(StrEnum):
     TEXT = "text"
     DATE = "date"
@@ -166,6 +179,47 @@ class ExaCreateSearch(BaseModel):
     recall: bool | None = None
 
 
+class ExaCreateImportCsvOptions(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    identifier: int = Field(default=0, ge=0)
+
+
+class ExaCreateImportRequest(BaseModel):
+    """Pinned CSV import request. The presigned upload URL exists only in the response."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    size: int = Field(ge=1, le=50_000_000)
+    count: int = Field(ge=1)
+    format: Literal["csv"] = "csv"
+    entity: ExaWebsetEntity
+    title: NonEmptyStr
+    csv: ExaCreateImportCsvOptions = ExaCreateImportCsvOptions()
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _supported_entity(self) -> ExaCreateImportRequest:
+        if self.entity.type is ExaWebsetEntityType.CUSTOM:
+            raise ValueError("targeted CSV imports do not support custom entities")
+        return self
+
+    def canonical_bytes(self) -> bytes:
+        return json.dumps(
+            self.model_dump(mode="json", exclude_defaults=True),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
+class ExaCreateImportRef(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source: Literal["import", "webset"]
+    id: NonEmptyStr
+    evaluate: bool | None = None
+
+
 class ExaCreateWebsetRequest(BaseModel):
     """Pinned subset of the current ``CreateWebsetParameters`` schema.
 
@@ -176,7 +230,8 @@ class ExaCreateWebsetRequest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
-    search: ExaCreateSearch
+    search: ExaCreateSearch | None = None
+    imports: tuple[ExaCreateImportRef, ...] = Field(default=(), alias="import")
     title: str | None = Field(default=None, min_length=1)
     enrichments: tuple[ExaCreateEnrichment, ...] = Field(default=(), max_length=10)
     external_id: str = Field(
@@ -185,6 +240,12 @@ class ExaCreateWebsetRequest(BaseModel):
         alias="externalId",
     )
     metadata: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _has_acquisition_source(self) -> ExaCreateWebsetRequest:
+        if self.search is None and not self.imports:
+            raise ValueError("an Exa Webset requires a search or import")
+        return self
 
     def wire_dict(self) -> dict[str, JsonValue]:
         raw = self.model_dump(
@@ -324,6 +385,51 @@ class ExaResponseEnrichment(BaseModel):
     updated_at: datetime = Field(alias="updatedAt")
 
 
+class ExaImport(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="allow", populate_by_name=True)
+
+    id: NonEmptyStr
+    object: Literal["import"]
+    status: ExaImportStatus
+    format: ExaImportFormat
+    entity: ExaWebsetEntity | None
+    title: str
+    count: Decimal = Field(ge=0)
+    metadata: dict[str, str]
+    failed_reason: (
+        Literal["invalid_format", "invalid_file_content", "missing_identifier"] | None
+    ) = Field(alias="failedReason")
+    failed_at: datetime | None = Field(alias="failedAt")
+    failed_message: str | None = Field(alias="failedMessage")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+    @property
+    def integral_count(self) -> int:
+        if self.count != self.count.to_integral_value():
+            raise ValueError("Exa import count is not integral")
+        return int(self.count)
+
+
+class ExaCreateImportResponse(ExaImport):
+    upload_url: SecretStr = Field(alias="uploadUrl")
+    upload_valid_until: datetime = Field(alias="uploadValidUntil")
+
+    def sanitized_bytes(self) -> bytes:
+        payload = self.model_dump(mode="json", by_alias=True)
+        payload["uploadUrl"] = "[REDACTED_PRESIGNED_URL]"
+        payload["redaction"] = "presigned_upload_url_credential"
+        return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+class ExaImportExchange(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+    status_code: int
+    request_id: str | None = None
+    response: ExaCreateImportResponse
+
+
 class ExaWebset(BaseModel):
     """Pinned identity/lifecycle portion of Exa's ``Webset`` response.
 
@@ -340,7 +446,7 @@ class ExaWebset(BaseModel):
     external_id: str | None = Field(alias="externalId")
     title: str | None
     searches: tuple[ExaResponseSearch, ...]
-    imports: tuple[dict[str, JsonValue], ...]
+    imports: tuple[ExaImport, ...]
     enrichments: tuple[ExaResponseEnrichment, ...]
     monitors: tuple[dict[str, JsonValue], ...]
     excludes: tuple[ExaWebsetSourceRef, ...]
@@ -900,6 +1006,24 @@ class ExaWebsetsTransport(Protocol):
     async def get_webset(self, webset_id_or_external_id: str) -> ExaWebsetExchange: ...
 
 
+class ExaWebsetsImportTransport(Protocol):
+    """Provider calls required by an import-only targeted enrichment operation."""
+
+    async def create_import(self, request: ExaCreateImportRequest) -> ExaImportExchange: ...
+
+    async def upload_import_csv(self, *, upload_url: SecretStr, content: bytes) -> None: ...
+
+    async def create_webset(self, request: ExaCreateWebsetRequest) -> ExaWebsetExchange: ...
+
+    async def get_webset(self, webset_id_or_external_id: str) -> ExaWebsetExchange: ...
+
+    async def poll_webset(self, webset_id: str) -> ExaWebsetExchange: ...
+
+    async def list_items(
+        self, webset_id: str, *, cursor: str | None = None, limit: int = 100
+    ) -> ExaItemPageExchange: ...
+
+
 class ExaWebsetsLifecycleTransport(Protocol):
     """Single-attempt reads; the durable worker, not the client, owns retry timing."""
 
@@ -968,7 +1092,9 @@ class ExaWebsetsClient:
             "provider.exa_websets.create",
             provider=EXA_WEBSETS_SOURCE_KEY,
             provider_api_version=EXA_WEBSETS_API_VERSION,
-            requested_count=request.search.count,
+            requested_count=request.search.count
+            if request.search is not None
+            else len(request.imports),
             external_id=request.external_id,
         ) as span:
             exchange = await self._request(
@@ -987,6 +1113,59 @@ class ExaWebsetsClient:
                 },
             )
             return exchange
+
+    async def create_import(self, request: ExaCreateImportRequest) -> ExaImportExchange:
+        """Create one uncharged upload slot; never retain its presigned credential in telemetry."""
+
+        status, request_id, response_body = await self._raw_request(
+            method="POST",
+            url=f"{self._base_url}/imports",
+            body=request.canonical_bytes(),
+            expected_status=201,
+            create=True,
+        )
+        try:
+            response = ExaCreateImportResponse.model_validate_json(response_body)
+        except (ValueError, TypeError) as exc:
+            raise ExaWebsetsContractDrift(
+                "Exa import response does not match the pinned v0 contract",
+                status_code=status,
+                request_id=request_id,
+                # The response may contain a live presigned credential. Never propagate it into
+                # durable error handling or logs on a schema mismatch.
+                response_body=None,
+            ) from exc
+        return ExaImportExchange(status_code=status, request_id=request_id, response=response)
+
+    async def upload_import_csv(self, *, upload_url: SecretStr, content: bytes) -> None:
+        """PUT exact CSV bytes to Exa's presigned URL without Exa auth or URL logging."""
+
+        if not content:
+            raise ValueError("Exa import CSV must be non-empty")
+        try:
+            response = await self._client.put(
+                upload_url.get_secret_value(),
+                headers={"content-type": "text/csv"},
+                content=content,
+            )
+        except (httpx.ConnectTimeout, httpx.PoolTimeout, httpx.ConnectError) as exc:
+            raise ExaWebsetsPreDispatchError(
+                "Exa import upload connection failed before dispatch"
+            ) from exc
+        except httpx.TransportError as exc:
+            # Re-PUT of the same immutable bytes is safe while the presigned URL remains valid, but
+            # the caller may not possess that credential after a crash. Classify the boundary
+            # honestly and let the durable E1 coordinator decide whether to start a fresh import.
+            raise ExaWebsetsIndeterminateDispatch(
+                "Exa import upload outcome is indeterminate"
+            ) from exc
+        await response.aread()
+        if not 200 <= response.status_code < 300:
+            raise ExaWebsetsError(
+                "Exa import upload was rejected",
+                status_code=response.status_code,
+                request_id=response.headers.get("x-request-id"),
+            )
 
     async def get_webset(self, webset_id_or_external_id: str) -> ExaWebsetExchange:
         if not webset_id_or_external_id.strip():
@@ -1289,6 +1468,9 @@ __all__ = [
     "EXA_WEBSETS_SOURCE_KEY",
     "ExaCreateCriterion",
     "ExaCreateEnrichment",
+    "ExaCreateImportRef",
+    "ExaCreateImportRequest",
+    "ExaCreateImportResponse",
     "ExaCreateSearch",
     "ExaCreateWebhookRequest",
     "ExaCreateWebsetRequest",
@@ -1299,6 +1481,10 @@ __all__ = [
     "ExaEventPageExchange",
     "ExaItemPage",
     "ExaItemPageExchange",
+    "ExaImport",
+    "ExaImportExchange",
+    "ExaImportFormat",
+    "ExaImportStatus",
     "ExaResponseEnrichment",
     "ExaResponseSearch",
     "ExaWebsetDuplicateExternalId",
@@ -1318,6 +1504,7 @@ __all__ = [
     "ExaWebsetsContractDrift",
     "ExaWebsetsError",
     "ExaWebsetsIndeterminateDispatch",
+    "ExaWebsetsImportTransport",
     "ExaWebsetsInvalidRequest",
     "ExaWebsetsPaymentRequired",
     "ExaWebsetsPermissionDenied",

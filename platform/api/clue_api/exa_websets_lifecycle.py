@@ -912,6 +912,11 @@ class DurableExaWebsetLifecycle:
         request: ExaCreateWebsetRequest,
         webset: ExaWebset,
     ) -> tuple[tuple[DiscoveryItemSnapshot, ...], ExaWebsetsChargeBreakdown]:
+        requested_search = request.search
+        if requested_search is None:
+            raise ExaLifecycleReconciliationError(
+                "discovery reconciliation requires a search Webset request"
+            )
         if webset.id != operation.provider_operation_id:
             raise ExaLifecycleReconciliationError("provider Webset id changed")
         if webset.imports:
@@ -935,7 +940,7 @@ class DurableExaWebsetLifecycle:
             )
         if len({item.provider_item_id for item in items}) != len(items):
             raise ExaLifecycleReconciliationError("multiple current snapshots exist for one item")
-        if len(items) > request.search.count:
+        if len(items) > requested_search.count:
             raise ExaLifecycleReconciliationError("provider returned more items than requested")
         found = search.progress.found
         if found != found.to_integral_value() or int(found) != len(items):
@@ -969,7 +974,7 @@ class DurableExaWebsetLifecycle:
         if len(definition_by_id) != len(provider_by_field):
             raise ExaLifecycleReconciliationError("terminal Webset repeats an enrichment id")
 
-        expected_criteria = {criterion.description for criterion in request.search.criteria}
+        expected_criteria = {criterion.description for criterion in requested_search.criteria}
         item_ids = {item.provider_item_id for item in items}
         matching_search_results = 0
         ordinary_enrichment_rows = 0
@@ -988,7 +993,7 @@ class DurableExaWebsetLifecycle:
                 raise ExaLifecycleReconciliationError("item belongs to another search")
             if provider_item.source_entity_id is not None or provider_item.scope_id is not None:
                 raise ExaLifecycleReconciliationError("search item carries import/scope identity")
-            requested_entity = request.search.entity
+            requested_entity = requested_search.entity
             if (
                 requested_entity is None
                 or provider_item.properties.type != requested_entity.type.value

@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -127,6 +128,27 @@ class ExaWebsetsPricingPolicy(BaseModel):
 
     def maximum_cost_cents(self, search: DiscoverySearchPlan) -> Decimal:
         return self.monetary_value(self.maximum_units(search))
+
+    def maximum_targeted_import_units(
+        self,
+        *,
+        account_count: int,
+        formats: Sequence[DiscoveryEnrichmentFormat],
+    ) -> Decimal:
+        if account_count < 1:
+            raise ValueError("targeted import account_count must be positive")
+        per_account = self.import_resolution_credits
+        for format_ in formats:
+            per_account += (
+                self.contact_enrichment_credits
+                if format_
+                in {
+                    DiscoveryEnrichmentFormat.EMAIL,
+                    DiscoveryEnrichmentFormat.PHONE,
+                }
+                else self.standard_enrichment_credits
+            )
+        return per_account * account_count
 
     def realized_units(
         self,
@@ -307,6 +329,8 @@ def assert_exa_response_matches_request(
     request: ExaCreateWebsetRequest,
     exchange: ExaWebsetExchange,
 ) -> None:
+    if request.search is None:
+        raise ExaSubmitContractError("discovery response matcher requires a search request")
     webset = exchange.webset
     mismatches: list[str] = []
     if webset.external_id != request.external_id:
