@@ -309,7 +309,13 @@ class ClaimEntailmentJudge(Protocol):
     """
 
     async def entails(
-        self, *, entity_id: EntityId, field_key: str, value: JsonValue, quote: str
+        self,
+        *,
+        workspace_id: str,
+        entity_id: EntityId,
+        field_key: str,
+        value: JsonValue,
+        quote: str,
     ) -> ClaimEntailment: ...
 
 
@@ -458,6 +464,7 @@ async def route_interview_answer(
             statements=statements,
             client_entity_id=client_entity_id,
         ),
+        workspace_id=workspace_id,
         entailment_judge=entailment_judge,
     )
     statement_ids: list[VolunteeredStatementId] = []
@@ -597,6 +604,7 @@ async def prepare_interview_statements(
 async def judge_interview_values(
     prepared: tuple[_PreparedStatement, ...],
     *,
+    workspace_id: str,
     entailment_judge: ClaimEntailmentJudge | None = None,
 ) -> tuple[_PreparedStatement, ...]:
     """Prove every claim value is entailed by its own quote; mark the ones the judge admitted.
@@ -614,6 +622,7 @@ async def judge_interview_values(
         assert item.entity_id is not None
         assert item.classified.field_key is not None
         judged = await check_claim_value_entailment(
+            workspace_id=workspace_id,
             field_key=item.classified.field_key,
             value=item.classified.value,
             quote=item.quote,
@@ -643,6 +652,7 @@ def is_judged_value(value: JsonValue) -> bool:
 
 async def check_claim_value_entailment(
     *,
+    workspace_id: str,
     field_key: str,
     value: JsonValue,
     quote: str,
@@ -677,6 +687,7 @@ async def check_claim_value_entailment(
             ),
         )
     entailment = await entailment_judge.entails(
+        workspace_id=workspace_id,
         entity_id=entity_id,
         field_key=field_key,
         value=value,

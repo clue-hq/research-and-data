@@ -144,6 +144,7 @@ from clue_research.stage0.import_types import (
 from clue_research.stage0.interview import (
     SOURCE_CLIENT_INTERVIEW,
     SOURCE_CLIENT_INTERVIEW_JUDGED,
+    VALUE_JUDGE_UNAVAILABLE,
     ClaimEntailment,
     ClaimEntailmentJudge,
     InterviewClaimEntityRefused,
@@ -324,6 +325,7 @@ __all__ = [
     "transition_recon_lane",
     "SOURCE_CLIENT_INTERVIEW",
     "SOURCE_CLIENT_INTERVIEW_JUDGED",
+    "VALUE_JUDGE_UNAVAILABLE",
     "ClaimEntailment",
     "ClaimEntailmentJudge",
     "InterviewClaimEntityRefused",

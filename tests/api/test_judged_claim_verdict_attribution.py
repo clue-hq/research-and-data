@@ -41,8 +41,11 @@ _QUOTE = "Our platform has completed SOC 2 controls and supports HIPAA-governed 
 
 
 class _SupportedGateway:
+    calls = 0
+
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
         del messages, opts
+        self.calls += 1
         return Completion(
             model=model,
             text=(
@@ -75,6 +78,7 @@ def test_actual_q_producer_is_visible_to_narrative_and_review_only_as_a() -> Non
             )
             producer = FaithfulnessClaimEntailmentJudge(judge=judge)
             admitted = await producer.entails(
+                workspace_id=_WORKSPACE,
                 entity_id=account_id,
                 field_key=_FIELD,
                 value=_VALUE,
@@ -99,6 +103,7 @@ def test_actual_q_producer_is_visible_to_narrative_and_review_only_as_a() -> Non
             )
             await insert_claim(conn, actual)
             question_id = entailment_judgment_id(
+                workspace_id=_WORKSPACE,
                 field_key=_FIELD,
                 value=_VALUE,
                 quote=_QUOTE,
@@ -132,5 +137,79 @@ def test_actual_q_producer_is_visible_to_narrative_and_review_only_as_a() -> Non
                 claim_ids=(actual.id,), workspace_id=_OTHER_WORKSPACE
             )
             assert hidden == {}, "a side-table row cannot bypass claim-store tenant scope"
+
+    run_async(scenario())
+
+
+def test_equal_local_field_questions_are_cached_within_but_never_across_workspaces() -> None:
+    """One tenant's judgment cannot authorize an equal-looking local field in another tenant."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_workspace(conn, _WORKSPACE)
+            await seed_workspace(conn, _OTHER_WORKSPACE)
+            first_account = await insert_account_entity(
+                conn,
+                canonical_name="Capacity Semantics A",
+                primary_domain="capacity-a.test",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_WORKSPACE,
+            )
+            second_account = await insert_account_entity(
+                conn,
+                canonical_name="Capacity Semantics B",
+                primary_domain="capacity-b.test",
+                status=AccountStatus.ACTIVE,
+                workspace_id=_OTHER_WORKSPACE,
+            )
+            gateway = _SupportedGateway()
+            producer = FaithfulnessClaimEntailmentJudge(
+                judge=FaithfulnessJudgeImpl(
+                    gateway=gateway,
+                    conn_factory=conn_session_factory(conn),
+                )
+            )
+            question = {
+                "field_key": "client.capacity_limit",
+                "value": 50,
+                "quote": "Our capacity limit is 50.",
+            }
+
+            assert (
+                await producer.entails(
+                    workspace_id=_WORKSPACE,
+                    entity_id=first_account,
+                    **question,
+                )
+            ).supported
+            assert (
+                await producer.entails(
+                    workspace_id=_OTHER_WORKSPACE,
+                    entity_id=second_account,
+                    **question,
+                )
+            ).supported
+            # A replay inside one workspace is still a cache hit.
+            assert (
+                await producer.entails(
+                    workspace_id=_WORKSPACE,
+                    entity_id=first_account,
+                    **question,
+                )
+            ).supported
+
+            first_q = entailment_judgment_id(workspace_id=_WORKSPACE, **question)
+            second_q = entailment_judgment_id(workspace_id=_OTHER_WORKSPACE, **question)
+            assert first_q != second_q
+            assert gateway.calls == 2
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM faithfulness_verdict "
+                        "WHERE claim_id = ANY(CAST(:ids AS uuid[]))"
+                    ),
+                    {"ids": [str(first_q), str(second_q)]},
+                )
+            ).scalar_one() == 2
 
     run_async(scenario())

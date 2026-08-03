@@ -967,7 +967,11 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 )
             # Outside the connection scope on purpose: the entailment judge makes a (synchronous,
             # multi-second) gateway call, and no pooled transaction stays open across it.
-            await judge_interview_values(prepared, entailment_judge=self._entailment_judge)
+            await judge_interview_values(
+                prepared,
+                workspace_id=ctx.workspace_id,
+                entailment_judge=self._entailment_judge,
+            )
         except (InterviewClaimEntityRefused, InterviewEvidenceRefused) as exc:
             return _failure(exc.reason_code, str(exc))
         return ()

@@ -1,4 +1,4 @@
-"""The identity of one *entailment question* — a content address over (field, value, span).
+"""The identity of one *entailment question* — a scoped content address.
 
 The M9.3 faithfulness judge caches and audits on ``faithfulness_verdict.claim_id``. For a tier-4
 synthesized claim that column is genuinely the claim's id: the claim exists first and is judged
@@ -29,9 +29,10 @@ Two subtleties, both deliberate:
   ``claim`` is spelled differently from the one that was judged; an order-sensitive digest would
   miss its own verdict on every recompute (found live, 2026-08-01). List order is preserved — a
   list is a sequence, not a set.
-* **Two subjects whose claims share a field, a value *and* a span share one question**, so erasing
-  either redacts the shared rationale. That is the correct direction: the rationale quotes that
-  exact text, which is the erased subject's words too.
+* **Tenant-private questions also include the workspace.** ``client.*`` field meaning is local to
+  the workspace, so equal field/value/span bytes in two workspaces are not the same semantic
+  question and must never share a cached verdict. Within one workspace, two claims with the same
+  field, value and span still share one question; erasing either redacts the shared rationale.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ __all__ = [
     "FaithfulnessSubjectIdentityError",
     "entailment_judgment_id",
     "faithfulness_lookup_plan",
+    "faithfulness_redaction_subject_ids",
 ]
 
 #: The uuid5 name prefix for an entailment *question*. Distinct from the interview's claim prefix
@@ -69,8 +71,10 @@ class FaithfulnessLookupPlan:
     """The ordered verdict subjects for one public/actual claim ``A``.
 
     ``subject_ids`` is priority-ordered. Ordinary claims have ``(A,)``; a judged interview claim
-    has ``(Q, A)`` so the content-addressed pre-write judgment wins and ``A`` remains a legacy
-    fallback. Consumers must key and label their result with ``actual_claim_id`` only.
+    has ``(Q_workspace, A)`` so the scoped pre-write judgment wins and ``A`` remains a legacy
+    fallback. The former unscoped Q is deliberately not a fallback: it cannot prove which tenant's
+    field semantics were judged. Consumers must key and label their result with
+    ``actual_claim_id`` only.
     """
 
     actual_claim_id: ClaimId
@@ -80,26 +84,64 @@ class FaithfulnessLookupPlan:
 class FaithfulnessSubjectIdentityError(ValueError):
     """A marked judged claim lacks the immutable evidence needed to reconstruct ``Q``."""
 
-    reason_code = "judged_interview_evidence_span_missing"
-
-    def __init__(self, actual_claim_id: ClaimId) -> None:
+    def __init__(self, actual_claim_id: ClaimId, *, reason_code: str) -> None:
         self.actual_claim_id = actual_claim_id
+        self.reason_code = reason_code
         super().__init__(
             f"cannot resolve faithfulness subject for claim {actual_claim_id}: {self.reason_code}"
         )
 
 
-def entailment_judgment_id(*, field_key: str, value: JsonValue, quote: str) -> ClaimId:
+def entailment_judgment_id(
+    *, workspace_id: str, field_key: str, value: JsonValue, quote: str
+) -> ClaimId:
     """The content-addressed id of "does this span entail this value for this field?".
 
     Key-sorted canonical JSON for the value, NUL-separated from the field and the quote so
-    ``field="a", quote="bc"`` and ``field="ab", quote="c"`` stay two questions.
+    ``field="a", quote="bc"`` and ``field="ab", quote="c"`` stay two questions. Supplying a
+    workspace is mandatory: allowing an omitted scope here would make cross-tenant cache reuse an
+    easy regression for any new caller.
     """
 
-    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    payload = "\x00".join((field_key, canonical, quote))
+    if not workspace_id:
+        raise ValueError("workspace-scoped entailment identity requires a non-empty workspace_id")
+    return _entailment_judgment_id(("workspace", workspace_id, field_key, _canonical(value), quote))
+
+
+def _canonical(value: JsonValue) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _entailment_judgment_id(parts: tuple[str, ...]) -> ClaimId:
+    payload = "\x00".join(parts)
     digest = hashlib.sha256(payload.encode()).hexdigest()
     return ClaimId(uuid5(NAMESPACE_URL, f"{ENTAILMENT_JUDGMENT_NAMESPACE}:{digest}"))
+
+
+def _legacy_entailment_judgment_id(*, field_key: str, value: JsonValue, quote: str) -> ClaimId:
+    """Reconstruct the pre-workspace Q only for privacy cleanup of already-written rows."""
+
+    return _entailment_judgment_id((field_key, _canonical(value), quote))
+
+
+def faithfulness_redaction_subject_ids(claim: Claim) -> tuple[ClaimId, ...]:
+    """Return every current or legacy verdict subject whose rationale quotes ``claim``.
+
+    Legacy Q is never exposed to attribution readers because it cannot prove tenant-local field
+    semantics. It remains reachable here so a DSAR/workspace erasure also removes rationale written
+    by the pre-workspace implementation.
+    """
+
+    plan = faithfulness_lookup_plan(claim)
+    if claim.source_key != SOURCE_CLIENT_INTERVIEW_JUDGED:
+        return plan.subject_ids
+    assert claim.evidence_span is not None
+    legacy = _legacy_entailment_judgment_id(
+        field_key=claim.field_key,
+        value=claim.value_json,
+        quote=claim.evidence_span,
+    )
+    return tuple(dict.fromkeys((*plan.subject_ids, legacy)))
 
 
 def faithfulness_lookup_plan(claim: Claim) -> FaithfulnessLookupPlan:
@@ -114,11 +156,18 @@ def faithfulness_lookup_plan(claim: Claim) -> FaithfulnessLookupPlan:
     if claim.source_key != SOURCE_CLIENT_INTERVIEW_JUDGED:
         return FaithfulnessLookupPlan(actual_claim_id=claim.id, subject_ids=(claim.id,))
     if not claim.evidence_span:
-        raise FaithfulnessSubjectIdentityError(claim.id)
+        raise FaithfulnessSubjectIdentityError(
+            claim.id, reason_code="judged_interview_evidence_span_missing"
+        )
+    if not claim.workspace_id:
+        raise FaithfulnessSubjectIdentityError(
+            claim.id, reason_code="judged_interview_workspace_missing"
+        )
     question_id = entailment_judgment_id(
         field_key=claim.field_key,
         value=claim.value_json,
         quote=claim.evidence_span,
+        workspace_id=claim.workspace_id,
     )
     return FaithfulnessLookupPlan(
         actual_claim_id=claim.id,

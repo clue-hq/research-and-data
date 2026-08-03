@@ -14,7 +14,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import Claim, UtcDatetime, canonical_json, decode_jsonb, serialize_value_json
-from clue_research.claimstore import get_workspace_field
+from clue_research.claimstore import (
+    assert_workspace_dynamic_client_kb_active,
+    get_workspace_field,
+)
 
 
 class WorkspaceClientKbReadinessPolicy(BaseModel):
@@ -41,6 +44,10 @@ async def get_workspace_client_kb_readiness_policy(
                            decision_reason, created_at
                     FROM workspace_client_kb_readiness_policy
                     WHERE workspace_id = :workspace_id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM workspace_dynamic_client_kb_erasure e
+                          WHERE e.workspace_id = workspace_client_kb_readiness_policy.workspace_id
+                      )
                     ORDER BY version DESC
                     LIMIT 1
                     """
@@ -70,6 +77,7 @@ async def set_workspace_client_kb_readiness_policy(
 
     if not decided_by.startswith("human:"):
         raise PermissionError("workspace Client-KB readiness policy requires human authority")
+    await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
     keys = tuple(sorted(set(required_field_keys)))
     for field_key in keys:
         definition = await get_workspace_field(conn, workspace_id=workspace_id, field_key=field_key)

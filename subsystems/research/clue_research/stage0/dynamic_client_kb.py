@@ -33,6 +33,7 @@ from clue_core.proposals import FieldProposalId, ProposalStatus
 from clue_research.claimstore import (
     FieldRegistryOrigin,
     FieldRegistryScope,
+    assert_workspace_dynamic_client_kb_active,
     get_effective_field,
     insert_claim,
     validate_effective_value,
@@ -164,6 +165,7 @@ async def prepare_field_materialization(
 ) -> tuple[FieldMaterializationPlan, FieldMaterializationReceipt | None]:
     """Resolve and validate a promoted proposal plus same-workspace preserved statement."""
 
+    await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
     proposal = await get_field_proposal(
         conn, proposal_id, workspace_id=workspace_id, for_update=False
     )

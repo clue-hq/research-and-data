@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
+from typing import cast
 
 from pydantic import JsonValue
 from sqlalchemy import text
@@ -30,6 +31,7 @@ from clue_core.proposals import (
 from clue_research.claimstore import (
     ValueSchemaError,
     WorkspaceFieldDefinitionError,
+    assert_workspace_dynamic_client_kb_active,
     get_field,
     get_workspace_field,
     register_field,
@@ -97,6 +99,47 @@ def _payload_hash(payload: FieldProposalPayload | SourceProposalPayload) -> str:
     return hashlib.sha256(canonical_json(dumped).encode("utf-8")).hexdigest()
 
 
+def client_field_semantic_contract_hash(payload: FieldProposalPayload) -> str:
+    """Hash the policy-owned part of a dynamic Client-KB field contract.
+
+    Candidate values, evidence ids, and proposal rationale vary per observation. Field meaning,
+    schema, downstream use, and all authority/sensitivity declarations do not. Safe-auto policy
+    pre-authorizes this exact digest through trusted configuration, so a model cannot make its own
+    proposal eligible merely by self-reporting every safety boolean as ``False``.
+    """
+
+    details = payload.client_kb
+    contract = {
+        "field_def": payload.field_def.model_dump(mode="json"),
+        "value_schema": payload.value_schema,
+        "corroboration_min": payload.corroboration_min,
+        "single_source_sufficient": payload.single_source_sufficient,
+        "equality_mode": payload.equality_mode.value,
+        "description": payload.description,
+        "pack": payload.pack,
+        "version": payload.version,
+        "sensitive": payload.sensitive,
+        "client_kb": (
+            {
+                "intended_use": details.intended_use,
+                "client_kb_role": details.client_kb_role,
+                "non_expiring_rationale": details.non_expiring_rationale,
+                "readiness_requested": details.readiness_requested,
+                "scoring_authoritative": details.scoring_authoritative,
+                "qualification_authoritative": details.qualification_authoritative,
+                "outreach_authoritative": details.outreach_authoritative,
+                "compliance_authoritative": details.compliance_authoritative,
+                "contains_personal_data": details.contains_personal_data,
+                "introduces_new_source": details.introduces_new_source,
+                "elevates_source_trust": details.elevates_source_trust,
+            }
+            if details is not None
+            else None
+        ),
+    }
+    return hashlib.sha256(canonical_json(cast(JsonValue, contract)).encode("utf-8")).hexdigest()
+
+
 def field_required_authority(
     payload: FieldProposalPayload, policy: ProposalPolicy
 ) -> ProposalAuthority:
@@ -130,6 +173,11 @@ def evaluate_safe_client_field(
         reasons.append("reuse_scope_not_tenant_private")
     if payload.pack != "client" or details.client_kb_role != "extended":
         reasons.append("not_supplemental_client_kb")
+    if (
+        client_field_semantic_contract_hash(payload)
+        not in policy.safe_auto_client_field_contract_hashes
+    ):
+        reasons.append("semantic_contract_not_policy_approved")
     if payload.sensitive:
         reasons.append("sensitive")
     if details.contains_personal_data:
@@ -252,6 +300,7 @@ async def propose_field(
     global_collision = False
     local_collision = False
     if is_client_field:
+        await assert_workspace_dynamic_client_kb_active(conn, workspace_id=scope.workspace_id)
         await _validate_client_field_evidence(conn, scope=scope, payload=payload)
         global_collision = await get_field(conn, payload.field_def.field_key) is not None
         local_collision = (
@@ -289,12 +338,16 @@ async def propose_field(
     ):
         eligible, reasons = evaluate_safe_client_field(payload, policy)
         if eligible:
+            contract_hash = client_field_semantic_contract_hash(payload)
             return await decide_field_proposal(
                 conn,
                 proposal_id=proposal.id,
                 workspace_id=scope.workspace_id,
                 decision=ProposalDecision.PROMOTE,
-                reason=(f"{policy.client_field_policy_version}:safe_auto_promote:eligible"),
+                reason=(
+                    f"{policy.client_field_policy_version}:safe_auto_promote:eligible:"
+                    f"contract={contract_hash}"
+                ),
                 authority=ProposalAuthority.POLICY,
                 decided_by="policy:dynamic_client_kb",
                 policy=policy,
@@ -441,6 +494,17 @@ async def decide_field_proposal(
     if decision is ProposalDecision.PROMOTE:
         payload = proposal.payload
         if is_client_field:
+            # Promotion defines a materializable field/value pair. Human authority may approve
+            # semantics, but it cannot waive the mechanical schema contract and leave behind a
+            # promoted definition whose own candidate can never be written.
+            if payload.value_schema is None:
+                raise WorkspaceFieldDefinitionError(
+                    "dynamic Client-KB fields require value_schema before promotion"
+                )
+            validate_workspace_field_schema(payload.value_schema)
+            details = payload.client_kb
+            assert details is not None
+            validate_value_against_schema(details.candidate_value, payload.value_schema)
             if authority is ProposalAuthority.POLICY:
                 eligible, reasons = evaluate_safe_client_field(payload, policy)
                 if (
