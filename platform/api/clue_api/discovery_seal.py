@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Protocol, cast
 
 from pydantic import JsonValue
 from sqlalchemy import text
@@ -54,6 +54,12 @@ from clue_storage import ArtifactNotFound, StorageBackend, content_address
 
 _MANIFEST_SOURCE = "discovery_seal"
 _WAIT_INTERVAL = timedelta(minutes=5)
+
+
+class DiscoveryBatchStarter(Protocol):
+    """Originate the current run's durable acquisition before the seal handler waits on it."""
+
+    async def ensure_started(self, ctx: PhaseContext) -> DiscoveryBatchId: ...
 
 
 def _canonical_json(value: object) -> bytes:
@@ -269,7 +275,11 @@ def _completion(seal: object) -> DiscoveryPhaseCompletion:
 
 
 class DurableDiscoveryPhaseHandler:
-    """Seal-aware DISCOVERY handler with a legacy fallback for runs without a durable batch."""
+    """Seal-aware DISCOVERY handler with optional production batch origination.
+
+    Provider I/O is deliberately invoked only after the repository transaction has closed.  Once
+    a starter is configured, absence of a batch can never fall through to legacy discovery.
+    """
 
     phase = ProjectPhase.DISCOVERY
 
@@ -278,122 +288,140 @@ class DurableDiscoveryPhaseHandler:
         *,
         storage: StorageBackend,
         fallback: PhaseHandler,
+        starter: DiscoveryBatchStarter | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._storage = storage
         self._fallback = fallback
+        self._starter = starter
         self._conn_factory = conn_factory
 
     async def run(self, ctx: PhaseContext) -> PhaseResult:
-        async with self._conn_factory() as conn:
-            batch = await get_current_discovery_batch(
-                conn,
-                workspace_id=ctx.workspace_id,
-                project_run_id=ctx.project_run_id,
-                for_update=True,
-            )
-            if batch is None:
-                use_fallback = True
-            else:
-                use_fallback = False
-                if (
-                    batch.project_id != ctx.project_id
-                    or batch.icp_key != ctx.icp_key
-                    or batch.icp_version != ctx.icp_version
-                ):
-                    raise DiscoveryReplayConflict(
-                        "current discovery batch differs from phase lineage"
-                    )
-                if batch.state in {
-                    DiscoveryBatchState.PAUSED_BY_USER,
-                    DiscoveryBatchState.FAILED_TERMINAL,
-                    DiscoveryBatchState.CANCELLED_UNSEALED,
-                }:
-                    return PhaseResult(
-                        status=PhaseStatus.PAUSED,
-                        payload={
-                            "discovery_batch_id": str(batch.id),
-                            "batch_state": batch.state.value,
-                            "failure_code": batch.failure_code,
-                            "replacement_batch_id": (
-                                str(batch.replacement_batch_id)
-                                if batch.replacement_batch_id is not None
-                                else None
-                            ),
-                        },
-                    )
-                seal = await get_discovery_batch_seal(
-                    conn, workspace_id=ctx.workspace_id, batch_id=batch.id
+        started = False
+        while True:
+            need_start = False
+            use_fallback = False
+            async with self._conn_factory() as conn:
+                batch = await get_current_discovery_batch(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    project_run_id=ctx.project_run_id,
+                    for_update=True,
                 )
-                if seal is None:
-                    manifest = await get_discovery_batch_manifest(
+                if batch is None:
+                    use_fallback = self._starter is None
+                    need_start = self._starter is not None and not started
+                    if self._starter is not None and started:
+                        raise DiscoveryNotFound(
+                            "discovery starter returned without creating the current batch"
+                        )
+                else:
+                    if (
+                        batch.project_id != ctx.project_id
+                        or batch.icp_key != ctx.icp_key
+                        or batch.icp_version != ctx.icp_version
+                    ):
+                        raise DiscoveryReplayConflict(
+                            "current discovery batch differs from phase lineage"
+                        )
+                    if batch.state in {
+                        DiscoveryBatchState.PAUSED_BY_USER,
+                        DiscoveryBatchState.FAILED_TERMINAL,
+                        DiscoveryBatchState.CANCELLED_UNSEALED,
+                    }:
+                        return PhaseResult(
+                            status=PhaseStatus.PAUSED,
+                            payload={
+                                "discovery_batch_id": str(batch.id),
+                                "batch_state": batch.state.value,
+                                "failure_code": batch.failure_code,
+                                "replacement_batch_id": (
+                                    str(batch.replacement_batch_id)
+                                    if batch.replacement_batch_id is not None
+                                    else None
+                                ),
+                            },
+                        )
+                    seal = await get_discovery_batch_seal(
                         conn, workspace_id=ctx.workspace_id, batch_id=batch.id
                     )
-                    readiness = await read_discovery_seal_readiness(
-                        conn,
-                        workspace_id=ctx.workspace_id,
-                        batch_id=batch.id,
-                        draft=manifest.seal_draft if manifest is not None else None,
-                    )
-                    blockers = evaluate_discovery_seal(readiness).blockers
-                    non_manifest = tuple(
-                        blocker
-                        for blocker in blockers
-                        if blocker is not DiscoverySealBlocker.FINAL_MANIFESTS
-                    )
-                    if not non_manifest:
-                        manifest = manifest or await build_discovery_batch_manifest(
-                            conn,
-                            self._storage,
-                            workspace_id=ctx.workspace_id,
-                            batch_id=batch.id,
-                        )
-                        seal = await seal_discovery_batch(
-                            conn,
-                            workspace_id=ctx.workspace_id,
-                            batch_id=batch.id,
-                            draft=manifest.seal_draft,
-                        )
-                    else:
-                        status = await get_discovery_batch_status(
+                    if seal is None:
+                        manifest = await get_discovery_batch_manifest(
                             conn, workspace_id=ctx.workspace_id, batch_id=batch.id
                         )
-                        operation_owned = {
-                            DiscoverySealBlocker.OPERATION_TERMINALITY,
-                            DiscoverySealBlocker.DISPATCH_RECEIPTS,
-                            DiscoverySealBlocker.PROVIDER_EVENTS,
-                            DiscoverySealBlocker.FINAL_RECONCILIATION,
-                            DiscoverySealBlocker.PAGINATION_EXHAUSTION,
-                            DiscoverySealBlocker.ITEM_MATERIALIZATION,
-                            DiscoverySealBlocker.SPEND_RECONCILIATION,
-                        }
-                        reason = (
-                            DiscoveryWakeReason.SCHEDULED_POLL
-                            if any(blocker in operation_owned for blocker in non_manifest)
-                            else DiscoveryWakeReason.FIELD_MATERIALIZATION
+                        readiness = await read_discovery_seal_readiness(
+                            conn,
+                            workspace_id=ctx.workspace_id,
+                            batch_id=batch.id,
+                            draft=manifest.seal_draft if manifest is not None else None,
                         )
-                        wait = DiscoveryExternalWait(
-                            discovery_batch_id=batch.id,
-                            pending_operation_ids=status.pending_operation_ids,
-                            next_poll_at=status.next_poll_at or datetime.now(UTC) + _WAIT_INTERVAL,
-                            wake_reason=reason,
-                            blockers=non_manifest,
+                        blockers = evaluate_discovery_seal(readiness).blockers
+                        non_manifest = tuple(
+                            blocker
+                            for blocker in blockers
+                            if blocker is not DiscoverySealBlocker.FINAL_MANIFESTS
                         )
-                        return PhaseResult(
-                            status=PhaseStatus.WAITING_EXTERNAL,
-                            payload=wait.model_dump(mode="json"),
-                        )
-                assert seal is not None
-                completion = _completion(seal)
-                return PhaseResult(
-                    status=PhaseStatus.COMPLETED,
-                    accounts_processed=seal.account_count,
-                    cost_cents=seal.cost_cents_charged,
-                    payload=completion.model_dump(mode="json"),
-                )
-        if use_fallback:
-            return await self._fallback.run(ctx)
-        raise AssertionError("unreachable durable discovery phase state")
+                        if not non_manifest:
+                            manifest = manifest or await build_discovery_batch_manifest(
+                                conn,
+                                self._storage,
+                                workspace_id=ctx.workspace_id,
+                                batch_id=batch.id,
+                            )
+                            seal = await seal_discovery_batch(
+                                conn,
+                                workspace_id=ctx.workspace_id,
+                                batch_id=batch.id,
+                                draft=manifest.seal_draft,
+                            )
+                        else:
+                            status = await get_discovery_batch_status(
+                                conn, workspace_id=ctx.workspace_id, batch_id=batch.id
+                            )
+                            operation_owned = {
+                                DiscoverySealBlocker.OPERATION_TERMINALITY,
+                                DiscoverySealBlocker.DISPATCH_RECEIPTS,
+                                DiscoverySealBlocker.PROVIDER_EVENTS,
+                                DiscoverySealBlocker.FINAL_RECONCILIATION,
+                                DiscoverySealBlocker.PAGINATION_EXHAUSTION,
+                                DiscoverySealBlocker.ITEM_MATERIALIZATION,
+                                DiscoverySealBlocker.SPEND_RECONCILIATION,
+                            }
+                            reason = (
+                                DiscoveryWakeReason.SCHEDULED_POLL
+                                if any(blocker in operation_owned for blocker in non_manifest)
+                                else DiscoveryWakeReason.FIELD_MATERIALIZATION
+                            )
+                            wait = DiscoveryExternalWait(
+                                discovery_batch_id=batch.id,
+                                pending_operation_ids=status.pending_operation_ids,
+                                next_poll_at=(
+                                    status.next_poll_at or datetime.now(UTC) + _WAIT_INTERVAL
+                                ),
+                                wake_reason=reason,
+                                blockers=non_manifest,
+                            )
+                            return PhaseResult(
+                                status=PhaseStatus.WAITING_EXTERNAL,
+                                payload=wait.model_dump(mode="json"),
+                            )
+                    assert seal is not None
+                    completion = _completion(seal)
+                    return PhaseResult(
+                        status=PhaseStatus.COMPLETED,
+                        accounts_processed=seal.account_count,
+                        cost_cents=seal.cost_cents_charged,
+                        payload=completion.model_dump(mode="json"),
+                    )
+            if need_start:
+                assert self._starter is not None
+                # Never hold a DB transaction/row lock across the potentially paid provider call.
+                await self._starter.ensure_started(ctx)
+                started = True
+                continue
+            if use_fallback:
+                return await self._fallback.run(ctx)
+            raise AssertionError("unreachable durable discovery phase state")
 
 
 class DbSealedDiscoveryAccountManifestReader:

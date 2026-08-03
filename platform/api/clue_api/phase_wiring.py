@@ -37,7 +37,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from clue_api.composition import build_pre_spend_gate
-from clue_api.discovery_seal import DurableDiscoveryPhaseHandler
+from clue_api.discovery_seal import DiscoveryBatchStarter, DurableDiscoveryPhaseHandler
 from clue_api.storage_wiring import SnapshotBindingPhaseHandler
 from clue_core import (
     FaithfulnessJudge,
@@ -148,6 +148,7 @@ def build_discovery_handler(
     channels: ChannelRegistry,
     gateway: LLMGateway | None = None,
     durable_batches: bool = False,
+    durable_batch_starter: DiscoveryBatchStarter | None = None,
     storage: StorageBackend | None = None,
     session_factory: ConnFactory = transaction,
 ) -> PhaseHandler:
@@ -165,6 +166,7 @@ def build_discovery_handler(
     return DurableDiscoveryPhaseHandler(
         storage=storage,
         fallback=legacy,
+        starter=durable_batch_starter,
         conn_factory=session_factory,
     )
 
@@ -174,6 +176,7 @@ def register_discovery_handler(
     channels: ChannelRegistry,
     gateway: LLMGateway | None = None,
     durable_batches: bool = False,
+    durable_batch_starter: DiscoveryBatchStarter | None = None,
     session_factory: ConnFactory = transaction,
     storage: StorageBackend | None,
     register: _Register = register_phase_handler,
@@ -185,6 +188,7 @@ def register_discovery_handler(
             channels=channels,
             gateway=gateway,
             durable_batches=durable_batches,
+            durable_batch_starter=durable_batch_starter,
             storage=storage,
             session_factory=session_factory,
         ),

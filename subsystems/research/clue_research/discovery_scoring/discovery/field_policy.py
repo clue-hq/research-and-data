@@ -14,6 +14,16 @@ from clue_core import (
     DiscoveryFieldRequirement,
 )
 
+REVENUE_BAND_OPTIONS = (
+    "under_1m",
+    "1m_10m",
+    "10m_50m",
+    "50m_100m",
+    "100m_500m",
+    "500m_1b",
+    "1b_plus",
+)
+
 DISCOVERY_ENVELOPE_POLICY_V1 = DiscoveryEnvelopePolicy(
     version="discovery-envelope-v1",
     fields=(
@@ -92,4 +102,4 @@ DISCOVERY_ENVELOPE_POLICY_V1 = DiscoveryEnvelopePolicy(
 )
 
 
-__all__ = ["DISCOVERY_ENVELOPE_POLICY_V1"]
+__all__ = ["DISCOVERY_ENVELOPE_POLICY_V1", "REVENUE_BAND_OPTIONS"]

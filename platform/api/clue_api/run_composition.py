@@ -61,7 +61,10 @@ from clue_api.deep.composition import (
     build_deep_phase_handler,
     build_high_tier_resolver,
 )
-from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
+from clue_api.discovery_seal import (
+    DbSealedDiscoveryAccountManifestReader,
+    DiscoveryBatchStarter,
+)
 from clue_api.fleet_wiring import (
     build_fleet_deep_scheduler,
     register_boot_handlers,
@@ -277,6 +280,7 @@ class ComposingRunDriver:
         lock_factory: LockFactory | None = None,
         committee_sources: Sequence[CommitteeSource] = (),
         channels: ChannelRegistry | None = None,
+        discovery_batch_starter: DiscoveryBatchStarter | None = None,
         spec_loader: SpecLoader | None = None,
         client_input_provider: ClientInputProvider | None = None,
         cache_size: int | None = None,
@@ -300,6 +304,7 @@ class ComposingRunDriver:
         )
         self._committee_sources = tuple(committee_sources)
         self._channels = channels if channels is not None else ChannelRegistry()
+        self._discovery_batch_starter = discovery_batch_starter
         self._client_input_provider = client_input_provider
         self._session_factory = session_factory
         self._controls = controls
@@ -444,6 +449,7 @@ class ComposingRunDriver:
             # The provider flag controls new Exa work, not whether an already-created durable
             # generation keeps its hard barrier after a rollout switch is reduced.
             durable_batches=True,
+            durable_batch_starter=self._discovery_batch_starter,
             session_factory=self._session_factory,
             storage=self._storage,
             register=registry.register,
