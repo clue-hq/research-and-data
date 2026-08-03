@@ -798,7 +798,9 @@ async def seed_insight_health_discovery_fixture(
         readiness.readiness_decision_id,
         workspace_id=WORKSPACE_ID,
     )
-    if stored_readiness is None or stored_readiness.metrics != readiness_metrics:
+    if stored_readiness is None or any(
+        stored_readiness.metrics.get(key) != value for key, value in readiness_metrics.items()
+    ):
         raise FixtureStateConflict("fixture readiness replayed with different metrics")
 
     await start_confirmed_project_run(
