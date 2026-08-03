@@ -34,6 +34,7 @@ from clue_research.discovery_scoring.tiering.engine import (
     cutoff_version,
     estimate_cost,
     load_score_views,
+    persist_discovery_selection_tier,
     persist_tier,
     tier_distribution,
 )
@@ -45,7 +46,18 @@ from clue_research.discovery_scoring.tiering.results import (
     CheckpointDecision,
     CheckpointReview,
     CheckpointStatus,
+    DiscoveryCriteriaCheckpointReview,
     TierAssignment,
+)
+from clue_research.discovery_scoring.tiering.selection import (
+    DiscoveryCriteriaAccountView,
+    DiscoveryCriteriaSelection,
+    DiscoverySelectionDisposition,
+    DiscoverySelectionPolicy,
+    ScoringMode,
+    SelectionMode,
+    load_discovery_criteria_selection,
+    selection_decision_version,
 )
 
 __all__ = [
@@ -57,6 +69,7 @@ __all__ = [
     # store read / write
     "load_score_views",
     "persist_tier",
+    "persist_discovery_selection_tier",
     "TIER_FIELD",
     # results + decision
     "AccountScoreView",
@@ -66,6 +79,15 @@ __all__ = [
     "CheckpointDecision",
     "CheckpointAction",
     "CheckpointStatus",
+    "DiscoveryCriteriaCheckpointReview",
+    "DiscoveryCriteriaAccountView",
+    "DiscoveryCriteriaSelection",
+    "DiscoverySelectionDisposition",
+    "DiscoverySelectionPolicy",
+    "ScoringMode",
+    "SelectionMode",
+    "load_discovery_criteria_selection",
+    "selection_decision_version",
     "CHECKPOINT_DECISION_PARAM",
     # config
     "TieringConfig",

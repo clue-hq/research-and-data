@@ -63,6 +63,7 @@ from clue_research.durable import (
     DiscoveryReplayConflict,
     capture_discovery_artifact,
     create_discovery_batch,
+    discovery_manifest_members,
     ensure_project_run,
     enumerate_discovery_subject_artifacts,
     get_discovery_candidate_link,
@@ -539,6 +540,13 @@ def test_d4_materializes_dedup_conflict_missing_evidence_and_exact_replay(
             assert first.excluded_item_count == first.review_item_count == 0
             assert first.claims_created == 18
             assert len(first.claim_ids) == 20  # 18 typed fields + 2 item-specific provenance claims
+            manifest_accounts, manifest_claims, _ = await discovery_manifest_members(
+                conn,
+                workspace_id=workspace_id,
+                batch_id=batch_id,
+            )
+            assert manifest_accounts == first.account_ids
+            assert set(manifest_claims) == set(first.claim_ids)
             assert first.field_resolution_count == 8
             account_id = first.account_ids[0]
             assert (

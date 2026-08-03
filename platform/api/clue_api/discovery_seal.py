@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    ClaimId,
     DiscoveryAccountManifest,
     DiscoveryBatchId,
     DiscoveryBatchState,
@@ -43,6 +44,7 @@ from clue_research.durable import (
     get_discovery_batch_manifest,
     get_discovery_batch_seal,
     get_discovery_batch_status,
+    get_discovery_field_resolution,
     get_discovery_plan,
     put_discovery_batch_manifest,
     read_discovery_seal_readiness,
@@ -465,7 +467,7 @@ class DbSealedDiscoveryAccountManifestReader:
             if content_address(body) != bundle.account_manifest_sha256:
                 raise DiscoverySealConflict("account manifest artifact hash mismatch")
             manifest = DiscoveryAccountManifest.model_validate_json(body)
-            account_ids, _, _ = await discovery_manifest_members(
+            account_ids, claim_ids, _ = await discovery_manifest_members(
                 conn, workspace_id=workspace_id, batch_id=batch.id
             )
             if (
@@ -484,11 +486,67 @@ class DbSealedDiscoveryAccountManifestReader:
                 or len(manifest.account_ids) != seal.account_count
             ):
                 raise DiscoverySealConflict("account manifest differs from its immutable seal")
+
+            try:
+                claim_body = await self._storage.get(bundle.claim_manifest_artifact_key)
+            except ArtifactNotFound as exc:
+                raise DiscoverySealConflict("claim manifest artifact body is absent") from exc
+            if content_address(claim_body) != bundle.claim_manifest_sha256:
+                raise DiscoverySealConflict("claim manifest artifact hash mismatch")
+            try:
+                claim_manifest = json.loads(claim_body)
+            except (TypeError, ValueError) as exc:
+                raise DiscoverySealConflict("claim manifest artifact is not valid JSON") from exc
+            expected_claim_ids = [str(value) for value in claim_ids]
+            if (
+                not isinstance(claim_manifest, dict)
+                or claim_manifest.get("contract") != "discovery-claim-manifest-v1"
+                or claim_manifest.get("workspace_id") != workspace_id
+                or claim_manifest.get("discovery_batch_id") != str(batch.id)
+                or claim_manifest.get("project_id") != batch.project_id
+                or claim_manifest.get("project_run_id") != str(run_id)
+                or claim_manifest.get("claim_ids") != expected_claim_ids
+                or bundle.claim_ids != claim_ids
+            ):
+                raise DiscoverySealConflict("claim manifest differs from its immutable seal")
+
+            plan_row = await get_discovery_plan(
+                conn, workspace_id=workspace_id, plan_id=batch.discovery_plan_id
+            )
+            if plan_row is None or plan_row.plan_sha256 != seal.plan_sha256:
+                raise DiscoverySealConflict("sealed discovery plan lineage is incomplete")
+            required_criteria = tuple(
+                dict.fromkeys(
+                    criterion.description
+                    for search in plan_row.plan.searches
+                    for criterion in search.criteria
+                )
+            )
+            resolutions = []
+            for account_id in manifest.account_ids:
+                for field_key in plan_row.plan.required_account_fields:
+                    resolution = await get_discovery_field_resolution(
+                        conn,
+                        workspace_id=workspace_id,
+                        batch_id=batch.id,
+                        account_entity_id=account_id,
+                        logical_field_key=str(field_key),
+                    )
+                    if resolution is None or not resolution.is_seal_terminal:
+                        raise DiscoverySealConflict(
+                            "sealed discovery required-field decisions are incomplete"
+                        )
+                    resolutions.append(resolution)
             return SealedDiscoveryAccounts(
                 discovery_batch_id=batch.id,
                 seal_sha256=seal.seal_sha256,
                 account_manifest_ref=bundle.account_manifest_artifact_key,
                 account_ids=manifest.account_ids,
+                claim_manifest_ref=bundle.claim_manifest_artifact_key,
+                claim_ids=tuple(ClaimId(value) for value in claim_ids),
+                required_criteria=required_criteria,
+                required_account_fields=plan_row.plan.required_account_fields,
+                field_resolutions=tuple(resolutions),
             )
 
 

@@ -126,7 +126,7 @@ REQUIRED_URLS = (HOME_URL, AMBIENT_URL, AURA_ANYWHERE_URL, NEUROSURGERY_URL)
 
 SOURCE_KEY = "firecrawl_site"
 HARVESTED_AT = datetime(2026, 8, 2, tzinfo=UTC)
-FIXTURE_COMPILER_VERSION = "insight-health-aura-stage0-fixture@1"
+FIXTURE_COMPILER_VERSION = "insight-health-aura-stage0-fixture@2"
 
 
 def _stable_uuid(label: str) -> UUID:
@@ -527,6 +527,9 @@ def _discovery_strategy() -> dict[str, JsonValue]:
             "Not a general hospital, health system, or hospital-employed department",
             "Multiple providers and public evidence of referral or intake workflow",
         ],
+        "scoring_mode": "disabled",
+        "selection_mode": "discovery_criteria",
+        "approved_tier": "high",
         "required_account_fields": [
             "account_name",
             "primary_domain",

@@ -1,12 +1,14 @@
 # M06A D5 — Discovery batch seal and hard project-phase barrier
 
-**Status:** implementation acceptance contract
+**Status:** implementation acceptance contract, including the 2026-08-03 post-review repair
 
 **Parent:** `M06A-exa-websets-sumble-discovery-integration.md`, Slice D5
 
 **Boundary:** D5 consumes the D1 lifecycle and D4 terminal identity/field ledger. It performs no
-provider call, does not discover or enrich another account, and does not score an account. D6 owns
-the first complete live production-composition acceptance.
+provider call and does not discover or enrich another account. The post-review repair also defines
+the explicit no-numeric-scoring path immediately after the seal, because preserving the phase and
+human barrier is part of making D5 non-bypassable. D6 remains unimplemented and owns the first
+complete live production-composition acceptance.
 
 ## 1. Outcome
 
@@ -85,7 +87,8 @@ The relational bundle is one immutable row per batch with:
 The four artifacts are canonical compact JSON:
 
 1. `discovery-account-manifest-v1` — exact account membership and lineage;
-2. `discovery-claim-manifest-v1` — exact field-ledger claim ids;
+2. `discovery-claim-manifest-v1` — every D4 claim rooted in the exact admitted item artifacts,
+   including the discovery-provenance/evaluation claim, plus every field-resolution evidence claim;
 3. `discovery-raw-artifact-manifest-v1` — exact durable raw receipt/evidence references; and
 4. `discovery-coverage-report-v1` — requested, observed, admitted, excluded, and unsearched-channel
    counts without an exhaustiveness claim.
@@ -118,9 +121,15 @@ advance the run.
 
 ## 7. Database project-run guard
 
-A `BEFORE UPDATE OF phase` trigger on `project_run` examines only
-`discovery -> scoring` transitions. When the run has a durable discovery batch, it rejects the
-transition unless:
+A `BEFORE UPDATE OF phase` trigger on `project_run` rejects every attempt to skip one of the three
+post-discovery phases:
+
+- `discovery` may move only to `scoring`;
+- `scoring` may move only to `tier_checkpoint`; and
+- `tier_checkpoint` may move only to `deep`.
+
+The original D5 seal trigger still guards `discovery -> scoring`. When the run has a durable
+discovery batch, it rejects that transition unless:
 
 1. the greatest generation belongs to the same workspace/project/run/ICP lineage;
 2. that batch is `sealed` and has one matching `discovery_batch_seal`;
@@ -130,7 +139,9 @@ transition unless:
 5. the committed discovery checkpoint payload contains the exact current batch id and seal hash.
 
 This guard protects calls that bypass `ProjectRun`, direct repository calls, and crash replay
-between checkpoint commit and phase transition.
+between checkpoint commit and phase transition. The sequence trigger additionally requires a
+committed scoring checkpoint before `scoring -> tier_checkpoint`, and an approved, resumed,
+committed human checkpoint before `tier_checkpoint -> deep`.
 
 ## 8. Sealed manifest reader and scoring
 
@@ -140,14 +151,56 @@ The concrete reader:
 2. requires its seal and immutable manifest bundle;
 3. loads the account-manifest artifact;
 4. verifies its content hash and all lineage/count fields against the seal and relational bundle;
-5. verifies the relational survivor set still equals the immutable account-id list; and
-6. returns only the ordered account ids plus seal references.
+5. loads and verifies the claim manifest and exact claim ids;
+6. verifies the relational survivor set still equals the immutable account-id list;
+7. loads the immutable plan's required criteria and required account fields; and
+8. returns the ordered account ids, claim ids, plan criteria, and terminal required-field
+   resolutions plus seal references.
 
 `ScoringPhaseHandler` uses this reader when a durable batch exists. It falls back to the historical
 discovery-provenance query only when the reader reports that the run has no durable batch. An
 unsealed, stale, cross-workspace, replaced, erased, or tampered manifest fails closed.
 
-## 9. Acceptance matrix
+## 9. Explicit no-numeric-scoring policy
+
+The agreed temporary bypass is policy-as-data on the pinned ICP version:
+
+```json
+{
+  "scoring_mode": "disabled",
+  "selection_mode": "discovery_criteria",
+  "must_have_criteria": ["..."],
+  "approved_tier": "high"
+}
+```
+
+Both mode values must be present together. The normalized `must_have_criteria` set must equal the
+criteria frozen in the exact discovery plan; an omitted or additional criterion fails the phase
+instead of selecting too broadly.
+
+Under this policy, `SCORING` remains a real, durable phase but performs no Pass-A waterfall,
+provider call, or numeric fit/intent write. It classifies only the exact sealed account set:
+
+| Observation | Disposition |
+|---|---|
+| Every required criterion is `yes` and every required field is `resolved` | `selected` |
+| Any required criterion is `no` | `excluded` |
+| Any required criterion is `unclear` or absent | `hold` |
+| Any required field is terminal missing or conflict | `hold` |
+
+The checkpoint exposes every criterion observation, provider reasoning, reference URL, evidence
+claim id, and required-field terminal state. Human approval may select all eligible accounts or an
+explicit subset. A hold/excluded/unknown account cannot be approved. Approved accounts receive a
+human-source `account.scoring.tier` claim whose `decision_basis` is `discovery_criteria`, bound to
+the exact project run, ICP version, discovery batch, seal, policy version, and decision version.
+No fit or intent number is synthesized. Deep composition consumes only those current-run approved
+tier claims.
+
+`ScoreAccountsTool` requires the persisted run itself to be active in `scoring`, both during
+precondition evaluation and immediately before invocation. Possessing a valid seal while the run
+is still in `discovery` is insufficient.
+
+## 10. Acceptance matrix
 
 | Case | Required proof |
 |---|---|
@@ -159,13 +212,18 @@ unsealed, stale, cross-workspace, replaced, erased, or tampered manifest fails c
 | Late event | Born `late_after_seal`; membership, fields, manifests, and seal remain byte-identical |
 | Manifest tamper/erasure | Reader and transition fail closed |
 | Scoring input | Exact sealed account ids are read; mutable/unsealed candidates are invisible |
+| Policy/plan drift | Missing or extra must-have criterion fails closed |
+| Criteria bypass | No numeric claims or provider calls; yes/unclear/no and required-field states map to selected/hold/excluded |
+| Human subset | Only selected accounts receive current-run, seal-bound tier claims |
+| Scoring tool crash window | Tool refuses while the persisted run remains in discovery, even when the seal already exists |
+| Later phase skips | DB rejects discovery -> deep, scoring -> deep, and tier checkpoint -> later phases without their committed gates |
 | Pause/resume | No paused wake is claimed; resume preserves operation identity and derives state |
 | Cancel | Old generation is terminal, unsealable, and child-immutable |
 | Replace | Old generation keeps evidence and points to the new current generation |
 | Concurrent/restarted seal | One identical bundle and seal |
 | Migration | One Alembic head; clean head -> base -> head |
 
-## 10. Gate D5
+## 11. Gate D5
 
 D5 passes only when real PostgreSQL and filesystem storage prove the entire matrix. Unit fixtures
 alone cannot close it. No Exa or Sumble call is required or permitted for this slice; already-paid

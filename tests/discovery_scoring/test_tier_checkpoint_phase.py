@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import JsonValue
@@ -19,6 +20,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    DiscoveryFieldResolution,
+    DiscoveryFieldResolutionState,
     EntityId,
     EntityType,
     ExtractionMethod,
@@ -28,8 +31,10 @@ from clue_core import (
     ProjectPhase,
     ProjectRunId,
     ResearchMode,
+    SealedDiscoveryAccounts,
     account_claim,
     discovery_claim,
+    new_discovery_batch_id,
     new_project_run_id,
     new_run_id,
 )
@@ -527,5 +532,151 @@ def test_checkpoint_fails_without_a_rubric() -> None:
             result = await handler.run(_ctx(new_project_run_id()))
             assert result.status is PhaseStatus.FAILED
             assert "no scoring rubric" in str(result.payload["error"])
+
+    run_async(_run())
+
+
+def test_discovery_criteria_checkpoint_approves_only_selected_without_numeric_scores() -> None:
+    class _SealedReader:
+        def __init__(self, sealed: SealedDiscoveryAccounts) -> None:
+            self._sealed = sealed
+
+        async def read(self, **_kwargs: object) -> SealedDiscoveryAccounts:
+            return self._sealed
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await create_icp_spec(
+                conn,
+                workspace_id=CLIENT,
+                icp_key=ICP,
+                created_from=ICPCreatedFrom.SYNTHESIS,
+                discovery_strategy={
+                    "scoring_mode": "disabled",
+                    "selection_mode": "discovery_criteria",
+                    "must_have_criteria": ["Independent practice"],
+                    "approved_tier": "high",
+                },
+                activate=True,
+            )
+            batch_id = new_discovery_batch_id()
+            account_ids: list[EntityId] = []
+            provenance_ids = []
+            resolutions = []
+            for domain, state in (("selected.example", "yes"), ("hold.example", "unclear")):
+                account_id = await insert_account_entity(
+                    conn,
+                    canonical_name=domain,
+                    primary_domain=domain,
+                    workspace_id=CLIENT,
+                )
+                account_ids.append(account_id)
+                provenance_id = await insert_claim(
+                    conn,
+                    discovery_claim(
+                        entity_id=account_id,
+                        entity_type=EntityType.ACCOUNT,
+                        field_key="core.discovery_provenance",
+                        value_json={
+                            "matched_channel": "exa_websets",
+                            "matched_signal": f"Independent practice={state}",
+                            "discovery_confidence": 0.9,
+                            "evidence": {
+                                "evaluations": [
+                                    {
+                                        "criterion": "Independent practice",
+                                        "satisfied": state,
+                                        "reasoning": f"provider verdict {state}",
+                                        "references": [{"url": f"https://{domain}/about"}],
+                                    }
+                                ]
+                            },
+                        },
+                        source_tier=1,
+                        extraction_method=ExtractionMethod.API,
+                        confidence=0.9,
+                        run_id=new_run_id(),
+                        research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                        found_via="exa_websets",
+                        matched_signal=f"Independent practice={state}",
+                        discovery_confidence=0.9,
+                        source_url=f"https://{domain}/about",
+                    ),
+                )
+                provenance_ids.append(provenance_id)
+                resolutions.append(
+                    DiscoveryFieldResolution(
+                        batch_id=batch_id,
+                        account_entity_id=account_id,
+                        logical_field_key="discovery.industry",
+                        state=DiscoveryFieldResolutionState.RESOLVED,
+                        claim_ids=(provenance_id,),
+                        winning_claim_id=provenance_id,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+            sealed = SealedDiscoveryAccounts(
+                discovery_batch_id=batch_id,
+                seal_sha256="f" * 64,
+                account_manifest_ref="fixture/" + "1" * 64,
+                account_ids=tuple(account_ids),
+                claim_manifest_ref="fixture/" + "2" * 64,
+                claim_ids=tuple(provenance_ids),
+                required_criteria=("Independent practice",),
+                required_account_fields=("discovery.industry",),
+                field_resolutions=tuple(resolutions),
+            )
+            project_run_id = new_project_run_id()
+            handler = TierCheckpointPhaseHandler(
+                session_factory=_session_factory(conn),
+                sealed_account_reader=_SealedReader(sealed),
+            )
+            initial = await handler.run(_ctx(project_run_id))
+            assert initial.status is PhaseStatus.PAUSED
+            assert initial.payload["selection_distribution"] == {
+                "selected": 1,
+                "hold": 1,
+                "excluded": 0,
+            }
+            review_accounts = initial.payload["review"]["accounts"]
+            assert all(
+                row["criteria"][0]["observations"][0]["reasoning"].startswith("provider verdict")
+                for row in review_accounts
+            )
+
+            approved = await handler.run(
+                _ctx(
+                    project_run_id,
+                    params=_decision(
+                        action="approve",
+                        approved_account_ids=[str(account_ids[0])],
+                    ),
+                )
+            )
+            assert approved.status is PhaseStatus.COMPLETED
+            assert approved.payload["decision_basis"] == "discovery_criteria"
+            assert approved.payload["numeric_scores_written"] == 0
+            scope = WorkspaceScope.for_workspace(CLIENT)
+            selected_tiers = await claims_for(conn, account_ids[0], TIER_FIELD, scope=scope)
+            hold_tiers = await claims_for(conn, account_ids[1], TIER_FIELD, scope=scope)
+            assert len(selected_tiers) == 1
+            assert hold_tiers == []
+            value = selected_tiers[0].value_json
+            assert value["decision_basis"] == "discovery_criteria"
+            assert value["project_run_id"] == str(project_run_id)
+            assert "fit_score" not in value and "intent_score" not in value
+
+            rejected_approval = await handler.run(
+                _ctx(
+                    project_run_id,
+                    params=_decision(
+                        action="approve",
+                        approved_account_ids=[str(account_ids[1])],
+                    ),
+                )
+            )
+            assert rejected_approval.status is PhaseStatus.PAUSED
+            assert rejected_approval.payload["approval_selection_error"] is not None
 
     run_async(_run())

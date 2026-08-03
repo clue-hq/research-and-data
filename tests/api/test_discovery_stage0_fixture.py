@@ -214,6 +214,9 @@ def test_discovery_fixture_is_real_db_backed_provenance_complete_and_replay_safe
             assert spec.discovery_strategy["advance_only_after"] == (
                 "immutable_discovery_batch_seal"
             )
+            assert spec.discovery_strategy["scoring_mode"] == "disabled"
+            assert spec.discovery_strategy["selection_mode"] == "discovery_criteria"
+            assert spec.discovery_strategy["approved_tier"] == "high"
 
             decision = await get_readiness_decision(
                 conn,

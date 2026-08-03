@@ -50,6 +50,7 @@ from clue_research.durable import (
     replace_discovery_batch,
     resume_discovery_batch,
     schedule_discovery_wake,
+    upsert_checkpoint,
 )
 from clue_storage import FsStorage
 from tests.db.conftest import run_async
@@ -120,6 +121,15 @@ def test_waits_then_seals_and_project_run_advances_once(tmp_path: Path) -> None:
                 with pytest.raises(DBAPIError, match="requires exact current discovery batch seal"):
                     await conn.execute(
                         text("UPDATE project_run SET phase = 'scoring' WHERE id = :run_id"),
+                        {"run_id": started.project_run_id},
+                    )
+            finally:
+                await savepoint.rollback()
+            savepoint = await conn.begin_nested()
+            try:
+                with pytest.raises(DBAPIError, match="cannot skip scoring after discovery"):
+                    await conn.execute(
+                        text("UPDATE project_run SET phase = 'deep' WHERE id = :run_id"),
                         {"run_id": started.project_run_id},
                     )
             finally:
@@ -200,6 +210,72 @@ def test_waits_then_seals_and_project_run_advances_once(tmp_path: Path) -> None:
             assert advanced.phase is ProjectPhase.SCORING
             assert advanced.status.value == "active"
 
+            # A caller cannot use the intentional no-numeric-scoring policy as a phase skip: the
+            # durable SCORING checkpoint and the human TIER_CHECKPOINT must still occur.
+            savepoint = await conn.begin_nested()
+            try:
+                with pytest.raises(
+                    DBAPIError, match="cannot skip the tier checkpoint after scoring"
+                ):
+                    await conn.execute(
+                        text("UPDATE project_run SET phase = 'deep' WHERE id = :run_id"),
+                        {"run_id": started.project_run_id},
+                    )
+            finally:
+                await savepoint.rollback()
+            savepoint = await conn.begin_nested()
+            try:
+                with pytest.raises(DBAPIError, match="requires a committed scoring checkpoint"):
+                    await conn.execute(
+                        text("UPDATE project_run SET phase = 'tier_checkpoint' WHERE id = :run_id"),
+                        {"run_id": started.project_run_id},
+                    )
+            finally:
+                await savepoint.rollback()
+
+            await upsert_checkpoint(
+                conn,
+                project_run_id=started.project_run_id,
+                phase=ProjectPhase.SCORING,
+                idempotency_key="d5-scoring-bypass-acceptance",
+                status=PhaseCheckpointStatus.COMMITTED,
+                payload={"scoring_mode": "disabled", "numeric_scores_written": 0},
+            )
+            await conn.execute(
+                text("UPDATE project_run SET phase = 'tier_checkpoint' WHERE id = :run_id"),
+                {"run_id": started.project_run_id},
+            )
+            savepoint = await conn.begin_nested()
+            try:
+                with pytest.raises(
+                    DBAPIError, match="requires an approved committed tier checkpoint"
+                ):
+                    await conn.execute(
+                        text("UPDATE project_run SET phase = 'deep' WHERE id = :run_id"),
+                        {"run_id": started.project_run_id},
+                    )
+            finally:
+                await savepoint.rollback()
+
+            await upsert_checkpoint(
+                conn,
+                project_run_id=started.project_run_id,
+                phase=ProjectPhase.TIER_CHECKPOINT,
+                idempotency_key="d5-human-checkpoint-acceptance",
+                status=PhaseCheckpointStatus.COMMITTED,
+                payload={"checkpoint_status": "resumed", "decision_action": "approve"},
+            )
+            await conn.execute(
+                text("UPDATE project_run SET phase = 'deep' WHERE id = :run_id"),
+                {"run_id": started.project_run_id},
+            )
+            assert (
+                await conn.execute(
+                    text("SELECT phase::text FROM project_run WHERE id = :run_id"),
+                    {"run_id": started.project_run_id},
+                )
+            ).scalar_one() == ProjectPhase.DEEP.value
+
             seal = await get_discovery_batch_seal(
                 conn, workspace_id=workspace_id, batch_id=started.batch_id
             )
@@ -244,6 +320,11 @@ def test_waits_then_seals_and_project_run_advances_once(tmp_path: Path) -> None:
             assert accounts.account_ids == (ready.account_id,)
             assert accounts.discovery_batch_id == started.batch_id
             assert accounts.seal_sha256 == seal.seal_sha256
+            assert accounts.claim_manifest_ref == bundle.claim_manifest_artifact_key
+            assert accounts.claim_ids == tuple(bundle.claim_ids)
+            assert accounts.required_criteria == ("is an independent practice",)
+            assert accounts.required_account_fields
+            assert len(accounts.field_resolutions) == len(accounts.required_account_fields)
 
             # A late team-level webhook remains auditable but is explicitly outside the sealed
             # generation. It cannot change candidate membership or field resolution.

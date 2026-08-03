@@ -237,18 +237,35 @@ def register_scoring_handler(
 # --- TIER_CHECKPOINT (M6.4) — pure reads/tiering ---------------------------------------------
 
 
-def build_tier_checkpoint_handler() -> TierCheckpointPhaseHandler:
+def build_tier_checkpoint_handler(
+    *,
+    sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+    session_factory: ConnFactory = transaction,
+) -> TierCheckpointPhaseHandler:
     """The TIER_CHECKPOINT handler (M6.4): tier the stored Pass-A scores, estimate Pass-B cost, and
     run the durable human gate. Config defaults to its production constants."""
-    return TierCheckpointPhaseHandler()
+    return TierCheckpointPhaseHandler(
+        sealed_account_reader=sealed_account_reader,
+        session_factory=session_factory,
+    )
 
 
 def register_tier_checkpoint_handler(
-    *, storage: StorageBackend | None, register: _Register = register_phase_handler
+    *,
+    storage: StorageBackend | None,
+    sealed_account_reader: SealedDiscoveryAccountReader | None = None,
+    session_factory: ConnFactory = transaction,
+    register: _Register = register_phase_handler,
 ) -> PhaseHandler:
     """Build + register the TIER_CHECKPOINT handler. The phase does **not** fetch (it tiers stored
     scores), so the snapshot wrapper is harmless — applied only for uniformity when ``storage`` is
     passed."""
-    handler = snapshot_bound(build_tier_checkpoint_handler(), storage=storage)
+    handler = snapshot_bound(
+        build_tier_checkpoint_handler(
+            sealed_account_reader=sealed_account_reader,
+            session_factory=session_factory,
+        ),
+        storage=storage,
+    )
     register(handler)
     return handler

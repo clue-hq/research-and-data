@@ -11,12 +11,15 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    DiscoveryFieldResolution,
+    DiscoveryFieldResolutionState,
     EntityId,
     EntityType,
     ExtractionMethod,
@@ -270,5 +273,112 @@ def test_scoring_phase_fails_without_a_rubric() -> None:
             result = await handler.run(_ctx())
             assert result.status is PhaseStatus.FAILED
             assert "no scoring rubric" in str(result.payload["error"])
+
+    run_async(_run())
+
+
+def test_scoring_disabled_classifies_exact_seal_without_scores_or_spend() -> None:
+    class _SealedReader:
+        def __init__(self, sealed: SealedDiscoveryAccounts) -> None:
+            self._sealed = sealed
+
+        async def read(self, **_kwargs: object) -> SealedDiscoveryAccounts:
+            return self._sealed
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await create_icp_spec(
+                conn,
+                workspace_id=CLIENT,
+                icp_key=ICP,
+                created_from=ICPCreatedFrom.SYNTHESIS,
+                discovery_strategy={
+                    "scoring_mode": "disabled",
+                    "selection_mode": "discovery_criteria",
+                    "must_have_criteria": ["Independent practice"],
+                    "approved_tier": "high",
+                },
+                activate=True,
+            )
+            ctx = _ctx()
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Selected",
+                primary_domain="selected.example",
+                workspace_id=CLIENT,
+            )
+            provenance_id = await insert_claim(
+                conn,
+                discovery_claim(
+                    entity_id=account_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="core.discovery_provenance",
+                    value_json={
+                        "matched_channel": "exa_websets",
+                        "matched_signal": "Independent practice=yes",
+                        "discovery_confidence": 0.9,
+                        "evidence": {
+                            "evaluations": [
+                                {
+                                    "criterion": "Independent practice",
+                                    "satisfied": "yes",
+                                    "reasoning": "Official practice site",
+                                    "references": [{"url": "https://selected.example/about"}],
+                                }
+                            ]
+                        },
+                    },
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    confidence=0.9,
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                    found_via="exa_websets",
+                    matched_signal="Independent practice=yes",
+                    discovery_confidence=0.9,
+                    source_url="https://selected.example/about",
+                ),
+            )
+            batch_id = new_discovery_batch_id()
+            sealed = SealedDiscoveryAccounts(
+                discovery_batch_id=batch_id,
+                seal_sha256="c" * 64,
+                account_manifest_ref="fixture/" + "d" * 64,
+                account_ids=(account_id,),
+                claim_manifest_ref="fixture/" + "e" * 64,
+                claim_ids=(provenance_id,),
+                required_criteria=("Independent practice",),
+                required_account_fields=("discovery.industry",),
+                field_resolutions=(
+                    DiscoveryFieldResolution(
+                        batch_id=batch_id,
+                        account_entity_id=account_id,
+                        logical_field_key="discovery.industry",
+                        state=DiscoveryFieldResolutionState.RESOLVED,
+                        claim_ids=(provenance_id,),
+                        winning_claim_id=provenance_id,
+                        updated_at=datetime.now(UTC),
+                    ),
+                ),
+            )
+            result = await ScoringPhaseHandler(
+                session_factory=_session_factory(conn),
+                sealed_account_reader=_SealedReader(sealed),
+            ).run(ctx)
+
+            assert result.status is PhaseStatus.COMPLETED
+            assert result.cost_cents == 0
+            assert result.payload["scoring_mode"] == "disabled"
+            assert result.payload["selection_distribution"] == {
+                "selected": 1,
+                "hold": 0,
+                "excluded": 0,
+            }
+            assert result.payload["numeric_scores_written"] == 0
+            assert result.payload["external_calls"] == 0
+            scope = WorkspaceScope.for_workspace(CLIENT)
+            assert await claims_for(conn, account_id, FIT_FIELD, scope=scope) == []
+            assert await claims_for(conn, account_id, INTENT_FIELD, scope=scope) == []
 
     run_async(_run())
