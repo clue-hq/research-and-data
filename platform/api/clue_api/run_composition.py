@@ -55,7 +55,7 @@ from clue_api.contact_eligibility import (
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
 )
-from clue_api.deep import ProfileAccountFn
+from clue_api.deep import CommitteePreparer, ProfileAccountFn
 from clue_api.deep.composition import (
     DeepPhaseComposition,
     build_deep_phase_handler,
@@ -292,6 +292,7 @@ class ComposingRunDriver:
         project_execution_router: ProjectExecutionRouter | None = None,
         account_agent_profiler: ProfileAccountFn | None = None,
         profile_account_fn: ProfileAccountFn | None = None,
+        committee_preparer: CommitteePreparer | None = None,
     ) -> None:
         self._settings = settings if settings is not None else load_settings()
         self._store: ProjectRunStore = store if store is not None else DbProjectRunStore()
@@ -313,6 +314,7 @@ class ComposingRunDriver:
         self._project_execution_router = project_execution_router
         self._account_agent_profiler = account_agent_profiler
         self._profile_account_fn = profile_account_fn
+        self._committee_preparer = committee_preparer
         if (controls is None) != (supervisor_actions is None):
             raise ValueError("controls and supervisor_actions must be supplied together")
         if controls is not None and execution_journal is None:
@@ -537,6 +539,7 @@ class ComposingRunDriver:
             high_tier_resolver=high_tier_resolver,
             pre_spend_gate=pre_spend_gate,
             canary_controller=canary_controller,
+            committee_preparer=self._committee_preparer,
             profile_account_fn=(
                 self._profile_account_fn
                 if self._profile_account_fn is not None
@@ -590,6 +593,7 @@ class ComposingRunDriver:
         )
         phases = registry.phases()
         committee_sources = len(self._committee_sources)
+        committee_preparer = self._committee_preparer is not None
         # One structured log per composition (cache fill), not per advance.
         log.info(
             "composer.registry_composed",
@@ -598,9 +602,10 @@ class ComposingRunDriver:
             icp_version=row.icp_version,
             phases=sorted(phase.value for phase in phases),
             committee_sources=committee_sources,
+            committee_preparer=committee_preparer,
             handoff_narrative_emit=self._settings.c7_production_handoff_enabled,
         )
-        if committee_sources == 0:
+        if committee_sources == 0 and not committee_preparer:
             # Zero committee sources ⇒ DEEP resolves no buying committee ⇒ required output #3 (the
             # per-account committee) is silently empty. Loud so a misconfigured run is visible, not
             # a quiet blank (a valid state only for a run that intends account-only research).

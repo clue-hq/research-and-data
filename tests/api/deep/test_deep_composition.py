@@ -103,6 +103,12 @@ def test_gate_and_classifier_are_threaded_into_the_orchestrator() -> None:
     assert comp.orchestrator._profile_contact is profile_contact
 
 
+def test_provider_neutral_committee_preparer_is_threaded_into_orchestrator() -> None:
+    preparer = object()
+    comp = _composition(committee_preparer=preparer)
+    assert comp.orchestrator._committee_preparer is preparer
+
+
 def test_account_axis_registry_excludes_committee_and_contact() -> None:
     """The graph's worker registry holds only the account-axis aspects; committee/contact run as
     direct callables and must NOT be registered as graph aspects (spec §M8A.6)."""

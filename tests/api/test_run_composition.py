@@ -159,6 +159,18 @@ def test_composed_registry_holds_every_phase() -> None:
     run_async(scenario())
 
 
+def test_composed_run_threads_committee_preparer_into_deep_orchestrator() -> None:
+    async def scenario() -> None:
+        preparer = object()
+        composed = await _driver(
+            {("ws", "a", 1): _spec("a")},
+            committee_preparer=preparer,
+        ).composed(_row("a"))
+        assert composed.deep.orchestrator._committee_preparer is preparer
+
+    run_async(scenario())
+
+
 def test_composed_discovery_retains_injected_durable_batch_starter() -> None:
     class _Starter:
         async def ensure_started(self, ctx: PhaseContext):
