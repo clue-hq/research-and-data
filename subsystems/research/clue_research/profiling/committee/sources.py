@@ -50,6 +50,12 @@ class CommitteePersonCandidate(BaseModel):
     geo: dict[str, JsonValue] | None = None
     source_url: str | None = None  # where the person was found (the grounding / discovery channel)
     matched_signal: str = ""  # why this person is relevant (e.g. "VP Eng on the leadership page")
+    source_person_id: str | None = None  # provider provenance key; never a strong identity key
+    job_function: str | None = None
+    job_level: str | None = None
+    team_names: tuple[str, ...] = ()
+    relationship_labels: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
     discovery_confidence: Confidence = 0.5
     cost_cents: CostCents = Decimal(0)
 
