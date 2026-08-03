@@ -1,8 +1,10 @@
 # M6A-SM1 — Governed Sumble MCP client and account-gap adapter
 
-**Status:** mechanical/client/database gate `PASS` on 2026-08-03; zero-credit live
-`initialize` + `tools/list` gate `PASS`; OAuth-authorized paid tool canary and production
-composition remain `OPEN`.
+**Status:** mechanical/client/database gate `PASS` on 2026-08-03 and reverified on 2026-08-04;
+zero-credit live `initialize` + `tools/list` gate `PASS`; OAuth-authorized paid tool canary and
+production composition remain `OPEN`. The 2026-08-04 paid-canary attempt reached Sumble's
+authenticated authorization page, but Sumble disabled authorization because the account was on
+the Free plan; no access token, paid-dispatch lease, provider call, or charge was created.
 
 **Branch:** `platform/c8-exa-sumble-discovery`
 
@@ -169,8 +171,34 @@ does not bypass them.
 | Arbitrary registered field through data-driven JSON-pointer binding | PASS |
 | Real PostgreSQL + filesystem request/response artifacts and receipt | PASS |
 | Fresh-journal terminal replay with zero provider calls | PASS |
-| Paid OAuth-authorized tool call | OPEN — deliberately not spent in SM1 |
+| Paid OAuth-authorized tool call | OPEN — 2026-08-04 OAuth blocked by Sumble Free plan |
 | Production account-deep composition | OPEN — owned after branch integration |
+
+### 5.1 Paid-canary attempt — 2026-08-04
+
+The explicitly authorized one-account/one-field canary was prepared for Insight Health AI using
+`FindMatchAndEnrichOrganizations` in match mode, with no contact reveal or people capability. The
+current live server still negotiated MCP `2025-06-18`, identified itself as Sumble `1.29.0`, and
+advertised catalog fingerprint
+`c25e286bb3dd4a32c4ed8176aa62e9bc16e25326a24f23d03ebf2409e8e4794d`. The bounded canary
+arguments passed the local policy and the exact live advertised input-schema validator.
+
+The configured Sumble REST API key was correctly rejected as an MCP OAuth credential. Dynamic
+OAuth registration and PKCE authorization then reached the authenticated Sumble page, which
+reported that MCP is enabled only on paid plans and disabled its authorization controls for the
+Free account. The callback was stopped before any token or paid-dispatch lease existed. Therefore:
+
+- provider credits consumed: `0`;
+- paid `tools/call` attempts: `0`;
+- access/refresh token files created: `0`;
+- the real response-to-artifact-to-claim-to-settlement chain remains unproven; and
+- the paid-canary acceptance row above remains `OPEN`, rather than being promoted from mechanical
+  evidence.
+
+The mechanical boundary was reverified separately: all MCP unit/adversarial tests passed, the
+zero-credit live catalog probe passed, and the real isolated-PostgreSQL request/response artifact,
+receipt, and zero-call replay test passed. Those results do not substitute for the blocked paid
+provider response.
 
 The database test ran on the isolated `clue_mcp_branch_20260803` database because the shared local
 database was already stamped with the parallel account-deep branch's Alembic head. The shared
