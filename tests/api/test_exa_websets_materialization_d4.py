@@ -606,9 +606,9 @@ def test_d4_materializes_dedup_conflict_missing_evidence_and_exact_replay(
             assert hq is not None and hq.state is DiscoveryFieldResolutionState.CONFLICT
             assert len(hq.claim_ids) == 2 and set(hq.source_item_ids) == set(item_ids)
             assert industry is not None and industry.state is (
-                DiscoveryFieldResolutionState.CONFIRMED_MISSING
+                DiscoveryFieldResolutionState.PENDING
             )
-            assert industry.reason_code == "exa_terminal_base_property_absent"
+            assert industry.reason_code is None
             assert email is not None and email.state is (
                 DiscoveryFieldResolutionState.CONFIRMED_MISSING
             )
@@ -892,7 +892,8 @@ def test_d4_replay_follows_identity_survivor_without_rewriting_or_duplicating_cl
             )
             assert readiness.survivor_links_complete
             assert readiness.hard_identities_complete
-            assert readiness.required_fields_terminal
+            # D4 keeps unresolved required fields open for the pre-seal provider waterfall.
+            assert not readiness.required_fields_terminal
             assert readiness.claims_or_dispositions_complete
 
             counts_before_replay = await _workspace_table_counts(conn, workspace_id)

@@ -97,6 +97,7 @@ from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_account_gaps import build_production_sumble_account_gap_starter
+from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
 from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSupervisorActions
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
@@ -510,6 +511,11 @@ async def _serve() -> None:
             gateway=gateway,
             storage=storage,
             discovery_batch_starter=_build_exa_discovery_starter(
+                settings,
+                secrets=secrets,
+                storage=storage,
+            ),
+            discovery_required_field_resolver=build_production_sumble_discovery_gap_resolver(
                 settings,
                 secrets=secrets,
                 storage=storage,

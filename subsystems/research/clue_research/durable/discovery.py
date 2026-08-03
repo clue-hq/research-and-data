@@ -2525,6 +2525,43 @@ async def get_discovery_field_resolution(
     )
 
 
+async def list_discovery_field_resolutions(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    batch_id: DiscoveryBatchId,
+    state: DiscoveryFieldResolutionState | None = None,
+) -> tuple[DiscoveryFieldResolution, ...]:
+    params: dict[str, object] = {"workspace_id": workspace_id, "batch_id": batch_id}
+    predicate = ""
+    if state is not None:
+        predicate = " AND state = CAST(:state AS discovery_field_resolution_state)"
+        params["state"] = state.value
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT account_entity_id, logical_field_key FROM discovery_field_resolution "
+                "WHERE workspace_id=:workspace_id AND batch_id=:batch_id"
+                + predicate
+                + " ORDER BY account_entity_id, logical_field_key"
+            ),
+            params,
+        )
+    ).all()
+    values: list[DiscoveryFieldResolution] = []
+    for account_entity_id, logical_field_key in rows:
+        resolution = await get_discovery_field_resolution(
+            conn,
+            workspace_id=workspace_id,
+            batch_id=batch_id,
+            account_entity_id=EntityId(account_entity_id),
+            logical_field_key=str(logical_field_key),
+        )
+        assert resolution is not None
+        values.append(resolution)
+    return tuple(values)
+
+
 async def bind_discovery_artifact_subject(
     conn: AsyncConnection,
     *,
@@ -2950,12 +2987,22 @@ async def reconcile_discovery_batch_costs(
                 cost_cents_charged = totals.cost,
                 updated_at = now()
             FROM (
-                SELECT COALESCE(sum(provider_units_reserved), 0) AS reserved,
-                       COALESCE(sum(provider_units_charged), 0) AS charged,
-                       COALESCE(sum(cost_cents_reserved), 0) AS cost_reserved,
-                       COALESCE(sum(cost_cents_charged), 0) AS cost
-                FROM discovery_operation
-                WHERE workspace_id = :workspace_id AND batch_id = :batch_id
+                SELECT COALESCE(sum(operation.provider_units_reserved), 0) AS reserved,
+                       COALESCE(sum(operation.provider_units_charged), 0) AS charged,
+                       COALESCE(sum(operation.cost_cents_reserved), 0) AS cost_reserved,
+                       COALESCE(sum(operation.cost_cents_charged), 0) AS cost
+                FROM (
+                    SELECT provider_units_reserved, provider_units_charged,
+                           cost_cents_reserved, cost_cents_charged
+                    FROM discovery_operation
+                    WHERE workspace_id = :workspace_id AND batch_id = :batch_id
+                    UNION ALL
+                    SELECT provider_units_reserved, provider_units_charged,
+                           cost_cents_reserved, cost_cents_charged
+                    FROM discovery_gap_operation
+                    WHERE workspace_id = :workspace_id
+                      AND discovery_batch_id = :batch_id
+                ) operation
             ) totals
             WHERE batch.workspace_id = :workspace_id AND batch.id = :batch_id
               AND batch.state <> 'sealed'
@@ -3246,6 +3293,17 @@ async def discovery_manifest_members(
                         FROM discovery_item_snapshot item
                         WHERE item.workspace_id = :workspace_id
                           AND item.operation_id IN (SELECT id FROM operations)
+                        UNION
+                        SELECT ref.key
+                        FROM discovery_gap_operation gap
+                        CROSS JOIN LATERAL (VALUES
+                            (gap.request_artifact_key),
+                            (gap.response_artifact_key),
+                            (gap.receipt_artifact_key)
+                        ) ref(key)
+                        WHERE gap.workspace_id = :workspace_id
+                          AND gap.discovery_batch_id = :batch_id
+                          AND ref.key IS NOT NULL
                     )
                     SELECT key FROM refs ORDER BY key
                     """
@@ -3403,6 +3461,11 @@ _READINESS_SQL = text(
         SELECT operation.*
         FROM discovery_operation operation
         WHERE operation.workspace_id = :workspace_id AND operation.batch_id = :batch_id
+    ), gap_operations AS (
+        SELECT operation.*
+        FROM discovery_gap_operation operation
+        WHERE operation.workspace_id = :workspace_id
+          AND operation.discovery_batch_id = :batch_id
     ), admitted AS (
         SELECT DISTINCT candidate.survivor_entity_id AS account_entity_id
         FROM discovery_candidate_link candidate
@@ -3463,6 +3526,15 @@ _READINESS_SQL = text(
         FROM discovery_item_snapshot item
         WHERE item.workspace_id = :workspace_id
           AND item.operation_id IN (SELECT id FROM operations)
+        UNION
+        SELECT ref.key
+        FROM gap_operations operation
+        CROSS JOIN LATERAL (VALUES
+            (operation.request_artifact_key),
+            (operation.response_artifact_key),
+            (operation.receipt_artifact_key)
+        ) ref(key)
+        WHERE ref.key IS NOT NULL
     )
     SELECT
         EXISTS (
@@ -3485,6 +3557,9 @@ _READINESS_SQL = text(
         AND NOT EXISTS (
             SELECT 1 FROM operations
             WHERE state NOT IN ('succeeded', 'accepted_terminal_failure')
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM gap_operations WHERE state <> 'succeeded'
         ) AS operations_terminal,
 
         NOT EXISTS (
@@ -3518,6 +3593,31 @@ _READINESS_SQL = text(
                       AND artifact.workspace_id = :workspace_id
                       AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
                ))
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM gap_operations operation
+            WHERE operation.request_artifact_key IS NULL
+               OR operation.response_artifact_key IS NULL
+               OR operation.receipt_artifact_key IS NULL
+               OR operation.provider_request_id IS NULL
+               OR NOT EXISTS (
+                    SELECT 1 FROM artifact
+                    WHERE artifact.storage_key = operation.request_artifact_key
+                      AND artifact.workspace_id = :workspace_id
+                      AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
+               )
+               OR NOT EXISTS (
+                    SELECT 1 FROM artifact
+                    WHERE artifact.storage_key = operation.response_artifact_key
+                      AND artifact.workspace_id = :workspace_id
+                      AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
+               )
+               OR NOT EXISTS (
+                    SELECT 1 FROM artifact
+                    WHERE artifact.storage_key = operation.receipt_artifact_key
+                      AND artifact.workspace_id = :workspace_id
+                      AND artifact.erased_at IS NULL AND artifact.purged_at IS NULL
+               )
         ) AS dispatch_receipts_complete,
 
         NOT EXISTS (
@@ -3720,10 +3820,15 @@ _READINESS_SQL = text(
         EXISTS (SELECT 1 FROM target)
         AND (SELECT provider_units_charged FROM target) =
             (SELECT COALESCE(sum(provider_units_charged), 0) FROM operations)
+            + (SELECT COALESCE(sum(provider_units_charged), 0) FROM gap_operations)
         AND (SELECT cost_cents_charged FROM target) =
             (SELECT COALESCE(sum(cost_cents_charged), 0) FROM operations)
+            + (SELECT COALESCE(sum(cost_cents_charged), 0) FROM gap_operations)
         AND NOT EXISTS (
             SELECT 1 FROM operations WHERE spend_outcome IN ('unknown', 'not_dispatched')
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM gap_operations WHERE spend_outcome IN ('unknown', 'not_dispatched')
         ) AS spend_reconciled,
 
         EXISTS (

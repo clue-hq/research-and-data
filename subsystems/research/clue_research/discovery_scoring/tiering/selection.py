@@ -246,6 +246,29 @@ def _criterion_review(
     )
 
 
+def classify_required_criteria_claims(
+    *, claims: Sequence[Claim], required_criteria: Sequence[str]
+) -> tuple[DiscoveryCriterionReview, ...]:
+    """Classify one account's discovery claims without requiring a D5 seal.
+
+    The pre-seal required-field waterfall uses the same criterion interpretation as the later
+    scoring-disabled selection phase. Keeping this one pure classifier prevents the spend gate and
+    checkpoint from disagreeing about ``yes`` / ``no`` / ``unclear`` evidence.
+    """
+
+    normalized = tuple(_normalize(value) for value in required_criteria)
+    if not normalized or len(normalized) != len(set(normalized)):
+        raise ValueError("required discovery criteria must be non-empty and unique")
+    required = set(normalized)
+    observations: dict[str, list[DiscoveryCriterionObservation]] = {
+        criterion: [] for criterion in normalized
+    }
+    for claim in claims:
+        for criterion, values in _claim_observations(claim, required).items():
+            observations[criterion].extend(values)
+    return tuple(_criterion_review(criterion, observations[criterion]) for criterion in normalized)
+
+
 def classify_discovery_criteria(
     *,
     sealed: SealedDiscoveryAccounts,
@@ -270,10 +293,8 @@ def classify_discovery_criteria(
 
     rows: list[DiscoveryCriteriaAccountView] = []
     for account_id in sealed.account_ids:
-        observations: dict[str, list[DiscoveryCriterionObservation]] = {
-            criterion: [] for criterion in policy.required_criteria
-        }
         evidence_ids: list[ClaimId] = []
+        account_claims: list[Claim] = []
         for claim_id in sealed.claim_ids:
             claim = claims.get(claim_id)
             if claim is None or claim.entity_id != account_id:
@@ -282,12 +303,11 @@ def classify_discovery_criteria(
             if not parsed:
                 continue
             evidence_ids.append(claim.id)
-            for criterion, values in parsed.items():
-                observations[criterion].extend(values)
+            account_claims.append(claim)
 
-        criterion_rows = tuple(
-            _criterion_review(criterion, observations[criterion])
-            for criterion in policy.required_criteria
+        criterion_rows = classify_required_criteria_claims(
+            claims=account_claims,
+            required_criteria=policy.required_criteria,
         )
         field_states: dict[str, DiscoveryFieldResolutionState] = {}
         hold_reasons: list[str] = []
@@ -384,6 +404,7 @@ __all__ = [
     "ScoringMode",
     "SelectionMode",
     "classify_discovery_criteria",
+    "classify_required_criteria_claims",
     "load_discovery_criteria_selection",
     "selection_decision_version",
 ]

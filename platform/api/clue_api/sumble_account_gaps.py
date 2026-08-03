@@ -15,11 +15,15 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Final, cast
+from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
+from clue_api.sumble_claim_materialization import (
+    SumbleClaimMaterializer,
+    SumbleFieldDisposition,
+)
 from clue_config import Secrets, Settings
 from clue_core import (
     AccountGapFieldPlan,
@@ -34,16 +38,11 @@ from clue_core import (
     AccountGapSpendOutcome,
     Claim,
     ClaimId,
-    Entity,
     EntityId,
     EntityType,
     ProjectPhase,
     ProjectRunId,
-    ResearchMode,
-    RunId,
-    canonical_json,
     new_account_gap_operation_id,
-    revalidate_with,
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import (
@@ -52,8 +51,6 @@ from clue_research.claimstore import (
     claims_for,
     current_value,
     get_effective_field,
-    insert_claim,
-    load_core_pack,
 )
 from clue_research.discovery_scoring.tiering import TIER_FIELD
 from clue_research.durable import (
@@ -80,29 +77,24 @@ from clue_research.durable import (
     update_account_gap_operation,
     update_account_gap_snapshot,
 )
-from clue_research.identity import canonical_member_ids, get_account, surviving_id
+from clue_research.identity import get_account, surviving_id
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
     ORGANIZATIONS_SOURCE_KEY,
     SUMBLE_API_BASE,
     SUMBLE_API_VERSION,
     TECH_STACK_SOURCE_KEY,
-    MappingSumbleSnapshotLookup,
     SumbleClient,
     SumbleCreditBudget,
     SumbleJobsResponse,
     SumbleOrganizationsResponse,
     SumbleSnapshot,
-    SumbleSourceKey,
     SumbleSpendOutcomeUnknown,
     SumbleTechStackResponse,
-    build_sumble_resolvers,
     engineering_jobs_request,
     matched_organization_id,
     organization_request,
 )
-from clue_research.sources import seed_source_manifests
-from clue_research.verification import Corroborator
 from clue_storage import StorageBackend, content_address
 
 SUMBLE_V9_CONTRACT_VERSION: Final = (
@@ -442,6 +434,7 @@ class SumbleAccountGapCoordinator:
                 cents_per_credit=cents,
             )
         )
+        self._materializer = SumbleClaimMaterializer(conn_factory=conn_factory)
 
     async def start(self, preflight: SumbleAccountGapPreflight) -> SumbleAccountGapResult:
         operation, _created = await self._reserve(preflight)
@@ -962,7 +955,7 @@ class SumbleAccountGapCoordinator:
         snapshots: Mapping[str, SumbleSnapshot],
     ) -> tuple[str, ...]:
         claim_ids: list[str] = []
-        await self._seed()
+        await self._materializer.seed()
         async with self._conn_factory() as conn:
             existing_results = {
                 str(item.field_key): item
@@ -980,14 +973,6 @@ class SumbleAccountGapCoordinator:
                 continue
             source_key = plan.source_key
             snapshot = snapshots.get(source_key)
-            async with self._conn_factory() as conn:
-                field = await get_effective_field(
-                    conn,
-                    scope=FieldRegistryScope.for_workspace(operation.request.workspace_id),
-                    field_key=str(plan.field_key),
-                )
-                if field is None:
-                    raise AccountGapReplayConflict("Sumble materialization field disappeared")
             if snapshot is None:
                 await self._put_field(
                     operation,
@@ -996,109 +981,33 @@ class SumbleAccountGapCoordinator:
                     reason="no_matched_sumble_organization",
                 )
                 continue
-            typed_source = cast(SumbleSourceKey, source_key)
-            resolver = build_sumble_resolvers(
-                MappingSumbleSnapshotLookup(
-                    {(operation.request.account_id, typed_source): snapshot}
-                )
-            )[typed_source]
-            candidates = resolver.resolve(
-                Entity(entity_id=operation.request.account_id, entity_type=EntityType.ACCOUNT),
-                field.field_def,
-            )
-            if not candidates:
-                await self._put_field(
-                    operation,
-                    plan,
-                    state=AccountGapFieldState.CONFIRMED_MISSING,
-                    reason="sumble_terminal_field_absent",
-                )
-                continue
-            if len(candidates) != 1:
-                raise AccountGapReplayConflict("Sumble field normalized to multiple claims")
-            candidate = revalidate_with(
-                candidates[0],
+            outcome = await self._materializer.materialize(
+                workspace_id=operation.request.workspace_id,
+                project_run_id=operation.request.project_run_id,
+                account_id=operation.request.account_id,
+                field_key=str(plan.field_key),
                 source_key=source_key,
-                run_id=RunId(operation.request.project_run_id),
-                research_mode=ResearchMode.ACCOUNT_PROFILING,
-                cost_cents=Decimal(0),
+                snapshot=snapshot,
             )
-            claim_id = await self._ensure_claim(operation, candidate)
-            claim_ids.append(str(claim_id))
-            corroboration = await Corroborator(conn_factory=self._conn_factory).evaluate(
-                operation.request.account_id,
-                plan.field_key,
-                scope=WorkspaceScope.for_workspace(operation.request.workspace_id),
-                entity_type=EntityType.ACCOUNT,
-            )
-            async with self._conn_factory() as conn:
-                merged = await current_value(
-                    conn,
-                    operation.request.account_id,
-                    plan.field_key,
-                    scope=WorkspaceScope.for_workspace(operation.request.workspace_id),
-                )
-            if corroboration.conflict or (merged is not None and merged.conflict):
-                conflicts = corroboration.conflicting_claim_ids or (
-                    merged.conflicting_claim_ids if merged is not None else ()
-                )
-                await self._put_field(
-                    operation,
-                    plan,
-                    state=AccountGapFieldState.CONFLICT,
-                    sumble_claim_id=claim_id,
-                    conflicts=conflicts,
-                    reason="authoritative_sources_disagree",
-                )
-                continue
-            corroborated = any(
-                claim_id in group.claim_ids and group.independent_sources >= 2
-                for group in corroboration.value_groups
-            )
+            if outcome.provider_claim_id is not None:
+                claim_ids.append(str(outcome.provider_claim_id))
             await self._put_field(
                 operation,
                 plan,
-                state=(
-                    AccountGapFieldState.CORROBORATED
-                    if corroborated
-                    else AccountGapFieldState.RESOLVED
-                ),
-                sumble_claim_id=claim_id,
-                current_claim_id=(merged.provenance.claim_id if merged is not None else claim_id),
-                reason=("independent_sources_agree" if corroborated else "sumble_native_value"),
+                state={
+                    SumbleFieldDisposition.CONFIRMED_MISSING: (
+                        AccountGapFieldState.CONFIRMED_MISSING
+                    ),
+                    SumbleFieldDisposition.RESOLVED: AccountGapFieldState.RESOLVED,
+                    SumbleFieldDisposition.CORROBORATED: AccountGapFieldState.CORROBORATED,
+                    SumbleFieldDisposition.CONFLICT: AccountGapFieldState.CONFLICT,
+                }[outcome.disposition],
+                sumble_claim_id=outcome.provider_claim_id,
+                current_claim_id=outcome.current_claim_id,
+                conflicts=outcome.conflicting_claim_ids,
+                reason=outcome.reason_code,
             )
         return tuple(sorted(set(claim_ids)))
-
-    async def _seed(self) -> None:
-        async with self._conn_factory() as conn:
-            await load_core_pack(conn)
-            await seed_source_manifests(conn)
-
-    async def _ensure_claim(self, operation: AccountGapOperation, candidate: Claim) -> ClaimId:
-        async with self._conn_factory() as conn:
-            members = await canonical_member_ids(
-                conn,
-                operation.request.account_id,
-                EntityType.ACCOUNT,
-                workspace_id=operation.request.workspace_id,
-            )
-            matches: list[Claim] = []
-            for member in members:
-                matches.extend(
-                    claim
-                    for claim in await claims_for(
-                        conn,
-                        member,
-                        candidate.field_key,
-                        scope=WorkspaceScope.for_workspace(operation.request.workspace_id),
-                    )
-                    if claim.source_key == candidate.source_key
-                    and claim.artifact_key == candidate.artifact_key
-                    and canonical_json(claim.value_json) == canonical_json(candidate.value_json)
-                )
-            if len(matches) > 1:
-                raise AccountGapReplayConflict("duplicate equivalent Sumble claims exist")
-            return matches[0].id if matches else await insert_claim(conn, candidate)
 
     async def _put_field(
         self,

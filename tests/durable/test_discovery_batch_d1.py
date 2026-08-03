@@ -591,6 +591,59 @@ async def _build_manifest_bundle(
         "project_run_id": str(batch.project_run_id),
         "artifact_keys": list(raw_keys),
     }
+    claim_counts = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT
+                      (SELECT count(DISTINCT edge.claim_id)
+                       FROM discovery_field_claim edge
+                       JOIN discovery_field_resolution resolution
+                         ON resolution.id = edge.resolution_id
+                        AND resolution.workspace_id = edge.workspace_id
+                       WHERE resolution.workspace_id = :workspace_id
+                         AND resolution.batch_id = :batch_id) AS field_resolution,
+                      (SELECT count(DISTINCT provider_claim_id)
+                       FROM (
+                         SELECT materialized.id AS provider_claim_id
+                         FROM discovery_candidate_link candidate
+                         JOIN discovery_item_snapshot item
+                           ON item.id = candidate.item_snapshot_id
+                          AND item.workspace_id = candidate.workspace_id
+                         JOIN claim materialized
+                           ON materialized.entity_id = candidate.survivor_entity_id
+                          AND materialized.artifact_key = item.raw_artifact_key
+                         WHERE candidate.workspace_id = :workspace_id
+                           AND candidate.batch_id = :batch_id
+                           AND candidate.admission_status IN ('admitted', 'merged')
+                         UNION
+                         SELECT provider_claim_id
+                         FROM discovery_gap_field_result
+                         WHERE workspace_id = :workspace_id
+                           AND discovery_batch_id = :batch_id
+                           AND provider_claim_id IS NOT NULL
+                       ) provider_claims) AS provider_materialized
+                    """
+                ),
+                {"workspace_id": started.workspace_id, "batch_id": started.batch_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    gap_operation_ids = tuple(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    "SELECT id FROM discovery_gap_operation "
+                    "WHERE workspace_id=:workspace_id AND discovery_batch_id=:batch_id ORDER BY id"
+                ),
+                {"workspace_id": started.workspace_id, "batch_id": started.batch_id},
+            )
+        ).scalars()
+    )
     coverage_payload = {
         "contract": "discovery-coverage-report-v1",
         "workspace_id": started.workspace_id,
@@ -607,6 +660,10 @@ async def _build_manifest_bundle(
         "searched_channels": ["exa_websets"],
         "unsearched_channels": [],
         "coverage_is_exhaustive": False,
+        "sealed_claim_count": len(claim_ids),
+        "field_resolution_claim_count": int(claim_counts["field_resolution"]),
+        "materialized_provider_claim_count": int(claim_counts["provider_materialized"]),
+        "discovery_gap_operation_ids": list(gap_operation_ids),
     }
 
     async def _capture(payload: object) -> tuple[str, str]:

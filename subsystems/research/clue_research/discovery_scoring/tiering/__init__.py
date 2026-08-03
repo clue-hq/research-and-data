@@ -56,6 +56,7 @@ from clue_research.discovery_scoring.tiering.selection import (
     DiscoverySelectionPolicy,
     ScoringMode,
     SelectionMode,
+    classify_required_criteria_claims,
     load_discovery_criteria_selection,
     selection_decision_version,
 )
@@ -86,6 +87,7 @@ __all__ = [
     "DiscoverySelectionPolicy",
     "ScoringMode",
     "SelectionMode",
+    "classify_required_criteria_claims",
     "load_discovery_criteria_selection",
     "selection_decision_version",
     "CHECKPOINT_DECISION_PARAM",
