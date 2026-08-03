@@ -109,6 +109,9 @@ from clue_research.review.projection import (
     INTENT_FIELD,
     InMemoryVerificationAnnotationReader,
     ReviewProjector,
+    ReviewProjectScope,
+    ReviewProjectScopeNotFound,
+    ReviewProjectScopeReader,
 )
 from clue_research.review.repository import (
     ReviewSessionRow,
@@ -148,6 +151,9 @@ __all__ = [
     "to_millicredits",
     # read projection (M13.1)
     "ReviewProjector",
+    "ReviewProjectScope",
+    "ReviewProjectScopeReader",
+    "ReviewProjectScopeNotFound",
     "InMemoryVerificationAnnotationReader",
     "FIT_FIELD",
     "INTENT_FIELD",

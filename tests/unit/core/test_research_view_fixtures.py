@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -79,7 +80,8 @@ class _AdversarialCase(BaseModel):
     contract_case: str | None
     later_guard_stage: str
     expected_reason_code: str
-    expected_outcome: Literal["rejected", "restricted", "unavailable"]
+    expected_outcome: Literal["redacted", "rejected", "restricted", "unavailable"]
+    evidence_test: str
 
 
 class _AdversarialManifest(BaseModel):
@@ -91,6 +93,23 @@ class _AdversarialManifest(BaseModel):
     cases: tuple[_AdversarialCase, ...]
 
 
+class _DsarSurface(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    surface_id: str
+    disposition: str
+    evidence_test: str
+
+
+class _DsarSurfaceManifest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["1.0"]
+    fixture_id: str
+    sanitized: Literal[True]
+    surfaces: tuple[_DsarSurface, ...]
+
+
 def _load_frontend(name: str) -> _FrontendFixtureManifest:
     return _FrontendFixtureManifest.model_validate_json((FIXTURES / name).read_text())
 
@@ -99,6 +118,26 @@ def _load_adversarial() -> _AdversarialManifest:
     return _AdversarialManifest.model_validate_json(
         (FIXTURES / "adversarial_cases.json").read_text()
     )
+
+
+def _load_dsar_surfaces() -> _DsarSurfaceManifest:
+    return _DsarSurfaceManifest.model_validate_json(
+        (FIXTURES / "dsar_surface_map.json").read_text()
+    )
+
+
+def _assert_test_node(node_id: str) -> None:
+    path_text, separator, function_name = node_id.partition("::")
+    assert separator and function_name.startswith("test_")
+    path = FIXTURES.parents[2] / path_text
+    assert path.is_file(), node_id
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    functions = {
+        node.name
+        for node in module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert function_name in functions, node_id
 
 
 def _account_subject() -> ResearchSubjectRef:
@@ -355,15 +394,55 @@ def test_adversarial_fixture_map_is_complete_and_stage_owned() -> None:
     fixture = _load_adversarial()
     cases = {case.case_id: case for case in fixture.cases}
     assert set(cases) == {
+        "same_name_wrong_contact",
+        "wrong_employer",
         "wrong_person_biography",
         "inconsistent_pronoun_or_identity_signal",
         "sensitive_medical_personalization",
+        "public_personal_display_only",
+        "weak_binding",
+        "cross_workspace_support",
+        "cross_product_fit_or_narrative",
+        "invalid_cross_entity_support_role",
+        "prompt_injection_in_support_or_evidence",
+        "stale_dependency",
+        "superseded_dependency",
+        "rejected_dependency",
+        "expired_dependency",
+        "erased_dependency",
+        "flagged_derived_erased_dependency",
+        "conflicted_dependency",
         "wrong_account_activity",
-        "cross_product_bleed",
     }
     assert cases["inconsistent_pronoun_or_identity_signal"].first_guard_stage == "c7.3_target_lock"
     assert cases["inconsistent_pronoun_or_identity_signal"].contract_case is None
     assert all(case.expected_reason_code for case in cases.values())
+    assert all(case.evidence_test for case in cases.values())
+
+
+def test_adversarial_fixture_evidence_nodes_resolve_to_collected_test_functions() -> None:
+    for case in _load_adversarial().cases:
+        _assert_test_node(case.evidence_test)
+
+
+def test_extended_dsar_surface_map_is_complete_and_executable() -> None:
+    surfaces = {item.surface_id: item for item in _load_dsar_surfaces().surfaces}
+    assert set(surfaces) == {
+        "direct_personal_claim_and_evidence",
+        "derived_claim_value",
+        "legacy_faithfulness_rationale",
+        "evidence_artifact",
+        "research_view_snapshot",
+        "research_view_recheck",
+        "legacy_account_handoff_payload",
+        "projection_cache",
+        "outbox_and_sse",
+        "c6_workspace_and_history_reference",
+    }
+    assert surfaces["projection_cache"].disposition == "absent_no_body_cache"
+    for surface in surfaces.values():
+        assert surface.disposition
+        _assert_test_node(surface.evidence_test)
 
 
 @pytest.mark.parametrize("contract_case", sorted(_CONTRACT_CASES))
@@ -371,7 +450,7 @@ def test_c70_adversarial_contract_cases_fail_closed(contract_case: str) -> None:
     mapped = {
         case.contract_case
         for case in _load_adversarial().cases
-        if case.first_guard_stage == "c7.0_contract"
+        if case.first_guard_stage == "c7.0_contract" and case.contract_case is not None
     }
     assert set(_CONTRACT_CASES) == mapped
     with pytest.raises(ValidationError):

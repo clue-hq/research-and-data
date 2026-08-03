@@ -84,7 +84,7 @@ from clue_research.narrative.health import VerificationHealth, compute_verificat
 from clue_research.narrative.support import (
     FaithfulnessCitation,
     read_claim_support,
-    read_faithfulness_citation,
+    read_faithfulness_citations,
 )
 
 # The reserved Pass-A score fields (M6.3 ``discovery_scoring.scoring.engine`` writes them; that is a
@@ -281,6 +281,7 @@ class HandoffAssembler:
                 icp_spec_version,
                 icp_key,
                 product_id,
+                project_run_id,
                 scope,
             )
             intent_score, _, intent_scored = await self._read_score(
@@ -290,6 +291,7 @@ class HandoffAssembler:
                 icp_spec_version,
                 icp_key,
                 product_id,
+                project_run_id,
                 scope,
             )
 
@@ -388,6 +390,7 @@ class HandoffAssembler:
         icp_spec_version: int,
         icp_key: str | None,
         product_id: str | None,
+        project_run_id: ProjectRunId | None,
         scope: WorkspaceScope,
     ) -> tuple[Score, bool, bool]:
         """The decomposed score for *this* ICP segment. Filters the live ``account.scoring.*``
@@ -406,6 +409,7 @@ class HandoffAssembler:
                 and value.get("icp_version") == icp_spec_version
                 and (icp_key is None or value.get("icp_key") == icp_key)
                 and claim.product_id == product_id
+                and (project_run_id is None or value.get("project_run_id") == str(project_run_id))
             ):
                 score, non_fit = _score_from_value_json(value)
                 return score, non_fit, True
@@ -480,7 +484,7 @@ class HandoffAssembler:
         claim_id)`` for a byte-stable handoff (AC5)."""
         claims = await claims_for(conn, account_entity_id, VALUE_NARRATIVE, scope=scope)
         items: list[ValueNarrativeItem] = []
-        citations: dict[str, FaithfulnessCitation] = {}
+        citation_claims = []
         for claim in claims:
             value = claim.value_json
             if not isinstance(value, dict):
@@ -509,9 +513,13 @@ class HandoffAssembler:
                     ),
                 )
             )
-            citation = await read_faithfulness_citation(conn, claim.id)
-            if citation is not None:
-                citations[str(claim.id)] = citation
+            citation_claims.append(claim)
+        citations = {
+            str(claim_id): citation
+            for claim_id, citation in (
+                await read_faithfulness_citations(conn, citation_claims)
+            ).items()
+        }
         items.sort(key=lambda i: (i.persona.value, str(i.claim_id)))
         return tuple(items), dict(sorted(citations.items()))
 

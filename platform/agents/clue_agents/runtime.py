@@ -8,9 +8,9 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from deepagents import create_deep_agent
-from langchain.agents.middleware.types import AgentMiddleware
+from langchain.agents.middleware.types import AgentMiddleware, ModelResponse
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
@@ -27,8 +27,11 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
+from clue_obs import get_logger
 
 __all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware"]
+
+log = get_logger("clue_agents.runtime")
 
 _FRAMEWORK_TOOL_NAMES = frozenset(
     {
@@ -40,6 +43,29 @@ _FRAMEWORK_TOOL_NAMES = frozenset(
         "glob",
         "grep",
     }
+)
+
+_FINALIZE_TOOL_NAME = "finalize_turn"
+
+# One corrective round trip per independent rejector. A finalization is refused by two unrelated
+# authorities — the shape contract (``ModelFinalizeRequest``) and the surface's ``CompletionGuard``
+# — and a turn can legitimately trip both once each while converging: the model fixes the shape,
+# then learns from the guard that it must route the human's input first. With a single shared
+# repair the second, honest attempt never happened and the turn died ``missing_finalize`` mid-
+# repair. A model that proposes a dishonest terminal shape a *third* time has not misread the
+# schema; it is refusing the contract, and the turn must die rather than loop.
+_MAX_FINALIZE_REPAIRS = 2
+
+# The status contract itself is stated once, on the finalize tool's own description, which the
+# model is holding when it reads this. Restating it here would be a second copy free to drift.
+_FINALIZE_CONTRACT_HELP = (
+    "Nothing was committed and this turn is not finished. Call finalize_turn again with a "
+    "terminal shape that satisfies the status contract in its description. Keep the content "
+    "you already wrote; change only what the error above names."
+)
+
+_FINALIZE_REPAIRS_EXHAUSTED = (
+    "Nothing was committed and no further finalize attempt will be accepted for this turn."
 )
 
 
@@ -71,10 +97,12 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
             {
                 *(pin.name for pin in profile.profile.tools),
                 *_FRAMEWORK_TOOL_NAMES,
-                "finalize_turn",
+                _FINALIZE_TOOL_NAME,
                 *(("delegate_specialist",) if profile.profile.delegation_roles else ()),
             }
         )
+        # Per-turn state: one middleware instance is constructed per ``DeepAgentTurnRuntime.run``.
+        self._finalize_rejections = 0
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         by_name = {_tool_name(tool): tool for tool in request.tools}
@@ -93,10 +121,42 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         else:
             final_prompt = f"{base_prompt.rstrip()}\n\n{suffix}"
         filtered = [by_name[name] for name in sorted(self._allowed)]
+        governed_request = request.override(
+            tools=filtered,
+            # Every platform turn has a mandatory ``finalize_turn`` authority. Requiring a tool
+            # call asks compatible providers to keep acting until they invoke a governed tool.
+            tool_choice="required",
+            system_message=SystemMessage(content=final_prompt),
+        )
+        response = await handler(governed_request)
+        if not isinstance(response, ModelResponse) or len(response.result) != 1:
+            return response
+        message = response.result[0]
+        if not isinstance(message, AIMessage) or message.tool_calls or not message.text.strip():
+            return response
+
+        # Some OpenAI-compatible gateways/models may still return a plain-text stop despite
+        # ``tool_choice=required``. Give that exact proposed response one bounded finalize-only
+        # recovery call. Authority is not bypassed: the model must still invoke the real governed
+        # finalizer, and a second non-tool stop remains ``missing_finalize`` downstream.
         return await handler(
-            request.override(
-                tools=filtered,
-                system_message=SystemMessage(content=final_prompt),
+            governed_request.override(
+                messages=[
+                    *governed_request.messages,
+                    message,
+                    HumanMessage(
+                        content=(
+                            "Your previous response is not committed because it did not call "
+                            "finalize_turn. Call finalize_turn now and no other tool. Preserve "
+                            "the previous response exactly as user_message. Use awaiting_input "
+                            "when it asks the human for information or confirmation and include "
+                            "one next_actions item describing that requested response; otherwise "
+                            "use completed. Do not add new content."
+                        )
+                    ),
+                ],
+                tools=[by_name["finalize_turn"]],
+                tool_choice="finalize_turn",
             )
         )
 
@@ -108,7 +168,71 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
                 tool_call_id=str(request.tool_call.get("id", "unavailable-tool")),
                 status="error",
             )
-        return await handler(request)
+        if name != _FINALIZE_TOOL_NAME:
+            return await handler(request)
+        return await self._bounded_finalize(request, handler)
+
+    async def _bounded_finalize(self, request: Any, handler: Any) -> Any:
+        """Give a refused finalization back to the model once, then fail the turn closed.
+
+        ``finalize_turn`` is ``return_direct``: the agent graph ends as soon as the tool node
+        produces its message, which is exactly right for a *committed* finalization and exactly
+        wrong for a *refused* one — the model never saw the rejection, so the turn died as
+        ``missing_finalize`` with no feedback (the live Stage-0 defect). A refusal therefore
+        clears ``return_direct`` for that one call so the corrected proposal can come back, and
+        restores it before every attempt so a commit still ends the turn immediately.
+
+        Bounding is by omission, not by a new terminal path: once the repair budget is spent the
+        tool stays ``return_direct``, so the final refusal ends the graph the way it always did
+        and the runtime reports the same stable ``missing_finalize``. Nothing was committed, so
+        that remains the honest code.
+        """
+
+        tool = request.tool
+        if isinstance(tool, BaseTool):
+            tool.return_direct = True
+        tool_call_id = str(request.tool_call.get("id", _FINALIZE_TOOL_NAME))
+        try:
+            result = await handler(request)
+        except ValueError as error:
+            # Argument-schema violations are already turned into an error ``ToolMessage`` by the
+            # tool node; a refusal raised *inside* the finalize tool (envelope construction, the
+            # required-output check, the completion guard) would otherwise crash the graph unseen.
+            # Both are the same thing to the model: its proposed terminal shape was not accepted.
+            #
+            # The catch is deliberately the whole ``ValueError`` family, not just pydantic's
+            # ``ValidationError``: the platform's own finalize guards raise plain ``ValueError``
+            # and their messages are precisely what the model needs in order to produce an honest
+            # terminal shape. The cost is that a guard violation now reaches the operator as
+            # ``missing_finalize`` rather than as its own exception, so every swallowed error is
+            # logged here with the exception type and message that would otherwise have surfaced.
+            log.warning(
+                "agent.finalize_refused",
+                tool_call_id=tool_call_id,
+                error_type=type(error).__name__,
+                error=str(error),
+                rejection=self._finalize_rejections + 1,
+            )
+            result = ToolMessage(
+                content=str(error),
+                name=_FINALIZE_TOOL_NAME,
+                tool_call_id=tool_call_id,
+                status="error",
+            )
+        if not (isinstance(result, ToolMessage) and result.status == "error"):
+            return result
+
+        self._finalize_rejections += 1
+        exhausted = self._finalize_rejections > _MAX_FINALIZE_REPAIRS
+        if not exhausted and isinstance(tool, BaseTool):
+            tool.return_direct = False
+        guidance = _FINALIZE_REPAIRS_EXHAUSTED if exhausted else _FINALIZE_CONTRACT_HELP
+        return ToolMessage(
+            content=f"{result.content}\n\n{guidance}",
+            name=_FINALIZE_TOOL_NAME,
+            tool_call_id=tool_call_id,
+            status="error",
+        )
 
 
 def _error_code(exc: BaseException) -> str:

@@ -97,7 +97,17 @@ def test_seed_manifests_load_idempotently() -> None:
             first = await registered_source_keys(conn)
             await seed_source_manifests(conn)  # second load is a no-op
             assert await registered_source_keys(conn) == first
-            assert {"clay", "apollo", "builtwith", "crm", "firecrawl_site", "exa_deep"} <= first
+            assert {
+                "clay",
+                "apollo",
+                "builtwith",
+                "crm",
+                "firecrawl_site",
+                "exa_deep",
+                "sumble_organizations",
+                "sumble_jobs",
+                "sumble_tech_stack",
+            } <= first
 
     run_async(_run())
 
@@ -132,7 +142,19 @@ def test_structured_providers_are_tier1_structured() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             await seed_source_manifests(conn)
-            for key in ("clay", "apollo", "zoominfo", "builtwith", "npi", "duns", "cik", "lei"):
+            for key in (
+                "clay",
+                "apollo",
+                "zoominfo",
+                "builtwith",
+                "npi",
+                "duns",
+                "cik",
+                "lei",
+                "sumble_organizations",
+                "sumble_jobs",
+                "sumble_tech_stack",
+            ):
                 src = await get_source(conn, key)
                 assert src is not None, key
                 assert src.tier == 1, key
@@ -144,12 +166,12 @@ def test_structured_providers_are_tier1_structured() -> None:
 # --- sources_for capability query ------------------------------------------
 
 
-def test_sources_for_techstack_returns_builtwith_not_firecrawl() -> None:
+def test_sources_for_techstack_returns_structured_sources_not_firecrawl() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             await seed_source_manifests(conn)
             keys = await sources_for(conn, "core.primary_tech_stack", tier=1)
-            assert keys == ["builtwith"]  # the only tier-1 source yielding the technographic field
+            assert keys == ["builtwith", "sumble_tech_stack"]
             assert "firecrawl_site" not in await sources_for(conn, "core.primary_tech_stack")
 
     run_async(_run())

@@ -175,8 +175,7 @@ def test_honest_finalize_recovers_each_storage_and_commit_boundary_without_false
                     media_type=media_type,
                 )
 
-            stage = await put('{"stage":"planning"}')
-            readiness = await put('{"ready":true}')
+            card = await put('{"card_kind":"stage0_project","project":{}}')
             budget = await put('{"limit_millicents":10000}')
             manifest = await put('{"resources":[]}')
             user = await put("Please finalize", "text/plain")
@@ -204,8 +203,7 @@ def test_honest_finalize_recovers_each_storage_and_commit_boundary_without_false
                     brand_id=project.brand_id,
                     product_id=None,
                     profile_ref=resolved.profile_ref,
-                    stage_snapshot_ref=stage,
-                    readiness_snapshot_ref=readiness,
+                    project_card_ref=card,
                     budget_envelope_ref=budget,
                     resource_manifest_ref=manifest,
                     resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
@@ -410,8 +408,7 @@ def test_delegation_is_durable_before_fresh_child_wake_and_rolls_up_reference_re
                     media_type="application/json",
                 )
 
-            stage = await put('{"stage":"research"}')
-            readiness = await put('{"ready":true}')
+            card = await put('{"card_kind":"account_research","plan":{}}')
             budget = await put('{"limit_millicents":10000}')
             manifest = await put('{"resources":[]}')
             user = await put('{"message":"delegate"}')
@@ -428,8 +425,7 @@ def test_delegation_is_durable_before_fresh_child_wake_and_rolls_up_reference_re
                     brand_id=project.brand_id,
                     product_id=None,
                     profile_ref=parent_profile.profile_ref,
-                    stage_snapshot_ref=stage,
-                    readiness_snapshot_ref=readiness,
+                    project_card_ref=card,
                     budget_envelope_ref=budget,
                     resource_manifest_ref=manifest,
                     resource_manifest_sha256=parent_profile.resource_manifest.aggregate_sha256,

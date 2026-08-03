@@ -124,7 +124,16 @@ def _driver(specs: dict[tuple[str, str, int], ICPSpec], **kwargs: object) -> Com
         await asyncio.sleep(0)  # a real await so concurrent gather() actually interleaves
         return specs.get((workspace_id, icp_key, icp_version))
 
+    settings = kwargs.pop(
+        "settings",
+        load_settings(
+            gateway_allow_stub=True,
+            c7_production_handoff_enabled=True,
+            _env_file=None,
+        ),
+    )
     return ComposingRunDriver(
+        settings=settings,  # type: ignore[arg-type]
         gateway=_stub_gateway(),  # type: ignore[arg-type]
         storage=FakeStorage(),  # type: ignore[arg-type]
         lock_factory=ProcessLocalLockFactory(),  # type: ignore[arg-type]
@@ -158,6 +167,20 @@ def test_composed_handoff_is_real_retention_wrapped_m12_handler() -> None:
         handoff = composed.registry.get(ProjectPhase.HANDOFF)
         assert isinstance(handoff, RetentionSweepHandoffHandler)
         assert isinstance(handoff._inner, HandoffPhaseHandler)
+
+    run_async(scenario())
+
+
+def test_c7_production_handoff_is_default_off_and_has_no_fallback_handler() -> None:
+    """Rollback removes HANDOFF dispatch; it never reinstates the retired fake-success marker."""
+
+    async def scenario() -> None:
+        composed = await _driver(
+            {("ws", "a", 1): _spec("a")},
+            settings=load_settings(_env_file=None),
+        ).composed(_row("a"))
+        assert ProjectPhase.HANDOFF not in composed.phases
+        assert composed.registry.get(ProjectPhase.HANDOFF) is None
 
     run_async(scenario())
 

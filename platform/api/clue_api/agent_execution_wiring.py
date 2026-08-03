@@ -12,6 +12,7 @@ from collections.abc import (
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
+from types import MappingProxyType
 from typing import Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -43,10 +44,20 @@ from clue_agents import (
     operation_id_for_plan_node,
     review_agent_plan,
 )
-from clue_agents.contracts import PlanDelegationStep, PlanToolStep
-from clue_agents.ports import ExecutionProgress
+from clue_agents.contracts import (
+    MODEL_FORBIDDEN_AUTHORITY_KEYS,
+    PlanDelegationStep,
+    PlanToolStep,
+)
+from clue_agents.ports import ExecutionProgress, OperationFailure
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
+from clue_api.turn_binding import (
+    CapturedTurn,
+    CapturedTurnSource,
+    CapturedTurnUnavailable,
+    trusted_turn_fields,
+)
 from clue_core import ExecutionId
 from clue_db import ConnFactory, database_url, transaction
 from clue_execution import (
@@ -61,7 +72,13 @@ from clue_execution import (
     ToolNode,
     validate_graph,
 )
-from clue_toolbelt import ToolContext, ToolInvoker, ToolRegistry, ToolResult
+from clue_toolbelt import (
+    PreconditionFailed,
+    ToolContext,
+    ToolInvoker,
+    ToolRegistry,
+    ToolResult,
+)
 
 __all__ = [
     "AgentExecutionCrashHook",
@@ -98,6 +115,37 @@ async def _no_crash(
 
 
 _DEFAULT_CRASH_HOOK = cast(AgentExecutionCrashHook, _no_crash)
+
+# A refusal sentence is model feedback, not a log dump: enough to name what was wrong, bounded so a
+# pathological traceback-in-a-message cannot dominate the next model call's context.
+_FAILURE_MESSAGE_LIMIT = 600
+
+
+def _failure_message(error: BaseException) -> str:
+    if isinstance(error, PreconditionFailed):
+        # A precondition refusal states its codes in ``str()`` and *what to do about it* only in
+        # the per-failure messages, which is the half a model can act on.
+        text_value = "; ".join(
+            f"{failure.reason_code}: {failure.message}" for failure in error.failures
+        ) or str(error)
+    else:
+        text_value = str(error) or type(error).__name__
+    collapsed = " ".join(text_value.split())
+    if len(collapsed) <= _FAILURE_MESSAGE_LIMIT:
+        return collapsed
+    return f"{collapsed[:_FAILURE_MESSAGE_LIMIT]}…"
+
+
+def _operation_failure(
+    operation: ValidatedOperation,
+    error: BaseException,
+) -> OperationFailure:
+    return OperationFailure(
+        node_key=operation.node_key,
+        address=operation.address,
+        error_type=type(error).__name__,
+        message=_failure_message(error),
+    )
 
 
 class FreshWakeChildRunner(Protocol):
@@ -167,13 +215,90 @@ def _rewrite_refs(value: object, prefix: str) -> object:
     return value
 
 
+def _trusted_authority(constitution: AgentConstitution) -> dict[str, JsonValue]:
+    """The authority values a tool body may receive, sourced only from the constitution.
+
+    A ``None`` here is *not* a value: ``_trusted_tool_arguments`` skips it, so a tool that requires
+    the field is refused by its own validator instead of being served a fabricated scope.
+    """
+
+    return {
+        "actor_id": constitution.actor_id,
+        "brand_id": constitution.brand_id,
+        "client_entity_id": constitution.client_entity_id,
+        "execution_id": str(constitution.execution_id),
+        "project_id": constitution.project_id,
+        "workspace_id": constitution.workspace_id,
+    }
+
+
+def _trusted_tool_arguments(
+    *,
+    arguments: Mapping[str, JsonValue],
+    input_model: type[BaseModel],
+    constitution: AgentConstitution,
+    captured_turn: CapturedTurn | None = None,
+) -> dict[str, JsonValue]:
+    """Merge trusted authority into the model-proposed arguments of one tool step.
+
+    A tool input model may declare an authority field (the Stage-0 tools declare ``project_id``),
+    but the model neither sees it (the governed wrapper hides it from the model-visible schema)
+    nor may propose it (``PlanToolStep.arguments`` rejects the key). The value therefore comes
+    from exactly one place: the trusted :class:`AgentConstitution` this adapter is bound to.
+
+    Authority the constitution does not carry (``operation_id``, ``parent_execution_id``) is
+    deliberately not synthesized — such a field stays absent and its own model decides whether
+    that is valid.
+
+    Per-turn authority (PC-C8 §6) merges the same way from a different trusted source: a field
+    marked :data:`~clue_api.turn_binding.TRUSTED_TURN_FIELD` is served from ``captured_turn``, the
+    binding compiled from this turn's own artifact and capture record. A tool that declares such a
+    field and reaches an execution with no binding is refused here rather than executed against
+    whatever the model happened to send — which is the point: a forged or foreign
+    ``onboarding_input_id`` has no path into the call.
+    """
+
+    merged = dict(arguments)
+    supplied = MODEL_FORBIDDEN_AUTHORITY_KEYS & set(merged)
+    if supplied:
+        # Defence in depth: PlanToolStep already refuses these keys.
+        raise ValueError(f"plan arguments carry trusted authority: {sorted(supplied)}")
+    turn_fields = trusted_turn_fields(input_model)
+    proposed_turn = set(turn_fields) & set(merged)
+    if proposed_turn:
+        raise ValueError(f"plan arguments carry trusted turn authority: {sorted(proposed_turn)}")
+    authority = _trusted_authority(constitution)
+    for key in MODEL_FORBIDDEN_AUTHORITY_KEYS & set(input_model.model_fields):
+        value = authority.get(key)
+        if value is not None:
+            merged[key] = value
+    for key in turn_fields:
+        if captured_turn is None:
+            raise CapturedTurnUnavailable(
+                f"{key!r} is served from this turn's captured input, which is unavailable",
+                reason_code="no_binding",
+            )
+        merged[key] = captured_turn.value_for(key)
+    return merged
+
+
 def _plan_graph_and_parameters(
     *,
     plan: AgentPlan,
     tools: ToolRegistry,
     slot: InteractionSlotView,
+    arguments: Mapping[str, Mapping[str, JsonValue]],
+    pin_requests: Mapping[str, tuple[PinRequest, ...]] = MappingProxyType({}),
 ) -> tuple[RecipeGraph, dict[str, JsonValue], dict[str, object]]:
-    """Translate the full proposal into C5's closed graph/binding language."""
+    """Translate the full proposal into C5's closed graph/binding language.
+
+    ``pin_requests`` carries the per-step artifact-level pins already resolved for this plan, and
+    they are attached to each ``ToolNode.requirements`` — the same field a recipe's own step pins
+    land on. ``validate_graph`` reads exactly that field when it checks a descriptor's
+    ``pin_requirements``, so a tool whose per-turn pins are dynamic (Stage-0's
+    ``record_interview_answer`` needs an ``artifact_input`` derived from its own arguments) is
+    reviewed against the pins it will actually execute with, not against an empty set.
+    """
 
     nodes: list[ToolNode | BarrierNode] = []
     parameters: dict[str, JsonValue] = {}
@@ -190,7 +315,8 @@ def _plan_graph_and_parameters(
             )
             continue
         descriptor = tools.descriptor(step.tool.name, step.tool.version)
-        validated = descriptor.input_model.model_validate(step.arguments).model_dump(mode="json")
+        step_arguments = arguments[step.node_key]
+        validated = descriptor.input_model.model_validate(step_arguments).model_dump(mode="json")
         input_schema = descriptor.input_model.model_json_schema()
         input_properties = input_schema.get("properties", {})
         if not isinstance(input_properties, Mapping):
@@ -222,6 +348,7 @@ def _plan_graph_and_parameters(
                 input_schema_sha256=step.tool.input_schema_sha256,
                 output_schema_sha256=step.tool.output_schema_sha256,
                 bindings=bindings,
+                requirements=tuple(pin_requests.get(step.node_key, ())),
             )
         )
     parameter_schema: dict[str, object] = {
@@ -1087,6 +1214,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         checkpointer_factory: CheckpointerFactory,
         pin_provider: StepPinProvider | None = None,
         delegation: DbAgentDelegationRuntime | None = None,
+        captured_turn: CapturedTurnSource | None = None,
         crash_hook: AgentExecutionCrashHook = _DEFAULT_CRASH_HOOK,
         conn_factory: ConnFactory = transaction,
     ) -> None:
@@ -1103,11 +1231,28 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         self._checkpointer_factory = checkpointer_factory
         self._pin_provider = pin_provider
         self._delegation = delegation
+        self._captured_turn = captured_turn
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
         self._validated: dict[UUID, ValidatedPlan] = {}
         self._proposals: dict[UUID, AgentPlan] = {}
         self._pin_requests: dict[UUID, dict[str, tuple[PinRequest, ...]]] = {}
+
+    async def _resolve_captured_turn(self) -> CapturedTurn:
+        """Serve this turn's binding, or refuse loudly enough for the model to see it.
+
+        The refusal is a ``ValueError`` on purpose: the caller turns it into a
+        ``turn_binding_unavailable`` plan issue, so a step needing turn authority on an execution
+        that has none is rejected with visible feedback instead of running unbound.
+        """
+
+        if self._captured_turn is None:
+            raise CapturedTurnUnavailable(
+                "this execution carries no captured-turn binding, so the platform cannot supply "
+                "the turn's captured input, artifact, or body",
+                reason_code="no_binding",
+            )
+        return await self._captured_turn.captured_turn()
 
     async def validate_plan(
         self,
@@ -1151,6 +1296,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 )
             )
         effective = {pin.address for pin in self._resolved_profile.profile.tools}
+        # Model-proposed arguments carry model-controlled fields only; the authority a tool body
+        # declares is merged in here, from the bound constitution, before anything validates or
+        # executes. Every later use of a step's inputs reads this one merged mapping.
+        trusted_arguments: dict[str, dict[str, JsonValue]] = {}
         for ordinal, step in enumerate(plan.steps):
             if not isinstance(step, PlanToolStep):
                 continue
@@ -1165,6 +1314,21 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                     )
                 )
             if step.tool.address not in effective:
+                # Skipping without an issue would retain the step while leaving it out of
+                # ``trusted_arguments``, and the later unguarded lookups (graph compilation, cost
+                # estimation) key straight off ``plan.steps``. ``review_agent_plan`` happens to
+                # refuse this same shape upstream, but that is a second, independently-editable
+                # authority: this loop states its own precondition so the invariant "every
+                # retained tool step has trusted arguments" holds here, not by inheritance.
+                issues.append(
+                    _agent_issue(
+                        GraphIssue(
+                            "tool_not_effective",
+                            f"plan.steps[{ordinal}].tool",
+                            f"{step.tool.address} is not an effective tool of the bound profile",
+                        )
+                    )
+                )
                 continue
             descriptor = self._tools.descriptor(step.tool.name, step.tool.version)
             if (
@@ -1182,7 +1346,32 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 )
                 continue
             try:
-                descriptor.input_model.model_validate(step.arguments)
+                merged = _trusted_tool_arguments(
+                    arguments=step.arguments,
+                    input_model=descriptor.input_model,
+                    constitution=constitution,
+                    captured_turn=(
+                        await self._resolve_captured_turn()
+                        if trusted_turn_fields(descriptor.input_model)
+                        else None
+                    ),
+                )
+                descriptor.input_model.model_validate(merged)
+            except CapturedTurnUnavailable as exc:
+                # Attribution matters: this step is unrunnable because the *platform* cannot bind
+                # the turn, not because the model's arguments are wrong. Reporting it as
+                # ``tool_input_invalid`` on ``.arguments`` sends the model into a repair loop over
+                # arguments it did not get wrong and cannot fix. Same fail-closed outcome, honest
+                # cause — and the location names the step, not the model's proposal.
+                issues.append(
+                    _agent_issue(
+                        GraphIssue(
+                            "turn_binding_unavailable",
+                            f"plan.steps[{ordinal}]",
+                            str(exc),
+                        )
+                    )
+                )
             except Exception as exc:
                 issues.append(
                     _agent_issue(
@@ -1193,37 +1382,18 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                         )
                     )
                 )
+            else:
+                trusted_arguments[step.node_key] = merged
         if issues:
             from clue_agents import AgentPlanReview
 
             raise AgentPlanRejected(review.model_copy(update={"issues": tuple(issues)}))
 
-        graph, _, parameter_schema = _plan_graph_and_parameters(
-            plan=plan,
-            tools=self._tools,
-            slot=slot,
-        )
-        graph_review = validate_graph(
-            graph,
-            parameter_schema=parameter_schema,
-            tool_catalog=self._tools,
-            max_nodes=self._policy.max_nodes,
-            max_depth=self._policy.max_dependency_depth,
-            max_fanout=self._policy.max_fanout,
-            execution_requirements=slot.requirements,
-        )
-        if not graph_review.valid:
-            from clue_agents import AgentPlanReview
-
-            raise AgentPlanRejected(
-                AgentPlanReview(
-                    proposal_sha256=review.proposal_sha256,
-                    issues=tuple(_agent_issue(item) for item in graph_review.issues),
-                    dependency_depth=review.dependency_depth,
-                    maximum_fanout=review.maximum_fanout,
-                )
-            )
-
+        # Pins are resolved *before* the graph is compiled, because ``validate_graph`` enforces
+        # "every pin kind the descriptor requires is on the node (or execution-wide)" — and for a
+        # governed Stage-0 tool the per-turn kinds (an ``artifact_input`` derived from the step's
+        # own arguments) exist nowhere else. Resolving them afterwards made every such tool
+        # unreachable through the agent path with ``missing_tool_requirement``.
         resolved_pin_requests: dict[str, tuple[PinRequest, ...]] = {}
         if self._pin_provider is not None:
             for step in plan.steps:
@@ -1239,7 +1409,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                             step_id=step.node_key,
                             tool_name=step.tool.name,
                             tool_version=step.tool.version,
-                            input_refs=step.arguments,
+                            # The merged mapping, never ``step.arguments``: pin derivation reads
+                            # authority-injected keys (``project_id``) that the model neither sees
+                            # nor may propose, so the raw proposal silently under-pins.
+                            input_refs=dict(trusted_arguments[step.node_key]),
                             depends_on=step.depends_on,
                         ),
                         ctx=ToolContext(
@@ -1291,6 +1464,34 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                     )
                 resolved_pin_requests[step.node_key] = pins
 
+        graph, _, parameter_schema = _plan_graph_and_parameters(
+            plan=plan,
+            tools=self._tools,
+            slot=slot,
+            arguments=trusted_arguments,
+            pin_requests=resolved_pin_requests,
+        )
+        graph_review = validate_graph(
+            graph,
+            parameter_schema=parameter_schema,
+            tool_catalog=self._tools,
+            max_nodes=self._policy.max_nodes,
+            max_depth=self._policy.max_dependency_depth,
+            max_fanout=self._policy.max_fanout,
+            execution_requirements=slot.requirements,
+        )
+        if not graph_review.valid:
+            from clue_agents import AgentPlanReview
+
+            raise AgentPlanRejected(
+                AgentPlanReview(
+                    proposal_sha256=review.proposal_sha256,
+                    issues=tuple(_agent_issue(item) for item in graph_review.issues),
+                    dependency_depth=review.dependency_depth,
+                    maximum_fanout=review.maximum_fanout,
+                )
+            )
+
         proposal_ref = await self._artifacts.persist_body(
             workspace_id=constitution.workspace_id,
             data=_canonical_bytes(plan),
@@ -1305,7 +1506,9 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         for step in plan.steps:
             if isinstance(step, PlanToolStep):
                 tool = self._tools.get(step.tool.name, step.tool.version)
-                inputs = tool.input_model.model_validate(step.arguments)
+                # The executed body is materialized from this artifact, so it must be the
+                # authority-merged arguments, never the raw model proposal.
+                inputs = tool.input_model.model_validate(trusted_arguments[step.node_key])
                 estimate = tool.estimate(inputs)
                 costs[step.node_key] = int(
                     (Decimal(estimate.cost_cents) * 1000).to_integral_value(rounding=ROUND_CEILING)
@@ -1422,6 +1625,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         by_key = {operation.node_key: operation for operation in plan.operations}
         completed: set[str] = set()
         failed: set[str] = set()
+        failures: list[OperationFailure] = []
         await self._journal.event(
             plan_id=plan.plan_id,
             workspace_id=self._constitution.workspace_id,
@@ -1454,6 +1658,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             for operation, result in zip(batch, results, strict=True):
                 if isinstance(result, BaseException):
                     failed.add(operation.node_key)
+                    failures.append(_operation_failure(operation, result))
                 else:
                     completed.add(operation.node_key)
             yield ExecutionProgress(
@@ -1461,6 +1666,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 status="failed" if failed else "running",
                 completed_node_keys=tuple(sorted(completed)),
                 failed_node_keys=tuple(sorted(failed)),
+                failures=tuple(failures),
             )
             if failed:
                 break

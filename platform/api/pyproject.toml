@@ -17,6 +17,7 @@ dependencies = [
     "clue-agents",
     # app-layer runtime
     "fastapi>=0.138.0",
+    "uvicorn>=0.35.0",
 ]
 
 [build-system]

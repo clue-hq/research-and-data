@@ -17,11 +17,11 @@ Never edit a runtime workspace to change agent behavior.
 
 | Role | System prompt | Progressively disclosed skills | Active profile |
 |---|---|---|---|
-| Head of ABM | `prompts/head-of-abm/v3/SYSTEM.md` | `skills/stage0-interview/v3/SKILL.md` | `profiles/head-of-abm/v3/profile.yaml` |
-| Research specialist | `prompts/research-specialist/v2/SYSTEM.md` | `skills/research-task/v1/SKILL.md` | `profiles/research-specialist/v2/profile.yaml` |
-| Content drafter | `prompts/content-drafter/v2/SYSTEM.md` | `skills/content-exemplar/v1/SKILL.md` | `profiles/content-drafter/v2/profile.yaml` |
-| Reviewer | `prompts/reviewer/v2/SYSTEM.md` | `skills/artifact-review/v1/SKILL.md` | `profiles/reviewer/v2/profile.yaml` |
-| Account research worker | `prompts/account-research/v1/SYSTEM.md` | `skills/account-gap-research/v1/SKILL.md` | `profiles/account-research/v1/profile.yaml` |
+| Head of ABM | `prompts/head-of-abm/v3/SYSTEM.md` | `skills/stage0-interview/v5/SKILL.md` | `profiles/head-of-abm/v7/profile.yaml` |
+| Research specialist | `prompts/research-specialist/v2/SYSTEM.md` | `skills/research-task/v1/SKILL.md` | `profiles/research-specialist/v4/profile.yaml` |
+| Content drafter | `prompts/content-drafter/v2/SYSTEM.md` | `skills/content-exemplar/v1/SKILL.md` | `profiles/content-drafter/v4/profile.yaml` |
+| Reviewer | `prompts/reviewer/v2/SYSTEM.md` | `skills/artifact-review/v1/SKILL.md` | `profiles/reviewer/v4/profile.yaml` |
+| Account research worker | `prompts/account-research/v1/SYSTEM.md` | `skills/account-gap-research/v1/SKILL.md` | `profiles/account-research/v3/profile.yaml` |
 
 The active version selector is
 `platform/api/clue_api/agent_registry_wiring.py::C6_ACTIVE_PROFILE_VERSIONS`. Historical versions

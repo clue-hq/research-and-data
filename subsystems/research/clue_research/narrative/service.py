@@ -160,8 +160,13 @@ class EmitReport(BaseModel):
     refs: tuple[str, ...] = ()
 
 
-def _summary(icp_key: str, tier: str | None, assembled: AssembledHandoff) -> HandoffSummary:
-    """Project an ``(icp_key, tier, AssembledHandoff)`` row to its compact list summary."""
+def _summary(
+    icp_key: str,
+    tier: str | None,
+    product_id: str | None,
+    assembled: AssembledHandoff,
+) -> HandoffSummary:
+    """Project an exact materialized handoff row to its compact list summary."""
     h = assembled.handoff
     version = h.icp_spec_version if h.icp_spec_version is not None else 0
     return HandoffSummary(
@@ -180,7 +185,7 @@ def _summary(icp_key: str, tier: str | None, assembled: AssembledHandoff) -> Han
         coverage_confidence=h.coverage_confidence,
         verification_health=assembled.verification_health,
         assembled_at=h.assembled_at,
-        handoff_ref=handoff_ref_for(h.account_entity_id, version, icp_key),
+        handoff_ref=handoff_ref_for(h.account_entity_id, version, icp_key, product_id),
     )
 
 
@@ -210,6 +215,7 @@ class HandoffService:
         account_entity_id: EntityId,
         icp_spec_version: int,
         icp_key: str = "",
+        product_id: str | None = None,
     ) -> ServedHandoff:
         """Fetch one ``account_handoff`` for ``(workspace_id, account_entity_id, icp_spec_version,
         icp_key)`` including its ``provenance_index`` and ``verification_health``.
@@ -227,6 +233,7 @@ class HandoffService:
                 account_entity_id=account_entity_id,
                 icp_spec_version=icp_spec_version,
                 icp_key=icp_key,
+                product_id=product_id,
             )
             if assembled is None:
                 raise HandoffNotFoundError(
@@ -245,6 +252,7 @@ class HandoffService:
         icp_spec_version: int,
         claim_id: ClaimId,
         icp_key: str = "",
+        product_id: str | None = None,
     ) -> ProvenanceRef:
         """Resolve one value's ``claim_id`` to its full provenance within a served handoff — the
         "every line is sourced" traversal (overview §3, AC1). Raises :class:`HandoffNotFoundError`
@@ -256,6 +264,7 @@ class HandoffService:
             account_entity_id=account_entity_id,
             icp_spec_version=icp_spec_version,
             icp_key=icp_key,
+            product_id=product_id,
         )
         if assembled is None:
             raise HandoffNotFoundError(f"no handoff for account {account_entity_id} in this tenant")
@@ -300,8 +309,8 @@ class HandoffService:
                 conn, workspace_id=workspace_id, project_run_id=project_run_id
             )
             summaries = [
-                _summary(icp_key, row_tier, a)
-                for icp_key, row_tier, a in assembled_rows
+                _summary(icp_key, row_tier, row_product_id, a)
+                for icp_key, row_tier, row_product_id, a in assembled_rows
                 if _passes_filters(a, row_tier, tier, persona, min_verification_pass_rate)
             ]
             return HandoffListPage(
@@ -452,7 +461,7 @@ async def _assemble_materialise_emit(
         icp_spec_version=icp_version,
         icp_key=icp_key,
         workspace_id=workspace_id,
-        handoff_ref=handoff_ref_for(account_entity_id, icp_version, icp_key),
+        handoff_ref=handoff_ref_for(account_entity_id, icp_version, icp_key, product_id),
         schema_version=HANDOFF_SCHEMA_VERSION,
     )
     async with conn_factory() as conn:
@@ -467,7 +476,14 @@ async def _assemble_materialise_emit(
             coverage_confidence=coverage_confidence,
             product_id=product_id,
         )
-        await write_handoff(conn, assembled, workspace_id=workspace_id, icp_key=icp_key, tier=tier)
+        await write_handoff(
+            conn,
+            assembled,
+            workspace_id=workspace_id,
+            icp_key=icp_key,
+            tier=tier,
+            product_id=product_id,
+        )
         was_new = await emit_handoff_event(conn, event)
     return event, was_new
 

@@ -82,8 +82,13 @@ class GatewayConfig(BaseModel):
 
 
 def default_gateway_config() -> GatewayConfig:
-    """Return gateway defaults with deploy-time env overrides (``CLUE_SYNTHESIS_MODEL``, …)."""
+    """Return gateway defaults with deploy-time env overrides (``CLUE_SYNTHESIS_MODEL``,
+    ``CLUE_JUDGE_MODEL``, …)."""
     settings = load_settings()
+    if settings.judge_model:
+        return GatewayConfig(
+            synthesis_model=settings.synthesis_model, judge_model=settings.judge_model
+        )
     return GatewayConfig(synthesis_model=settings.synthesis_model)
 
 

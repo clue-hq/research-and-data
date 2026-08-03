@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -21,6 +21,7 @@ from clue_api.tool_outputs import (
     Stage0OverrideOutput,
     Stage0ReadinessOutput,
 )
+from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_config import DEFAULT_STAGE0_POLICY, Stage0Policy
 from clue_core import (
     AccountEntity,
@@ -48,14 +49,19 @@ from clue_research.durable import (
 )
 from clue_research.icp import get_icp_version
 from clue_research.stage0 import (
+    ClaimEntailmentJudge,
     ClientInput,
+    InterviewClaimEntityRefused,
+    InterviewEvidenceRefused,
     InterviewStatement,
     ReconLaneStatus,
     compile_product_context,
     evaluate_readiness,
     get_onboarding_input,
     get_readiness_decision,
+    judge_interview_values,
     override_readiness,
+    prepare_interview_statements,
     recon_dedupe_hash,
     reverse_profile,
     route_interview_answer,
@@ -78,6 +84,8 @@ from clue_toolbelt import (
     ToolInput,
     ToolResult,
 )
+
+MemoryWriteFactory = Callable[[AsyncConnection], MemoryWriteSeam]
 
 
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
@@ -211,80 +219,316 @@ async def start_confirmed_project_run(
     return project_run_id
 
 
+# NOTE (PC-C8 §6a, tasks 1.3 + 1.4): `brand_id` and `client_entity_id` joined `project_id` in
+# `MODEL_FORBIDDEN_AUTHORITY_KEYS`, so on every input model below they are stripped from the
+# model-visible schema and served from the `AgentConstitution` at the execution seam. They stay
+# declared because the C4 recipe path supplies them directly.
+#
+# Task 1.3 deliberately left their `description` text stale — it is part of `model_json_schema()`
+# and therefore of the tool's pinned `input_schema_sha256`, so rewording it would have forced a
+# second catalog bump for text no model reads. Task 1.4's coordinated bump (skill
+# `stage0-interview/v7`, profile `head-of-abm/v9`) does the reword: all eight descriptions that
+# described a field the model fills now state the same thing `project_id` always did — the
+# platform supplies it. (`confirm_icp`, `import_accounts` and `synthesize_icps` declare
+# `client_entity_id` with no description at all; nothing to reword there, and adding one would
+# move their digests for no model-visible gain.)
+
+
 class SubmitOnboardingInput(ToolInput):
-    brand_id: str
-    kind: OnboardingInputKind
-    artifact_key: str
-    content_sha256: str
-    product_id: str | None = None
-    project_id: str | None = None
-    client_entity_id: str | None = None
-    source_ref: str | None = None
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
+    kind: OnboardingInputKind = Field(
+        description=(
+            "What was captured: a live human turn is `user_turn`, a supplied page is `website`, "
+            "an uploaded file is `upload`."
+        )
+    )
+    artifact_key: str = Field(
+        description=(
+            "Storage key of an artifact already captured in this workspace; an absent or foreign "
+            "key is refused (`artifact_not_found`). Capture happens outside you, so use a key you "
+            "were given rather than inventing one."
+        )
+    )
+    content_sha256: str = Field(
+        description=(
+            "Hex SHA-256 of the exact captured bytes. It is stored immutably and re-checked "
+            "later: `record_interview_answer` refuses an `answer` that does not hash to it."
+        )
+    )
+    product_id: str | None = Field(
+        default=None,
+        description="Confirmed product this input belongs to, when the project has one.",
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
+    client_entity_id: str | None = Field(
+        default=None,
+        description="Trusted client-entity authority; supplied by the platform, never by you.",
+    )
+    source_ref: str | None = Field(
+        default=None,
+        description="Where the input came from (URL, filename, or channel), for the audit trail.",
+    )
 
 
 class StartReconInput(ToolInput):
-    brand_id: str
-    name: str
-    website: str
-    onboarding_input_ids: list[str]
-    product_id: str | None = None
-    project_id: str | None = None
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
+    name: str = Field(
+        description="Client company name exactly as the human gave it; not an expansion of yours."
+    )
+    website: str = Field(
+        description=(
+            "The client's official website URL. Recon reads official surfaces only, so a guessed "
+            "domain produces wrong Client-KB claims rather than an error."
+        )
+    )
+    onboarding_input_ids: list[str] = Field(
+        description=(
+            "At least one onboarding input id captured in this workspace; an empty list, a "
+            "malformed id, or a foreign id is refused (`onboarding_input_not_found`). These pin "
+            "the captured evidence this recon is grounded in."
+        )
+    )
+    product_id: str | None = Field(
+        default=None, description="Confirmed product this recon profiles for, when one exists."
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class RecordInterviewAnswerInput(ToolInput):
-    brand_id: str
-    onboarding_input_id: str
-    artifact_key: str
-    answer: str
-    client_entity_id: str
-    statements: list[InterviewStatement]
-    product_id: str | None = None
-    project_id: str | None = None
+    """Route one captured turn. The model classifies; the platform supplies the turn itself.
+
+    ``onboarding_input_id``, ``artifact_key`` and ``answer`` are trusted turn authority (PC-C8
+    §6a): they are stripped from the model-visible schema and served at the execution seam from
+    the binding compiled off this turn's own artifact and capture record
+    (:mod:`clue_api.turn_binding`). They stay declared here because the C4 recipe path supplies
+    them directly — only the *agent* surface loses them.
+    """
+
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
+    onboarding_input_id: str = Field(
+        json_schema_extra={TRUSTED_TURN_FIELD: True},
+        description=(
+            "The onboarding input that captured this turn. Trusted turn authority: supplied by "
+            "the platform from the captured turn, never by you. It must exist in this workspace "
+            "and carry the same `artifact_key`."
+        ),
+    )
+    artifact_key: str = Field(
+        json_schema_extra={TRUSTED_TURN_FIELD: True},
+        description=(
+            "Artifact key of that captured turn — the same key the onboarding input carries. "
+            "Trusted turn authority: supplied by the platform, never by you."
+        ),
+    )
+    answer: str = Field(
+        json_schema_extra={TRUSTED_TURN_FIELD: True},
+        description=(
+            "The captured user message, byte-identical. Trusted turn authority: the platform "
+            "loads these exact bytes from the captured artifact and verifies their SHA-256 "
+            "against the onboarding input's `content_sha256`, so there is nothing here for you "
+            "to retype. Every statement's quote offsets index into this exact string."
+        ),
+    )
+    client_entity_id: str = Field(
+        description="Trusted client-entity authority; supplied by the platform, never by you."
+    )
+    statements: list[InterviewStatement] = Field(
+        description=(
+            "One statement per material fact, preference, or project decision in the answer, each "
+            "carrying its own exact quote offsets. A turn with nothing material is routed as one "
+            "`unmapped` statement — routing nothing is never the honest answer."
+        )
+    )
+    product_id: str | None = Field(
+        default=None, description="Confirmed product this answer is about, when one exists."
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class ConfirmProjectProductInput(ToolInput):
-    project_id: str
-    product_id: str
+    project_id: str = Field(
+        description="Project whose product is being confirmed; human-only (`human_required`)."
+    )
+    product_id: str = Field(
+        description=(
+            "Product to bind to the project; both must exist in this workspace and share one "
+            "brand. The binding is immutable once made."
+        )
+    )
 
 
 class EvaluateStage0ReadinessInput(ToolInput):
-    brand_id: str
-    gate: ReadinessGate
-    metrics: dict[str, JsonValue]
-    product_id: str | None = None
-    project_id: str | None = None
-    client_entity_id: str | None = None
-    client_kb_version: int | None = None
-    icp_key: str | None = None
-    icp_version: int | None = None
-    product_context_version_id: str | None = None
-    claim_refs: list[str] = []
-    memory_refs: list[str] = []
-    artifact_refs: list[str] = []
-    gap_refs: list[dict[str, JsonValue]] = []
-    field_proposal_refs: list[str] = []
-    source_proposal_refs: list[str] = []
-    ingestion_refs: list[str] = []
-    agent_sufficiency_status: str = "not_evaluated"
-    agent_sufficiency_ref: str | None = None
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
+    gate: ReadinessGate = Field(
+        description=(
+            "Which floor to evaluate. `start_confirmed_project_run` accepts only a "
+            "`discovery_spend` decision."
+        )
+    )
+    metrics: dict[str, JsonValue] = Field(
+        description=(
+            "Measured evidence, never estimates. The floor reads exactly `coverage_ratio` "
+            "(number), `verified_claims` (integer), `open_policy_blocks` (integer), and "
+            "`available_field_keys` (list of registered field keys); an absent key counts as "
+            "zero/empty. A number you inflate records a false readiness decision — it does not "
+            "make the gate pass honestly."
+        )
+    )
+    product_id: str | None = Field(
+        default=None,
+        description=(
+            "Confirmed product. Gates that require a product report `product_not_confirmed` "
+            "while this is absent."
+        ),
+    )
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
+    client_entity_id: str | None = Field(
+        default=None,
+        description="Trusted client-entity authority; supplied by the platform, never by you.",
+    )
+    client_kb_version: int | None = Field(
+        default=None,
+        description=(
+            "Client-KB version the decision is made against; part of the lineage a confirmed run "
+            "re-checks, so pin the version you actually read."
+        ),
+    )
+    icp_key: str | None = Field(
+        default=None,
+        description=(
+            "Confirmed ICP key. Gates that require an ICP report `icp_not_confirmed` while this "
+            "or `icp_version` is absent."
+        ),
+    )
+    icp_version: int | None = Field(
+        default=None, description="Confirmed ICP version that goes with `icp_key`."
+    )
+    product_context_version_id: str | None = Field(
+        default=None,
+        description=(
+            "Existing compiled product-context version. Leave it out to compile a new one from "
+            "the refs below (needs product, client entity, and Client-KB version)."
+        ),
+    )
+    claim_refs: list[str] = Field(
+        default=[],
+        description="Claim ids that evidence this readiness; compiled into the product context.",
+    )
+    memory_refs: list[str] = Field(
+        default=[],
+        description="Memory ids that inform this readiness; compiled into the product context.",
+    )
+    artifact_refs: list[str] = Field(
+        default=[],
+        description="Artifact keys backing this readiness; compiled into the product context.",
+    )
+    gap_refs: list[dict[str, JsonValue]] = Field(
+        default=[],
+        description="Named open gaps recorded on the decision; they do not change the verdict.",
+    )
+    field_proposal_refs: list[str] = Field(
+        default=[],
+        description="Open `propose_field` references; a proposal grants no promotion authority.",
+    )
+    source_proposal_refs: list[str] = Field(
+        default=[],
+        description="Open `propose_source` references; a proposal grants no trust authority.",
+    )
+    ingestion_refs: list[str] = Field(
+        default=[], description="`submit_ingestion` references recorded on this decision."
+    )
+    agent_sufficiency_status: str = Field(
+        default="not_evaluated",
+        description=(
+            "Your advisory judgment: `not_evaluated`, `sufficient`, or `insufficient`. Advisory "
+            "only — `insufficient` adds a not-ready reason, but this field can never turn a "
+            "failing deterministic floor into ready."
+        ),
+    )
+    agent_sufficiency_ref: str | None = Field(
+        default=None, description="Reference backing that advisory judgment, when you have one."
+    )
 
 
 class OverrideStage0ReadinessInput(ToolInput):
-    readiness_decision_id: str
-    gate: ReadinessGate
-    reason: str
+    readiness_decision_id: str = Field(
+        description=(
+            "The not-ready decision being overridden; it must exist in this workspace. Human-only "
+            "(`human_required`)."
+        )
+    )
+    gate: ReadinessGate = Field(
+        description="Gate of that decision; a mismatch is refused (`readiness_not_found`)."
+    )
+    reason: str = Field(
+        description="The human's durable justification for proceeding without a ready verdict."
+    )
 
 
 class StartConfirmedProjectRunInput(ToolInput):
-    project_id: str
-    client_entity_id: str
-    client_kb_version: int
-    product_id: str
-    product_context_version_id: str
-    readiness_decision_id: str
-    icp_key: str
-    icp_version: int
-    budget_cap_cents: int | None = None
+    project_id: str = Field(
+        description="Trusted project authority; supplied by the platform, never by you."
+    )
+    client_entity_id: str = Field(
+        description="Trusted client-entity authority; supplied by the platform, never by you."
+    )
+    client_kb_version: int = Field(
+        description=(
+            "Client-KB version of that lineage; the ICP, product context, and readiness decision "
+            "must all carry this exact version."
+        )
+    )
+    product_id: str = Field(
+        description=(
+            "Confirmed product; the project must already carry it (a human confirms it through "
+            "`confirm_project_product`)."
+        )
+    )
+    product_context_version_id: str = Field(
+        description=(
+            "Compiled product-context version carrying this brand, product, client entity, and "
+            "Client-KB version; a context outside that lineage is refused."
+        )
+    )
+    readiness_decision_id: str = Field(
+        description=(
+            "A `discovery_spend` readiness decision pinning this exact lineage whose verdict is "
+            "ready, or which carries a durable human override. Anything else is refused — report "
+            "the refusal rather than restating the call."
+        )
+    )
+    icp_key: str = Field(
+        description=(
+            "Confirmed ICP key whose spec carries this client entity, Client-KB version, and "
+            "product; an ICP outside that lineage is refused."
+        )
+    )
+    icp_version: int = Field(
+        description="Confirmed ICP version that goes with `icp_key`, in the same lineage."
+    )
+    budget_cap_cents: int | None = Field(
+        default=None, description="Optional hard spend cap, in cents, for the whole run."
+    )
 
 
 class _Stage0Tool(Tool):
@@ -295,17 +539,21 @@ class _Stage0Tool(Tool):
         policy: Stage0Policy = DEFAULT_STAGE0_POLICY,
         pre_spend_gate: PreSpendGate,
         memory_write: MemoryWriteSeam | None = None,
+        memory_write_factory: MemoryWriteFactory | None = None,
         scrape_binder: Callable[[AccountEntity], None] | None = None,
         storage: StorageBackend | None = None,
         project_execution_router: ProjectExecutionRouter | None = None,
+        entailment_judge: ClaimEntailmentJudge | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._policy = policy
         self._pre_spend_gate = pre_spend_gate
         self._memory_write = memory_write
+        self._memory_write_factory = memory_write_factory
         self._scrape_binder = scrape_binder
         self._storage = storage
         self._project_execution_router = project_execution_router
+        self._entailment_judge = entailment_judge
 
     async def _project_audit_snapshot(self, project_id: str, ctx: ToolContext) -> dict[str, object]:
         async with self._conn_factory() as conn:
@@ -648,11 +896,13 @@ class RecordInterviewAnswerTool(_Stage0Tool):
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
     )
     effect_class = ToolEffectClass.SPEND
+    # The turn-authority fields are deliberately absent: a journal display is a summary of what
+    # the *caller* asked for, and since PC-C8 §6a nothing about the turn's identity is asked for —
+    # it is served from the binding. The durable receipt still carries them in the full validated
+    # body; they just stop being displayed as if the caller had chosen them.
     parameter_policy = JournalParameterPolicy(
         safe_display_fields=(
             "brand_id",
-            "onboarding_input_id",
-            "artifact_key",
             "client_entity_id",
             "product_id",
             "project_id",
@@ -693,16 +943,47 @@ class RecordInterviewAnswerTool(_Stage0Tool):
         if (
             any(statement.route.value == "memory" for statement in inputs.statements)
             and self._memory_write is None
+            and self._memory_write_factory is None
         ):
             return _failure(
                 "memory_not_configured",
                 "memory-routed interview statements require the MemoryWriteSeam",
             )
+        # PC-C8 §8 (B1 layer 2) + §6c: every statement's evidence is located, its entity resolved,
+        # and its value vouched for before any write — through the *same* function the routing
+        # engine runs as its own pass one. That turns what used to be a silent tier downgrade (and,
+        # since §6c, a mid-write `ValueError`) into a typed refusal the model can read and act on;
+        # `route_interview_answer` still runs the pass independently, so the guarantee does not
+        # depend on this precondition being called, and the judge's content-addressed cache means
+        # the second run asks no second question.
+        try:
+            async with self._conn_factory() as conn:
+                prepared = await prepare_interview_statements(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    answer=inputs.answer,
+                    statements=tuple(inputs.statements),
+                    client_entity_id=EntityId(client_uuid),
+                )
+            # Outside the connection scope on purpose: the entailment judge makes a (synchronous,
+            # multi-second) gateway call, and no pooled transaction stays open across it.
+            await judge_interview_values(
+                prepared,
+                workspace_id=ctx.workspace_id,
+                entailment_judge=self._entailment_judge,
+            )
+        except (InterviewClaimEntityRefused, InterviewEvidenceRefused) as exc:
+            return _failure(exc.reason_code, str(exc))
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, RecordInterviewAnswerInput)
         async with self._conn_factory() as conn:
+            memory_write = (
+                self._memory_write_factory(conn)
+                if self._memory_write_factory is not None
+                else self._memory_write
+            )
             result = await route_interview_answer(
                 conn,
                 workspace_id=ctx.workspace_id,
@@ -715,7 +996,8 @@ class RecordInterviewAnswerTool(_Stage0Tool):
                 answer=inputs.answer,
                 statements=tuple(inputs.statements),
                 actor=ctx.actor,
-                memory_write=self._memory_write,
+                memory_write=memory_write,
+                entailment_judge=self._entailment_judge,
                 run_id=RunId(ctx.operation_id),
             )
         return ToolResult(
@@ -824,6 +1106,19 @@ class EvaluateStage0ReadinessTool(_Stage0Tool):
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        """Evaluate one gate, compiling the product context first when the lineage is complete.
+
+        **Behavior change, PC-C8 task 1.3.** ``client_entity_id`` used to be optional *in practice*
+        as well as in the schema: the model filled it, and a model that omitted it fell through to
+        the no-context branch. It is now engine-injected from the constitution on every agent call,
+        so whenever ``product_id`` and ``client_kb_version`` are also present the
+        ``compile_product_context`` branch below runs where it previously often did not. That is
+        the correct direction — a readiness decision that *could* pin a product-context version and
+        silently did not was under-evidenced — but it is a real change in what this tool does per
+        call, and it costs one extra compile+write. The C4 recipe path is unaffected: it supplied
+        the id already.
+        """
+
         assert isinstance(inputs, EvaluateStage0ReadinessInput)
         client_uuid = _uuid(inputs.client_entity_id) if inputs.client_entity_id else None
         context_uuid = (
@@ -1039,7 +1334,9 @@ def stage0_tools(
     memory_write: MemoryWriteSeam | None,
     scrape_binder: Callable[[AccountEntity], None] | None,
     storage: StorageBackend | None,
+    memory_write_factory: MemoryWriteFactory | None = None,
     project_execution_router: ProjectExecutionRouter | None = None,
+    entailment_judge: ClaimEntailmentJudge | None = None,
 ) -> tuple[Tool, ...]:
     def make(tool_type: type[_Stage0Tool]) -> _Stage0Tool:
         return tool_type(
@@ -1047,9 +1344,11 @@ def stage0_tools(
             policy=policy,
             pre_spend_gate=pre_spend_gate,
             memory_write=memory_write,
+            memory_write_factory=memory_write_factory,
             scrape_binder=scrape_binder,
             storage=storage,
             project_execution_router=project_execution_router,
+            entailment_judge=entailment_judge,
         )
 
     return (

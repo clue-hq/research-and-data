@@ -5,16 +5,29 @@ from decimal import Decimal
 from typing import Any
 
 import httpx
+import pytest
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from clue_config.gateway import GatewayConfig, ModelPrice
 from clue_gateway import OpenRouterAgentModelProvider
-from clue_gateway.agent_model import GovernedAgentChatModel
+from clue_gateway.agent_model import (
+    GovernedAgentChatModel,
+    provider_compatible_tool_schema,
+    unsupported_schema_pattern,
+)
 from clue_obs.otel import SPAN_LLM_GATEWAY_CALL, collect_spans
+from clue_research.proposals.models import SourceManifestDraft
 
 
 class ReadProjectInput(BaseModel):
@@ -64,42 +77,60 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     requests: list[dict[str, Any]] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://openrouter.ai/api/v1/chat/completions"
+        assert request.url == "https://openrouter.ai/api/v1/responses"
         assert request.headers["authorization"] == "Bearer test-openrouter-key"
         payload = json.loads(request.content)
         requests.append(payload)
+        has_tool_output = any(
+            item.get("type") == "function_call_output" for item in payload["input"]
+        )
+        output = (
+            [
+                {
+                    "id": "msg-c6-complete",
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "project read",
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ]
+            if has_tool_output
+            else [
+                {
+                    "id": "fc-c6-spike",
+                    "type": "function_call",
+                    "call_id": "call-read-project",
+                    "name": "ReadProjectInput",
+                    "arguments": '{"project_id":"project-1"}',
+                    "status": "completed",
+                }
+            ]
+        )
         return httpx.Response(
             200,
             json={
-                "id": "gen-c6-spike",
-                "object": "chat.completion",
-                "created": 1_775_000_000,
-                "model": "openai/gpt-4.1",
-                "choices": [
-                    {
-                        "index": 0,
-                        "finish_reason": "tool_calls",
-                        "message": {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": "call-read-project",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "ReadProjectInput",
-                                        "arguments": '{"project_id":"project-1"}',
-                                    },
-                                }
-                            ],
-                        },
-                    }
-                ],
+                "id": "resp-c6-spike",
+                "object": "response",
+                "created_at": 1_775_000_000,
+                "model": "openai/gpt-5.6-terra",
+                "output": output,
+                "parallel_tool_calls": True,
+                "tool_choice": "auto",
+                "tools": [],
                 "usage": {
-                    "prompt_tokens": 11,
-                    "completion_tokens": 7,
+                    "input_tokens": 11,
+                    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                    "output_tokens": 7,
+                    "output_tokens_details": {"reasoning_tokens": 0},
                     "total_tokens": 18,
                 },
+                "status": "completed",
             },
             request=request,
         )
@@ -111,7 +142,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
         timeout_s=30,
         max_retries=2,
         prices={
-            "openai/gpt-4.1": ModelPrice(
+            "openai/gpt-5.6-terra": ModelPrice(
                 prompt_cents_per_1k=Decimal(1),
                 completion_cents_per_1k=Decimal(2),
             )
@@ -124,7 +155,7 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
         http_async_client=async_client,
     )
     model = provider.build(
-        model_id="openai/gpt-4.1",
+        model_id="openai/gpt-5.6-terra",
         timeout_s=10,
         max_retries=1,
         max_output_tokens=1_024,
@@ -146,32 +177,56 @@ def test_openrouter_agent_model_parses_standard_tool_calls_offline() -> None:
     assert response.usage_metadata is not None
     assert response.usage_metadata["input_tokens"] == 11
     assert response.usage_metadata["output_tokens"] == 7
-    assert response.response_metadata["clue_requested_model"] == "openai/gpt-4.1"
-    assert response.response_metadata["clue_answering_model"] == "openai/gpt-4.1"
+    assert response.response_metadata["clue_requested_model"] == "openai/gpt-5.6-terra"
+    assert response.response_metadata["clue_answering_model"] == "openai/gpt-5.6-terra"
     assert response.response_metadata["clue_cost_cents"] == "0.025"
     spans = exporter.get_finished_spans()
     assert [span.name for span in spans] == [SPAN_LLM_GATEWAY_CALL]
     assert spans[0].attributes is not None
     assert spans[0].attributes["prompt_tokens"] == 11
     assert spans[0].attributes["completion_tokens"] == 7
-    assert requests[0]["model"] == "openai/gpt-4.1"
-    assert requests[0]["max_completion_tokens"] == 1_024
-    assert requests[0]["tools"][0]["function"]["name"] == "ReadProjectInput"
+    assert requests[0]["model"] == "openai/gpt-5.6-terra"
+    assert requests[0]["reasoning"] == {"effort": "none"}
+    assert requests[0]["max_output_tokens"] == 1_024
+    assert "messages" not in requests[0]
+    assert "max_completion_tokens" not in requests[0]
+    assert requests[0]["input"][0]["type"] == "message"
+    assert requests[0]["tools"][0]["type"] == "function"
+    assert requests[0]["tools"][0]["name"] == "ReadProjectInput"
 
     async def invoke_async() -> None:
-        async_response = await bound.ainvoke("Read the project asynchronously.")
-        assert async_response.tool_calls[0]["name"] == "ReadProjectInput"
+        async_response = await bound.ainvoke(
+            [
+                HumanMessage(content="Read the project."),
+                response,
+                ToolMessage(content='{"name":"Project One"}', tool_call_id="call-read-project"),
+            ]
+        )
+        assert async_response.text == "project read"
 
     import asyncio
 
     asyncio.run(invoke_async())
     assert len(requests) == 2
+    assert "previous_response_id" not in requests[1]
+    assert [item["type"] for item in requests[1]["input"]] == [
+        "message",
+        "function_call",
+        "function_call_output",
+    ]
+    assert requests[1]["input"][1]["call_id"] == "call-read-project"
+    assert requests[1]["input"][2] == {
+        "type": "function_call_output",
+        "output": '{"name":"Project One"}',
+        "call_id": "call-read-project",
+    }
 
 
 def test_openrouter_agent_model_falls_back_and_records_answering_model() -> None:
     requested_models: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://openrouter.ai/api/v1/responses"
         payload = json.loads(request.content)
         model = payload["model"]
         requested_models.append(model)
@@ -180,22 +235,36 @@ def test_openrouter_agent_model_falls_back_and_records_answering_model() -> None
         return httpx.Response(
             200,
             json={
-                "id": "gen-fallback",
-                "object": "chat.completion",
-                "created": 1_775_000_000,
+                "id": "resp-fallback",
+                "object": "response",
+                "created_at": 1_775_000_000,
                 "model": "fallback/model",
-                "choices": [
+                "output": [
                     {
-                        "index": 0,
-                        "finish_reason": "stop",
-                        "message": {"role": "assistant", "content": "fallback answer"},
+                        "id": "msg-fallback",
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "fallback answer",
+                                "annotations": [],
+                            }
+                        ],
                     }
                 ],
+                "parallel_tool_calls": True,
+                "tool_choice": "auto",
+                "tools": [],
                 "usage": {
-                    "prompt_tokens": 4,
-                    "completion_tokens": 2,
+                    "input_tokens": 4,
+                    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                    "output_tokens": 2,
+                    "output_tokens_details": {"reasoning_tokens": 0},
                     "total_tokens": 6,
                 },
+                "status": "completed",
             },
             request=request,
         )
@@ -224,7 +293,7 @@ def test_openrouter_agent_model_falls_back_and_records_answering_model() -> None
     response = model.invoke("Use the fallback.")
 
     assert requested_models == ["primary/model", "fallback/model"]
-    assert response.content == "fallback answer"
+    assert response.text == "fallback answer"
     assert response.response_metadata["clue_requested_model"] == "primary/model"
     assert response.response_metadata["clue_answering_model"] == "fallback/model"
 
@@ -290,3 +359,109 @@ def test_agent_model_policy_cannot_exceed_gateway_timeout_or_retries() -> None:
         assert "retries" in str(exc)
     else:
         raise AssertionError("retry escalation must fail")
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$",
+        r"^(?=.*a).*$",
+        r"(?<=x)y",
+        r"(?<!x)y",
+        r"(\w+)\s+\1",
+    ],
+)
+def test_unsupported_schema_pattern_flags_lookaround_and_backreferences(pattern: str) -> None:
+    assert unsupported_schema_pattern(pattern) is True
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"^[a-z][a-z0-9_]*$",
+        r"^\d{4}-\d{2}-\d{2}$",
+        r"^(alpha|beta)$",
+    ],
+)
+def test_supported_schema_patterns_are_kept(pattern: str) -> None:
+    assert unsupported_schema_pattern(pattern) is False
+
+
+def test_provider_compatible_tool_schema_drops_only_unsupported_patterns() -> None:
+    schema = {
+        "type": "function",
+        "function": {
+            "name": "example",
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "amount": {
+                        "anyOf": [
+                            {"type": "number", "minimum": 0.0},
+                            {"type": "string", "pattern": r"^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$"},
+                        ],
+                        "title": "Amount",
+                    },
+                    "slug": {"type": "string", "pattern": r"^[a-z][a-z0-9_]*$"},
+                    "pattern": {"type": "string"},
+                },
+                "required": ["amount", "slug"],
+            },
+        },
+    }
+
+    transformed = provider_compatible_tool_schema(schema)
+
+    assert transformed == {
+        "type": "function",
+        "function": {
+            "name": "example",
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "amount": {
+                        "anyOf": [
+                            {"type": "number", "minimum": 0.0},
+                            {"type": "string"},
+                        ],
+                        "title": "Amount",
+                    },
+                    "slug": {"type": "string", "pattern": r"^[a-z][a-z0-9_]*$"},
+                    "pattern": {"type": "string"},
+                },
+                "required": ["amount", "slug"],
+            },
+        },
+    }
+
+
+def test_decimal_tool_schema_loses_lookahead_while_local_validation_still_rejects_negatives() -> (
+    None
+):
+    raw = json.dumps(convert_to_openai_tool(SourceManifestDraft))
+    assert "(?!" in raw
+
+    model = GovernedAgentChatModel(
+        models=(StreamingChatModel(),),
+        model_ids=("served/streaming-model",),
+        requested_model="requested/model",
+        gateway_config=GatewayConfig(),
+    )
+    bound = model.bind_tools([SourceManifestDraft])
+
+    emitted = json.dumps(bound.kwargs["tools"])
+    assert "(?!" not in emitted
+    assert '"cost_cents"' in emitted
+
+    payload = {
+        "source_key": "example_source",
+        "modality": "text",
+        "entity_scope": "account",
+    }
+    assert SourceManifestDraft.model_validate({**payload, "cost_cents": "1.5"}).cost_cents == (
+        Decimal("1.5")
+    )
+    with pytest.raises(ValidationError):
+        SourceManifestDraft.model_validate({**payload, "cost_cents": "-1"})

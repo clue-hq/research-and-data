@@ -172,12 +172,22 @@ class FieldProposalOutput(ToolOutput):
     field_proposal_id: str
     field_key: str
     status: str
+    materialization_id: str | None = None
+    materialization_status: str | None = None
+    claim_ref: str | None = None
+    client_kb_version: int | None = None
+    refusal_code: str | None = None
 
 
 class FieldProposalDecisionOutput(ToolOutput):
     field_proposal_id: str
     status: str
     applied_field_key: str | None
+    materialization_id: str | None = None
+    materialization_status: str | None = None
+    claim_ref: str | None = None
+    client_kb_version: int | None = None
+    refusal_code: str | None = None
 
 
 class SourceProposalOutput(ToolOutput):
@@ -239,6 +249,47 @@ class Stage0ReadinessOutput(ToolOutput):
     verdict: str
     spec_version: int
     product_context_version_id: str | None
+
+
+class StatementHistoryOutput(ToolOutput):
+    """PC-C8 §7 — one bounded page of interview history.
+
+    ``returned <= page_size`` always, and every reduction is named. A row whose words could not be
+    read carries ``quote_excluded_reason`` and a null ``quoted_text``; the tool never substitutes
+    text it did not verify.
+
+    ``total_matching`` is how many rows the selector matched — and is **null for the
+    ``excluded_statement_evidence`` view**, where the total is genuinely unknown without resolving
+    evidence for the entire ledger (the scan that view is bounded to avoid). Reporting the
+    candidate-pool size there would let a caller read a truncated page as a complete one, so the
+    field abstains instead. ``has_more`` + ``next_cursor`` are the complete-traversal contract in
+    every view; ``candidates_scanned`` is how many candidate rows this page examined, which is what
+    the cursor advanced by.
+    """
+
+    project_id: str
+    view: str
+    statements: list[dict[str, object]]
+    page_size: int
+    returned: int
+    total_matching: int | None
+    candidates_scanned: int
+    has_more: bool
+    next_cursor: str | None
+
+
+class ReadinessHistoryOutput(ToolOutput):
+    """PC-C8 §7 — one bounded, override-annotated page of the readiness ledger."""
+
+    project_id: str
+    gate: str | None
+    decisions: list[dict[str, object]]
+    page_size: int
+    returned: int
+    total_matching: int
+    ledger_length: int
+    has_more: bool
+    next_cursor: str | None
 
 
 class Stage0OverrideOutput(ToolOutput):
@@ -317,6 +368,7 @@ __all__ = [
     "ProjectRunStartOutput",
     "ProjectRunStatusOutput",
     "RunControlOutput",
+    "ReadinessHistoryOutput",
     "ReconOutput",
     "RecipeExecutionStartOutput",
     "RecipeExecutionStatusOutput",
@@ -328,6 +380,7 @@ __all__ = [
     "SourceProposalOutput",
     "Stage0OverrideOutput",
     "Stage0ReadinessOutput",
+    "StatementHistoryOutput",
     "SynthesizeIcpsOutput",
     "TierCheckpointOutput",
     "ProjectPhaseAdvanceOutput",

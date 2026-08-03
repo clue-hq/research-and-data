@@ -24,7 +24,7 @@ from tests.api.test_storage_wiring import FakeStorage
 from tests.fleet.conftest import ProcessLocalLockFactory, run_async
 
 from clue_api.run_composition import ComposingRunDriver
-from clue_config import GatewayConfig
+from clue_config import GatewayConfig, load_settings
 from clue_core import ICPCreatedFrom, PhaseContext, ProjectPhase
 from clue_db import db_lifespan, transaction
 from clue_fleet import DbLeaseStore, DbTaskQueue, ProjectRunWorker, enqueue_drive
@@ -130,6 +130,10 @@ def test_composed_worker_drives_reverse_profiling_through_handoff() -> None:
                     return ClientInput(name="Stub Co", website="https://stub.example")
 
                 driver = ComposingRunDriver(
+                    settings=load_settings(
+                        c7_production_handoff_enabled=True,
+                        _env_file=None,
+                    ),
                     gateway=build_gateway(GatewayConfig(stub=True)),
                     storage=FakeStorage(),  # type: ignore[arg-type]
                     lock_factory=ProcessLocalLockFactory(),  # process-local single-flight, no redis

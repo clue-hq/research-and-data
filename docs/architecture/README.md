@@ -62,7 +62,7 @@ Doc S end-to-end → the substrate doc a task touches → Doc M if memory is inv
 
 ## Standing flags
 
-- **O11 (harness doc; backend resolved 2026-07-27):** dossier means a structured account/contact
+- **O11 (harness doc; backend resolved 2026-07-27; C7 implementation closed 2026-07-28):** dossier means a structured account/contact
   research view with provenance/evidence actions and reference-only saved versions. Consumers read
   claims/narrative/block projections, not a canonical rendered document. Exact frontend layout and
   any optional downstream renderer remain open.

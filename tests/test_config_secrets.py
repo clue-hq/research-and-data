@@ -37,10 +37,12 @@ def test_secrets_read_db_dsn_from_environment(monkeypatch: pytest.MonkeyPatch) -
 def test_secrets_read_provider_keys_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLUE_EXA_API_KEY", "exa-secret-value-123456")
     monkeypatch.setenv("CLUE_FIRECRAWL_API_KEY", "fc-secret-value-7890")
+    monkeypatch.setenv("CLUE_SUMBLE_API_KEY", "sumble-secret-value")
     secrets = Secrets(_env_file=None)  # type: ignore[call-arg]
     assert secrets.exa_api_key is not None
     assert secrets.exa_api_key.get_secret_value() == "exa-secret-value-123456"
     assert secrets.firecrawl_api_key is not None
+    assert secrets.sumble_api_key is not None
 
 
 def test_secrets_default_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,6 +56,7 @@ def test_secrets_default_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> Non
         "CLUE_EXA_API_KEY",
         "CLUE_PARALLEL_API_KEY",
         "CLUE_FIRECRAWL_API_KEY",
+        "CLUE_SUMBLE_API_KEY",
         "CLUE_CRM_API_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -61,6 +64,7 @@ def test_secrets_default_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> Non
     assert secrets.database_url is None
     assert secrets.clay_api_key is None
     assert secrets.crm_api_key is None
+    assert secrets.sumble_api_key is None
 
 
 def test_secret_value_not_in_repr_or_str(monkeypatch: pytest.MonkeyPatch) -> None:

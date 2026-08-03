@@ -171,7 +171,7 @@ def test_resource_manifest_pins_exact_resource_and_tool_digests() -> None:
 
 def test_constitution_and_turn_reject_cross_workspace_refs_and_extra_fields() -> None:
     with pytest.raises(ValidationError, match="constitution artifact refs"):
-        constitution(stage_snapshot_ref=artifact("stage.json", workspace_id="ws-2"))
+        constitution(project_card_ref=artifact("project-card.json", workspace_id="ws-2"))
 
     with pytest.raises(ValidationError, match="turn artifact refs"):
         AgentTurnRequest(
@@ -361,8 +361,8 @@ def test_frozen_contract_json_schema_digests() -> None:
     assert actual == {
         "AgentProfile": "cb23c46fe9a2fa643ddfc816b95be2f09353e92c680bd634e929c5ab4b15580c",
         "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
-        "AgentConstitution": ("b3fa6888af9a1a7d427877a426943b2c959944edcf8c4203bfbd1720887de1a5"),
-        "AgentTurnRequest": ("fd8dc5c626099b24442aefa3f71eb5ba2c715cb565f60e5fef41c670991f4ebb"),
+        "AgentConstitution": ("c7efb228f84e2bdb90873c8efe2dce18b9ccf097885fa8ff07cbb2898c40efa3"),
+        "AgentTurnRequest": ("d3dde9c4a67ca322982143abd06d369b010275ba6b0cabf838af30846e832dda"),
         "AgentPlan": "a954471a676c23101629f3babe2e523a6de96d21f7cc96de7983c8f265073c4e",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
         "DelegationRequest": ("421ad5b96a036115f492c687bab8d8fc46dafd57991b80ce0718a8bfa3f65be3"),

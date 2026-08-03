@@ -265,16 +265,19 @@ class WorkspaceProductLayerSource:
 
 
 class ProjectLayerSource:
+    """L3 is exactly two required artifacts: the project card and the budget envelope.
+
+    One owner per concern (PC-C8 §2). The card is the whole bounded projection of durable project
+    state, so the compiled ``project`` context card this source used to read as well is subsumed by
+    it — reading both would put two descriptions of the same project in front of the model and
+    reintroduce the duplication the card exists to remove. The budget envelope stays separate
+    because it is spend authority rather than project state.
+    """
+
     layer = ContextLayer.L3_PROJECT
 
-    def __init__(
-        self,
-        *,
-        artifacts: AgentArtifactReader,
-        cards: CompiledContextCardReader,
-    ) -> None:
+    def __init__(self, *, artifacts: AgentArtifactReader) -> None:
         self._artifacts = artifacts
-        self._cards = cards
 
     async def load(
         self,
@@ -284,29 +287,12 @@ class ProjectLayerSource:
         history: Sequence[HistoryMessageRef],
     ) -> Sequence[ContextCandidate]:
         del profile, history
-        workspace_id = request.constitution.workspace_id
-        project_id = request.constitution.project_id
-        result: list[ContextCandidate] = []
-        card = await self._cards.read(
-            workspace_id=workspace_id,
-            object_type="project",
-            object_id=project_id,
-        )
-        if card is not None:
-            result.append(
-                ContextCandidate(
-                    stable_key=f"project:{project_id}:{card.ref.version}",
-                    ref=card.ref,
-                    body=card.body,
-                    materialized_path=_card_path("project", card.ref),
-                )
-            )
-        snapshots = (
-            ("stage", request.constitution.stage_snapshot_ref),
-            ("readiness", request.constitution.readiness_snapshot_ref),
+        candidates = (
+            ("project_card", request.constitution.project_card_ref),
             ("budget", request.constitution.budget_envelope_ref),
         )
-        for name, ref in snapshots:
+        result: list[ContextCandidate] = []
+        for name, ref in candidates:
             body = (await self._artifacts.read(ref)).decode("utf-8")
             result.append(
                 ContextCandidate(
@@ -453,11 +439,44 @@ class HistoryLayerSource:
         return result
 
 
+class CapturedTurnIdentity(Protocol):
+    """The engine-owned identity of a captured user turn (PC-C8 §6b).
+
+    Structural on purpose: the concrete binding lives at the api composition root (it needs the
+    artifact store and the capture record), and L7 only ever reads these four values. They are
+    read-only members, which is also what lets an immutable (frozen) implementation satisfy this.
+    """
+
+    @property
+    def onboarding_input_id(self) -> str: ...
+
+    @property
+    def artifact_key(self) -> str: ...
+
+    @property
+    def sha256(self) -> str: ...
+
+    @property
+    def byte_count(self) -> int: ...
+
+
+class CapturedTurnDescription(Protocol):
+    """Describe this turn's capture, or ``None`` when the surface captured none."""
+
+    async def describe(self, request: AgentTurnRequest) -> CapturedTurnIdentity | None: ...
+
+
 class TurnLayerSource:
     layer = ContextLayer.L7_TURN
 
-    def __init__(self, artifacts: AgentArtifactReader) -> None:
+    def __init__(
+        self,
+        artifacts: AgentArtifactReader,
+        *,
+        captured_turn: CapturedTurnDescription | None = None,
+    ) -> None:
         self._artifacts = artifacts
+        self._captured_turn = captured_turn
 
     async def load(
         self,
@@ -489,6 +508,30 @@ class TurnLayerSource:
                         "Attachment reference only: "
                         f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
                         f"media_type={ref.media_type} byte_count={ref.byte_count}"
+                    ),
+                    role="user",
+                )
+            )
+        # The turn's own identity, so the model can *reference* this capture without authoring it.
+        # Deliberately reference-only and last: the trusted values are injected at the tool seam
+        # (PC-C8 §6a), and a model that retypes them from here changes nothing. A surface that
+        # captured no onboarding input simply has no envelope — that is not a failure, and L7 must
+        # still assemble.
+        captured = (
+            await self._captured_turn.describe(request) if self._captured_turn is not None else None
+        )
+        if captured is not None:
+            result.append(
+                ContextCandidate(
+                    stable_key="900-captured-turn",
+                    ref=request.user_message_artifact_ref,
+                    body=(
+                        "Captured turn reference only: this message is already a captured "
+                        "onboarding input. The platform supplies these values to any tool that "
+                        "needs them; never author or retype them. "
+                        f"onboarding_input_id={captured.onboarding_input_id} "
+                        f"artifact_key={captured.artifact_key} sha256={captured.sha256} "
+                        f"byte_count={captured.byte_count}"
                     ),
                     role="user",
                 )

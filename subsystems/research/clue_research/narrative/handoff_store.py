@@ -5,9 +5,10 @@ result so M12.3 serves a stable object with a precomputed provenance index, Post
 source of truth, and a re-assembly after a claim is superseded simply replaces the row (overview §3
 recommended persistence; AC8). The whole :class:`~clue_research.narrative.handoff.AssembledHandoff`
 (the frozen ``AccountHandoff`` contract object + the M12.2 extras) is stored as a JSONB ``payload``;
-the scope key columns ``(workspace_id, account_entity_id, icp_spec_version)`` make a client's view
-fetchable and tenant-isolated (substrate §2 — the same public account researched by two clients
-keeps two handoffs).
+the scope key columns
+``(workspace_id, account_entity_id, icp_spec_version, icp_key, product_id)`` make a client's view
+fetchable, product-exact, and tenant-isolated (substrate §2 — the same public account researched
+by two clients keeps two handoffs).
 
 This is a *read-projection* of the claim store, never a write-back path (conventions §6 / substrate
 §5c): the only writer is the assembler caching its own read.
@@ -45,6 +46,7 @@ async def write_handoff(
     workspace_id: str,
     icp_key: str = "",
     tier: str | None = None,
+    product_id: str | None = None,
 ) -> None:
     """Materialise ``assembled`` for ``(workspace_id, icp_key)`` (UPSERT on the ``(workspace_id,
     account_entity_id, icp_spec_version, icp_key)`` scope key — a re-assembly after supersession
@@ -122,12 +124,16 @@ async def write_handoff(
             text(
                 """
             INSERT INTO account_handoff
-                (workspace_id, account_entity_id, icp_spec_version, icp_key, project_run_id,
+                (workspace_id, account_entity_id, icp_spec_version, icp_key, product_id,
+                 project_run_id,
                  assembled_at, tier, payload)
             VALUES
-                (:workspace_id, :account_entity_id, :icp_spec_version, :icp_key, :project_run_id,
+                (:workspace_id, :account_entity_id, :icp_spec_version, :icp_key, :product_id,
+                 :project_run_id,
                  :assembled_at, :tier, CAST(:payload AS jsonb))
-            ON CONFLICT (workspace_id, account_entity_id, icp_spec_version, icp_key) DO UPDATE SET
+            ON CONFLICT (
+                workspace_id, account_entity_id, icp_spec_version, icp_key, product_id
+            ) DO UPDATE SET
                 project_run_id = EXCLUDED.project_run_id,
                 assembled_at    = EXCLUDED.assembled_at,
                 tier            = EXCLUDED.tier,
@@ -141,6 +147,7 @@ async def write_handoff(
                 "account_entity_id": str(h.account_entity_id),
                 "icp_spec_version": h.icp_spec_version,
                 "icp_key": icp_key,
+                "product_id": product_id or "",
                 "project_run_id": str(h.project_run_id) if h.project_run_id is not None else None,
                 "assembled_at": h.assembled_at,
                 "tier": tier,
@@ -219,6 +226,7 @@ async def read_handoff(
     account_entity_id: EntityId,
     icp_spec_version: int,
     icp_key: str = "",
+    product_id: str | None = None,
 ) -> AssembledHandoff | None:
     """Read the materialised :class:`AssembledHandoff` for ``(workspace_id, account_entity_id,
     icp_spec_version, icp_key)``, or ``None`` if it has not been assembled. Tenant-scoped on
@@ -230,6 +238,7 @@ async def read_handoff(
                 "SELECT payload FROM account_handoff WHERE workspace_id = :workspace_id "
                 "AND account_entity_id = :account_entity_id "
                 "AND icp_spec_version = :icp_spec_version AND icp_key = :icp_key "
+                "AND product_id = :product_id "
                 "AND payload IS NOT NULL"
             ),
             {
@@ -237,6 +246,7 @@ async def read_handoff(
                 "account_entity_id": str(account_entity_id),
                 "icp_spec_version": icp_spec_version,
                 "icp_key": icp_key,
+                "product_id": product_id or "",
             },
         )
     ).first()
@@ -247,9 +257,10 @@ async def read_handoff(
 
 async def list_handoffs_for_run(
     conn: AsyncConnection, *, workspace_id: str, project_run_id: ProjectRunId
-) -> list[tuple[str, str | None, AssembledHandoff]]:
-    """All materialised handoffs for ``(workspace_id, project_run_id)`` as ``(icp_key, tier,
-    assembled)`` triples — the M12.3 list-serve surface (``GET /project_runs/{id}/handoffs``). A
+) -> list[tuple[str, str | None, str | None, AssembledHandoff]]:
+    """All materialised handoffs for ``(workspace_id, project_run_id)`` as
+    ``(icp_key, tier, product_id, assembled)`` tuples — the M12.3 list-serve surface
+    (``GET /project_runs/{id}/handoffs``). A
     materialised row exists only *after* assembly (which reads verified claims), so the list returns
     exactly the run's **ready** handoffs (M12.3 AC: an account still in deep/verification has no row
     and is absent). ``icp_key`` / ``tier`` are table columns (the frozen ``AccountHandoff`` payload
@@ -260,7 +271,7 @@ async def list_handoffs_for_run(
     rows = (
         await conn.execute(
             text(
-                "SELECT icp_key, tier, payload FROM account_handoff "
+                "SELECT icp_key, tier, NULLIF(product_id, ''), payload FROM account_handoff "
                 "WHERE workspace_id = :workspace_id AND project_run_id = :project_run_id "
                 "AND payload IS NOT NULL "
                 "ORDER BY account_entity_id, icp_spec_version, icp_key"
@@ -268,4 +279,4 @@ async def list_handoffs_for_run(
             {"workspace_id": workspace_id, "project_run_id": project_run_id},
         )
     ).all()
-    return [(str(row[0]), row[1], _decode_payload(row[2])) for row in rows]
+    return [(str(row[0]), row[1], row[2], _decode_payload(row[3])) for row in rows]

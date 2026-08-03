@@ -1,11 +1,11 @@
 """The live OpenRouter-backed ``LLMGateway`` (M0.4) — the single egress for direct LLM calls.
 
-Wraps **OpenRouter** (OpenAI-compatible) via the ``openai`` client, which is imported **only here**
-(the model analogue of a provider resolver; import-linter Rule 4b keeps every other package from
-constructing a model SDK). The client is built behind an injectable ``client_factory`` seam, so the
-gateway's *logic* — message mapping, token-usage extraction, cost computation, and fallback-model
-retry — is unit-testable with a fake, while production lazy-imports the real SDK. The requested
-``model`` is config (conventions §4): swapping it is a config change, not code.
+Wraps **OpenRouter's Responses API** via the OpenAI SDK, which is imported **only here** (the model
+analogue of a provider resolver; import-linter Rule 4b keeps every other package from constructing a
+model SDK). The client is built behind an injectable ``client_factory`` seam, so the gateway's
+*logic* — Responses input mapping, output-text and token-usage extraction, cost computation, and
+fallback-model retry — is unit-testable with a fake, while production lazy-imports the real SDK.
+The requested ``model`` is config (conventions §4): swapping it is a config change, not code.
 """
 
 from __future__ import annotations
@@ -18,18 +18,17 @@ from pydantic import SecretStr
 from clue_config.gateway import GatewayConfig
 from clue_core.gateway import Completion, EmbeddingResult, Message, TokenUsage
 
-# A zero-arg factory returning an OpenAI-compatible client (duck-typed: ``.chat.completions.create``
-# and ``.embeddings.create``). The default builds the real ``openai`` client; tests inject a fake.
+# A zero-arg factory returning an OpenAI-compatible client (duck-typed: ``.responses.create`` and
+# ``.embeddings.create``). The default builds the real ``openai`` client; tests inject a fake.
 ClientFactory = Callable[[], Any]
 
 
 class GatewayError(RuntimeError):
-    """A gateway call returned a malformed response (e.g. a successful HTTP body with no choices).
+    """A gateway call returned a malformed Responses payload.
 
-    OpenRouter can surface an upstream-provider failure as an HTTP-200 body carrying an ``error``
-    and an empty ``choices`` list. Raising a typed error (rather than letting ``choices[0]`` throw a
-    raw ``IndexError``) lets the fallback loop treat it like any other failure and gives the caller
-    a clear message instead of an opaque index error.
+    OpenRouter can surface an upstream-provider failure in a successful HTTP body carrying an
+    ``error`` or no usable text output. Raising a typed error lets the fallback loop treat that like
+    any other failure and gives the caller a clear message instead of leaking SDK-shape errors.
     """
 
 
@@ -66,21 +65,29 @@ class OpenRouterGateway:
         return self._client
 
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
-        payload = [{"role": m.role.value, "content": m.content} for m in messages]
+        input_items = [
+            {
+                "type": "message",
+                "role": message.role.value,
+                "content": [{"type": "input_text", "text": message.content}],
+            }
+            for message in messages
+        ]
         first_exc: Exception | None = None
         last_exc: Exception | None = None
         for candidate in self._candidates(model):
             try:
-                resp = self._client_().chat.completions.create(
-                    model=candidate, messages=payload, **opts
-                )
-                # A successful-but-empty response (upstream error surfaced as HTTP 200) must not
-                # crash with a raw IndexError on choices[0]; treat it as a failure so the fallback
-                # model is tried and the caller gets a clear, typed error.
-                if not getattr(resp, "choices", None):
-                    raise GatewayError(f"gateway returned no choices for model {candidate!r}")
+                resp = self._client_().responses.create(model=candidate, input=input_items, **opts)
+                error = getattr(resp, "error", None)
+                if error is not None:
+                    detail = getattr(error, "message", None) or str(error)
+                    raise GatewayError(
+                        f"gateway returned an error for model {candidate!r}: {detail}"
+                    )
+                if not self._output_text(resp):
+                    raise GatewayError(f"gateway returned no output text for model {candidate!r}")
                 return self._to_completion(resp, candidate)
-            # normalize SDK / empty-response errors → try the fallback model, else re-raise below.
+            # Normalize SDK / malformed-response errors → try fallback, else re-raise below.
             except Exception as exc:
                 first_exc = first_exc or exc
                 last_exc = exc
@@ -112,17 +119,55 @@ class OpenRouterGateway:
         return [model]
 
     def _to_completion(self, resp: Any, requested_model: str) -> Completion:
-        choice = resp.choices[0]
         usage = self._usage(resp)
         # The model that actually answered (may be the fallback) — recorded for honest provenance.
         answered = getattr(resp, "model", None) or requested_model
+        incomplete = getattr(resp, "incomplete_details", None)
+        finish_reason = getattr(incomplete, "reason", None) or getattr(resp, "status", None)
         return Completion(
             model=answered,
-            text=choice.message.content or "",
+            text=self._output_text(resp),
             usage=usage,
             cost_cents=self._config.cost_cents(answered, usage),
-            finish_reason=getattr(choice, "finish_reason", None),
+            finish_reason=finish_reason,
         )
+
+    @staticmethod
+    def _output_text(resp: Any) -> str:
+        """Extract text from the SDK convenience property or standard output items."""
+
+        text = getattr(resp, "output_text", None)
+        if text:
+            return str(text)
+
+        parts: list[str] = []
+        for output in getattr(resp, "output", None) or ():
+            output_type = (
+                output.get("type") if isinstance(output, dict) else getattr(output, "type", None)
+            )
+            if output_type != "message":
+                continue
+            content_items = (
+                output.get("content", ())
+                if isinstance(output, dict)
+                else getattr(output, "content", ())
+            )
+            for content in content_items or ():
+                content_type = (
+                    content.get("type")
+                    if isinstance(content, dict)
+                    else getattr(content, "type", None)
+                )
+                if content_type != "output_text":
+                    continue
+                value = (
+                    content.get("text")
+                    if isinstance(content, dict)
+                    else getattr(content, "text", None)
+                )
+                if value:
+                    parts.append(str(value))
+        return "".join(parts)
 
     @staticmethod
     def _usage(resp: Any) -> TokenUsage:
@@ -130,6 +175,10 @@ class OpenRouterGateway:
         if usage is None:
             return TokenUsage()
         return TokenUsage(
-            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            prompt_tokens=(
+                getattr(usage, "input_tokens", None) or getattr(usage, "prompt_tokens", 0) or 0
+            ),
+            completion_tokens=(
+                getattr(usage, "output_tokens", None) or getattr(usage, "completion_tokens", 0) or 0
+            ),
         )

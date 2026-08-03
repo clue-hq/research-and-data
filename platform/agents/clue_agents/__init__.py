@@ -96,6 +96,7 @@ from clue_agents.registry import (
     AgentCapabilityStatus,
     AgentProfileRegistry,
     AgentRegistryProjection,
+    AgentSurfacePolicy,
     AgentToolCatalog,
     AgentToolContract,
     ProfileProjection,
@@ -103,6 +104,7 @@ from clue_agents.registry import (
     RoleRegistryEntry,
     RoleRegistryStatus,
     SkillDisclosure,
+    SurfaceRegistryEntry,
     ToolCapabilityDisclosure,
 )
 from clue_agents.resources import (
@@ -179,6 +181,7 @@ __all__ = [
     "AgentTurnReceipt",
     "AgentTurnStatus",
     "AgentTurnOutcome",
+    "AgentSurfacePolicy",
     "AgentToolCatalog",
     "AgentToolContract",
     "AgentWorkspaceFactory",
@@ -242,6 +245,7 @@ __all__ = [
     "SpecialistTaskEnvelope",
     "SkillDescriptor",
     "SkillDisclosure",
+    "SurfaceRegistryEntry",
     "ToolCapabilityDisclosure",
     "SkillResource",
     "AgentReplayUnavailable",

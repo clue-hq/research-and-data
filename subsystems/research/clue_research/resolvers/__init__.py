@@ -31,6 +31,7 @@ from clue_research.resolvers import (
     firecrawl,
     parallel,
     registries,
+    sumble,
     zoominfo,
 )
 from clue_research.resolvers.base import (
@@ -90,6 +91,32 @@ from clue_research.resolvers.parallel import (
     ParallelTaskConfig,
     register_parallel_task_resolver,
 )
+from clue_research.resolvers.sumble import (
+    JOBS_SOURCE_KEY as SUMBLE_JOBS_SOURCE_KEY,
+)
+from clue_research.resolvers.sumble import (
+    ORGANIZATIONS_SOURCE_KEY as SUMBLE_ORGANIZATIONS_SOURCE_KEY,
+)
+from clue_research.resolvers.sumble import (
+    SUMBLE_API_VERSION,
+    SUMBLE_SOURCE_KEYS,
+    MappingSumbleSnapshotLookup,
+    SumbleClient,
+    SumbleContractError,
+    SumbleCreditBudget,
+    SumbleCreditContractViolation,
+    SumbleCreditLimitExceeded,
+    SumbleSnapshot,
+    SumbleSnapshotLookup,
+    SumbleSnapshotResolver,
+    SumbleSpendOutcomeUnknown,
+    SumbleUnboundedCreditRisk,
+    build_sumble_resolvers,
+    register_sumble_resolvers,
+)
+from clue_research.resolvers.sumble import (
+    TECH_STACK_SOURCE_KEY as SUMBLE_TECH_STACK_SOURCE_KEY,
+)
 from clue_research.sources import SEED_MANIFESTS, bind_resolver
 
 # The enrichment provider modules (each a single-module sub-package) and the registry family. The
@@ -140,6 +167,7 @@ __all__ = [
     "firecrawl",
     "exa",
     "parallel",
+    "sumble",
     # M4.5 CRM seam (the connector + records are config; nothing downstream knows the vendor)
     "CRMConnector",
     "CrmResolver",
@@ -172,6 +200,25 @@ __all__ = [
     "DEFAULT_EXA_CONFIG",
     "ParallelTaskConfig",
     "DEFAULT_PARALLEL_CONFIG",
+    # Sumble v9 acquisition + durable-snapshot resolver seam
+    "SUMBLE_API_VERSION",
+    "SUMBLE_SOURCE_KEYS",
+    "SUMBLE_ORGANIZATIONS_SOURCE_KEY",
+    "SUMBLE_JOBS_SOURCE_KEY",
+    "SUMBLE_TECH_STACK_SOURCE_KEY",
+    "SumbleClient",
+    "SumbleCreditBudget",
+    "SumbleSnapshot",
+    "SumbleSnapshotLookup",
+    "MappingSumbleSnapshotLookup",
+    "SumbleSnapshotResolver",
+    "SumbleContractError",
+    "SumbleCreditLimitExceeded",
+    "SumbleUnboundedCreditRisk",
+    "SumbleSpendOutcomeUnknown",
+    "SumbleCreditContractViolation",
+    "build_sumble_resolvers",
+    "register_sumble_resolvers",
     # live transport seam (HTTP backend template + the account-key lookup)
     "AccountLookup",
     "HttpEnrichmentBackend",

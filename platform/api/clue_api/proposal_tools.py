@@ -11,14 +11,24 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from clue_api.dynamic_client_kb import DynamicClientKbMaterializer, MaterializedFieldRefs
 from clue_api.tool_outputs import (
     FieldProposalDecisionOutput,
     FieldProposalOutput,
     SourceProposalDecisionOutput,
     SourceProposalOutput,
 )
-from clue_config.proposals import DEFAULT_PROPOSAL_POLICY, ProposalPolicy
-from clue_core.proposals import FieldProposalId, ProposalAuthority, SourceProposalId
+from clue_config.proposals import (
+    DEFAULT_PROPOSAL_POLICY,
+    ClientFieldPromotionMode,
+    ProposalPolicy,
+)
+from clue_core.proposals import (
+    FieldProposalId,
+    ProposalAuthority,
+    ProposalStatus,
+    SourceProposalId,
+)
 from clue_research.proposals import (
     FieldProposalPayload,
     ProposalDecision,
@@ -26,6 +36,7 @@ from clue_research.proposals import (
     SourceProposalPayload,
     decide_field_proposal,
     decide_source_proposal,
+    evaluate_safe_client_field,
     get_field_proposal,
     get_source_proposal,
     propose_field,
@@ -47,22 +58,50 @@ from clue_toolbelt import (
 
 
 class ProposalScopeInput(BaseModel):
+    """The narrowing part of a proposal's scope: what the proposal is *about*.
+
+    ``brand_id`` and ``project_id`` deliberately do **not** live here (PC-C8 task 1.4). They are
+    :data:`~clue_agents.contracts.MODEL_FORBIDDEN_AUTHORITY_KEYS` — this execution's brand, this
+    execution's project — and the strip/inject seam is top-level only, so a nested copy was neither
+    hidden from the model nor served from the constitution. Hoisting them onto the tool input
+    (rather than teaching the seam to recurse) means there is no nested authority left to strip:
+    the invalid state is unrepresentable instead of defended against.
+    """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    brand_id: str
     product_id: str | None = None
-    project_id: str | None = None
     icp_key: str | None = None
     icp_spec_version: int | None = Field(default=None, ge=1)
 
-    def for_workspace(self, workspace_id: str) -> ProposalScope:
-        return ProposalScope(workspace_id=workspace_id, **self.model_dump())
+    def for_execution(
+        self,
+        *,
+        workspace_id: str,
+        brand_id: str,
+        project_id: str | None,
+    ) -> ProposalScope:
+        """Rejoin the model-authored narrowing with the engine's trusted scope authority."""
+
+        return ProposalScope(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            project_id=project_id,
+            **self.model_dump(),
+        )
 
 
 class ProposeFieldInput(ToolInput):
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
     scope: ProposalScopeInput
     payload: FieldProposalPayload
     proposed_by_ref: str | None = None
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class DecideFieldProposalInput(ToolInput):
@@ -72,9 +111,16 @@ class DecideFieldProposalInput(ToolInput):
 
 
 class ProposeSourceInput(ToolInput):
+    brand_id: str = Field(
+        description="Trusted brand authority; supplied by the platform, never by you."
+    )
     scope: ProposalScopeInput
     payload: SourceProposalPayload
     proposed_by_ref: str | None = None
+    project_id: str | None = Field(
+        default=None,
+        description="Trusted project authority; supplied by the platform, never by you.",
+    )
 
 
 class DecideSourceProposalInput(ToolInput):
@@ -86,6 +132,19 @@ class DecideSourceProposalInput(ToolInput):
 
 def _failure(code: str, message: str) -> tuple[PreconditionFailure, ...]:
     return (PreconditionFailure(reason_code=code, message=message),)
+
+
+def _resolved_scope(
+    inputs: ProposeFieldInput | ProposeSourceInput,
+    ctx: ToolContext,
+) -> ProposalScope:
+    """Join the model-authored narrowing with the trusted brand/project/workspace authority."""
+
+    return inputs.scope.for_execution(
+        workspace_id=ctx.workspace_id,
+        brand_id=inputs.brand_id,
+        project_id=inputs.project_id,
+    )
 
 
 def _field_id(raw: str) -> FieldProposalId | None:
@@ -109,14 +168,17 @@ class _ProposalTool(Tool):
         policy: ProposalPolicy = DEFAULT_PROPOSAL_POLICY,
         credential_ready: Callable[[str], bool] | None = None,
         personal_source_allowed: Callable[[SourceProposalPayload], bool] | None = None,
+        dynamic_client_kb_materializer: DynamicClientKbMaterializer | None = None,
     ) -> None:
         self._policy = policy
         self._credential_ready = credential_ready
         self._personal_source_allowed = personal_source_allowed
+        self._dynamic_client_kb_materializer = dynamic_client_kb_materializer
 
 
 class ProposeFieldTool(_ProposalTool):
     name = "propose_field"
+    version = "2"
     input_model = ProposeFieldInput
     output_model = FieldProposalOutput
     replay = ReplaySafety(
@@ -134,9 +196,21 @@ class ProposeFieldTool(_ProposalTool):
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ProposeFieldInput)
         async with ctx.conn_factory() as conn:
-            valid = await scope_exists(conn, inputs.scope.for_workspace(ctx.workspace_id))
+            valid = await scope_exists(conn, _resolved_scope(inputs, ctx))
         if not valid:
             return _failure("proposal_scope_not_found", "proposal scope not found")
+        is_dynamic = inputs.payload.field_def.field_key.startswith("client.")
+        eligible, _ = evaluate_safe_client_field(inputs.payload, self._policy)
+        if (
+            is_dynamic
+            and self._policy.client_field_mode is ClientFieldPromotionMode.SAFE_AUTO_PROMOTE
+            and eligible
+            and self._dynamic_client_kb_materializer is None
+        ):
+            return _failure(
+                "dynamic_client_kb_materializer_not_configured",
+                "safe autonomous field promotion requires statement-evidence materialization",
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -144,25 +218,61 @@ class ProposeFieldTool(_ProposalTool):
         async with ctx.conn_factory() as conn:
             proposal = await propose_field(
                 conn,
-                scope=inputs.scope.for_workspace(ctx.workspace_id),
+                scope=_resolved_scope(inputs, ctx),
                 payload=inputs.payload,
                 proposed_by_actor=ctx.actor,
                 proposed_by_ref=inputs.proposed_by_ref,
                 policy=self._policy,
             )
+        materialized: MaterializedFieldRefs | None = None
+        if proposal.status is ProposalStatus.PROMOTED and proposal.payload.client_kb is not None:
+            if self._dynamic_client_kb_materializer is None:
+                raise RuntimeError("dynamic Client-KB materializer is not configured")
+            materialized = await self._dynamic_client_kb_materializer.materialize(
+                proposal=proposal,
+                workspace_id=ctx.workspace_id,
+                conn_factory=ctx.conn_factory,
+            )
+        references = {
+            "field_proposal_id": str(proposal.id),
+            "field_key": proposal.payload.field_def.field_key,
+            "status": proposal.status.value,
+        }
+        if materialized is not None:
+            references.update(materialized.model_dump(exclude_none=True))
         return ToolResult(
             tool=self.name,
             version=self.version,
-            references={
-                "field_proposal_id": str(proposal.id),
-                "field_key": proposal.payload.field_def.field_key,
-                "status": proposal.status.value,
-            },
+            references=references,
         )
+
+
+class LegacyProposeFieldTool(ProposeFieldTool):
+    """Exact v1 compatibility for historical recipes; dynamic client fields require v2."""
+
+    version = "1"
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, ProposeFieldInput)
+        if inputs.payload.field_def.field_key.startswith("client."):
+            return _failure(
+                "dynamic_client_kb_requires_v2",
+                "tenant-local dynamic Client-KB proposals require propose_field@2",
+            )
+        return await super().preconditions(inputs, ctx)
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ProposeFieldInput)
+        if inputs.payload.field_def.field_key.startswith("client."):
+            raise RuntimeError("dynamic Client-KB proposals require propose_field@2")
+        return await super().invoke(inputs, ctx)
 
 
 class DecideFieldProposalTool(_ProposalTool):
     name = "decide_field_proposal"
+    version = "2"
     input_model = DecideFieldProposalInput
     output_model = FieldProposalDecisionOutput
 
@@ -182,6 +292,15 @@ class DecideFieldProposalTool(_ProposalTool):
             proposal = await get_field_proposal(conn, proposal_id, workspace_id=ctx.workspace_id)
         if proposal is None:
             return _failure("proposal_not_found", "no such field proposal")
+        if (
+            inputs.decision is ProposalDecision.PROMOTE
+            and proposal.payload.client_kb is not None
+            and self._dynamic_client_kb_materializer is None
+        ):
+            return _failure(
+                "dynamic_client_kb_materializer_not_configured",
+                "dynamic Client-KB promotion requires statement-evidence materialization",
+            )
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -199,15 +318,72 @@ class DecideFieldProposalTool(_ProposalTool):
                 decided_by=f"human:{ctx.workspace_id}",
                 policy=self._policy,
             )
+        materialized: MaterializedFieldRefs | None = None
+        if (
+            inputs.decision is ProposalDecision.PROMOTE
+            and proposal.status is ProposalStatus.PROMOTED
+            and proposal.payload.client_kb is not None
+        ):
+            assert self._dynamic_client_kb_materializer is not None
+            materialized = await self._dynamic_client_kb_materializer.materialize(
+                proposal=proposal,
+                workspace_id=ctx.workspace_id,
+                conn_factory=ctx.conn_factory,
+            )
+        references = {
+            "field_proposal_id": str(proposal.id),
+            "status": proposal.status.value,
+            "applied_field_key": proposal.applied_field_key,
+        }
+        if materialized is not None:
+            references.update(materialized.model_dump(exclude_none=True))
         return ToolResult(
             tool=self.name,
             version=self.version,
-            references={
-                "field_proposal_id": str(proposal.id),
-                "status": proposal.status.value,
-                "applied_field_key": proposal.applied_field_key,
-            },
+            references=references,
         )
+
+
+class LegacyDecideFieldProposalTool(DecideFieldProposalTool):
+    """Exact v1 compatibility; it cannot promote a tenant-local dynamic field."""
+
+    version = "1"
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        failures = await super().preconditions(inputs, ctx)
+        if failures:
+            return failures
+        assert isinstance(inputs, DecideFieldProposalInput)
+        proposal_id = _field_id(inputs.field_proposal_id)
+        assert proposal_id is not None
+        async with ctx.conn_factory() as conn:
+            proposal = await get_field_proposal(conn, proposal_id, workspace_id=ctx.workspace_id)
+        if (
+            inputs.decision is ProposalDecision.PROMOTE
+            and proposal is not None
+            and proposal.payload.client_kb is not None
+        ):
+            return _failure(
+                "dynamic_client_kb_requires_v2",
+                "tenant-local dynamic Client-KB promotion requires decide_field_proposal@2",
+            )
+        return ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, DecideFieldProposalInput)
+        proposal_id = _field_id(inputs.field_proposal_id)
+        assert proposal_id is not None
+        async with ctx.conn_factory() as conn:
+            proposal = await get_field_proposal(conn, proposal_id, workspace_id=ctx.workspace_id)
+        if (
+            inputs.decision is ProposalDecision.PROMOTE
+            and proposal is not None
+            and proposal.payload.client_kb is not None
+        ):
+            raise RuntimeError("dynamic Client-KB promotion requires decide_field_proposal@2")
+        return await super().invoke(inputs, ctx)
 
 
 class ProposeSourceTool(_ProposalTool):
@@ -229,7 +405,7 @@ class ProposeSourceTool(_ProposalTool):
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, ProposeSourceInput)
         async with ctx.conn_factory() as conn:
-            valid = await scope_exists(conn, inputs.scope.for_workspace(ctx.workspace_id))
+            valid = await scope_exists(conn, _resolved_scope(inputs, ctx))
         if not valid:
             return _failure("proposal_scope_not_found", "proposal scope not found")
         return ()
@@ -239,7 +415,7 @@ class ProposeSourceTool(_ProposalTool):
         async with ctx.conn_factory() as conn:
             proposal = await propose_source(
                 conn,
-                scope=inputs.scope.for_workspace(ctx.workspace_id),
+                scope=_resolved_scope(inputs, ctx),
                 payload=inputs.payload,
                 proposed_by_actor=ctx.actor,
                 proposed_by_ref=inputs.proposed_by_ref,
@@ -338,6 +514,8 @@ class DecideSourceProposalTool(_ProposalTool):
 __all__ = [
     "DecideFieldProposalInput",
     "DecideFieldProposalTool",
+    "LegacyDecideFieldProposalTool",
+    "LegacyProposeFieldTool",
     "DecideSourceProposalInput",
     "DecideSourceProposalTool",
     "ProposalScopeInput",

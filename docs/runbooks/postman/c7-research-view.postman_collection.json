@@ -1,0 +1,105 @@
+{
+  "info": {
+    "_postman_id": "cb5488dc-cd2e-4f92-869d-c3b760857a9b",
+    "name": "C7 production research-view trial",
+    "description": "Sanitized read-first collection. It contains no customer data or evidence locators.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8000"},
+    {"key": "workspace_id", "value": ""},
+    {"key": "project_id", "value": ""},
+    {"key": "project_run_id", "value": ""},
+    {"key": "product_id", "value": ""},
+    {"key": "account_id", "value": ""},
+    {"key": "contact_id", "value": ""},
+    {"key": "owner_references_json", "value": "[]"},
+    {"key": "snapshot_id", "value": ""},
+    {"key": "statement_id", "value": ""},
+    {"key": "claim_id", "value": ""},
+    {"key": "action_id", "value": ""},
+    {"key": "idempotency_key", "value": "replace-for-each-mutation"}
+  ],
+  "item": [
+    {
+      "name": "1 - Account live view",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-Workspace-Id", "value": "{{workspace_id}}"},
+          {"key": "X-Actor", "value": "human"}
+        ],
+        "url": "{{base_url}}/v1/projects/{{project_id}}/accounts/{{account_id}}/research-view"
+      }
+    },
+    {
+      "name": "2 - Contact live view",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-Workspace-Id", "value": "{{workspace_id}}"},
+          {"key": "X-Actor", "value": "human"}
+        ],
+        "url": "{{base_url}}/v1/projects/{{project_id}}/contacts/{{contact_id}}/research-view"
+      }
+    },
+    {
+      "name": "3 - Resolve account owner references",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "X-Workspace-Id", "value": "{{workspace_id}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"project_run_id\": \"{{project_run_id}}\",\n  \"subject_entity_id\": \"{{account_id}}\",\n  \"subject_entity_type\": \"account\",\n  \"product_id\": \"{{product_id}}\",\n  \"references\": {{owner_references_json}}\n}"
+        },
+        "url": "{{base_url}}/v1/projects/{{project_id}}/research-view-owner-references:resolve"
+      }
+    },
+    {
+      "name": "4 - Compose saved snapshot (enable only after read approval)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "X-Workspace-Id", "value": "{{workspace_id}}"},
+          {"key": "X-Actor", "value": "human"},
+          {"key": "Idempotency-Key", "value": "{{idempotency_key}}"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"project_id\": \"{{project_id}}\",\n  \"project_run_id\": \"{{project_run_id}}\",\n  \"subject_entity_id\": \"{{account_id}}\",\n  \"subject_entity_type\": \"account\",\n  \"product_id\": \"{{product_id}}\"\n}"
+        },
+        "url": "{{base_url}}/v1/research-view-snapshots"
+      }
+    },
+    {
+      "name": "5 - Read saved snapshot",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "X-Workspace-Id", "value": "{{workspace_id}}"}
+        ],
+        "url": "{{base_url}}/v1/research-view-snapshots/{{snapshot_id}}"
+      }
+    },
+    {
+      "name": "6 - Evidence action (enable only after snapshot approval)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "X-Workspace-Id", "value": "{{workspace_id}}"},
+          {"key": "X-Actor", "value": "human"},
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"project_id\": \"{{project_id}}\",\n  \"subject_entity_id\": \"{{account_id}}\",\n  \"claim_id\": \"{{claim_id}}\",\n  \"action_id\": \"{{action_id}}\",\n  \"desired_action\": \"open_public_source\"\n}"
+        },
+        "url": "{{base_url}}/v1/research-statements/{{statement_id}}/evidence-action"
+      }
+    }
+  ]
+}

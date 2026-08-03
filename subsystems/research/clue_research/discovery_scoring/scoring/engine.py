@@ -44,6 +44,7 @@ from clue_core import (
     PreSpendGate,
     PreSpendRequest,
     PreSpendVerdict,
+    ProjectRunId,
     ResearchMode,
     RunId,
     Score,
@@ -148,6 +149,7 @@ async def score_account(
     workspace_id: str,
     icp_key: str,
     icp_version: int,
+    project_run_id: ProjectRunId | None = None,
     product_id: str | None = None,
     budget_envelope: Decimal | None = None,
     thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
@@ -213,7 +215,12 @@ async def score_account(
         entity_id=account_id,
         field_key=FIT_FIELD,
         value_json=_fit_value_json(
-            fit, rubric, non_fit_flag=non_fit_flag, icp_key=icp_key, icp_version=icp_version
+            fit,
+            rubric,
+            non_fit_flag=non_fit_flag,
+            icp_key=icp_key,
+            icp_version=icp_version,
+            project_run_id=project_run_id,
         ),
         run_id=run_id,
         workspace_id=workspace_id,
@@ -224,7 +231,13 @@ async def score_account(
         conn,
         entity_id=account_id,
         field_key=INTENT_FIELD,
-        value_json=_intent_value_json(intent, rubric, icp_key=icp_key, icp_version=icp_version),
+        value_json=_intent_value_json(
+            intent,
+            rubric,
+            icp_key=icp_key,
+            icp_version=icp_version,
+            project_run_id=project_run_id,
+        ),
         run_id=run_id,
         workspace_id=workspace_id,
         icp_key=icp_key,
@@ -318,7 +331,13 @@ def _yield_steps(results: Sequence[WaterfallResult]) -> list[SourceYieldRow]:
 
 
 def _fit_value_json(
-    fit: Score, rubric: ScoringRubric, *, non_fit_flag: bool, icp_key: str, icp_version: int
+    fit: Score,
+    rubric: ScoringRubric,
+    *,
+    non_fit_flag: bool,
+    icp_key: str,
+    icp_version: int,
+    project_run_id: ProjectRunId | None,
 ) -> dict[str, JsonValue]:
     """The ``account.scoring.fit`` claim payload: the decomposed score (with per-component evidence)
     plus the rubric version, the non-fit flag (D6), and the ICP it was scored under. ``value`` (the
@@ -329,17 +348,26 @@ def _fit_value_json(
     payload["fit_floor"] = rubric.fit_floor
     payload["icp_key"] = icp_key
     payload["icp_version"] = icp_version
+    if project_run_id is not None:
+        payload["project_run_id"] = str(project_run_id)
     return payload
 
 
 def _intent_value_json(
-    intent: Score, rubric: ScoringRubric, *, icp_key: str, icp_version: int
+    intent: Score,
+    rubric: ScoringRubric,
+    *,
+    icp_key: str,
+    icp_version: int,
+    project_run_id: ProjectRunId | None,
 ) -> dict[str, JsonValue]:
     """The ``account.scoring.intent`` claim payload (no fit floor — non-fit is a Fit concept)."""
     payload: dict[str, JsonValue] = dict(intent.model_dump(mode="json"))
     payload["rubric_version"] = rubric.version
     payload["icp_key"] = icp_key
     payload["icp_version"] = icp_version
+    if project_run_id is not None:
+        payload["project_run_id"] = str(project_run_id)
     return payload
 
 

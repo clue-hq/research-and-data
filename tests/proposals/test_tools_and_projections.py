@@ -46,7 +46,9 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
         async with rollback_conn() as conn:
             workspace_id = await seed_workspace(conn, "proposal-tools")
             brand = await create_brand(conn, workspace_id=workspace_id, name="Tools brand")
-            scope = ProposalScopeInput(brand_id=brand.brand_id)
+            # PC-C8 task 1.4: `brand_id`/`project_id` are trusted top-level authority; the
+            # nested scope is the model-authored narrowing only.
+            scope = ProposalScopeInput()
             factory = _factory(conn)
             agent = ToolContext(
                 workspace_id=workspace_id,
@@ -63,6 +65,7 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
 
             propose_field_tool = ProposeFieldTool()
             propose_field_input = ProposeFieldInput(
+                brand_id=brand.brand_id,
                 scope=scope,
                 payload=_field_payload("account.partner_density"),
                 proposed_by_ref="thread:tools",
@@ -101,7 +104,9 @@ def test_four_tools_return_refs_and_enforce_human_decisions() -> None:
                 }
             )
             propose_source_tool = ProposeSourceTool()
-            propose_source_input = ProposeSourceInput(scope=scope, payload=source_payload)
+            propose_source_input = ProposeSourceInput(
+                brand_id=brand.brand_id, scope=scope, payload=source_payload
+            )
             assert await propose_source_tool.preconditions(propose_source_input, agent) == ()
             source_result = await propose_source_tool.invoke(propose_source_input, agent)
             source_id = str(source_result.references["source_proposal_id"])

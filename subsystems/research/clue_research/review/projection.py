@@ -10,6 +10,9 @@ import-linter independence rule allows the shared base + services; it bans only 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -38,13 +41,14 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_research.claimstore import (
+    DEFAULT_MERGE_POLICY,
     WorkspaceScope,
     claims_by_ids,
     claims_for,
-    current_value,
-    current_values,
+    current_values_resolved_for_product,
+    merge_claims,
 )
-from clue_research.identity import contact_ids_for_account, surviving_id
+from clue_research.identity import contact_ids_for_account, get_contact, surviving_id
 
 # The reserved score field-keys (M6.3). Read by STRING — ``review`` must not import
 # ``discovery_scoring`` (independence contract); these are stable reserved fields (M1.3/ENG-165).
@@ -58,6 +62,31 @@ _PERSONA_FIELD = "contact.persona"
 _ROLE_FIELD = "contact.role_on_committee"
 
 _Winners = dict[tuple[EntityId, str], CurrentValue]
+
+
+@dataclass(frozen=True)
+class ReviewProjectScope:
+    """The project-run authority needed to keep a review projection product-exact."""
+
+    product_id: str | None
+
+
+class ReviewProjectScopeNotFound(LookupError):
+    """The review session's project run is absent or belongs to another workspace."""
+
+
+class ReviewProjectScopeReader(Protocol):
+    async def read_scope(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        workspace_id: str,
+    ) -> ReviewProjectScope: ...
+
+
+def _product_allowed(claim: Claim, product_id: str | None) -> bool:
+    return claim.product_id is None or claim.product_id == product_id
 
 
 def _parse_persona(value: object) -> Persona | None:
@@ -101,8 +130,14 @@ class ReviewProjector:
     conflict flags (M9.2) arrive through the injected :class:`VerificationAnnotationReader` (the
     production impl is built at the ``api`` root; tests inject the in-memory reader)."""
 
-    def __init__(self, *, annotation_reader: VerificationAnnotationReader) -> None:
+    def __init__(
+        self,
+        *,
+        annotation_reader: VerificationAnnotationReader,
+        project_scope_reader: ReviewProjectScopeReader,
+    ) -> None:
         self._annotations = annotation_reader
+        self._project_scope = project_scope_reader
 
     async def build(
         self,
@@ -116,22 +151,55 @@ class ReviewProjector:
         status: ReviewSessionStatus,
     ) -> ReviewSession:
         scope = WorkspaceScope.for_workspace(workspace_id)
+        project_scope = await self._project_scope.read_scope(
+            conn,
+            project_run_id=project_run_id,
+            workspace_id=workspace_id,
+        )
         account_id = await surviving_id(conn, account_entity_id, EntityType.ACCOUNT)
 
-        fit = await self._read_score(conn, account_id, FIT_FIELD, scope=scope)
-        intent = await self._read_score(conn, account_id, INTENT_FIELD, scope=scope)
+        fit = await self._read_score(
+            conn,
+            account_id,
+            FIT_FIELD,
+            project_run_id=project_run_id,
+            product_id=project_scope.product_id,
+            scope=scope,
+        )
+        intent = await self._read_score(
+            conn,
+            account_id,
+            INTENT_FIELD,
+            project_run_id=project_run_id,
+            product_id=project_scope.product_id,
+            scope=scope,
+        )
 
         account_live = [
             c
             for c in await claims_for(conn, account_id, scope=scope)
-            if c.field_key not in _SCORE_FIELDS and c.field_key != _NARRATIVE_FIELD
+            if c.field_key not in _SCORE_FIELDS
+            and c.field_key != _NARRATIVE_FIELD
+            and _product_allowed(c, project_scope.product_id)
         ]
-        committee_raw: list[tuple[EntityId, list[Claim]]] = [
-            (contact_id, list(await claims_for(conn, contact_id, scope=scope)))
-            for contact_id in await contact_ids_for_account(conn, account_id)
-        ]
+        committee_raw: list[tuple[EntityId, list[Claim]]] = []
+        for contact_id in await contact_ids_for_account(conn, account_id):
+            contact_claims = [
+                claim
+                for claim in await claims_for(conn, contact_id, scope=scope)
+                if _product_allowed(claim, project_scope.product_id)
+            ]
+            if contact_claims:
+                committee_raw.append((contact_id, contact_claims))
 
-        winners = await self._winners(conn, account_id, account_live, committee_raw, scope=scope)
+        winners = await self._winners(
+            conn,
+            account_id,
+            account_live,
+            committee_raw,
+            product_id=project_scope.product_id,
+            scope=scope,
+        )
 
         all_claim_ids: list[ClaimId] = [c.id for c in account_live]
         for _cid, cclaims in committee_raw:
@@ -139,8 +207,11 @@ class ReviewProjector:
         annotations = await self._annotations.annotations_for_claims(
             claim_ids=all_claim_ids, workspace_id=workspace_id
         )
-        field_conflicts = await self._annotations.open_conflicts_for_account(
-            account_entity_id=account_id, workspace_id=workspace_id
+        field_conflicts = self._product_scoped_conflicts(
+            await self._annotations.open_conflicts_for_account(
+                account_entity_id=account_id, workspace_id=workspace_id
+            ),
+            claim_ids=all_claim_ids,
         )
 
         account_rows = tuple(
@@ -180,10 +251,57 @@ class ReviewProjector:
             provenance_index=provenance_index,
         )
 
+    @staticmethod
+    def _product_scoped_conflicts(
+        conflicts: Sequence[FieldConflict],
+        *,
+        claim_ids: Sequence[ClaimId],
+    ) -> tuple[FieldConflict, ...]:
+        """Remove conflicts whose evidence does not survive this product-exact projection."""
+
+        allowed = frozenset(claim_ids)
+        scoped: list[FieldConflict] = []
+        for conflict in conflicts:
+            surviving = tuple(
+                claim_id for claim_id in conflict.conflicting_claim_ids if claim_id in allowed
+            )
+            if len(surviving) < 2:
+                continue
+            scoped.append(conflict.model_copy(update={"conflicting_claim_ids": surviving}))
+        return tuple(scoped)
+
     async def _read_score(
-        self, conn: AsyncConnection, account_id: EntityId, field_key: str, *, scope: WorkspaceScope
+        self,
+        conn: AsyncConnection,
+        account_id: EntityId,
+        field_key: str,
+        *,
+        project_run_id: ProjectRunId,
+        product_id: str | None,
+        scope: WorkspaceScope,
     ) -> Score | None:
-        cv = await current_value(conn, account_id, field_key, scope=scope)
+        candidates = []
+        for claim in await claims_for(conn, account_id, field_key, scope=scope):
+            value = claim.value_json
+            if not isinstance(value, dict):
+                continue
+            if product_id is None:
+                if claim.product_id is not None:
+                    continue
+            elif claim.product_id != product_id:
+                continue
+            pinned_run = value.get("project_run_id")
+            if pinned_run is not None and pinned_run != str(project_run_id):
+                continue
+            if product_id is not None and pinned_run != str(project_run_id):
+                continue
+            candidates.append(claim)
+        cv = merge_claims(
+            candidates,
+            None,
+            DEFAULT_MERGE_POLICY,
+            datetime.now(UTC),
+        )
         if cv is None or not isinstance(cv.value_json, dict):
             return None
         payload = cv.value_json
@@ -199,17 +317,73 @@ class ReviewProjector:
         account_live: list[Claim],
         committee_raw: list[tuple[EntityId, list[Claim]]],
         *,
+        product_id: str | None,
         scope: WorkspaceScope,
     ) -> _Winners:
-        winners: _Winners = {}
         acct_fields = {c.field_key for c in account_live}
-        if acct_fields:
-            winners.update(await current_values(conn, [account_id], acct_fields, scope=scope))
         contact_ids = [cid for cid, _ in committee_raw]
         contact_fields = {c.field_key for _cid, cclaims in committee_raw for c in cclaims}
-        if contact_ids and contact_fields:
-            winners.update(await current_values(conn, contact_ids, contact_fields, scope=scope))
-        return winners
+        return await current_values_resolved_for_product(
+            conn,
+            entity_ids=(account_id, *contact_ids),
+            field_keys=tuple(str(value) for value in acct_fields | contact_fields),
+            scope=scope,
+            product_id=product_id,
+        )
+
+    async def claim_is_reviewable(
+        self,
+        conn: AsyncConnection,
+        *,
+        claim: Claim,
+        account_entity_id: EntityId,
+        project_run_id: ProjectRunId,
+        workspace_id: str,
+    ) -> bool:
+        """Fail closed when an action targets a claim outside the rendered session scope."""
+
+        project_scope = await self._project_scope.read_scope(
+            conn,
+            project_run_id=project_run_id,
+            workspace_id=workspace_id,
+        )
+        if not _product_allowed(claim, project_scope.product_id):
+            return False
+        if claim.field_key in _SCORE_FIELDS or claim.field_key in {
+            _NARRATIVE_FIELD,
+            _PERSONA_FIELD,
+            _ROLE_FIELD,
+        }:
+            return False
+        scope = WorkspaceScope.for_workspace(workspace_id)
+        live_ids = {
+            candidate.id
+            for candidate in await claims_for(
+                conn,
+                claim.entity_id,
+                claim.field_key,
+                scope=scope,
+            )
+        }
+        if claim.id not in live_ids:
+            return False
+        account_id = await surviving_id(conn, account_entity_id, EntityType.ACCOUNT)
+        if claim.entity_type is EntityType.ACCOUNT:
+            return claim.entity_id == account_id
+        if claim.entity_type is not EntityType.CONTACT:
+            return False
+        contact = await get_contact(conn, claim.entity_id)
+        return (
+            contact is not None
+            and contact.workspace_id == workspace_id
+            and contact.merged_into is None
+            and await surviving_id(
+                conn,
+                contact.account_entity_id,
+                EntityType.ACCOUNT,
+            )
+            == account_id
+        )
 
     def _claim_row(
         self,

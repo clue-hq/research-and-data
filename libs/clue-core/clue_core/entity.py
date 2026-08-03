@@ -11,7 +11,7 @@ name (a non-UUID ``entity_id``/``id`` is rejected at validation).
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from clue_core.enums import AccountStatus, EntityType
 from clue_core.primitives import EntityId
@@ -44,6 +44,9 @@ class AccountEntity(BaseModel):
     registry_ids: dict[str, str] = {}  # NPI | DUNS | CIK | LEI ... vertical-dependent
     status: AccountStatus = AccountStatus.CANDIDATE
     merged_into: EntityId | None = None  # set when status == MERGED
+    # Durable identity revision used by C7 research-view/snapshot identity. It changes only when
+    # canonical identity state changes; bookkeeping timestamps do not create a new revision.
+    canonical_version: int = Field(default=1, ge=1)
     # Workspace tenancy (contract-delta 2026-07-24, [B3×research]): accounts are workspace-local.
     # Required in both the domain shape and DB from migration 82a80fb80c9e; the dev-only legacy
     # NULL state was retired rather than backfilled.
@@ -76,6 +79,7 @@ class ContactEntity(BaseModel):
     jurisdiction: str | None = None  # resolved per Doc D §1; nullable until a location claim lands
     status: AccountStatus = AccountStatus.CANDIDATE
     merged_into: EntityId | None = None  # set when status == MERGED
+    canonical_version: int = Field(default=1, ge=1)
     # Workspace tenancy (contract-delta 2026-07-24, [B3×research]): required and denormalized from
     # the parent account; the composite FK makes a mismatch unrepresentable.
     workspace_id: str

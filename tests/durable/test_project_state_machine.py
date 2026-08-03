@@ -131,8 +131,8 @@ def test_tier_checkpoint_suspends_then_submit_resumes_deep() -> None:
         run = await machine.run_to_completion(run_id)
         assert run.status is ProjectRunStatus.COMPLETED
         assert handlers[ProjectPhase.DEEP].calls == 1
-        # the gate handler ran exactly once — suspension never re-ran it
-        assert gate.calls == 1
+        # secure-input approval re-enters the gate once so it can persist the approved decision
+        assert gate.calls == 2
 
     run_async(_run())
 

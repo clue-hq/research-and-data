@@ -5,7 +5,7 @@ description = "Clue platform LLM gateway — the ONE model egress (OpenRouter cl
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
 dependencies = [
-    "openai>=1.40",
+    "openai>=2.45,<3",
     "langchain-openai==1.4.1",
     "clue-core",
     "clue-config",

@@ -23,10 +23,16 @@ from clue_agents import (
     WorkspacePolicy,
 )
 from clue_agents.contracts import PlanToolStep
-from clue_api.agent_execution_wiring import C5AgentExecutionAdapter
+from clue_api.agent_execution_wiring import (
+    _FAILURE_MESSAGE_LIMIT,
+    C5AgentExecutionAdapter,
+    _trusted_tool_arguments,
+)
 from clue_core import ExecutionId
 from clue_execution import InteractionAppend, InteractionSlotView, PinRequest
 from clue_toolbelt import (
+    PreconditionFailed,
+    PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
     Tool,
@@ -169,6 +175,29 @@ class _Executor:
         )
 
 
+class _RefusingExecutor(_Executor):
+    """Executor whose tool refuses the way a real governed tool refuses: by raising.
+
+    The live F7 case: ``record_interview_answer`` raised a domain ``ValueError`` from the
+    interview verifier. The exception is gathered away inside :meth:`execute` (a failed operation
+    must not abort its siblings), so the *reason* has to ride the progress stream or the caller has
+    nothing to hand the model.
+    """
+
+    def __init__(self, *, error: BaseException, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.error = error
+
+    async def invoke_interaction_tool(
+        self,
+        append: InteractionAppend,
+        **kwargs: Any,
+    ) -> ToolResult:
+        del append, kwargs
+        self.effect_count += 1
+        raise self.error
+
+
 class _PinProvider:
     async def pins_for(self, step: object, *, ctx: ToolContext) -> tuple[PinRequest, ...]:
         del step, ctx
@@ -180,6 +209,12 @@ class _PinProvider:
                 digest="a" * 64,
             ),
         )
+
+
+class _OtherTool(_Tool):
+    """A second registered tool, so a profile can pin something the plan does not call."""
+
+    name = "write_note"
 
 
 def _profile(pin: ToolPin) -> AgentProfile:
@@ -240,9 +275,12 @@ def _adapter(
     crash_hook: Any = _no_crash,
     pin_provider: object | None = None,
     dynamic_pin_kinds: tuple[str, ...] = (),
+    tool: Tool | None = None,
+    profile_pins_other_tool: bool = False,
+    executor: _Executor | None = None,
 ):
     registry = ToolRegistry()
-    registry.register(_Tool(), make_default=True)
+    registry.register(tool if tool is not None else _Tool(), make_default=True)
     descriptor = registry.descriptor("read_project", "1")
     pin = ToolPin(
         name=descriptor.name,
@@ -250,7 +288,22 @@ def _adapter(
         input_schema_sha256=descriptor.input_schema_sha256,
         output_schema_sha256=descriptor.output_schema_sha256,
     )
-    runtime_profile = _profile(pin)
+    if profile_pins_other_tool:
+        # The C5 slot allowlist and the profile's effective tool set are two independent
+        # authorities. Pinning the profile to a *different* registered tool produces the one
+        # combination neither test above covers: allowlisted by the slot, absent from the profile.
+        registry.register(_OtherTool(), make_default=True)
+        other = registry.descriptor("write_note", "1")
+        runtime_profile = _profile(
+            ToolPin(
+                name=other.name,
+                version=other.version,
+                input_schema_sha256=other.input_schema_sha256,
+                output_schema_sha256=other.output_schema_sha256,
+            )
+        )
+    else:
+        runtime_profile = _profile(pin)
     profile_ref = AgentResourceRef(
         kind=ResourceKind.PROFILE,
         name=runtime_profile.name,
@@ -267,10 +320,11 @@ def _adapter(
     )
     artifacts = _Artifacts()
     journal = _Journal()
-    executor = _Executor(
-        allowed=allowed,
-        dynamic_pin_kinds=dynamic_pin_kinds,
-    )
+    if executor is None:
+        executor = _Executor(
+            allowed=allowed,
+            dynamic_pin_kinds=dynamic_pin_kinds,
+        )
     adapter = C5AgentExecutionAdapter(
         turn_id=UUID("00000000-0000-0000-0000-000000000645"),
         constitution=trusted,
@@ -360,6 +414,40 @@ def test_agent_path_rejects_resource_pins_outside_the_recipe0_slot_contract() ->
     assert executor.appended == []
 
 
+def test_compiler_refuses_a_slot_allowlisted_tool_the_profile_does_not_make_effective() -> None:
+    """A not-effective step is refused *by this loop*, not left half-processed for a later lookup.
+
+    The C5 slot allowlist and the profile's effective tool set are independent authorities, so a
+    step can satisfy one and not the other. That branch used to ``continue`` without recording an
+    issue of its own: the step stayed in ``plan.steps`` but never got a ``trusted_arguments``
+    entry, and the two later unguarded lookups (graph compilation and cost estimation) would
+    ``KeyError`` on its node key. Today the shape is caught upstream by ``review_agent_plan``
+    (``tool_not_allowed``), which is what keeps the KeyError latent rather than live — but that
+    is an accident of a second, independently-editable authority agreeing. This loop must state
+    its own precondition, so the ``trusted_arguments`` invariant ("every retained tool step has an
+    entry") holds locally instead of being inherited.
+    """
+
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        profile_pins_other_tool=True,
+    )
+
+    with pytest.raises(AgentPlanRejected) as rejected:
+        run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    codes = [issue.code for issue in rejected.value.review.issues]
+    assert "tool_not_effective" in codes
+    assert [
+        issue.location
+        for issue in rejected.value.review.issues
+        if issue.code == "tool_not_effective"
+    ] == ["plan.steps[0].tool"]
+    # The upstream profile review still fires; the new issue is an added local guarantee.
+    assert "tool_not_allowed" in codes
+    assert executor.appended == []
+
+
 def test_compiler_rejects_c5_slot_and_budget_bypass_before_any_dynamic_append() -> None:
     missing, trusted, pin, executor, _ = _adapter(allowed=())
     with pytest.raises(AgentPlanRejected, match="c5_tool_not_allowed"):
@@ -400,3 +488,174 @@ def test_agent_boundaries_retry_through_c5_without_duplicate_domain_effect(
 
 async def _collect(iterator: Any) -> list[Any]:
     return [item async for item in iterator]
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_type", "expected_fragment"),
+    [
+        (
+            ValueError("claim value is not textually entailed by the exact interview quote"),
+            "ValueError",
+            "not textually entailed",
+        ),
+        (
+            PreconditionFailed(
+                (
+                    PreconditionFailure(
+                        reason_code="no_active_icp",
+                        message="confirm an ICP before importing accounts",
+                    ),
+                )
+            ),
+            "PreconditionFailed",
+            "no_active_icp: confirm an ICP before importing accounts",
+        ),
+    ],
+)
+def test_a_failed_operation_carries_its_reason_on_the_progress_stream(
+    error: BaseException,
+    expected_type: str,
+    expected_fragment: str,
+) -> None:
+    """The durable record of a failure is a code; the sentence that repairs it is the exception.
+
+    ``execute`` deliberately gathers operation exceptions away — one failed node must not abort its
+    siblings — so before this the reason existed only in the log. The caller (the governed tool
+    wrapper) then had nothing to tell the model beyond "it failed", which is exactly the live F7
+    dead end.
+    """
+
+    adapter, trusted, pin, executor, journal = _adapter(
+        allowed=("read_project@1",),
+        executor=_RefusingExecutor(error=error, allowed=("read_project@1",)),
+    )
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "failed"
+    assert progress[-1].failed_node_keys == ("read",)
+    failure = progress[-1].failures[0]
+    assert failure.node_key == "read"
+    assert failure.address == "read_project@1"
+    assert failure.error_type == expected_type
+    assert expected_fragment in failure.message
+    # The durable side is untouched: the failure event stands, no result row was written.
+    assert journal.results == []
+    assert journal.events[-1] == {
+        "plan_id": validated.plan_id,
+        "workspace_id": trusted.workspace_id,
+        "status": "failed",
+        "reason_code": "operation_failed",
+    }
+    assert executor.effect_count == 1
+
+
+def test_a_failure_message_is_bounded_for_the_next_model_call() -> None:
+    adapter, trusted, pin, _, _ = _adapter(
+        allowed=("read_project@1",),
+        executor=_RefusingExecutor(
+            error=ValueError("refused\n" + "x" * 5_000),
+            allowed=("read_project@1",),
+        ),
+    )
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    message = progress[-1].failures[0].message
+    assert message.startswith("refused x")
+    assert len(message) == _FAILURE_MESSAGE_LIMIT + 1  # the truncation ellipsis
+
+
+class _AuthorityInput(ToolInput):
+    """A tool body that legitimately needs authority it may never be *told* by the model."""
+
+    query: str
+    project_id: str | None = None
+    workspace_id: str | None = None
+
+
+class _AuthorityTool(_Tool):
+    input_model = _AuthorityInput
+
+
+def test_declared_authority_is_served_from_the_constitution_not_the_model() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        tool=_AuthorityTool(),
+    )
+
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "completed"
+    # The model proposed only ``query``; the executed body carries the trusted values.
+    assert executor.appended[0]["inputs"] == {
+        "query": "current project",
+        "project_id": trusted.project_id,
+        "workspace_id": trusted.workspace_id,
+    }
+
+
+def test_declared_authority_cannot_be_anything_but_the_constitution_value() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(
+        allowed=("read_project@1",),
+        tool=_AuthorityTool(),
+    )
+    other = constitution(profile_ref=trusted.profile_ref, project_id="project-attacker")
+    assert other != trusted
+
+    # A plan offered under any other constitution is refused outright, so the executed authority
+    # can only ever be the bound constitution's.
+    with pytest.raises(ValueError, match="different constitution"):
+        run_async(adapter.validate_plan(plan=_plan(pin), constitution=other))
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    run_async(_collect(adapter.execute(plan=validated)))
+    assert executor.appended[0]["inputs"]["project_id"] == trusted.project_id
+    assert executor.appended[0]["inputs"]["project_id"] != other.project_id
+    # The merge reads the constitution it is handed and nothing else.
+    assert _trusted_tool_arguments(
+        arguments={"query": "current project"},
+        input_model=_AuthorityInput,
+        constitution=other,
+    ) == {
+        "query": "current project",
+        "project_id": other.project_id,
+        "workspace_id": other.workspace_id,
+    }
+
+
+def test_tools_that_declare_no_authority_are_untouched() -> None:
+    adapter, trusted, pin, executor, _ = _adapter(allowed=("read_project@1",))
+
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    run_async(_collect(adapter.execute(plan=validated)))
+
+    assert executor.appended[0]["inputs"] == {"query": "current project"}
+
+
+def test_authority_merge_refuses_plan_arguments_that_already_carry_authority() -> None:
+    # Defence in depth: PlanToolStep refuses these keys, so reaching the merge with one means a
+    # caller bypassed the contract — that must fail loudly, never be silently overwritten.
+    trusted = constitution()
+    with pytest.raises(ValueError, match="trusted authority"):
+        _trusted_tool_arguments(
+            arguments={"query": "x", "project_id": "project-attacker"},
+            input_model=_AuthorityInput,
+            constitution=trusted,
+        )
+
+
+def test_authority_the_constitution_does_not_carry_is_not_synthesized() -> None:
+    class _OperationInput(ToolInput):
+        query: str
+        operation_id: str | None = None
+
+    merged = _trusted_tool_arguments(
+        arguments={"query": "x"},
+        input_model=_OperationInput,
+        constitution=constitution(),
+    )
+
+    assert merged == {"query": "x"}

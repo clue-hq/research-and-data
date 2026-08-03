@@ -15,7 +15,7 @@ skills:
 tools:
   - name: get_research_view
     version: "1"
-    input_schema_sha256: 0ce6ad0eaa0d4e2dd91461d53119be6dcb1129d36923c3fb720a23c87ad8ee35
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
     output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
   - name: research_account_gaps
     version: "2"

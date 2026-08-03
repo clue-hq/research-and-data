@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
@@ -18,12 +18,14 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from langchain_core.tools import BaseTool, StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic_core import to_jsonable_python
 from sqlalchemy import text
 
 from clue_agents import (
     AgentFinalizeEnvelope,
     AgentPlan,
+    AgentPlanRejected,
     AgentRole,
     AgentTurnOutcome,
     AgentTurnRequest,
@@ -37,7 +39,13 @@ from clue_agents import (
     ResolvedAgentProfile,
     SpecialistTaskEnvelope,
 )
-from clue_agents.contracts import PlanDelegationStep, PlanToolStep, normalize_virtual_path
+from clue_agents.contracts import (
+    MODEL_FORBIDDEN_AUTHORITY_KEYS,
+    PlanDelegationStep,
+    PlanToolStep,
+    ReasonCode,
+    normalize_virtual_path,
+)
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
@@ -48,7 +56,9 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
 from clue_toolbelt import ToolRegistry
 
 __all__ = [
@@ -57,11 +67,27 @@ __all__ = [
     "DurableDeepAgentTurnRunner",
     "DelegateSpecialistRequest",
     "GovernedAgentToolFactory",
+    "GovernedToolFailure",
     "ModelFinalizeRequest",
 ]
 
+log = get_logger("clue_api.agent_runtime_wiring")
+
 _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
+
+# One turn's budget for *refused* governed invocations, shared by every governed tool the model
+# holds. The hard ceiling is already there — ``DeepAgentTurnRuntime`` caps the graph at
+# ``max_rounds * 2 + 4`` supersteps, so a repair loop cannot run forever — but that ceiling is
+# reached only after ~24 further paid model calls. Three refusals is the point past which the model
+# is no longer misreading an argument contract, so the turn stops paying to find out.
+_MAX_GOVERNED_TOOL_FAILURES = 3
+
+_GOVERNED_TOOL_REPAIR_HELP = (
+    "Nothing was recorded: no durable state changed and this operation did not happen. Correct "
+    "exactly what the reasons name and call the tool again, or tell the human what is blocking "
+    "you. Do not report this as captured."
+)
 
 
 def _stable_error_code(error: BaseException) -> str:
@@ -230,6 +256,29 @@ class _ModelInput(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=False)
 
 
+class GovernedToolFailure(BaseModel):
+    """The refusal of one governed invocation, shaped for the model that must repair it.
+
+    A governed tool returns its :class:`GovernedOperationReceipt` as JSON when the operation
+    commits. A refusal is the same kind of answer — a bounded, typed, reference-only statement of
+    what the platform did — so it is returned the same way rather than raised. Raising killed the
+    LangGraph run and the model was never told why (the live Stage-0 defect: a paraphrased claim
+    value failed the interview verifier and the turn ended ``runtime_error`` in silence).
+
+    ``recorded`` is pinned ``False``: the durable failure record is unchanged, nothing committed,
+    and the model must not describe this operation as having happened.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    error: Literal["plan_rejected", "operation_failed"]
+    address: str
+    node_key: str
+    recorded: Literal[False] = False
+    reasons: tuple[str, ...]
+    guidance: str = _GOVERNED_TOOL_REPAIR_HELP
+
+
 class ModelFinalizeRequest(_ModelInput):
     """Model-controlled final content only; trusted identity/time/output snapshots are injected."""
 
@@ -239,14 +288,59 @@ class ModelFinalizeRequest(_ModelInput):
     open_gate_refs: tuple[DomainObjectRef, ...] = ()
     assumptions: tuple[str, ...] = Field(default=(), max_length=64)
     next_actions: tuple[str, ...] = Field(default=(), max_length=64)
-    failure_code: str | None = Field(
-        default=None,
-        pattern=r"^[a-z0-9_.-]+$",
-        max_length=128,
-    )
+    # The envelope's own alias, not a copy of its pattern. A hand-copied constraint is the exact
+    # drift hazard this contract-parity work exists to close: tightening ``ReasonCode`` would
+    # silently leave the model boundary looser again, and the model would once more be told yes
+    # about a code the durable envelope refuses.
+    failure_code: ReasonCode | None = None
+
+    @model_validator(mode="after")
+    def terminal_shape_is_honest(self) -> ModelFinalizeRequest:
+        """Mirror :meth:`AgentFinalizeEnvelope.terminal_shape_is_honest` at the model boundary.
+
+        The model-facing shape must be *at least* as strict as the durable envelope. When it is
+        looser the model gets a green light for a proposal the envelope will refuse, and the turn
+        dies inside envelope construction — the live Stage-0 defect (``awaiting_input`` carrying a
+        ``failure_code``). Every rule the envelope enforces on a field the model actually supplies
+        is restated here so the refusal happens where the model can still see and repair it.
+
+        Two envelope rules are checked against their model-side *source*: the envelope's
+        ``user_message_artifact_ref`` is persisted from ``user_message``, and its
+        ``next_action_refs`` are persisted from ``next_actions`` — or, when a non-terminal turn
+        supplies neither an explicit next action nor an open gate, from the ``user_message`` that
+        already states what the human must do (the deliberate repair in ``_finalize_tool``). Rules
+        over trusted injected fields (``output_refs``, identity, time) stay envelope-only: the
+        model does not supply them, so there is nothing honest to check here.
+        """
+
+        if self.status is FinalizeStatus.FAILED:
+            if self.failure_code is None:
+                raise ValueError("status 'failed' must carry a stable snake_case failure_code")
+        elif self.failure_code is not None:
+            raise ValueError(
+                f"status {self.status.value!r} cannot carry a failure_code; only 'failed' may"
+            )
+        if self.status is FinalizeStatus.COMPLETED and self.user_message is None:
+            raise ValueError("status 'completed' must carry a user_message")
+        if self.status in {FinalizeStatus.AWAITING_INPUT, FinalizeStatus.BLOCKED} and not (
+            self.open_gate_refs or self.next_actions or self.user_message
+        ):
+            raise ValueError(
+                f"status {self.status.value!r} must identify what it is waiting for: supply "
+                "next_actions, open_gate_refs, or a user_message that asks for it"
+            )
+        return self
 
 
+# A surface-specific veto over a *non-failing* terminal proposal, invoked for ``completed`` and
+# ``awaiting_input`` (the two statuses that tell the human the turn did its job). It receives the
+# whole proposal, so a guard that only governs one of them checks ``status`` itself; ``failed`` and
+# ``blocked`` are never gated, because an honest failure must not be forced through work it could
+# not do. A guard refuses by raising ``ValueError``, which the runtime's bounded finalize repair
+# turns into visible model feedback before the turn fails closed.
 CompletionGuard = Callable[[ModelFinalizeRequest], Awaitable[None]]
+
+_GUARDED_STATUSES = frozenset({FinalizeStatus.COMPLETED, FinalizeStatus.AWAITING_INPUT})
 
 
 class ModelDomainRef(_ModelInput):
@@ -287,19 +381,74 @@ def _with_trusted_runtime(
     *,
     name: str,
 ) -> type[BaseModel]:
-    """Add LangGraph's injected runtime without changing the model-visible schema."""
+    """Add LangGraph's injected runtime and hide trusted authority from the model-visible schema.
+
+    A tool input model may legitimately declare an authority field (the Stage-0 tools declare
+    ``project_id``), but the model never gets to choose one: ``PlanToolStep.arguments`` rejects
+    every :data:`MODEL_FORBIDDEN_AUTHORITY_KEYS` name outright, and the executor serves the value
+    from the trusted :class:`~clue_agents.contracts.AgentConstitution`. Leaving those fields on
+    the model-visible schema is not merely redundant — it breaks the tool, because
+    ``StructuredTool`` materializes *every* defaulted field into the kwargs it hands the
+    coroutine, so an untouched ``project_id=None`` would reach the plan step and trip the
+    forbidden-authority guard on a call the model made correctly.
+
+    The same removal covers per-turn authority: a field marked
+    :data:`~clue_api.turn_binding.TRUSTED_TURN_FIELD` is
+    served from the captured-turn binding at the execution seam (``clue_api.turn_binding``), so
+    ``record_interview_answer``'s ``onboarding_input_id``, ``artifact_key`` and captured ``answer``
+    body leave the model surface entirely. The two sets differ only in where the trusted value
+    comes from — the constitution for the whole execution, the captured turn for this one turn.
+
+    Removing them keeps ``extra='forbid'`` doing the honest thing: a model that invents
+    ``project_id`` anyway gets an ordinary validation error it can see and react to, rather than
+    a crash deep in plan construction. Field removal (rather than rebuilding the model from its
+    surviving fields) preserves the source model's own field and model validators.
+    """
 
     config = dict(model.model_config)
     config["arbitrary_types_allowed"] = True
-    return type(
-        name,
-        (model,),
-        {
-            "__module__": __name__,
-            "__annotations__": {"runtime": ToolRuntime},
-            "model_config": cast(ConfigDict, config),
-        },
+    subclass = cast(
+        type[BaseModel],
+        type(
+            name,
+            (model,),
+            {
+                "__module__": __name__,
+                "__annotations__": {"runtime": ToolRuntime},
+                "model_config": cast(ConfigDict, config),
+            },
+        ),
     )
+    trusted = MODEL_FORBIDDEN_AUTHORITY_KEYS | set(trusted_turn_fields(model))
+    hidden = trusted & set(subclass.__pydantic_fields__)
+    if hidden:
+        for key in hidden:
+            del subclass.__pydantic_fields__[key]
+        subclass.model_rebuild(force=True)
+    return subclass
+
+
+def _json_arguments(kwargs: Mapping[str, Any]) -> dict[str, JsonValue]:
+    """Render LangChain-validated tool kwargs as the pure JSON a durable plan step admits.
+
+    ``StructuredTool`` hands the coroutine *validated* values — a nested ``BaseModel`` stays a
+    model instance, an enum stays an enum member, ``UUID``/``Decimal``/``datetime`` stay rich
+    Python objects — while :class:`~clue_agents.contracts.PlanToolStep.arguments` is
+    ``dict[str, JsonValue]``. Without this seam every governed tool carrying a nested model dies
+    with ``input was not a valid JSON value`` on a semantically correct model call.
+
+    The conversion is a pure re-representation, never a repair: ``to_jsonable_python`` raises on
+    a value with no JSON representation, so a malformed argument still fails loudly here instead
+    of being laundered into the plan. Round-tripping through the tool's own args model is
+    deliberately *not* used — that model is the ``_with_trusted_runtime`` subclass carrying the
+    injected, unserializable ``runtime`` object, and dumping it would either fail or leak trusted
+    authority into model-proposed arguments. (``runtime`` binds to the coroutine's own parameter,
+    so it never reaches ``kwargs``; only model-controlled fields are normalized.) The executor
+    re-validates these arguments into the tool's ``input_model``, which accepts the JSON
+    representation.
+    """
+
+    return cast(dict[str, JsonValue], to_jsonable_python(dict(kwargs)))
 
 
 class AgentFinalizationAuthority:
@@ -466,6 +615,9 @@ class GovernedAgentToolFactory:
         self._artifacts = artifacts
         self._required_output_path = required_output_path
         self._completion_guard = completion_guard
+        # Per-turn state: the factory is constructed once per turn, next to the turn's execution
+        # adapter, so this budget is shared across every governed tool the model may call.
+        self._tool_failures = 0
 
     def build(self) -> tuple[BaseTool, ...]:
         tools = tuple(
@@ -502,21 +654,45 @@ class GovernedAgentToolFactory:
                     PlanToolStep(
                         node_key=node_key,
                         tool=pin,
-                        arguments=kwargs,
+                        arguments=_json_arguments(kwargs),
                         purpose=f"Governed direct invocation of {pin.address}.",
                     ),
                 ),
                 proposed_at=self._request.requested_at,
             )
-            validated = await self._execution.validate_plan(
-                plan=plan,
-                constitution=self._request.constitution,
-            )
+            try:
+                validated = await self._execution.validate_plan(
+                    plan=plan,
+                    constitution=self._request.constitution,
+                )
+            except AgentPlanRejected as rejected:
+                return self._tool_failure(
+                    error="plan_rejected",
+                    address=pin.address,
+                    node_key=node_key,
+                    error_type=type(rejected).__name__,
+                    reasons=tuple(
+                        f"{issue.location}: {issue.code}: {issue.message}"
+                        for issue in rejected.review.issues
+                    ),
+                    raise_when_exhausted=rejected,
+                )
             final_progress = None
             async for progress in self._execution.execute(plan=validated):
                 final_progress = progress
             if final_progress is None or final_progress.status != "completed":
-                raise RuntimeError(f"governed operation {pin.address} failed")
+                failures = final_progress.failures if final_progress is not None else ()
+                return self._tool_failure(
+                    error="operation_failed",
+                    address=pin.address,
+                    node_key=node_key,
+                    error_type=(failures[0].error_type if failures else "RuntimeError"),
+                    reasons=tuple(
+                        f"{failure.error_type}: {failure.message}" for failure in failures
+                    )
+                    or ("the governed operation did not complete",),
+                    raise_when_exhausted=RuntimeError(f"governed operation {pin.address} failed"),
+                )
             recovered = await self._execution.recover(
                 execution_id=self._request.constitution.execution_id
             )
@@ -552,6 +728,50 @@ class GovernedAgentToolFactory:
                 name=f"{descriptor.input_model.__name__}AgentRuntime",
             ),
         )
+
+    def _tool_failure(
+        self,
+        *,
+        error: Literal["plan_rejected", "operation_failed"],
+        address: str,
+        node_key: str,
+        error_type: str,
+        reasons: tuple[str, ...],
+        raise_when_exhausted: BaseException,
+    ) -> str:
+        """Hand one refused governed invocation back to the model, within a per-turn budget.
+
+        The refusal is a tool *result*, not an exception, because an exception raised out of a
+        ``StructuredTool`` coroutine ends the LangGraph run: the operation's durable failure record
+        was written, nothing committed, and the model was told nothing — it could not correct the
+        argument that was refused, and the turn died with no user-facing answer.
+
+        Once the budget is spent the original exception is raised, which is exactly today's
+        behaviour: the turn fails closed with its stable error code and still commits nothing.
+        A repeated refusal is not a misread argument contract, and each further attempt is a paid
+        model call.
+        """
+
+        self._tool_failures += 1
+        exhausted = self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
+        log.warning(
+            "agent.tool_repair",
+            address=address,
+            node_key=node_key,
+            error=error,
+            error_type=error_type,
+            reasons=list(reasons),
+            attempt=self._tool_failures,
+            exhausted=exhausted,
+        )
+        if exhausted:
+            raise raise_when_exhausted
+        return GovernedToolFailure(
+            error=error,
+            address=address,
+            node_key=node_key,
+            reasons=reasons,
+        ).model_dump_json()
 
     def _delegation_tool(self) -> BaseTool:
         output_paths = {
@@ -712,10 +932,7 @@ class GovernedAgentToolFactory:
                     raise ValueError(
                         "completed specialist turn requires its non-empty role output file"
                     )
-            if (
-                model_input.status is FinalizeStatus.COMPLETED
-                and self._completion_guard is not None
-            ):
+            if model_input.status in _GUARDED_STATUSES and self._completion_guard is not None:
                 await self._completion_guard(model_input)
             workspace_id = self._request.constitution.workspace_id
             final_message_ref = (
@@ -737,15 +954,30 @@ class GovernedAgentToolFactory:
                     for value in model_input.assumptions
                 ]
             )
-            next_action_refs = tuple(
-                [
-                    await self._artifacts.persist_body(
-                        workspace_id=workspace_id,
-                        data=value.encode(),
-                        media_type="text/plain",
-                    )
-                    for value in model_input.next_actions
-                ]
+            # A user-facing question already identifies the requested human action. Providers
+            # occasionally omit the redundant ``next_actions`` array even when they correctly
+            # choose ``awaiting_input``. Preserve that exact message as the action reference so
+            # the honest-finalization envelope remains valid without inventing new content.
+            next_actions = model_input.next_actions
+            message_is_implicit_next_action = (
+                model_input.status in {FinalizeStatus.AWAITING_INPUT, FinalizeStatus.BLOCKED}
+                and not model_input.open_gate_refs
+                and not next_actions
+                and model_input.user_message is not None
+            )
+            next_action_refs = (
+                (final_message_ref,)
+                if message_is_implicit_next_action and final_message_ref is not None
+                else tuple(
+                    [
+                        await self._artifacts.persist_body(
+                            workspace_id=workspace_id,
+                            data=value.encode(),
+                            media_type="text/plain",
+                        )
+                        for value in next_actions
+                    ]
+                )
             )
             output_refs = tuple(await self._lease.backend.snapshot_outputs())
             envelope = AgentFinalizeEnvelope(
@@ -768,9 +1000,20 @@ class GovernedAgentToolFactory:
             return ref.model_dump_json()
 
         finalize_turn.__name__ = "finalize_turn"
+        # The status rules are stated here, not only enforced in the schema: a plain object
+        # schema cannot express "failure_code iff status='failed'", so the model learns the
+        # contract from the description and is refused (visibly, with one bounded repair) if it
+        # proposes a shape the durable envelope would reject.
         finalize_turn.__doc__ = (
             "Required terminal action. Durably commit the user message, frozen outputs, "
-            "typed references, and honest status. Normal model stop is not success."
+            "typed references, and honest status. Normal model stop is not success. "
+            "Status contract, enforced exactly: "
+            "'completed' requires user_message and must omit failure_code; "
+            "'awaiting_input' and 'blocked' must omit failure_code and must say what is "
+            "needed via next_actions, open_gate_refs, or a user_message that asks for it; "
+            "'failed' requires a stable failure_code matching ^[a-z0-9_.-]+$ (lowercase, at "
+            "most 128 characters). "
+            "No status other than 'failed' may carry a failure_code."
         )
         return StructuredTool.from_function(
             coroutine=finalize_turn,

@@ -22,7 +22,7 @@ from clue_research.discovery_scoring import (
     TierCheckpointPhaseHandler,
     coverage_report,
 )
-from clue_research.discovery_scoring.phases import _discovery_run_id
+from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.sources import RegistrySourceManifest, register_source
 from clue_research.sources.source_yield import record_source_yield
 
@@ -216,7 +216,7 @@ def test_checkpoint_payload_includes_coverage() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
             project_run_id = await _seed_and_score(conn)
-            disc_run = _discovery_run_id(_ctx(project_run_id))
+            disc_run = discovery_run_id(_ctx(project_run_id))
             await _register_account_source(conn, "exa")
             await _register_account_source(conn, "apollo")  # an unsearched gap
             await _write_discovery_yield(

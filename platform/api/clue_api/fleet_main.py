@@ -53,6 +53,8 @@ from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
 from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_platform_wiring import build_agent_platform_components
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.compliance_wiring import register_compliance_wiring
+from clue_api.composition import load_research_packs
 from clue_api.execution_tools import (
     ExecutionControlServices,
     register_execution_control_tools,
@@ -68,6 +70,7 @@ from clue_api.fleet_wiring import (
     build_multi_work_worker,
     register_boot_handlers,
 )
+from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -77,6 +80,7 @@ from clue_api.recipe_wiring import (
     build_recipe_pin_registry,
     seed_system_recipes,
 )
+from clue_api.research_view_runtime import build_production_research_view_runtime
 from clue_api.run_composition import ComposingRunDriver, build_platform_gateway
 from clue_api.run_events_wiring import build_run_event_emitter
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
@@ -219,6 +223,10 @@ async def _serve() -> None:
     settings = load_settings()
     storage = build_storage_backend(settings)
     async with db_lifespan(), redis_lifespan():
+        register_compliance_wiring()
+        register_narrative_wiring()
+        async with transaction() as conn:
+            await load_research_packs(conn)
         project_execution_router = DeferredProjectExecutionRouter()
         # Boot smoke: the process-wide-composable handler set (REVIEW today) must compose — a clean
         # refuse-to-start if it cannot (a degenerate no-composer deployment). The ComposingRunDriver
@@ -234,12 +242,33 @@ async def _serve() -> None:
         task_queue = DbTaskQueue()
         work_queue = DbWorkQueue(task_queue)
         gateway = build_platform_gateway(settings)
+        c7_enabled = any(
+            (
+                settings.c7_research_view_read_enabled,
+                settings.c7_snapshot_compose_enabled,
+                settings.c7_evidence_actions_enabled,
+                settings.c7_recheck_enabled,
+                settings.c7_production_handoff_enabled,
+            )
+        )
+        research_views = (
+            build_production_research_view_runtime(storage=storage) if c7_enabled else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
             gateway=gateway,
             queue=task_queue,
             project_execution_router=project_execution_router,
+            research_view_composer=(
+                research_views.composer if research_views is not None else None
+            ),
+            research_view_snapshots=(
+                research_views.snapshots if research_views is not None else None
+            ),
+            research_view_recheck=(
+                research_views.recheck if research_views is not None else None
+            ),
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -261,6 +290,8 @@ async def _serve() -> None:
             storage=storage,
             settings=settings,
         )
+        if research_views is not None:
+            research_views.bind_tool_invoker(tool_invoker)
         deferred_supervisor_actions.bind(
             ToolbeltSupervisorActions(invoker=tool_invoker, conn_factory=transaction)
         )

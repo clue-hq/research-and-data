@@ -35,7 +35,7 @@ from clue_core import (
 )
 from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim, load_core_pack
 from clue_research.discovery_scoring import ScoringPhaseHandler, TierCheckpointPhaseHandler
-from clue_research.discovery_scoring.phases import _discovery_run_id
+from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import FIT_FIELD
 from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
 from clue_research.icp import (
@@ -168,7 +168,7 @@ async def _seed_admitted(
             source_tier=2,
             extraction_method=ExtractionMethod.SCRAPE,
             confidence=0.8,
-            run_id=_discovery_run_id(ctx),
+            run_id=discovery_run_id(ctx),
             research_mode=ResearchMode.ACCOUNT_DISCOVERY,
             found_via="exa",
             matched_signal="saas",

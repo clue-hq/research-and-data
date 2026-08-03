@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
+from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -41,6 +42,7 @@ from clue_core import (
     new_recon_run_id,
     serialize_value_json,
 )
+from clue_research.stage0.readiness_policy import get_workspace_client_kb_readiness_policy
 
 
 class ReconLaneStatus(StrEnum):
@@ -103,6 +105,44 @@ class ReconRunRow(BaseModel):
     failure_code: str | None
     created_at: UtcDatetime
     updated_at: UtcDatetime
+
+
+class VolunteeredStatementRow(BaseModel):
+    """One durable interview statement plus the captured artifact its quote is proven against.
+
+    The quote text itself is deliberately **not** stored — only its offsets and sha256 into the
+    ``onboarding_input`` artifact body — so a reader that wants the words must fetch the captured
+    artifact and can verify the span it sliced."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: VolunteeredStatementId
+    onboarding_input_id: OnboardingInputId
+    artifact_key: str
+    workspace_id: str
+    project_id: str | None
+    route_kind: StatementRoute
+    route_key: str
+    route_ref: str | None
+    quote_start: int
+    quote_end: int
+    quote_sha256: str
+    correction_of_id: VolunteeredStatementId | None
+    created_at: UtcDatetime
+
+
+class StatementCounts(BaseModel):
+    """How many durable routing receipts one captured input produced.
+
+    ``total`` is every statement written for the input — the structural answer to "did this turn
+    route the human's words anywhere at all?". ``non_unmapped`` excludes the
+    :attr:`StatementRoute.UNMAPPED` escape hatch, which is an honest "nothing here is material" and
+    therefore is *not* new evidence for a readiness recompute."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    total: int
+    non_unmapped: int
 
 
 class ReadinessDecisionRow(BaseModel):
@@ -231,6 +271,66 @@ async def get_onboarding_input(
                     "WHERE id = :id AND workspace_id = :workspace_id"
                 ),
                 {"id": input_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return OnboardingInputRow.model_validate(dict(row)) if row is not None else None
+
+
+async def get_onboarding_input_for_artifact(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    artifact_key: str,
+    actor: str,
+    kind: OnboardingInputKind | None = None,
+) -> OnboardingInputRow | None:
+    """Return the newest capture record for exactly this artifact, in this project, by this actor.
+
+    Every part of the scope is load-bearing, because an artifact key is *content-addressed* and
+    ``submit_onboarding_input`` is a writable tool: a caller who resolves "which capture is this
+    artifact" on ``(workspace_id, artifact_key)`` alone lets anything that can write an
+    ``onboarding_input`` row decide the answer, simply by writing a newer one.
+
+    * ``project_id`` — two projects in one workspace whose users send a byte-identical short
+      answer ("confirm") share one artifact key. Without this they cross-select, and each other's
+      turns are attributed to the wrong project.
+    * ``actor`` — an agent-written row (``actor='agent'``) must never out-rank the human capture
+      of the turn the agent is answering. Callers resolving a *user turn* pass ``'human'``.
+    * ``kind`` — a ``website``/``upload`` capture of the same bytes is not the user's turn.
+
+    Within that scope the newest row is the one just written (capture precedes use), and every
+    candidate carries the same immutable ``artifact_key``/``content_sha256`` pair, so the choice
+    can never change which bytes a caller is handed. ``id`` breaks a ``created_at`` tie so the
+    answer is deterministic rather than storage-order dependent.
+
+    ``project_id`` is required, and the column is nullable — so a capture surface that omits it
+    writes a row this lookup can never select, and the turn it captured is **unbindable**: a tool
+    needing turn authority is refused rather than served a scope-free match. That is deliberate
+    (fail-closed), and it is the one thing a future human-capture surface must not get wrong:
+    capture the project, or accept that the turn cannot be bound.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_ONBOARDING_COLUMNS} FROM onboarding_input "
+                    "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                    "AND artifact_key = :artifact_key AND actor = :actor "
+                    "AND (CAST(:kind AS text) IS NULL OR kind = :kind) "
+                    "ORDER BY created_at DESC, id DESC LIMIT 1"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "artifact_key": artifact_key,
+                    "actor": actor,
+                    "kind": kind.value if kind is not None else None,
+                },
             )
         )
         .mappings()
@@ -501,6 +601,106 @@ async def record_statement(
     return statement_id
 
 
+async def read_statements(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    route_kind: StatementRoute = StatementRoute.PROJECT_STATE,
+    include_superseded: bool = False,
+) -> tuple[VolunteeredStatementRow, ...]:
+    """The client's **live** statements of one route kind under this project, oldest first.
+
+    This is the read side of the interview seam: ``project_state`` statements are the client's own
+    targeting/strategy words, durable but *not* claim-shaped, and ICP synthesis grounds on them
+    alongside the versioned Client-KB claims.
+
+    The table is append-only, so a client who changes their mind lands a **new** statement carrying
+    ``correction_of_id``. Latest-correction-wins: a statement another statement corrects is
+    superseded and is excluded by default — a retracted "we target healthcare" must not keep
+    steering downstream synthesis. Pass ``include_superseded=True`` for the full audit history."""
+    superseded_filter = (
+        ""
+        if include_superseded
+        else """
+                      AND NOT EXISTS (
+                          SELECT 1 FROM volunteered_statement c
+                          WHERE c.correction_of_id = s.id
+                            AND c.workspace_id = s.workspace_id
+                      )"""
+    )
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"""
+                    SELECT s.id, s.onboarding_input_id, i.artifact_key, s.workspace_id,
+                           s.project_id, s.route_kind, s.route_key, s.route_ref,
+                           s.quote_start, s.quote_end, s.quote_sha256, s.correction_of_id,
+                           s.created_at
+                    FROM volunteered_statement s
+                    JOIN onboarding_input i ON i.id = s.onboarding_input_id
+                    WHERE s.workspace_id = :workspace_id
+                      AND s.project_id = :project_id
+                      AND s.route_kind = :route_kind{superseded_filter}
+                    ORDER BY s.created_at, s.id
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "route_kind": route_kind.value,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(VolunteeredStatementRow.model_validate(dict(row)) for row in rows)
+
+
+async def count_statements_for_input(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    onboarding_input_id: OnboardingInputId,
+) -> StatementCounts:
+    """Count the routing receipts one captured onboarding input produced, by route class.
+
+    This is the durable answer to "did this turn actually record anything?" — the question a
+    caller must be able to ask *without* reading prose. It deliberately spans every route kind
+    (unlike :func:`read_statements`, which serves one route kind under a project) and keys on the
+    onboarding input rather than the project, because the input is what identifies a single
+    captured user turn.
+
+    Superseded statements are counted: a correction is still a receipt for the turn that made it.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT count(*) AS total,
+                           count(*) FILTER (WHERE route_kind <> :unmapped) AS non_unmapped
+                    FROM volunteered_statement
+                    WHERE workspace_id = :workspace_id
+                      AND onboarding_input_id = :onboarding_input_id
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "onboarding_input_id": onboarding_input_id,
+                    "unmapped": StatementRoute.UNMAPPED.value,
+                },
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return StatementCounts(total=int(row["total"]), non_unmapped=int(row["non_unmapped"]))
+
+
 def _manifest_hash(payload: Mapping[str, JsonValue]) -> str:
     return hashlib.sha256(serialize_value_json(dict(payload)).encode()).hexdigest()
 
@@ -736,6 +936,9 @@ async def evaluate_readiness(
     agent_sufficiency_ref: str | None = None,
     readiness_decision_id: ReadinessDecisionId | None = None,
 ) -> ReadinessSnapshotRef:
+    workspace_policy = await get_workspace_client_kb_readiness_policy(
+        conn, workspace_id=workspace_id
+    )
     floor = spec.floors[gate]
     coverage = _number(metrics.get("coverage_ratio"), default=0.0)
     verified = int(_number(metrics.get("verified_claims"), default=0.0))
@@ -745,6 +948,20 @@ async def evaluate_readiness(
         {item for item in raw_available_fields if isinstance(item, str)}
         if isinstance(raw_available_fields, list)
         else set()
+    )
+    metrics_for_record: dict[str, JsonValue] = dict(metrics)
+    workspace_required = (
+        workspace_policy.required_field_keys if workspace_policy is not None else ()
+    )
+    workspace_missing = sorted(set(workspace_required) - available_fields)
+    metrics_for_record.update(
+        {
+            "workspace_readiness_policy_version": (
+                workspace_policy.version if workspace_policy is not None else 0
+            ),
+            "workspace_required_field_keys": cast(list[JsonValue], list(workspace_required)),
+            "workspace_required_missing_field_keys": cast(list[JsonValue], workspace_missing),
+        }
     )
     reasons: list[str] = []
     if coverage < floor.min_coverage_ratio:
@@ -761,6 +978,7 @@ async def evaluate_readiness(
         reasons.append("agent_sufficiency_insufficient")
     if missing := sorted(set(floor.required_field_keys) - available_fields):
         reasons.extend(f"missing_field:{key}" for key in missing)
+    reasons.extend(f"missing_workspace_field:{key}" for key in workspace_missing)
     spec_version = await ensure_readiness_spec(conn, workspace_id=workspace_id, spec=spec)
     decision_id = (
         readiness_decision_id if readiness_decision_id is not None else new_readiness_decision_id()
@@ -805,7 +1023,7 @@ async def evaluate_readiness(
             "field_refs": serialize_value_json(list(field_proposal_refs)),
             "source_refs": serialize_value_json(list(source_proposal_refs)),
             "ingestion_refs": serialize_value_json(list(ingestion_refs)),
-            "metrics": serialize_value_json(dict(metrics)),
+            "metrics": serialize_value_json(metrics_for_record),
             "reasons": serialize_value_json(reasons),
             "agent_status": agent_sufficiency_status,
             "agent_ref": agent_sufficiency_ref,
@@ -871,6 +1089,38 @@ async def get_readiness_decision(
         .one_or_none()
     )
     return _readiness_row(dict(row)) if row is not None else None
+
+
+async def read_readiness_decisions(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> tuple[ReadinessDecisionRow, ...]:
+    """This project's readiness ledger, oldest first — the append-only decision history.
+
+    The read side of :func:`evaluate_readiness`. Ordered ``(created_at, id)`` so "the latest
+    decision" is a deterministic choice even when two decisions share a timestamp, and so a reader
+    that pages the ledger sees a stable sequence. Every gate and actor is returned: filtering to
+    *authoritative* (``created_by_actor='system'``) or lineage-current rows is a policy the caller
+    applies, not a truth the store hides.
+    """
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_READINESS_COLUMNS} FROM readiness_decision "
+                    "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                    "ORDER BY created_at, id"
+                ),
+                {"workspace_id": workspace_id, "project_id": project_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_readiness_row(dict(row)) for row in rows)
 
 
 async def override_readiness(
@@ -963,14 +1213,19 @@ __all__ = [
     "ReadinessDecisionRow",
     "ReconLaneStatus",
     "ReconRunRow",
+    "StatementCounts",
     "StatementRoute",
+    "VolunteeredStatementRow",
     "compile_product_context",
+    "count_statements_for_input",
     "ensure_readiness_spec",
     "evaluate_readiness",
     "get_onboarding_input",
     "get_readiness_decision",
     "get_recon",
     "override_readiness",
+    "read_readiness_decisions",
+    "read_statements",
     "recon_dedupe_hash",
     "record_statement",
     "start_recon",

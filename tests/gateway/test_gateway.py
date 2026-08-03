@@ -15,7 +15,13 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
-from clue_config import ConfigOverlay, GatewayConfig, ModelPrice, get_config
+from clue_config import (
+    ConfigOverlay,
+    GatewayConfig,
+    ModelPrice,
+    default_gateway_config,
+    get_config,
+)
 from clue_config.loader import OverlayStore
 from clue_core import Completion, EmbeddingResult, LLMGateway, Message, Role, TokenUsage
 from clue_gateway import (
@@ -202,35 +208,61 @@ def test_stub_path_does_not_import_openai() -> None:
 # --- the live gateway logic, hermetic via an injected fake client -----------
 
 
-class _FakeChat:
-    def __init__(self, fail_models: set[str], empty_models: set[str] | None = None) -> None:
+class _FakeOpenRouter:
+    def __init__(
+        self,
+        fail_models: set[str],
+        empty_models: set[str] | None = None,
+        error_models: set[str] | None = None,
+    ) -> None:
         self._fail_models = fail_models
         self._empty_models = empty_models or set()
+        self._error_models = error_models or set()
         self.calls: list[str] = []
+        self.inputs: list[list[Any]] = []
 
     @property
-    def chat(self) -> Any:
-        return SimpleNamespace(completions=SimpleNamespace(create=self._create))
+    def responses(self) -> Any:
+        return SimpleNamespace(create=self._create)
 
     @property
     def embeddings(self) -> Any:
         return SimpleNamespace(create=self._embed)
 
-    def _create(self, *, model: str, messages: list[Any], **opts: Any) -> Any:
+    def _create(self, *, model: str, input: list[Any], **opts: Any) -> Any:
+        del opts
         self.calls.append(model)
+        self.inputs.append(input)
         if model in self._fail_models:
             raise RuntimeError(f"boom: {model}")
-        if model in self._empty_models:  # successful HTTP body with no choices (upstream error)
-            return SimpleNamespace(model=model, choices=[], usage=None)
+        if model in self._empty_models:
+            return SimpleNamespace(
+                model=model,
+                output_text="",
+                output=[],
+                status="completed",
+                incomplete_details=None,
+                error=None,
+                usage=None,
+            )
+        if model in self._error_models:
+            return SimpleNamespace(
+                model=model,
+                output_text="",
+                output=[],
+                status="failed",
+                incomplete_details=None,
+                error=SimpleNamespace(message=f"upstream error: {model}"),
+                usage=None,
+            )
         return SimpleNamespace(
             model=model,
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content=f"answer from {model}"),
-                    finish_reason="stop",
-                )
-            ],
-            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+            output_text=f"answer from {model}",
+            output=[],
+            status="completed",
+            incomplete_details=None,
+            error=None,
+            usage=SimpleNamespace(input_tokens=11, output_tokens=7),
         )
 
     def _embed(self, *, model: str, input: list[str], **opts: Any) -> Any:
@@ -245,8 +277,9 @@ def _live(
     config: GatewayConfig,
     fail_models: set[str] | None = None,
     empty_models: set[str] | None = None,
+    error_models: set[str] | None = None,
 ) -> OpenRouterGateway:
-    fake = _FakeChat(fail_models or set(), empty_models)
+    fake = _FakeOpenRouter(fail_models or set(), empty_models, error_models)
     gw = OpenRouterGateway(config, SecretStr("sk-or-test"), client_factory=lambda: fake)
     gw._fake = fake  # type: ignore[attr-defined]  # stash for assertions
     return gw
@@ -258,10 +291,19 @@ def test_live_maps_response_to_completion() -> None:
     assert out.text == "answer from anthropic/claude-3.5-sonnet"
     assert out.model == "anthropic/claude-3.5-sonnet"
     assert out.usage == TokenUsage(prompt_tokens=11, completion_tokens=7)
-    assert out.finish_reason == "stop"
+    assert out.finish_reason == "completed"
     assert out.cost_cents == Decimal(300) * Decimal(11) / Decimal(1000) + Decimal(1500) * Decimal(
         7
     ) / Decimal(1000)
+    assert gw._fake.inputs == [
+        [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hello there"}],
+            }
+        ]
+    ]
 
 
 def test_live_falls_back_on_primary_error() -> None:
@@ -278,20 +320,52 @@ def test_live_reraises_when_no_fallback() -> None:
         gw.complete(model="only/model", messages=_PROMPT)
 
 
-def test_live_empty_choices_raises_typed_error_not_indexerror() -> None:
-    # A successful HTTP-200 body with no choices (OpenRouter surfacing an upstream error) must yield
-    # a clear GatewayError, never a raw IndexError on choices[0].
+def test_live_empty_output_raises_typed_error() -> None:
     gw = _live(GatewayConfig(), empty_models={"only/model"})
-    with pytest.raises(GatewayError, match="no choices"):
+    with pytest.raises(GatewayError, match="no output text"):
         gw.complete(model="only/model", messages=_PROMPT)
 
 
-def test_live_empty_choices_falls_back() -> None:
+def test_live_empty_output_falls_back() -> None:
     config = GatewayConfig(fallback_model="backup/model")
     gw = _live(config, empty_models={"primary/model"})
     out = gw.complete(model="primary/model", messages=_PROMPT)
     assert out.model == "backup/model"  # empty primary response routed to the fallback
     assert gw._fake.calls == ["primary/model", "backup/model"]
+
+
+def test_live_response_error_falls_back() -> None:
+    config = GatewayConfig(fallback_model="backup/model")
+    gw = _live(config, error_models={"primary/model"})
+    out = gw.complete(model="primary/model", messages=_PROMPT)
+    assert out.model == "backup/model"
+    assert gw._fake.calls == ["primary/model", "backup/model"]
+
+
+def test_live_extracts_text_from_response_output_items() -> None:
+    gw = _live(GatewayConfig())
+    fake = gw._fake
+
+    def create(*, model: str, input: list[Any], **opts: Any) -> Any:
+        del input, opts
+        return SimpleNamespace(
+            model=model,
+            output_text=None,
+            output=[
+                SimpleNamespace(
+                    type="message",
+                    content=[SimpleNamespace(type="output_text", text="item text")],
+                )
+            ],
+            status="completed",
+            incomplete_details=None,
+            error=None,
+            usage=SimpleNamespace(input_tokens=3, output_tokens=2),
+        )
+
+    fake._create = create
+    out = gw.complete(model="only/model", messages=_PROMPT)
+    assert out.text == "item text"
 
 
 def test_live_embed_maps_vectors() -> None:
@@ -318,8 +392,16 @@ def test_model_id_is_config_swappable() -> None:
     )
     default_model = get_config("nobody").gateway.judge_model
     swapped_model = get_config("acme", store=store).gateway.judge_model
-    assert default_model == "anthropic/claude-3.5-sonnet"
+    # The base layer is `default_gateway_config()`, which applies the deploy-time env overrides
+    # (`CLUE_SYNTHESIS_MODEL`, and since PC-C8 §6c-b `CLUE_JUDGE_MODEL`) — and `Settings` reads the
+    # on-disk `.env` through `env_file`, so a hardcoded id here asserts a *deployment's* config
+    # rather than this test's property. The property is "an overlay swaps the id with no code
+    # change": the base is whatever the deployment resolved, and the overlay differs from it.
+    assert default_model == default_gateway_config().judge_model
     assert swapped_model == "openai/gpt-4o"
+    assert swapped_model != default_model
+    # The unoverlaid *code* default is separately a code fact, independent of any deployment.
+    assert GatewayConfig().judge_model == "anthropic/claude-3.5-sonnet"
 
 
 def test_completion_cost_is_returned_to_caller() -> None:

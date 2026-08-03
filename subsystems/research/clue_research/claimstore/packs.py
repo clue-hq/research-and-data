@@ -20,8 +20,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import FieldDef, PassKind, ReuseScope
+from clue_core import EntityType, FieldDef, PassKind, ResearchSectionKind, ReuseScope
 from clue_research.claimstore.registry import register_field
+from clue_research.claimstore.research_view_routes import (
+    ResearchRouteContext,
+    ResearchRouteProductMode,
+    ResearchViewFieldRoute,
+    register_research_view_route,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,42 @@ class SeedField:
     equality_mode: str = "exact"
     description: str | None = None
     pack: str | None = None
+    research_view_route: ResearchViewFieldRoute | None = None
+    research_view_additional_routes: tuple[ResearchViewFieldRoute, ...] = ()
+
+
+def _account_route(
+    field_key: str,
+    section_kind: ResearchSectionKind,
+    *,
+    context_scope: ResearchRouteContext = "subject_current",
+    product_mode: ResearchRouteProductMode = "neutral_or_exact",
+    ordinal: int = 0,
+) -> ResearchViewFieldRoute:
+    """Declare presentation-neutral account placement beside the field definition."""
+
+    return ResearchViewFieldRoute(
+        field_key=field_key,
+        entity_type=EntityType.ACCOUNT,
+        section_kind=section_kind,
+        context_scope=context_scope,
+        product_mode=product_mode,
+        ordinal=ordinal,
+    )
+
+
+def _contact_route(
+    field_key: str,
+    section_kind: ResearchSectionKind,
+    *,
+    ordinal: int = 0,
+) -> ResearchViewFieldRoute:
+    return ResearchViewFieldRoute(
+        field_key=field_key,
+        entity_type=EntityType.CONTACT,
+        section_kind=section_kind,
+        ordinal=ordinal,
+    )
 
 
 def _seed(
@@ -56,6 +98,8 @@ def _seed(
     equality_mode: str = "exact",
     description: str | None = None,
     pack: str | None = None,
+    research_view_route: ResearchViewFieldRoute | None = None,
+    research_view_additional_routes: tuple[ResearchViewFieldRoute, ...] = (),
 ) -> SeedField:
     return SeedField(
         field_def=FieldDef(
@@ -73,6 +117,8 @@ def _seed(
         equality_mode=equality_mode,
         description=description,
         pack=pack,
+        research_view_route=research_view_route,
+        research_view_additional_routes=research_view_additional_routes,
     )
 
 
@@ -82,16 +128,19 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.employee_count",
         "int",
         PassKind.SCORING,
-        tier_plan=("clay", "apollo"),
+        tier_plan=("clay", "apollo", "sumble_organizations"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "integer"},
         description="Total headcount.",
+        research_view_route=_account_route(
+            "core.employee_count", ResearchSectionKind.ABOUT, ordinal=10
+        ),
     ),
     _seed(
         "core.primary_domain",
         "str",
         PassKind.SCORING,
-        tier_plan=("registry", "clearbit"),
+        tier_plan=("registry", "clearbit", "sumble_organizations"),
         freshness_ttl=timedelta(days=180),
         value_schema={"type": "string"},
         description="Primary web domain.",
@@ -109,10 +158,13 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.primary_tech_stack",
         "list[str]",
         PassKind.SCORING,
-        tier_plan=("builtwith",),
+        tier_plan=("builtwith", "sumble_tech_stack"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "array", "items": {"type": "string"}},
         description="Detected primary technologies.",
+        research_view_route=_account_route(
+            "core.primary_tech_stack", ResearchSectionKind.ABOUT, ordinal=20
+        ),
     ),
     _seed(
         "account.recent_funding",
@@ -126,6 +178,9 @@ CORE_PACK: tuple[SeedField, ...] = (
             "properties": {"amount_usd": {"type": "number"}, "round": {"type": "string"}},
         },
         description="Most recent funding round.",
+        research_view_route=_account_route(
+            "account.recent_funding", ResearchSectionKind.INSIGHTS, ordinal=10
+        ),
     ),
     # The CRM resolver's "already a customer / already in pipeline" flag (M4.5; substrate §4) — a
     # tier-1 ``crm`` field. Its ``crm_import`` extraction_method makes every claim TENANT_PRIVATE at
@@ -206,12 +261,15 @@ CORE_PACK: tuple[SeedField, ...] = (
         "account.hiring_velocity_eng",
         "number",
         PassKind.DEEP,
-        tier_plan=("linkedin_jobs", "exa"),
+        tier_plan=("sumble_jobs", "linkedin_jobs", "exa"),
         freshness_ttl=timedelta(days=30),
         gate="tier>=3",
         value_schema={"type": "number"},
         corroboration_min=2,
         description="Engineering hiring velocity (signal field; substrate §3 example).",
+        research_view_route=_account_route(
+            "account.hiring_velocity_eng", ResearchSectionKind.INSIGHTS, ordinal=20
+        ),
     ),
     _seed(
         "account.operational_pain",
@@ -223,6 +281,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         value_schema={"type": "string"},
         corroboration_min=2,
         description="Synthesized operational pain.",
+        research_view_route=_account_route(
+            "account.operational_pain", ResearchSectionKind.INSIGHTS, ordinal=30
+        ),
     ),
     _seed(
         "account.strategic_moves",
@@ -234,6 +295,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         value_schema={"type": "string"},
         corroboration_min=2,
         description="Strategic moves / initiatives.",
+        research_view_route=_account_route(
+            "account.strategic_moves", ResearchSectionKind.INSIGHTS, ordinal=40
+        ),
     ),
     # Governed field-classes (Doc C §2): deep pass, tier-4 synthesis, governed by M10. The
     # governed/deep/tier-4 nature is carried by field_class (resonance / facet) + pass='deep'.
@@ -246,6 +310,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         gate="deep-pass",
         value_schema={"type": "string"},
         description="Cultural resonance signal (Doc C §2; tier-4, governed).",
+        research_view_route=_account_route(
+            "account.resonance.culture", ResearchSectionKind.INSIGHTS, ordinal=50
+        ),
     ),
     _seed(
         "contact.facet.recent_post",
@@ -256,6 +323,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         gate="committee-gated",
         value_schema={"type": "string"},
         description="Recent public post (personal hook; Doc C §2; governed by M10).",
+        research_view_route=_contact_route(
+            "contact.facet.recent_post", ResearchSectionKind.QUOTES, ordinal=10
+        ),
     ),
 )
 
@@ -274,6 +344,14 @@ async def load_pack(conn: AsyncConnection, fields: tuple[SeedField, ...]) -> Non
             description=seed.description,
             pack=seed.pack,
         )
+        if seed.research_view_route is not None:
+            if seed.research_view_route.field_key != str(seed.field_def.field_key):
+                raise ValueError("a research-view route must match its SeedField field_key")
+            await register_research_view_route(conn, seed.research_view_route)
+        for route in seed.research_view_additional_routes:
+            if route.field_key != str(seed.field_def.field_key):
+                raise ValueError("a research-view route must match its SeedField field_key")
+            await register_research_view_route(conn, route)
 
 
 async def load_core_pack(conn: AsyncConnection) -> None:
