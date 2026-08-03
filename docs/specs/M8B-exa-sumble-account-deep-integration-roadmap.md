@@ -1,8 +1,9 @@
 # M8B — Account-deep provider integration roadmap
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
-> **Status:** implementation in progress. A1, M06A S2A–S2D, the provider-neutral O1 DEEP wait
-> seam, and the Sumble portion of O2 composition are implemented mechanically; Exa E0–E2, A2,
+> **Status:** implementation in progress. A0 and the remediated A1, M06A S2A–S2D, the
+> provider-neutral O1 DEEP wait seam, and the Sumble portion of O2 composition are implemented
+> mechanically; Exa E0–E2, A2,
 > the full-unit launch surface, O3, and live canaries remain open. **Recorded:** 2026-08-03. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
@@ -147,6 +148,8 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
 
 | Slice | State | Evidence |
 |---|---|---|
+| A0 | Complete mechanically; no live call | `M8B-A0-account-deep-provider-contract-acceptance.md`; pinned Exa request/response digests, strict additive-tolerant models, independent default-off settings, spend/error and future-operation decisions |
+| A1 | Complete mechanically; precedence remediation closed 2026-08-04 | additive fixture; direct and composed paths use the real gate and the same frozen exact-source authority, produce all four account claims, persist explicit policy refs, and replay without provider calls/writes |
 | S2A | Complete mechanically | `2810dcf`; pinned v9 Teams/People request, response, credit, no-reveal, identity, and normalizer contract |
 | S2B | Complete mechanically | `0f8715b`; durable async operation/snapshot/attempt/receipt and exact spend/replay |
 | S2C | Complete mechanically | `69295ee`; exact-account snapshot-backed `SumbleCommitteeSource` through existing M8 committee worker |
@@ -209,6 +212,35 @@ Implement this as a versioned workspace/ICP override; do not mutate the shared
 The override authorizes `sumble_jobs`, the chosen official-page resolver (`firecrawl_site` or the
 configured `scrapling_site` manifest, never an unnamed fetcher), `exa_deep`, and only deliberate
 `sumble_tech_stack`. It excludes `parallel_task` for this first integration.
+
+#### 4.3.1 Source-precedence ruling and remediation
+
+The original A1 production test exposed two different authorities. The planner correctly read the
+workspace/ICP source-profile override, but the pre-spend gate independently read the shared
+`field_definition.tier_plan`. For `account.operational_pain` and `account.strategic_moves`, the
+override admitted the tier-2 official-page source before tier-4 Exa while the shared field default
+listed only tier-4 sources. The gate therefore rejected a source the planner had legitimately
+selected. Tier precedence itself was not broken; the planner and gate were applying different
+plans.
+
+The accepted repair is one immutable `effective_field_source_plan` per
+`(workspace_id, icp_key, icp_version, field_key)`:
+
+- the planner compiles the complete source-profile/active-capability intersection before applying
+  run-specific tier, modality, LLM-ranking, fan-out, or budget narrowing;
+- the first real pre-spend check reconstructs that canonical set from the pinned database state,
+  rejects a merely caller-hashed substitute, and freezes the content-addressed plan;
+- later planners load the frozen row, so a mutable source-profile/registry change cannot widen an
+  already-pinned ICP version;
+- every field request carries the exact `source_key`, tier, and plan digest; the gate checks all
+  three and records them in its append-only decision row;
+- field-less committee enumeration validates `sumble_teams`/`sumble_people` as exact active
+  registry keys at their registered tiers; an unrelated same-tier people source is not authority;
+- a rejected source is a source-local skip. The waterfall continues to another authorized
+  fallback; an unsanctioned source never terminates otherwise valid research.
+
+The global field `tier_plan` remains the legacy/static fallback for callers without a pinned ICP.
+It no longer overrides a supplied, database-validated effective plan.
 
 ## 5. Durable user research direction
 
@@ -373,7 +405,8 @@ call occurs without separate authorization.
 
 ### Slice A0 — Contract and authority freeze
 
-**Owns:** this spec's executable companion acceptance docs and fixtures; no provider code.
+**Owns:** this spec's executable companion acceptance docs, transport-free contract models, and
+fixtures; no HTTP transport, provider binding, operation, or live call.
 
 Deliver:
 
@@ -389,6 +422,18 @@ Deliver:
 **Gate A0:** request builders and recorded response models fail loudly on breaking drift, tolerate
 documented additive fields, and the acceptance document names the exact charging/settlement event.
 
+**Implemented 2026-08-04 — Gate A0 mechanically closed.**
+
+- `M8B-A0-account-deep-provider-contract-acceptance.md` records the official Exa reference digest,
+  exact request/response/URL/cost/error contracts, independent settings, operation-store decision,
+  identity ruling, and decided/inferred/unresolved source map.
+- Frozen request/response fixtures and transport-free models enforce deep/deep-reasoning only,
+  the Clue 50-result and optional one-to-ten-additional-query caps, closed registered-field output,
+  target-lock instructions, field grounding, additive response tolerance, and post-dispatch
+  spend-unknown.
+- Sumble retains the separately accepted S2 contract and no-reveal boundary. No HTTP request,
+  provider operation, credential read, or spend occurs in A0.
+
 ### Slice A1 — Synthetic account-deep handoff fixture
 
 **Owns:** additive trial fixture module and fixture tests only.
@@ -401,7 +446,7 @@ existing discovery fixture ICP.
 orchestrator-created `account_run`; replay is deterministic; original discovery fixture remains
 unchanged.
 
-**Implemented 2026-08-03 — Gate A1 closed.**
+**Implemented 2026-08-03; critically remediated 2026-08-04 — Gate A1 closed.**
 
 - `clue_api.trial.account_deep_fixture` now layers a separate gastroenterology account-deep ICP and
   project run over the unchanged Insight Health discovery fixture. It persists the exact sealed
@@ -416,15 +461,17 @@ unchanged.
 - DB-backed acceptance proves additive/read-only fixture replay, explicit zero-gap behavior with
   the original shallow ICP, four non-empty direct-profiler gaps, full production composition,
   orchestrator-owned durable `account_run`, two committee members, and zero-call/zero-write replay.
-- The production-entry case retains the real pre-spend gate. The current shared definitions for
-  `account.operational_pain` and `account.strategic_moves` sanction tier 4, while the §4.3
-  field-class override correctly presents the tier-2 official source first; A1 therefore asserts
-  the existing fail-closed rejection rather than weakening policy. E1/O2 must reconcile the
-  field/question-specific effective plan before a live Exa canary.
-- Verification evidence: the A1 file passed 3/3 tests; the original discovery fixture plus deep
-  composition/orchestrator regression set passed 32/32 tests; Ruff passed on the A1 scope, mypy
-  passed across 499 source files, and all 24 import contracts held. No paid call was authorized or
-  made.
+- The fixture directive now explicitly carries versioned budget, jurisdiction/use-class,
+  freshness, recursion, source-plan, and committee-policy references. Its source-plan,
+  jurisdiction, recursion, and budget values are wired into the A1 execution composition rather
+  than existing only as prose.
+- Both direct and production-entry paths use the real pre-spend gate and the same
+  content-addressed exact-source plan. Both produce the same four governed account claims
+  (`sumble_jobs` plus three `exa_deep`) with no plan mismatch or rejected sanctioned source.
+- The original tier-only acceptance was reopened rather than preserved as expected failure.
+  §4.3.1 now owns the source-precedence ruling; E1/O2 consume this seam instead of re-solving it.
+- No paid call was authorized or made. Current verification evidence is recorded in the matching
+  session memory note and local commits rather than freezing transient test counts here.
 
 ### Slice A2 — Research directive, preview, and context binding
 
