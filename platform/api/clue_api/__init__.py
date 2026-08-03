@@ -112,6 +112,11 @@ from clue_api.contact_eligibility import (
     build_governed_committee_view_reader,
     build_production_handoff_committee_reader,
 )
+from clue_api.discovery_seal import (
+    DbSealedDiscoveryAccountManifestReader,
+    DurableDiscoveryPhaseHandler,
+    build_discovery_batch_manifest,
+)
 from clue_api.disposition_wiring import (
     build_disposition_store,
     build_review_disposition_emitter,
@@ -442,6 +447,10 @@ __all__ = [
     "build_tier_checkpoint_handler",
     "register_tier_checkpoint_handler",
     "snapshot_bound",
+    # M6A D5: immutable discovery batch seal and scoring membership barrier
+    "DurableDiscoveryPhaseHandler",
+    "DbSealedDiscoveryAccountManifestReader",
+    "build_discovery_batch_manifest",
     # Phase C1-C3 integration wiring
     "IngestionProposalSink",
     "ProductionIngestionClaimErasureRoute",

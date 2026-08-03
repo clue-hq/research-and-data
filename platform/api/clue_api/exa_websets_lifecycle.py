@@ -44,6 +44,7 @@ from clue_core import (
     DiscoverySpendOutcome,
     DiscoveryWakeReason,
     DiscoveryWakeRequest,
+    ProjectRunId,
     new_discovery_item_snapshot_id,
 )
 from clue_db import ConnFactory, transaction
@@ -364,39 +365,46 @@ class ExaWebhookIngestor:
                     received_at=observed_at,
                 ),
             )
+            wake_scheduled = False
             if created:
                 batch = await get_discovery_batch(
                     conn, workspace_id=workspace_id, batch_id=operation.batch_id
                 )
                 if batch is None:
                     raise DiscoveryNotFound(f"discovery batch {operation.batch_id}")
-                await schedule_discovery_wake(
-                    conn,
-                    workspace_id=workspace_id,
-                    request=DiscoveryWakeRequest(
+                if batch.state not in {
+                    DiscoveryBatchState.SEALED,
+                    DiscoveryBatchState.FAILED_TERMINAL,
+                    DiscoveryBatchState.CANCELLED_UNSEALED,
+                }:
+                    await schedule_discovery_wake(
+                        conn,
                         workspace_id=workspace_id,
-                        project_run_id=batch.project_run_id,
-                        discovery_batch_id=batch.id,
+                        request=DiscoveryWakeRequest(
+                            workspace_id=workspace_id,
+                            project_run_id=batch.project_run_id,
+                            discovery_batch_id=batch.id,
+                            operation_id=operation_id,
+                            reason=DiscoveryWakeReason.PROVIDER_EVENT,
+                            available_at=observed_at,
+                            dedupe_key=f"exa-event:{operation_id}:{provider_event.id}",
+                        ),
+                    )
+                    await finish_discovery_event(
+                        conn,
+                        workspace_id=workspace_id,
                         operation_id=operation_id,
-                        reason=DiscoveryWakeReason.PROVIDER_EVENT,
-                        available_at=observed_at,
-                        dedupe_key=f"exa-event:{operation_id}:{provider_event.id}",
-                    ),
-                )
-                await finish_discovery_event(
-                    conn,
-                    workspace_id=workspace_id,
-                    operation_id=operation_id,
-                    provider_event_id=provider_event.id,
-                    disposition=DiscoveryEventDisposition.PROCESSED,
-                )
+                        provider_event_id=provider_event.id,
+                        disposition=DiscoveryEventDisposition.PROCESSED,
+                    )
+                    wake_scheduled = True
         return ExaWebhookResult(
             provider_event_id=provider_event.id,
             matched_operation=True,
             workspace_id=workspace_id,
             operation_id=operation_id,
             duplicate=not created,
-            wake_scheduled=created,
+            wake_scheduled=wake_scheduled,
         )
 
 
@@ -1341,11 +1349,13 @@ class ExaDiscoveryWakeWorker:
         *,
         lifecycle: DurableExaWebsetLifecycle,
         materializer: DiscoveryBatchMaterializer | None = None,
+        project_run_waker: Callable[[ProjectRunId], Awaitable[object]] | None = None,
         conn_factory: ConnFactory = transaction,
         claim_stale_after: timedelta = timedelta(minutes=5),
     ) -> None:
         self._lifecycle = lifecycle
         self._materializer = materializer
+        self._project_run_waker = project_run_waker
         self._conn_factory = conn_factory
         self._claim_stale_after = claim_stale_after
 
@@ -1369,6 +1379,11 @@ class ExaDiscoveryWakeWorker:
                     workspace_id=wake.workspace_id,
                     batch_id=wake.batch_id,
                 )
+                # D5: the durable project machine may be sleeping on WAITING_EXTERNAL. Re-offer
+                # it only after D4 has made every field terminal; enqueue is idempotent. Do this
+                # before completing the wake so a queue failure leaves a reclaimable retry.
+                if self._project_run_waker is not None:
+                    await self._project_run_waker(wake.project_run_id)
             else:
                 await self._lifecycle.run_once(
                     workspace_id=wake.workspace_id,

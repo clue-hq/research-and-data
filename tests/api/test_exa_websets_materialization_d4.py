@@ -43,6 +43,7 @@ from clue_core import (
     EntityType,
     ICPCreatedFrom,
     ProjectPhase,
+    ProjectRunId,
     discovery_provider_external_id,
     new_discovery_batch_id,
     new_discovery_item_snapshot_id,
@@ -1041,14 +1042,22 @@ def test_field_materialization_wake_routes_to_d4_without_provider_lifecycle(
                 ),
             )
             materializer = _RecordingMaterializer()
+            woken_runs: list[ProjectRunId] = []
+
+            async def _wake_project_run(run_id: ProjectRunId) -> object:
+                woken_runs.append(run_id)
+                return True
+
             worker = ExaDiscoveryWakeWorker(
                 lifecycle=_ForbiddenLifecycle(),  # type: ignore[arg-type]
                 materializer=materializer,
+                project_run_waker=_wake_project_run,
                 conn_factory=conn_session_factory(conn),
             )
 
             assert await worker.run_due(now=_NOW) == 1
             assert materializer.calls == [(workspace_id, batch_id)]
+            assert woken_runs == [project_run_id]
             processed_at = (
                 await conn.execute(
                     text(

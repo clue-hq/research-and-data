@@ -867,6 +867,10 @@ demonstrates domain dedup and evidence preservation.
 
 ### Slice D5 — Batch seal and hard project-phase barrier
 
+**Implementation record:** `docs/specs/M06A-D5-discovery-seal-phase-barrier.md` freezes the
+current-generation rule, immutable relational/artifact manifest bundle, database project-phase
+guard, pause/cancel/replace semantics, and sealed-manifest scoring reader.
+
 **Purpose:** Make partial discovery structurally unable to advance.
 
 **Deliverables:**

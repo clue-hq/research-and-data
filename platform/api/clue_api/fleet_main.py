@@ -73,6 +73,7 @@ from clue_api.execution_wiring import (
 from clue_api.fleet_wiring import (
     build_account_lock_factory,
     build_multi_work_worker,
+    enqueue_run_drive,
     register_boot_handlers,
 )
 from clue_api.narrative_wiring import register_narrative_wiring
@@ -211,6 +212,7 @@ async def _exa_discovery_loop(
         worker = ExaDiscoveryWakeWorker(
             lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage),
             materializer=ExaWebsetsD4Materializer(storage=storage),
+            project_run_waker=enqueue_run_drive,
         )
         while True:
             try:

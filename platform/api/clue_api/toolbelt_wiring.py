@@ -71,9 +71,11 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.deep.composition import build_high_tier_resolver
+from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
+from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
@@ -126,11 +128,7 @@ from clue_fleet import TaskQueue
 from clue_obs import get_logger
 from clue_research.claimstore import ALL_WORKSPACES
 from clue_research.discovery_scoring.discovery import ChannelRegistry
-from clue_research.discovery_scoring.phases import (
-    DiscoveryPhaseHandler,
-    ScoringPhaseHandler,
-    discovery_run_id,
-)
+from clue_research.discovery_scoring.phases import discovery_run_id
 from clue_research.discovery_scoring.scoring import admitted_account_ids
 from clue_research.discovery_scoring.tiering import DEFAULT_TIERING_CONFIG
 from clue_research.durable import (
@@ -139,6 +137,7 @@ from clue_research.durable import (
     DbBudgetStore,
     DbIdempotencyStore,
     DbProjectRunStore,
+    DiscoverySealConflict,
     LockFactory,
     PhaseCheckpointStatus,
     PhaseHandlerRegistry,
@@ -756,9 +755,11 @@ class DiscoverAccountsTool(_CapabilityTool):
         # derivation, the admission-gate writes, and the M7.4 replay-idempotency all match the
         # machine's later drive. The bare ``discover()`` call this replaces did none of that.
         handler = self._wrap_snapshots(
-            DiscoveryPhaseHandler(
+            build_discovery_handler(
                 channels=self._channels,
                 gateway=self._gateway,
+                durable_batches=self._storage is not None,
+                storage=self._storage,
                 session_factory=self._conn_factory,
             )
         )
@@ -799,12 +800,39 @@ class ScoreAccountsTool(_CapabilityTool):
         run = await self._load_run(inputs.project_run_id, ctx)
         if run is None:
             return _fail("run_not_found", "no such project run")
-        # S8: scoring over an empty admitted set is a silent no-op — refuse it. The admitted set is
-        # the accounts carrying a ``core.discovery_provenance`` claim for this run's deterministic
-        # discovery run-id (the same id + ALL_WORKSPACES scope ScoringPhaseHandler itself reads).
-        discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
-        async with self._conn_factory() as conn:
-            admitted = await admitted_account_ids(conn, run_id=discovery_run, scope=ALL_WORKSPACES)
+        admitted: Sequence[EntityId]
+        if self._storage is not None:
+            try:
+                sealed = await DbSealedDiscoveryAccountManifestReader(
+                    storage=self._storage,
+                    conn_factory=self._conn_factory,
+                ).read(
+                    workspace_id=run.workspace_id,
+                    project_run_id=run.id,
+                    icp_key=run.icp_key,
+                    icp_version=run.icp_version,
+                )
+            except DiscoverySealConflict:
+                return _fail(
+                    "discovery_not_sealed",
+                    "the exact current discovery generation is not sealed",
+                )
+            if sealed is not None:
+                admitted = sealed.account_ids
+            else:
+                # The durable feature flag may be enabled for a historical run which never
+                # acquired a batch. Preserve the legacy run's existing provenance semantics.
+                discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
+                async with self._conn_factory() as conn:
+                    admitted = await admitted_account_ids(
+                        conn, run_id=discovery_run, scope=ALL_WORKSPACES
+                    )
+        else:
+            discovery_run = discovery_run_id(self._phase_ctx(run, ProjectPhase.SCORING))
+            async with self._conn_factory() as conn:
+                admitted = await admitted_account_ids(
+                    conn, run_id=discovery_run, scope=ALL_WORKSPACES
+                )
         if not admitted:
             return _fail(
                 "discovery_not_run",
@@ -816,7 +844,21 @@ class ScoreAccountsTool(_CapabilityTool):
         assert isinstance(inputs, ScoreAccountsInput)
         run = await self._load_run(inputs.project_run_id, ctx)
         assert run is not None
-        handler = self._wrap_snapshots(ScoringPhaseHandler(session_factory=self._conn_factory))
+        sealed_reader = (
+            DbSealedDiscoveryAccountManifestReader(
+                storage=self._storage,
+                conn_factory=self._conn_factory,
+            )
+            if self._storage is not None
+            else None
+        )
+        handler = self._wrap_snapshots(
+            build_scoring_handler(
+                pre_spend_gate=self._pre_spend_gate,
+                sealed_account_reader=sealed_reader,
+                session_factory=self._conn_factory,
+            )
+        )
         result = await handler.run(self._phase_ctx(run, ProjectPhase.SCORING))
         return ToolResult(
             tool=self.name,

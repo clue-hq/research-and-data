@@ -17,15 +17,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
+    EntityId,
     EntityType,
     ExtractionMethod,
     ICPCreatedFrom,
     PhaseContext,
     PhaseStatus,
     ProjectPhase,
+    ProjectRunId,
     ResearchMode,
+    SealedDiscoveryAccounts,
     account_claim,
     discovery_claim,
+    new_discovery_batch_id,
     new_project_run_id,
     new_run_id,
 )
@@ -183,6 +187,52 @@ def test_scoring_phase_scores_admitted_and_records_yield() -> None:
             assert raw is not None
             dispo = json.loads(raw) if isinstance(raw, str) else raw
             assert dispo["kind"] == "scoring"
+
+    run_async(_run())
+
+
+def test_scoring_phase_uses_only_sealed_manifest_membership() -> None:
+    class _SealedReader:
+        def __init__(self, account_id: EntityId) -> None:
+            self._account_id = account_id
+
+        async def read(
+            self,
+            *,
+            workspace_id: str,
+            project_run_id: ProjectRunId,
+            icp_key: str,
+            icp_version: int,
+        ) -> SealedDiscoveryAccounts:
+            del workspace_id, project_run_id, icp_key, icp_version
+            return SealedDiscoveryAccounts(
+                discovery_batch_id=new_discovery_batch_id(),
+                seal_sha256="a" * 64,
+                account_manifest_ref="acme/" + "b" * 64,
+                account_ids=(self._account_id,),
+            )
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await _seed_active_icp(conn)
+            ctx = _ctx()
+            sealed = await _seed_admitted(conn, ctx, name="Sealed", domain="sealed.example")
+            mutable_only = await _seed_admitted(
+                conn, ctx, name="Mutable only", domain="mutable-only.example"
+            )
+
+            result = await ScoringPhaseHandler(
+                session_factory=_session_factory(conn),
+                sealed_account_reader=_SealedReader(sealed),
+            ).run(ctx)
+
+            assert result.status is PhaseStatus.COMPLETED
+            assert result.accounts_processed == 1
+            scope = WorkspaceScope.for_workspace(CLIENT)
+            assert len(await claims_for(conn, sealed, FIT_FIELD, scope=scope)) == 1
+            assert len(await claims_for(conn, mutable_only, FIT_FIELD, scope=scope)) == 0
+            assert len(await claims_for(conn, mutable_only, INTENT_FIELD, scope=scope)) == 0
 
     run_async(_run())
 
