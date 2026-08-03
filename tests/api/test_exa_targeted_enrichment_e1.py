@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import pytest
 from pydantic import SecretStr
@@ -17,22 +19,30 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.exa_targeted_enrichment import (
+    DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
     ExaTargetedEligibilityError,
     ExaTargetedEnrichmentCoordinator,
+    ExaTargetedEnrichmentStarter,
+    ExaTargetedEnrichmentWorker,
     ExaTargetedOutcome,
+    ExaTargetedResult,
     build_exa_import_request,
     build_exa_import_webset_request,
     compile_exa_targeted_preflight,
 )
+from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import (
     DiscoveryEnrichmentFormat,
     EntityId,
     ExtractionMethod,
+    ProjectPhase,
     ProjectRunId,
     ResearchMode,
     RunId,
     TargetedEnrichmentFieldPlan,
+    TargetedEnrichmentOperationId,
     account_claim,
+    new_operation_id,
 )
 from clue_research.adapters.exa_websets import (
     ExaCreateImportRequest,
@@ -49,20 +59,81 @@ from clue_research.claimstore import WorkspaceScope, claims_for, insert_claim
 from clue_research.discovery_scoring.discovery import REVENUE_BAND_OPTIONS
 from clue_research.discovery_scoring.tiering import TIER_FIELD
 from clue_research.durable import (
+    PhaseCheckpointStatus,
+    TargetedEnrichmentBudgetExceeded,
     append_targeted_enrichment_artifact,
+    enumerate_discovery_subject_artifacts,
     get_discovery_batch,
     get_targeted_enrichment_operation,
     list_targeted_enrichment_artifacts,
     list_targeted_enrichment_field_results,
     seal_discovery_batch,
+    tombstone_discovery_subject_artifacts,
+    upsert_checkpoint,
 )
-from clue_research.identity import stamp_reuse
+from clue_research.identity import insert_account_entity, stamp_reuse
 from clue_storage import FsStorage
+from clue_toolbelt import ToolContext, invoke_tool
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
 from tests.durable.test_discovery_batch_d1 import _complete_batch, _start_batch
 
 pytestmark = pytest.mark.usefixtures("require_profiling_db")
+
+
+async def _advance_sealed_run_to_deep(conn: AsyncConnection, project_run_id: ProjectRunId) -> None:
+    seal = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT batch_id, seal_sha256 FROM discovery_batch_seal "
+                    "WHERE project_run_id=:project_run_id"
+                ),
+                {"project_run_id": project_run_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await upsert_checkpoint(
+        conn,
+        project_run_id=project_run_id,
+        phase=ProjectPhase.DISCOVERY,
+        idempotency_key=f"e1-discovery-seal:{project_run_id}",
+        status=PhaseCheckpointStatus.COMMITTED,
+        payload={
+            "discovery_batch_id": str(seal["batch_id"]),
+            "discovery_batch_seal_ref": str(seal["seal_sha256"]),
+        },
+    )
+    await conn.execute(
+        text("UPDATE project_run SET phase='scoring' WHERE id=:project_run_id"),
+        {"project_run_id": project_run_id},
+    )
+    await upsert_checkpoint(
+        conn,
+        project_run_id=project_run_id,
+        phase=ProjectPhase.SCORING,
+        idempotency_key=f"e1-scoring-bypass:{project_run_id}",
+        status=PhaseCheckpointStatus.COMMITTED,
+        payload={"scoring_mode": "disabled", "numeric_scores_written": 0},
+    )
+    await conn.execute(
+        text("UPDATE project_run SET phase='tier_checkpoint' WHERE id=:project_run_id"),
+        {"project_run_id": project_run_id},
+    )
+    await upsert_checkpoint(
+        conn,
+        project_run_id=project_run_id,
+        phase=ProjectPhase.TIER_CHECKPOINT,
+        idempotency_key=f"e1-tier-approval:{project_run_id}",
+        status=PhaseCheckpointStatus.COMMITTED,
+        payload={"checkpoint_status": "resumed", "decision_action": "approve"},
+    )
+    await conn.execute(
+        text("UPDATE project_run SET phase='deep' WHERE id=:project_run_id"),
+        {"project_run_id": project_run_id},
+    )
 
 
 def _import_payload(request: ExaCreateImportRequest) -> dict[str, object]:
@@ -311,6 +382,20 @@ class _BlockingImportTransport(_ImportTransport):
         )
 
 
+class _CapturingCoordinator(ExaTargetedEnrichmentCoordinator):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.last_result: ExaTargetedResult | None = None
+
+    async def drive_once(
+        self, *, workspace_id: str, operation_id: TargetedEnrichmentOperationId
+    ) -> ExaTargetedResult:
+        self.last_result = await super().drive_once(
+            workspace_id=workspace_id, operation_id=operation_id
+        )
+        return self.last_result
+
+
 def _fields() -> tuple[TargetedEnrichmentFieldPlan, ...]:
     return (
         TargetedEnrichmentFieldPlan(
@@ -357,6 +442,7 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                 batch_id=started.batch_id,
                 draft=ready.draft,
             )
+            await _advance_sealed_run_to_deep(conn, ProjectRunId(started.project_run_id))
             tier = stamp_reuse(
                 account_claim(
                     entity_id=EntityId(ready.account_id),
@@ -399,7 +485,10 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                 project_run_id=ProjectRunId(started.project_run_id),
                 account_ids=[EntityId(ready.account_id)],
                 fields=_fields(),
-                observation_window="2026-08-03",
+                observation_window=(
+                    f"project-run:{started.project_run_id}:targeted:"
+                    f"{DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY.version}"
+                ),
                 storage=storage,
                 conn_factory=same_connection,
             )
@@ -407,22 +496,89 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             assert preflight.maximum_cost_cents == Decimal("2.694")
             assert preflight.csv_bytes == b"url\nhttps://insighthealth.ai/\n"
             assert build_exa_import_request(preflight).size == len(preflight.csv_bytes)
+            spent_before_e1 = Decimal(
+                (
+                    await conn.execute(
+                        text("SELECT spent_cents FROM project_run WHERE id=:project_run_id"),
+                        {"project_run_id": started.project_run_id},
+                    )
+                ).scalar_one()
+            )
 
             transport = _BlockingImportTransport(target_url="https://insighthealth.ai/")
-            coordinator = ExaTargetedEnrichmentCoordinator(
+
+            @asynccontextmanager
+            async def transport_factory() -> AsyncIterator[_BlockingImportTransport]:
+                yield transport
+
+            starter = ExaTargetedEnrichmentStarter(
+                transport_factory=transport_factory,
+                storage=storage,
+                conn_factory=same_connection,
+            )
+            registry = build_toolbelt(
+                storage=storage,
+                gateway=None,
+                conn_factory=same_connection,
+                targeted_enrichment_starter=starter,
+            )
+            tool_body = {
+                "project_run_id": str(started.project_run_id),
+                "account_entity_ids": [str(ready.account_id)],
+                "field_keys": [
+                    "core.company_linkedin_url",
+                    "core.revenue_band",
+                ],
+            }
+            first_ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor="agent",
+                conn_factory=same_connection,
+                operation_id=new_operation_id(),
+            )
+            concurrent_ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor="agent",
+                conn_factory=same_connection,
+                operation_id=new_operation_id(),
+            )
+            coordinator = _CapturingCoordinator(
                 transport=transport,
                 storage=storage,
                 conn_factory=same_connection,
                 poll_after_seconds=1,
             )
-            first_start = asyncio.create_task(coordinator.start(preflight))
+            first_start = asyncio.create_task(
+                invoke_tool(
+                    registry,
+                    "enrich_selected_accounts",
+                    tool_body,
+                    first_ctx,
+                    idempotency_ttl_s=86400,
+                )
+            )
             await transport.import_entered.wait()
-            concurrent = await coordinator.start(preflight)
-            assert concurrent.outcome is ExaTargetedOutcome.JOINED_IN_FLIGHT
+            concurrent = await invoke_tool(
+                registry,
+                "enrich_selected_accounts",
+                tool_body,
+                concurrent_ctx,
+                idempotency_ttl_s=86400,
+            )
+            assert concurrent.references["outcome"] == ExaTargetedOutcome.JOINED_IN_FLIGHT.value
             assert transport.import_calls == 1
             transport.import_release.set()
             started_result = await first_start
-            assert started_result.outcome is ExaTargetedOutcome.CREATED
+            assert started_result.references["outcome"] == ExaTargetedOutcome.CREATED.value
+            operation_id = TargetedEnrichmentOperationId(
+                UUID(str(started_result.references["operation_id"]))
+            )
+            started_operation = await get_targeted_enrichment_operation(
+                conn,
+                workspace_id=workspace_id,
+                operation_id=operation_id,
+            )
+            assert started_operation is not None
             assert (transport.import_calls, transport.upload_calls, transport.create_calls) == (
                 1,
                 1,
@@ -436,10 +592,63 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                 build_exa_import_webset_request(preflight.request, import_id="import_e1")
                 == transport.webset_request
             )
+            wrong_field_claim = stamp_reuse(
+                account_claim(
+                    entity_id=EntityId(ready.account_id),
+                    field_key="core.company_email",
+                    value_json="contact@insighthealth.ai",
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.HUMAN,
+                    confidence=1,
+                    run_id=RunId(started.project_run_id),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                ),
+                workspace_id=workspace_id,
+            )
+            wrong_field_claim_id = await insert_claim(conn, wrong_field_claim)
+            other_account_id = await insert_account_entity(
+                conn,
+                canonical_name="Other Account",
+                primary_domain="other-account.example",
+                workspace_id=workspace_id,
+            )
+            wrong_tier_savepoint = await conn.begin_nested()
+            with pytest.raises(DBAPIError, match="tier claim must be live and match"):
+                await conn.execute(
+                    text(
+                        "INSERT INTO targeted_enrichment_target ("
+                        "operation_id, workspace_id, account_id, identifier_url, "
+                        "tier_claim_id, ordinal) VALUES ("
+                        ":operation_id, :workspace_id, :account_id, :url, :wrong_claim, 1)"
+                    ),
+                    {
+                        "wrong_claim": wrong_field_claim_id,
+                        "operation_id": started_operation.operation_id,
+                        "workspace_id": workspace_id,
+                        "account_id": other_account_id,
+                        "url": "https://other-account.example/",
+                    },
+                )
+            await wrong_tier_savepoint.rollback()
+
+            wrong_result_savepoint = await conn.begin_nested()
+            with pytest.raises(DBAPIError, match="result claim must match"):
+                await conn.execute(
+                    text(
+                        "UPDATE targeted_enrichment_field_result SET claim_id=:wrong_claim "
+                        "WHERE operation_id=:operation_id "
+                        "AND field_key='core.company_linkedin_url'"
+                    ),
+                    {
+                        "wrong_claim": wrong_field_claim_id,
+                        "operation_id": started_operation.operation_id,
+                    },
+                )
+            await wrong_result_savepoint.rollback()
             submitted_artifacts = await list_targeted_enrichment_artifacts(
                 conn,
                 workspace_id=workspace_id,
-                operation_id=started_result.operation.operation_id,
+                operation_id=started_operation.operation_id,
             )
             create_artifact = next(
                 artifact
@@ -449,7 +658,7 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             same_bytes_other_event = await append_targeted_enrichment_artifact(
                 conn,
                 workspace_id=workspace_id,
-                operation_id=started_result.operation.operation_id,
+                operation_id=started_operation.operation_id,
                 artifact_kind="same_bytes_other_lifecycle_event",
                 artifact_key=create_artifact.artifact_key,
                 content_sha256=create_artifact.content_sha256,
@@ -460,7 +669,7 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                 await append_targeted_enrichment_artifact(
                     conn,
                     workspace_id=workspace_id,
-                    operation_id=started_result.operation.operation_id,
+                    operation_id=started_operation.operation_id,
                     artifact_kind="same_bytes_other_lifecycle_event",
                     artifact_key=create_artifact.artifact_key,
                     content_sha256=create_artifact.content_sha256,
@@ -469,13 +678,33 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                 == same_bytes_other_event
             )
 
-            completed = await coordinator.drive_once(
-                workspace_id=workspace_id,
-                operation_id=started_result.operation.operation_id,
+            await conn.execute(
+                text(
+                    "UPDATE targeted_enrichment_operation "
+                    "SET next_poll_at=now() - interval '1 second' "
+                    "WHERE id=:operation_id"
+                ),
+                {"operation_id": started_operation.operation_id},
             )
+            worker = ExaTargetedEnrichmentWorker(
+                coordinator=coordinator,
+                conn_factory=same_connection,
+            )
+            assert await worker.run_due() == 1
+            completed = coordinator.last_result
+            assert completed is not None
             assert completed.outcome is ExaTargetedOutcome.SUCCEEDED
             assert completed.operation.provider_units_charged == Decimal("6")
             assert completed.operation.cost_cents_charged == Decimal("2.694")
+            spent_after_e1 = Decimal(
+                (
+                    await conn.execute(
+                        text("SELECT spent_cents FROM project_run WHERE id=:project_run_id"),
+                        {"project_run_id": started.project_run_id},
+                    )
+                ).scalar_one()
+            )
+            assert spent_after_e1 == spent_before_e1 + Decimal("2.694")
             assert completed.claims_created == 1
             assert completed.resolved_fields == 1
             assert completed.missing_fields == 1
@@ -499,11 +728,75 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
                     {"operation_id": completed.operation.operation_id},
                 )
             await terminal_write.rollback()
+            terminal_operation_write = await conn.begin_nested()
+            with pytest.raises(DBAPIError, match="terminal targeted enrichment operation"):
+                await conn.execute(
+                    text(
+                        "UPDATE targeted_enrichment_operation "
+                        "SET state='waiting_external', provider_units_charged=0, "
+                        "cost_cents_charged=0, final_receipt_ref=NULL, "
+                        "raw_response_manifest_key=NULL, terminal_at=NULL "
+                        "WHERE id=:operation_id"
+                    ),
+                    {"operation_id": completed.operation.operation_id},
+                )
+            await terminal_operation_write.rollback()
             receipt = json.loads(await storage.get(completed.operation.final_receipt_ref or ""))
             assert receipt["matching_search_results"] == 0
             assert receipt["search_credits"] == "0"
             assert receipt["import_credits"] == "2"
             assert receipt["ordinary_enrichment_credits"] == "4"
+            assert receipt["cost_semantics"] == "subscription-credit-allocation-equivalent"
+            assert (
+                receipt["settlement_method"] == "public-credit-rules-applied-to-terminal-item-facts"
+            )
+
+            subject_artifacts = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT reference_kind, artifact_key FROM discovery_artifact_subject "
+                            "WHERE workspace_id=:workspace_id "
+                            "AND subject_kind='account' AND subject_entity_id=:account_id "
+                            "AND reference_kind LIKE 'targeted_enrichment_%' "
+                            "AND tombstoned_at IS NULL"
+                        ),
+                        {"workspace_id": workspace_id, "account_id": ready.account_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            by_kind = {
+                str(row["reference_kind"]): str(row["artifact_key"]) for row in subject_artifacts
+            }
+            assert by_kind["targeted_enrichment_request"] == completed.operation.input_artifact_key
+            assert by_kind["targeted_enrichment_csv"] == completed.operation.csv_artifact_key
+            assert (
+                by_kind["targeted_enrichment_final_receipt"]
+                == completed.operation.final_receipt_ref
+            )
+            assert (
+                by_kind["targeted_enrichment_manifest"]
+                == completed.operation.raw_response_manifest_key
+            )
+            enumerated = await enumerate_discovery_subject_artifacts(
+                conn,
+                workspace_id=workspace_id,
+                subject_kind="account",
+                subject_entity_id=EntityId(ready.account_id),
+            )
+            assert {
+                row.reference_kind
+                for row in enumerated
+                if row.reference_kind.startswith("targeted_enrichment_")
+            } >= {
+                "targeted_enrichment_request",
+                "targeted_enrichment_csv",
+                "targeted_enrichment_item",
+                "targeted_enrichment_final_receipt",
+                "targeted_enrichment_manifest",
+            }
 
             after = await get_discovery_batch(
                 conn, workspace_id=workspace_id, batch_id=started.batch_id
@@ -540,6 +833,17 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             replay = await restarted.start(preflight)
             assert replay.outcome is ExaTargetedOutcome.REPLAYED
             assert (
+                Decimal(
+                    (
+                        await conn.execute(
+                            text("SELECT spent_cents FROM project_run WHERE id=:project_run_id"),
+                            {"project_run_id": started.project_run_id},
+                        )
+                    ).scalar_one()
+                )
+                == spent_after_e1
+            )
+            assert (
                 transport.import_calls,
                 transport.upload_calls,
                 transport.create_calls,
@@ -559,6 +863,131 @@ def test_e1_real_db_import_cost_materialization_and_zero_call_replay(tmp_path: P
             )
             assert stored == completed.operation
 
+            # A differently bundled request cannot repurchase a field already covered in the same
+            # stable observation window. The database rejects it before any provider dispatch.
+            overlapping = await compile_exa_targeted_preflight(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_ids=[EntityId(ready.account_id)],
+                fields=(_fields()[0],),
+                observation_window=preflight.request.observation_window,
+                storage=storage,
+                conn_factory=same_connection,
+            )
+            overlap_transport = _ImportTransport(target_url="https://insighthealth.ai/")
+            overlap_coordinator = ExaTargetedEnrichmentCoordinator(
+                transport=overlap_transport,
+                storage=storage,
+                conn_factory=same_connection,
+            )
+            overlap_savepoint = await conn.begin_nested()
+            with pytest.raises(DBAPIError, match="already reserved in this observation window"):
+                await overlap_coordinator.start(overlapping)
+            await overlap_savepoint.rollback()
+            assert overlap_transport.import_calls == 0
+
+            # The shared project cap includes settled spend and rejects a new observation window
+            # before import creation/upload/Webset creation.
+            await conn.execute(
+                text("UPDATE project_run SET budget_cap_cents=:cap WHERE id=:project_run_id"),
+                {"cap": spent_after_e1, "project_run_id": started.project_run_id},
+            )
+            over_budget = await compile_exa_targeted_preflight(
+                workspace_id=workspace_id,
+                project_run_id=ProjectRunId(started.project_run_id),
+                account_ids=[EntityId(ready.account_id)],
+                fields=(_fields()[0],),
+                observation_window="2026-08-04",
+                storage=storage,
+                conn_factory=same_connection,
+            )
+            budget_transport = _ImportTransport(target_url="https://insighthealth.ai/")
+            with pytest.raises(TargetedEnrichmentBudgetExceeded, match="project-run cap"):
+                await ExaTargetedEnrichmentCoordinator(
+                    transport=budget_transport,
+                    storage=storage,
+                    conn_factory=same_connection,
+                ).start(over_budget)
+            assert budget_transport.import_calls == 0
+
+            # Paused runs cannot compile fresh paid work, even if all account eligibility evidence
+            # remains present. Existing accepted operations still drain through the worker path.
+            paused_savepoint = await conn.begin_nested()
+            await conn.execute(
+                text("UPDATE project_run SET status='paused' WHERE id=:project_run_id"),
+                {"project_run_id": started.project_run_id},
+            )
+            with pytest.raises(ExaTargetedEligibilityError, match="active project run in deep"):
+                await compile_exa_targeted_preflight(
+                    workspace_id=workspace_id,
+                    project_run_id=ProjectRunId(started.project_run_id),
+                    account_ids=[EntityId(ready.account_id)],
+                    fields=(_fields()[0],),
+                    observation_window="2026-08-05",
+                    storage=storage,
+                    conn_factory=same_connection,
+                )
+            await paused_savepoint.rollback()
+
+            # The subject index makes every E1 artifact reachable by DSAR. A terminal production
+            # retry after tombstoning is a DB-only replay: it neither resurrects the serving edges
+            # nor recaptures bytes or invokes Exa.
+            await tombstone_discovery_subject_artifacts(
+                conn,
+                workspace_id=workspace_id,
+                subject_kind="account",
+                subject_entity_id=EntityId(ready.account_id),
+            )
+            assert (
+                await enumerate_discovery_subject_artifacts(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind="account",
+                    subject_entity_id=EntityId(ready.account_id),
+                )
+                == ()
+            )
+            calls_before_erased_replay = (
+                transport.import_calls,
+                transport.upload_calls,
+                transport.create_calls,
+                transport.lookup_calls,
+                transport.poll_calls,
+                transport.item_page_calls,
+            )
+            erased_replay = await restarted.start(preflight)
+            assert erased_replay.outcome is ExaTargetedOutcome.REPLAYED
+            with pytest.raises(ExaTargetedEligibilityError, match="intact sealed discovery"):
+                await invoke_tool(
+                    registry,
+                    "enrich_selected_accounts",
+                    tool_body,
+                    ToolContext(
+                        workspace_id=workspace_id,
+                        actor="agent",
+                        conn_factory=same_connection,
+                        operation_id=new_operation_id(),
+                    ),
+                    idempotency_ttl_s=86400,
+                )
+            assert (
+                transport.import_calls,
+                transport.upload_calls,
+                transport.create_calls,
+                transport.lookup_calls,
+                transport.poll_calls,
+                transport.item_page_calls,
+            ) == calls_before_erased_replay
+            assert (
+                await enumerate_discovery_subject_artifacts(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind="account",
+                    subject_entity_id=EntityId(ready.account_id),
+                )
+                == ()
+            )
+
     run_async(scenario())
 
 
@@ -575,6 +1004,7 @@ def test_paid_item_resolving_another_domain_fails_closed_without_claim(tmp_path:
                 batch_id=started.batch_id,
                 draft=ready.draft,
             )
+            await _advance_sealed_run_to_deep(conn, ProjectRunId(started.project_run_id))
             tier = stamp_reuse(
                 account_claim(
                     entity_id=EntityId(ready.account_id),
@@ -647,6 +1077,25 @@ def test_paid_item_resolving_another_domain_fails_closed_without_claim(tmp_path:
                 scope=scope,
             )
             assert linkedin == []
+            calls = (
+                transport.import_calls,
+                transport.upload_calls,
+                transport.create_calls,
+                transport.lookup_calls,
+                transport.poll_calls,
+                transport.item_page_calls,
+            )
+            quarantined_replay = await coordinator.start(preflight)
+            assert quarantined_replay.outcome is ExaTargetedOutcome.SPEND_OUTCOME_UNKNOWN
+            assert quarantined_replay.operation == result.operation
+            assert (
+                transport.import_calls,
+                transport.upload_calls,
+                transport.create_calls,
+                transport.lookup_calls,
+                transport.poll_calls,
+                transport.item_page_calls,
+            ) == calls
 
     run_async(scenario())
 
@@ -664,6 +1113,7 @@ def test_preflight_rejects_non_selected_account_before_provider_work(tmp_path: P
                 batch_id=started.batch_id,
                 draft=ready.draft,
             )
+            await _advance_sealed_run_to_deep(conn, ProjectRunId(started.project_run_id))
             machine_tier = stamp_reuse(
                 account_claim(
                     entity_id=EntityId(ready.account_id),

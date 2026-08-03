@@ -193,6 +193,14 @@ from clue_research.durable.project_run import (
     list_adjustments,
     upsert_checkpoint,
 )
+from clue_research.durable.provider_spend import (
+    ProviderSpendBudgetExceeded,
+    ProviderSpendCapacity,
+    ProviderSpendGuardError,
+    ProviderSpendRunIneligible,
+    ProviderSpendRunNotFound,
+    require_provider_spend_capacity,
+)
 from clue_research.durable.recursion import (
     SpawnDecision,
     SpawnDenyReason,
@@ -227,6 +235,7 @@ from clue_research.durable.targeted_enrichment import (
     TargetedEnrichmentReplayConflict,
     TargetedEnrichmentRepositoryError,
     append_targeted_enrichment_artifact,
+    claim_due_targeted_enrichment_operations,
     claim_targeted_enrichment_dispatch,
     fail_targeted_enrichment_predispatch,
     find_targeted_enrichment_operation,
@@ -326,6 +335,7 @@ __all__ = [
     "TargetedEnrichmentReplayConflict",
     "TargetedEnrichmentRepositoryError",
     "append_targeted_enrichment_artifact",
+    "claim_due_targeted_enrichment_operations",
     "claim_targeted_enrichment_dispatch",
     "fail_targeted_enrichment_predispatch",
     "find_targeted_enrichment_operation",
@@ -337,6 +347,13 @@ __all__ = [
     "put_targeted_enrichment_item",
     "reserve_targeted_enrichment_operation",
     "update_targeted_enrichment_operation",
+    # shared provider-spend reservation guard
+    "ProviderSpendBudgetExceeded",
+    "ProviderSpendCapacity",
+    "ProviderSpendGuardError",
+    "ProviderSpendRunIneligible",
+    "ProviderSpendRunNotFound",
+    "require_provider_spend_capacity",
     # enums
     "AccountRunStatus",
     "AccountRunSubPhase",

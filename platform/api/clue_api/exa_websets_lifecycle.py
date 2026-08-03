@@ -30,6 +30,7 @@ from clue_api.exa_websets_submit import (
 )
 from clue_core import (
     FIRST_PAGE_CURSOR,
+    BudgetScope,
     DiscoveryBatchId,
     DiscoveryBatchState,
     DiscoveryEventDisposition,
@@ -74,6 +75,8 @@ from clue_research.adapters.exa_websets import (
     verify_exa_webhook_signature,
 )
 from clue_research.durable import (
+    BudgetEngine,
+    DbBudgetStore,
     DiscoveryNotFound,
     DiscoveryPageRow,
     DiscoveryReplayConflict,
@@ -451,6 +454,7 @@ class DurableExaWebsetLifecycle:
         poll_after_seconds: int = 15,
         maximum_retry_after_seconds: int = 300,
         crash_after_page_persisted: CrashHook | None = None,
+        budget: BudgetEngine | None = None,
     ) -> None:
         if poll_after_seconds < 1 or maximum_retry_after_seconds < 1:
             raise ValueError("Exa lifecycle timing values must be positive")
@@ -461,6 +465,7 @@ class DurableExaWebsetLifecycle:
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._maximum_retry_after = timedelta(seconds=maximum_retry_after_seconds)
         self._crash_hook = crash_after_page_persisted
+        self._budget = budget or BudgetEngine(store=DbBudgetStore(conn_factory=conn_factory))
 
     async def run_once(
         self,
@@ -1154,6 +1159,17 @@ class DurableExaWebsetLifecycle:
             )
             succeeded = await update_discovery_operation(
                 conn, workspace_id=workspace_id, operation=succeeded
+            )
+            batch = await get_discovery_batch(
+                conn, workspace_id=workspace_id, batch_id=operation.batch_id
+            )
+            if batch is None:
+                raise DiscoveryNotFound(f"discovery batch {operation.batch_id}")
+            await self._budget.record(
+                cost_cents=realized_cost_cents,
+                scope=BudgetScope.RUN,
+                project_run_id=batch.project_run_id,
+                conn=conn,
             )
             await mark_discovery_operation_reconciled(
                 conn,

@@ -11,7 +11,8 @@ from __future__ import annotations
 import csv
 import io
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -19,6 +20,7 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.exa_websets_materialization import (
@@ -29,11 +31,14 @@ from clue_api.exa_websets_submit import (
     DEFAULT_EXA_WEBSETS_PRICING,
     ExaWebsetsPricingPolicy,
 )
+from clue_config import Secrets, Settings
 from clue_core import (
+    BudgetScope,
     DiscoveryEnrichmentFormat,
     EntityId,
     EntityType,
     ExtractionMethod,
+    ProjectPhase,
     ProjectRunId,
     ResearchMode,
     RunId,
@@ -70,6 +75,7 @@ from clue_research.adapters.exa_websets import (
     ExaWebsetItem,
     ExaWebsetItemCompanyProperties,
     ExaWebsetNotFound,
+    ExaWebsetsClient,
     ExaWebsetsContractDrift,
     ExaWebsetsError,
     ExaWebsetsImportTransport,
@@ -81,14 +87,20 @@ from clue_research.claimstore import WorkspaceScope, claims_for, load_core_pack
 from clue_research.discovery_scoring.discovery import REVENUE_BAND_OPTIONS
 from clue_research.discovery_scoring.tiering import TIER_FIELD
 from clue_research.durable import (
+    BudgetEngine,
+    DbBudgetStore,
+    DiscoverySealConflict,
+    ProjectRunStatus,
     TargetedEnrichmentItemSnapshot,
     TargetedEnrichmentNotFound,
     TargetedEnrichmentReplayConflict,
     append_targeted_enrichment_artifact,
     bind_discovery_artifact_subject,
     capture_discovery_artifact,
+    claim_due_targeted_enrichment_operations,
     claim_targeted_enrichment_dispatch,
     fail_targeted_enrichment_predispatch,
+    find_targeted_enrichment_operation,
     get_project_run,
     get_targeted_enrichment_operation,
     list_targeted_enrichment_artifacts,
@@ -113,13 +125,36 @@ _FORMATS = {
     DiscoveryEnrichmentFormat.OPTIONS: ExaWebsetEnrichmentFormat.OPTIONS,
 }
 
-_APPROVED_FIELDS: dict[str, DiscoveryEnrichmentFormat] = {
-    "core.annual_revenue": DiscoveryEnrichmentFormat.NUMBER,
-    "core.company_email": DiscoveryEnrichmentFormat.EMAIL,
-    "core.company_linkedin_url": DiscoveryEnrichmentFormat.URL,
-    "core.company_phone": DiscoveryEnrichmentFormat.PHONE,
-    "core.revenue_band": DiscoveryEnrichmentFormat.OPTIONS,
+_APPROVED_FIELD_PLANS: dict[str, TargetedEnrichmentFieldPlan] = {
+    "core.annual_revenue": TargetedEnrichmentFieldPlan(
+        field_key="core.annual_revenue",
+        description="Find the latest supported annual revenue amount in USD.",
+        format=DiscoveryEnrichmentFormat.NUMBER,
+    ),
+    "core.company_email": TargetedEnrichmentFieldPlan(
+        field_key="core.company_email",
+        description="Find one official public company contact email address.",
+        format=DiscoveryEnrichmentFormat.EMAIL,
+    ),
+    "core.company_linkedin_url": TargetedEnrichmentFieldPlan(
+        field_key="core.company_linkedin_url",
+        description="Find the official LinkedIn company URL.",
+        format=DiscoveryEnrichmentFormat.URL,
+    ),
+    "core.company_phone": TargetedEnrichmentFieldPlan(
+        field_key="core.company_phone",
+        description="Find one official public company phone number.",
+        format=DiscoveryEnrichmentFormat.PHONE,
+    ),
+    "core.revenue_band": TargetedEnrichmentFieldPlan(
+        field_key="core.revenue_band",
+        description="Select the best supported annual revenue band.",
+        format=DiscoveryEnrichmentFormat.OPTIONS,
+        options=REVENUE_BAND_OPTIONS,
+    ),
 }
+
+TargetedTransportFactory = Callable[[], AbstractAsyncContextManager[ExaWebsetsImportTransport]]
 
 
 class ExaTargetedEnrichmentError(RuntimeError):
@@ -152,6 +187,25 @@ class ExaTargetedEnrichmentPolicy(BaseModel):
 
 
 DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY = ExaTargetedEnrichmentPolicy()
+
+
+def approved_targeted_field_plans(
+    field_keys: Sequence[str],
+) -> tuple[TargetedEnrichmentFieldPlan, ...]:
+    """Resolve caller field keys through the versioned E1 allowlist.
+
+    Provider prompts/formats/options are platform policy, never caller-controlled free text.
+    """
+
+    unique = tuple(sorted(set(field_keys)))
+    if not unique:
+        raise ExaTargetedEligibilityError("targeted enrichment requires at least one field")
+    unknown = tuple(value for value in unique if value not in _APPROVED_FIELD_PLANS)
+    if unknown:
+        raise ExaTargetedEligibilityError(
+            f"targeted enrichment field(s) are not approved: {', '.join(unknown)}"
+        )
+    return tuple(_APPROVED_FIELD_PLANS[value] for value in unique)
 
 
 class ExaTargetedPreflight(BaseModel):
@@ -210,6 +264,26 @@ def _provider_external_id(fingerprint: str) -> str:
     return f"clue-e1-{fingerprint}"
 
 
+async def _bind_targeted_artifact_subjects(
+    conn: AsyncConnection,
+    *,
+    operation: TargetedEnrichmentOperation,
+    artifact_key: str,
+    reference_kind: str,
+    reference_id: str,
+) -> None:
+    for target in operation.request.targets:
+        await bind_discovery_artifact_subject(
+            conn,
+            workspace_id=operation.request.workspace_id,
+            artifact_key_value=artifact_key,
+            subject_kind="account",
+            subject_entity_id=target.account_id,
+            reference_kind=reference_kind,
+            reference_id=reference_id,
+        )
+
+
 async def compile_exa_targeted_preflight(
     *,
     workspace_id: str,
@@ -235,16 +309,10 @@ async def compile_exa_targeted_preflight(
     if len(canonical_fields) != len({field.field_key for field in canonical_fields}):
         raise ExaTargetedEligibilityError("targeted enrichment fields must be unique")
     for field in canonical_fields:
-        expected = _APPROVED_FIELDS.get(str(field.field_key))
-        if expected is None or field.format is not expected:
+        expected = _APPROVED_FIELD_PLANS.get(str(field.field_key))
+        if expected is None or field != expected:
             raise ExaTargetedEligibilityError(
-                f"field {field.field_key!s} is not approved with format {field.format.value}"
-            )
-        if str(field.field_key) == "core.revenue_band" and tuple(field.options) != tuple(
-            REVENUE_BAND_OPTIONS
-        ):
-            raise ExaTargetedEligibilityError(
-                "revenue band must use the versioned closed vocabulary"
+                f"field {field.field_key!s} does not match the approved field plan"
             )
 
     reader = DbSealedDiscoveryAccountManifestReader(storage=storage, conn_factory=conn_factory)
@@ -254,12 +322,21 @@ async def compile_exa_targeted_preflight(
             raise ExaTargetedEligibilityError("targeted enrichment project run does not exist")
         if run.workspace_id != workspace_id:
             raise ExaTargetedEligibilityError("targeted enrichment project run is cross-workspace")
-    sealed = await reader.read(
-        workspace_id=workspace_id,
-        project_run_id=project_run_id,
-        icp_key=run.icp_key,
-        icp_version=run.icp_version,
-    )
+        if run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
+            raise ExaTargetedEligibilityError(
+                "targeted enrichment requires an active project run in deep phase"
+            )
+    try:
+        sealed = await reader.read(
+            workspace_id=workspace_id,
+            project_run_id=project_run_id,
+            icp_key=run.icp_key,
+            icp_version=run.icp_version,
+        )
+    except DiscoverySealConflict as exc:
+        raise ExaTargetedEligibilityError(
+            "targeted enrichment requires an intact sealed discovery batch"
+        ) from exc
     if sealed is None:
         raise ExaTargetedEligibilityError("targeted enrichment requires a sealed discovery batch")
     sealed_ids = set(sealed.account_ids)
@@ -461,6 +538,7 @@ class ExaTargetedEnrichmentCoordinator:
         pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
         poll_after_seconds: int = 15,
         in_flight_grace_seconds: int = 60,
+        budget: BudgetEngine | None = None,
     ) -> None:
         if poll_after_seconds < 1 or in_flight_grace_seconds < 1:
             raise ValueError("targeted enrichment timing values must be positive")
@@ -470,6 +548,7 @@ class ExaTargetedEnrichmentCoordinator:
         self._pricing = pricing
         self._poll_after = timedelta(seconds=poll_after_seconds)
         self._in_flight_grace = timedelta(seconds=in_flight_grace_seconds)
+        self._budget = budget or BudgetEngine(store=DbBudgetStore(conn_factory=conn_factory))
 
     async def start(self, preflight: ExaTargetedPreflight) -> ExaTargetedResult:
         request = preflight.request
@@ -492,6 +571,11 @@ class ExaTargetedEnrichmentCoordinator:
             }:
                 return ExaTargetedResult(
                     outcome=ExaTargetedOutcome.FAILED_TERMINAL, operation=operation
+                )
+            if operation.state is TargetedEnrichmentState.SPEND_OUTCOME_UNKNOWN:
+                return ExaTargetedResult(
+                    outcome=ExaTargetedOutcome.SPEND_OUTCOME_UNKNOWN,
+                    operation=operation,
                 )
             if operation.provider_operation_id is not None:
                 return ExaTargetedResult(
@@ -690,6 +774,28 @@ class ExaTargetedEnrichmentCoordinator:
     ) -> tuple[TargetedEnrichmentOperation, bool]:
         request = preflight.request
         async with self._conn_factory() as conn:
+            # Read exact replay before recapturing any content-addressed request/CSV artifact.
+            # Besides avoiding needless writes, this is the E1 no-resurrection barrier: after a
+            # subject erasure tombstones its serving edges and marks an unreferenced blob erased,
+            # a terminal retry must only read the durable operation and must not put the bytes or
+            # revive the subject edge again.
+            existing = await find_targeted_enrichment_operation(
+                conn,
+                workspace_id=request.workspace_id,
+                source_key=request.source_key,
+                request_fingerprint=request.request_fingerprint,
+                observation_window=request.observation_window,
+            )
+            if existing is not None:
+                if (
+                    existing.request != request
+                    or existing.provider_units_reserved != preflight.maximum_provider_credits
+                    or existing.cost_cents_reserved != preflight.maximum_cost_cents
+                ):
+                    raise TargetedEnrichmentReplayConflict(
+                        "targeted enrichment replay differs from its durable request or reservation"
+                    )
+                return existing, False
             input_key = await capture_discovery_artifact(
                 conn,
                 self._storage,
@@ -720,7 +826,19 @@ class ExaTargetedEnrichmentCoordinator:
                 provider_units_reserved=preflight.maximum_provider_credits,
                 cost_cents_reserved=preflight.maximum_cost_cents,
             )
-            return await reserve_targeted_enrichment_operation(conn, operation=operation)
+            stored, created = await reserve_targeted_enrichment_operation(conn, operation=operation)
+            for artifact_key, reference_kind in (
+                (stored.input_artifact_key, "targeted_enrichment_request"),
+                (stored.csv_artifact_key, "targeted_enrichment_csv"),
+            ):
+                await _bind_targeted_artifact_subjects(
+                    conn,
+                    operation=stored,
+                    artifact_key=artifact_key,
+                    reference_kind=reference_kind,
+                    reference_id=str(stored.operation_id),
+                )
+            return stored, created
 
     async def _claim(
         self, operation: TargetedEnrichmentOperation
@@ -770,6 +888,13 @@ class ExaTargetedEnrichmentCoordinator:
                 artifact_key=key,
                 content_sha256=content_address(body),
                 provider_request_id=request_id,
+            )
+            await _bind_targeted_artifact_subjects(
+                conn,
+                operation=operation,
+                artifact_key=key,
+                reference_kind=f"targeted_enrichment_{kind}",
+                reference_id=f"{operation.operation_id}:{request_id or content_address(body)}",
             )
             return key
 
@@ -1049,6 +1174,23 @@ class ExaTargetedEnrichmentCoordinator:
             )
             if current is None:
                 raise TargetedEnrichmentNotFound("targeted enrichment reconciliation")
+            if current.state is TargetedEnrichmentState.SUCCEEDED:
+                return ExaTargetedResult(
+                    outcome=ExaTargetedOutcome.REPLAYED,
+                    operation=current,
+                    poll_calls=1,
+                    item_page_calls=item_page_calls,
+                )
+            if current.state in {
+                TargetedEnrichmentState.FAILED_TERMINAL,
+                TargetedEnrichmentState.CANCELLED,
+            }:
+                return ExaTargetedResult(
+                    outcome=ExaTargetedOutcome.FAILED_TERMINAL,
+                    operation=current,
+                    poll_calls=1,
+                    item_page_calls=item_page_calls,
+                )
             await load_core_pack(conn)
             await seed_source_manifests(conn)
             for target, item, company_properties, item_bytes in prepared:
@@ -1198,6 +1340,8 @@ class ExaTargetedEnrichmentCoordinator:
                 "contact_enrichment_credits": str(charge.contact_enrichment_credits),
                 "provider_units_charged": str(charge.total_units),
                 "cost_cents_charged": str(self._pricing.monetary_value(charge.total_units)),
+                "cost_semantics": "subscription-credit-allocation-equivalent",
+                "settlement_method": "public-credit-rules-applied-to-terminal-item-facts",
                 "pricing_policy_version": self._pricing.version,
                 "claim_ids": cast(JsonValue, sorted(set(claim_ids))),
             }
@@ -1212,6 +1356,13 @@ class ExaTargetedEnrichmentCoordinator:
                 media_type="application/json",
                 source_key=EXA_WEBSETS_SOURCE_KEY,
                 source_url=f"{EXA_WEBSETS_API_BASE}/websets/{operation.provider_operation_id}",
+            )
+            await _bind_targeted_artifact_subjects(
+                conn,
+                operation=operation,
+                artifact_key=receipt_key,
+                reference_kind="targeted_enrichment_final_receipt",
+                reference_id=str(operation.operation_id),
             )
             manifest_payload: dict[str, JsonValue] = {
                 "contract": "targeted-enrichment-artifact-manifest-v1",
@@ -1241,6 +1392,13 @@ class ExaTargetedEnrichmentCoordinator:
                 source_key=EXA_WEBSETS_SOURCE_KEY,
                 source_url=f"{EXA_WEBSETS_API_BASE}/websets/{operation.provider_operation_id}",
             )
+            await _bind_targeted_artifact_subjects(
+                conn,
+                operation=operation,
+                artifact_key=manifest_key,
+                reference_kind="targeted_enrichment_manifest",
+                reference_id=str(operation.operation_id),
+            )
             current = current.model_copy(
                 update={
                     "state": TargetedEnrichmentState.SUCCEEDED,
@@ -1254,6 +1412,12 @@ class ExaTargetedEnrichmentCoordinator:
                 }
             )
             stored = await update_targeted_enrichment_operation(conn, operation=current)
+            await self._budget.record(
+                cost_cents=stored.cost_cents_charged,
+                scope=BudgetScope.RUN,
+                project_run_id=stored.request.project_run_id,
+                conn=conn,
+            )
         return ExaTargetedResult(
             outcome=ExaTargetedOutcome.SUCCEEDED,
             operation=stored,
@@ -1361,17 +1525,125 @@ class ExaTargetedEnrichmentCoordinator:
             )
 
 
+class ExaTargetedEnrichmentStarter:
+    """Production-facing compiler + coordinator entry point for a bounded E1 request."""
+
+    def __init__(
+        self,
+        *,
+        transport_factory: TargetedTransportFactory,
+        storage: StorageBackend,
+        conn_factory: ConnFactory = transaction,
+        policy: ExaTargetedEnrichmentPolicy = DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
+        pricing: ExaWebsetsPricingPolicy = DEFAULT_EXA_WEBSETS_PRICING,
+    ) -> None:
+        self._transport_factory = transport_factory
+        self._storage = storage
+        self._conn_factory = conn_factory
+        self._policy = policy
+        self._pricing = pricing
+
+    async def start(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_ids: Sequence[EntityId],
+        field_keys: Sequence[str],
+    ) -> ExaTargetedResult:
+        preflight = await compile_exa_targeted_preflight(
+            workspace_id=workspace_id,
+            project_run_id=project_run_id,
+            account_ids=account_ids,
+            fields=approved_targeted_field_plans(field_keys),
+            observation_window=(f"project-run:{project_run_id}:targeted:{self._policy.version}"),
+            storage=self._storage,
+            conn_factory=self._conn_factory,
+            policy=self._policy,
+            pricing=self._pricing,
+        )
+        async with self._transport_factory() as transport:
+            coordinator = ExaTargetedEnrichmentCoordinator(
+                transport=transport,
+                storage=self._storage,
+                conn_factory=self._conn_factory,
+                pricing=self._pricing,
+            )
+            return await coordinator.start(preflight)
+
+
+class ExaTargetedEnrichmentWorker:
+    """Lease and drive due E1 operations without originating new provider spend."""
+
+    def __init__(
+        self,
+        *,
+        coordinator: ExaTargetedEnrichmentCoordinator,
+        conn_factory: ConnFactory = transaction,
+        lease_seconds: int = 60,
+    ) -> None:
+        if lease_seconds < 1:
+            raise ValueError("targeted enrichment lease must be positive")
+        self._coordinator = coordinator
+        self._conn_factory = conn_factory
+        self._lease_seconds = lease_seconds
+
+    async def run_due(self, *, limit: int = 10) -> int:
+        async with self._conn_factory() as conn:
+            operations = await claim_due_targeted_enrichment_operations(
+                conn,
+                now=datetime.now(UTC),
+                limit=limit,
+                lease_seconds=self._lease_seconds,
+            )
+        for operation in operations:
+            await self._coordinator.drive_once(
+                workspace_id=operation.request.workspace_id,
+                operation_id=operation.operation_id,
+            )
+        return len(operations)
+
+
+def build_production_exa_targeted_starter(
+    settings: Settings,
+    *,
+    secrets: Secrets,
+    storage: StorageBackend,
+) -> ExaTargetedEnrichmentStarter | None:
+    """Bind new E1 spend only when both the spend switch and reconciler are enabled."""
+
+    if not settings.exa_targeted_enrichment_enabled:
+        return None
+    if not settings.exa_websets_lifecycle_enabled:
+        raise RuntimeError(
+            "Exa targeted enrichment is enabled but its lifecycle worker is disabled"
+        )
+    if secrets.exa_api_key is None:
+        raise RuntimeError(
+            "Exa targeted enrichment is enabled but CLUE_EXA_API_KEY is not configured"
+        )
+    api_key = secrets.exa_api_key
+    return ExaTargetedEnrichmentStarter(
+        transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
+        storage=storage,
+    )
+
+
 __all__ = [
     "EXA_TARGETED_FIELD_POLICY_VERSION",
     "ExaTargetedEligibilityError",
     "ExaTargetedEnrichmentCoordinator",
     "ExaTargetedEnrichmentError",
     "ExaTargetedEnrichmentPolicy",
+    "ExaTargetedEnrichmentStarter",
+    "ExaTargetedEnrichmentWorker",
     "ExaTargetedOutcome",
     "ExaTargetedPreflight",
     "ExaTargetedResult",
     "assert_exa_import_webset_matches",
+    "approved_targeted_field_plans",
     "build_exa_import_request",
     "build_exa_import_webset_request",
+    "build_production_exa_targeted_starter",
     "compile_exa_targeted_preflight",
 ]

@@ -679,6 +679,17 @@ def test_missed_webhook_polling_paginates_reconciles_cost_and_replays_zero_calls
                 batch = await get_discovery_batch(
                     conn, workspace_id=workspace_id, batch_id=operation.batch_id
                 )
+                project_spend = Decimal(
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT spent_cents FROM project_run "
+                                "WHERE id=(SELECT project_run_id FROM discovery_batch WHERE id=:id)"
+                            ),
+                            {"id": operation.batch_id},
+                        )
+                    ).scalar_one()
+                )
                 candidate_count = int(
                     (
                         await conn.execute(
@@ -721,6 +732,7 @@ def test_missed_webhook_polling_paginates_reconciles_cost_and_replays_zero_calls
             assert batch.provider_units_charged == 31
             assert batch.cost_cents_reserved == Decimal("29.634")
             assert batch.cost_cents_charged == Decimal("13.919")
+            assert project_spend == Decimal("13.919")
             assert candidate_count == 0
         finally:
             await _cleanup(workspace_id)

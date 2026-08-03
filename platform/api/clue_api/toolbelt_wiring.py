@@ -57,7 +57,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from decimal import Decimal
-from typing import ClassVar, cast
+from typing import ClassVar, Protocol, cast
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -73,6 +73,13 @@ from clue_api.coverage_tools import (
 from clue_api.deep.composition import build_high_tier_resolver
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
+from clue_api.exa_targeted_enrichment import (
+    DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY,
+    ExaTargetedEligibilityError,
+    ExaTargetedResult,
+    approved_targeted_field_plans,
+)
+from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
@@ -107,6 +114,7 @@ from clue_api.tool_outputs import (
     ProjectRunStatusOutput,
     ReverseProfileOutput,
     SynthesizeIcpsOutput,
+    TargetedEnrichmentOutput,
     TierCheckpointOutput,
 )
 from clue_api.verification import build_verification_phase_handler
@@ -270,6 +278,12 @@ class DiscoverAccountsInput(ToolInput):
 
 class ScoreAccountsInput(ToolInput):
     project_run_id: str
+
+
+class EnrichSelectedAccountsInput(ToolInput):
+    project_run_id: str
+    account_entity_ids: tuple[str, ...]
+    field_keys: tuple[str, ...]
 
 
 class SubmitTierCheckpointInput(ToolInput):
@@ -894,6 +908,131 @@ class ScoreAccountsTool(_CapabilityTool):
             references={
                 "status": result.status.value,
                 "accounts_processed": result.accounts_processed,
+            },
+        )
+
+
+class TargetedEnrichmentStarter(Protocol):
+    async def start(
+        self,
+        *,
+        workspace_id: str,
+        project_run_id: ProjectRunId,
+        account_ids: Sequence[EntityId],
+        field_keys: Sequence[str],
+    ) -> ExaTargetedResult: ...
+
+
+class EnrichSelectedAccountsTool(Tool):
+    """Explicit post-checkpoint E1 spend over an exact selected-account/field set."""
+
+    name = "enrich_selected_accounts"
+    input_model = EnrichSelectedAccountsInput
+    output_model = TargetedEnrichmentOutput
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "project run + exact discovery seal + selected accounts + field policy window"
+        ),
+        external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
+    )
+    effect_class = ToolEffectClass.SPEND
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_run_id", "account_entity_ids", "field_keys")
+    )
+    pin_requirements = (
+        "project_run",
+        "discovery_seal",
+        "tier_checkpoint",
+        "field_policy",
+        "budget_policy",
+    )
+
+    def __init__(
+        self,
+        *,
+        starter: TargetedEnrichmentStarter | None,
+        conn_factory: ConnFactory,
+    ) -> None:
+        self._starter = starter
+        self._conn_factory = conn_factory
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        assert isinstance(inputs, EnrichSelectedAccountsInput)
+        if self._starter is None:
+            return _fail(
+                "targeted_enrichment_not_configured",
+                "targeted Exa enrichment is disabled or unavailable",
+            )
+        run_id = _parse_run_id(inputs.project_run_id)
+        if run_id is None:
+            return _fail("run_not_found", "no such project run")
+        async with self._conn_factory() as conn:
+            run = await get_project_run(conn, run_id)
+        if run is None or run.workspace_id != ctx.workspace_id:
+            return _fail("run_not_found", "no such project run")
+        if run.status is not ProjectRunStatus.ACTIVE or run.phase is not ProjectPhase.DEEP:
+            return _fail(
+                "targeted_enrichment_phase_ineligible",
+                "targeted enrichment requires an active project run in deep phase",
+            )
+        account_ids = tuple(_parse_entity_id(value) for value in inputs.account_entity_ids)
+        if not account_ids or any(value is None for value in account_ids):
+            return _fail("invalid_account_set", "account ids must be non-empty UUIDs")
+        if len(account_ids) != len(set(account_ids)):
+            return _fail("invalid_account_set", "account ids must be unique")
+        if len(account_ids) > DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY.maximum_accounts:
+            return _fail("invalid_account_set", "account count exceeds targeted policy")
+        try:
+            fields = approved_targeted_field_plans(inputs.field_keys)
+        except ExaTargetedEligibilityError as exc:
+            return _fail("invalid_field_set", str(exc))
+        if len(fields) > DEFAULT_EXA_TARGETED_ENRICHMENT_POLICY.maximum_fields:
+            return _fail("invalid_field_set", "field count exceeds targeted policy")
+        return ()
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, EnrichSelectedAccountsInput)
+        try:
+            fields = approved_targeted_field_plans(inputs.field_keys)
+        except ExaTargetedEligibilityError:
+            return ToolEstimate(cost_cents=Decimal(0), detail={"basis": "invalid_field_set"})
+        units = DEFAULT_EXA_WEBSETS_PRICING.maximum_targeted_import_units(
+            account_count=len(set(inputs.account_entity_ids)),
+            formats=[field.format for field in fields],
+        )
+        return ToolEstimate(
+            cost_cents=DEFAULT_EXA_WEBSETS_PRICING.monetary_value(units),
+            detail={
+                "basis": "exa_targeted_maximum_credit_allocation",
+                "provider_units": str(units),
+            },
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, EnrichSelectedAccountsInput)
+        assert self._starter is not None
+        run_id = _parse_run_id(inputs.project_run_id)
+        assert run_id is not None
+        account_ids = tuple(_parse_entity_id(value) for value in inputs.account_entity_ids)
+        assert all(value is not None for value in account_ids)
+        result = await self._starter.start(
+            workspace_id=ctx.workspace_id,
+            project_run_id=run_id,
+            account_ids=cast(tuple[EntityId, ...], account_ids),
+            field_keys=inputs.field_keys,
+        )
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "operation_id": str(result.operation.operation_id),
+                "state": result.operation.state.value,
+                "outcome": result.outcome.value,
+                "provider_units_reserved": str(result.operation.provider_units_reserved),
+                "cost_cents_reserved": str(result.operation.cost_cents_reserved),
             },
         )
 
@@ -1694,6 +1833,7 @@ def build_toolbelt(
     research_view_composer: ResearchViewComposer | None = None,
     research_view_snapshots: ResearchViewSnapshotService | None = None,
     research_view_recheck: ResearchViewRecheckService | None = None,
+    targeted_enrichment_starter: TargetedEnrichmentStarter | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -1795,6 +1935,13 @@ def build_toolbelt(
             ),
             make_default=True,
         )
+    registry.register(
+        EnrichSelectedAccountsTool(
+            starter=targeted_enrichment_starter,
+            conn_factory=conn_factory,
+        ),
+        make_default=True,
+    )
     registry.register(
         build_research_account_gaps_tool(
             gateway=gateway,
