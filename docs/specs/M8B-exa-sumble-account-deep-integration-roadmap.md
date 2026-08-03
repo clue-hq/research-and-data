@@ -1,9 +1,9 @@
 # M8B — Account-deep provider integration roadmap
 ## Exa Deep account profiling + Sumble organization map and buying committee
 
-> **Status:** implementation in progress. M06A S2A–S2D, the provider-neutral O1 DEEP wait seam,
-> and the Sumble portion of O2 composition are implemented mechanically; Exa E0–E2, A1/A2, the
-> full-unit launch surface, O3, and live canaries remain open. **Recorded:** 2026-08-03. **Working branch:**
+> **Status:** implementation in progress. A1, M06A S2A–S2D, the provider-neutral O1 DEEP wait
+> seam, and the Sumble portion of O2 composition are implemented mechanically; Exa E0–E2, A2,
+> the full-unit launch surface, O3, and live canaries remain open. **Recorded:** 2026-08-03. **Working branch:**
 > `platform/c8-account-profiling-integration`. **Provider baseline:** commit `cb7a275`, identical to
 > the current local `platform/c8-exa-sumble-discovery` branch when this plan was recorded.
 >
@@ -400,6 +400,31 @@ existing discovery fixture ICP.
 **Gate A1:** direct profiler and full production-entry tests exercise non-empty deep gaps and real
 orchestrator-created `account_run`; replay is deterministic; original discovery fixture remains
 unchanged.
+
+**Implemented 2026-08-03 — Gate A1 closed.**
+
+- `clue_api.trial.account_deep_fixture` now layers a separate gastroenterology account-deep ICP and
+  project run over the unchanged Insight Health discovery fixture. It persists the exact sealed
+  discovery generation, required-field resolutions, must-have evidence, committed discovery /
+  scoring / human tier checkpoints, confirmed fixture directive and committee plan, and immutable
+  Exa Deep / Sumble Jobs / Technology / Teams / People doubles. It creates no `account_run` and
+  performs no network or provider operation.
+- The recorded account resolvers and exact-account, no-reveal committee source implement the
+  existing provider-neutral seams. Candidates carry strong LinkedIn identity keys, provider/team
+  relationship labels, and immutable evidence refs; no email or phone attribute exists in the
+  fixture payloads.
+- DB-backed acceptance proves additive/read-only fixture replay, explicit zero-gap behavior with
+  the original shallow ICP, four non-empty direct-profiler gaps, full production composition,
+  orchestrator-owned durable `account_run`, two committee members, and zero-call/zero-write replay.
+- The production-entry case retains the real pre-spend gate. The current shared definitions for
+  `account.operational_pain` and `account.strategic_moves` sanction tier 4, while the §4.3
+  field-class override correctly presents the tier-2 official source first; A1 therefore asserts
+  the existing fail-closed rejection rather than weakening policy. E1/O2 must reconcile the
+  field/question-specific effective plan before a live Exa canary.
+- Verification evidence: the A1 file passed 3/3 tests; the original discovery fixture plus deep
+  composition/orchestrator regression set passed 32/32 tests; Ruff passed on the A1 scope, mypy
+  passed across 499 source files, and all 24 import contracts held. No paid call was authorized or
+  made.
 
 ### Slice A2 — Research directive, preview, and context binding
 
