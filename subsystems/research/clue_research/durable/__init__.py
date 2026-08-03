@@ -92,6 +92,11 @@ from clue_research.durable.committee_acquisition import (
     update_committee_acquisition_operation,
     update_committee_acquisition_snapshot,
 )
+from clue_research.durable.committee_eligibility import (
+    find_committee_eligibility_decision,
+    get_committee_eligibility_decision,
+    record_committee_eligibility_decision,
+)
 from clue_research.durable.discovery import (
     DbDiscoveryWakeScheduler,
     DiscoveryArtifactSubjectRow,
@@ -331,6 +336,9 @@ __all__ = [
     "update_committee_acquisition_attempt",
     "update_committee_acquisition_operation",
     "update_committee_acquisition_snapshot",
+    "find_committee_eligibility_decision",
+    "get_committee_eligibility_decision",
+    "record_committee_eligibility_decision",
     # durable discovery-batch substrate (M6A D1)
     "DbDiscoveryWakeScheduler",
     "DiscoveryArtifactSubjectRow",
