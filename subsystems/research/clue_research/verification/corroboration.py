@@ -69,6 +69,7 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import (
+    FieldRegistryScope,
     WorkspaceScope,
     claims_for,
     get_corroboration_config,
@@ -350,7 +351,15 @@ class Corroborator:
     async def _evaluate(
         self, conn: AsyncConnection, entity_id: EntityId, field_key: str, scope: WorkspaceScope
     ) -> CorroborationResult:
-        cfg = await get_corroboration_config(conn, field_key)
+        cfg = await get_corroboration_config(
+            conn,
+            field_key,
+            scope=(
+                FieldRegistryScope.for_workspace(scope.workspace_id)
+                if scope.workspace_id is not None
+                else FieldRegistryScope.global_only()
+            ),
+        )
         mode = EqualityMode(cfg.equality_mode) if cfg is not None else EqualityMode.EXACT
         threshold = cfg.corroboration_min if cfg is not None else 1
         single_source_sufficient = cfg.single_source_sufficient if cfg is not None else False

@@ -6,9 +6,8 @@ displays / whose state machine it resumes. This module assembles:
 
 * :class:`DbVerificationAnnotationReader` — the production
   :class:`~clue_core.VerificationAnnotationReader` over the ``faithfulness_verdict``
-  (M9.3), ``use_decision`` (M10.3), and ``conflict_flag`` (M9.2) side tables (read by raw SQL, the
-  composition root — these could be promoted to public reader fns in
-  ``verification``/``compliance`` later; tracked follow-up);
+  (M9.3), ``use_decision`` (M10.3), and ``conflict_flag`` (M9.2) side tables. Faithfulness reads go
+  through the claimstore's shared A/Q attribution seam; the other two remain composition-root SQL;
 * :class:`ProjectRunResumeHook` — the ``finalize → resume`` seam over
   ``ProjectRun.submit_checkpoint`` (``review`` may not import ``durable``);
 * :class:`NoopReviewDispositionEmitter` — the M13.2 seam, a no-op until M13.2 supplies the
@@ -33,7 +32,6 @@ from clue_api.review.handler import ReviewAccountResolver, ReviewPhaseHandler
 from clue_core import (
     ClaimId,
     EntityId,
-    JudgeVerdict,
     PhaseContext,
     ProjectRunId,
     ReviewActionOutcome,
@@ -47,6 +45,11 @@ from clue_core.review import (
     VerificationAnnotationReader,
 )
 from clue_db import ConnFactory, connection, transaction
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    read_faithfulness_attributions,
+)
 from clue_research.durable import (
     AccountSpec,
     BudgetEngine,
@@ -66,9 +69,9 @@ from clue_research.review import (
 
 class DbVerificationAnnotationReader:
     """The production :class:`~clue_core.VerificationAnnotationReader` over the M9/M10 side
-    tables. Manages its own short read transaction (the seam carries no connection). The claim ids
-    are already tenant-scoped by the projection (it reads only tenant-visible claims), so the side
-    tables — which carry no tenant column — are read by ``claim_id`` directly."""
+    tables. Manages its own short read transaction (the seam carries no connection). It resolves
+    the requested ids through the tenant-scoped claim store first; side-table rows can therefore
+    never manufacture visibility for an unknown, superseded, expired, or cross-tenant claim."""
 
     def __init__(self, *, conn_factory: ConnFactory = connection) -> None:
         self._conn_factory = conn_factory
@@ -76,26 +79,19 @@ class DbVerificationAnnotationReader:
     async def annotations_for_claims(
         self, *, claim_ids: Sequence[ClaimId], workspace_id: str
     ) -> dict[ClaimId, ClaimAnnotation]:
-        ids = [str(cid) for cid in claim_ids]
-        if not ids:
+        if not claim_ids:
             return {}
         async with self._conn_factory() as conn:
-            # The latest faithfulness verdict per claim (one row per judge_model/prompt_version).
-            faith = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT DISTINCT ON (claim_id) claim_id, verdict, score "
-                            "FROM faithfulness_verdict WHERE claim_id IN :ids "
-                            "ORDER BY claim_id, judged_at DESC"
-                        ).bindparams(bindparam("ids", expanding=True)),
-                        {"ids": ids},
-                    )
-                )
-                .mappings()
-                .all()
+            visible_claims = await claims_by_ids(
+                conn,
+                claim_ids,
+                scope=WorkspaceScope.for_workspace(workspace_id),
             )
-            faith_map = {ClaimId(r["claim_id"]): r for r in faith}
+            if not visible_claims:
+                return {}
+            actual_claims = tuple(visible_claims.values())
+            faith_map = await read_faithfulness_attributions(conn, actual_claims)
+            ids = [str(claim.id) for claim in actual_claims]
             # The latest use decision per claim (one row per policy_version).
             use = (
                 (
@@ -118,8 +114,8 @@ class DbVerificationAnnotationReader:
             f = faith_map.get(cid)
             u = use_map.get(cid)
             out[cid] = ClaimAnnotation(
-                faithfulness_verdict=JudgeVerdict(f["verdict"]) if f is not None else None,
-                faithfulness_score=f["score"] if f is not None else None,
+                faithfulness_verdict=f.verdict if f is not None else None,
+                faithfulness_score=f.score if f is not None else None,
                 use_decision=(
                     UseDecision(
                         claim_id=cid,

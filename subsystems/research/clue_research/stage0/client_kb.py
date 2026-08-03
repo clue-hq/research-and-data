@@ -27,8 +27,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from decimal import Decimal
 from typing import cast
+from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -62,11 +64,15 @@ from clue_obs.otel import (
     traced_step,
 )
 from clue_research.claimstore import (
+    FieldFilters,
+    FieldRegistryScope,
     ValueSchemaError,
     WorkspaceScope,
     claims_for,
+    get_effective_field,
     get_field,
     insert_claim,
+    list_effective_fields,
     supersede_claim,
 )
 from clue_research.identity import (
@@ -82,8 +88,8 @@ from clue_research.identity import (
 )
 from clue_research.sources import StopReason, resolve_field
 from clue_research.stage0.fields import (
+    CLIENT_BASELINE_FIELDS,
     CLIENT_KB_VERSION,
-    CLIENT_KNOWLEDGE_FIELDS,
     SURFACE_CLASS_FIELDS,
     load_client_knowledge_pack,
 )
@@ -109,6 +115,16 @@ _EVIDENCE_SPAN_MAX = 2000  # cap a raw excerpt used as an evidence_span
 # workspace-identity
 # reuse knob for the (degenerate) no-registrable-domain case.
 _CLIENT_REUSE_MIN_SCORE = 0.85
+
+
+class ClientKbWriteTarget(BaseModel):
+    """The version/run a post-promotion materialization must write into."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int
+    run_id: RunId
+    created_new_version: bool = False
 
 
 async def reverse_profile(
@@ -195,7 +211,7 @@ async def reverse_profile(
 
         # 2) Drive the waterfall (tiers 1–3) over each still-empty client field, honoring the cap.
         budget_exhausted = False
-        for field_key in CLIENT_KNOWLEDGE_FIELDS:
+        for field_key in CLIENT_BASELINE_FIELDS:
             if field_key in material_fields:
                 continue  # a volunteered fact already fills it — do not spend to re-derive
             if budget.exhausted:
@@ -378,7 +394,14 @@ async def _ingest_material(
     for field_key, value in material.asserted_fields.items():
         if field_key in already_written:
             continue  # idempotent re-entry / already filled by an earlier material
-        if await get_field(conn, field_key) is None:
+        if (
+            await get_effective_field(
+                conn,
+                scope=FieldRegistryScope.for_workspace(workspace_id),
+                field_key=field_key,
+            )
+            is None
+        ):
             continue  # only registered client fields are ingestible
         claim = account_claim(
             entity_id=client_entity_id,
@@ -433,7 +456,7 @@ def _coverage(filled: set[str], attempted: set[str]) -> CoverageReport:
     that missed, and excludes fields cut off by a budget halt). A surface is ``attempted`` iff the
     run reached ≥1 of its fields, so a budget-truncated run honestly reports later surfaces as
     *not* attempted (rather than a constant ``True``)."""
-    empty = tuple(f for f in CLIENT_KNOWLEDGE_FIELDS if f not in filled)
+    empty = tuple(f for f in CLIENT_BASELINE_FIELDS if f not in filled)
     surfaces = tuple(
         SurfaceCoverage(
             surface_class=surface_class,
@@ -444,7 +467,7 @@ def _coverage(filled: set[str], attempted: set[str]) -> CoverageReport:
         for surface_class, fields in SURFACE_CLASS_FIELDS.items()
     )
     return CoverageReport(
-        filled_fields=tuple(f for f in CLIENT_KNOWLEDGE_FIELDS if f in filled),
+        filled_fields=tuple(f for f in CLIENT_BASELINE_FIELDS if f in filled),
         empty_fields=empty,
         surfaces=surfaces,
     )
@@ -458,6 +481,7 @@ async def _write_version_marker(
     run_id: RunId,
     coverage: CoverageReport,
     product_id: str | None,
+    base_version: int | None = None,
 ) -> int:
     """Write (or, on re-entry, reuse) the ``client.kb_version`` marker — the claim-store version
     ledger. A new run bumps the version and supersedes the prior marker; a re-entered run (same
@@ -485,6 +509,8 @@ async def _write_version_marker(
         "filled_fields": coverage.filled_count,
         "total_fields": coverage.total_count,
     }
+    if base_version is not None:
+        value["base_version"] = base_version
     marker = account_claim(
         entity_id=client_entity_id,
         field_key=CLIENT_KB_VERSION,
@@ -514,6 +540,117 @@ def _marker_version(claim: Claim) -> int:
         if isinstance(version, int):
             return version
     return 0
+
+
+def _marker_base_version(claim: Claim) -> int | None:
+    value = claim.value_json
+    if isinstance(value, dict):
+        base = value.get("base_version")
+        if isinstance(base, int) and base >= 1:
+            return base
+    return None
+
+
+async def client_kb_write_target_for_materialization(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    client_entity_id: EntityId,
+    product_id: str | None,
+    operation_key: str,
+) -> ClientKbWriteTarget:
+    """Select the active KB run, or append a derived version when the current one is pinned.
+
+    One transaction-scoped advisory lock serializes the read/new-version decision. A derived marker
+    points at ``base_version``; its reader inherits those earlier run claims without copying or
+    rewriting them, while the old pinned version remains byte- and claim-stable.
+    """
+
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": (f"dynamic-client-kb:{workspace_id}:{client_entity_id}:{product_id or 'global'}")},
+    )
+    scope = WorkspaceScope.for_workspace(workspace_id)
+    marker = await _pinned_marker(
+        conn,
+        client_entity_id,
+        scope=scope,
+        version=None,
+        product_id=product_id,
+    )
+    run_id = RunId(
+        uuid5(
+            NAMESPACE_URL,
+            f"stage0-dynamic-client-kb:{workspace_id}:{client_entity_id}:{operation_key}",
+        )
+    )
+    if marker is None:
+        version = await _write_version_marker(
+            conn,
+            client_entity_id=client_entity_id,
+            workspace_id=workspace_id,
+            run_id=run_id,
+            coverage=_coverage(set(), set()),
+            product_id=product_id,
+        )
+        return ClientKbWriteTarget(version=version, run_id=run_id, created_new_version=True)
+
+    version = _marker_version(marker)
+    pinned = (
+        await conn.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM icp_spec
+                    WHERE workspace_id = :workspace_id
+                      AND client_entity_id = :client_entity_id
+                      AND client_kb_version = :version
+                      AND product_id IS NOT DISTINCT FROM :product_id
+                      AND status = 'active'
+                    UNION ALL
+                    SELECT 1 FROM product_context_version
+                    WHERE workspace_id = :workspace_id
+                      AND client_entity_id = :client_entity_id
+                      AND client_kb_version = :version
+                      AND product_id IS NOT DISTINCT FROM :product_id
+                    UNION ALL
+                    SELECT 1 FROM project_run
+                    WHERE workspace_id = :workspace_id
+                      AND client_entity_id = :client_entity_id
+                      AND client_kb_version = :version
+                      AND product_id IS NOT DISTINCT FROM :product_id
+                )
+                """
+            ),
+            {
+                "workspace_id": workspace_id,
+                "client_entity_id": client_entity_id,
+                "version": version,
+                "product_id": product_id,
+            },
+        )
+    ).scalar_one()
+    if not pinned:
+        return ClientKbWriteTarget(version=version, run_id=marker.run_id)
+
+    prior_claims = await _pinned_field_claims(
+        conn,
+        client_entity_id,
+        scope=scope,
+        version=version,
+        product_id=product_id,
+    )
+    filled = set(prior_claims).intersection(CLIENT_BASELINE_FIELDS)
+    new_version = await _write_version_marker(
+        conn,
+        client_entity_id=client_entity_id,
+        workspace_id=workspace_id,
+        run_id=run_id,
+        coverage=_coverage(filled, set(CLIENT_BASELINE_FIELDS)),
+        product_id=product_id,
+        base_version=version,
+    )
+    return ClientKbWriteTarget(version=new_version, run_id=run_id, created_new_version=True)
 
 
 # --- read API (consumed by M5.2 ICP synthesis, M12 positioning) -------------
@@ -584,16 +721,46 @@ async def _pinned_field_claims(
     )
     if marker is None:
         return {}
-    run_id = marker.run_id
+    if scope.workspace_id is None:
+        raise ValueError("Client-KB reads require a workspace-scoped claim selector")
+    definitions = await list_effective_fields(
+        conn,
+        scope=FieldRegistryScope.for_workspace(scope.workspace_id),
+        filters=FieldFilters(pack="client", active=None),
+        include_retired=True,
+    )
+    knowledge_fields = {
+        item.field_def.field_key
+        for item in definitions
+        if item.field_def.field_key != CLIENT_KB_VERSION
+    }
+    markers = await claims_for(
+        conn, client_entity_id, CLIENT_KB_VERSION, include_superseded=True, scope=scope
+    )
+    by_version = {_marker_version(item): item for item in markers}
+    run_ids: list[RunId] = []
+    seen_versions: set[int] = set()
+    current: Claim | None = marker
+    while current is not None:
+        marker_version = _marker_version(current)
+        if marker_version in seen_versions:
+            raise RuntimeError("Client-KB marker base-version cycle detected")
+        seen_versions.add(marker_version)
+        run_ids.append(current.run_id)
+        base_version = _marker_base_version(current)
+        current = by_version.get(base_version) if base_version is not None else None
+
+    claims = await claims_for(conn, client_entity_id, include_superseded=True, scope=scope)
     pinned: dict[str, Claim] = {}
-    for claim in await claims_for(conn, client_entity_id, include_superseded=True, scope=scope):
-        if (
-            claim.run_id == run_id
-            and claim.field_key in CLIENT_KNOWLEDGE_FIELDS
-            and claim.field_key not in pinned
-            and (product_id is None or claim.product_id == product_id)
-        ):
-            pinned[claim.field_key] = claim
+    for run_id in run_ids:
+        for claim in claims:
+            if (
+                claim.run_id == run_id
+                and claim.field_key in knowledge_fields
+                and claim.field_key not in pinned
+                and (product_id is None or claim.product_id == product_id)
+            ):
+                pinned[claim.field_key] = claim
     return pinned
 
 
@@ -676,7 +843,7 @@ def client_kb_readiness_metrics(claims: Mapping[str, Claim]) -> dict[str, JsonVa
     policy blocks supplies its own count, and the evaluator already defaults a missing key.
     """
 
-    knowledge_fields = set(CLIENT_KNOWLEDGE_FIELDS)
+    knowledge_fields = set(CLIENT_BASELINE_FIELDS)
     available = sorted(knowledge_fields.intersection(claims))
     return {
         "coverage_ratio": (len(available) / len(knowledge_fields) if knowledge_fields else 1.0),

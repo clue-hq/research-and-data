@@ -65,6 +65,11 @@ from clue_research.compliance.use_gate import (
     decide_use,
     load_workspace_policy,
 )
+from clue_research.compliance.workspace_erasure import (
+    WorkspaceDynamicClientKbErasureResult,
+    erase_workspace_dynamic_client_kb,
+    get_workspace_dynamic_client_kb_erasure,
+)
 
 __all__ = [
     # M10.1 — jurisdiction resolution
@@ -111,6 +116,9 @@ __all__ = [
     "SweepResult",
     "TombstoneReason",
     "build_tombstone",
+    "WorkspaceDynamicClientKbErasureResult",
+    "erase_workspace_dynamic_client_kb",
+    "get_workspace_dynamic_client_kb_erasure",
     # field pack (M10.1 contact.jurisdiction; M10.5 retention semantics live in lawful_basis/dsar)
     "COMPLIANCE_PACK",
     "CONTACT_JURISDICTION",

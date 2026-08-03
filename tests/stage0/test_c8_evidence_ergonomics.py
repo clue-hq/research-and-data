@@ -126,8 +126,15 @@ class _StubJudge:
     asked: list[tuple[str, JsonValue, str]] = field(default_factory=list)
 
     async def entails(
-        self, *, entity_id: EntityId, field_key: str, value: JsonValue, quote: str
+        self,
+        *,
+        workspace_id: str,
+        entity_id: EntityId,
+        field_key: str,
+        value: JsonValue,
+        quote: str,
     ) -> ClaimEntailment:
+        del workspace_id
         self.asked.append((field_key, value, quote))
         return self.verdicts.get((field_key, repr(value), quote), self.default)
 
@@ -692,6 +699,7 @@ def test_one_conversation_is_one_source_however_its_values_earned_entry() -> Non
         async with rollback_conn(workspace_id=_WORKSPACE) as conn:
             first = await _capture(conn, answer)
             second = await _capture(conn, answer, suffix="-2")
+            third = await _capture(conn, answer, suffix="-3")
 
             def literal(field: str) -> InterviewStatement:
                 return InterviewStatement(
@@ -707,7 +715,7 @@ def test_one_conversation_is_one_source_however_its_values_earned_entry() -> Non
             two = await _route(conn, second, literal(CLIENT_VALUE_PROP), judge=judge)
             judged = await _route(
                 conn,
-                second,
+                third,
                 InterviewStatement(
                     route=InterviewRoute.CLAIM,
                     route_key=BOOL_FIELD,

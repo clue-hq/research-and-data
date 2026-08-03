@@ -759,7 +759,7 @@ def test_answering_model_records_fallback_distinct_from_cache_key() -> None:
             # the M12.2 citation reader reports the answering model (read via the narrative seam).
             from clue_research.narrative import read_faithfulness_citation
 
-            citation = await read_faithfulness_citation(conn, claim.id)
+            citation = await read_faithfulness_citation(conn, claim)
             assert citation is not None
             assert citation.answering_model == "anthropic/claude-3-opus-fallback"
             assert citation.judge_model == DEFAULT_JUDGE_POLICY.judge_model

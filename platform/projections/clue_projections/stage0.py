@@ -32,8 +32,14 @@ from clue_core import (
     VolunteeredStatementId,
 )
 from clue_db import ConnFactory, transaction
+from clue_research.claimstore import (
+    FieldFilters,
+    FieldRegistryOrigin,
+    FieldRegistryScope,
+    list_effective_fields,
+)
 from clue_research.stage0 import (
-    CLIENT_KNOWLEDGE_FIELDS,
+    CLIENT_BASELINE_FIELDS,
     MAX_PROJECT_STATEMENTS,
     ReadinessDecisionRow,
     StatementRoute,
@@ -292,6 +298,7 @@ class Stage0CardPolicy(BaseModel):
     max_gate_evidence_bytes: int = 1_000
     max_kb_brief_bytes: int = 256
     max_kb_total_bytes: int = 4_000
+    max_pending_field_proposals: int = 8
     #: Forward capacity, not a load-bearing bound: :class:`Stage0CardOmissionKind` can produce at
     #: most four entries in v1, so ``OMISSIONS_TRUNCATED`` is unreachable in production and only
     #: the tests (which lower this cap) exercise the collapse. Nothing should treat 12 as tuned.
@@ -415,6 +422,7 @@ class Stage0CardKnownField(BaseModel):
     brief_value: str
     claim_id: str
     brief_truncated: bool
+    retired: bool = False
 
 
 class Stage0CardClientKnowledge(BaseModel):
@@ -423,6 +431,12 @@ class Stage0CardClientKnowledge(BaseModel):
     version: int
     known_fields: tuple[Stage0CardKnownField, ...]
     open_gaps: tuple[str, ...]
+    baseline_required: int = 0
+    baseline_filled: int = 0
+    extended_registered: int = 0
+    extended_filled: int = 0
+    pending_field_proposals: int = 0
+    pending_field_proposal_refs: tuple[str, ...] = ()
 
 
 class Stage0CardStatement(BaseModel):
@@ -751,7 +765,11 @@ def _statement_digest(entries: Sequence[Stage0CardStatement]) -> str:
 
 
 def _known_fields(
-    claims: Mapping[str, Claim], *, policy: Stage0CardPolicy, limit: int
+    claims: Mapping[str, Claim],
+    *,
+    policy: Stage0CardPolicy,
+    limit: int,
+    retired_fields: frozenset[str] = frozenset(),
 ) -> tuple[tuple[Stage0CardKnownField, ...], tuple[str, ...]]:
     """Bounded Client-KB briefs in field-registry order, plus the gaps that remain open.
 
@@ -764,7 +782,9 @@ def _known_fields(
 
     fields: list[Stage0CardKnownField] = []
     total = 0
-    for field_key in CLIENT_KNOWLEDGE_FIELDS:
+    baseline = [key for key in CLIENT_BASELINE_FIELDS if key in claims]
+    extended = sorted(set(claims) - set(CLIENT_BASELINE_FIELDS))
+    for field_key in (*baseline, *extended):
         if len(fields) >= limit:
             break
         claim = claims.get(field_key)
@@ -776,13 +796,14 @@ def _known_fields(
             brief_value=brief,
             claim_id=str(claim.id),
             brief_truncated=truncated,
+            retired=field_key in retired_fields,
         )
         size = len(_canonical_json(entry.model_dump(mode="json", exclude_none=True)))
         if total + size > policy.max_kb_total_bytes:
             break
         total += size
         fields.append(entry)
-    gaps = tuple(key for key in CLIENT_KNOWLEDGE_FIELDS if key not in claims)
+    gaps = tuple(key for key in CLIENT_BASELINE_FIELDS if key not in claims)
     return tuple(fields), gaps
 
 
@@ -1018,6 +1039,50 @@ async def _current_spec_version(conn: AsyncConnection, *, workspace_id: str) -> 
     return int(version) if version is not None else None
 
 
+async def _pending_client_field_proposals(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    brand_id: str,
+    product_id: str | None,
+    project_id: str,
+    limit: int,
+) -> tuple[int, tuple[str, ...]]:
+    """Count and bound pending dynamic-field refs without loading their private payload bodies."""
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT id, count(*) OVER () AS total
+                    FROM field_definition_revision
+                    WHERE workspace_id = :workspace_id
+                      AND brand_id = :brand_id
+                      AND status = 'proposed'
+                      AND field_key LIKE 'client.%'
+                      AND (product_id IS NULL OR product_id = :product_id)
+                      AND (project_id IS NULL OR project_id = :project_id)
+                    ORDER BY proposed_at DESC, id
+                    LIMIT :limit
+                    """
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "brand_id": brand_id,
+                    "product_id": product_id,
+                    "project_id": project_id,
+                    "limit": limit,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    total = int(rows[0]["total"]) if rows else 0
+    return total, tuple(str(row["id"]) for row in rows)
+
+
 def _gate_readiness(
     ledger: Sequence[ReadinessDecisionRow],
     overrides: dict[str, str],
@@ -1161,6 +1226,26 @@ async def compile_stage0_project_card(
             version=client_kb_version,
             product_id=kb_product_id,
         )
+        client_fields = await list_effective_fields(
+            conn,
+            scope=FieldRegistryScope.for_workspace(workspace_id),
+            filters=FieldFilters(pack="client", active=None),
+            include_retired=True,
+        )
+        extended_definitions = tuple(
+            item for item in client_fields if item.origin is FieldRegistryOrigin.WORKSPACE
+        )
+        retired_fields = frozenset(
+            item.field_def.field_key for item in extended_definitions if not item.active
+        )
+        pending_field_count, pending_field_refs = await _pending_client_field_proposals(
+            conn,
+            workspace_id=workspace_id,
+            brand_id=str(project["brand_id"]),
+            product_id=kb_product_id,
+            project_id=project_id,
+            limit=policy.max_pending_field_proposals,
+        )
         live = await read_statements(conn, workspace_id=workspace_id, project_id=project_id)
         with_superseded = await read_statements(
             conn, workspace_id=workspace_id, project_id=project_id, include_superseded=True
@@ -1237,10 +1322,15 @@ async def compile_stage0_project_card(
     # oldest included statement, then the last Client-KB field, until the canonical bytes fit. Each
     # reduction is re-counted into `omissions`, so the card stays honest about what it dropped.
     statement_limit = policy.max_statements
-    kb_limit = len(CLIENT_KNOWLEDGE_FIELDS)
+    kb_limit = len(claims)
     while True:
         entries = _select_statements(candidates, quotes, policy=policy, limit=statement_limit)
-        known_fields, open_gaps = _known_fields(claims, policy=policy, limit=kb_limit)
+        known_fields, open_gaps = _known_fields(
+            claims,
+            policy=policy,
+            limit=kb_limit,
+            retired_fields=retired_fields,
+        )
         statement_cursor = _statement_cursor(entries) if len(entries) < len(candidates) else None
         omissions = _card_omissions(
             policy=policy,
@@ -1248,20 +1338,29 @@ async def compile_stage0_project_card(
             statement_cursor=statement_cursor,
             evidence_excluded=len(excluded),
             readiness_history=len(ledger) - len(shown_decisions),
-            client_knowledge_withheld=(
-                sum(1 for key in CLIENT_KNOWLEDGE_FIELDS if key in claims) - len(known_fields)
-            ),
+            client_knowledge_withheld=len(claims) - len(known_fields),
             client_kb_version=client_kb_version,
         )
         card = Stage0ProjectCard(
             compiler_policy_version=policy.version,
             project=card_project,
             product=card_product,
-            registered_client_claim_fields=tuple(CLIENT_KNOWLEDGE_FIELDS),
+            # This field remains the bounded platform baseline the agent may write directly.
+            # Workspace extensions are shown only after registration as claim refs below; dumping
+            # the entire private registry into L3 would undo the card's bound.
+            registered_client_claim_fields=tuple(CLIENT_BASELINE_FIELDS),
             client_knowledge=Stage0CardClientKnowledge(
                 version=client_kb_version,
                 known_fields=known_fields,
                 open_gaps=open_gaps,
+                baseline_required=len(CLIENT_BASELINE_FIELDS),
+                baseline_filled=sum(key in claims for key in CLIENT_BASELINE_FIELDS),
+                extended_registered=len(extended_definitions),
+                extended_filled=sum(
+                    item.field_def.field_key in claims for item in extended_definitions
+                ),
+                pending_field_proposals=pending_field_count,
+                pending_field_proposal_refs=pending_field_refs,
             ),
             interview=Stage0CardInterview(
                 current_effective_statements=entries,
