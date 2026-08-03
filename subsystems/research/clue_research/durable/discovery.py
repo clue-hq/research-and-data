@@ -3165,12 +3165,30 @@ async def discovery_manifest_members(
         for value in (
             await conn.execute(
                 text(
-                    "SELECT DISTINCT edge.claim_id FROM discovery_field_claim edge "
-                    "JOIN discovery_field_resolution resolution "
-                    "ON resolution.id = edge.resolution_id "
-                    "AND resolution.workspace_id = edge.workspace_id "
-                    "WHERE resolution.workspace_id = :workspace_id "
-                    "AND resolution.batch_id = :batch_id ORDER BY edge.claim_id"
+                    """
+                    WITH batch_claims AS (
+                        SELECT edge.claim_id
+                        FROM discovery_field_claim edge
+                        JOIN discovery_field_resolution resolution
+                          ON resolution.id = edge.resolution_id
+                         AND resolution.workspace_id = edge.workspace_id
+                        WHERE resolution.workspace_id = :workspace_id
+                          AND resolution.batch_id = :batch_id
+                        UNION
+                        SELECT materialized.id AS claim_id
+                        FROM discovery_candidate_link candidate
+                        JOIN discovery_item_snapshot item
+                          ON item.id = candidate.item_snapshot_id
+                         AND item.workspace_id = candidate.workspace_id
+                        JOIN claim materialized
+                          ON materialized.entity_id = candidate.survivor_entity_id
+                         AND materialized.artifact_key = item.raw_artifact_key
+                        WHERE candidate.workspace_id = :workspace_id
+                          AND candidate.batch_id = :batch_id
+                          AND candidate.admission_status IN ('admitted', 'merged')
+                    )
+                    SELECT DISTINCT claim_id FROM batch_claims ORDER BY claim_id
+                    """
                 ),
                 {"workspace_id": workspace_id, "batch_id": batch_id},
             )

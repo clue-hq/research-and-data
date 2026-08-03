@@ -878,7 +878,13 @@ class DiscoveryAccountManifest(BaseModel):
 
 
 class SealedDiscoveryAccounts(BaseModel):
-    """Reference-only verified result returned by the sealed-manifest reader seam."""
+    """Verified D5 input returned to the post-discovery selection/scoring phases.
+
+    Membership, claim ids, and field-resolution decisions are all frozen by the same batch seal.
+    The claim ids remain references into the claim store; provider response bodies never cross this
+    seam.  ``required_account_fields`` lets a scoring-disabled policy distinguish an honestly
+    terminal missing required field from a resolved field without consulting mutable plan state.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -886,6 +892,39 @@ class SealedDiscoveryAccounts(BaseModel):
     seal_sha256: Sha256Hex
     account_manifest_ref: NonEmptyStr
     account_ids: tuple[EntityId, ...]
+    claim_manifest_ref: NonEmptyStr | None = None
+    claim_ids: tuple[ClaimId, ...] = ()
+    required_criteria: tuple[NonEmptyStr, ...] = ()
+    required_account_fields: tuple[FieldKey, ...] = ()
+    field_resolutions: tuple[DiscoveryFieldResolution, ...] = ()
+
+    @model_validator(mode="after")
+    def _sealed_selection_inputs_are_consistent(self) -> SealedDiscoveryAccounts:
+        if len(self.account_ids) != len(set(self.account_ids)):
+            raise ValueError("sealed discovery account ids must be unique")
+        if len(self.claim_ids) != len(set(self.claim_ids)):
+            raise ValueError("sealed discovery claim ids must be unique")
+        if len(self.required_criteria) != len(set(self.required_criteria)):
+            raise ValueError("sealed discovery criteria must be unique")
+        if len(self.required_account_fields) != len(set(self.required_account_fields)):
+            raise ValueError("sealed required account fields must be unique")
+        account_set = set(self.account_ids)
+        required = set(self.required_account_fields)
+        seen: set[tuple[EntityId, FieldKey]] = set()
+        for resolution in self.field_resolutions:
+            if resolution.batch_id != self.discovery_batch_id:
+                raise ValueError("sealed field resolution belongs to another discovery batch")
+            if resolution.account_entity_id not in account_set:
+                raise ValueError("sealed field resolution belongs to an unsealed account")
+            key = (resolution.account_entity_id, resolution.logical_field_key)
+            if key in seen:
+                raise ValueError("sealed field resolutions must be unique per account and field")
+            seen.add(key)
+        if required and self.field_resolutions:
+            expected = {(account_id, field) for account_id in account_set for field in required}
+            if seen != expected:
+                raise ValueError("sealed field resolutions do not cover every required field")
+        return self
 
 
 @runtime_checkable

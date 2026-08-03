@@ -184,6 +184,7 @@ from clue_storage import StorageBackend
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
+    PreconditionFailed,
     PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
@@ -800,6 +801,16 @@ class ScoreAccountsTool(_CapabilityTool):
         run = await self._load_run(inputs.project_run_id, ctx)
         if run is None:
             return _fail("run_not_found", "no such project run")
+        if run.phase is not ProjectPhase.SCORING:
+            return _fail(
+                "project_phase_not_scoring",
+                "score_accounts is available only while the project run is in scoring",
+            )
+        if run.status is not ProjectRunStatus.ACTIVE:
+            return _fail(
+                "project_run_not_active",
+                "score_accounts requires an active project run",
+            )
         admitted: Sequence[EntityId]
         if self._storage is not None:
             try:
@@ -844,6 +855,20 @@ class ScoreAccountsTool(_CapabilityTool):
         assert isinstance(inputs, ScoreAccountsInput)
         run = await self._load_run(inputs.project_run_id, ctx)
         assert run is not None
+        if run.phase is not ProjectPhase.SCORING:
+            raise PreconditionFailed(
+                _fail(
+                    "project_phase_not_scoring",
+                    "score_accounts is available only while the project run is in scoring",
+                )
+            )
+        if run.status is not ProjectRunStatus.ACTIVE:
+            raise PreconditionFailed(
+                _fail(
+                    "project_run_not_active",
+                    "score_accounts requires an active project run",
+                )
+            )
         sealed_reader = (
             DbSealedDiscoveryAccountManifestReader(
                 storage=self._storage,

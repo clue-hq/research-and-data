@@ -17,12 +17,23 @@ existence leak).
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import text
 
 from clue_api.toolbelt_wiring import build_toolbelt
-from clue_core import ICPCreatedFrom, new_operation_id
+from clue_core import (
+    EntityType,
+    ExtractionMethod,
+    ICPCreatedFrom,
+    ProjectRunId,
+    ResearchMode,
+    discovery_claim,
+    new_operation_id,
+)
+from clue_research.claimstore import insert_claim
+from clue_research.discovery_scoring.phases import project_discovery_run_id
 from clue_research.icp import (
     ScoringRubric,
     TierBand,
@@ -366,8 +377,8 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
                 )
 
             # Control: the OWNING workspace is not refused run_not_found — pause_run succeeds, and
-            # score_accounts refuses on its real next precondition (discovery_not_run), proving the
-            # ws_B refusals above were scope-driven, not absence-driven.
+            # score_accounts refuses on the owning run's actual phase, proving the ws_B refusals
+            # above were scope-driven, not absence-driven.
             paused = await invoke_tool(
                 registry, "pause_run", {"project_run_id": run_id}, ctx_a, idempotency_ttl_s=TTL
             )
@@ -380,7 +391,90 @@ def test_cross_workspace_run_access_refuses_run_not_found(  # noqa: F811
                     ctx_a,
                     idempotency_ttl_s=TTL,
                 )
-            assert ei.value.reason_codes == ("discovery_not_run",)
+            assert ei.value.reason_codes == ("project_phase_not_scoring",)
+
+    run_async(scenario())
+
+
+def test_score_accounts_refuses_discovery_even_when_admitted_accounts_exist(
+    require_profiling_db: None,
+) -> None:
+    """Regression for the D5 crash window: seal/membership alone never authorizes scoring."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=True) as conn:
+            await seed_packs(conn)
+            from clue_api.composition import load_research_packs
+
+            await load_research_packs(conn)
+            cf = conn_session_factory(conn)
+            registry = build_toolbelt(storage=None, gateway=None, conn_factory=cf)
+            workspace_id = await seed_workspace(conn, f"ws_phase_{uuid4().hex[:8]}")
+            project = await seed_project(conn, workspace_id)
+            ctx = ToolContext(
+                workspace_id=workspace_id,
+                actor="human",
+                conn_factory=cf,
+                operation_id=new_operation_id(),
+            )
+            started = await invoke_tool(
+                registry,
+                "start_project_run",
+                {
+                    "project_id": project.project_id,
+                    "icp_key": "matrix",
+                    "icp_version": 1,
+                },
+                ctx,
+                idempotency_ttl_s=TTL,
+            )
+            run_id = ProjectRunId(UUID(started.references["project_run_id"]))
+            await conn.execute(
+                text(
+                    "UPDATE project_run SET phase = 'discovery', status = 'active' WHERE id = :id"
+                ),
+                {"id": run_id},
+            )
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Already admitted",
+                primary_domain="admitted.example",
+                workspace_id=workspace_id,
+            )
+            await insert_claim(
+                conn,
+                discovery_claim(
+                    entity_id=account_id,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="core.discovery_provenance",
+                    value_json={
+                        "matched_channel": "exa_websets",
+                        "matched_signal": "admitted",
+                        "discovery_confidence": 0.9,
+                    },
+                    source_tier=1,
+                    extraction_method=ExtractionMethod.API,
+                    confidence=0.9,
+                    run_id=project_discovery_run_id(
+                        project_run_id=run_id,
+                        icp_key="matrix",
+                        icp_version=1,
+                    ),
+                    research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                    found_via="exa_websets",
+                    matched_signal="admitted",
+                    discovery_confidence=0.9,
+                    source_url="https://admitted.example",
+                ),
+            )
+
+            tool = registry.get("score_accounts")
+            inputs = tool.input_model(project_run_id=str(run_id))
+            failures = await tool.preconditions(inputs, ctx)
+            assert tuple(value.reason_code for value in failures) == ("project_phase_not_scoring",)
+            with pytest.raises(PreconditionFailed) as exc:
+                await tool.invoke(inputs, ctx)
+            assert exc.value.reason_codes == ("project_phase_not_scoring",)
 
     run_async(scenario())
 

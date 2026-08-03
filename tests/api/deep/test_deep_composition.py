@@ -31,7 +31,11 @@ from clue_core import (
     new_run_id,
 )
 from clue_research.claimstore import insert_claim
-from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
+from clue_research.discovery_scoring.tiering import (
+    TIER_FIELD,
+    DiscoverySelectionPolicy,
+    cutoff_version,
+)
 from clue_research.durable import (
     AccountSpec,
     PhaseHandlerRegistry,
@@ -288,6 +292,79 @@ def test_high_tier_resolver_selects_named_band_at_committed_cutoff(
             assert {s.entity_id for s in specs} == {high.id}
             assert specs[0].tier == "high"
             assert specs[0].workspace_id == _CLIENT
+
+    run_async(scenario())
+
+
+def test_high_tier_resolver_selects_only_current_run_human_approved_criteria_account(
+    require_profiling_db: None,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await seed_packs(conn)
+            factory = conn_session_factory(conn)
+            strategy = {
+                "scoring_mode": "disabled",
+                "selection_mode": "discovery_criteria",
+                "must_have_criteria": ["Independent practice"],
+                "approved_tier": "high",
+            }
+            spec = ICPSpec(
+                workspace_id=_CLIENT,
+                icp_key=_ICP,
+                created_from=ICPCreatedFrom.SYNTHESIS,
+                discovery_strategy=strategy,
+            )
+            policy = DiscoverySelectionPolicy.from_slot(strategy)
+            current_run = new_project_run_id()
+            stale_run = new_project_run_id()
+            approved = await insert_test_account(
+                conn, name="Approved Co", domain="approved.example"
+            )
+            stale = await insert_test_account(
+                conn, name="Stale Co", domain="stale-selection.example"
+            )
+
+            async def write(account_id: UUID, project_run_id) -> None:
+                await insert_claim(
+                    conn,
+                    stamp_reuse(
+                        account_claim(
+                            entity_id=account_id,
+                            field_key=TIER_FIELD,
+                            value_json={
+                                "tier": "high",
+                                "decision_basis": "discovery_criteria",
+                                "selection_policy_version": policy.policy_version,
+                                "cutoff_version": "criteria-decision",
+                                "project_run_id": str(project_run_id),
+                                "icp_key": _ICP,
+                                "icp_version": 1,
+                            },
+                            source_tier=1,
+                            extraction_method=ExtractionMethod.HUMAN,
+                            confidence=1.0,
+                            run_id=new_run_id(),
+                            research_mode=ResearchMode.ACCOUNT_PROFILING,
+                        ),
+                        workspace_id=_CLIENT,
+                    ),
+                )
+
+            await write(approved.id, current_run)
+            await write(stale.id, stale_run)
+            resolver = build_high_tier_resolver(spec=spec, session_factory=factory)
+            ctx = PhaseContext(
+                project_run_id=current_run,
+                project_id="prj-test",
+                brand_id="brd-test",
+                phase=ProjectPhase.DEEP,
+                workspace_id=_CLIENT,
+                icp_key=_ICP,
+                icp_version=1,
+            )
+            specs = tuple(await resolver(ctx))
+            assert {row.entity_id for row in specs} == {approved.id}
 
     run_async(scenario())
 

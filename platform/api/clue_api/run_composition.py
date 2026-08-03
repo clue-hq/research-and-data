@@ -448,16 +448,22 @@ class ComposingRunDriver:
             storage=self._storage,
             register=registry.register,
         )
+        sealed_discovery_reader = DbSealedDiscoveryAccountManifestReader(
+            storage=self._storage,
+            conn_factory=self._session_factory,
+        )
         register_scoring_handler(
             storage=self._storage,
             session_factory=self._session_factory,
-            sealed_account_reader=DbSealedDiscoveryAccountManifestReader(
-                storage=self._storage,
-                conn_factory=self._session_factory,
-            ),
+            sealed_account_reader=sealed_discovery_reader,
             register=registry.register,
         )
-        register_tier_checkpoint_handler(storage=self._storage, register=registry.register)
+        register_tier_checkpoint_handler(
+            storage=self._storage,
+            sealed_account_reader=sealed_discovery_reader,
+            session_factory=self._session_factory,
+            register=registry.register,
+        )
 
         # DEEP — campaign-scoped (one ICPSpec) over the fleet scheduler; single-flight + rubric
         # priority ON (D2 / the B1-wiring residuals).

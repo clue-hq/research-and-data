@@ -82,7 +82,12 @@ from clue_core import (
 )
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for, entities_with_field_claim
-from clue_research.discovery_scoring.tiering import TIER_FIELD, cutoff_version
+from clue_research.discovery_scoring.tiering import (
+    TIER_FIELD,
+    DiscoverySelectionPolicy,
+    ScoringMode,
+    cutoff_version,
+)
 from clue_research.durable import (
     AccountResearchGraph,
     AccountScheduler,
@@ -175,13 +180,24 @@ def build_high_tier_resolver(
     """
 
     async def _resolve(ctx: PhaseContext) -> Sequence[AccountSpec]:
-        cutoffs = _tier_cutoffs(ctx.params.get("tier_cutoffs"))
-        if cutoffs is None or not cutoffs.bands:
+        try:
+            selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
+        except ValueError:
             return ()
-        committed = cutoff_version(cutoffs)
-        eligible = (
-            deep_tiers if deep_tiers is not None else frozenset(b.tier for b in cutoffs.bands)
-        )
+        selection_mode = selection_policy.scoring_mode is ScoringMode.DISABLED
+        if selection_mode:
+            committed = selection_policy.policy_version
+            eligible = frozenset({selection_policy.approved_tier})
+            if deep_tiers is not None:
+                eligible &= deep_tiers
+        else:
+            cutoffs = _tier_cutoffs(ctx.params.get("tier_cutoffs"))
+            if cutoffs is None or not cutoffs.bands:
+                return ()
+            committed = cutoff_version(cutoffs)
+            eligible = (
+                deep_tiers if deep_tiers is not None else frozenset(b.tier for b in cutoffs.bands)
+            )
         scope = WorkspaceScope.for_workspace(ctx.workspace_id)
         specs: list[AccountSpec] = []
         async with session_factory() as conn:
@@ -193,7 +209,14 @@ def build_high_tier_resolver(
                 value = live[0].value_json  # most-recent live tier claim for this account
                 if not isinstance(value, dict):
                     continue
-                if value.get("cutoff_version") != committed:
+                if selection_mode:
+                    if (
+                        value.get("decision_basis") != "discovery_criteria"
+                        or value.get("selection_policy_version") != committed
+                        or value.get("project_run_id") != str(ctx.project_run_id)
+                    ):
+                        continue
+                elif value.get("cutoff_version") != committed:
                     continue
                 if value.get("icp_key") != ctx.icp_key:
                     continue

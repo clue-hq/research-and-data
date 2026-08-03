@@ -886,7 +886,17 @@ guard, pause/cancel/replace semantics, and sealed-manifest scoring reader.
 §6.2; after resolving the final blocker, one seal commits and the same run advances exactly once to
 scoring. A late event cannot alter membership or fields under the seal.
 
+**Post-review repair (2026-08-03):** the project must still traverse a committed `SCORING` phase
+and an approved human `TIER_CHECKPOINT` before `DEEP`; direct phase skips are rejected in
+PostgreSQL. For the Insight Health/Aura ICP, numeric scoring is explicitly disabled and selection
+uses the immutable Exa criteria: all required `yes` -> selected, any `no` -> excluded, and any
+`unclear`/missing criterion or unresolved required field -> hold. The checkpoint may approve only
+selected accounts and writes seal/run-bound tier decisions without synthetic fit or intent scores.
+`ScoreAccountsTool` refuses unless the persisted run is active in `SCORING`.
+
 ### Slice D6 — Full live Exa discovery acceptance
+
+**Status:** not implemented. The D5 review and repair do not claim or substitute for this slice.
 
 **Purpose:** Prove the complete production composition, not isolated adapters.
 
