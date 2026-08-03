@@ -19,6 +19,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -45,11 +46,13 @@ from clue_core import (
     DiscoverySpendOutcome,
     DiscoveryWakeReason,
     DiscoveryWakeRequest,
+    EntityType,
     ExtractionMethod,
     ICPCreatedFrom,
     ProjectPhase,
     ResearchMode,
     account_claim,
+    discovery_claim,
     discovery_provider_external_id,
     new_discovery_batch_id,
     new_discovery_item_snapshot_id,
@@ -163,6 +166,7 @@ async def _start_batch(
     *,
     workspace_id: str,
     persist_first_page: bool = True,
+    discovery_strategy: dict[str, JsonValue] | None = None,
 ) -> _StartedBatch:
     project = await seed_project(conn, workspace_id, name="D1 account discovery")
     icp = await create_icp_spec(
@@ -171,6 +175,7 @@ async def _start_batch(
         icp_key="independent-specialty-practices",
         created_from=ICPCreatedFrom.SYNTHESIS,
         field_keys=("core.employee_count", "core.primary_domain"),
+        discovery_strategy=discovery_strategy,
         activate=True,
     )
     run_id = new_project_run_id()
@@ -302,6 +307,8 @@ async def _complete_batch(
     *,
     started: _StartedBatch,
     persist_manifest: bool = True,
+    criterion_state: str | None = None,
+    resolve_all_required_fields: bool = False,
 ) -> _ReadyBatch:
     workspace_id = started.workspace_id
     assert started.page_id is not None
@@ -399,17 +406,60 @@ async def _complete_batch(
             source_key="exa_websets",
         )
         claim_ids.append(await insert_claim(conn, claim, validate_field=False))
+    if criterion_state is not None:
+        criterion_claim = revalidate_with(
+            discovery_claim(
+                entity_id=account_id,
+                entity_type=EntityType.ACCOUNT,
+                field_key="core.discovery_provenance",
+                value_json={
+                    "matched_channel": "exa_websets",
+                    "matched_signal": "must-have criterion evaluation",
+                    "discovery_confidence": 0.95,
+                    "evidence": {
+                        "evaluations": [
+                            {
+                                "criterion": "is an independent practice",
+                                "satisfied": criterion_state,
+                                "reasoning": "recorded provider criterion evaluation",
+                                "references": [
+                                    {
+                                        "url": "https://www.insighthealth.ai/",
+                                        "title": "Insight Health",
+                                        "snippet": "independent healthcare practice",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                },
+                source_tier=1,
+                extraction_method=ExtractionMethod.API,
+                confidence=0.95,
+                run_id=started.project_run_id,
+                research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+                found_via="exa_websets",
+                matched_signal="must-have criterion evaluation",
+                discovery_confidence=0.95,
+                source_url="https://www.insighthealth.ai/",
+                evidence_span=f"is an independent practice: {criterion_state}",
+            ),
+            source_key="exa_websets",
+            artifact_key=item_key,
+        )
+        claim_ids.append(await insert_claim(conn, criterion_claim, validate_field=False))
 
     now = datetime.now(UTC)
     for index, logical_field in enumerate(DISCOVERY_ENVELOPE_POLICY_V1.required_fields):
-        if index < 2:
+        if index < 2 or resolve_all_required_fields:
+            winning_claim_id = claim_ids[min(index, 1)]
             resolution = DiscoveryFieldResolution(
                 batch_id=started.batch_id,
                 account_entity_id=account_id,
                 logical_field_key=logical_field,
                 state=DiscoveryFieldResolutionState.RESOLVED,
-                claim_ids=(claim_ids[index],),
-                winning_claim_id=claim_ids[index],
+                claim_ids=(winning_claim_id,),
+                winning_claim_id=winning_claim_id,
                 source_item_ids=(item_id,),
                 updated_at=now,
             )

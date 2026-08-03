@@ -33,7 +33,7 @@ from clue_core import (
     account_claim,
 )
 from clue_research.claimstore import insert_claim
-from clue_research.discovery_scoring.tiering import TIER_FIELD
+from clue_research.discovery_scoring.tiering import TIER_FIELD, DiscoverySelectionPolicy
 from clue_research.durable import (
     enumerate_discovery_subject_artifacts,
     list_committee_acquisition_attempts,
@@ -108,10 +108,36 @@ class _ProcessCrash(BaseException):
 
 
 async def _setup(
-    conn: AsyncConnection, storage: FsStorage, *, workspace_id: str
+    conn: AsyncConnection,
+    storage: FsStorage,
+    *,
+    workspace_id: str,
+    strict_s2d: bool = False,
+    s2d_criterion_state: str = "yes",
 ) -> CommitteeAcquisitionRequest:
-    started = await _start_batch(conn, storage, workspace_id=workspace_id)
-    ready = await _complete_batch(conn, storage, started=started)
+    strategy = (
+        {
+            "scoring_mode": "disabled",
+            "selection_mode": "discovery_criteria",
+            "must_have_criteria": ["is an independent practice"],
+            "approved_tier": "high",
+        }
+        if strict_s2d
+        else None
+    )
+    started = await _start_batch(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        discovery_strategy=strategy,
+    )
+    ready = await _complete_batch(
+        conn,
+        storage,
+        started=started,
+        criterion_state=s2d_criterion_state if strict_s2d else None,
+        resolve_all_required_fields=strict_s2d,
+    )
     seal = await seal_discovery_batch(
         conn,
         workspace_id=workspace_id,
@@ -126,7 +152,11 @@ async def _setup(
             value_json={
                 "tier": "high",
                 "decision_basis": "discovery_criteria",
-                "selection_policy_version": "discovery-selection-v1",
+                "selection_policy_version": (
+                    DiscoverySelectionPolicy.from_slot(strategy).policy_version
+                    if strategy is not None
+                    else "discovery-selection-v1"
+                ),
                 "decision_version": "s2b-test-decision",
                 "cutoff_version": "s2b-test-decision",
                 "discovery_batch_id": str(started.batch_id),

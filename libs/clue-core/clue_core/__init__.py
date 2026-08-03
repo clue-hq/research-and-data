@@ -40,6 +40,15 @@ from clue_core.committee_acquisition import (
     CommitteeSpendOutcome,
     new_committee_acquisition_operation_id,
 )
+from clue_core.committee_eligibility import (
+    CommitteeEligibilityCondition,
+    CommitteeEligibilityConditionResult,
+    CommitteeEligibilityDecision,
+    CommitteeEligibilityDecisionId,
+    CommitteeEligibilityOutcome,
+    CommitteeExecutionAuthorization,
+    new_committee_eligibility_decision_id,
+)
 from clue_core.compliance import UseDecision, UseGate, is_outreach_promotable
 from clue_core.coverage import (
     CoverageAttemptId,
@@ -464,6 +473,14 @@ __all__ = [
     "CommitteeSnapshotState",
     "CommitteeSpendOutcome",
     "new_committee_acquisition_operation_id",
+    # provider-neutral committee eligibility (M6A S2D)
+    "CommitteeEligibilityCondition",
+    "CommitteeEligibilityConditionResult",
+    "CommitteeEligibilityDecision",
+    "CommitteeEligibilityDecisionId",
+    "CommitteeEligibilityOutcome",
+    "CommitteeExecutionAuthorization",
+    "new_committee_eligibility_decision_id",
     # durable asynchronous discovery contracts (M6A D0)
     "FIRST_PAGE_CURSOR",
     "SEAL_TERMINAL_FIELD_STATES",
