@@ -343,7 +343,7 @@ def _one_result(observation: ExaDiscoveryEnrichmentObservation) -> str:
     return observation.result[0].strip()
 
 
-def _enrichment_value(
+def exa_enrichment_value(
     company: ExaDiscoveryCompanyItem,
     observation: ExaDiscoveryEnrichmentObservation,
 ) -> tuple[str, JsonValue] | None:
@@ -480,12 +480,12 @@ async def _item_provenance_claim(
     return matches[0]
 
 
-async def _ensure_field_claim(
+async def ensure_exa_company_field_claim(
     conn: AsyncConnection,
     *,
     entity_id: EntityId,
     run_id: RunId,
-    snapshot: DiscoveryItemSnapshot,
+    artifact_key: str,
     company: ExaDiscoveryCompanyItem,
     member_ids: Sequence[EntityId],
     field_key: str,
@@ -493,12 +493,13 @@ async def _ensure_field_claim(
     provider_field: str,
     references: Sequence[ExaWebsetReference] = (),
     reasoning: str | None = None,
+    research_mode: ResearchMode = ResearchMode.ACCOUNT_DISCOVERY,
 ) -> tuple[ClaimId, bool]:
     existing = await _equivalent_claim(
         conn,
         entity_ids=member_ids,
         field_key=field_key,
-        artifact_key=snapshot.raw_artifact_key,
+        artifact_key=artifact_key,
         value=value,
     )
     if existing is not None:
@@ -511,7 +512,7 @@ async def _ensure_field_claim(
         extraction_method=ExtractionMethod.API,
         confidence=0.85 if references else 0.75,
         run_id=run_id,
-        research_mode=ResearchMode.ACCOUNT_DISCOVERY,
+        research_mode=research_mode,
         source_url=_best_reference_url(company, references),
         evidence_span=(
             _enrichment_span(
@@ -533,7 +534,7 @@ async def _ensure_field_claim(
     claim = revalidate_with(
         claim,
         source_key=EXA_WEBSETS_SOURCE_KEY,
-        artifact_key=snapshot.raw_artifact_key,
+        artifact_key=artifact_key,
     )
     return await insert_claim(conn, claim), True
 
@@ -566,11 +567,11 @@ async def _materialize_item_claims(
         conn, survivor_id, EntityType.ACCOUNT, workspace_id=workspace_id
     )
     for field_key, value in _base_field_values(prepared.company).items():
-        claim_id, was_created = await _ensure_field_claim(
+        claim_id, was_created = await ensure_exa_company_field_claim(
             conn,
             entity_id=survivor_id,
             run_id=run_id,
-            snapshot=prepared.snapshot,
+            artifact_key=prepared.snapshot.raw_artifact_key,
             company=prepared.company,
             member_ids=member_ids,
             field_key=field_key,
@@ -584,18 +585,18 @@ async def _materialize_item_claims(
     for observation in prepared.company.enrichments:
         field_key = _canonical_enrichment_field(observation.field_key)
         attempted.add(field_key)
-        mapped = _enrichment_value(prepared.company, observation)
+        mapped = exa_enrichment_value(prepared.company, observation)
         if mapped is None:
             missing.add(field_key)
             enrichment_missing.add(field_key)
             continue
         mapped_field, value = mapped
         missing.discard(mapped_field)
-        claim_id, was_created = await _ensure_field_claim(
+        claim_id, was_created = await ensure_exa_company_field_claim(
             conn,
             entity_id=survivor_id,
             run_id=run_id,
-            snapshot=prepared.snapshot,
+            artifact_key=prepared.snapshot.raw_artifact_key,
             company=prepared.company,
             member_ids=member_ids,
             field_key=mapped_field,
@@ -1183,4 +1184,6 @@ __all__ = [
     "ExaD4Result",
     "ExaWebsetsD4Materializer",
     "ExaWebsetsDurableSnapshotChannel",
+    "ensure_exa_company_field_claim",
+    "exa_enrichment_value",
 ]

@@ -930,11 +930,57 @@ are inputs to the later Sumble gap waterfall, not grounds for weakening the admi
 
 ### Slice E1 — Targeted Exa import enrichment for selected accounts
 
+**Status:** mechanical/provider-contract implementation `PASS`; bounded live canary `OPEN` on
+2026-08-03. See `M06A-E1-targeted-exa-enrichment-acceptance.md`.
+
 **Purpose:** Enrich only selected accounts without applying new fields to the entire discovery
 Webset.
 
-**Gate E1:** import a bounded selected-account set, pay the documented import/enrichment units, and
-prove the original discovery row cost is not incurred again; replay makes no provider call.
+**Eligibility and lineage:**
+
+- E1 is a post-seal operation. It never appends to or mutates the sealed discovery batch.
+- Every target must be a canonical account in the exact current D5 seal and have a live,
+  human-approved `account.scoring.tier` claim whose `decision_basis`, project run, batch, seal,
+  ICP, disposition, and approved tier all match that seal. A hold/excluded/stale/foreign account
+  causes preflight to fail before any provider call.
+- The request carries an explicit bounded account list and an explicit versioned field plan. It
+  cannot implicitly enrich every discovered account.
+
+**Provider contract:**
+
+1. Create a CSV import containing only the selected accounts' canonical URL identifiers.
+2. Upload the exact content-addressed CSV to the returned presigned URL. The URL is a credential:
+   it is never logged or durably stored, and the durable import receipt records this redaction.
+3. Create an import-only Webset with that import plus the requested enrichments and no search.
+4. Poll to `idle`, exhaust item pagination, and reconcile the returned import/enrichment objects.
+
+Imported items must have `source=import`, the expected import `sourceId`, their original URL in
+`sourceEntityId`, no criterion evaluations, one terminal result for every requested enrichment,
+and the requested company entity type. `sourceEntityId`, not provider result ordering or a fuzzy
+name, binds the result back to the already-canonical account. A missing imported row or terminal
+null enrichment becomes an explicit terminal field outcome; it never creates a null claim.
+
+**Durability and spend:**
+
+- The request fingerprint covers the exact seal, sorted account/identifier pairs, field plan,
+  provider/pricing contracts, and observation window. Reserve before the first provider request.
+- Persist the input plan/CSV, sanitized import receipt, Webset receipts, every item page/item,
+  claim/provenance links, field outcomes, and the final cost receipt. A terminal replay reads these
+  records and makes zero provider calls.
+- E1 settlement has no discovery-search row component: `2 × resolved imports`, plus `2 × ordinary
+  enrichment rows` (including terminal nulls), plus `5 × actual email/phone values`. The receipt
+  records a zero search charge and the original sealed batch's charge is unchanged.
+- A crash after a possibly accepted Webset create is reconciled by deterministic `externalId`
+  lookup; it is never blindly re-created. Presigned upload URLs are not durable credentials, so a
+  known pre-dispatch import/upload failure may start a fresh uncharged import. A process crash after
+  upload but before the paid create is quarantined as unknown until an operator completes the
+  deterministic absence audit; the system never infers safety from one `404` and blindly creates.
+
+**Gate E1:** a real PostgreSQL/storage run imports a bounded selected-account set, materializes the
+expected claims and terminal missing outcomes, settles only the documented import/enrichment units,
+and proves the original discovery row cost is not incurred again. Concurrent/restarted replay makes
+no provider call and writes no duplicate equivalent claim. A bounded live canary closes the
+provider-contract portion; until then mechanical integration may pass while E1 remains `OPEN`.
 
 ### Slice S1 — Sumble account gaps after scoring
 

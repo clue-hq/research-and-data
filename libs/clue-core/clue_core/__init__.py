@@ -385,6 +385,18 @@ from clue_core.stage0 import (
     new_recon_run_id,
     new_volunteered_statement_id,
 )
+from clue_core.targeted_enrichment import (
+    TargetedEnrichmentFieldPlan,
+    TargetedEnrichmentFieldResult,
+    TargetedEnrichmentFieldState,
+    TargetedEnrichmentOperation,
+    TargetedEnrichmentOperationId,
+    TargetedEnrichmentRequest,
+    TargetedEnrichmentSpendOutcome,
+    TargetedEnrichmentState,
+    TargetedEnrichmentTarget,
+    new_targeted_enrichment_operation_id,
+)
 from clue_core.verification import (
     AgeOutCandidate,
     Binding,
@@ -460,6 +472,17 @@ __all__ = [
     "new_discovery_operation_id",
     "new_discovery_plan_id",
     "validate_discovery_plan_policy",
+    # targeted post-discovery enrichment
+    "TargetedEnrichmentFieldPlan",
+    "TargetedEnrichmentFieldResult",
+    "TargetedEnrichmentFieldState",
+    "TargetedEnrichmentOperation",
+    "TargetedEnrichmentOperationId",
+    "TargetedEnrichmentRequest",
+    "TargetedEnrichmentSpendOutcome",
+    "TargetedEnrichmentState",
+    "TargetedEnrichmentTarget",
+    "new_targeted_enrichment_operation_id",
     # primitives
     "EntityId",
     "ClaimId",
