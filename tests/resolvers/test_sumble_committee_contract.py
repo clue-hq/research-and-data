@@ -9,8 +9,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 
 from clue_research.resolvers.sumble import SumbleContractError, SumbleSchemaDrift
+from clue_research.resolvers.sumble.committee_transport import (
+    SumbleV9CommitteeClient,
+    require_matching_people_request_id,
+)
 from clue_research.resolvers.sumble.people import (
     PEOPLE_NO_REVEAL_ATTRIBUTES,
     SumbleAdvancedQuery,
@@ -89,6 +94,35 @@ def test_people_poll_body_contains_request_id_alone() -> None:
     assert people_poll_request(" request-123 ") == {"request_id": "request-123"}
     with pytest.raises(ValueError, match="non-empty"):
         people_poll_request("   ")
+
+
+def test_committee_transport_is_single_attempt_and_request_id_locked() -> None:
+    calls: list[dict[str, Any]] = []
+
+    def http(url: str, **kwargs: Any) -> object:
+        calls.append({"url": url, **kwargs})
+        return _fixture("people_pending.json")
+
+    client = SumbleV9CommitteeClient(api_key=SecretStr("fixture-secret"), http=http)
+    response, _payload = client.submit_people({"filter": {}}, maximum_credits=16)
+    assert response.status is SumblePeopleStatus.PENDING
+    assert calls[0]["retries"] == 0
+    assert calls[0]["headers"] == {"Authorization": "Bearer fixture-secret"}
+    require_matching_people_request_id(response, response.request_id)
+    with pytest.raises(SumbleContractError, match="request_id differs"):
+        require_matching_people_request_id(response, "different-operation")
+
+
+def test_committee_transport_rejects_unrequested_contact_before_returning_payload() -> None:
+    payload = _fixture("teams_succeeded.json")
+    payload["teams"][0]["related_people"][0]["attributes"]["email"] = "hidden@example.test"
+
+    def http(_url: str, **_kwargs: Any) -> object:
+        return payload
+
+    client = SumbleV9CommitteeClient(api_key=SecretStr("fixture-secret"), http=http)
+    with pytest.raises(SumbleContractError, match="no-reveal"):
+        client.search_teams({"filter": {}}, maximum_credits=12)
 
 
 @pytest.mark.parametrize(

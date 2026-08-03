@@ -263,6 +263,18 @@ def parse_teams_response(payload: Mapping[str, Any]) -> SumbleTeamsResponse:
         raise SumbleContractError("sumble_teams: invalid v9 response shape") from exc
 
 
+def assert_no_team_contact_reveals(response: SumbleTeamsResponse) -> None:
+    """Reject unexpected contact values before the raw response enters durable storage."""
+
+    for team in response.teams:
+        for person in team.related_people or ():
+            attributes = person.attributes
+            if attributes is not None and (attributes.email or attributes.phone):
+                raise SumbleContractError(
+                    "sumble_teams: S2 no-reveal response unexpectedly contained email or phone"
+                )
+
+
 def normalize_teams(
     payload: Mapping[str, Any],
     *,
@@ -362,6 +374,7 @@ __all__ = [
     "SumbleTeamRecord",
     "SumbleTeamsNormalization",
     "SumbleTeamsResponse",
+    "assert_no_team_contact_reveals",
     "normalize_teams",
     "parse_teams_response",
     "teams_search_request",
